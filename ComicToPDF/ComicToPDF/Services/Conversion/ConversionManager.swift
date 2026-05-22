@@ -169,7 +169,14 @@ class ConversionManager: ObservableObject {
     // MARK: - Persistence Façade
     private var saveTask: Task<Void, Never>?
     
+    // PERF D-M2: Dirty flag — set true when library structure changes (add/delete/
+    // rename/metadata). Page-turn progress writes use saveProgressOnly() which
+    // skips the expensive syncToSwiftData call, preventing a full SwiftData
+    // migration on every 300ms debounce tick during a reading session.
+    var hasStructuralChange: Bool = false
+
     func saveLibrary() {
+        hasStructuralChange = true   // structural callers always set the flag
         saveTask?.cancel()
         saveTask = Task { @MainActor [weak self] in
             guard let self = self else { return }
@@ -179,6 +186,18 @@ class ConversionManager: ObservableObject {
             LibraryPersistenceManager.shared.save(manager: self)
             // Keep Spotlight index in sync with the library
             SpotlightIndexer.shared.indexLibrary(pdfs: self.convertedPDFs)
+        }
+    }
+
+    /// Lightweight save for progress-only updates (page turns, reading position).
+    /// Skips the SwiftData full migration — SQLite only.
+    func saveProgressOnly() {
+        saveTask?.cancel()
+        saveTask = Task { @MainActor [weak self] in
+            guard let self = self else { return }
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            guard !Task.isCancelled else { return }
+            LibraryPersistenceManager.shared.saveProgressOnly(manager: self)
         }
     }
     

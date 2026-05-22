@@ -129,7 +129,14 @@ actor LibraryScanner {
         
         var didRepairURLs = false
 
+        // PERF D-M1: yield every 50 files so iCloud-backed fileExists calls
+        // (which can block waiting for ubiquity metadata) don't stall the actor
+        // thread and delay the first library render.
+        var pruneYieldCount = 0
         for var pdf in allPDFs {
+            pruneYieldCount += 1
+            if pruneYieldCount % 50 == 0 { await Task.yield() }
+
             if seenNames.contains(pdf.url.lastPathComponent) {
                 missingIDs.insert(pdf.id)
                 continue

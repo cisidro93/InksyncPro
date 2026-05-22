@@ -77,26 +77,34 @@ struct ModernLibraryView: View {
     @State private var sortOption: SortOption = .dateAdded
     
     // 🗑 Removed Native Importer Bypass State
-    // ✅ NEW: Precomputed Types for Swift 6 Parser Speed
-    private var allowedImportTypes: [UTType] {
-        return [
-            .folder, .pdf, .zip, .epub,
-            UTType(filenameExtension: "cbz"),
-            UTType(filenameExtension: "cbr"),
-            UTType(filenameExtension: "cb7"),
-            UTType(filenameExtension: "cbt")
-        ].compactMap { $0 }
-    }
-    
-    // ✅ NEW: SwiftData Native Resolvers
-    private var nativeVisiblePDFs: [ConvertedPDF] {
-        let mapped = swiftDataPDFs.map { $0.toDTO() }
-        return settingsManager.isVaultUnlocked ? mapped : mapped.filter { !$0.isPrivate }
-    }
-    
+    // PERF D-H3: static let avoids UTType system registry query on every render
+    private static let allowedImportTypes: [UTType] = [
+        .folder, .pdf, .zip, .epub,
+        UTType(filenameExtension: "cbz"),
+        UTType(filenameExtension: "cbr"),
+        UTType(filenameExtension: "cb7"),
+        UTType(filenameExtension: "cbt")
+    ].compactMap { $0 }
 
-    private var nativeCollections: [PDFCollection] {
-        swiftDataCollections.map { $0.toDTO() }
+    // PERF D-C1: Cached DTO mapping — previously recomputed on every render.
+    // @State so SwiftUI only re-renders when the array identity actually changes.
+    // Rebuilt only in rebuildNativeCache() which is gated behind the 250ms debounce
+    // for SwiftData page-turn writes and immediate for low-frequency user actions.
+    @State private var cachedVisiblePDFs: [ConvertedPDF] = []
+    @State private var cachedCollections: [PDFCollection] = []
+    // PERF D-H2: reviewCount scanned 15K trimmingCharacters per render — now cached.
+    @State private var cachedReviewCount: Int = 0
+
+    private func rebuildNativeCache() {
+        let mapped = swiftDataPDFs.map { $0.toDTO() }
+        cachedVisiblePDFs = settingsManager.isVaultUnlocked ? mapped : mapped.filter { !$0.isPrivate }
+        cachedCollections = swiftDataCollections.map { $0.toDTO() }
+        cachedReviewCount = mapped.filter { pdf in
+            let seriesEmpty = pdf.metadata.series?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true
+            let authorEmpty = pdf.metadata.author?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true
+            let titleEmpty  = pdf.metadata.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            return seriesEmpty || authorEmpty || titleEmpty
+        }.count
     }
 
     var body: some View {
@@ -119,7 +127,7 @@ struct ModernLibraryView: View {
                 if let userInfo = notification.userInfo,
                    let pdfID = userInfo["pdfID"] as? UUID,
                    let pageIndex = userInfo["pageIndex"] as? Int {
-                    if let targetPDF = nativeVisiblePDFs.first(where: { $0.id == pdfID }) {
+                    if let targetPDF = cachedVisiblePDFs.first(where: { $0.id == pdfID }) {
                         var progress = ReaderProgressTracker.shared.progress(for: targetPDF.id) ?? ReadingProgress(pdfID: targetPDF.id, lastOpenedAt: Date(), currentPageIndex: pageIndex, totalPagesRead: 1, completionFraction: 0, readingSessionDates: [])
                         progress.currentPageIndex = pageIndex
                         ReaderProgressTracker.shared.update(progress)
@@ -142,7 +150,7 @@ struct ModernLibraryView: View {
             .onReceive(NotificationCenter.default.publisher(for: .inksyncResumeLastRead)) { notification in
                 let readingModeStr = notification.userInfo?["readingMode"] as? String
                 if let mostRecent = ReaderProgressTracker.shared.recentSessions().first,
-                   let pdf = nativeVisiblePDFs.first(where: { $0.id == mostRecent.pdfID }) {
+                   let pdf = cachedVisiblePDFs.first(where: { $0.id == mostRecent.pdfID }) {
                     AppRouter.shared.presentFullScreen(.read(pdf))
                 }
             }
@@ -154,7 +162,7 @@ struct ModernLibraryView: View {
             .onReceive(NotificationCenter.default.publisher(for: .inksyncOpenBook)) { notification in
                 if let searchTitle = notification.userInfo?["searchTitle"] as? String {
                     // Find the first book containing the title (case-insensitive)
-                    if let pdf = nativeVisiblePDFs.first(where: { $0.name.localizedCaseInsensitiveContains(searchTitle) || $0.metadata.title.localizedCaseInsensitiveContains(searchTitle) }) {
+                    if let pdf = cachedVisiblePDFs.first(where: { $0.name.localizedCaseInsensitiveContains(searchTitle) || $0.metadata.title.localizedCaseInsensitiveContains(searchTitle) }) {
                         AppRouter.shared.presentFullScreen(.read(pdf))
                     } else {
                         // Just set the search text if not explicitly found, so user can see partial matches
@@ -185,25 +193,20 @@ struct ModernLibraryView: View {
         shellWithAlerts
             .onAppear {
                 conversionManager.backfillMissingThumbnails()
-                viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption)
+                rebuildNativeCache()
+                viewModel.updateLibraryItemsCache(pdfs: cachedVisiblePDFs, collections: cachedCollections, sortOption: sortOption)
 
                 // Seed landscape state immediately (handles cold-launch in landscape)
                 let size = UIScreen.main.bounds.size
                 isLandscape = size.width > size.height
 
-                // Wire the debounced SwiftData publisher: page-turn progress writes
-                // fire swiftDataPDFs onChange many times per reading session. Instead of
-                // rebuilding on every write, we send a signal and let a 250ms debounce
-                // absorb the burst before triggering a single rebuild.
+                // PERF D-C1: debounce absorbs page-turn bursts; rebuilds DTO map once per 250ms
                 viewModel.swiftDataCancellable = viewModel.swiftDataDidChange
                     .debounce(for: .milliseconds(250), scheduler: RunLoop.main)
                     .sink { [weak viewModel] in
                         guard let vm = viewModel else { return }
-                        // Capture current values at sink time (main thread, safe)
-                        let pdfs = self.nativeVisiblePDFs
-                        let cols  = self.nativeCollections
-                        let sort  = self.sortOption
-                        vm.updateLibraryItemsCache(pdfs: pdfs, collections: cols, sortOption: sort)
+                        self.rebuildNativeCache()
+                        vm.updateLibraryItemsCache(pdfs: self.cachedVisiblePDFs, collections: self.cachedCollections, sortOption: self.sortOption)
                     }
             }
             .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
@@ -216,12 +219,26 @@ struct ModernLibraryView: View {
             // instead of calling updateLibraryItemsCache directly.
             .onChange(of: swiftDataPDFs) { viewModel.notifySwiftDataChanged() }
             // All other triggers are low-frequency and user-initiated — rebuild immediately.
-            .onChange(of: sortOption) { viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption) }
-            .onChange(of: swiftDataCollections) { viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption) }
-            .onChange(of: viewModel.debouncedSearchText) { viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption) }
-            .onChange(of: viewModel.filterState) { viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption) }
-            .onChange(of: viewModel.contentShelf) { viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption) }
-            .onChange(of: viewModel.currentFolderID) { viewModel.updateLibraryItemsCache(pdfs: nativeVisiblePDFs, collections: nativeCollections, sortOption: sortOption) }
+            .onChange(of: sortOption) {
+                rebuildNativeCache()
+                viewModel.updateLibraryItemsCache(pdfs: cachedVisiblePDFs, collections: cachedCollections, sortOption: sortOption)
+            }
+            .onChange(of: swiftDataCollections) {
+                rebuildNativeCache()
+                viewModel.updateLibraryItemsCache(pdfs: cachedVisiblePDFs, collections: cachedCollections, sortOption: sortOption)
+            }
+            .onChange(of: viewModel.debouncedSearchText) {
+                viewModel.updateLibraryItemsCache(pdfs: cachedVisiblePDFs, collections: cachedCollections, sortOption: sortOption)
+            }
+            .onChange(of: viewModel.filterState) {
+                viewModel.updateLibraryItemsCache(pdfs: cachedVisiblePDFs, collections: cachedCollections, sortOption: sortOption)
+            }
+            .onChange(of: viewModel.contentShelf) {
+                viewModel.updateLibraryItemsCache(pdfs: cachedVisiblePDFs, collections: cachedCollections, sortOption: sortOption)
+            }
+            .onChange(of: viewModel.currentFolderID) {
+                viewModel.updateLibraryItemsCache(pdfs: cachedVisiblePDFs, collections: cachedCollections, sortOption: sortOption)
+            }
     }
 
     // MARK: - Alert Shell (rootShell + alerts + onDrop)
@@ -594,14 +611,9 @@ struct ModernLibraryView: View {
         }
     }
 
-    private var reviewCount: Int {
-        conversionManager.convertedPDFs.filter { (pdf: ConvertedPDF) -> Bool in
-            let seriesEmpty = pdf.metadata.series?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true
-            let authorEmpty = pdf.metadata.author?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true
-            let titleEmpty = pdf.metadata.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            return seriesEmpty || authorEmpty || titleEmpty
-        }.count
-    }
+    // PERF D-H2: reviewCount moved to @State (cachedReviewCount), rebuilt in
+    // rebuildNativeCache(). Left as a private accessor for any legacy call sites.
+    private var reviewCount: Int { cachedReviewCount }
 
     @ViewBuilder
     private var dailyBriefCard: some View {

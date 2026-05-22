@@ -24,9 +24,25 @@ class LibraryPersistenceManager {
     func save(manager: ConversionManager) {
         let syncPDFs = manager.convertedPDFs
         let syncCols = manager.collections
-        
+        let isStructural = manager.hasStructuralChange
+        manager.hasStructuralChange = false   // reset after capture
+
         Task.detached(priority: .background) {
-            await MigrationService.shared.syncToSwiftData(pdfs: syncPDFs, collections: syncCols)
+            // PERF D-M2: Only sync SwiftData when the library structure changed.
+            // Page-turn progress writes (the majority of debounce fires) skip this
+            // expensive N-row migration entirely.
+            if isStructural {
+                await MigrationService.shared.syncToSwiftData(pdfs: syncPDFs, collections: syncCols)
+            }
+            await LibraryDatabaseService.shared.save(syncPDFs)
+        }
+    }
+
+    /// SQLite-only save for progress updates. Never calls syncToSwiftData.
+    @MainActor
+    func saveProgressOnly(manager: ConversionManager) {
+        let syncPDFs = manager.convertedPDFs
+        Task.detached(priority: .background) {
             await LibraryDatabaseService.shared.save(syncPDFs)
         }
     }

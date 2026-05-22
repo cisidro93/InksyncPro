@@ -177,16 +177,28 @@ final class LinkedLibraryScanner: ObservableObject {
 
         guard let manager = conversionManager else { return }
 
+        // PERF D-H1: Pre-resolve all linked bookmarks in one pass so the stale-check
+        // loop below does a dictionary lookup instead of an XPC bookmark-agent call
+        // per file. On a 500-file drive this avoids 500 individual XPC round-trips.
+        var resolvedPathCache: [UUID: String] = [:]
+        for pdf in manager.convertedPDFs {
+            guard case .linked(let bm) = pdf.sourceMode else { continue }
+            var fileIsStale = false
+            if let resolved = try? URL(
+                resolvingBookmarkData: bm,
+                options: .withoutUI,
+                relativeTo: nil,
+                bookmarkDataIsStale: &fileIsStale
+            ) {
+                resolvedPathCache[pdf.id] = resolved.path
+            }
+        }
+
         // Mark files no longer present on the drive
         for idx in manager.convertedPDFs.indices {
-            if case .linked(let bm) = manager.convertedPDFs[idx].sourceMode {
-                var fileIsStale = false
-                if let resolved = try? URL(
-                    resolvingBookmarkData: bm,
-                    options: .withoutUI,
-                    relativeTo: nil,
-                    bookmarkDataIsStale: &fileIsStale
-                ), !foundPaths.contains(resolved.path) {
+            if case .linked = manager.convertedPDFs[idx].sourceMode {
+                let pdfID = manager.convertedPDFs[idx].id
+                if let resolvedPath = resolvedPathCache[pdfID], !foundPaths.contains(resolvedPath) {
                     manager.convertedPDFs[idx].metadata.autoMatchFailed = true
                     Logger.shared.log("LinkedLibraryScanner: '\(manager.convertedPDFs[idx].name)' no longer found on drive", category: "Drive", type: .warning)
                 }

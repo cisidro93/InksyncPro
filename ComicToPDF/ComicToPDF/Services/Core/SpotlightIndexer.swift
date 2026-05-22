@@ -24,11 +24,29 @@ final class SpotlightIndexer {
     // MARK: - Library Indexing
 
     /// Index the entire library — call after import or metadata changes.
-    /// Runs on a detached task to keep the main thread free.
+    /// PERF D-C2: Previously called pdfs.map { makeBookItem($0) } on @MainActor,
+    /// which allocated N ConvertedPDF copies AND decoded every coverImageData
+    /// blob into UIImage before handing off to the background task.
+    /// Now only lightweight value tuples are captured — no DTO copies, no image
+    /// decoding on the main thread. Cover thumbnails are omitted from bulk indexing
+    /// (Spotlight doesn't surface them for .content-type items).
     func indexLibrary(pdfs: [ConvertedPDF]) {
-        let items = pdfs.map { makeBookItem($0) }
+        // Capture only primitive values — zero heap allocation on MainActor
+        let tuples = pdfs.map { (id: $0.id, name: $0.name, series: $0.metadata.series, type: $0.contentType.rawValue) }
         Task.detached(priority: .background) { [weak self] in
             guard let self else { return }
+            let items: [CSSearchableItem] = tuples.map { t in
+                let attrs = CSSearchableItemAttributeSet(contentType: .content)
+                attrs.title = t.name
+                attrs.contentDescription = t.series
+                attrs.keywords = [t.type]
+                attrs.identifier = t.id.uuidString
+                return CSSearchableItem(
+                    uniqueIdentifier: "book-\(t.id.uuidString)",
+                    domainIdentifier: "com.inksyncpro.library",
+                    attributeSet: attrs
+                )
+            }
             do {
                 try await self.index.indexSearchableItems(items)
             } catch {
