@@ -156,8 +156,7 @@ struct ModernLibraryView: View {
                 listRenameGroup = group
                 listRenamePendingName = group.title
             }
-            .onReceive(NotificationCenter.default.publisher(for: .inksyncResumeLastRead)) { notification in
-                let readingModeStr = notification.userInfo?["readingMode"] as? String
+            .onReceive(NotificationCenter.default.publisher(for: .inksyncResumeLastRead)) { _ in
                 if let mostRecent = ReaderProgressTracker.shared.recentSessions().first {
                     let pdf = cachedVisiblePDFs.first(where: { $0.id == mostRecent.pdfID })
                         ?? conversionManager.convertedPDFs.first(where: { $0.id == mostRecent.pdfID })
@@ -532,7 +531,7 @@ struct ModernLibraryView: View {
             // MARK: - Dedicated Header Component
             LibraryHeaderView(
                 searchText: $viewModel.searchText,
-                sortOption: Binding(get: { sortOption }, set: { sortOption = $0; _ = viewModel.sortPDFs(nativeVisiblePDFs, sortOption: $0) }),
+                sortOption: Binding(get: { sortOption }, set: { sortOption = $0; _ = viewModel.sortPDFs(cachedVisiblePDFs, sortOption: $0) }),
                 filterState: $viewModel.filterState,
                 contentShelf: $viewModel.contentShelf,
                 viewStyle: $viewStyle,
