@@ -6,6 +6,21 @@ class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication, supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask {
         return OrientationLockManager.shared.lockedOrientation
     }
+
+    // MARK: - Background URLSession (OPDSDownloadQueue)
+    // Required so OPDSDownloadQueue's background download session receives its
+    // completion handler when the system wakes the app post-download.
+    func application(
+        _ application: UIApplication,
+        handleEventsForBackgroundURLSession identifier: String,
+        completionHandler: @escaping () -> Void
+    ) {
+        if identifier == "com.inksyncpro.opds.dl" {
+            OPDSDownloadQueue.shared.handleBackgroundEvents(completionHandler: completionHandler)
+        } else {
+            completionHandler()
+        }
+    }
 }
 
 @main

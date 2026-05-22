@@ -251,8 +251,10 @@ struct ReaderView: View {
                 if fileURL.pathExtension.lowercased() != "pdf" {
                     toc = CBZTableOfContents.build(from: newPages)
                 }
-                // One-shot restore: only on first non-empty population
-                if currentPageIndex == 0 {
+                // One-shot restore via hasRestoredProgress flag (not currentPageIndex
+                // comparison, which incorrectly skips books last read at page 0)
+                if !hasRestoredProgress {
+                    hasRestoredProgress = true
                     restorePerBookPreferences()
                 }
             }
@@ -1192,6 +1194,7 @@ struct ReaderView: View {
         guard !drawing.bounds.isEmpty, let pdfUUID = pdf?.id else { return }
         let drawingData = drawing.dataRepresentation()
         let pIndex = currentPageIndex
+        // SDAnnotation.pdfID is UUID — predicate compares UUID == UUID directly
         let descriptor = FetchDescriptor<SDAnnotation>(
             predicate: #Predicate { $0.pdfID == pdfUUID && $0.pageIndex == pIndex && $0.kindRaw == "ink" }
         )
@@ -1199,14 +1202,19 @@ struct ReaderView: View {
             existing.drawingData = drawingData
             existing.modifiedAt = Date()
         } else {
-            let newInk = SDAnnotation(from: Annotation(
+            // Use the String-pdfID Readwise-compatible constructor (the only public designated init)
+            let newInk = SDAnnotation(
                 id: UUID(),
-                pdfID: pdfUUID,
+                pdfID: pdfUUID.uuidString,
                 pageIndex: pIndex,
-                kind: .ink,
-                createdAt: Date(),
-                modifiedAt: Date()
-            ))
+                text: nil,
+                note: nil,
+                isReadwiseImport: false,
+                readwiseBookTitle: nil,
+                readwiseAuthor: nil,
+                createdAt: Date()
+            )
+            newInk.kindRaw = "ink"
             newInk.drawingData = drawingData
             modelContext.insert(newInk)
         }
