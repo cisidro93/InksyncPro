@@ -115,7 +115,8 @@ struct SplitStudyWorkspace: View {
         case .notebook:
             StudyNotebookView(
                 bookID: pdf?.id.uuidString ?? fileURL.lastPathComponent,
-                bookTitle: pdf?.name ?? fileURL.deletingPathExtension().lastPathComponent
+                bookTitle: pdf?.name ?? fileURL.deletingPathExtension().lastPathComponent,
+                fileURL: fileURL
             )
         case .studio:
             InkStudioView()

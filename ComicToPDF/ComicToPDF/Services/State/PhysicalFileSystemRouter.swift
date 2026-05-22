@@ -576,6 +576,85 @@ class PhysicalFileSystemRouter {
         return 0
     }
 
+    nonisolated static func extractPageImage(from url: URL, pageIndex: Int) -> UIImage? {
+        let ext = url.pathExtension.lowercased()
+        if ext == "pdf" {
+            let accessing = url.startAccessingSecurityScopedResource()
+            defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+            
+            guard let document = PDFDocument(url: url) else { return nil }
+            guard pageIndex >= 0 && pageIndex < document.pageCount else { return nil }
+            guard let page = document.page(at: pageIndex) else { return nil }
+            return page.thumbnail(of: CGSize(width: 400, height: 560), for: .mediaBox)
+        }
+
+        if ["cbz", "zip", "epub"].contains(ext) {
+            let accessing = url.startAccessingSecurityScopedResource()
+            defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+            
+            guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+            
+            do {
+                let archive = try Archive(url: url, accessMode: .read)
+                var imageEntries: [Entry] = []
+                for entry in archive {
+                    if entry.type == .directory { continue }
+                    let entryExt = (entry.path as NSString).pathExtension.lowercased()
+                    if ["jpg", "jpeg", "png", "webp"].contains(entryExt) {
+                        if entry.path.contains("__MACOSX") || entry.path.hasPrefix("._") || entry.path.hasSuffix(".DS_Store") { continue }
+                        imageEntries.append(entry)
+                    }
+                }
+                
+                let sortedEntries = imageEntries.sorted {
+                    $0.path.localizedStandardCompare($1.path) == .orderedAscending
+                }
+                
+                guard pageIndex >= 0 && pageIndex < sortedEntries.count else { return nil }
+                let targetEntry = sortedEntries[pageIndex]
+                
+                var data = Data()
+                try archive.extract(targetEntry) { chunk in
+                    data.append(chunk)
+                }
+                return UIImage(data: data)
+            } catch {
+                Logger.shared.log("Failed to extract page image at index \(pageIndex) from archive: \(error.localizedDescription)", category: "Archive", type: .error)
+            }
+        }
+
+        if ext == "cbr" || ext == "rar" {
+            let accessing = url.startAccessingSecurityScopedResource()
+            defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+            guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+
+            do {
+                let archive = try Unrar.Archive(fileURL: url)
+                let entries = try archive.entries()
+
+                let imageExts: Set<String> = ["jpg", "jpeg", "png", "webp"]
+                let sorted = entries
+                    .filter { entry in
+                        guard !entry.directory,
+                              !entry.fileName.contains("__MACOSX"),
+                              !(entry.fileName as NSString).lastPathComponent.hasPrefix("._") && !(entry.fileName as NSString).lastPathComponent.hasSuffix(".DS_Store") else { return false }
+                        return imageExts.contains((entry.fileName as NSString).pathExtension.lowercased())
+                    }
+                    .sorted { $0.fileName.localizedStandardCompare($1.fileName) == .orderedAscending }
+
+                guard pageIndex >= 0 && pageIndex < sorted.count else { return nil }
+                let targetEntry = sorted[pageIndex]
+                let data = try archive.extract(targetEntry)
+                return UIImage(data: data)
+            } catch {
+                Logger.shared.log("PhysicalFileSystemRouter: CBR page image extraction failed for index \(pageIndex): \(error.localizedDescription)", category: "Archive", type: .error)
+            }
+        }
+
+        return nil
+    }
+
     
     // ✅ NEW: Extract Smart Panels from ComicInfo.xml
 }
+

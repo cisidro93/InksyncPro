@@ -6,6 +6,7 @@ import PencilKit
 struct StudyNotebookView: View {
     let bookID: String       // the ConvertedPDF's UUID string
     let bookTitle: String    // human-readable title shown in the Zettelkasten Hub
+    var fileURL: URL? = nil  // Optional source file URL for page preview generation
 
     // Phase 1: Native Zettelkasten Integration
     @Environment(\.modelContext) private var modelContext
@@ -36,6 +37,13 @@ struct StudyNotebookView: View {
     
     // ✅ Speech-to-Text Subsystem
     @StateObject private var speechManager = SpeechRecognitionManager.shared
+    
+    // ✅ Phase 4: Page Link Previews
+    @State private var resolvedPDF: SDConvertedPDF? = nil
+    @State private var previewPageIndex: Int? = nil
+    @State private var previewImage: UIImage? = nil
+    @State private var showPreviewModal = false
+    @State private var isExtractingPreviewImage = false
     
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -193,7 +201,7 @@ struct StudyNotebookView: View {
                 // MARK: Notebook Canvas
                 ZStack(alignment: .trailing) {
                     if inputMode == .markdown {
-                        MarkdownTextEditor(text: $localNotes, isFocused: $isFocused)
+                        MarkdownTextEditor(text: $localNotes, isFocused: $isFocused, onLinkTapped: handleLinkTapped)
                             .padding(16)
                             .onChange(of: localNotes) { _, _ in debounceSave() }
                     } else {
@@ -217,6 +225,11 @@ struct StudyNotebookView: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 20)
+            }
+            
+            // MARK: Interactive Page Preview Modal Overlay
+            if showPreviewModal {
+                pagePreviewModalOverlay
             }
         }
         .onAppear {
@@ -330,6 +343,15 @@ struct StudyNotebookView: View {
         } else {
             Logger.shared.log("Highlights fetch failed for '\(bookTitle)'", category: "Notebook", type: .warning)
         }
+        
+        // Fetch and resolve the SDConvertedPDF for page preview generation
+        if let allBooks = try? modelContext.fetch(FetchDescriptor<SDConvertedPDF>()),
+           let book = allBooks.first(where: { $0.id == targetPDFID }) {
+            self.resolvedPDF = book
+            Logger.shared.log("StudyNotebookView: resolved SDConvertedPDF '\(book.name)' from SwiftData", category: "Notebook", type: .success)
+        } else {
+            Logger.shared.log("StudyNotebookView: could not resolve SDConvertedPDF for UUID \(targetPDFID)", category: "Notebook", type: .warning)
+        }
     }
     
     private func debounceSave() {
@@ -392,12 +414,12 @@ struct StudyNotebookView: View {
             Logger.shared.log("insertHighlightIntoNote: skipped — highlight has no selectedText (id: \(highlight.id))", category: "Notebook", type: .warning)
             return
         }
-        let quote = "\n\n> \(text) (p. \(highlight.pageIndex + 1))\n\n"
+        let quote = "\n\n> \(text) [[Page \(highlight.pageIndex + 1)]]\n\n"
         withAnimation {
             localNotes += quote
             debounceSave()
         }
-        Logger.shared.log("Inserted highlight citation (p. \(highlight.pageIndex + 1)) into note for '\(bookTitle)'", category: "Notebook", type: .info)
+        Logger.shared.log("Inserted highlight citation [[Page \(highlight.pageIndex + 1)]] into note for '\(bookTitle)'", category: "Notebook", type: .info)
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
     }
 
@@ -409,6 +431,11 @@ struct StudyNotebookView: View {
             return
         }
         
+        let pageLinks = Array(Set(bookHighlights.map { $0.pageIndex + 1 }))
+            .sorted()
+            .map { "[[Page \($0)]]" }
+            .joined(separator: ", ")
+            
         let prompt = """
         
         ### 💡 Smart Highlights Summary
@@ -419,7 +446,7 @@ struct StudyNotebookView: View {
         \(bookHighlights.prefix(3).map { "  * " + ($0.selectedText?.prefix(80).appending("...") ?? "") }.joined(separator: "\n"))
         
         **Action Items & Key Insights:**
-        - Review highlighted sections on page(s) \(Array(Set(bookHighlights.map { "\($0.pageIndex + 1)" })).sorted().joined(separator: ", ")).
+        - Review highlighted sections on page(s) \(pageLinks).
         - Synthesize these key passages into your core Zettelkasten card collection.
         """
         
@@ -429,6 +456,181 @@ struct StudyNotebookView: View {
         }
         Logger.shared.log("Smart summary generated for '\(bookTitle)' using \(bookHighlights.count) highlight(s)", category: "Notebook", type: .success)
         UINotificationFeedbackGenerator().notificationOccurred(.success)
+    }
+
+    private func handleLinkTapped(_ url: URL) {
+        guard url.scheme == "inksync",
+              url.host == "page",
+              let lastComponent = url.pathComponents.last,
+              let pageIndex = Int(lastComponent) else { return }
+        
+        Logger.shared.log("Page link tapped: page index \(pageIndex)", category: "Notebook", type: .info)
+        
+        self.previewPageIndex = pageIndex
+        self.previewImage = nil
+        self.isExtractingPreviewImage = true
+        withAnimation(.easeOut(duration: 0.2)) {
+            self.showPreviewModal = true
+        }
+        
+        // Triggers haptic feedback
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        
+        // Extract page image in background
+        if let bookURL = fileURL ?? resolvedPDF?.url {
+            Task {
+                let img = await Task.detached(priority: .userInitiated) { () -> UIImage? in
+                    return PhysicalFileSystemRouter.extractPageImage(from: bookURL, pageIndex: pageIndex)
+                }.value
+                
+                await MainActor.run {
+                    self.previewImage = img
+                    self.isExtractingPreviewImage = false
+                    if img == nil {
+                        Logger.shared.log("Failed to extract page image for index \(pageIndex)", category: "Notebook", type: .error)
+                    }
+                }
+            }
+        } else {
+            self.isExtractingPreviewImage = false
+            Logger.shared.log("No resolved PDF or URL available to extract page preview.", category: "Notebook", type: .warning)
+        }
+    }
+
+    @ViewBuilder
+    private var pagePreviewModalOverlay: some View {
+        ZStack {
+            // Semi-transparent dimming backdrop to focus on the preview, tapping it dismisses the modal
+            Color.black.opacity(0.45)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        showPreviewModal = false
+                        previewPageIndex = nil
+                        previewImage = nil
+                    }
+                }
+            
+            // Glassmorphic Modal Card
+            VStack(spacing: 0) {
+                // Header
+                HStack {
+                    if let pageIndex = previewPageIndex {
+                        Text("Page \(pageIndex + 1)")
+                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                            .foregroundColor(Theme.text)
+                    } else {
+                        Text("Page Preview")
+                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                            .foregroundColor(Theme.text)
+                    }
+                    
+                    Spacer()
+                    
+                    Button {
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            showPreviewModal = false
+                            previewPageIndex = nil
+                            previewImage = nil
+                        }
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 22))
+                            .foregroundColor(Theme.textSecondary)
+                            .symbolRenderingMode(.hierarchical)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 14)
+                .background(Color.primary.opacity(0.04))
+                
+                Divider()
+                
+                // Page content container
+                ZStack {
+                    if isExtractingPreviewImage {
+                        VStack(spacing: 12) {
+                            ProgressView()
+                                .scaleEffect(1.2)
+                            Text("Loading preview...")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundColor(Theme.textSecondary)
+                        }
+                        .frame(maxHeight: .infinity)
+                    } else if let image = previewImage {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFit()
+                            .cornerRadius(8)
+                            .shadow(color: Color.black.opacity(0.15), radius: 8, x: 0, y: 4)
+                            .padding(16)
+                            .frame(maxHeight: .infinity)
+                    } else {
+                        VStack(spacing: 12) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: 32))
+                                .foregroundColor(.red.opacity(0.8))
+                            Text("No preview available")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundColor(Theme.textSecondary)
+                        }
+                        .frame(maxHeight: .infinity)
+                    }
+                }
+                .frame(height: 380)
+                .background(Color.black.opacity(0.03))
+                
+                Divider()
+                
+                // Footer
+                if let pageIndex = previewPageIndex {
+                    Button {
+                        // Dismiss modal
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            showPreviewModal = false
+                            previewPageIndex = nil
+                            previewImage = nil
+                        }
+                        // Jump to page in Reader
+                        NotificationCenter.default.post(
+                            name: NSNotification.Name("Reader_JumpToPage"),
+                            object: nil,
+                            userInfo: ["pageIndex": pageIndex]
+                        )
+                        // Play haptic jump response
+                        UINotificationFeedbackGenerator().notificationOccurred(.success)
+                    } label: {
+                        Text("Jump to Page \(pageIndex + 1)")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(
+                                LinearGradient(colors: [Theme.blue, Theme.purple], startPoint: .leading, endPoint: .trailing)
+                            )
+                            .cornerRadius(10)
+                            .shadow(color: Theme.blue.opacity(0.3), radius: 6, x: 0, y: 3)
+                    }
+                    .padding(16)
+                }
+            }
+            .frame(width: 320)
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(Color(UIColor.systemBackground).opacity(0.85))
+                    .background(.ultraThinMaterial)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+            )
+            .shadow(color: Color.black.opacity(0.25), radius: 20, x: 0, y: 10)
+            .transition(.asymmetric(
+                insertion: .scale(scale: 0.95).combined(with: .opacity).animation(.spring(response: 0.3, dampingFraction: 0.75)),
+                removal: .opacity.animation(.easeOut(duration: 0.15))
+            ))
+        }
     }
 
     private func toggleSpeechDictation() {
@@ -622,9 +824,11 @@ struct StudyNotebookView: View {
 }
 
 // MARK: - Phase 2: Modern Markdown Engine WYSIWYG
+// MARK: - Phase 2: Modern Markdown Engine WYSIWYG
 struct MarkdownTextEditor: UIViewRepresentable {
     @Binding var text: String
     @Binding var isFocused: Bool
+    var onLinkTapped: ((URL) -> Void)? = nil
     
     func makeUIView(context: Context) -> UITextView {
         let textView = UITextView()
@@ -635,6 +839,13 @@ struct MarkdownTextEditor: UIViewRepresentable {
         textView.textColor = UIColor.label
         textView.isScrollEnabled = true
         textView.keyboardDismissMode = .interactive
+        textView.linkTextAttributes = [:] // Style links completely via MarkdownHighlighter attributes
+
+        // Add Tap Gesture Recognizer to intercept page link clicks without disrupting text insertion cursor focus
+        let tapGesture = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
+        tapGesture.delegate = context.coordinator
+        tapGesture.cancelsTouchesInView = true
+        textView.addGestureRecognizer(tapGesture)
 
         // MARK: Formatting Shortcut Bar (Bear/Notability pattern)
         // Replaces the plain "Done" toolbar with a 7-button formatting bar.
@@ -734,7 +945,7 @@ struct MarkdownTextEditor: UIViewRepresentable {
         Coordinator(self)
     }
     
-    class Coordinator: NSObject, UITextViewDelegate {
+    class Coordinator: NSObject, UITextViewDelegate, UIGestureRecognizerDelegate {
         var parent: MarkdownTextEditor
         weak var textView: UITextView?
         private var dictationObserver: NSObjectProtocol?
@@ -831,6 +1042,68 @@ struct MarkdownTextEditor: UIViewRepresentable {
             parent.isFocused = false
             UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         }
+
+        // MARK: - UIGestureRecognizerDelegate
+        
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+            guard let textView = textView else { return false }
+            let point = touch.location(in: textView)
+            
+            var location = point
+            location.x -= textView.textContainerInset.left
+            location.y -= textView.textContainerInset.top
+            
+            let layoutManager = textView.layoutManager
+            let textContainer = textView.textContainer
+            
+            var fraction: CGFloat = 0.0
+            let charIndex = layoutManager.characterIndex(for: location, in: textContainer, fractionOfDistanceBetweenInsertionPoints: &fraction)
+            
+            guard charIndex < textView.textStorage.length else { return false }
+            
+            if let url = textView.textStorage.attribute(.link, at: charIndex, effectiveRange: nil) as? URL {
+                if url.scheme == "inksync" {
+                    let glyphIndex = layoutManager.glyphIndexForCharacter(at: charIndex)
+                    let glyphRect = layoutManager.boundingRect(forGlyphRange: NSRange(location: glyphIndex, length: 1), in: textContainer)
+                    let touchTargetRect = glyphRect.insetBy(dx: -5, dy: -5)
+                    if touchTargetRect.contains(location) {
+                        return true
+                    }
+                }
+            }
+            return false
+        }
+
+        @objc func handleTap(_ gesture: UITapGestureRecognizer) {
+            guard let textView = textView, gesture.state == .ended else { return }
+            let point = gesture.location(in: textView)
+            
+            var location = point
+            location.x -= textView.textContainerInset.left
+            location.y -= textView.textContainerInset.top
+            
+            let layoutManager = textView.layoutManager
+            let textContainer = textView.textContainer
+            
+            var fraction: CGFloat = 0.0
+            let charIndex = layoutManager.characterIndex(for: location, in: textContainer, fractionOfDistanceBetweenInsertionPoints: &fraction)
+            
+            if charIndex < textView.textStorage.length {
+                if let url = textView.textStorage.attribute(.link, at: charIndex, effectiveRange: nil) as? URL {
+                    if url.scheme == "inksync" {
+                        parent.onLinkTapped?(url)
+                    }
+                }
+            }
+        }
+
+        func textView(_ textView: UITextView, shouldInteractWith URL: URL, in characterRange: NSRange, interaction: UITextItemInteraction) -> Bool {
+            if URL.scheme == "inksync" {
+                parent.onLinkTapped?(URL)
+                return false
+            }
+            return true
+        }
     }
 }
 
@@ -881,11 +1154,33 @@ struct MarkdownHighlighter {
         let linkPattern = "\\[\\[(.*?)\\]\\]"
         if let regex = try? NSRegularExpression(pattern: linkPattern, options: []) {
             let matches = regex.matches(in: text, range: fullRange)
+            let nsText = text as NSString
             for match in matches {
                 attrString.addAttributes([
                     .foregroundColor: UIColor.systemBlue,
                     .underlineStyle: NSUnderlineStyle.single.rawValue
                 ], range: match.range)
+                
+                if match.numberOfRanges > 1 {
+                    let innerRange = match.range(at: 1)
+                    let innerText = nsText.substring(with: innerRange)
+                    
+                    let pageRegexPattern = "^(?:[Pp]age|[Pp]g|[Pp]\\.?)?\\s*(\\d+)$"
+                    if let pageRegex = try? NSRegularExpression(pattern: pageRegexPattern, options: []),
+                       let pageMatch = pageRegex.firstMatch(in: innerText, options: [], range: NSRange(innerText.startIndex..., in: innerText)) {
+                        if pageMatch.numberOfRanges > 1 {
+                            let pageNumRange = pageMatch.range(at: 1)
+                            if let pageNumRangeInString = Range(pageNumRange, in: innerText),
+                               let pageNum = Int(innerText[pageNumRangeInString]),
+                               pageNum > 0 {
+                                let pageIndex = pageNum - 1
+                                if let url = URL(string: "inksync://page/\(pageIndex)") {
+                                    attrString.addAttribute(.link, value: url, range: match.range)
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
         
