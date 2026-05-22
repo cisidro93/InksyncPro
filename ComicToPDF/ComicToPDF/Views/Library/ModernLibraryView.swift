@@ -109,6 +109,12 @@ struct ModernLibraryView: View {
 
     var body: some View {
         shellWithNotifications
+            // PERF D-C1 boot fix: seed the cache before the view fully renders
+            // so notification-based lookups (Resume, Handoff) fire correctly even
+            // if onAppear hasn't run yet (e.g. app launch via Spotlight/widget).
+            .task(id: swiftDataPDFs.count) {
+                if cachedVisiblePDFs.isEmpty { rebuildNativeCache() }
+            }
     }
 
     // MARK: - Notification Shell (onReceive + debug overlay)
@@ -127,7 +133,10 @@ struct ModernLibraryView: View {
                 if let userInfo = notification.userInfo,
                    let pdfID = userInfo["pdfID"] as? UUID,
                    let pageIndex = userInfo["pageIndex"] as? Int {
-                    if let targetPDF = cachedVisiblePDFs.first(where: { $0.id == pdfID }) {
+                    // Search cached list first; fall back to conversionManager for cold-launch
+                    let targetPDF = cachedVisiblePDFs.first(where: { $0.id == pdfID })
+                        ?? conversionManager.convertedPDFs.first(where: { $0.id == pdfID })
+                    if let targetPDF = targetPDF {
                         var progress = ReaderProgressTracker.shared.progress(for: targetPDF.id) ?? ReadingProgress(pdfID: targetPDF.id, lastOpenedAt: Date(), currentPageIndex: pageIndex, totalPagesRead: 1, completionFraction: 0, readingSessionDates: [])
                         progress.currentPageIndex = pageIndex
                         ReaderProgressTracker.shared.update(progress)
@@ -149,9 +158,12 @@ struct ModernLibraryView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: .inksyncResumeLastRead)) { notification in
                 let readingModeStr = notification.userInfo?["readingMode"] as? String
-                if let mostRecent = ReaderProgressTracker.shared.recentSessions().first,
-                   let pdf = cachedVisiblePDFs.first(where: { $0.id == mostRecent.pdfID }) {
-                    AppRouter.shared.presentFullScreen(.read(pdf))
+                if let mostRecent = ReaderProgressTracker.shared.recentSessions().first {
+                    let pdf = cachedVisiblePDFs.first(where: { $0.id == mostRecent.pdfID })
+                        ?? conversionManager.convertedPDFs.first(where: { $0.id == mostRecent.pdfID })
+                    if let pdf = pdf {
+                        AppRouter.shared.presentFullScreen(.read(pdf))
+                    }
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: .inksyncOpenShelf)) { _ in
@@ -161,8 +173,8 @@ struct ModernLibraryView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: .inksyncOpenBook)) { notification in
                 if let searchTitle = notification.userInfo?["searchTitle"] as? String {
-                    // Find the first book containing the title (case-insensitive)
-                    if let pdf = cachedVisiblePDFs.first(where: { $0.name.localizedCaseInsensitiveContains(searchTitle) || $0.metadata.title.localizedCaseInsensitiveContains(searchTitle) }) {
+                    let pdf = cachedVisiblePDFs.first(where: { $0.name.localizedCaseInsensitiveContains(searchTitle) || $0.metadata.title.localizedCaseInsensitiveContains(searchTitle) })
+                    if let pdf = pdf {
                         AppRouter.shared.presentFullScreen(.read(pdf))
                     } else {
                         // Just set the search text if not explicitly found, so user can see partial matches
