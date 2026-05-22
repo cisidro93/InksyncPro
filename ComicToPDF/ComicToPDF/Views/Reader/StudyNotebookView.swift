@@ -34,8 +34,11 @@ struct StudyNotebookView: View {
     @State private var highlightSearchQuery = ""
     @State private var highlightSortNewest = true
     
+    // ✅ Speech-to-Text Subsystem
+    @StateObject private var speechManager = SpeechRecognitionManager.shared
+    
     var body: some View {
-        ZStack {
+        ZStack(alignment: .bottom) {
             // MARK: Premium Background Base
             Color(UIColor.systemBackground).ignoresSafeArea()
             
@@ -59,6 +62,20 @@ struct StudyNotebookView: View {
                     }
                     .pickerStyle(.segmented)
                     .frame(width: 110)
+                    
+                    if inputMode == .markdown {
+                        Button {
+                            toggleSpeechDictation()
+                        } label: {
+                            Image(systemName: speechManager.isRecording ? "mic.fill" : "mic")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundColor(speechManager.isRecording ? .red : .primary)
+                                .padding(8)
+                                .background(speechManager.isRecording ? Color.red.opacity(0.15) : Color.primary.opacity(0.08))
+                                .clipShape(Circle())
+                        }
+                        .keyboardShortcut("d", modifiers: [.command])
+                    }
                     
                     if inputMode == .handwriting {
                         // Paper Style Menu
@@ -193,10 +210,23 @@ struct StudyNotebookView: View {
                     }
                 }
             }
+            
+            if speechManager.isRecording {
+                SpeechDictationBar { text in
+                    NotificationCenter.default.post(name: .insertDictatedText, object: nil, userInfo: ["text": text])
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 20)
+            }
         }
         .onAppear {
             Logger.shared.log("StudyNotebook appeared for book: '\(bookTitle)'", category: "Notebook", type: .info)
             initializeSDAnnotation()
+        }
+        .supportPencilDoubleTap {
+            if inputMode == .markdown {
+                toggleSpeechDictation()
+            }
         }
         .onDisappear {
             // Final explicit sync flush layer
@@ -401,6 +431,24 @@ struct StudyNotebookView: View {
         UINotificationFeedbackGenerator().notificationOccurred(.success)
     }
 
+    private func toggleSpeechDictation() {
+        let manager = SpeechRecognitionManager.shared
+        if manager.isRecording {
+            manager.stopDictation(commit: true)
+        } else {
+            Task {
+                let granted = await manager.requestPermissions()
+                if granted {
+                    do {
+                        try manager.startDictation()
+                    } catch {
+                        Logger.shared.log("Failed to start dictation: \(error.localizedDescription)", category: "STT", type: .error)
+                    }
+                }
+            }
+        }
+    }
+
     enum ExportType {
         case markdown, plainText
     }
@@ -581,6 +629,7 @@ struct MarkdownTextEditor: UIViewRepresentable {
     func makeUIView(context: Context) -> UITextView {
         let textView = UITextView()
         textView.delegate = context.coordinator
+        context.coordinator.textView = textView
         textView.font = UIFont.systemFont(ofSize: 16, weight: .regular)
         textView.backgroundColor = .clear
         textView.textColor = UIColor.label
@@ -619,6 +668,21 @@ struct MarkdownTextEditor: UIViewRepresentable {
             stack.addArrangedSubview(btn)
         }
 
+        // Add Microphone button (tag 999) to formatting bar
+        let micBtn = UIButton(type: .system)
+        micBtn.tag = 999
+        let isRecording = SpeechRecognitionManager.shared.isRecording
+        let config = UIImage.SymbolConfiguration(pointSize: 14, weight: .semibold)
+        let micImage = UIImage(systemName: isRecording ? "mic.fill" : "mic", withConfiguration: config)
+        micBtn.setImage(micImage, for: .normal)
+        micBtn.tintColor = isRecording ? .systemRed : .label
+        micBtn.backgroundColor = UIColor.secondarySystemFill
+        micBtn.layer.cornerRadius = 6
+        micBtn.addTarget(context.coordinator, action: #selector(Coordinator.micButtonTapped), for: .touchUpInside)
+        stack.addArrangedSubview(micBtn)
+        micBtn.widthAnchor.constraint(equalToConstant: 36).isActive = true
+        micBtn.heightAnchor.constraint(equalToConstant: 32).isActive = true
+
         // Spacer + Done button on trailing
         let spacer = UIView()
         spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
@@ -653,6 +717,17 @@ struct MarkdownTextEditor: UIViewRepresentable {
         } else if !isFocused && uiView.isFirstResponder {
             uiView.resignFirstResponder()
         }
+        
+        // Sync custom mic button tag 999
+        if let bar = uiView.inputAccessoryView {
+            if let micBtn = bar.viewWithTag(999) as? UIButton {
+                let isRecording = SpeechRecognitionManager.shared.isRecording
+                let config = UIImage.SymbolConfiguration(pointSize: 14, weight: .semibold)
+                let micImage = UIImage(systemName: isRecording ? "mic.fill" : "mic", withConfiguration: config)
+                micBtn.setImage(micImage, for: .normal)
+                micBtn.tintColor = isRecording ? .systemRed : .label
+            }
+        }
     }
     
     func makeCoordinator() -> Coordinator {
@@ -661,9 +736,78 @@ struct MarkdownTextEditor: UIViewRepresentable {
     
     class Coordinator: NSObject, UITextViewDelegate {
         var parent: MarkdownTextEditor
+        weak var textView: UITextView?
+        private var dictationObserver: NSObjectProtocol?
         
         init(_ parent: MarkdownTextEditor) {
             self.parent = parent
+            super.init()
+            
+            dictationObserver = NotificationCenter.default.addObserver(
+                forName: .insertDictatedText,
+                object: nil,
+                queue: .main
+            ) { [weak self] notification in
+                guard let self = self,
+                      let textView = self.textView,
+                      let textToInsert = notification.userInfo?["text"] as? String else { return }
+                
+                self.insertText(textToInsert)
+            }
+        }
+        
+        deinit {
+            if let observer = dictationObserver {
+                NotificationCenter.default.removeObserver(observer)
+            }
+        }
+        
+        @objc func micButtonTapped() {
+            let manager = SpeechRecognitionManager.shared
+            if manager.isRecording {
+                manager.stopDictation(commit: true)
+            } else {
+                Task {
+                    let granted = await manager.requestPermissions()
+                    if granted {
+                        do {
+                            try manager.startDictation()
+                        } catch {
+                            Logger.shared.log("Failed to start dictation: \(error.localizedDescription)", category: "STT", type: .error)
+                        }
+                    }
+                }
+            }
+        }
+        
+        private func insertText(_ newText: String) {
+            guard let tv = textView else { return }
+            let selectedRange = tv.selectedRange
+            let originalText = tv.text ?? ""
+            
+            // Insert space if needed
+            let insertionText: String
+            if selectedRange.location > 0 {
+                let prevIndex = originalText.index(originalText.startIndex, offsetBy: selectedRange.location - 1)
+                let prevChar = originalText[prevIndex]
+                if !prevChar.isWhitespace && !prevChar.isNewline {
+                    insertionText = " " + newText
+                } else {
+                    insertionText = newText
+                }
+            } else {
+                insertionText = newText
+            }
+            
+            tv.insertText(insertionText)
+            
+            // Trigger SwiftUI update
+            parent.text = tv.text
+            
+            // Re-apply highlights
+            let newSelectedRange = tv.selectedRange
+            tv.attributedText = MarkdownHighlighter.highlight(tv.text)
+            tv.selectedRange = newSelectedRange
         }
         
         func textViewDidChange(_ textView: UITextView) {
@@ -891,4 +1035,8 @@ struct NotebookPaperBackground: View {
             .stroke(colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.08), lineWidth: style == .dots ? 2 : 0.8)
         }
     }
+}
+
+extension Notification.Name {
+    static let insertDictatedText = Notification.Name("InsertDictatedText")
 }

@@ -49,6 +49,10 @@
     
     <key>NSFaceIDUsageDescription</key>
     <string>Authentication required to access the Private Vault.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>InkSync Pro requires microphone access to record voice dictation in your notebook and studios.</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>InkSync Pro uses speech recognition to transcribe your voice dictation into markdown text.</string>
     <key>NSLocalNetworkUsageDescription</key>
     <string>Inksync Pro uses your local Wi-Fi network to transfer comic and book files directly between your iPhone and iPad at full speed, without using iCloud or the internet.</string>
     <!-- OPDS: Allow HTTP connections to local network servers (Kavita, Komga, Calibre).

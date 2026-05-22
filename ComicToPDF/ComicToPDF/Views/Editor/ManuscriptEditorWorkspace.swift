@@ -27,6 +27,9 @@ struct ManuscriptEditorWorkspace: View {
     @State private var exportError: String?
     @State private var showExportError = false
 
+    // ✅ Speech-to-Text Subsystem
+    @StateObject private var speechManager = SpeechRecognitionManager.shared
+
     private var sortedDocuments: [SDManuscriptDocument] {
         project.documents.sorted(by: { $0.orderIndex < $1.orderIndex })
     }
@@ -58,6 +61,11 @@ struct ManuscriptEditorWorkspace: View {
         }
         .sheet(isPresented: $showShareSheet) {
             ActivityViewController(activityItems: exportItems)
+        }
+        .supportPencilDoubleTap {
+            if editorMode == .write && !isFocusMode {
+                toggleSpeechDictation()
+            }
         }
     }
 
@@ -146,13 +154,23 @@ struct ManuscriptEditorWorkspace: View {
     private func editorWithInspector(document: SDManuscriptDocument) -> some View {
         HStack(spacing: 0) {
             // Center: Editor or Preview
-            VStack(spacing: 0) {
-                editorHeader(document: document)
-                Divider()
-                if editorMode == .write {
-                    InkTextEditor(document: document, modelContext: modelContext)
-                } else {
-                    MarkdownPreviewPane(markdown: document.contentMarkdown)
+            ZStack(alignment: .bottom) {
+                VStack(spacing: 0) {
+                    editorHeader(document: document)
+                    Divider()
+                    if editorMode == .write {
+                        InkTextEditor(document: document, modelContext: modelContext)
+                    } else {
+                        MarkdownPreviewPane(markdown: document.contentMarkdown)
+                    }
+                }
+                
+                if speechManager.isRecording {
+                    SpeechDictationBar { text in
+                        appendSpeechText(text, to: document)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 20)
                 }
             }
             .frame(maxWidth: .infinity)
@@ -185,6 +203,16 @@ struct ManuscriptEditorWorkspace: View {
             .pickerStyle(.segmented)
             .frame(width: 160)
             .onChange(of: document.id) { _, _ in editorMode = .write }
+
+            if editorMode == .write {
+                Button {
+                    toggleSpeechDictation()
+                } label: {
+                    Image(systemName: speechManager.isRecording ? "mic.fill" : "mic")
+                        .foregroundStyle(speechManager.isRecording ? Color.red : Color.inkAccentKnowledge)
+                }
+                .keyboardShortcut("d", modifiers: [.command])
+            }
 
             // Word count chip
             Text("\(document.wordCount) Words")
@@ -323,6 +351,45 @@ struct ManuscriptEditorWorkspace: View {
             }
         }
         try? modelContext.save()
+    }
+
+    private func appendSpeechText(_ text: String, to document: SDManuscriptDocument) {
+        let originalText = document.contentMarkdown
+        let cleanedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanedText.isEmpty else { return }
+        
+        let newContent: String
+        if originalText.isEmpty {
+            newContent = cleanedText
+        } else {
+            if originalText.hasSuffix("\n") {
+                newContent = originalText + cleanedText
+            } else {
+                newContent = originalText + " " + cleanedText
+            }
+        }
+        
+        document.contentMarkdown = newContent
+        document.modifiedAt = Date()
+        try? modelContext.save()
+    }
+
+    private func toggleSpeechDictation() {
+        let manager = SpeechRecognitionManager.shared
+        if manager.isRecording {
+            manager.stopDictation(commit: true)
+        } else {
+            Task {
+                let granted = await manager.requestPermissions()
+                if granted {
+                    do {
+                        try manager.startDictation()
+                    } catch {
+                        // Handle error
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -520,6 +587,9 @@ struct FocusModeEditor: View {
     @State private var text: String = ""
     @State private var showControls = false
 
+    // ✅ Speech-to-Text Subsystem
+    @StateObject private var speechManager = SpeechRecognitionManager.shared
+
     var body: some View {
         ZStack(alignment: .bottom) {
             // Full-bleed editor
@@ -560,12 +630,25 @@ struct FocusModeEditor: View {
                     Spacer()
                     if showControls {
                         VStack(spacing: 10) {
-                            Text("\(wordCount) words")
-                                .font(.system(size: 12, weight: .medium, design: .rounded))
-                                .foregroundStyle(Color.inkTextTertiary)
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 6)
-                                .background(.ultraThinMaterial, in: Capsule())
+                            HStack(spacing: 8) {
+                                Text("\(wordCount) words")
+                                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                                    .foregroundStyle(Color.inkTextTertiary)
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 6)
+                                    .background(.ultraThinMaterial, in: Capsule())
+                                
+                                Button {
+                                    toggleSpeechDictation()
+                                } label: {
+                                    Image(systemName: speechManager.isRecording ? "mic.fill" : "mic")
+                                        .font(.system(size: 14, weight: .semibold))
+                                        .foregroundStyle(speechManager.isRecording ? Color.red : Color.inkTextTertiary)
+                                        .padding(8)
+                                        .background(.ultraThinMaterial, in: Circle())
+                                }
+                                .keyboardShortcut("d", modifiers: [.command])
+                            }
 
                             Button {
                                 onExit()
@@ -583,6 +666,15 @@ struct FocusModeEditor: View {
                 }
             }
             .animation(.easeInOut(duration: 0.2), value: showControls)
+            
+            // Dictation Bar Overlay
+            if speechManager.isRecording {
+                SpeechDictationBar { transcribedText in
+                    appendSpeechText(transcribedText)
+                }
+                .padding(.horizontal, 32)
+                .padding(.bottom, 24)
+            }
         }
         .contentShape(Rectangle())
         .onTapGesture(count: 1) {
@@ -594,10 +686,46 @@ struct FocusModeEditor: View {
             document.modifiedAt = Date()
             try? modelContext.save()
         }
+        .supportPencilDoubleTap {
+            toggleSpeechDictation()
+        }
     }
 
     private var wordCount: Int {
         text.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }.count
+    }
+
+    private func appendSpeechText(_ newText: String) {
+        let cleanedText = newText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanedText.isEmpty else { return }
+        
+        if text.isEmpty {
+            text = cleanedText
+        } else {
+            if text.hasSuffix("\n") {
+                text += cleanedText
+            } else {
+                text += " " + cleanedText
+            }
+        }
+    }
+
+    private func toggleSpeechDictation() {
+        let manager = SpeechRecognitionManager.shared
+        if manager.isRecording {
+            manager.stopDictation(commit: true)
+        } else {
+            Task {
+                let granted = await manager.requestPermissions()
+                if granted {
+                    do {
+                        try manager.startDictation()
+                    } catch {
+                        // Handle error
+                    }
+                }
+            }
+        }
     }
 }
 
