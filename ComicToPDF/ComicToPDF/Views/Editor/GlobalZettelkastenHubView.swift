@@ -480,7 +480,7 @@ struct GlobalZettelkastenHubView: View {
         isExporting = true
         Task {
             do {
-                let zipURL = try await ZettelkastenExporter.shared.exportToMarkdownZip(annotations: activeAnnotations, pdfs: allPDFs)
+                let zipURL = try await ZettelkastenExporter.shared.exportToMarkdownZip(annotations: cachedActiveAnnotations, pdfs: allPDFs)
                 let data = try Data(contentsOf: zipURL)
                 
                 await MainActor.run {
