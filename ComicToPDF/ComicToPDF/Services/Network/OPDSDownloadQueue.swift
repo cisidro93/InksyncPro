@@ -147,10 +147,23 @@ extension OPDSDownloadQueue: URLSessionDownloadDelegate {
     ) {
         guard let taskID = Optional(downloadTask.taskIdentifier) else { return }
 
-        Task { @MainActor [weak self] in
-            guard let self, var record = self.activeTasks[taskID] else { return }
+        // Copy from ephemeral location to a stable temp path synchronously,
+        // because URLSession deletes the file at location as soon as this method returns.
+        let tempDir = FileManager.default.temporaryDirectory
+        let tempFileURL = tempDir.appendingPathComponent(UUID().uuidString + ".tmp")
+        do {
+            try FileManager.default.copyItem(at: location, to: tempFileURL)
+        } catch {
+            Logger.shared.log("OPDSDownloadQueue: failed to copy download to stable temp URL — \(error)", category: "OPDS", type: .error)
+        }
 
-            // Move from ephemeral location to a stable temp path
+        Task { @MainActor [weak self] in
+            guard let self, let record = self.activeTasks[taskID] else {
+                try? FileManager.default.removeItem(at: tempFileURL)
+                return
+            }
+
+            // Move from stable temp location to final destination
             let ext = record.mimeType.contains("pdf") ? "pdf"
                 : record.mimeType.contains("epub") ? "epub"
                 : "cbz"
@@ -161,9 +174,10 @@ extension OPDSDownloadQueue: URLSessionDownloadDelegate {
                 .appendingPathComponent("\(safe).\(ext)")
             try? FileManager.default.removeItem(at: dest)
             do {
-                try FileManager.default.moveItem(at: location, to: dest)
+                try FileManager.default.moveItem(at: tempFileURL, to: dest)
             } catch {
                 Logger.shared.log("OPDSDownloadQueue: move failed — \(error)", category: "OPDS", type: .error)
+                try? FileManager.default.removeItem(at: tempFileURL)
                 self.removeRecord(taskID: taskID)
                 return
             }
