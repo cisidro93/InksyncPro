@@ -7,6 +7,10 @@ class DeepScanPanelProvider: PanelProvider {
     func detectPanels(in image: UIImage, context: CIContext) async -> [PanelCandidate] {
         guard let cgImage = image.cgImage else { return [] }
         
+        // Snapshot @MainActor-isolated adaptive thresholds before entering the
+        // non-isolated continuation block. This satisfies strict concurrency checking.
+        let currentMinSize = await MainActor.run { AdaptiveLearningManager.shared.currentMinimumSize }
+        
         return await withCheckedContinuation { continuation in
             autoreleasepool {
                 let request = VNDetectContoursRequest { request, error in
@@ -16,9 +20,6 @@ class DeepScanPanelProvider: PanelProvider {
                 }
                 
                 var candidates: [PanelCandidate] = []
-                
-                // Adaptive Thresholds
-                let currentMinSize = AdaptiveLearningManager.shared.currentMinimumSize
                 
                 for observation in results {
                     // Contours return a hierarchy. We want the top-level contours (the panel borders),
@@ -61,7 +62,11 @@ class DeepScanPanelProvider: PanelProvider {
                     
                     // Fallback to raw image if CI fails
                     let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
-                    try? handler.perform([request])
+                    do {
+                        try handler.perform([request])
+                    } catch {
+                        continuation.resume(returning: [])
+                    }
                     return
                 }
                 

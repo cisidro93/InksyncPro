@@ -199,7 +199,7 @@ class SyncCoordinator: ObservableObject {
     }
     
     /// Silent background daemon to fetch the raw physical CBZ files for newly synced placeholder items.
-    private func downloadMissingPayloads(_ filenames: [String], from peerIP: String, cookie: String?) async {
+    nonisolated private func downloadMissingPayloads(_ filenames: [String], from peerIP: String, cookie: String?) async {
         let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         let config = URLSessionConfiguration.default
         let session = URLSession(configuration: config)
