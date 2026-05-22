@@ -596,7 +596,7 @@ class PhysicalFileSystemRouter {
             
             do {
                 let archive = try Archive(url: url, accessMode: .read)
-                var imageEntries: [Entry] = []
+                var imageEntries: [ZIPFoundation.Entry] = []
                 for entry in archive {
                     if entry.type == .directory { continue }
                     let entryExt = (entry.path as NSString).pathExtension.lowercased()

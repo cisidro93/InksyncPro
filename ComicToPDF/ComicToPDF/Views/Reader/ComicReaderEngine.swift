@@ -52,7 +52,7 @@ class ComicImageCache: ObservableObject {
     // on the same Archive instance corrupt each other's reads, causing wrong pages
     // to appear in the reader. Each extraction opens its own fresh file handle.
     private var cbzURL: URL?
-    private var entries: [Entry] = []
+    private var entries: [ZIPFoundation.Entry] = []
     
     // ✅ OPDS-style cloud page streaming
     private var cloudPageSource: CloudPageSource?
