@@ -314,6 +314,14 @@ class MigrationService {
         // the current vault directory.
         let fileManager = FileManager.default
         let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+        let currentSandboxPath = appSupport?.path ?? ""
+        
+        let lastSandboxPath = UserDefaults.standard.string(forKey: "lastSandboxDocumentsPath")
+        if !currentSandboxPath.isEmpty && lastSandboxPath == currentSandboxPath {
+            Logger.shared.log("MigrationService: Sandbox path matches, skipping re-anchoring check for \(docs.count) doc(s)", category: "Migration", type: .info)
+            return (docs, cols)
+        }
+
         let vaultRoot = appSupport?.appendingPathComponent("InksyncVault", isDirectory: true)
         let inboxRoot = appSupport?.appendingPathComponent("InksyncVault/Inbox", isDirectory: true)
         let docsRoot = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first
@@ -419,6 +427,10 @@ class MigrationService {
 
         if didUpdate {
             try? context.save()
+        }
+
+        if !currentSandboxPath.isEmpty {
+            UserDefaults.standard.set(currentSandboxPath, forKey: "lastSandboxDocumentsPath")
         }
 
         return (validDocs, validCols)

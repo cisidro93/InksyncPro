@@ -234,9 +234,6 @@ struct ReaderView: View {
             )
             .overlay { readerChromeOverlay(in: geo) }
             .task {
-                if UIDevice.current.userInterfaceIdiom == .phone {
-                    orientationLock.lock(to: .portrait)
-                }
                 await prepareArchive()
                 // Note: restorePerBookPreferences() is now called in .onChange(of: pages)
                 // after pages are populated to avoid a race where pages.count is still 0.
