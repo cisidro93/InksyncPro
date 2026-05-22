@@ -60,13 +60,16 @@ class ConversionManager: ObservableObject {
         panelEditorContinuation = nil
     }
     
-    var visiblePDFs: [ConvertedPDF] {
-        convertedPDFs.filter { AppSettingsManager.shared.isVaultUnlocked ? true : !$0.isPrivate }
-    }
-    
-    /// Only Pro-mode files — used by the Pro Library to exclude Go conversions.
-    var proLibraryPDFs: [ConvertedPDF] {
-        convertedPDFs.filter { (AppSettingsManager.shared.isVaultUnlocked ? true : !$0.isPrivate) && $0.addedByMode == .pro }
+    // PERF M2: Cached as @Published so observers only re-render when
+    // the filtered set actually changes, not on every convertedPDFs mutation.
+    @Published private(set) var visiblePDFs: [ConvertedPDF] = []
+    @Published private(set) var proLibraryPDFs: [ConvertedPDF] = []
+    private var librarySubscription: AnyCancellable?
+
+    private func rebuildVisiblePDFs() {
+        let unlocked = AppSettingsManager.shared.isVaultUnlocked
+        visiblePDFs    = convertedPDFs.filter { unlocked ? true : !$0.isPrivate }
+        proLibraryPDFs = convertedPDFs.filter { (unlocked ? true : !$0.isPrivate) && $0.addedByMode == .pro }
     }
     
     private var taskEngineRelay: AnyCancellable?
@@ -112,6 +115,11 @@ class ConversionManager: ObservableObject {
             .sink { [weak self] _ in
                 self?.objectWillChange.send()
             }
+
+        // PERF M2: Rebuild visible/pro caches whenever the library array changes.
+        librarySubscription = $convertedPDFs
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.rebuildVisiblePDFs() }
 
         // ── Cloud Cover Ready: wire CloudCoverExtractor → thumbnailCache ──────
         // CloudCoverExtractor writes covers to disk but has no reference to

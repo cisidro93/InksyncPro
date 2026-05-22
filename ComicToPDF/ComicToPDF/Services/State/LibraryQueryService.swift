@@ -95,14 +95,33 @@ struct LibraryQueryService {
     }
 
     // Full-text search across title, series, creator, publisher, and tags.
+    // PERF H3: Uses FTS5 MATCH instead of 5× LIKE '%q%' — inverted index, O(log N).
+    // Falls back to LIKE scan if the FTS table is empty on first run/migration.
     static func fetchSearch(query: String) async -> [ConvertedPDF] {
         await timed("fetchSearch") {
             let db = LibraryDatabaseService.shared
-            let pattern = "%\(query)%"
+            // Build an FTS5 prefix-match expression: each token becomes "word*"
+            let ftsQuery = query
+                .components(separatedBy: .whitespaces)
+                .filter { !$0.isEmpty }
+                .map { "\($0)*" }
+                .joined(separator: " ")
             return await Task.detached(priority: .userInitiated) {
                 guard let dbHandle = await db.databaseHandle() else { return [] }
                 do {
                     let rows = try dbHandle.fetchAll("""
+                        SELECT f.* FROM library_files f
+                        JOIN library_fts ON library_fts.rowid = f.rowid
+                        WHERE library_fts MATCH ?
+                        ORDER BY rank
+                        LIMIT 200
+                    """, arguments: [ftsQuery])
+                    if !rows.isEmpty {
+                        return rows.compactMap { LibraryFileRecord(row: $0)?.toDomainModel() }
+                    }
+                    // FTS table empty (first launch before populate) — fall back to LIKE
+                    let pattern = "%\(query)%"
+                    let fallback = try dbHandle.fetchAll("""
                         SELECT * FROM library_files
                         WHERE title LIKE ?
                            OR series LIKE ?
@@ -112,7 +131,7 @@ struct LibraryQueryService {
                         ORDER BY addedAt DESC
                         LIMIT 200
                     """, arguments: [pattern, pattern, pattern, pattern, pattern])
-                    return rows.compactMap { LibraryFileRecord(row: $0)?.toDomainModel() }
+                    return fallback.compactMap { LibraryFileRecord(row: $0)?.toDomainModel() }
                 } catch {
                     Logger.shared.log("LibraryQueryService.fetchSearch failed: \(error.localizedDescription)", category: "Library", type: .error)
                     return []

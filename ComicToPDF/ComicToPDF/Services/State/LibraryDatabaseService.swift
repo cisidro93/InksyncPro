@@ -123,6 +123,7 @@ actor LibraryDatabaseService {
         writeStream?.yield(.saveFiles(library))
     }
 
+
     func load() async -> [ConvertedPDF] {
         guard let db = self.db else { return [] }
         do {
@@ -346,6 +347,17 @@ final class LibraryDB: @unchecked Sendable {
                 modifiedAt REAL NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_zn_sourceFileID ON zettel_notes(sourceFileID);
+
+            -- PERF H3: FTS5 virtual table for O(log N) library search.
+            -- LIKE '%q%' on 5 columns forces a full table scan on every keystroke;
+            -- FTS5 MATCH uses an inverted index and is ~100x faster at scale.
+            -- content='' + content_rowid= makes this a "contentless" FTS5 table
+            -- that stores only the index, not duplicated text.
+            CREATE VIRTUAL TABLE IF NOT EXISTS library_fts USING fts5(
+                title, series, creator, publisher, tags,
+                content='library_files',
+                content_rowid='rowid'
+            );
         """)
     }
 

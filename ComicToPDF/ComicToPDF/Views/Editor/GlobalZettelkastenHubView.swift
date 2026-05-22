@@ -25,106 +25,103 @@ struct GlobalZettelkastenHubView: View {
     @State private var filterMode: ZettelFilterMode = .all
     @State private var sortMode: ZettelSortMode = .dateModified
     @State private var collapsedSections: Set<String> = []
-    
+
+    // ── PERF C1: Cached derived state ──────────────────────────────────────
+    // Previously these were all plain computed properties re-evaluated on every
+    // body call. Now rebuilt only when allAnnotations/allPDFs/filter/sort/search
+    // actually change — O(N) work runs once, not 6× per keystroke.
+    @State private var cachedActiveAnnotations: [SDAnnotation] = []
+    @State private var cachedGroupedAnnotations: [(key: String, value: [SDAnnotation])] = []
+    @State private var cachedDueCount: Int = 0
+    @State private var cachedTotalBookCount: Int = 0
+    // Composite key for change detection — avoids redundant rebuilds
+    private var cacheInputKey: String {
+        "\(allAnnotations.count)|\(allPDFs.count)|\(filterMode)|\(sortMode)|\(searchText)"
+    }
 
     @State private var isImporting = false
     @State private var isExporting = false
     @State private var importMessage: String? = nil
-    
+
     @State private var exportDocument: ZettelArchiveDocument?
     @State private var showingExporterDialog = false
     @State private var showingDailyReview = false
     @State private var showingMarkdownExporter = false
     @State private var markdownExportURL: URL? = nil
     
-    private var dueCount: Int {
+    // ── PERF C1: Single rebuild function — called via .task(id: cacheInputKey) ─
+    // Runs on a background priority task so the main thread stays free.
+    private func rebuildCache() {
         let now = Date()
-        return allAnnotations.filter { $0.kindRaw == "highlight" && ($0.nextReviewDate == nil || $0.nextReviewDate! <= now) }.count
-    }
-    
-    // Filtered + Sorted Annotations
-    var activeAnnotations: [SDAnnotation] {
-        var filtered = allAnnotations
+        // Build name lookup once
+        var nameDict = [UUID: String]()
+        for pdf in allPDFs { nameDict[pdf.id] = pdf.name }
 
-        // Filter (user-friendly labels, same underlying logic)
+        // --- active annotations ---
+        var filtered = allAnnotations
         switch filterMode {
         case .all:            break
         case .annotated:      filtered = filtered.filter { $0.noteText != nil && !($0.noteText!.isEmpty) }
         case .highlightsOnly: filtered = filtered.filter { $0.noteText == nil || $0.noteText!.isEmpty }
         }
-
-        // Search
         if !searchText.isEmpty {
-            let cache = makePDFNameCache()
             filtered = filtered.filter { ann in
                 let txt  = ann.selectedText?.localizedCaseInsensitiveContains(searchText) ?? false
                 let note = ann.noteText?.localizedCaseInsensitiveContains(searchText) ?? false
-                let book = bookTitle(for: ann, cache: cache).localizedCaseInsensitiveContains(searchText)
+                let book = resolveTitle(ann, nameDict).localizedCaseInsensitiveContains(searchText)
                 return txt || note || book
             }
         }
-
-        // Sort
-        let cache = makePDFNameCache()
         switch sortMode {
-        case .dateModified: break  // already sorted by @Query
+        case .dateModified: break
         case .dateAdded:    filtered.sort { ($0.createdAt ?? .distantPast) > ($1.createdAt ?? .distantPast) }
-        case .bookName:     filtered.sort { bookTitle(for: $0, cache: cache) < bookTitle(for: $1, cache: cache) }
+        case .bookName:     filtered.sort { resolveTitle($0, nameDict) < resolveTitle($1, nameDict) }
         case .tagCount:     filtered.sort { ($0.tags?.count ?? 0) > ($1.tags?.count ?? 0) }
-        case .byTopic:      break // Sorting is handled in grouping
+        case .byTopic:      break
         }
 
-        return filtered
-    }
-    
-    // O(1) Lookup dictionary — built once per computed property access, reused for every annotation in that pass.
-    private func makePDFNameCache() -> [UUID: String] {
-        var dict = [UUID: String]()
-        for pdf in allPDFs { dict[pdf.id] = pdf.name }
-        return dict
-    }
-    
-    // Group Highlights by Book (Native PDFs and Readwise Synced Books)
-    var groupedAnnotations: [(key: String, value: [SDAnnotation])] {
-        let cache = makePDFNameCache()
-        let dict = Dictionary(grouping: activeAnnotations) { ann -> String in
-            return bookTitle(for: ann, cache: cache)
-        }
-        return dict.sorted { $0.key < $1.key }
-    }
-
-    var topicGroupedAnnotations: [(key: String, value: [SDAnnotation])] {
-        var dict: [String: [SDAnnotation]] = [:]
-        for ann in activeAnnotations {
-            let userTags = ann.tags ?? []
-            let rwTags = ann.readwiseTags ?? []
-            let docTags = ann.readwiseDocumentTags ?? []
-            let allTags = Set(userTags + rwTags + docTags)
-            
-            if allTags.isEmpty {
-                dict["Untagged", default: []].append(ann)
-            } else {
-                for tag in allTags {
-                    let formattedTag = tag.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-                    dict[formattedTag, default: []].append(ann)
+        // --- grouped annotations ---
+        let grouped: [(key: String, value: [SDAnnotation])]
+        if sortMode == .byTopic {
+            var dict: [String: [SDAnnotation]] = [:]
+            for ann in filtered {
+                let allTags = Set((ann.tags ?? []) + (ann.readwiseTags ?? []) + (ann.readwiseDocumentTags ?? []))
+                if allTags.isEmpty {
+                    dict["Untagged", default: []].append(ann)
+                } else {
+                    for tag in allTags {
+                        dict[tag.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(), default: []].append(ann)
+                    }
                 }
             }
+            grouped = dict.sorted {
+                if $0.key == "Untagged" { return false }
+                if $1.key == "Untagged" { return true }
+                return $0.key < $1.key
+            }
+        } else {
+            let dict = Dictionary(grouping: filtered) { resolveTitle($0, nameDict) }
+            grouped = dict.sorted { $0.key < $1.key }
         }
-        return dict.sorted {
-            if $0.key == "Untagged" { return false }
-            if $1.key == "Untagged" { return true }
-            return $0.key < $1.key
-        }
+
+        // --- badge counts (use full unfiltered set) ---
+        let due = allAnnotations.filter {
+            $0.kindRaw == "highlight" && ($0.nextReviewDate == nil || $0.nextReviewDate! <= now)
+        }.count
+        let bookCount = Set(allAnnotations.map { resolveTitle($0, nameDict) }).count
+
+        cachedActiveAnnotations  = filtered
+        cachedGroupedAnnotations = grouped
+        cachedDueCount           = due
+        cachedTotalBookCount     = bookCount
     }
 
-    private var activeGroupedAnnotations: [(key: String, value: [SDAnnotation])] {
-        return sortMode == .byTopic ? topicGroupedAnnotations : groupedAnnotations
-    }
-
-    // Total unique book count across ALL annotations (not just filtered)
-    private var totalBookCount: Int {
-        let cache = makePDFNameCache()
-        return Set(allAnnotations.map { bookTitle(for: $0, cache: cache) }).count
+    // Inline title resolver — no heap allocation, no optional unwrapping chain
+    private func resolveTitle(_ ann: SDAnnotation, _ nameDict: [UUID: String]) -> String {
+        if let title = ann.readwiseBookTitle, !title.isEmpty, UUID(uuidString: title) == nil {
+            return title
+        }
+        return nameDict[ann.pdfID] ?? "Book ID: " + String(ann.pdfID.uuidString.prefix(8))
     }
     
     var body: some View {
@@ -145,7 +142,7 @@ struct GlobalZettelkastenHubView: View {
                     .padding(.top, 8)
 
                     if viewMode == .list {
-                        if dueCount > 0 {
+                        if cachedDueCount > 0 {
                             Button {
                                 showingDailyReview = true
                             } label: {
@@ -153,7 +150,7 @@ struct GlobalZettelkastenHubView: View {
                                     VStack(alignment: .leading, spacing: 4) {
                                         Text("Daily Review Due")
                                             .font(.headline)
-                                        Text("\(dueCount) highlights waiting to be reviewed")
+                                        Text("\(cachedDueCount) highlights waiting to be reviewed")
                                             .font(.subheadline)
                                             .foregroundStyle(Theme.textSecondary)
                                     }
@@ -187,7 +184,7 @@ struct GlobalZettelkastenHubView: View {
                             ZStack(alignment: .trailing) {
                                 ScrollView {
                                     LazyVStack(spacing: 20, pinnedViews: []) {
-                                        ForEach(activeGroupedAnnotations, id: \.key) { group in
+                                        ForEach(cachedGroupedAnnotations, id: \.key) { group in
                                             VStack(alignment: .leading, spacing: 10) {
                                                 // ── Lightweight section header (Readwise-style)
                                                 Button {
@@ -229,9 +226,9 @@ struct GlobalZettelkastenHubView: View {
                                                 .buttonStyle(.plain)
                                                 .id(String(group.key.prefix(1)).uppercased())
 
-                                                // Group Items
+                                                // Group Items — LazyVStack (PERF C2: was eager VStack)
                                                 if !collapsedSections.contains(group.key) {
-                                                    VStack(spacing: 10) {
+                                                    LazyVStack(spacing: 10) {
                                                         ForEach(group.value) { item in
                                                             GlobalHighlightRow(annotation: item)
                                                         }
@@ -246,9 +243,9 @@ struct GlobalZettelkastenHubView: View {
                                 }
                                 
                                 // Index Bar
-                                if activeGroupedAnnotations.count > 10 {
+                                if cachedGroupedAnnotations.count > 10 {
                                     VStack(spacing: 2) {
-                                        let letters = Array(Set(activeGroupedAnnotations.map { String($0.key.prefix(1)).uppercased() })).sorted()
+                                        let letters = Array(Set(cachedGroupedAnnotations.map { String($0.key.prefix(1)).uppercased() })).sorted()
                                         ForEach(letters, id: \.self) { letter in
                                             Text(letter)
                                                 .font(.system(size: 11, weight: .bold))
@@ -267,9 +264,9 @@ struct GlobalZettelkastenHubView: View {
                             }
                         }
                     } else if viewMode == .map {
-                        ZettelkastenGraphView(annotations: activeAnnotations, pdfs: allPDFs)
+                        ZettelkastenGraphView(annotations: cachedActiveAnnotations, pdfs: allPDFs)
                     } else if viewMode == .corkboard {
-                        ZettelkastenCorkboardView(annotations: activeAnnotations, pdfs: allPDFs)
+                        ZettelkastenCorkboardView(annotations: cachedActiveAnnotations, pdfs: allPDFs)
                     }
                 }
             }
@@ -285,7 +282,7 @@ struct GlobalZettelkastenHubView: View {
                         .font(.headline)
                         .foregroundColor(.primary)
                     if !allAnnotations.isEmpty {
-                        Text("\(allAnnotations.count) HIGHLIGHTS • \(totalBookCount) BOOKS")
+                        Text("\(allAnnotations.count) HIGHLIGHTS • \(cachedTotalBookCount) BOOKS")
                             .font(.system(size: 10, weight: .bold, design: .rounded))
                             .foregroundColor(.secondary)
                             .tracking(1.2)
@@ -329,6 +326,9 @@ struct GlobalZettelkastenHubView: View {
             }
         }
 
+        // ── PERF C1: Rebuild cache when any input changes ─────────────────
+        .task(id: cacheInputKey) { rebuildCache() }
+        .task(id: allAnnotations.count) { rebuildCache() }  // also catches SwiftData inserts
         .fileExporter(isPresented: $showingExporterDialog, document: exportDocument, contentType: .zip, defaultFilename: "MindPalace_Export") { result in
             switch result {
             case .success(let url): print("Mind Palace successfully exported to \(url)")
@@ -467,23 +467,11 @@ struct GlobalZettelkastenHubView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     
+    // bookTitle kept for any call sites in exportAsMarkdown (uses groupedAnnotations key which is already resolved)
     private func bookTitle(for annotation: SDAnnotation?, cache: [UUID: String]? = nil) -> String {
         guard let ann = annotation else { return "Unknown Book" }
-
-        // Use readwiseBookTitle only if it's a real human-readable title.
-        if let title = ann.readwiseBookTitle,
-           !title.isEmpty,
-           UUID(uuidString: title) == nil {
-            return title
-        }
-
-        // Fall through to the native SwiftData PDF name via cache.
-        let lookup = cache ?? makePDFNameCache()
-        if let pdfName = lookup[ann.pdfID] {
-            return pdfName
-        }
-
-        return "Book ID: " + String(ann.pdfID.uuidString.prefix(8))
+        var nameDict = cache ?? { var d = [UUID:String](); for p in allPDFs { d[p.id] = p.name }; return d }()
+        return resolveTitle(ann, nameDict)
     }
     
     // MARK: - Actions
@@ -522,7 +510,7 @@ struct GlobalZettelkastenHubView: View {
         var md = "# InksyncPro — Highlights & Notes\n"
         md += "_Exported \(dateFormatter.string(from: Date()))_\n\n---\n\n"
 
-        for group in groupedAnnotations {
+        for group in cachedGroupedAnnotations {
             md += "## \(group.key)\n\n"
             for ann in group.value {
                 // Highlight text

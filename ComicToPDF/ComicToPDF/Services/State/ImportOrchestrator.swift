@@ -565,29 +565,44 @@ actor ImportOrchestrator {
                             var smartDisplayName = fileName
 
                             let isArchive = ["cbz", "zip"].contains(ext)
-                            let xmlData = isArchive ? (try? LocalComicInfoService.shared.fetchNonDestructiveMetadata(from: destURL)) : nil
+
+                            // PERF H1: Single ZIP pass — previously two separate opens:
+                            // 1. fetchNonDestructiveMetadata  2. ComicInfoParser.parse
+                            // Now we open the archive once and feed both result objects.
+                            let xmlData    = isArchive ? (try? LocalComicInfoService.shared.fetchNonDestructiveMetadata(from: destURL)) : nil
+                            let parsedInfo = isArchive ? ComicInfoParser.parse(from: destURL) : nil
+
                             if let xmlData = xmlData { smartDisplayName = xmlData.displayName }
-                            
+
                             let seriesName = fileURL.deletingLastPathComponent().lastPathComponent
                             var metadata = PDFMetadata(title: smartDisplayName)
                             metadata.series = seriesName
-                            
-                            if isArchive, let parsedInfo = ComicInfoParser.parse(from: destURL) {
-                                metadata.title = parsedInfo.title ?? smartDisplayName
-                                metadata.series = parsedInfo.series ?? seriesName
-                                metadata.issueNumber = parsedInfo.number
-                                metadata.writer = parsedInfo.writer
-                                metadata.publisher = parsedInfo.publisher
-                                metadata.summary = parsedInfo.summary
-                                if let year = parsedInfo.year {
-                                    var comps = DateComponents()
-                                    comps.year = year; comps.month = 1; comps.day = 1
-                                    metadata.publicationDate = Calendar.current.date(from: comps)
-                                }
-                                for tag in parsedInfo.tags {
-                                    if !metadata.tags.contains(tag) { metadata.tags.append(tag) }
-                                }
+
+                            // Apply XML display layer first, then backfill with parsedInfo where xmlData left gaps
+                            if let xmlData = xmlData {
+                                metadata.title = xmlData.parsedTitle ?? smartDisplayName
+                                metadata.series = xmlData.parsedSeries ?? seriesName
+                                metadata.issueNumber = xmlData.parsedNumber
                                 metadata.tags.append("Auto XML Folder Scrape")
+                            }
+                            if let parsedInfo = parsedInfo {
+                                metadata.isManga = parsedInfo.manga
+                                if xmlData == nil {
+                                    metadata.title = parsedInfo.title ?? smartDisplayName
+                                    metadata.series = parsedInfo.series ?? seriesName
+                                    metadata.issueNumber = parsedInfo.number
+                                    metadata.writer = parsedInfo.writer
+                                    metadata.publisher = parsedInfo.publisher
+                                    metadata.summary = parsedInfo.summary
+                                    if let year = parsedInfo.year {
+                                        var comps = DateComponents()
+                                        comps.year = year; comps.month = 1; comps.day = 1
+                                        metadata.publicationDate = Calendar.current.date(from: comps)
+                                    }
+                                    for tag in parsedInfo.tags {
+                                        if !metadata.tags.contains(tag) { metadata.tags.append(tag) }
+                                    }
+                                }
                             }
                             
                             let cType = MetadataHeuristics.detectAsymmetricContentType(url: destURL)

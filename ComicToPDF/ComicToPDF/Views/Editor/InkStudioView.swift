@@ -46,6 +46,13 @@ struct InkStudioView: View {
     @State private var mode: StudioMode = .reading
     @Query private var allAnnotations: [SDAnnotation]
 
+    // PERF H2: Lazy-init flags — each tab is only mounted after first visit.
+    // Once loaded, it stays in the hierarchy (keeps scroll/navigation state)
+    // but is hidden via .studioVisible(). This prevents Zettelkasten @Query
+    // and ManuscriptProjectsListView from loading at app launch.
+    @State private var researchLoaded = false
+    @State private var writingLoaded  = false
+
     var body: some View {
         VStack(spacing: 0) {
 
@@ -58,19 +65,25 @@ struct InkStudioView: View {
             Divider()
                 .background(Color.inkBorderVisible)
 
-            // ── Content — all views stay alive ──────────────────────────
+            // ── Content — reading always live; research + writing lazily mounted ──
             ZStack {
-                // Reading segment (Active Reader Dashboard)
+                // Reading segment — always live
                 ActiveReaderDashboardView()
                     .studioVisible(mode == .reading)
 
-                // Research segment (Zettelkasten Hub)
-                GlobalZettelkastenHubView()
-                    .studioVisible(mode == .research)
+                // Research segment — mounted on first visit, kept alive thereafter
+                if researchLoaded || mode == .research {
+                    GlobalZettelkastenHubView()
+                        .studioVisible(mode == .research)
+                        .onAppear { researchLoaded = true }
+                }
 
-                // Writing segment (Manuscript Projects)
-                ManuscriptProjectsListView()
-                    .studioVisible(mode == .writing)
+                // Writing segment — mounted on first visit, kept alive thereafter
+                if writingLoaded || mode == .writing {
+                    ManuscriptProjectsListView()
+                        .studioVisible(mode == .writing)
+                        .onAppear { writingLoaded = true }
+                }
             }
         }
         .background(Color.clear)

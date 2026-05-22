@@ -42,6 +42,11 @@ final class OPDSDownloadQueue: NSObject, ObservableObject {
     private var backgroundCompletionHandler: (() -> Void)?
     private var activeTasks: [Int: OPDSDownloadRecord] = [:]   // taskID → record
 
+    // PERF M3: Throttle didWriteData MainActor hops to 4 fps (250ms).
+    // URLSessionDownloadDelegate fires progress at ~50 fps on large downloads
+    // which would schedule 50 MainActor crossings/sec and cause UI jitter.
+    private var lastProgressUpdate: [Int: Date] = [:]   // taskID → last update time
+
     // MARK: Init
     override init() {
         super.init()
@@ -187,8 +192,14 @@ extension OPDSDownloadQueue: URLSessionDownloadDelegate {
         guard totalBytesExpectedToWrite > 0 else { return }
         let fraction = Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)
         let taskID = downloadTask.taskIdentifier
+        let now = Date()
+        // PERF M3: Only hop to MainActor at most every 250ms (4 fps)
         Task { @MainActor [weak self] in
-            guard let self, let idx = self.queue.firstIndex(where: { $0.taskIdentifier == taskID }) else { return }
+            guard let self else { return }
+            let last = self.lastProgressUpdate[taskID] ?? .distantPast
+            guard now.timeIntervalSince(last) >= 0.25 else { return }
+            self.lastProgressUpdate[taskID] = now
+            guard let idx = self.queue.firstIndex(where: { $0.taskIdentifier == taskID }) else { return }
             self.queue[idx].fractionCompleted = fraction
         }
     }
