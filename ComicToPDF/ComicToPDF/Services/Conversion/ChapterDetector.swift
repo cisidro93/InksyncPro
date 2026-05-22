@@ -56,8 +56,14 @@ class ChapterDetector {
                 request.usesLanguageCorrection = false
                 request.recognitionLanguages = languages
                 
-                let handler = VNImageRequestHandler(cgImage: croppedCG, options: [:])
-                do { try handler.perform([request]) } catch { continuation.resume(throwing: error) }
+                DispatchQueue.global(qos: .userInitiated).async {
+                    let handler = VNImageRequestHandler(cgImage: croppedCG, options: [:])
+                    do {
+                        try handler.perform([request])
+                    } catch {
+                        continuation.resume(throwing: error)
+                    }
+                }
             }
             
             let lines = text.components(separatedBy: .newlines)

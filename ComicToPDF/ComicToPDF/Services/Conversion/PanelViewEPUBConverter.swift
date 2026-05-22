@@ -777,23 +777,9 @@ class PanelViewEPUBConverter {
                         dither: settings.imageEnhancement.ditheringEnabled,
                         marginOffset: settings.bindingMarginOffset,
                         marginSide: settings.bindingMarginSide,
-                        isOddPage: isOddPage
+                        isOddPage: isOddPage,
+                        customTargetSize: slot
                     )
-                    // Now resample down to half-slot dimensions so Kindle doesn't letterbox.
-                    // We use the same scale() helper from EInkOptimizer (exposed indirectly
-                    // through processImage). Since processImage already used the portrait
-                    // profile resolution (1980×2640), we now clamp to the slot width (1320)
-                    // so the height also scales proportionally and fills the slot fully.
-                    let slotScale = min(slot.width / workingImage.size.width,
-                                       slot.height / workingImage.size.height)
-                    if slotScale < 0.99 {
-                        let newSize = CGSize(width: workingImage.size.width  * slotScale,
-                                            height: workingImage.size.height * slotScale)
-                        let fmt = UIGraphicsImageRendererFormat(); fmt.scale = 1.0
-                        workingImage = UIGraphicsImageRenderer(size: newSize, format: fmt).image { _ in
-                            workingImage.draw(in: CGRect(origin: .zero, size: newSize))
-                        }
-                    }
                 } else {
                     workingImage = EInkOptimizer.shared.processImage(
                         workingImage,

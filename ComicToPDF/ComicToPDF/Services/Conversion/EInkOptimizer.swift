@@ -14,9 +14,9 @@ class EInkOptimizer {
     private init() {}
     
     /// Processes a UIImage for the specified target device profile and grayscale preference
-    func processImage(_ image: UIImage, for profile: TargetDeviceProfile, applyGrayscale: Bool, cropMargins: Bool = false, reduceMoire: Bool = false, dither: Bool = false, marginOffset: Int = 0, marginSide: BindingMarginSide = .none, isOddPage: Bool = true) -> UIImage {
-        // Handle Edge Case: Profile = Original and Grayscale = False and cropMargins = False and reduceMoire = False and dither = False and marginOffset = 0
-        if profile == .original && !applyGrayscale && !cropMargins && !reduceMoire && !dither && marginOffset == 0 {
+    func processImage(_ image: UIImage, for profile: TargetDeviceProfile, applyGrayscale: Bool, cropMargins: Bool = false, reduceMoire: Bool = false, dither: Bool = false, marginOffset: Int = 0, marginSide: BindingMarginSide = .none, isOddPage: Bool = true, customTargetSize: CGSize? = nil) -> UIImage {
+        // Handle Edge Case: Profile = Original and Grayscale = False and cropMargins = False and reduceMoire = False and dither = False and marginOffset = 0 and no customTargetSize
+        if profile == .original && !applyGrayscale && !cropMargins && !reduceMoire && !dither && marginOffset == 0 && customTargetSize == nil {
             return image
         }
         
@@ -35,14 +35,14 @@ class EInkOptimizer {
         }
         
         // 3. Aspect-Fit Downsampling
-        if let targetSize = profile.resolution {
+        if let targetSize = customTargetSize ?? profile.resolution {
             let originalSize = workingImage.size
-            if originalSize.width > targetSize.width || originalSize.height > targetSize.height {
+            if customTargetSize != nil || originalSize.width > targetSize.width || originalSize.height > targetSize.height {
                 var safeTargetSize = targetSize
                 // Dynamic Orientation-Aware Scaling!
                 // If the original image is naturally a landscape spread, we flip the 
                 // device hardware limits horizontally to avoid crushing max width to portrait constraints!
-                if originalSize.width > originalSize.height {
+                if customTargetSize == nil && originalSize.width > originalSize.height {
                     safeTargetSize = CGSize(width: max(targetSize.width, targetSize.height), height: min(targetSize.width, targetSize.height))
                 }
                 workingImage = scale(workingImage, toFit: safeTargetSize)
@@ -228,35 +228,65 @@ class EInkOptimizer {
         
         context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
         
-        var minX = width
-        var minY = height
-        var maxX = 0
-        var maxY = 0
-        
         // Threshold for "white" (0 is black, 255 is white)
         // We consider anything less than 250 to be content
         let threshold: UInt8 = 250
         
+        var minY = height
         for y in 0..<height {
-            var rowHasContent = false
+            let rowOffset = y * bytesPerRow
             for x in 0..<width {
-                let pixelIndex = (y * bytesPerRow) + x
-                let pixelValue = rawData[pixelIndex]
-                
-                if pixelValue < threshold {
-                    if x < minX { minX = x }
-                    if x > maxX { maxX = x }
-                    rowHasContent = true
+                if rawData[rowOffset + x] < threshold {
+                    minY = y
+                    break
                 }
             }
-            if rowHasContent {
-                if y < minY { minY = y }
-                if y > maxY { maxY = y }
+            if minY != height { break }
+        }
+        
+        var maxY = -1
+        if minY < height {
+            for y in stride(from: height - 1, through: minY, by: -1) {
+                let rowOffset = y * bytesPerRow
+                for x in 0..<width {
+                    if rawData[rowOffset + x] < threshold {
+                        maxY = y
+                        break
+                    }
+                }
+                if maxY != -1 { break }
             }
         }
         
-        // If the entire image is white or the crop box is invalid, return original
-        if minX > maxX || minY > maxY {
+        if minY > maxY || minY == height || maxY == -1 {
+            return cgImage
+        }
+        
+        var minX = width
+        for x in 0..<width {
+            for y in minY...maxY {
+                if rawData[y * bytesPerRow + x] < threshold {
+                    minX = x
+                    break
+                }
+            }
+            if minX != width { break }
+        }
+        
+        var maxX = -1
+        if minX < width {
+            for x in stride(from: width - 1, through: minX, by: -1) {
+                for y in minY...maxY {
+                    if rawData[y * bytesPerRow + x] < threshold {
+                        maxX = x
+                        break
+                    }
+                }
+                if maxX != -1 { break }
+            }
+        }
+        
+        if minX > maxX || minX == width || maxX == -1 {
             return cgImage
         }
         

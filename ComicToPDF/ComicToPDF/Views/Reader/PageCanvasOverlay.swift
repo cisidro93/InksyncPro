@@ -52,9 +52,10 @@ struct PageCanvasOverlay: View {
         guard hasLoaded, let pdfID = pdfID else { return }
         
         let currentDrawingData = canvasView.drawing.dataRepresentation()
+        let drawing = canvasView.drawing
         
         // Don't save empty drawings if annotation doesn't exist
-        if canvasView.drawing.bounds.isEmpty && activeAnnotation == nil {
+        if drawing.bounds.isEmpty && activeAnnotation == nil {
             return
         }
         
@@ -79,6 +80,26 @@ struct PageCanvasOverlay: View {
             self.activeAnnotation = newInk
         }
         try? modelContext.save()
+        
+        if let annotation = activeAnnotation {
+            if !drawing.bounds.isEmpty {
+                Task.detached(priority: .background) {
+                    if let ocrText = await HandwritingOCRManager.shared.recognizeHandwriting(in: drawing) {
+                        await MainActor.run {
+                            if let active = self.activeAnnotation, active.drawingOCRText != ocrText {
+                                active.drawingOCRText = ocrText
+                                active.modifiedAt = Date()
+                                try? self.modelContext.save()
+                                Logger.shared.log("Page ink OCR updated for page \(self.pageIndex): \(ocrText.prefix(40))...", category: "OCR", type: .success)
+                                SpotlightIndexer.shared.indexAnnotation(active)
+                            }
+                        }
+                    }
+                }
+            } else {
+                SpotlightIndexer.shared.indexAnnotation(annotation)
+            }
+        }
     }
 }
 

@@ -250,7 +250,7 @@ extension Data {
 
 extension Data {
     /// Decompresses raw deflate data (RFC 1951) lacking zlib headers.
-    fileprivate func rawDeflateDecompressed(expectedSize: Int) throws -> Data {
+    func rawDeflateDecompressed(expectedSize: Int) throws -> Data {
         var stream = z_stream()
         // -15 enables raw deflate mode (no zlib wrapper)
         var status = inflateInit2_(&stream, -15, ZLIB_VERSION, Int32(MemoryLayout<z_stream>.size))

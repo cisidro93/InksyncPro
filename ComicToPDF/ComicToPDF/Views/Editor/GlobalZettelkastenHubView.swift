@@ -68,8 +68,9 @@ struct GlobalZettelkastenHubView: View {
             filtered = filtered.filter { ann in
                 let txt  = ann.selectedText?.localizedCaseInsensitiveContains(searchText) ?? false
                 let note = ann.noteText?.localizedCaseInsensitiveContains(searchText) ?? false
+                let ocr  = ann.drawingOCRText?.localizedCaseInsensitiveContains(searchText) ?? false
                 let book = resolveTitle(ann, nameDict).localizedCaseInsensitiveContains(searchText)
-                return txt || note || book
+                return txt || note || ocr || book
             }
         }
         switch sortMode {
@@ -617,6 +618,19 @@ struct GlobalHighlightRow: View {
                             .foregroundStyle(.primary)
                             .lineSpacing(4)
                             .padding(.leading, 12)
+                    } else if let ocrText = annotation.drawingOCRText, !ocrText.isEmpty {
+                        HStack(alignment: .top, spacing: 6) {
+                            Image(systemName: "scribble.variable")
+                                .font(.system(size: 12))
+                                .foregroundStyle(Theme.textSecondary)
+                                .padding(.top, 4)
+                            Text(ocrText)
+                                .font(.system(size: 16, weight: .regular, design: .serif))
+                                .italic()
+                                .foregroundStyle(.primary)
+                                .lineSpacing(4)
+                        }
+                        .padding(.leading, 12)
                     }
                 }
 

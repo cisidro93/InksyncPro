@@ -271,6 +271,7 @@ class WiFiServer: ObservableObject {
         var filename: String = ""
         var relativePath: String? = nil // ✅ NEW: Track folder structure
         var isAuthenticated = false // Track auth per request context
+        var remoteIP: String = ""
     }
     
     private func handleConnection(_ connection: NWConnection) {
@@ -280,6 +281,9 @@ class WiFiServer: ObservableObject {
         
         // Track Connection End
         let context = ConnectionContext()
+        if case let .hostPort(host, _) = connection.endpoint {
+            context.remoteIP = "\(host)"
+        }
         
         connection.stateUpdateHandler = { [weak self] state in
             switch state {
@@ -385,7 +389,7 @@ class WiFiServer: ObservableObject {
         
         // 2. Handle Login POST separately (Does not require auth)
         if method == "POST" && path == "/login" {
-            handleLogin(lines: lines, bodyData: bodyData, connection: connection)
+            handleLogin(lines: lines, bodyData: bodyData, connection: connection, remoteIP: context.remoteIP)
             return
         }
         
@@ -449,8 +453,7 @@ class WiFiServer: ObservableObject {
         }
     }
     
-    private func handleLogin(lines: [String], bodyData: Data, connection: NWConnection) {
-        let remoteIP = "" // NWConnection endpoint string used for blocking
+    private func handleLogin(lines: [String], bodyData: Data, connection: NWConnection, remoteIP: String) {
 
         // Check if IP is blocked
         sessionLock.lock()
@@ -624,9 +627,10 @@ class WiFiServer: ObservableObject {
             
             let size = context.receivedLength
             let name = context.filename
+            let ip = context.remoteIP
             Task {
                 await WiFiTransferLog.shared.record(
-                    ip: "",
+                    ip: ip,
                     filename: name,
                     sizeBytes: size,
                     direction: .upload,

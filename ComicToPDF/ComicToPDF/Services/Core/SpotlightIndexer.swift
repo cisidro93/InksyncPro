@@ -75,7 +75,11 @@ final class SpotlightIndexer {
     // MARK: - Annotation Indexing
 
     func indexAnnotation(_ annotation: SDAnnotation) {
-        guard let text = annotation.selectedText, !text.isEmpty else { return }
+        let hasSelectedText = !(annotation.selectedText ?? "").isEmpty
+        let hasNoteText = !(annotation.noteText ?? "").isEmpty
+        let hasOCRText = !(annotation.drawingOCRText ?? "").isEmpty
+        guard hasSelectedText || hasNoteText || hasOCRText else { return }
+        
         let item = makeAnnotationItem(annotation)
         Task.detached(priority: .background) { [weak self] in
             guard let self else { return }
@@ -137,8 +141,34 @@ final class SpotlightIndexer {
 
     private func makeAnnotationItem(_ ann: SDAnnotation) -> CSSearchableItem {
         let attrs = CSSearchableItemAttributeSet(contentType: .text)
-        attrs.title = String((ann.selectedText ?? "").prefix(80))
-        attrs.contentDescription = ann.noteText ?? "Highlight"
+        
+        let title: String
+        let desc: String
+        
+        if ann.kindRaw == "note" {
+            let noteContent = ann.noteText ?? ""
+            let ocrContent = ann.drawingOCRText ?? ""
+            
+            if !noteContent.isEmpty && !ocrContent.isEmpty {
+                title = "Note & Sketch in " + (ann.readwiseBookTitle ?? "Book")
+                desc = "\(noteContent)\nSketch: \(ocrContent)"
+            } else if !ocrContent.isEmpty {
+                title = "Handwritten Sketch in " + (ann.readwiseBookTitle ?? "Book")
+                desc = ocrContent
+            } else {
+                title = "Text Note in " + (ann.readwiseBookTitle ?? "Book")
+                desc = noteContent
+            }
+        } else if ann.kindRaw == "ink" {
+            title = "Scribble on Page \(ann.pageIndex + 1)"
+            desc = ann.drawingOCRText ?? "Handwritten drawing"
+        } else {
+            title = String((ann.selectedText ?? "").prefix(80))
+            desc = ann.noteText ?? "Highlight"
+        }
+        
+        attrs.title = title
+        attrs.contentDescription = desc
         attrs.keywords = ann.tags ?? []
         let activity = NSUserActivity(activityType: SpotlightIndexer.openAnnotationActivityType)
         activity.userInfo = ["annotationID": ann.id.uuidString]

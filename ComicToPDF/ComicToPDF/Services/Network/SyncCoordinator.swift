@@ -90,8 +90,11 @@ class SyncCoordinator: ObservableObject {
                 let incomingPage = incomingPDF.metadata.lastReadPage ?? 0
                 let localPage = existing.metadata.lastReadPage ?? 0
                 
-                // Adopt incoming metadata if the foreign device has progressed further in the comic
-                if incomingPage > localPage {
+                let incomingLastModified = incomingPDF.lastModified ?? Date(timeIntervalSince1970: 0)
+                let localLastModified = existing.lastModified ?? Date(timeIntervalSince1970: 0)
+                
+                // Adopt incoming metadata if incoming is newer or page progressed further
+                if incomingLastModified > localLastModified || incomingPage > localPage {
                     existing.metadata = incomingPDF.metadata
                     existing.isFavorite = incomingPDF.isFavorite
                     existing.collectionId = assignedLocalCollectionID
@@ -106,6 +109,7 @@ class SyncCoordinator: ObservableObject {
                 // Inject placeholder record into SwiftData. It will be downloaded later via P2P.
                 let doc = SDConvertedPDF(id: incomingPDF.id, name: incomingPDF.name, url: incomingPDF.url, pageCount: incomingPDF.pageCount, fileSize: incomingPDF.fileSize, metadata: incomingPDF.metadata, collectionId: assignedLocalCollectionID, isFavorite: incomingPDF.isFavorite, isPrivate: incomingPDF.isPrivate, coverImageData: incomingPDF.coverImageData, contentType: incomingPDF.contentType, chapters: incomingPDF.chapters, addedByMode: incomingPDF.addedByMode)
                 doc.isOnDevice = false // Cloud/P2P PlaceHolder Flag
+                doc.lastModified = incomingPDF.lastModified
                 context.insert(doc)
                 importedCopiesCount += 1
             }
@@ -144,12 +148,27 @@ class SyncCoordinator: ObservableObject {
             throw NSError(domain: "SyncCoordinator", code: 401, userInfo: [NSLocalizedDescriptionKey: "Incorrect PIN."])
         }
         
+        var sessionCookie: String? = nil
+        if let setCookieHeader = httpLoginResp.value(forHTTPHeaderField: "Set-Cookie") {
+            let parts = setCookieHeader.components(separatedBy: ";")
+            for part in parts {
+                let trimmed = part.trimmingCharacters(in: .whitespaces)
+                if trimmed.hasPrefix("session=") {
+                    sessionCookie = trimmed
+                    break
+                }
+            }
+        }
+        
         guard let url = URL(string: "http://\(peerIP):8080/api/sync") else {
             throw NSError(domain: "SyncCoordinator", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid Peer IP configuration."])
         }
         
         var request = URLRequest(url: url)
         request.timeoutInterval = 45.0 // Wait longer for giant DB exports
+        if let cookie = sessionCookie {
+            request.setValue(cookie, forHTTPHeaderField: "Cookie")
+        }
         
         do {
             self.syncStatus = "Downloading Library State..."
@@ -166,7 +185,7 @@ class SyncCoordinator: ObservableObject {
                 // Fetch missing physical payloads in background!
                 if !missingFiles.isEmpty {
                     Task.detached(priority: .background) {
-                        await self.downloadMissingPayloads(missingFiles, from: peerIP)
+                        await self.downloadMissingPayloads(missingFiles, from: peerIP, cookie: sessionCookie)
                     }
                 }
             } else if httpResponse.statusCode == 401 {
@@ -180,7 +199,7 @@ class SyncCoordinator: ObservableObject {
     }
     
     /// Silent background daemon to fetch the raw physical CBZ files for newly synced placeholder items.
-    private func downloadMissingPayloads(_ filenames: [String], from peerIP: String) async {
+    private func downloadMissingPayloads(_ filenames: [String], from peerIP: String, cookie: String?) async {
         let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         let config = URLSessionConfiguration.default
         let session = URLSession(configuration: config)
@@ -189,8 +208,13 @@ class SyncCoordinator: ObservableObject {
             guard let encodedName = filename.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
                   let url = URL(string: "http://\(peerIP):8080/\(encodedName)") else { continue }
             
+            var request = URLRequest(url: url)
+            if let cookie = cookie {
+                request.setValue(cookie, forHTTPHeaderField: "Cookie")
+            }
+            
             do {
-                let (tempURL, response) = try await session.download(from: url)
+                let (tempURL, response) = try await session.download(for: request)
                 guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else { continue }
                 
                 let destURL = docDir.appendingPathComponent(filename)

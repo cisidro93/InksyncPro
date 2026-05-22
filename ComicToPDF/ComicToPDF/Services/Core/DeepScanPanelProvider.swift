@@ -48,32 +48,34 @@ class DeepScanPanelProvider: PanelProvider {
                 continuation.resume(returning: candidates)
             }
             
-            // CoreImage filters to prepare the image for contour tracing
-            // We want hard contrast lines. Outline filter works perfectly for this.
-            let ciImage = CIImage(cgImage: cgImage)
-            let filter = CIFilter(name: "CIEdges")
-            filter?.setValue(ciImage, forKey: kCIInputImageKey)
-            filter?.setValue(10.0, forKey: "inputIntensity")
-            
-            guard let edgeImage = filter?.outputImage,
-                  let finalCGImage = context.createCGImage(edgeImage, from: edgeImage.extent) else {
+            DispatchQueue.global(qos: .userInitiated).async {
+                // CoreImage filters to prepare the image for contour tracing
+                // We want hard contrast lines. Outline filter works perfectly for this.
+                let ciImage = CIImage(cgImage: cgImage)
+                let filter = CIFilter(name: "CIEdges")
+                filter?.setValue(ciImage, forKey: kCIInputImageKey)
+                filter?.setValue(10.0, forKey: "inputIntensity")
                 
-                // Fallback to raw image if CI fails
-                let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
-                try? handler.perform([request])
-                return
-            }
-            
-            let handler = VNImageRequestHandler(cgImage: finalCGImage, options: [:])
-            do {
-                // High contrast setup
-                request.contrastAdjustment = 1.6
-                request.detectsDarkOnLight = true // Look for dark panel borders on white gutters
+                guard let edgeImage = filter?.outputImage,
+                      let finalCGImage = context.createCGImage(edgeImage, from: edgeImage.extent) else {
+                    
+                    // Fallback to raw image if CI fails
+                    let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+                    try? handler.perform([request])
+                    return
+                }
                 
-                try handler.perform([request])
-            } catch {
-                print("❌ [DeepScan] Contour Request failed: \(error)")
-                continuation.resume(returning: [])
+                let handler = VNImageRequestHandler(cgImage: finalCGImage, options: [:])
+                do {
+                    // High contrast setup
+                    request.contrastAdjustment = 1.6
+                    request.detectsDarkOnLight = true // Look for dark panel borders on white gutters
+                    
+                    try handler.perform([request])
+                } catch {
+                    print("❌ [DeepScan] Contour Request failed: \(error)")
+                    continuation.resume(returning: [])
+                }
             }
             }
         }

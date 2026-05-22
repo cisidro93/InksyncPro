@@ -280,41 +280,69 @@ class PageBufferManager: ObservableObject {
         let threshold: UInt8 = 245
 
         var top = 0
-        outerTop: for y in 0..<height {
+        for y in 0..<height {
             let rowOffset = y * bytesPerRow
+            var found = false
             for x in stride(from: 0, to: width, by: 10) {
                 let o = rowOffset + (x * bytesPerPixel)
-                if ptr[o] < threshold || ptr[o+1] < threshold || ptr[o+2] < threshold { break outerTop }
+                if ptr[o] < threshold || ptr[o+1] < threshold || ptr[o+2] < threshold {
+                    found = true
+                    break
+                }
             }
-            top = y
+            if found {
+                top = y
+                break
+            }
         }
 
         var bottom = height - 1
-        outerBottom: for y in stride(from: height - 1, through: 0, by: -1) {
+        for y in stride(from: height - 1, through: top, by: -1) {
             let rowOffset = y * bytesPerRow
+            var found = false
             for x in stride(from: 0, to: width, by: 10) {
                 let o = rowOffset + (x * bytesPerPixel)
-                if ptr[o] < threshold || ptr[o+1] < threshold || ptr[o+2] < threshold { break outerBottom }
+                if ptr[o] < threshold || ptr[o+1] < threshold || ptr[o+2] < threshold {
+                    found = true
+                    break
+                }
             }
-            bottom = y
+            if found {
+                bottom = y
+                break
+            }
         }
 
         var left = 0
-        outerLeft: for x in 0..<width {
+        for x in 0..<width {
+            var found = false
             for y in stride(from: top, to: bottom, by: 10) {
                 let o = (y * bytesPerRow) + (x * bytesPerPixel)
-                if ptr[o] < threshold || ptr[o+1] < threshold || ptr[o+2] < threshold { break outerLeft }
+                if ptr[o] < threshold || ptr[o+1] < threshold || ptr[o+2] < threshold {
+                    found = true
+                    break
+                }
             }
-            left = x
+            if found {
+                left = x
+                break
+            }
         }
 
         var right = width - 1
-        outerRight: for x in stride(from: width - 1, through: 0, by: -1) {
+        for x in stride(from: width - 1, through: left, by: -1) {
+            var found = false
             for y in stride(from: top, to: bottom, by: 10) {
                 let o = (y * bytesPerRow) + (x * bytesPerPixel)
-                if ptr[o] < threshold || ptr[o+1] < threshold || ptr[o+2] < threshold { break outerRight }
+                if ptr[o] < threshold || ptr[o+1] < threshold || ptr[o+2] < threshold {
+                    found = true
+                    break
+                }
             }
-            right = x
+            if found {
+                right = x
+                break
+            }
         }
 
         let pad = 10

@@ -56,12 +56,14 @@ class CoverVisionAnalyzer {
             request.recognitionLevel = .accurate
             request.usesLanguageCorrection = true
             
-            do {
-                let handler = VNImageRequestHandler(ciImage: ciImage, options: [:])
-                try handler.perform([request])
-            } catch {
-                Logger.shared.log("Vision AI Dispatch Error: \(error.localizedDescription)", category: "AI", type: .error)
-                continuation.resume(returning: nil)
+            DispatchQueue.global(qos: .userInitiated).async {
+                do {
+                    let handler = VNImageRequestHandler(ciImage: ciImage, options: [:])
+                    try handler.perform([request])
+                } catch {
+                    Logger.shared.log("Vision AI Dispatch Error: \(error.localizedDescription)", category: "AI", type: .error)
+                    continuation.resume(returning: nil)
+                }
             }
         }
     }

@@ -47,6 +47,9 @@ struct Annotation: Codable, Identifiable {
     var corkboardX: Double? = nil
     var corkboardY: Double? = nil
 
+    // ✅ Phase 6: Handwriting OCR
+    var drawingOCRText: String? = nil
+
     enum AnnotationKind: String, Codable {
         case highlight
         case note           // text note attached to a location
@@ -104,6 +107,9 @@ struct Annotation: Codable, Identifiable {
     var corkboardX: Double? = nil
     var corkboardY: Double? = nil
     
+    // ✅ Phase 6: Handwriting OCR
+    var drawingOCRText: String?
+    
     init(from dto: Annotation) {
         self.id = dto.id
         self.pdfID = dto.pdfID
@@ -128,6 +134,7 @@ struct Annotation: Codable, Identifiable {
         self.drawingData = dto.drawingData
         self.corkboardX = dto.corkboardX
         self.corkboardY = dto.corkboardY
+        self.drawingOCRText = dto.drawingOCRText
     }
     
     // ✅ Phase 31 Native Constructor for Readwise Importers
@@ -200,6 +207,7 @@ struct Annotation: Codable, Identifiable {
         dto.drawingData = self.drawingData
         dto.corkboardX = self.corkboardX
         dto.corkboardY = self.corkboardY
+        dto.drawingOCRText = self.drawingOCRText
         return dto
     }
     
@@ -223,6 +231,7 @@ struct Annotation: Codable, Identifiable {
         self.drawingData = dto.drawingData
         self.corkboardX = dto.corkboardX
         self.corkboardY = dto.corkboardY
+        self.drawingOCRText = dto.drawingOCRText
     }
 }
 

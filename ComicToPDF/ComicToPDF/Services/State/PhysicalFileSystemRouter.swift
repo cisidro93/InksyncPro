@@ -375,6 +375,9 @@ class PhysicalFileSystemRouter {
     nonisolated static func extractCoverImageStatic(from url: URL) -> UIImage? {
         let ext = url.pathExtension.lowercased()
         if ext == "pdf" {
+            let accessing = url.startAccessingSecurityScopedResource()
+            defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+            
             guard let document = PDFDocument(url: url) else { return nil }
             
             // Try up to the first 3 pages to find a portrait cover
@@ -521,6 +524,9 @@ class PhysicalFileSystemRouter {
     nonisolated static func getPageCountStatic(from url: URL) -> Int {
         let ext = url.pathExtension.lowercased()
         if ext == "pdf" {
+            let accessing = url.startAccessingSecurityScopedResource()
+            defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+            
             return PDFDocument(url: url)?.pageCount ?? 0
         }
 

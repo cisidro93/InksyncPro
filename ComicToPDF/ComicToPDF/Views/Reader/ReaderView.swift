@@ -1199,9 +1199,13 @@ struct ReaderView: View {
         let descriptor = FetchDescriptor<SDAnnotation>(
             predicate: #Predicate { $0.pdfID == pdfUUID && $0.pageIndex == pIndex && $0.kindRaw == "ink" }
         )
+        
+        var targetAnnotation: SDAnnotation? = nil
+        
         if let existing = try? modelContext.fetch(descriptor).first {
             existing.drawingData = drawingData
             existing.modifiedAt = Date()
+            targetAnnotation = existing
         } else {
             // Use the String-pdfID Readwise-compatible constructor (the only public designated init)
             let newInk = SDAnnotation(
@@ -1218,8 +1222,29 @@ struct ReaderView: View {
             newInk.kindRaw = "ink"
             newInk.drawingData = drawingData
             modelContext.insert(newInk)
+            targetAnnotation = newInk
         }
         try? modelContext.save()
+        
+        if let annotation = targetAnnotation {
+            Task.detached(priority: .background) {
+                if let ocrText = await HandwritingOCRManager.shared.recognizeHandwriting(in: drawing) {
+                    await MainActor.run {
+                        let targetID = annotation.id
+                        let refreshDescriptor = FetchDescriptor<SDAnnotation>(
+                            predicate: #Predicate { $0.id == targetID }
+                        )
+                        if let active = try? self.modelContext.fetch(refreshDescriptor).first, active.drawingOCRText != ocrText {
+                            active.drawingOCRText = ocrText
+                            active.modifiedAt = Date()
+                            try? self.modelContext.save()
+                            Logger.shared.log("Reader ink OCR updated for page \(pIndex): \(ocrText.prefix(40))...", category: "OCR", type: .success)
+                            SpotlightIndexer.shared.indexAnnotation(active)
+                        }
+                    }
+                }
+            }
+        }
     }
 
     // MARK: - Progress Tracking Integration

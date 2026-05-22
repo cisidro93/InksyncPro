@@ -202,14 +202,37 @@ struct StudyNotebookView: View {
             // Final explicit sync flush layer
             Logger.shared.log("StudyNotebook disappearing — flushing note to SwiftData for '\(bookTitle)'", category: "Notebook", type: .info)
             saveTask?.cancel()
-            activeNoteAnnotation?.noteText = localNotes
-            activeNoteAnnotation?.drawingData = canvasView.drawing.dataRepresentation()
+            let note = localNotes
+            let drawing = canvasView.drawing
+            let drawingData = drawing.dataRepresentation()
+            
+            activeNoteAnnotation?.noteText = note
+            activeNoteAnnotation?.drawingData = drawingData
             activeNoteAnnotation?.modifiedAt = Date()
             do {
                 try modelContext.save()
                 Logger.shared.log("Flush save succeeded for '\(bookTitle)'", category: "Notebook", type: .success)
+                if let annotation = activeNoteAnnotation {
+                    SpotlightIndexer.shared.indexAnnotation(annotation)
+                }
             } catch {
                 Logger.shared.log("Flush save FAILED for '\(bookTitle)': \(error.localizedDescription)", category: "Notebook", type: .error)
+            }
+            
+            if !drawing.bounds.isEmpty {
+                Task.detached(priority: .background) {
+                    if let ocrText = await HandwritingOCRManager.shared.recognizeHandwriting(in: drawing) {
+                        await MainActor.run {
+                            if let active = self.activeNoteAnnotation, active.drawingOCRText != ocrText {
+                                active.drawingOCRText = ocrText
+                                active.modifiedAt = Date()
+                                try? self.modelContext.save()
+                                Logger.shared.log("Flush Handwriting OCR updated for '\(self.bookTitle)': \(ocrText.prefix(40))...", category: "OCR", type: .success)
+                                SpotlightIndexer.shared.indexAnnotation(active)
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -284,15 +307,38 @@ struct StudyNotebookView: View {
         saveTask = Task {
             try? await Task.sleep(nanoseconds: 400_000_000)
             if !Task.isCancelled {
+                let note = self.localNotes
+                let drawing = self.canvasView.drawing
+                let drawingData = drawing.dataRepresentation()
+                
                 await MainActor.run {
-                    self.activeNoteAnnotation?.noteText = self.localNotes
-                    self.activeNoteAnnotation?.drawingData = self.canvasView.drawing.dataRepresentation()
+                    self.activeNoteAnnotation?.noteText = note
+                    self.activeNoteAnnotation?.drawingData = drawingData
                     self.activeNoteAnnotation?.modifiedAt = Date()
                     do {
                         try self.modelContext.save()
                         Logger.shared.log("Debounce save succeeded for '\(self.bookTitle)'", category: "Notebook", type: .success)
+                        if let annotation = self.activeNoteAnnotation {
+                            SpotlightIndexer.shared.indexAnnotation(annotation)
+                        }
                     } catch {
                         Logger.shared.log("Debounce save FAILED for '\(self.bookTitle)': \(error.localizedDescription)", category: "Notebook", type: .error)
+                    }
+                }
+                
+                if !drawing.bounds.isEmpty {
+                    Task.detached(priority: .background) {
+                        if let ocrText = await HandwritingOCRManager.shared.recognizeHandwriting(in: drawing) {
+                            await MainActor.run {
+                                if let active = self.activeNoteAnnotation, active.drawingOCRText != ocrText {
+                                    active.drawingOCRText = ocrText
+                                    active.modifiedAt = Date()
+                                    try? self.modelContext.save()
+                                    Logger.shared.log("Handwriting OCR updated for '\(self.bookTitle)': \(ocrText.prefix(40))...", category: "OCR", type: .success)
+                                    SpotlightIndexer.shared.indexAnnotation(active)
+                                }
+                            }
+                        }
                     }
                 }
             }

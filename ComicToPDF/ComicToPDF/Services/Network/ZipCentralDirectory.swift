@@ -228,7 +228,7 @@ struct ZipCentralDirectory {
         case 0: // Stored — raw bytes
             return compressedData
         case 8: // Deflate — decompress with zlib (raw deflate, no header)
-            return try (compressedData as NSData).decompressed(using: .zlib) as Data
+            return try compressedData.rawDeflateDecompressed(expectedSize: Int(entry.uncompressedSize))
         default:
             // Unsupported compression — return compressed data and let UIImage try
             return compressedData

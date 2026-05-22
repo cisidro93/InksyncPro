@@ -1058,6 +1058,7 @@ enum PageCoordinateSystem: String, Codable, Equatable, Hashable {
         pdf.lastTransferFailed = self.lastTransferFailed
         pdf.lastOutputFormat = self.lastOutputFormat
         pdf.lastConversionDate = self.lastConversionDate
+        pdf.lastModified = self.lastModified
         pdf.panelConfidenceScore = self.panelConfidenceScore
         
         if let data = self.sourceModeData, let decoded = try? JSONDecoder().decode(SourceMode.self, from: data) {
