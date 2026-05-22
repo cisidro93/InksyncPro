@@ -71,8 +71,8 @@ struct ZoomableScrollView<Content: View>: UIViewRepresentable {
     // MARK: - Coordinator
 
     final class Coordinator: NSObject, UIScrollViewDelegate {
-        // Weak reference to break the retain cycle between Coordinator ↔ ZoomableScrollView.
-        weak var hostingController: UIHostingController<Content>?
+        // Strong reference to retain the UIHostingController during the scroll view lifecycle.
+        var hostingController: UIHostingController<Content>?
         // Hold a weak ref to the scroll view for rotation reset.
         weak var scrollView: UIScrollView?
 

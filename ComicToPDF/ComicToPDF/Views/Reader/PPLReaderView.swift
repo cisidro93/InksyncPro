@@ -26,6 +26,7 @@ struct PPLReaderView: View {
 
     // ── Zoom / pan state ──────────────────────────────────────────────────────
     @State private var scale: CGFloat = 1.0
+    @State private var lastScale: CGFloat = 1.0
     @State private var offset: CGSize = .zero
     @State private var dragOffset: CGSize = .zero
     @State private var momentumTask: Task<Void, Never>?
@@ -258,8 +259,14 @@ struct PPLReaderView: View {
 
     private func zoomGesture(geo: GeometryProxy) -> some Gesture {
         MagnificationGesture()
-            .onChanged { val in scale = min(max(val, 1.0), 5.0) }
-            .onEnded    { _ in  updatePPL(in: geo.size) }
+            .onChanged { val in
+                let targetScale = lastScale * val
+                scale = min(max(targetScale, 1.0), 5.0)
+            }
+            .onEnded { _ in
+                lastScale = scale
+                updatePPL(in: geo.size)
+            }
     }
 
     private func swipeAndPanGesture(geo: GeometryProxy) -> some Gesture {
@@ -383,7 +390,10 @@ struct PPLReaderView: View {
     private func handleDoubleTap(at location: CGPoint, geo: GeometryProxy) {
         if scale > 1.0 {
             withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                scale = 1.0; offset = .zero; updatePPL(in: geo.size)
+                scale = 1.0
+                lastScale = 1.0
+                offset = .zero
+                updatePPL(in: geo.size)
             }
             return
         }
@@ -401,6 +411,7 @@ struct PPLReaderView: View {
         }
         withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
             scale = 2.0
+            lastScale = 2.0
             offset = CGSize(width:  -(location.x - geo.size.width  / 2) * scale,
                             height: -(location.y - geo.size.height / 2) * scale)
             updatePPL(in: geo.size)
@@ -554,7 +565,11 @@ struct PPLReaderView: View {
         momentumTask = nil
         isCommittingSwipe = false
         withAnimation(.easeOut(duration: 0.15)) {
-            scale = 1.0; offset = .zero; dragOffset = .zero; swipeDragX = 0
+            scale = 1.0
+            lastScale = 1.0
+            offset = .zero
+            dragOffset = .zero
+            swipeDragX = 0
         }
         bufferManager.isPPLEnabled = false
         bufferManager.updateViewport(rect: .full)
