@@ -43,13 +43,17 @@ enum LibrarySheetDestination: Identifiable {
 }
 
 enum LibraryFullScreenDestination: Identifiable {
-    case read(ConvertedPDF)
+    case read(ConvertedPDF, initialReadingMode: String?)
     case advancedWorkspace(ConvertedPDF)
     case smartCollection(SmartCollectionRule)
     
+    static func read(_ pdf: ConvertedPDF) -> LibraryFullScreenDestination {
+        return .read(pdf, initialReadingMode: nil)
+    }
+    
     var id: String {
         switch self {
-        case .read(let p): return "read_\(p.id)"
+        case .read(let p, _): return "read_\(p.id)"
         case .advancedWorkspace(let p): return "workspace_\(p.id)"
         case .smartCollection(let rule): return "smartCollection_\(rule.id)"
         }

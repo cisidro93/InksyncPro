@@ -279,8 +279,6 @@ struct PDFActionViews: View {
 }
 
 
-import SwiftUI
-
 // MARK: - 1. Recently Read Shelf
 
 /// A horizontal scrollable row showing the most recently read files, displayed at the top of the library.

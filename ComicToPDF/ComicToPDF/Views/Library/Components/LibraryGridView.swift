@@ -659,7 +659,7 @@ struct LibraryGridView: View {
             ReaderProgressTracker.shared.markComplete(pdfID: pdf.id)
             if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
                 conversionManager.convertedPDFs[idx].metadata.lastReadPage = pdf.pageCount
-                conversionManager.saveLibrary()
+                conversionManager.saveProgressOnly()
             }
         } label: { Label("Mark as Read", systemImage: "checkmark.circle") }
         
@@ -671,7 +671,7 @@ struct LibraryGridView: View {
             
             if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
                 conversionManager.convertedPDFs[idx].metadata.lastReadPage = 0
-                conversionManager.saveLibrary()
+                conversionManager.saveProgressOnly()
             }
         } label: { Label("Mark as Unread", systemImage: "circle") }
         

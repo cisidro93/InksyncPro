@@ -21,6 +21,7 @@ struct SplitStudyWorkspace: View {
     let fileURL: URL
     let contentType: ContentType
     let pdf: ConvertedPDF?
+    var initialReadingMode: String? = nil
     
     @AppStorage("study_split_fraction")   private var splitFraction: Double = 0.65
     @AppStorage("study_dock_position")    private var dockPosition: DockPosition = .right
@@ -38,7 +39,7 @@ struct SplitStudyWorkspace: View {
             if isCompact {
                 // Compact device fallback — panel always shown as a sheet
                 ZStack {
-                    ReaderView(fileURL: fileURL, contentType: contentType, pdf: pdf, onExit: { dismiss() })
+                    ReaderView(fileURL: fileURL, contentType: contentType, pdf: pdf, initialReadingMode: initialReadingMode, onExit: { dismiss() })
                         .sheet(isPresented: $showNotebook) {
                             sheetPanelContent
                         }
@@ -133,7 +134,7 @@ struct SplitStudyWorkspace: View {
     
     @ViewBuilder
     private func readerPane(geo: GeometryProxy, fraction: Double, axis: Axis, primary: Bool) -> some View {
-        ReaderView(fileURL: fileURL, contentType: contentType, pdf: pdf, onExit: { dismiss() })
+        ReaderView(fileURL: fileURL, contentType: contentType, pdf: pdf, initialReadingMode: initialReadingMode, onExit: { dismiss() })
             .frame(
                 width: showNotebook ? (axis == .horizontal ? geo.size.width * fraction : geo.size.width) : geo.size.width,
                 height: showNotebook ? (axis == .vertical ? geo.size.height * fraction : geo.size.height) : geo.size.height

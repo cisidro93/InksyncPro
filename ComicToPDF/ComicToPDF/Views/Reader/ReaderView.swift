@@ -35,6 +35,7 @@ struct ReaderView: View {
     @State var fileURL: URL
     let contentType: ContentType
     @State var pdf: ConvertedPDF? // Added to support Bookmarking
+    var initialReadingMode: String? = nil
     var onExit: (() -> Void)? = nil
     
     @Environment(\.dismiss) var dismiss
@@ -485,7 +486,7 @@ struct ReaderView: View {
                         if fileURL.pathExtension.lowercased() != "pdf" {
                             if !pages.isEmpty {
                                 let effectiveDoublePage = isDoublePageMode || (autoLandscapeDualPage && geo.size.width > geo.size.height)
-                                PPLReaderView(pages: pages, currentPageIndex: $currentPageIndex, pdfID: pdf?.id, isMangaMode: isMangaMode, isDoublePageOverride: effectiveDoublePage, isDrawingMode: isDrawingMode) {
+                                PPLReaderView(pages: pages, currentPageIndex: $currentPageIndex, pdfID: pdf?.id, isMangaMode: isMangaMode, isDoublePageOverride: effectiveDoublePage, isDrawingMode: isDrawingMode, startWithGuidedReading: initialReadingMode == "panelNavigation") {
                                     withAnimation(.easeInOut(duration: 0.2)) {
                                         isToolbarVisible.toggle()
                                     }

@@ -19,6 +19,7 @@ struct PPLReaderView: View {
     var isMangaMode: Bool
     var isDoublePageOverride: Bool = false
     var isDrawingMode: Bool = false // ✅ Added for GoodNotes Parity
+    var startWithGuidedReading: Bool = false
     var onCenterTap: () -> Void
 
     @ObservedObject private var bufferManager = PageBufferManager.shared
@@ -51,6 +52,7 @@ struct PPLReaderView: View {
     @State private var isGuidedReadingActive = false
     @State private var guidedPanelIndex = 0
     @State private var guidedPanels: [NormalizedRect] = []
+    @State private var hasInitializedGuidedReading = false
 
     private var effectiveDoublePage: Bool { isDoublePageOverride || isDoublePageStored }
 
@@ -519,6 +521,19 @@ struct PPLReaderView: View {
             bufferManager.renderDual(leadIndex: lead, pages: pages, isMangaMode: isMangaMode)
         } else {
             bufferManager.render(pageIndex: currentPageIndex, bounds: geo.size)
+        }
+        
+        if startWithGuidedReading && !hasInitializedGuidedReading {
+            hasInitializedGuidedReading = true
+            refreshGuidedPanels()
+            if !guidedPanels.isEmpty {
+                isGuidedReadingActive = true
+                guidedPanelIndex = 0
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    bufferManager.lockedRect   = guidedPanels[0]
+                    bufferManager.isPPLEnabled = true
+                }
+            }
         }
     }
 

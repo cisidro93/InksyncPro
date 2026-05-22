@@ -156,12 +156,13 @@ struct ModernLibraryView: View {
                 listRenameGroup = group
                 listRenamePendingName = group.title
             }
-            .onReceive(NotificationCenter.default.publisher(for: .inksyncResumeLastRead)) { _ in
+            .onReceive(NotificationCenter.default.publisher(for: .inksyncResumeLastRead)) { notification in
                 if let mostRecent = ReaderProgressTracker.shared.recentSessions().first {
                     let pdf = cachedVisiblePDFs.first(where: { $0.id == mostRecent.pdfID })
                         ?? conversionManager.convertedPDFs.first(where: { $0.id == mostRecent.pdfID })
                     if let pdf = pdf {
-                        AppRouter.shared.presentFullScreen(.read(pdf))
+                        let readingMode = notification.userInfo?["readingMode"] as? String
+                        AppRouter.shared.presentFullScreen(.read(pdf, initialReadingMode: readingMode))
                     }
                 }
             }
@@ -316,8 +317,8 @@ struct ModernLibraryView: View {
             }
             .fullScreenCover(item: $router.activeFullScreen) { dest in
                 switch dest {
-                case .read(let pdf):
-                    if pdf.contentType == .book { SplitStudyWorkspace(fileURL: pdf.url, contentType: pdf.contentType, pdf: pdf) } else { ReaderView(fileURL: pdf.url, contentType: pdf.contentType, pdf: pdf) }
+                case .read(let pdf, let initialReadingMode):
+                    if pdf.contentType == .book { SplitStudyWorkspace(fileURL: pdf.url, contentType: pdf.contentType, pdf: pdf, initialReadingMode: initialReadingMode) } else { ReaderView(fileURL: pdf.url, contentType: pdf.contentType, pdf: pdf, initialReadingMode: initialReadingMode) }
                 case .advancedWorkspace(let pdf):
                     AdvancedWorkspaceView(pdf: pdf).environmentObject(conversionManager)
                 case .smartCollection(let rule):
