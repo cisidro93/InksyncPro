@@ -62,33 +62,37 @@ struct LogEntry: Identifiable, Codable {
     }
 }
 
-@MainActor
-class Logger: ObservableObject {
+class Logger: ObservableObject, @unchecked Sendable {
     static let shared = Logger()
     
     private let logFileName = "debug.log"
-    @Published var recentLogs: String = ""
+    @MainActor @Published var recentLogs: String = ""
     
     // ✅ NEW: Memory buffer for UI (Last 100 logs)
     // We don't want to read file every time for small updates
-    @Published var parsedLogs: [LogEntry] = [] 
+    @MainActor @Published var parsedLogs: [LogEntry] = [] 
     
     private let queue = DispatchQueue(label: "com.comicvault.logger", qos: .utility)
     
     private init() {
         // Load initial logs on startup (async)
-        Task {
-            let logs = self.getLogs()
-            self.parsedLogs = self.parseLogFile(content: logs)
+        let fileURL = self.logFileURL
+        queue.async { [weak self] in
+            guard let self = self else { return }
+            let logs = (try? String(contentsOf: fileURL, encoding: .utf8)) ?? ""
+            let parsed = self.parseLogFile(content: logs)
+            DispatchQueue.main.async {
+                self.parsedLogs = parsed
+            }
         }
     }
     
-    var logFileURL: URL {
+    nonisolated var logFileURL: URL {
         let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         return docDir.appendingPathComponent(logFileName)
     }
     
-    func log(_ message: String, category: String = "INFO", type: LogType = .info) {
+    nonisolated func log(_ message: String, category: String = "INFO", type: LogType = .info) {
         let timestamp = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)
         // Format: [12:00:00] [INFO] [Category] Message
         let logEntry = "[\(timestamp)] [\(type.rawValue)] [\(category)] \(message)\n"
@@ -98,18 +102,20 @@ class Logger: ObservableObject {
         // Update UI Memory
         let entryObject = LogEntry(id: UUID(), timestamp: Date(), type: type, category: category, message: message)
         
-        self.parsedLogs.insert(entryObject, at: 0)
-        if self.parsedLogs.count > 500 { self.parsedLogs.removeLast() }
-        
-        // ✅ PHASE 8: Universal Alerts
-        // Immediately broadcast critical failures to the SwiftUI View layer
-        // so active bugs pop up on the user's screen instead of silently dropping.
-        if type == .error {
-            NotificationCenter.default.post(
-                name: NSNotification.Name("GlobalErrorTriggered"),
-                object: nil,
-                userInfo: ["message": message, "category": category]
-            )
+        DispatchQueue.main.async {
+            Self.shared.parsedLogs.insert(entryObject, at: 0)
+            if Self.shared.parsedLogs.count > 500 { Self.shared.parsedLogs.removeLast() }
+            
+            // ✅ PHASE 8: Universal Alerts
+            // Immediately broadcast critical failures to the SwiftUI View layer
+            // so active bugs pop up on the user's screen instead of silently dropping.
+            if type == .error {
+                NotificationCenter.default.post(
+                    name: NSNotification.Name("GlobalErrorTriggered"),
+                    object: nil,
+                    userInfo: ["message": message, "category": category]
+                )
+            }
         }
         
         let fileURL = self.logFileURL
@@ -129,18 +135,21 @@ class Logger: ObservableObject {
         }
     }
     
+    @MainActor
     func getLogs() -> String {
         return (try? String(contentsOf: logFileURL, encoding: .utf8)) ?? ""
     }
     
+    @MainActor
     func clearLogs() {
         try? FileManager.default.removeItem(at: logFileURL)
-        Task { @MainActor in self.parsedLogs.removeAll() }
+        self.parsedLogs.removeAll()
         log("Logs Cleared", category: "SYSTEM", type: .system)
     }
     
     // ✅ NEW: Dynamic Domain Tracker
     // Scans memory array to figure out which domains are currently actively failing or reporting.
+    @MainActor
     var availableCategories: [String] {
         let uniqueCategories = Set(parsedLogs.map { $0.category })
         return Array(uniqueCategories).sorted()
@@ -148,6 +157,7 @@ class Logger: ObservableObject {
     
     // ✅ NEW: Smart Domain/Level Targeted Exporter
     // Generates a tailored textual stack-trace based heavily on what the user explicitly selects.
+    @MainActor
     func generateSmartLog(categories: [String]? = nil, types: [LogType]? = nil) -> URL? {
         var filteredLogs = parsedLogs
         
@@ -195,6 +205,7 @@ class Logger: ObservableObject {
     }
     
     // ✅ NEW: Generate a condensed error log for email support
+    @MainActor
     func generateErrorLogFile() -> URL? {
         let errorEntries = parsedLogs.filter { $0.type == .error || $0.type == .warning }
         var errorString = "--- Inksync Pro Condensed Error Log ---\n"
@@ -231,6 +242,7 @@ class Logger: ObservableObject {
     }
     
     // ✅ DEBUG: Flight Recorder (Moved here to avoid Actor Isolation issues)
+    @MainActor
     func logEPUBStructure(at url: URL) {
         log("🔍 [Flight Recorder] Analyzing EPUB Structure: \(url.lastPathComponent)", category: "Debug", type: .info)
         
