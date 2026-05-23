@@ -45,26 +45,16 @@ final class ChapterDetector: Sendable {
             guard let croppedCG = cgImage.cropping(to: cropRect) else { continue }
             
             // Run Vision text recognition inline — no external dependency
-            let text = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<String, Error>) in
-                let request = VNRecognizeTextRequest { request, error in
-                    if let error = error { continuation.resume(throwing: error); return }
-                    let observations = request.results as? [VNRecognizedTextObservation] ?? []
-                    let joined = observations.compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n")
-                    continuation.resume(returning: joined)
-                }
-                request.recognitionLevel = .fast
-                request.usesLanguageCorrection = false
-                request.recognitionLanguages = languages
-                
-                DispatchQueue.global(qos: .userInitiated).async {
-                    let handler = VNImageRequestHandler(cgImage: croppedCG, options: [:])
-                    do {
-                        try handler.perform([request])
-                    } catch {
-                        continuation.resume(throwing: error)
-                    }
-                }
-            }
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = .fast
+            request.usesLanguageCorrection = false
+            request.recognitionLanguages = languages
+            
+            let handler = VNImageRequestHandler(cgImage: croppedCG, options: [:])
+            try handler.perform([request])
+            
+            let observations = request.results ?? []
+            let text = observations.compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n")
             
             let lines = text.components(separatedBy: .newlines)
             outerLoop: for line in lines.prefix(3) {
