@@ -1,7 +1,8 @@
 import Foundation
 import Combine
 
-class StudyNotesStore: ObservableObject {
+@MainActor
+final class StudyNotesStore: ObservableObject, Sendable {
     static let shared = StudyNotesStore()
     
     @Published var notes: String = ""

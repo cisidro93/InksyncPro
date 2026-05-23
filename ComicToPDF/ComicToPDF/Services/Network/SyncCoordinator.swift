@@ -90,8 +90,8 @@ class SyncCoordinator: ObservableObject {
                 let incomingPage = incomingPDF.metadata.lastReadPage ?? 0
                 let localPage = existing.metadata.lastReadPage ?? 0
                 
-                let incomingLastModified = incomingPDF.lastModified ?? Date(timeIntervalSince1970: 0)
-                let localLastModified = existing.lastModified ?? Date(timeIntervalSince1970: 0)
+                let incomingLastModified = incomingPDF.lastModified
+                let localLastModified = existing.lastModified
                 
                 // Adopt incoming metadata if incoming is newer or page progressed further
                 if incomingLastModified > localLastModified || incomingPage > localPage {

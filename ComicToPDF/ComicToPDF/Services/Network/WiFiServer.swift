@@ -618,15 +618,13 @@ final class WiFiServer: ObservableObject, Sendable {
             let size = context.receivedLength
             let name = context.filename
             let ip = context.remoteIP
-            Task {
-                await WiFiTransferLog.shared.record(
-                    ip: ip,
-                    filename: name,
-                    sizeBytes: size,
-                    direction: .upload,
-                    succeeded: true
-                )
-            }
+            WiFiTransferLog.shared.record(
+                ip: ip,
+                filename: name,
+                sizeBytes: size,
+                direction: .upload,
+                succeeded: true
+            )
 
             self.isUploading = false
             self.uploadProgress = 1.0
@@ -684,9 +682,9 @@ final class WiFiServer: ObservableObject, Sendable {
                 let tempZipURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".zip")
                 defer { try? FileManager.default.removeItem(at: tempZipURL) }
                 
-                var archive: Archive?
+                var archive: ZIPFoundation.Archive?
                 do {
-                    archive = try Archive(url: tempZipURL, accessMode: .create)
+                    archive = try ZIPFoundation.Archive(url: tempZipURL, accessMode: .create)
                 } catch {
                     archive = nil
                 }

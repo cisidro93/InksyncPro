@@ -49,7 +49,7 @@ struct SyncConflictResolutionView: View {
         let id = conflictID(conflict)
 
         switch conflict {
-        case .metadataConflict(let fileID, let local, let remote):
+        case .metadataConflict(let fileID, let local, _):
             VStack(alignment: .leading, spacing: 12) {
                 Text(local.metadata.name)
                     .font(.headline)

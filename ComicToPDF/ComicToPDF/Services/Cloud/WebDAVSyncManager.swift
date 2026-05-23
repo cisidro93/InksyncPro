@@ -4,7 +4,8 @@ import Combine
 /// Handles uploading large converted EPUB/PDF files directly to WebDAV servers
 /// bypassing Amazon's 200MB Send-to-Kindle limit and allowing direct sync to E-Readers
 /// like BOOX, Supernote, and Kobo (via third-party integrations).
-class WebDAVSyncManager: NSObject, ObservableObject, URLSessionTaskDelegate, URLSessionDataDelegate {
+@MainActor
+final class WebDAVSyncManager: NSObject, ObservableObject, URLSessionTaskDelegate, URLSessionDataDelegate, Sendable {
     static let shared = WebDAVSyncManager()
     
     @Published var isSyncing: Bool = false
@@ -31,11 +32,9 @@ class WebDAVSyncManager: NSObject, ObservableObject, URLSessionTaskDelegate, URL
     
     /// Starts a WebDAV PUT request to upload a given file to a target server
     func uploadToWebDAV(fileURL: URL, serverURL: URL, username: String?, password: String?) async throws {
-        Task { @MainActor in
-            self.isSyncing = true
-            self.syncProgress = 0.0
-            self.lastSyncStatus = "Connecting to \(serverURL.host ?? "Server")..."
-        }
+        self.isSyncing = true
+        self.syncProgress = 0.0
+        self.lastSyncStatus = "Connecting to \(serverURL.host ?? "Server")..."
         
         guard FileManager.default.fileExists(atPath: fileURL.path) else {
             throw CloudSyncError.fileNotFound
@@ -87,71 +86,65 @@ class WebDAVSyncManager: NSObject, ObservableObject, URLSessionTaskDelegate, URL
     func urlSession(_ session: URLSession, task: URLSessionTask, didSendBodyData bytesSent: Int64, totalBytesSent: Int64, totalBytesExpectedToSend: Int64) {
         // Track Background Upload Progress Live
         let progress = totalBytesExpectedToSend > 0 ? Double(totalBytesSent) / Double(totalBytesExpectedToSend) : 0
-        DispatchQueue.main.async {
-            self.syncProgress = progress
-        }
+        self.syncProgress = progress
     }
     
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        DispatchQueue.main.async {
-            let taskID = task.taskIdentifier
-            let fileURL = self.taskFiles[taskID]
-            
-            defer {
-                self.activeTasks.removeValue(forKey: taskID)
-                self.taskContinuations.removeValue(forKey: taskID)
-                self.taskFiles.removeValue(forKey: taskID)
-                if self.activeTasks.isEmpty {
-                    self.isSyncing = false
-                }
+        let taskID = task.taskIdentifier
+        let fileURL = self.taskFiles[taskID]
+        
+        defer {
+            self.activeTasks.removeValue(forKey: taskID)
+            self.taskContinuations.removeValue(forKey: taskID)
+            self.taskFiles.removeValue(forKey: taskID)
+            if self.activeTasks.isEmpty {
+                self.isSyncing = false
             }
-            
-            if let error = error {
-                let nsError = error as NSError
-                if nsError.code == NSURLErrorCancelled {
-                    self.lastSyncStatus = "Upload Cancelled"
-                    self.taskContinuations[taskID]?.resume(throwing: CancellationError())
-                } else {
-                    self.lastSyncStatus = "Upload Failed: \(error.localizedDescription)"
-                    self.taskContinuations[taskID]?.resume(throwing: error)
-                }
-                return
-            }
-            
-            if let httpResponse = task.response as? HTTPURLResponse {
-                if (200...299).contains(httpResponse.statusCode) {
-                    self.syncProgress = 1.0
-                    self.lastSyncStatus = fileURL != nil ? "Successfully uploaded \(fileURL!.lastPathComponent)" : "Upload Complete"
-                    self.taskContinuations[taskID]?.resume(returning: ())
-                } else {
-                    self.lastSyncStatus = "Server Error: \(httpResponse.statusCode)"
-                    self.taskContinuations[taskID]?.resume(throwing: CloudSyncError.httpError(statusCode: httpResponse.statusCode))
-                }
+        }
+        
+        if let error = error {
+            let nsError = error as NSError
+            if nsError.code == NSURLErrorCancelled {
+                self.lastSyncStatus = "Upload Cancelled"
+                self.taskContinuations[taskID]?.resume(throwing: CancellationError())
             } else {
-                self.lastSyncStatus = "Server returned an unrecognizable response."
-                self.taskContinuations[taskID]?.resume(throwing: URLError(.badServerResponse))
+                self.lastSyncStatus = "Upload Failed: \(error.localizedDescription)"
+                self.taskContinuations[taskID]?.resume(throwing: error)
             }
+            return
+        }
+        
+        if let httpResponse = task.response as? HTTPURLResponse {
+            if (200...299).contains(httpResponse.statusCode) {
+                self.syncProgress = 1.0
+                self.lastSyncStatus = fileURL != nil ? "Successfully uploaded \(fileURL!.lastPathComponent)" : "Upload Complete"
+                self.taskContinuations[taskID]?.resume(returning: ())
+            } else {
+                self.lastSyncStatus = "Server Error: \(httpResponse.statusCode)"
+                self.taskContinuations[taskID]?.resume(throwing: CloudSyncError.httpError(statusCode: httpResponse.statusCode))
+            }
+        } else {
+            self.lastSyncStatus = "Server returned an unrecognizable response."
+            self.taskContinuations[taskID]?.resume(throwing: URLError(.badServerResponse))
         }
     }
     
     // ✅ Emergency kill switch protecting against background runaway UI states
     func cancelAllSyncs() {
-        Task { @MainActor in
-            for task in activeTasks.values {
-                task.cancel()
-            }
-            activeTasks.removeAll()
-            
-            for cont in taskContinuations.values {
-                cont.resume(throwing: CancellationError())
-            }
-            taskContinuations.removeAll()
-            taskFiles.removeAll()
-            
-            isSyncing = false
-            syncProgress = 0.0
-            lastSyncStatus = "All pending uploads terminated."
+        for task in activeTasks.values {
+            task.cancel()
         }
+        activeTasks.removeAll()
+        
+        for cont in taskContinuations.values {
+            cont.resume(throwing: CancellationError())
+        }
+        taskContinuations.removeAll()
+        taskFiles.removeAll()
+        
+        isSyncing = false
+        syncProgress = 0.0
+        lastSyncStatus = "All pending uploads terminated."
     }
 }
 

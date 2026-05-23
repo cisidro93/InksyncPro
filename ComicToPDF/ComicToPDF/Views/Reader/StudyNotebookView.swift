@@ -945,6 +945,7 @@ struct MarkdownTextEditor: UIViewRepresentable {
         Coordinator(self)
     }
     
+    @MainActor
     class Coordinator: NSObject, UITextViewDelegate, UIGestureRecognizerDelegate {
         var parent: MarkdownTextEditor
         weak var textView: UITextView?
@@ -959,11 +960,13 @@ struct MarkdownTextEditor: UIViewRepresentable {
                 object: nil,
                 queue: .main
             ) { [weak self] notification in
-                guard let self = self,
-                      let textView = self.textView,
-                      let textToInsert = notification.userInfo?["text"] as? String else { return }
-                
-                self.insertText(textToInsert)
+                Task { @MainActor in
+                    guard let self = self,
+                          let textView = self.textView,
+                          let textToInsert = notification.userInfo?["text"] as? String else { return }
+                    
+                    self.insertText(textToInsert)
+                }
             }
         }
         

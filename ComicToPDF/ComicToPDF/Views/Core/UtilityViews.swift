@@ -29,6 +29,7 @@ struct ShareSheet: UIViewControllerRepresentable {
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
+@MainActor
 struct DocumentExporter {
     static func shareFile(url: URL) -> ShareSheet {
         return ShareSheet(activityItems: [url])
