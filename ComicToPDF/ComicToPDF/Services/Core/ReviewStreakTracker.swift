@@ -5,7 +5,7 @@ import Foundation
 // Tracks the user's consecutive daily review streak independently of SwiftData.
 // This is session metadata, not content — keeping it out of the model layer is intentional.
 
-final class ReviewStreakTracker {
+final class ReviewStreakTracker: Sendable {
     static let shared = ReviewStreakTracker()
     private init() {}
 

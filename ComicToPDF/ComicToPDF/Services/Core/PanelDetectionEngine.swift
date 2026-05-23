@@ -35,7 +35,7 @@ protocol PanelProvider {
 class EnsemblePanelDetector {
     private let visionProvider = VisionPanelProvider()
     private let deepScanProvider = DeepScanPanelProvider()
-    private static let sharedContext = CIContext(options: [.useSoftwareRenderer: false])
+    private static nonisolated(unsafe) let sharedContext = CIContext(options: [.useSoftwareRenderer: false])
     
     func detect(in image: UIImage) async -> [PanelCandidate] {
         let context = Self.sharedContext

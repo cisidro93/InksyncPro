@@ -4,6 +4,7 @@ import SwiftUI
 // Centralised singleton so any view can lock/unlock orientation without needing AppDelegate access.
 // Uses UIWindowScene.requestGeometryUpdate introduced in iOS 16.
 
+@MainActor
 final class OrientationLockManager: ObservableObject {
     static let shared = OrientationLockManager()
 
@@ -40,14 +41,13 @@ final class OrientationLockManager: ObservableObject {
             // Orientation change rejected by system — acceptable silent failure
         }
         // Rotate to match if needed — use the modern instance-method API (iOS 16+)
-        DispatchQueue.main.async {
-            scene.keyWindow?.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
-        }
+        scene.keyWindow?.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
     }
 }
 
 // MARK: - Sleep Timer Manager
 
+@MainActor
 final class SleepTimerManager: ObservableObject {
     static let shared = SleepTimerManager()
 
@@ -63,12 +63,14 @@ final class SleepTimerManager: ObservableObject {
         remainingSeconds = minutes * 60
         isActive = true
         didFire = false
-        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            guard let self = self else { return }
-            if self.remainingSeconds > 1 {
-                self.remainingSeconds -= 1
-            } else {
-                self.fire()
+        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                if self.remainingSeconds > 1 {
+                    self.remainingSeconds -= 1
+                } else {
+                    self.fire()
+                }
             }
         }
     }
@@ -82,9 +84,7 @@ final class SleepTimerManager: ObservableObject {
 
     private func fire() {
         stop()
-        DispatchQueue.main.async {
-            self.didFire = true
-        }
+        self.didFire = true
     }
 
     var formattedRemaining: String {

@@ -26,7 +26,7 @@ struct SnapResult {
 
 // MARK: - Snap Engine
 
-class SnapEngine {
+final class SnapEngine: Sendable {
     static let shared = SnapEngine()
     
     // Config

@@ -3,7 +3,7 @@ import UIKit
 import ZIPFoundation
 
 /// Safely manipulates EPUB/CBZ Open Packaging Format (OPF) data to inject Manga metadata, Amazon ASINs, and structural page properties.
-final class MetadataInjector {
+final class MetadataInjector: Sendable {
     static let shared = MetadataInjector()
     private init() {}
     

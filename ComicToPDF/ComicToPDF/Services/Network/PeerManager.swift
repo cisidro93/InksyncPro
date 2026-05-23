@@ -22,6 +22,7 @@ struct PeerNode: Identifiable, Equatable {
 /// Service Discovery Manager for Inksync Pro.
 /// Scans the local network via mDNS (Bonjour) for `_inksync._tcp` services to facilitate seamless peer-to-peer 
 /// LocalSend connections without manual IP entry.
+@MainActor
 class PeerManager: ObservableObject {
     static let shared = PeerManager()
 
@@ -44,17 +45,18 @@ class PeerManager: ObservableObject {
         // Broadcast type for Inksync nodes
         let browser = NWBrowser(for: .bonjour(type: "_inksync._tcp", domain: "local."), using: parameters)
         
-        browser.stateUpdateHandler = { [weak self] state in
-            DispatchQueue.main.async {
+        browser.stateUpdateHandler = { state in
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
                 switch state {
                 case .ready:
-                    self?.isSearching = true
+                    self.isSearching = true
                     Logger.shared.log("PeerManager: Started scanning for _inksync._tcp", category: "Network")
                 case .failed(let error):
-                    self?.isSearching = false
+                    self.isSearching = false
                     Logger.shared.log("PeerManager: Network discovery failed: \(error)", category: "Network", type: .error)
                 case .cancelled:
-                    self?.isSearching = false
+                    self.isSearching = false
                     Logger.shared.log("PeerManager: Network discovery cancelled", category: "Network")
                 default:
                     break
@@ -62,8 +64,11 @@ class PeerManager: ObservableObject {
             }
         }
         
-        browser.browseResultsChangedHandler = { [weak self] results, changes in
-            self?.processBrowseResults(results)
+        browser.browseResultsChangedHandler = { results, changes in
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                self.processBrowseResults(results)
+            }
         }
         
         browser.start(queue: .global(qos: .userInitiated))
@@ -75,10 +80,8 @@ class PeerManager: ObservableObject {
         browser?.cancel()
         browser = nil
         resolvedCache.removeAll()
-        DispatchQueue.main.async {
-            self.isSearching = false
-            self.availablePeers.removeAll()
-        }
+        self.isSearching = false
+        self.availablePeers.removeAll()
     }
     
     /// Maps generic NWBrowser.Result items into concrete PeerNode structures.
@@ -90,24 +93,21 @@ class PeerManager: ObservableObject {
                 // If we already resolved this endpoint, update the peer list without
                 // creating a new NWConnection (avoids connection proliferation on TTL refreshes).
                 if let cachedIP = resolvedCache[endpointKey] {
-                    DispatchQueue.main.async {
-                        let peer = PeerNode(id: UUID(), name: name, ipAddress: cachedIP, port: 8080,
-                                           os: "Unknown", deviceModel: "Unknown", protocolType: "Inksync")
-                        if !self.availablePeers.contains(peer) {
-                            self.availablePeers.append(peer)
-                            self.availablePeers.sort(by: { $0.name < $1.name })
-                        }
+                    let peer = PeerNode(id: UUID(), name: name, ipAddress: cachedIP, port: 8080,
+                                       os: "Unknown", deviceModel: "Unknown", protocolType: "Inksync")
+                    if !self.availablePeers.contains(peer) {
+                        self.availablePeers.append(peer)
+                        self.availablePeers.sort(by: { $0.name < $1.name })
                     }
                     continue
                 }
 
-                resolveIP(from: result.endpoint) { [weak self] resolvedIP in
-                    guard let self = self, let ip = resolvedIP else { return }
-                    self.resolvedCache[endpointKey] = ip
+                Task {
+                    if let ip = await resolveIP(from: result.endpoint) {
+                        self.resolvedCache[endpointKey] = ip
 
-                    let peer = PeerNode(id: UUID(), name: name, ipAddress: ip, port: 8080,
-                                       os: "Unknown", deviceModel: "Unknown", protocolType: "Inksync")
-                    DispatchQueue.main.async {
+                        let peer = PeerNode(id: UUID(), name: name, ipAddress: ip, port: 8080,
+                                           os: "Unknown", deviceModel: "Unknown", protocolType: "Inksync")
                         if !self.availablePeers.contains(peer) {
                             self.availablePeers.append(peer)
                             self.availablePeers.sort(by: { $0.name < $1.name })
@@ -119,43 +119,72 @@ class PeerManager: ObservableObject {
     }
     
     // Natively resolves the endpoint to an IP without requiring unencrypted broadcast text.
-    private func resolveIP(from endpoint: NWEndpoint, completion: @escaping (String?) -> Void) {
-        let connection = NWConnection(to: endpoint, using: .tcp)
-        var hasCompleted = false
-        connection.stateUpdateHandler = { state in
-            guard !hasCompleted else { return }
+    private nonisolated func resolveIP(from endpoint: NWEndpoint) async -> String? {
+        await withCheckedContinuation { continuation in
+            let connection = NWConnection(to: endpoint, using: .tcp)
+            let state = ResolveState(continuation: continuation, connection: connection)
+            connection.stateUpdateHandler = { [weak state] connectionState in
+                state?.handle(connectionState)
+            }
+            connection.start(queue: .global(qos: .userInitiated))
+        }
+    }
+    
+    private final class ResolveState: @unchecked Sendable {
+        private let lock = NSLock()
+        private var hasCompleted = false
+        private var continuation: CheckedContinuation<String?, Never>?
+        private let connection: NWConnection
+        
+        init(continuation: CheckedContinuation<String?, Never>, connection: NWConnection) {
+            self.continuation = continuation
+            self.connection = connection
+        }
+        
+        func handle(_ state: NWConnection.State) {
+            lock.lock()
+            guard !hasCompleted else {
+                lock.unlock()
+                return
+            }
+            
             switch state {
             case .ready:
                 hasCompleted = true
+                let cont = self.continuation
+                self.continuation = nil
+                lock.unlock()
+                
+                var ipAddress: String? = nil
                 if let remote = connection.currentPath?.remoteEndpoint,
                    case .hostPort(let host, _) = remote {
-                    var ipAddress: String? = nil
                     switch host {
                     case .ipv4(let ipv4):
-                        // Convert IPv4Address to String
                         ipAddress = "\(ipv4)".components(separatedBy: "%").first
                     case .ipv6(let ipv6):
-                        // Convert IPv6Address to String
                         ipAddress = "\(ipv6)".components(separatedBy: "%").first
-                    default: break
+                    default:
+                        break
                     }
-                    // Fallback to name-based resolution if native mapping doesn't unwrap purely
                     let finalIP = ipAddress ?? "\(host)".components(separatedBy: "%").first
-                    completion(finalIP)
+                    cont?.resume(returning: finalIP)
                 } else {
-                    completion(nil)
+                    cont?.resume(returning: nil)
                 }
                 connection.cancel()
+                
             case .failed, .cancelled:
-                if !hasCompleted {
-                    hasCompleted = true
-                    completion(nil)
-                }
+                hasCompleted = true
+                let cont = self.continuation
+                self.continuation = nil
+                lock.unlock()
+                cont?.resume(returning: nil)
+                connection.cancel()
+                
             default:
-                break
+                lock.unlock()
             }
         }
-        connection.start(queue: .global(qos: .userInitiated))
     }
     
     // MARK: - Device Reachability (Deep Module UX)

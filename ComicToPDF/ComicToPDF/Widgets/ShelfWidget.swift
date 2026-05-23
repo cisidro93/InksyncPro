@@ -5,8 +5,8 @@ import AppIntents
 
 /// Interactive intent allowing users to clear their shelf directly from the Home Screen
 struct ClearShelfIntent: AppIntent {
-    static var title: LocalizedStringResource = "Clear Shelf"
-    static var description = IntentDescription("Empties the active Inksync global shelf.")
+    static let title: LocalizedStringResource = "Clear Shelf"
+    static let description = IntentDescription("Empties the active Inksync global shelf.")
     
     func perform() async throws -> some IntentResult {
         // In a real SwiftData environment accessed by a WidgetExtension,

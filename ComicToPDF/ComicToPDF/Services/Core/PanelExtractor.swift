@@ -6,7 +6,7 @@ import CoreImage // ✅ Needed for Grayscale Filter
 struct PanelExtractor {
     
     // Global Context for performance (creation is expensive)
-    private static let ciContext = CIContext(options: [.useSoftwareRenderer: false])
+    private static nonisolated(unsafe) let ciContext = CIContext(options: [.useSoftwareRenderer: false])
 
     enum ExtractionMode: String, Codable, Equatable, Hashable {
         case automatic

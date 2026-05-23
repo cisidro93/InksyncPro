@@ -8,7 +8,7 @@ import CryptoKit
 ///   Highlight, Book Title, Book Author, Amazon Book ID,
 ///   Note, Color, Tags, Location Type, Location, Highlighted at, Document tags
 ///
-class ReadwiseImportService {
+final class ReadwiseImportService: Sendable {
     static let shared = ReadwiseImportService()
 
     func importReadwiseCSV(from url: URL, context: ModelContext) async throws -> Int {

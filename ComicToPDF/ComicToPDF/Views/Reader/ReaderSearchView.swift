@@ -146,15 +146,12 @@ struct ReaderSearchView: View {
         currentResultIndex = 0
         fieldFocused = false
 
-        // Capture locally before Task to avoid Swift 6 actor-crossing warning
         let searchQuery = query
-        Task.detached(priority: .userInitiated) {
+        Task {
             let found = document.findString(searchQuery, withOptions: [.caseInsensitive, .diacriticInsensitive])
-            await MainActor.run {
-                self.results = found
-                self.isSearching = false
-                if !found.isEmpty { self.scrollToCurrentResult() }
-            }
+            self.results = found
+            self.isSearching = false
+            if !found.isEmpty { self.scrollToCurrentResult() }
         }
     }
 

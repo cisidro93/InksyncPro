@@ -94,7 +94,7 @@ struct SmartCollectionDetailView: View {
 
     /// Groups a flat PDF list into .series and .single LibraryListItems.
     /// Series membership is determined by metadata.series — no download required.
-    private func groupIntoItems(_ pdfs: [ConvertedPDF]) -> [LibraryListItem] {
+    private nonisolated func groupIntoItems(_ pdfs: [ConvertedPDF]) -> [LibraryListItem] {
         var groups: [String: SeriesGroup] = [:]
         var singles: [ConvertedPDF] = []
         var order: [String: Int] = [:]

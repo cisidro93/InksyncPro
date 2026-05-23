@@ -5,6 +5,7 @@ import Combine
 
 /// Manages secure access to the Private Library "Vault"
 /// Handles Biometric Authentication and App Privacy Blur
+@MainActor
 class SecurityManager: ObservableObject {
     static let shared = SecurityManager()
     
@@ -45,9 +46,7 @@ class SecurityManager: ObservableObject {
             // .deviceOwnerAuthentication natively tries Biometrics first, then automatically falls back to Passcode.
             // This prevents hard crashes on simulators or devices with disabled FaceID.
             try await context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "Unlock your Comic Vault")
-            await MainActor.run {
-                self.isVaultLocked = false
-            }
+            self.isVaultLocked = false
             return true
         } catch {
             Logger.shared.log("Vault Authentication failed: \(error.localizedDescription)", category: "System", type: .error)

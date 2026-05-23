@@ -28,7 +28,7 @@ struct ResolvedEventItem: Identifiable {
     var resolution: ResolutionCategory
 }
 
-class SmartListImporter {
+final class SmartListImporter: Sendable {
     static let shared = SmartListImporter()
     
     /// Parses a standard .cbl XML file and extracts the reading order

@@ -290,8 +290,9 @@ struct ReaderView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("Reader_ShareCurrentPage"))) { note in
                 if let idx = note.userInfo?["pageIndex"] as? Int, idx < pages.count {
+                    let pageURL = pages[idx]
                     Task.detached(priority: .userInitiated) {
-                        if let data = try? Data(contentsOf: pages[idx]),
+                        if let data = try? Data(contentsOf: pageURL),
                            let img  = UIImage(data: data) {
                             await MainActor.run { shareImage = img; showShareSheet = true }
                         }
@@ -583,12 +584,14 @@ struct ReaderView: View {
             let pageIdx = currentPageIndex
             let docURL = fileURL
             Task { @MainActor in
-                let doc = await Task.detached(priority: .userInitiated) {
-                    PDFDocument(url: docURL)
-                }.value
-                if let doc, let page = doc.page(at: pageIdx) {
+                let img = await Task.detached(priority: .userInitiated) { () -> UIImage? in
+                    guard let doc = PDFDocument(url: docURL),
+                          let page = doc.page(at: pageIdx) else { return nil }
                     let size = CGSize(width: 1024, height: 1408)
-                    self.shareImage = page.thumbnail(of: size, for: .mediaBox)
+                    return page.thumbnail(of: size, for: .mediaBox)
+                }.value
+                if let img {
+                    self.shareImage = img
                     self.showShareSheet = true
                     Logger.shared.log("PDF page \(pageIdx + 1) rendered for share", category: "ReaderView", type: .success)
                 } else {
@@ -1618,14 +1621,17 @@ class VolumeObserverController: UIViewController {
         try? audioSession.setActive(true)
         baseVolume = audioSession.outputVolume
         
-        observation = audioSession.observe(\.outputVolume, options: [.new]) { [weak self] session, change in
-            guard let self = self, let newVolume = change.newValue else { return }
-            if newVolume > self.baseVolume || newVolume == 1.0 {
-                self.onUp()
-            } else if newVolume < self.baseVolume || newVolume == 0.0 {
-                self.onDown()
+        observation = audioSession.observe(\.outputVolume, options: [.new]) { _, change in
+            guard let newVolume = change.newValue else { return }
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                if newVolume > self.baseVolume || newVolume == 1.0 {
+                    self.onUp()
+                } else if newVolume < self.baseVolume || newVolume == 0.0 {
+                    self.onDown()
+                }
+                self.baseVolume = newVolume
             }
-            self.baseVolume = newVolume
         }
     }
     

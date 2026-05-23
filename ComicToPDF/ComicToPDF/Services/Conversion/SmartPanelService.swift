@@ -4,7 +4,7 @@ import UIKit
 
 // NOTE: I/O runs on the caller's context (typically a Task).
 // Only UI status string updates are dispatched to @MainActor.
-class SmartPanelService {
+final class SmartPanelService: Sendable {
     static let shared = SmartPanelService()
     
     // Internal Sidecar Model
