@@ -140,7 +140,7 @@ enum EBookTheme: String, CaseIterable, Identifiable {
     case night     = "Night"
     case custom    = "Custom"
 
-    var id: String { rawValue }
+    nonisolated var id: String { rawValue }
 
     var displayName: String { rawValue }
 
