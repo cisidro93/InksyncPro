@@ -59,6 +59,7 @@ class PhysicalFileSystemRouter {
         // ✅ PERF: Resolve cover URL on MainActor *once*, before the background task.
         // Avoids an implicit actor-hop back to MainActor per cell during scroll.
         let coverURL = getCoverURL(for: pdf)
+        let coverImageData = pdf.coverImageData
         return await Task.detached(priority: .userInitiated) { () -> UIImage? in
             // 1. Check ultra-fast Daemon cache first
             if let daemonCached = await ThumbnailDaemon.shared.getCachedThumbnail(for: pdf.id) {
@@ -66,17 +67,27 @@ class PhysicalFileSystemRouter {
                 return daemonCached
             }
             
-            // 2. Check standard Covers directory
-            guard let url = coverURL,
-                  FileManager.default.fileExists(atPath: url.path),
-                  let data = try? Data(contentsOf: url, options: .mappedIfSafe),
-                  let image = UIImage(data: data) else {
-                if let data = pdf.coverImageData, let image = UIImage(data: data) { return image }
-                return nil
+            // 2. Check standard Covers directory using high-performance downsampled ImageIO path
+            if let url = coverURL, FileManager.default.fileExists(atPath: url.path) {
+                let srcOpts = [kCGImageSourceShouldCache: false] as CFDictionary
+                if let source = CGImageSourceCreateWithURL(url as CFURL, srcOpts) {
+                    let downsampleOpts = [
+                        kCGImageSourceCreateThumbnailFromImageAlways: true,
+                        kCGImageSourceShouldCacheImmediately: true,
+                        kCGImageSourceCreateThumbnailWithTransform: true,
+                        kCGImageSourceThumbnailMaxPixelSize: 360
+                    ] as CFDictionary
+                    
+                    if let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, downsampleOpts) {
+                        let thumbnail = UIImage(cgImage: cg)
+                        await MainActor.run { manager.thumbnailCache.setObject(thumbnail, forKey: keyStr as NSString) }
+                        return thumbnail
+                    }
+                }
             }
-            let thumbnail = image.preparingThumbnail(of: CGSize(width: 240, height: 360)) ?? image
-            await MainActor.run { manager.thumbnailCache.setObject(thumbnail, forKey: keyStr as NSString) }
-            return thumbnail
+            
+            if let data = coverImageData, let image = UIImage(data: data) { return image }
+            return nil
         }.value
     }
     
@@ -301,9 +312,14 @@ class PhysicalFileSystemRouter {
     func getThumbnail(for pdf: ConvertedPDF, manager: ConversionManager) -> UIImage? {
         let keyStr = pdf.id.uuidString
         if let cached = manager.thumbnailCache.object(forKey: keyStr as NSString) { return cached }
+        
+        // Resolve URL and image data on MainActor to prevent background hopping
+        let coverURL = getCoverURL(for: pdf)
+        let coverImageData = pdf.coverImageData
+        
         Task.detached(priority: .userInitiated) {
             var generatedImage: UIImage? = nil
-            if let coverURL = await self.getCoverURL(for: pdf) {
+            if let coverURL = coverURL {
                 let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
                 if let source = CGImageSourceCreateWithURL(coverURL as CFURL, sourceOptions) {
                     let downsampleOptions = [
@@ -317,6 +333,8 @@ class PhysicalFileSystemRouter {
                         generatedImage = UIImage(cgImage: cgImage)
                     }
                 }
+            } else if let data = coverImageData {
+                generatedImage = UIImage(data: data)
             }
             
             if let image = generatedImage {
@@ -325,7 +343,11 @@ class PhysicalFileSystemRouter {
                     manager.objectWillChange.send()
                 }
             } else {
-                await self.generateCoverThumbnail(for: pdf, manager: manager)
+                await MainActor.run {
+                    Task {
+                        await self.generateCoverThumbnail(for: pdf, manager: manager)
+                    }
+                }
             }
         }
         return nil
