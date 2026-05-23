@@ -16,7 +16,7 @@ class TaskEngine: ObservableObject {
     private var progressSubscription: AnyCancellable?
     
     init() {
-        progressSubscription = ConversionEngine.shared.progressSubject
+        progressSubscription = ConversionEngine.shared.progressSubject.subject
             .receive(on: DispatchQueue.main)
             .sink { [weak self] event in
                 self?.handleEngineEvent(event)

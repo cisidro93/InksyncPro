@@ -1,19 +1,30 @@
 import Foundation
 import SwiftUI
 
-final class ConversionOrchestrator {
+final class ConversionOrchestrator: Sendable {
     static let shared = ConversionOrchestrator()
     private init() {}
     
     func convertComic(_ pdf: ConvertedPDF, mangaMode: Bool? = nil, manager: ConversionManager) async {
         #if os(iOS)
-        var bgTask: UIBackgroundTaskIdentifier = .invalid
-        bgTask = UIApplication.shared.beginBackgroundTask { 
-            UIApplication.shared.endBackgroundTask(bgTask)
-            bgTask = .invalid
+        let bgTask = await MainActor.run {
+            var task = UIBackgroundTaskIdentifier.invalid
+            task = UIApplication.shared.beginBackgroundTask {
+                Task { @MainActor in
+                    if task != .invalid {
+                        UIApplication.shared.endBackgroundTask(task)
+                    }
+                }
+            }
+            return task
         }
-        defer { 
-            if bgTask != .invalid { UIApplication.shared.endBackgroundTask(bgTask) }
+        defer {
+            let task = bgTask
+            Task { @MainActor in
+                if task != .invalid {
+                    UIApplication.shared.endBackgroundTask(task)
+                }
+            }
         }
         #endif
         
@@ -120,13 +131,24 @@ final class ConversionOrchestrator {
         guard !pdfs.isEmpty else { return }
         
         #if os(iOS)
-        var bgTask: UIBackgroundTaskIdentifier = .invalid
-        bgTask = UIApplication.shared.beginBackgroundTask { 
-            UIApplication.shared.endBackgroundTask(bgTask)
-            bgTask = .invalid
+        let bgTask = await MainActor.run {
+            var task = UIBackgroundTaskIdentifier.invalid
+            task = UIApplication.shared.beginBackgroundTask {
+                Task { @MainActor in
+                    if task != .invalid {
+                        UIApplication.shared.endBackgroundTask(task)
+                    }
+                }
+            }
+            return task
         }
-        defer { 
-            if bgTask != .invalid { UIApplication.shared.endBackgroundTask(bgTask) }
+        defer {
+            let task = bgTask
+            Task { @MainActor in
+                if task != .invalid {
+                    UIApplication.shared.endBackgroundTask(task)
+                }
+            }
         }
         #endif
         
@@ -230,13 +252,24 @@ final class ConversionOrchestrator {
         guard !sourceFiles.isEmpty else { return [] }
         
         #if os(iOS)
-        var bgTask: UIBackgroundTaskIdentifier = .invalid
-        bgTask = UIApplication.shared.beginBackgroundTask { 
-            UIApplication.shared.endBackgroundTask(bgTask)
-            bgTask = .invalid
+        let bgTask = await MainActor.run {
+            var task = UIBackgroundTaskIdentifier.invalid
+            task = UIApplication.shared.beginBackgroundTask {
+                Task { @MainActor in
+                    if task != .invalid {
+                        UIApplication.shared.endBackgroundTask(task)
+                    }
+                }
+            }
+            return task
         }
-        defer { 
-            if bgTask != .invalid { UIApplication.shared.endBackgroundTask(bgTask) }
+        defer {
+            let task = bgTask
+            Task { @MainActor in
+                if task != .invalid {
+                    UIApplication.shared.endBackgroundTask(task)
+                }
+            }
         }
         #endif
         

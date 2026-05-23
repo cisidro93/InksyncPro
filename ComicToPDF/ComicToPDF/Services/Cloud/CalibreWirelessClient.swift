@@ -138,7 +138,7 @@ actor CalibreWirelessClient {
     /// Reads one length-prefixed JSON packet from the TCP connection.
     /// Returns (opcode integer, payload dictionary).
     private func receivePacket() async throws -> (Int, [String: Any]) {
-        guard let connection else { throw CalibreError.notConnected }
+        guard connection != nil else { throw CalibreError.notConnected }
 
         // Read 4-byte big-endian length prefix
         let lengthData = try await receive(exactly: 4)
@@ -157,7 +157,7 @@ actor CalibreWirelessClient {
 
     /// Sends a length-prefixed JSON packet.
     private func sendPacket(_ dict: [String: Any]) async throws {
-        guard let connection else { throw CalibreError.notConnected }
+        guard connection != nil else { throw CalibreError.notConnected }
         let data = try JSONSerialization.data(withJSONObject: dict)
         var length = UInt32(data.count).bigEndian
         var packet = Data(bytes: &length, count: 4)
@@ -309,7 +309,7 @@ actor CalibreWirelessClient {
     /// Receives a book file from Calibre.
     /// Packet: JSON metadata { "lpath", "length", "metadata": {...} } followed by `length` raw bytes.
     private func handleSendBook(_ payload: [String: Any]) async throws {
-        guard let connection else { throw CalibreError.notConnected }
+        guard connection != nil else { throw CalibreError.notConnected }
 
         let title = (payload["metadata"] as? [String: Any])?["title"] as? String ?? "Unknown"
         let fileLength = payload["length"] as? Int ?? 0

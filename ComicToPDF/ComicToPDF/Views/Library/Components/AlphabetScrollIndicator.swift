@@ -147,6 +147,7 @@ enum LibraryPillKey: String, CaseIterable, Identifiable {
 
 /// Stores which pill buttons are enabled using AppStorage.
 /// Default: all enabled (matches current behaviour).
+@MainActor
 final class LibraryPillConfig: ObservableObject {
     static let shared = LibraryPillConfig()
 

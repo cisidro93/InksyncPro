@@ -4,6 +4,7 @@ import os
 
 /// Manages background downloading of cloud files directly into the local InksyncVault.
 /// Supports both Dropbox (unauthenticated temporary links) and Google Drive (Bearer token required).
+@MainActor
 class CloudDownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
     static let shared = CloudDownloadManager()
 
@@ -164,7 +165,7 @@ class CloudDownloadManager: NSObject, ObservableObject, URLSessionDownloadDelega
         }
 
         defer {
-            activeStreams.withLock { streams in
+            _ = activeStreams.withLock { streams in
                 streams.removeValue(forKey: remoteID)
             }
         }
@@ -175,7 +176,7 @@ class CloudDownloadManager: NSObject, ObservableObject, URLSessionDownloadDelega
     /// Removes a remoteID from the temp-file cache.
     /// Call this after manually deleting the cached file to prevent stale path returns.
     func evictCache(for remoteID: String) {
-        tempFileCache.withLock { cache in
+        _ = tempFileCache.withLock { cache in
             cache.removeValue(forKey: remoteID)
         }
         Logger.shared.log("CloudDownloadManager: Cache evicted for \(remoteID.prefix(8))…", category: "Cloud")
@@ -306,7 +307,7 @@ class CloudDownloadManager: NSObject, ObservableObject, URLSessionDownloadDelega
 
         // ── Step 5: Store in cache and clean up progress ──────────────────────────
         let expiry = Date().addingTimeInterval(cacheHoursLimit * 3600)
-        tempFileCache.withLock { cache in
+        _ = tempFileCache.withLock { cache in
             cache[remoteID] = CacheEntry(url: finalTemp, expires: expiry)
         }
         _ = await MainActor.run { self.streamProgress.removeValue(forKey: remoteID) }
@@ -337,7 +338,7 @@ class CloudDownloadManager: NSObject, ObservableObject, URLSessionDownloadDelega
 
     // MARK: - URLSessionDownloadDelegate (kept for progress tracking only)
 
-    func urlSession(
+    nonisolated func urlSession(
         _ session: URLSession,
         downloadTask: URLSessionDownloadTask,
         didWriteData bytesWritten: Int64,
@@ -352,12 +353,12 @@ class CloudDownloadManager: NSObject, ObservableObject, URLSessionDownloadDelega
         }
     }
 
-    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
+    nonisolated func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
         // No-op: download-to-vault is now handled by downloadAndStore()
-        downloadTaskMeta.withLock { _ = $0.removeValue(forKey: downloadTask) }
+        _ = downloadTaskMeta.withLock { _ = $0.removeValue(forKey: downloadTask) }
     }
 
-    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+    nonisolated func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         guard let error = error,
               let downloadTask = task as? URLSessionDownloadTask else { return }
               

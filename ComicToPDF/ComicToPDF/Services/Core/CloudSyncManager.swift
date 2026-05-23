@@ -4,6 +4,7 @@ import BackgroundTasks
 import UIKit
 
 /// Manages intelligent background synchronization for the "Inbox" folder in iCloud Drive.
+@MainActor
 class CloudSyncManager: ObservableObject {
     static let shared = CloudSyncManager()
     

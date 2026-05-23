@@ -22,12 +22,12 @@ struct ConversionJob: Codable, Identifiable {
 }
 
 /// A thread-safe, persistent queue for tracking Cloud-to-Kindle conversions across app launches.
+@MainActor
 class ConversionJobQueue: ObservableObject {
     static let shared = ConversionJobQueue()
     
     @Published private(set) var jobs: [ConversionJob] = []
     private let queueURL: URL
-    private let queueQueue = DispatchQueue(label: "com.antigravity.InksyncPro.ConversionJobQueue")
     
     private init() {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -49,72 +49,69 @@ class ConversionJobQueue: ObservableObject {
             status: .waitingForDownload
         )
         Logger.shared.log("ConversionJobQueue: enqueued job for '\(targetFileName)' (pdfID=\(pdfID), merge=\(isMerge))", category: "ConversionQueue", type: .info)
-        queueQueue.async {
-            var currentJobs = self.jobs
-            currentJobs.append(job)
-            self.saveJobs(currentJobs)
+        
+        self.jobs.append(job)
+        let currentJobs = self.jobs
+        let url = queueURL
+        Task.detached(priority: .background) {
+            Self.saveJobs(currentJobs, to: url)
         }
     }
     
     func updateJobStatus(pdfID: UUID, newStatus: ConversionJob.JobStatus) {
-        queueQueue.async {
-            var currentJobs = self.jobs
-            if let index = currentJobs.firstIndex(where: { $0.pdfID == pdfID }) {
-                let oldStatus = currentJobs[index].status
-                currentJobs[index].status = newStatus
-                self.saveJobs(currentJobs)
-                Logger.shared.log("ConversionJobQueue: status \(oldStatus.rawValue) → \(newStatus.rawValue) for pdfID=\(pdfID)", category: "ConversionQueue", type: .info)
-            } else {
-                Logger.shared.log("ConversionJobQueue: updateJobStatus — no job found for pdfID=\(pdfID)", category: "ConversionQueue", type: .warning)
+        if let index = jobs.firstIndex(where: { $0.pdfID == pdfID }) {
+            let oldStatus = jobs[index].status
+            jobs[index].status = newStatus
+            let currentJobs = jobs
+            let url = queueURL
+            Task.detached(priority: .background) {
+                Self.saveJobs(currentJobs, to: url)
             }
+            Logger.shared.log("ConversionJobQueue: status \(oldStatus.rawValue) → \(newStatus.rawValue) for pdfID=\(pdfID)", category: "ConversionQueue", type: .info)
+        } else {
+            Logger.shared.log("ConversionJobQueue: updateJobStatus — no job found for pdfID=\(pdfID)", category: "ConversionQueue", type: .warning)
         }
     }
     
     func removeJob(pdfID: UUID) {
         Logger.shared.log("ConversionJobQueue: removing job for pdfID=\(pdfID)", category: "ConversionQueue", type: .info)
-        queueQueue.async {
-            var currentJobs = self.jobs
-            currentJobs.removeAll(where: { $0.pdfID == pdfID })
-            self.saveJobs(currentJobs)
+        jobs.removeAll(where: { $0.pdfID == pdfID })
+        let currentJobs = jobs
+        let url = queueURL
+        Task.detached(priority: .background) {
+            Self.saveJobs(currentJobs, to: url)
         }
     }
     
     func getJob(for pdfID: UUID) -> ConversionJob? {
-        return queueQueue.sync {
-            return self.jobs.first(where: { $0.pdfID == pdfID })
-        }
+        return self.jobs.first(where: { $0.pdfID == pdfID })
     }
     
     func getJobByTargetFileName(_ name: String) -> ConversionJob? {
-        return queueQueue.sync {
-            return self.jobs.first(where: { $0.targetFileName == name })
-        }
+        return self.jobs.first(where: { $0.targetFileName == name })
     }
     
     // MARK: - Persistence
     
     private func loadJobs() {
-        queueQueue.sync {
-            guard let data = try? Data(contentsOf: queueURL),
-                  let loadedJobs = try? JSONDecoder().decode([ConversionJob].self, from: data) else {
-                Logger.shared.log("ConversionJobQueue: no persisted queue found (fresh start)", category: "ConversionQueue", type: .info)
-                return
-            }
-            Logger.shared.log("ConversionJobQueue: loaded \(loadedJobs.count) persisted job(s)", category: "ConversionQueue", type: .success)
-            DispatchQueue.main.async { self.jobs = loadedJobs }
+        guard let data = try? Data(contentsOf: queueURL),
+              let loadedJobs = try? JSONDecoder().decode([ConversionJob].self, from: data) else {
+            Logger.shared.log("ConversionJobQueue: no persisted queue found (fresh start)", category: "ConversionQueue", type: .info)
+            return
         }
+        Logger.shared.log("ConversionJobQueue: loaded \(loadedJobs.count) persisted job(s)", category: "ConversionQueue", type: .success)
+        self.jobs = loadedJobs
     }
     
-    private func saveJobs(_ newJobs: [ConversionJob]) {
+    private static func saveJobs(_ newJobs: [ConversionJob], to url: URL) {
         if let data = try? JSONEncoder().encode(newJobs) {
             do {
-                try data.write(to: queueURL, options: .atomic)
+                try data.write(to: url, options: .atomic)
             } catch {
                 Logger.shared.log("ConversionJobQueue: saveJobs FAILED: \(error.localizedDescription)", category: "ConversionQueue", type: .error)
             }
         } else {
             Logger.shared.log("ConversionJobQueue: JSON encoding of jobs failed", category: "ConversionQueue", type: .error)
         }
-        DispatchQueue.main.async { self.jobs = newJobs }
     }
 }

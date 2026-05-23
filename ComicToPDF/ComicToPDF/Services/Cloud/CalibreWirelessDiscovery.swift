@@ -27,6 +27,7 @@ struct CalibreHost: Identifiable, Hashable {
 ///
 /// Results are de-duplicated and published as `discovered: [CalibreHost]`.
 @Observable
+@MainActor
 final class CalibreWirelessDiscovery {
 
     static let shared = CalibreWirelessDiscovery()
@@ -46,7 +47,7 @@ final class CalibreWirelessDiscovery {
     private var udpListeners: [NWListener] = []
     private var udpConnections: [NWConnection] = []
 
-    private let queue = DispatchQueue(label: "com.inksynpro.calibre.discovery", qos: .utility)
+    nonisolated private let queue = DispatchQueue(label: "com.inksynpro.calibre.discovery", qos: .utility)
 
     // MARK: - Public API
 
@@ -90,7 +91,9 @@ final class CalibreWirelessDiscovery {
         browser.browseResultsChangedHandler = { [weak self] results, _ in
             for result in results {
                 if case .service(let name, _, let domain, _) = result.endpoint {
-                    self?.resolveBonjour(name: name, domain: domain)
+                    Task { @MainActor [weak self] in
+                        self?.resolveBonjour(name: name, domain: domain)
+                    }
                 }
             }
         }
@@ -110,12 +113,14 @@ final class CalibreWirelessDiscovery {
                    case .hostPort(let host, let port) = inner {
                     let hostname = "\(host)"
                     let devicePort = port.rawValue
-                    self?.addHost(CalibreHost(
-                        id: "\(hostname):\(devicePort)",
-                        hostname: hostname,
-                        devicePort: devicePort,
-                        contentPort: 8080   // default; will be refined by UDP response
-                    ))
+                    Task { @MainActor [weak self] in
+                        self?.addHost(CalibreHost(
+                            id: "\(hostname):\(devicePort)",
+                            hostname: hostname,
+                            devicePort: devicePort,
+                            contentPort: 8080   // default; will be refined by UDP response
+                        ))
+                    }
                 }
                 connection.cancel()
             }
@@ -150,7 +155,7 @@ final class CalibreWirelessDiscovery {
         )
         udpConnections.append(conn)
 
-        conn.stateUpdateHandler = { [weak self] state in
+        conn.stateUpdateHandler = { state in
             if case .ready = state {
                 // Send a short probe payload (empty is fine for Calibre)
                 let probe = "InksyncPro".data(using: .utf8)!
@@ -160,7 +165,9 @@ final class CalibreWirelessDiscovery {
 
         conn.receiveMessage { [weak self] data, _, _, _ in
             guard let data, let response = String(data: data, encoding: .utf8) else { return }
-            self?.parseBroadcastResponse(response)
+            Task { @MainActor [weak self] in
+                self?.parseBroadcastResponse(response)
+            }
         }
 
         conn.start(queue: queue)
@@ -174,12 +181,15 @@ final class CalibreWirelessDiscovery {
         guard let listener = try? NWListener(using: params, on: nwPort) else { return }
         udpListeners.append(listener)
 
+        let q = self.queue
         listener.newConnectionHandler = { [weak self] conn in
             conn.receiveMessage { data, _, _, _ in
                 guard let data, let response = String(data: data, encoding: .utf8) else { return }
-                self?.parseBroadcastResponse(response)
+                Task { @MainActor [weak self] in
+                    self?.parseBroadcastResponse(response)
+                }
             }
-            conn.start(queue: self?.queue ?? .main)
+            conn.start(queue: q)
         }
 
         listener.start(queue: queue)

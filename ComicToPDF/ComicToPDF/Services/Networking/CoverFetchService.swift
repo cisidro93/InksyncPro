@@ -17,7 +17,7 @@ struct FetchedCover: Identifiable, Hashable {
     }
 }
 
-class CoverFetchService {
+final class CoverFetchService: Sendable {
     static let shared = CoverFetchService()
     
     private init() {}

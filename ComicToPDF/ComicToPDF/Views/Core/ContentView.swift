@@ -211,8 +211,6 @@ struct ContentView: View {
             return ""
         }()
 
-        let icon = isConverting ? "arrow.triangle.2.circlepath" : "arrow.down.circle"
-
         if isActive {
             VStack(alignment: .leading, spacing: 10) {
                 // Header row

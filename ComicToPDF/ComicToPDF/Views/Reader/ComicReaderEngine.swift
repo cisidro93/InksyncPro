@@ -213,7 +213,7 @@ class ComicImageCache: ObservableObject {
         Task.detached(priority: .userInitiated) { [weak self] in
             guard let self = self else { return }
             // Capture archive state needed on background context
-            let img = self.extractOrRenderImage(at: index)
+            let img = await self.extractOrRenderImage(at: index)
             if let img {
                 self.cache.setObject(img, forKey: NSNumber(value: index))
                 await MainActor.run { [weak self] in
@@ -248,12 +248,12 @@ class ComicImageCache: ObservableObject {
         Task { @MainActor [weak self] in self?.updateLRUOnMain(index) }
     }
     
-    private func extractOrRenderImage(at index: Int) -> UIImage? {
+    private func extractOrRenderImage(at index: Int) async -> UIImage? {
         if isPDF {
             guard let page = pdfDocument?.page(at: index) else { return nil }
             let pageRect = page.bounds(for: .mediaBox)
             // Retina scale × 1.5
-            let scale = UIScreen.main.scale * 1.5
+            let scale = await MainActor.run { UIScreen.main.scale } * 1.5
             let size = CGSize(width: pageRect.width * scale, height: pageRect.height * scale)
             
             UIGraphicsBeginImageContextWithOptions(size, false, 1.0)
@@ -289,7 +289,10 @@ class ComicImageCache: ObservableObject {
                     return UIImage(data: data) // Fallback
                 }
                 
-                let maxPixelSize = max(UIScreen.main.bounds.width, UIScreen.main.bounds.height) * UIScreen.main.scale
+                let (bounds, scale) = await MainActor.run {
+                    (UIScreen.main.bounds, UIScreen.main.scale)
+                }
+                let maxPixelSize = max(bounds.width, bounds.height) * scale
                 let downsampleOptions: [CFString: Any] = [
                     kCGImageSourceCreateThumbnailFromImageAlways: true,
                     kCGImageSourceShouldCacheImmediately: true,
@@ -332,7 +335,8 @@ class ComicImageCache: ObservableObject {
             guard let self else { return }
             do {
                 let data = try await ZipCentralDirectory.fetchEntryData(entry: entry, manifest: manifest)
-                guard let image = Self.decodeImageData(data, maxPixelSize: Self.targetMaxPixelSize()) else {
+                let maxPixelSize = await Self.targetMaxPixelSize()
+                guard let image = Self.decodeImageData(data, maxPixelSize: maxPixelSize) else {
                     await MainActor.run { [weak self] in self?.fetchingQueue.remove(index) }
                     return
                 }
@@ -370,8 +374,10 @@ class ComicImageCache: ObservableObject {
         return UIImage(cgImage: cgImage)
     }
 
-    private static func targetMaxPixelSize() -> CGFloat {
-        max(UIScreen.main.bounds.width, UIScreen.main.bounds.height) * UIScreen.main.scale
+    private static func targetMaxPixelSize() async -> CGFloat {
+        await MainActor.run {
+            max(UIScreen.main.bounds.width, UIScreen.main.bounds.height) * UIScreen.main.scale
+        }
     }
 }
 

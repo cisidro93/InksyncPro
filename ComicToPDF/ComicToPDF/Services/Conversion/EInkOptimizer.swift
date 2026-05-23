@@ -374,7 +374,6 @@ class EInkOptimizer {
                 if found { break }
             }
         }
-        }
         
         if minX > maxX || minX == width || maxX == -1 {
             return cgImage

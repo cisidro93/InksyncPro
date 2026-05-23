@@ -1,10 +1,10 @@
 import Foundation
 import UIKit
-import Vision
+@preconcurrency import Vision
 
 /// Detects chapter boundaries by scanning the top of each page using Apple Vision directly.
 /// No OCR dependency — uses VNRecognizeTextRequest inline for zero-overhead detection.
-class ChapterDetector {
+final class ChapterDetector: Sendable {
     
     static let shared = ChapterDetector()
     

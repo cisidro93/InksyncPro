@@ -22,10 +22,9 @@ struct CBTExtractor {
     /// Extracts a CBT archive to a temporary directory.
     /// - Returns: (workingDir, sorted image URLs) — same contract as ZipUtilities.extractComic
     static func extract(from sourceURL: URL) async throws -> (workingDir: URL, imageURLs: [URL]) {
-        let fileManager = FileManager.default
-
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
+                let fm = FileManager.default
                 do {
                     let secured = sourceURL.startAccessingSecurityScopedResource()
                     defer { if secured { sourceURL.stopAccessingSecurityScopedResource() } }
@@ -37,9 +36,9 @@ struct CBTExtractor {
 
                     let stem = sourceURL.deletingPathExtension().lastPathComponent
                     let uniqueID = UUID().uuidString.prefix(8)
-                    let tempDir = fileManager.temporaryDirectory
+                    let tempDir = fm.temporaryDirectory
                         .appendingPathComponent("cbt_\(stem)_\(uniqueID)")
-                    try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
+                    try fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
 
                     let imageURLs = try parseTAR(data: archiveData, into: tempDir)
 

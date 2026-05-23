@@ -33,7 +33,7 @@ struct ComicVineImage: Codable {
     let original_url: String?
 }
 
-class ComicVineService {
+actor ComicVineService {
     static let shared = ComicVineService()
     
     // Rate Limiting: 1 request per second

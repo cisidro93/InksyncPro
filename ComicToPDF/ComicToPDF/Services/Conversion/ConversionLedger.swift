@@ -10,10 +10,10 @@ actor ConversionLedger {
 
     private var jobs: [UUID: ConversionJobRecord] = [:]
     private let persistURL: URL
-    private let batchCompletionSubject = PassthroughSubject<UUID, Never>()
+    nonisolated let batchCompletionSubject = SendableSubject<UUID>()
 
     nonisolated var batchCompletionPublisher: AnyPublisher<UUID, Never> {
-        batchCompletionSubject.eraseToAnyPublisher()
+        batchCompletionSubject.subject.eraseToAnyPublisher()
     }
 
     private init() {

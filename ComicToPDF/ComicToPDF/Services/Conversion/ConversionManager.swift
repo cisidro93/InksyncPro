@@ -130,7 +130,7 @@ class ConversionManager: ObservableObject {
             forName: .cloudCoverReady,
             object: nil,
             queue: .main
-        ) { [weak self] notification in
+        ) { @MainActor [weak self] notification in
             guard let self,
                   let pdfID = notification.userInfo?["pdfID"] as? UUID,
                   let image  = notification.userInfo?["image"]  as? UIImage else { return }

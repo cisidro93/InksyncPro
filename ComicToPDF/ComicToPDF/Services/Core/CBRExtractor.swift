@@ -43,25 +43,28 @@ struct CBRExtractor {
         } else {
             localSourceURL = sourceURL
         }
+        
+        let finalTempDownloadURL = tempDownloadURL
 
         // ── Phase 2: Sync RAR extraction on a background thread ────────────────
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
+                let fm = FileManager.default
                 do {
                     // Security-scoped access (only applies to local sandbox-scoped URLs)
                     let secured = localSourceURL.startAccessingSecurityScopedResource()
                     defer {
                         if secured { localSourceURL.stopAccessingSecurityScopedResource() }
                         // Clean up the temporary downloaded file after extraction
-                        if let tmp = tempDownloadURL { try? fileManager.removeItem(at: tmp) }
+                        if let tmp = finalTempDownloadURL { try? fm.removeItem(at: tmp) }
                     }
 
                     // Create extraction destination
                     let stem = sourceURL.deletingPathExtension().lastPathComponent
                     let uniqueID = UUID().uuidString.prefix(8)
-                    let tempDir = fileManager.temporaryDirectory
+                    let tempDir = fm.temporaryDirectory
                         .appendingPathComponent("cbr_\(stem)_\(uniqueID)")
-                    try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
+                    try fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
 
                     // Open archive — Unrar.Archive disambiguates from ZIPFoundation.Archive
                     let archive = try Unrar.Archive(fileURL: localSourceURL)

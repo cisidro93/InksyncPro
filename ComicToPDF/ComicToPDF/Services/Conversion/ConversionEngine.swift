@@ -10,6 +10,14 @@ enum ConversionProgressEvent {
     case failed(file: URL, error: Error)
 }
 
+/// Thread-safe wrapper for PassthroughSubject to allow Sendable conformance across actor boundaries
+final class SendableSubject<Output>: @unchecked Sendable {
+    let subject = PassthroughSubject<Output, Never>()
+    func send(_ value: Output) {
+        subject.send(value)
+    }
+}
+
 /// Secure Processing Core: High-performance file conversion engine
 /// Uses Swift Concurrency (Actors) for thread safety and performance
 actor ConversionEngine {
@@ -17,7 +25,7 @@ actor ConversionEngine {
     
     // Broadcast progress to listeners (likely the ViewModel/Manager)
     // Using PassthroughSubject so we can easily pump events to the UI
-    nonisolated let progressSubject = PassthroughSubject<ConversionProgressEvent, Never>()
+    nonisolated let progressSubject = SendableSubject<ConversionProgressEvent>()
     
     private init() {}
     
