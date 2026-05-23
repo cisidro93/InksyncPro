@@ -352,11 +352,12 @@ class EInkOptimizer {
                     if rawData[y * bytesPerRow + x] < threshold {
                         found = true
                         break
+                    }
                 }
-            }
-            if found {
-                foundRightCol = x
-                break
+                if found {
+                    foundRightCol = x
+                    break
+                }
             }
         }
         if foundRightCol != -1 {
