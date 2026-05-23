@@ -5,14 +5,15 @@ import Combine
 // Maximum 200 events. IP addresses are masked to the first 3 octets (e.g. 192.168.1.xxx).
 // Combine publisher notifies observers on new events.
 
-actor WiFiTransferLog {
+@MainActor
+class WiFiTransferLog: ObservableObject {
     static let shared = WiFiTransferLog()
 
     private let maxEvents = 200
     private var events: [TransferEvent] = []
     private let subject = PassthroughSubject<TransferEvent, Never>()
 
-    nonisolated var publisher: AnyPublisher<TransferEvent, Never> {
+    var publisher: AnyPublisher<TransferEvent, Never> {
         subject.eraseToAnyPublisher()
     }
 

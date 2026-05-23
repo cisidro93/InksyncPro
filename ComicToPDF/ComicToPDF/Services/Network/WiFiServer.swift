@@ -3,6 +3,7 @@ import Network
 import UIKit
 import ZIPFoundation
 
+@MainActor
 class WiFiServer: ObservableObject {
     private var listener: NWListener?
     private var bonjourService: NetService?      // separate, non-fatal mDNS advertisement
@@ -82,10 +83,7 @@ class WiFiServer: ObservableObject {
             let params = NWParameters.tcp
             params.allowLocalEndpointReuse = true
             params.includePeerToPeer = true
-            // Do NOT lock to .wifi — that silently blocks hotspot / USB-C ethernet.
 
-            // Bind on port 8080. allowLocalEndpointReuse lets us reclaim it
-            // immediately after a previous listener cancelled.
             let listener: NWListener
             do {
                 listener = try NWListener(using: params, on: 8080)
@@ -94,47 +92,38 @@ class WiFiServer: ObservableObject {
                 listener = try NWListener(using: params, on: .any)
             }
 
-            // ⚠️ Do NOT set listener.service here.
-            // NWListener.service ties Bonjour mDNS registration to the listener lifecycle.
-            // If mDNS registration fails (kDNSServiceErr_NoAuth / -65555 — common on
-            // corporate WiFi, router multicast filtering, or certain iOS sandbox states),
-            // iOS propagates the failure to the listener and kills it entirely.
-            // Instead we advertise via NetService separately so the server stays alive
-            // even when mDNS fails.
-
             listener.stateUpdateHandler = { [weak self] state in
-                guard let self = self else { return }
-                switch state {
-                case .ready:
-                    // Read the resolved port back (same as 8080 unless OS chose differently)
-                    let port = listener.port?.rawValue ?? 8080
-                    Logger.shared.log("WiFi Server ready on port \(port). PIN: \(self.securityCode)", category: "Network")
-                    self.bindRetryCount = 0
-                    DispatchQueue.main.async {
+                Task { @MainActor in
+                    guard let self = self else { return }
+                    switch state {
+                    case .ready:
+                        let port = listener.port?.rawValue ?? 8080
+                        Logger.shared.log("WiFi Server ready on port \(port). PIN: \(self.securityCode)", category: "Network")
+                        self.bindRetryCount = 0
                         self.isRunning = true
                         let ip = self.getIPAddress() ?? "localhost"
                         self.serverURL = "http://\(ip):\(port)"
-                        // Start Bonjour advertisement separately — failure here is non-fatal.
                         self.advertiseBonjourService(port: port)
-                    }
 
-                case .failed(let error):
-                    let raw = "\(error)"
-                    Logger.shared.log("WiFi Server failed: \(raw)", category: "Network", type: .error)
+                    case .failed(let error):
+                        let raw = "\(error)"
+                        Logger.shared.log("WiFi Server failed: \(raw)", category: "Network", type: .error)
 
-                    let isNetworkAuthError = raw.contains("NoAuth") || raw.contains("-6555")
-                        || raw.contains("posix(EPERM)")
+                        let isNetworkAuthError = raw.contains("NoAuth") || raw.contains("-6555")
+                            || raw.contains("posix(EPERM)")
 
-                    if isNetworkAuthError && self.bindRetryCount < self.maxBindRetries {
-                        self.bindRetryCount += 1
-                        Logger.shared.log("WiFi Server: retrying bind (attempt \(self.bindRetryCount))", category: "Network")
-                        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 1.5) { [weak self] in
-                            self?.bindListener()
+                        if isNetworkAuthError && self.bindRetryCount < self.maxBindRetries {
+                            self.bindRetryCount += 1
+                            Logger.shared.log("WiFi Server: retrying bind (attempt \(self.bindRetryCount))", category: "Network")
+                            Task.detached {
+                                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                                await MainActor.run { [weak self] in
+                                    self?.bindListener()
+                                }
+                            }
+                            return
                         }
-                        return
-                    }
 
-                    DispatchQueue.main.async {
                         if isNetworkAuthError {
                             self.errorMessage = "Wi-Fi server failed to start.\n\n"
                                 + "Local Network access is enabled in Settings, but iOS briefly blocked the connection.\n\n"
@@ -143,15 +132,17 @@ class WiFiServer: ObservableObject {
                         } else {
                             self.errorMessage = "Server failed: \(error.localizedDescription)\n\nRaw: \(raw)"
                         }
-                    }
-                    if self.isRunning { self.stop() }
+                        if self.isRunning { self.stop() }
 
-                default: break
+                    default: break
+                    }
                 }
             }
 
             listener.newConnectionHandler = { [weak self] connection in
-                self?.handleConnection(connection)
+                Task { @MainActor in
+                    self?.handleConnection(connection)
+                }
             }
 
             listener.start(queue: .global(qos: .userInitiated))
@@ -164,21 +155,22 @@ class WiFiServer: ObservableObject {
 
             if isNetworkAuthError && bindRetryCount < maxBindRetries {
                 bindRetryCount += 1
-                DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 1.5) { [weak self] in
-                    self?.bindListener()
+                Task.detached {
+                    try? await Task.sleep(nanoseconds: 1_500_000_000)
+                    await MainActor.run { [weak self] in
+                        self?.bindListener()
+                    }
                 }
                 return
             }
 
-            DispatchQueue.main.async {
-                if isNetworkAuthError {
-                    self.errorMessage = "Wi-Fi server failed to start.\n\n"
-                        + "Local Network access is enabled in Settings, but iOS briefly blocked the connection.\n\n"
-                        + "① Force-quit the app and reopen it, then tap Start Server.\n"
-                        + "② If it still fails: Settings › InksyncPro › Local Network → toggle OFF then back ON."
-                } else {
-                    self.errorMessage = "Could not start server: \(error.localizedDescription)"
-                }
+            if isNetworkAuthError {
+                self.errorMessage = "Wi-Fi server failed to start.\n\n"
+                    + "Local Network access is enabled in Settings, but iOS briefly blocked the connection.\n\n"
+                    + "① Force-quit the app and reopen it, then tap Start Server.\n"
+                    + "② If it still fails: Settings › InksyncPro › Local Network → toggle OFF then back ON."
+            } else {
+                self.errorMessage = "Could not start server: \(error.localizedDescription)"
             }
         }
     }
@@ -276,7 +268,7 @@ class WiFiServer: ObservableObject {
     
     private func handleConnection(_ connection: NWConnection) {
         // Track Connection Start
-        DispatchQueue.main.async { self.activeConnections += 1 }
+        self.activeConnections += 1
         Logger.shared.log("New Connection from \(connection.endpoint)", category: "Network")
         
         // Track Connection End
@@ -286,12 +278,14 @@ class WiFiServer: ObservableObject {
         }
         
         connection.stateUpdateHandler = { [weak self] state in
-            switch state {
-            case .cancelled, .failed:
-                DispatchQueue.main.async { self?.activeConnections = max(0, (self?.activeConnections ?? 1) - 1) }
-                self?.cleanup(context: context)
-                DispatchQueue.main.async { self?.endBackgroundTask() }
-            default: break
+            Task { @MainActor in
+                switch state {
+                case .cancelled, .failed:
+                    self?.activeConnections = max(0, (self?.activeConnections ?? 1) - 1)
+                    self?.cleanup(context: context)
+                    self?.endBackgroundTask()
+                default: break
+                }
             }
         }
         
@@ -301,20 +295,22 @@ class WiFiServer: ObservableObject {
     
     private func receive(on connection: NWConnection, context: ConnectionContext) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] data, _, isComplete, error in
-            guard let self = self else { return }
-            
-            if let data = data, !data.isEmpty {
-                self.processData(data, connection: connection, context: context)
-            }
-            
-            if isComplete {
-                connection.cancel()
-            } else if let error = error {
-                Logger.shared.log("Connection Error: \(error)", category: "Network", type: .error)
-                connection.cancel()
-            } else {
-                // Continue reading
-                self.receive(on: connection, context: context)
+            Task { @MainActor in
+                guard let self = self else { return }
+                
+                if let data = data, !data.isEmpty {
+                    self.processData(data, connection: connection, context: context)
+                }
+                
+                if isComplete {
+                    connection.cancel()
+                } else if let error = error {
+                    Logger.shared.log("Connection Error: \(error)", category: "Network", type: .error)
+                    connection.cancel()
+                } else {
+                    // Continue reading
+                    self.receive(on: connection, context: context)
+                }
             }
         }
     }
