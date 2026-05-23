@@ -74,9 +74,12 @@ struct ZipUtilities {
                         // Restore stable-build approach: failable initializer + full internal entry path.
                         // ZIPFoundation.extract(entry:to:) creates parent directories automatically (v0.9.9+).
                         // We add an explicit createDirectory before each extract as belt-and-suspenders.
-                        guard let archive = ZIPFoundation.Archive(url: sourceURL, accessMode: .read) else {
+                        let archive: ZIPFoundation.Archive
+                        do {
+                            archive = try ZIPFoundation.Archive(url: sourceURL, accessMode: .read)
+                        } catch {
                             throw NSError(domain: "ZipError", code: 1,
-                                          userInfo: [NSLocalizedDescriptionKey: "Could not open CBZ archive at \(sourceURL.lastPathComponent)"])
+                                          userInfo: [NSLocalizedDescriptionKey: "Could not open CBZ archive at \(sourceURL.lastPathComponent): \(error.localizedDescription)"])
                         }
 
                         for entry in archive {

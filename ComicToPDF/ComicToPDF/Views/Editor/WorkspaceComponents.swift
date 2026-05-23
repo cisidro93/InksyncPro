@@ -366,7 +366,7 @@ struct CoverStudioView: View {
                 .frame(height: 380)
                 .shadow(radius: 10, y: 5)
             
-            if let displayURL = previewCoverURL ?? activeCoverURL, let uiImage = displayImage {
+            if let uiImage = displayImage {
                 Image(uiImage: uiImage)
                     .resizable()
                     .aspectRatio(contentMode: .fit)

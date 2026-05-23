@@ -4,7 +4,7 @@ import UIKit
 import ZIPFoundation
 
 @MainActor
-class WiFiServer: ObservableObject {
+final class WiFiServer: ObservableObject, Sendable {
     private var listener: NWListener?
     private var bonjourService: NetService?      // separate, non-fatal mDNS advertisement
     @Published var errorMessage: String?
@@ -67,14 +67,13 @@ class WiFiServer: ObservableObject {
             // then wait 2 s for the user to respond before binding.
             triggerLocalNetworkPrivacyAlert()
             hasTriggeredLocalNetworkPermission = true
-            DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 2.0) { [weak self] in
-                self?.bindListener()
+            Task {
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                self.bindListener()
             }
         } else {
             // Permission already granted — bind immediately, no probe delay needed.
-            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                self?.bindListener()
-            }
+            self.bindListener()
         }
     }
 
@@ -201,15 +200,13 @@ class WiFiServer: ObservableObject {
         bonjourService = nil
         autoShutdownTask?.cancel()
         autoShutdownTask = nil
-        DispatchQueue.main.async {
-            self.isRunning = false
-            self.isUploading = false
-            self.activeConnections = 0
-            
-            self.sessionLock.lock()
-            self.validSessions.removeAll()
-            self.sessionLock.unlock()
-        }
+        self.isRunning = false
+        self.isUploading = false
+        self.activeConnections = 0
+        
+        self.sessionLock.lock()
+        self.validSessions.removeAll()
+        self.sessionLock.unlock()
     }
 
     func revokeAllSessions() {
@@ -253,6 +250,7 @@ class WiFiServer: ObservableObject {
 
 
     // Context to track state per connection
+    @MainActor
     private class ConnectionContext {
         var buffer = Data()
         var isHeaderParsed = false
@@ -584,12 +582,10 @@ class WiFiServer: ObservableObject {
 
         do {
             context.fileHandle = try FileHandle(forWritingTo: destURL)
-            DispatchQueue.main.async {
-                self.isUploading = true
-                self.currentUploadFilename = destURL.lastPathComponent
-                self.uploadProgress = 0.0
-                self.startBackgroundTask()
-            }
+            self.isUploading = true
+            self.currentUploadFilename = destURL.lastPathComponent
+            self.uploadProgress = 0.0
+            self.startBackgroundTask()
             return true
         } catch {
             Logger.shared.log("WiFi Transfer Failed to open file for writing: \(error.localizedDescription)", category: "Network", type: .error)
@@ -608,9 +604,7 @@ class WiFiServer: ObservableObject {
         if context.expectedLength > 0 {
             let progress = Double(context.receivedLength) / Double(context.expectedLength)
             // Throttle UI updates slightly
-            DispatchQueue.main.async {
-                self.uploadProgress = progress
-            }
+            self.uploadProgress = progress
         }
     }
     
@@ -634,14 +628,13 @@ class WiFiServer: ObservableObject {
                 )
             }
 
-            DispatchQueue.main.async {
-                self.isUploading = false
-                self.uploadProgress = 1.0
-                self.endBackgroundTask()
-                
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-                    NotificationCenter.default.post(name: Notification.Name("LibraryUpdated"), object: nil)
-                }
+            self.isUploading = false
+            self.uploadProgress = 1.0
+            self.endBackgroundTask()
+            
+            Task {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                NotificationCenter.default.post(name: Notification.Name("LibraryUpdated"), object: nil)
             }
         }
     }
@@ -691,7 +684,12 @@ class WiFiServer: ObservableObject {
                 let tempZipURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".zip")
                 defer { try? FileManager.default.removeItem(at: tempZipURL) }
                 
-                var archive: Archive? = try? Archive(url: tempZipURL, accessMode: .create)
+                var archive: Archive?
+                do {
+                    archive = try Archive(url: tempZipURL, accessMode: .create)
+                } catch {
+                    archive = nil
+                }
                 guard let validArchive = archive else {
                     sendResponse(connection, 500, "Failed to create archive stream.")
                     return
@@ -1061,7 +1059,8 @@ class WiFiServer: ObservableObject {
             close(socket)
         }
 
-        DispatchQueue.global().asyncAfter(deadline: .now() + 2) {
+        Task {
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
             browser.cancel()
         }
     }

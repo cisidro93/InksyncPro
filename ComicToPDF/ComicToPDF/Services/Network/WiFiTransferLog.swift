@@ -6,14 +6,14 @@ import Combine
 // Combine publisher notifies observers on new events.
 
 @MainActor
-class WiFiTransferLog: ObservableObject {
+final class WiFiTransferLog: ObservableObject, Sendable {
     static let shared = WiFiTransferLog()
 
     private let maxEvents = 200
     private var events: [TransferEvent] = []
     private let subject = PassthroughSubject<TransferEvent, Never>()
 
-    var publisher: AnyPublisher<TransferEvent, Never> {
+    @MainActor var publisher: AnyPublisher<TransferEvent, Never> {
         subject.eraseToAnyPublisher()
     }
 
