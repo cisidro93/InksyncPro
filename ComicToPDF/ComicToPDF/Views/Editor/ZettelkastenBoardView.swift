@@ -122,7 +122,10 @@ struct ZettelkastenBoardView: View {
             if let selected = selectedAnnotation {
                 Divider()
                 CardInspectorView(
-                    annotation: selected,
+                    annotation: Binding(
+                        get: { selectedAnnotation ?? selected },
+                        set: { selectedAnnotation = $0 }
+                    ),
                     allAnnotations: annotations,
                     pdfs: pdfs,
                     history: $inspectorHistory,
@@ -703,7 +706,7 @@ private struct HighlightCard: View {
 
 // MARK: - Detailed Inspector View
 private struct CardInspectorView: View {
-    @Bindable var annotation: SDAnnotation
+    @Binding var annotation: SDAnnotation
     let allAnnotations: [SDAnnotation]
     let pdfs: [SDConvertedPDF]
     
@@ -1035,5 +1038,37 @@ private struct CardInspectorView: View {
         other.modifiedAt = Date()
         try? modelContext.save()
         HapticEngine.medium()
+    }
+}
+
+// MARK: - Dot Grid Background
+struct DotGridBackground: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        let bg: Color = colorScheme == .dark
+            ? Color(red: 0.054, green: 0.054, blue: 0.070)
+            : Color(red: 0.961, green: 0.941, blue: 0.918)
+        let dot: Color = colorScheme == .dark
+            ? Color(red: 0.118, green: 0.118, blue: 0.157)
+            : Color(red: 0.851, green: 0.788, blue: 0.714)
+
+        Canvas { ctx, size in
+            ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .color(bg))
+            let spacing: CGFloat = 28
+            let r: CGFloat = 1.5
+            var x: CGFloat = spacing / 2
+            while x < size.width {
+                var y: CGFloat = spacing / 2
+                while y < size.height {
+                    ctx.fill(
+                        Path(ellipseIn: CGRect(x: x - r, y: y - r, width: r * 2, height: r * 2)),
+                        with: .color(dot)
+                    )
+                    y += spacing
+                }
+                x += spacing
+            }
+        }
     }
 }
