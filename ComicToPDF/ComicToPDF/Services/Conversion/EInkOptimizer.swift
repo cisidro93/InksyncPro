@@ -231,30 +231,77 @@ class EInkOptimizer {
         // Threshold for "white" (0 is black, 255 is white)
         // We consider anything less than 250 to be content
         let threshold: UInt8 = 250
+        let strideVal = 8
         
+        // 1. Find minY (top-down)
         var minY = height
-        for y in 0..<height {
+        var foundTopRow = -1
+        for y in stride(from: 0, to: height, by: strideVal) {
             let rowOffset = y * bytesPerRow
-            for x in 0..<width {
+            var found = false
+            for x in stride(from: 0, to: width, by: 8) {
                 if rawData[rowOffset + x] < threshold {
+                    found = true
+                    break
+                }
+            }
+            if found {
+                foundTopRow = y
+                break
+            }
+        }
+        if foundTopRow != -1 {
+            let startY = max(0, foundTopRow - strideVal + 1)
+            for y in startY...foundTopRow {
+                let rowOffset = y * bytesPerRow
+                var found = false
+                for x in 0..<width {
+                    if rawData[rowOffset + x] < threshold {
+                        found = true
+                        break
+                    }
+                }
+                if found {
                     minY = y
                     break
                 }
             }
-            if minY != height { break }
         }
         
+        // 2. Find maxY (bottom-up)
         var maxY = -1
+        var foundBottomRow = -1
         if minY < height {
-            for y in stride(from: height - 1, through: minY, by: -1) {
+            for y in stride(from: height - 1, through: minY, by: -strideVal) {
                 let rowOffset = y * bytesPerRow
-                for x in 0..<width {
+                var found = false
+                for x in stride(from: 0, to: width, by: 8) {
                     if rawData[rowOffset + x] < threshold {
-                        maxY = y
+                        found = true
                         break
                     }
                 }
-                if maxY != -1 { break }
+                if found {
+                    foundBottomRow = y
+                    break
+                }
+            }
+        }
+        if foundBottomRow != -1 {
+            let startY = min(height - 1, foundBottomRow + strideVal - 1)
+            for y in stride(from: startY, through: foundBottomRow, by: -1) {
+                let rowOffset = y * bytesPerRow
+                var found = false
+                for x in 0..<width {
+                    if rawData[rowOffset + x] < threshold {
+                        found = true
+                        break
+                    }
+                }
+                if found {
+                    maxY = y
+                    break
+                }
             }
         }
         
@@ -262,28 +309,70 @@ class EInkOptimizer {
             return cgImage
         }
         
+        // 3. Find minX (left-to-right)
         var minX = width
-        for x in 0..<width {
-            for y in minY...maxY {
+        var foundLeftCol = -1
+        for x in stride(from: 0, to: width, by: strideVal) {
+            var found = false
+            for y in stride(from: minY, to: maxY, by: 8) {
                 if rawData[y * bytesPerRow + x] < threshold {
+                    found = true
+                    break
+                }
+            }
+            if found {
+                foundLeftCol = x
+                break
+            }
+        }
+        if foundLeftCol != -1 {
+            let startX = max(0, foundLeftCol - strideVal + 1)
+            for x in startX...foundLeftCol {
+                var found = false
+                for y in minY...maxY {
+                    if rawData[y * bytesPerRow + x] < threshold {
+                        found = true
+                        break
+                    }
+                }
+                if found {
                     minX = x
                     break
                 }
             }
-            if minX != width { break }
         }
         
+        // 4. Find maxX (right-to-left)
         var maxX = -1
+        var foundRightCol = -1
         if minX < width {
-            for x in stride(from: width - 1, through: minX, by: -1) {
+            for x in stride(from: width - 1, through: minX, by: -strideVal) {
+                var found = false
+                for y in stride(from: minY, to: maxY, by: 8) {
+                    if rawData[y * bytesPerRow + x] < threshold {
+                        found = true
+                        break
+                }
+            }
+            if found {
+                foundRightCol = x
+                break
+            }
+        }
+        if foundRightCol != -1 {
+            let startX = min(width - 1, foundRightCol + strideVal - 1)
+            for x in stride(from: startX, through: foundRightCol, by: -1) {
+                var found = false
                 for y in minY...maxY {
                     if rawData[y * bytesPerRow + x] < threshold {
                         maxX = x
+                        found = true
                         break
                     }
                 }
-                if maxX != -1 { break }
+                if found { break }
             }
+        }
         }
         
         if minX > maxX || minX == width || maxX == -1 {
