@@ -75,7 +75,7 @@ struct GlobalZettelkastenHubView: View {
         }
         switch sortMode {
         case .dateModified: break
-        case .dateAdded:    filtered.sort { ($0.createdAt ?? .distantPast) > ($1.createdAt ?? .distantPast) }
+        case .dateAdded:    filtered.sort { $0.createdAt > $1.createdAt }
         case .bookName:     filtered.sort { resolveTitle($0, nameDict) < resolveTitle($1, nameDict) }
         case .tagCount:     filtered.sort { ($0.tags?.count ?? 0) > ($1.tags?.count ?? 0) }
         case .byTopic:      break
@@ -471,7 +471,7 @@ struct GlobalZettelkastenHubView: View {
     // bookTitle kept for any call sites in exportAsMarkdown (uses groupedAnnotations key which is already resolved)
     private func bookTitle(for annotation: SDAnnotation?, cache: [UUID: String]? = nil) -> String {
         guard let ann = annotation else { return "Unknown Book" }
-        var nameDict = cache ?? { var d = [UUID:String](); for p in allPDFs { d[p.id] = p.name }; return d }()
+        let nameDict = cache ?? { var d = [UUID:String](); for p in allPDFs { d[p.id] = p.name }; return d }()
         return resolveTitle(ann, nameDict)
     }
     

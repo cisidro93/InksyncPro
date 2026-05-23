@@ -198,17 +198,16 @@ struct GamificationDashboardView: View {
     }
     
     private func loadSerendipity() {
-        if let context = try? InksyncProApp.sharedModelContainer.mainContext {
-            let descriptor = FetchDescriptor<SDAnnotation>()
-            if let annotations = try? context.fetch(descriptor) {
-                let allHighlights = annotations.filter { sd -> Bool in
-                    let isHighlight = (sd.kindRaw == "highlight")
-                    let isNote = (sd.kindRaw == "note")
-                    return isHighlight || isNote
-                }
-                guard !allHighlights.isEmpty else { return }
-                self.serendipityHighlights = Array(allHighlights.shuffled().prefix(5))
+        let context = InksyncProApp.sharedModelContainer.mainContext
+        let descriptor = FetchDescriptor<SDAnnotation>()
+        if let annotations = try? context.fetch(descriptor) {
+            let allHighlights = annotations.filter { sd -> Bool in
+                let isHighlight = (sd.kindRaw == "highlight")
+                let isNote = (sd.kindRaw == "note")
+                return isHighlight || isNote
             }
+            guard !allHighlights.isEmpty else { return }
+            self.serendipityHighlights = Array(allHighlights.shuffled().prefix(5))
         }
     }
 }

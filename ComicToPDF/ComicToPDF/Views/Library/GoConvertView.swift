@@ -411,7 +411,7 @@ struct GoConvertView: View {
 
                         if viewModel.selectedPipeline == .proPanel {
                             VStack(spacing: 8) {
-                                if let pdf = previewPDF {
+                                if previewPDF != nil {
                                     Button(action: { viewModel.showingPreview = true }) {
                                         Label("Preview Panel Detection (Page 4)", systemImage: "eye")
                                             .font(.system(size: 14))

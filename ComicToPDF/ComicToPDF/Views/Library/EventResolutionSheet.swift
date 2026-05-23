@@ -239,7 +239,7 @@ struct EventResolutionSheet: View {
             return soA < soB
         }
         
-        var orderedIDs: [UUID] = matchedPairs.map { $0.pdf.id }
+        let orderedIDs: [UUID] = matchedPairs.map { $0.pdf.id }
         
         let newCollection = PDFCollection(
             id: UUID(),
