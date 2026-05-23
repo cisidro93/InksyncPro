@@ -125,7 +125,7 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
                 if fm.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue {
                     // Recursively spider the directory synchronously
                     if let enumerator = fm.enumerator(at: url, includingPropertiesForKeys: [.isDirectoryKey]) {
-                        for case let fileURL as URL in enumerator {
+                        while let fileURL = enumerator.nextObject() as? URL {
                             if allowedExts.contains(fileURL.pathExtension.lowercased()) {
                                 // Preserve native structure for SeriesNameParser Context
                                 let originalParent = fileURL.deletingLastPathComponent().lastPathComponent

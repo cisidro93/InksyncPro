@@ -242,8 +242,7 @@ class Logger: ObservableObject, @unchecked Sendable {
     }
     
     // ✅ DEBUG: Flight Recorder (Moved here to avoid Actor Isolation issues)
-    @MainActor
-    func logEPUBStructure(at url: URL) {
+    nonisolated func logEPUBStructure(at url: URL) {
         log("🔍 [Flight Recorder] Analyzing EPUB Structure: \(url.lastPathComponent)", category: "Debug", type: .info)
         
         guard let archive = try? Archive(url: url, accessMode: .read, pathEncoding: .utf8) else {
