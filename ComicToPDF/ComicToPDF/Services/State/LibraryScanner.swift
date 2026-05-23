@@ -99,8 +99,12 @@ actor LibraryScanner {
                         inFlight += 1
                     }
 
-                    // Seed 4 initial slots
-                    for _ in 0..<min(4, pdfsToProcess.count) { enqueue() }
+                    // Dynamically set concurrency based on device capability
+                    let perfClass = ProcessInfo.processInfo.performanceClass
+                    let maxConcurrency = perfClass == .low ? 2 : 4
+
+                    // Seed initial slots
+                    for _ in 0..<min(maxConcurrency, pdfsToProcess.count) { enqueue() }
 
                     for await result in group {
                         inFlight -= 1

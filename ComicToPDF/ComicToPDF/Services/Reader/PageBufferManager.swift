@@ -102,18 +102,34 @@ class PageBufferManager: ObservableObject {
         renderTask = Task {
             self.isLoading = true
 
-            async let current = renderPage(at: pageIndex)
-            async let next    = renderPage(at: pageIndex + 1)
-            async let prev    = renderPage(at: pageIndex - 1)
+            // 1. Decode current page first for zero-latency presentation
+            let cImage = await renderPage(at: pageIndex, bounds: bounds)
+            
+            // Publish current image immediately to unlock UI
+            if !Task.isCancelled, self.generation == gen {
+                self.currentImage = cImage
+                self.isLoading = false
+            }
 
-            let (cImage, nImage, pImage) = await (current, next, prev)
-            // Discard results if cancelled OR if a newer setup() has since started
-            guard !Task.isCancelled, self.generation == gen else { return }
-
-            self.currentImage = cImage
-            self.nextImage    = nImage
-            self.prevImage    = pImage
-            self.isLoading    = false
+            // 2. Load neighbors in background (sequential on low-end, concurrent on others)
+            let perfClass = ProcessInfo.processInfo.performanceClass
+            if perfClass == .low {
+                // Low end: only preload next page, skip prev page to save memory
+                let nImage = await renderPage(at: pageIndex + 1, bounds: bounds)
+                if !Task.isCancelled, self.generation == gen {
+                    self.nextImage = nImage
+                    self.prevImage = nil // free prev memory
+                }
+            } else {
+                // Medium/High: concurrent preload of both next and prev
+                async let next = renderPage(at: pageIndex + 1, bounds: bounds)
+                async let prev = renderPage(at: pageIndex - 1, bounds: bounds)
+                let (nImage, pImage) = await (next, prev)
+                if !Task.isCancelled, self.generation == gen {
+                    self.nextImage = nImage
+                    self.prevImage = pImage
+                }
+            }
 
             emitNearingEndIfNeeded(at: pageIndex)
         }
@@ -135,38 +151,53 @@ class PageBufferManager: ObservableObject {
             let prevPair = buildSpreadPair(leadIndex: leadIndex - 2, allPages: allPages, isMangaMode: isMangaMode)
             let nextPair = buildSpreadPair(leadIndex: leadIndex + 2, allPages: allPages, isMangaMode: isMangaMode)
 
-            // Decode all 6 images concurrently — update progress as each resolves
-            async let curL  = renderPage(at: curPair.leftIndex)
-            async let curR  = renderPage(at: curPair.rightIndex)
-            async let prevL = renderPage(at: prevPair.leftIndex)
-            async let prevR = renderPage(at: prevPair.rightIndex)
-            async let nextL = renderPage(at: nextPair.leftIndex)
-            async let nextR = renderPage(at: nextPair.rightIndex)
-
-            // Resolve current pair first (visible immediately) then background pairs
+            // 1. Decode current spread first (visible immediately)
+            async let curL  = renderPage(at: curPair.leftIndex, bounds: nil)
+            async let curR  = renderPage(at: curPair.rightIndex, bounds: nil)
             let cL = await curL;  self.decodeProgress = 1/6
             let cR = await curR;  self.decodeProgress = 2/6
-            // Publish partial state so first spread appears before prev/next finish
-            // Guard generation before every write — a new setup() may have arrived.
+
             if !Task.isCancelled, self.generation == gen {
                 self.currentSpread = SpreadPair(leftIndex: curPair.leftIndex, rightIndex: curPair.rightIndex, leftImage: cL, rightImage: cR)
                 self.currentImage  = cL ?? cR
                 self.isLoading     = false  // UI unlocks here
             }
-            let pL = await prevL; self.decodeProgress = 3/6
-            let pR = await prevR; self.decodeProgress = 4/6
-            let nL = await nextL; self.decodeProgress = 5/6
-            let nR = await nextR; self.decodeProgress = 6/6
-            guard !Task.isCancelled, self.generation == gen else { return }
 
-            self.currentSpread = SpreadPair(leftIndex: curPair.leftIndex, rightIndex: curPair.rightIndex, leftImage: cL, rightImage: cR)
-            self.prevSpread    = SpreadPair(leftIndex: prevPair.leftIndex, rightIndex: prevPair.rightIndex, leftImage: pL, rightImage: pR)
-            self.nextSpread    = SpreadPair(leftIndex: nextPair.leftIndex, rightIndex: nextPair.rightIndex, leftImage: nL, rightImage: nR)
-
-            // Keep single-page slots populated so switching back to single-page mode doesn't flash blank
-            self.currentImage = cL ?? cR
-            self.nextImage    = nL ?? nR
-            self.prevImage    = pL ?? pR
+            // 2. Decode background pairs
+            let perfClass = ProcessInfo.processInfo.performanceClass
+            if perfClass == .low {
+                // Low end: Skip previous spread preloading entirely. Load next spread sequentially to avoid memory spikes.
+                let nL = await renderPage(at: nextPair.leftIndex, bounds: nil);  self.decodeProgress = 4/6
+                let nR = await renderPage(at: nextPair.rightIndex, bounds: nil); self.decodeProgress = 6/6
+                
+                guard !Task.isCancelled, self.generation == gen else { return }
+                
+                self.nextSpread = SpreadPair(leftIndex: nextPair.leftIndex, rightIndex: nextPair.rightIndex, leftImage: nL, rightImage: nR)
+                self.prevSpread = nil
+                
+                self.nextImage = nL ?? nR
+                self.prevImage = nil
+            } else {
+                // Medium/High: concurrent preload of both prev and next spreads
+                async let prevL = renderPage(at: prevPair.leftIndex, bounds: nil)
+                async let prevR = renderPage(at: prevPair.rightIndex, bounds: nil)
+                async let nextL = renderPage(at: nextPair.leftIndex, bounds: nil)
+                async let nextR = renderPage(at: nextPair.rightIndex, bounds: nil)
+                
+                let pL = await prevL; self.decodeProgress = 3/6
+                let pR = await prevR; self.decodeProgress = 4/6
+                let nL = await nextL; self.decodeProgress = 5/6
+                let nR = await nextR; self.decodeProgress = 6/6
+                
+                guard !Task.isCancelled, self.generation == gen else { return }
+                
+                self.prevSpread = SpreadPair(leftIndex: prevPair.leftIndex, rightIndex: prevPair.rightIndex, leftImage: pL, rightImage: pR)
+                self.nextSpread = SpreadPair(leftIndex: nextPair.leftIndex, rightIndex: nextPair.rightIndex, leftImage: nL, rightImage: nR)
+                
+                self.currentImage = cL ?? cR
+                self.nextImage    = nL ?? nR
+                self.prevImage    = pL ?? pR
+            }
 
             self.isLoading = false
             emitNearingEndIfNeeded(at: leadIndex)
@@ -218,16 +249,55 @@ class PageBufferManager: ObservableObject {
 
     // MARK: - Private Helpers
 
-    private func renderPage(at index: Int?) async -> CGImage? {
+    private func renderPage(at index: Int?, bounds: CGSize? = nil) async -> CGImage? {
         guard let index = index, index >= 0, index < pageURLs.count else { return nil }
         let url = pageURLs[index]
 
+        let perfClass = ProcessInfo.processInfo.performanceClass
+        let maxPixelSize: CGFloat? = {
+            if let bounds = bounds, bounds.width > 0, bounds.height > 0 {
+                let maxDim = max(bounds.width, bounds.height)
+                switch perfClass {
+                case .low:
+                    return maxDim * 1.5
+                case .medium:
+                    return maxDim * 2.0
+                case .high:
+                    return maxDim * 3.0
+                }
+            } else {
+                switch perfClass {
+                case .low:
+                    return 1536
+                case .medium:
+                    return 2048
+                case .high:
+                    return 3072
+                }
+            }
+        }()
+
         return await Task.detached(priority: .userInitiated) {
             // Strategy 1: CGImageSource (fastest, best memory usage)
-            if let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-               let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) {
-                let cropEnabled = await MainActor.run { self.isAutoCropEnabled }
-                return cropEnabled ? Self.autoCropMargins(from: cgImage) : cgImage
+            if let source = CGImageSourceCreateWithURL(url as CFURL, nil) {
+                let options: [CFString: Any]
+                if let maxSize = maxPixelSize {
+                    options = [
+                        kCGImageSourceCreateThumbnailFromImageAlways: true,
+                        kCGImageSourceCreateThumbnailWithTransform: true,
+                        kCGImageSourceThumbnailMaxPixelSize: Int(maxSize),
+                        kCGImageSourceShouldCacheImmediately: true
+                    ]
+                } else {
+                    options = [
+                        kCGImageSourceShouldCacheImmediately: true
+                    ]
+                }
+                
+                if let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) {
+                    let cropEnabled = await MainActor.run { self.isAutoCropEnabled }
+                    return cropEnabled ? Self.autoCropMargins(from: cgImage) : cgImage
+                }
             }
 
             // Strategy 2: UIImage fallback (different OS codec path — handles some edge cases
@@ -240,7 +310,12 @@ class PageBufferManager: ObservableObject {
                     )
                 }
                 let cropEnabled = await MainActor.run { self.isAutoCropEnabled }
-                return cropEnabled ? Self.autoCropMargins(from: cgImage) : cgImage
+                let finalImage = cropEnabled ? Self.autoCropMargins(from: cgImage) : cgImage
+                
+                if let maxSize = maxPixelSize, CGFloat(max(finalImage.width, finalImage.height)) > maxSize {
+                    return Self.downsample(cgImage: finalImage, toMaxPixelSize: Int(maxSize))
+                }
+                return finalImage
             }
 
             // Both strategies failed — log diagnostic info
@@ -253,6 +328,31 @@ class PageBufferManager: ObservableObject {
             }
             return nil
         }.value
+    }
+
+    private static func downsample(cgImage: CGImage, toMaxPixelSize maxSize: Int) -> CGImage {
+        let width = cgImage.width
+        let height = cgImage.height
+        let maxDim = max(width, height)
+        guard maxDim > maxSize else { return cgImage }
+        
+        let scale = CGFloat(maxSize) / CGFloat(maxDim)
+        let newWidth = Int(CGFloat(width) * scale)
+        let newHeight = Int(CGFloat(height) * scale)
+        
+        guard let context = CGContext(
+            data: nil,
+            width: newWidth,
+            height: newHeight,
+            bitsPerComponent: 8,
+            bytesPerRow: newWidth * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
+        ) else { return cgImage }
+        
+        context.interpolationQuality = .medium
+        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: newWidth, height: newHeight))
+        return context.makeImage() ?? cgImage
     }
 
     private func emitNearingEndIfNeeded(at index: Int) {
@@ -278,9 +378,12 @@ class PageBufferManager: ObservableObject {
         guard bytesPerPixel >= 3 else { return image }
 
         let threshold: UInt8 = 245
+        let strideVal = 8
 
+        // Top margin search
         var top = 0
-        for y in 0..<height {
+        var foundTopRow = -1
+        for y in stride(from: 0, to: height, by: strideVal) {
             let rowOffset = y * bytesPerRow
             var found = false
             for x in stride(from: 0, to: width, by: 10) {
@@ -291,13 +394,33 @@ class PageBufferManager: ObservableObject {
                 }
             }
             if found {
-                top = y
+                foundTopRow = y
                 break
             }
         }
+        if foundTopRow != -1 {
+            let startY = max(0, foundTopRow - strideVal + 1)
+            for y in startY...foundTopRow {
+                let rowOffset = y * bytesPerRow
+                var found = false
+                for x in stride(from: 0, to: width, by: 10) {
+                    let o = rowOffset + (x * bytesPerPixel)
+                    if ptr[o] < threshold || ptr[o+1] < threshold || ptr[o+2] < threshold {
+                        found = true
+                        break
+                    }
+                }
+                if found {
+                    top = y
+                    break
+                }
+            }
+        }
 
+        // Bottom margin search
         var bottom = height - 1
-        for y in stride(from: height - 1, through: top, by: -1) {
+        var foundBottomRow = -1
+        for y in stride(from: height - 1, through: top, by: -strideVal) {
             let rowOffset = y * bytesPerRow
             var found = false
             for x in stride(from: 0, to: width, by: 10) {
@@ -308,13 +431,33 @@ class PageBufferManager: ObservableObject {
                 }
             }
             if found {
-                bottom = y
+                foundBottomRow = y
                 break
             }
         }
+        if foundBottomRow != -1 {
+            let startY = min(height - 1, foundBottomRow + strideVal - 1)
+            for y in stride(from: startY, through: foundBottomRow, by: -1) {
+                let rowOffset = y * bytesPerRow
+                var found = false
+                for x in stride(from: 0, to: width, by: 10) {
+                    let o = rowOffset + (x * bytesPerPixel)
+                    if ptr[o] < threshold || ptr[o+1] < threshold || ptr[o+2] < threshold {
+                        found = true
+                        break
+                    }
+                }
+                if found {
+                    bottom = y
+                    break
+                }
+            }
+        }
 
+        // Left margin search
         var left = 0
-        for x in 0..<width {
+        var foundLeftCol = -1
+        for x in stride(from: 0, to: width, by: strideVal) {
             var found = false
             for y in stride(from: top, to: bottom, by: 10) {
                 let o = (y * bytesPerRow) + (x * bytesPerPixel)
@@ -324,13 +467,32 @@ class PageBufferManager: ObservableObject {
                 }
             }
             if found {
-                left = x
+                foundLeftCol = x
                 break
             }
         }
+        if foundLeftCol != -1 {
+            let startX = max(0, foundLeftCol - strideVal + 1)
+            for x in startX...foundLeftCol {
+                var found = false
+                for y in stride(from: top, to: bottom, by: 10) {
+                    let o = (y * bytesPerRow) + (x * bytesPerPixel)
+                    if ptr[o] < threshold || ptr[o+1] < threshold || ptr[o+2] < threshold {
+                        found = true
+                        break
+                    }
+                }
+                if found {
+                    left = x
+                    break
+                }
+            }
+        }
 
+        // Right margin search
         var right = width - 1
-        for x in stride(from: width - 1, through: left, by: -1) {
+        var foundRightCol = -1
+        for x in stride(from: width - 1, through: left, by: -strideVal) {
             var found = false
             for y in stride(from: top, to: bottom, by: 10) {
                 let o = (y * bytesPerRow) + (x * bytesPerPixel)
@@ -340,8 +502,25 @@ class PageBufferManager: ObservableObject {
                 }
             }
             if found {
-                right = x
+                foundRightCol = x
                 break
+            }
+        }
+        if foundRightCol != -1 {
+            let startX = min(width - 1, foundRightCol + strideVal - 1)
+            for x in stride(from: startX, through: foundRightCol, by: -1) {
+                var found = false
+                for y in stride(from: top, to: bottom, by: 10) {
+                    let o = (y * bytesPerRow) + (x * bytesPerPixel)
+                    if ptr[o] < threshold || ptr[o+1] < threshold || ptr[o+2] < threshold {
+                        found = true
+                        break
+                    }
+                }
+                if found {
+                    right = x
+                    break
+                }
             }
         }
 

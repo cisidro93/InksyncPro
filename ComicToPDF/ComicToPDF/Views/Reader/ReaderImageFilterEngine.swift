@@ -11,10 +11,16 @@ actor ReaderImageFilterEngine {
     // from retaining large intermediate textures between frames.
     private let context = CIContext(options: [.useSoftwareRenderer: false, .cacheIntermediates: false])
 
-    // LRU Cache — dynamically scaled based on device memory for iPad Pro optimization.
+    // LRU Cache — dynamically scaled based on device memory class
     private let cacheLimit: Int = {
-        let mem = ProcessInfo.processInfo.physicalMemory
-        return mem > 6_000_000_000 ? 24 : 12 // 6GB+ gets 24 pages, standard gets 12
+        switch ProcessInfo.processInfo.performanceClass {
+        case .low:
+            return 4  // 4 pages max for low-end (2GB/3GB RAM) devices to prevent memory exhaustion
+        case .medium:
+            return 12 // 12 pages for standard devices (4GB/6GB RAM)
+        case .high:
+            return 24 // 24 pages for high-end (6GB+ RAM) devices
+        }
     }()
     
     private var cache: [URL: UIImage] = [:]
