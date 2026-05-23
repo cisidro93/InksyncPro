@@ -47,6 +47,11 @@ struct Annotation: Codable, Identifiable {
     var corkboardX: Double? = nil
     var corkboardY: Double? = nil
 
+    // ✅ Zettel Board Outlining & Linking
+    var outlineColumn: String? = nil
+    var outlineOrder: Int = 0
+    var linkedAnnotationIDs: [String]? = []
+
     // ✅ Phase 6: Handwriting OCR
     var drawingOCRText: String? = nil
 
@@ -107,6 +112,11 @@ struct Annotation: Codable, Identifiable {
     var corkboardX: Double? = nil
     var corkboardY: Double? = nil
     
+    // ✅ Zettel Board Outlining & Linking
+    var outlineColumn: String? = nil
+    var outlineOrder: Int = 0
+    var linkedAnnotationIDs: [String]? = []
+    
     // ✅ Phase 6: Handwriting OCR
     var drawingOCRText: String?
     
@@ -135,6 +145,9 @@ struct Annotation: Codable, Identifiable {
         self.corkboardX = dto.corkboardX
         self.corkboardY = dto.corkboardY
         self.drawingOCRText = dto.drawingOCRText
+        self.outlineColumn = dto.outlineColumn
+        self.outlineOrder = dto.outlineOrder
+        self.linkedAnnotationIDs = dto.linkedAnnotationIDs ?? []
     }
     
     // ✅ Phase 31 Native Constructor for Readwise Importers
@@ -192,6 +205,9 @@ struct Annotation: Codable, Identifiable {
         self.readwiseAmazonID    = readwiseAmazonID
         self.readwiseLocationType = readwiseLocationType
         self.readwiseLocation    = readwiseLocation
+        self.outlineColumn = nil
+        self.outlineOrder = 0
+        self.linkedAnnotationIDs = []
     }
     
     func toDTO() -> Annotation {
@@ -208,6 +224,9 @@ struct Annotation: Codable, Identifiable {
         dto.corkboardX = self.corkboardX
         dto.corkboardY = self.corkboardY
         dto.drawingOCRText = self.drawingOCRText
+        dto.outlineColumn = self.outlineColumn
+        dto.outlineOrder = self.outlineOrder
+        dto.linkedAnnotationIDs = self.linkedAnnotationIDs ?? []
         return dto
     }
     
@@ -232,6 +251,9 @@ struct Annotation: Codable, Identifiable {
         self.corkboardX = dto.corkboardX
         self.corkboardY = dto.corkboardY
         self.drawingOCRText = dto.drawingOCRText
+        self.outlineColumn = dto.outlineColumn
+        self.outlineOrder = dto.outlineOrder
+        self.linkedAnnotationIDs = dto.linkedAnnotationIDs ?? []
     }
 }
 
