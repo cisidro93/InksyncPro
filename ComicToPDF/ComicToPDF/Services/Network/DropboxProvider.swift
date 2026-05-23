@@ -36,6 +36,7 @@ private struct DropboxTokenResponse: Decodable {
 
 // MARK: - DropboxProvider
 
+@MainActor
 class DropboxProvider: NSObject, CloudStorageProvider, ObservableObject {
     static let shared = DropboxProvider()
 
@@ -180,13 +181,13 @@ class DropboxProvider: NSObject, CloudStorageProvider, ObservableObject {
         if let expiresIn = tokenResponse.expires_in {
             tokenExpiry = Date().addingTimeInterval(TimeInterval(expiresIn))
         }
-        await MainActor.run { self.isConnected = true }
+        self.isConnected = true
     }
 
     private func refreshAccessTokenIfNeeded() async throws {
         guard let expiry = tokenExpiry, expiry < Date().addingTimeInterval(60) else { return }
         guard let rToken = refreshToken else {
-            await MainActor.run { self.isConnected = false }
+            self.isConnected = false
             throw NSError(domain: "Dropbox", code: 401, userInfo: [NSLocalizedDescriptionKey: "No refresh token — please reconnect"])
         }
 
@@ -199,7 +200,7 @@ class DropboxProvider: NSObject, CloudStorageProvider, ObservableObject {
 
         let (data, response) = try await URLSession.shared.data(for: request)
         if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode >= 400 {
-            await MainActor.run { self.isConnected = false }
+            self.isConnected = false
             self.accessToken = nil
             self.refreshToken = nil
             throw NSError(domain: "Dropbox", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Refresh token rejected by Dropbox. Please reconnect."])
@@ -209,7 +210,7 @@ class DropboxProvider: NSObject, CloudStorageProvider, ObservableObject {
         if let expiresIn = tokenResponse.expires_in {
             tokenExpiry = Date().addingTimeInterval(TimeInterval(expiresIn))
         }
-        await MainActor.run { self.isConnected = true }
+        self.isConnected = true
     }
 
     // MARK: - Sign Out
@@ -229,7 +230,7 @@ class DropboxProvider: NSObject, CloudStorageProvider, ObservableObject {
         accessToken = nil
         refreshToken = nil
         tokenExpiry = nil
-        DispatchQueue.main.async { self.isConnected = false }
+        self.isConnected = false
     }
 
     // MARK: - Directory Listing

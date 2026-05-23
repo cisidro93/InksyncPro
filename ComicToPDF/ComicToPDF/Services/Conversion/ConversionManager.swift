@@ -130,12 +130,14 @@ class ConversionManager: ObservableObject {
             forName: .cloudCoverReady,
             object: nil,
             queue: .main
-        ) { @MainActor [weak self] notification in
-            guard let self,
-                  let pdfID = notification.userInfo?["pdfID"] as? UUID,
-                  let image  = notification.userInfo?["image"]  as? UIImage else { return }
-            self.thumbnailCache.setObject(image, forKey: pdfID.uuidString as NSString)
-            self.objectWillChange.send()
+        ) { [weak self] notification in
+            Task { @MainActor [weak self] in
+                guard let self,
+                      let pdfID = notification.userInfo?["pdfID"] as? UUID,
+                      let image  = notification.userInfo?["image"]  as? UIImage else { return }
+                self.thumbnailCache.setObject(image, forKey: pdfID.uuidString as NSString)
+                self.objectWillChange.send()
+            }
         }
     }
     

@@ -79,9 +79,12 @@ actor EditorSessionManager {
         if let cache = cacheToDelete {
              Task { @MainActor in
                  let bgTask = UIApplication.shared.beginBackgroundTask(expirationHandler: nil)
-                 DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + 1.0) {
+                 Task.detached(priority: .background) {
+                     try? await Task.sleep(for: .seconds(1))
                      try? FileManager.default.removeItem(at: cache.folder)
-                     UIApplication.shared.endBackgroundTask(bgTask)
+                     await MainActor.run {
+                         UIApplication.shared.endBackgroundTask(bgTask)
+                     }
                  }
              }
         }

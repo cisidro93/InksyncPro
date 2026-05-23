@@ -25,6 +25,7 @@ private struct DriveTokenResponse: Decodable {
 
 // MARK: - GoogleDriveProvider
 
+@MainActor
 class GoogleDriveProvider: NSObject, CloudStorageProvider, ObservableObject {
     static let shared = GoogleDriveProvider()
 
@@ -161,7 +162,7 @@ class GoogleDriveProvider: NSObject, CloudStorageProvider, ObservableObject {
         if let expiresIn = tokenResponse.expires_in {
             tokenExpiry = Date().addingTimeInterval(TimeInterval(expiresIn))
         }
-        await MainActor.run { self.isConnected = true }
+        self.isConnected = true
     }
 
     private func refreshAccessTokenIfNeeded() async throws {
@@ -191,7 +192,7 @@ class GoogleDriveProvider: NSObject, CloudStorageProvider, ObservableObject {
         accessToken = nil
         refreshToken = nil
         tokenExpiry = nil
-        DispatchQueue.main.async { self.isConnected = false }
+        self.isConnected = false
     }
 
     // MARK: - Directory Listing

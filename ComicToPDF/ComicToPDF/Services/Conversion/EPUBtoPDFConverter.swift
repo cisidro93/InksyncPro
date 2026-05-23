@@ -2,9 +2,9 @@ import UIKit
 import ZIPFoundation
 import PDFKit
 
-class EPUBtoPDFConverter {
+final class EPUBtoPDFConverter: Sendable {
     
-    func convertEPUBtoPDF(_ epubURL: URL, completion: @escaping (Result<URL, Error>) -> Void) {
+    func convertEPUBtoPDF(_ epubURL: URL, completion: @escaping @Sendable (Result<URL, Error>) -> Void) {
         DispatchQueue.global(qos: .userInitiated).async {
             do {
                 Logger.shared.log("Converting EPUB to PDF...", category: "EPUB2PDF")

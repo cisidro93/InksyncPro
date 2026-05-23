@@ -1,5 +1,5 @@
 import SwiftUI
-import PDFKit
+@preconcurrency import PDFKit
 import PencilKit
 
 struct DocumentReaderEngine: View {
@@ -112,9 +112,7 @@ struct DocumentReaderEngine: View {
                 resolvedURL = pdf.url
             }
 
-            let doc = await Task.detached(priority: .userInitiated) {
-                PDFDocument(url: resolvedURL)
-            }.value
+            let doc = PDFDocument(url: resolvedURL)
             // PDFDocument has fully loaded — release the scope.
             accessedURL?.stopAccessingSecurityScopedResource()
             pdfDocument = doc

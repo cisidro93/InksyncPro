@@ -5,7 +5,7 @@ import UIKit
 
 /// Performs high-performance, local offline handwriting recognition on PencilKit drawings.
 /// Works asynchronously off the main thread to ensure smooth user interactions.
-final class HandwritingOCRManager {
+final class HandwritingOCRManager: Sendable {
     static let shared = HandwritingOCRManager()
     
     private init() {}
@@ -21,47 +21,32 @@ final class HandwritingOCRManager {
         let image = drawing.image(from: drawing.bounds, scale: 2.0)
         guard let cgImage = image.cgImage else { return nil }
         
-        return await withCheckedContinuation { continuation in
-            let request = VNRecognizeTextRequest { request, error in
-                guard error == nil else {
-                    Logger.shared.log("Handwriting OCR error: \(error!.localizedDescription)", category: "OCR", type: .error)
-                    continuation.resume(returning: nil)
-                    return
-                }
-                
-                guard let observations = request.results as? [VNRecognizedTextObservation] else {
-                    continuation.resume(returning: "")
-                    return
-                }
-                
-                // Collect lines of text, ordered top-to-bottom, left-to-right by default from Vision.
-                let lines = observations.compactMap { observation in
-                    observation.topCandidates(1).first?.string
-                }
-                
-                let text = lines.joined(separator: "\n")
-                continuation.resume(returning: text)
+        let request = VNRecognizeTextRequest()
+        
+        // Best settings for local handwriting recognition
+        request.recognitionLevel = .accurate
+        request.usesLanguageCorrection = true
+        
+        #if os(iOS)
+        if #available(iOS 16.0, *) {
+            request.recognitionLanguages = ["en-US"]
+        }
+        #endif
+        
+        let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+        do {
+            try handler.perform([request])
+            guard let observations = request.results else { return "" }
+            
+            // Collect lines of text, ordered top-to-bottom, left-to-right by default from Vision.
+            let lines = observations.compactMap { observation in
+                observation.topCandidates(1).first?.string
             }
             
-            // Best settings for local handwriting recognition
-            request.recognitionLevel = .accurate
-            request.usesLanguageCorrection = true
-            
-            #if os(iOS)
-            if #available(iOS 16.0, *) {
-                request.recognitionLanguages = ["en-US"]
-            }
-            #endif
-            
-            DispatchQueue.global(qos: .userInitiated).async {
-                let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
-                do {
-                    try handler.perform([request])
-                } catch {
-                    Logger.shared.log("Handwriting OCR request perform failed: \(error.localizedDescription)", category: "OCR", type: .error)
-                    continuation.resume(returning: nil)
-                }
-            }
+            return lines.joined(separator: "\n")
+        } catch {
+            Logger.shared.log("Handwriting OCR request perform failed: \(error.localizedDescription)", category: "OCR", type: .error)
+            return nil
         }
     }
 }

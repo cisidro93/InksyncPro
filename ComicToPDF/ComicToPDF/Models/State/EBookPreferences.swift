@@ -1,6 +1,7 @@
 import SwiftUI
 
 // MARK: - Core Preference Data Engine
+@MainActor
 class EBookPreferences: ObservableObject {
     static let shared = EBookPreferences()
 
@@ -130,6 +131,7 @@ struct BookTypographyProfile: Codable {
 }
 
 // MARK: - Theme Engine
+@MainActor
 enum EBookTheme: String, CaseIterable, Identifiable {
     case paper     = "Paper"
     case parchment = "Parchment"

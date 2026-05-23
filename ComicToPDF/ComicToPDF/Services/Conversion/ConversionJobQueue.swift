@@ -1,7 +1,7 @@
 import Foundation
 
 /// Represents a queued conversion job for a file that is currently being downloaded or waiting for background execution.
-struct ConversionJob: Codable, Identifiable {
+struct ConversionJob: Codable, Identifiable, Sendable {
     let id: UUID
     let pdfID: UUID // The ID of the ConvertedPDF in the library
     let targetFileName: String
@@ -103,7 +103,7 @@ class ConversionJobQueue: ObservableObject {
         self.jobs = loadedJobs
     }
     
-    private static func saveJobs(_ newJobs: [ConversionJob], to url: URL) {
+    nonisolated private static func saveJobs(_ newJobs: [ConversionJob], to url: URL) {
         if let data = try? JSONEncoder().encode(newJobs) {
             do {
                 try data.write(to: url, options: .atomic)

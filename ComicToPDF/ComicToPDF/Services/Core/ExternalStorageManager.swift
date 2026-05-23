@@ -8,6 +8,7 @@
 import UIKit
 import UniformTypeIdentifiers
 
+@MainActor
 class ExternalStorageManager: NSObject {
     
     static let shared = ExternalStorageManager()

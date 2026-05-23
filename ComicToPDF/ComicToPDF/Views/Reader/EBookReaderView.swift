@@ -450,7 +450,7 @@ struct EBookReaderView: View {
                     return
                 }
             } else if case .linked(let bm) = pdf.sourceMode,
-               let url = try? await BookmarkResolver.shared.resolve(bm) {
+               let url = try? BookmarkResolver.shared.resolve(bm) {
                 let didAccess = url.startAccessingSecurityScopedResource()
                 resolvedURL = url
                 if didAccess { accessedURL = url }
@@ -784,6 +784,7 @@ struct EBookWebReader: UIViewRepresentable {
     
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
+    @MainActor
     final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         var parent: EBookWebReader
         var lastLoadedHref: String = ""
@@ -796,23 +797,19 @@ struct EBookWebReader: UIViewRepresentable {
 
         func userContentController(_ ucc: WKUserContentController, didReceive message: WKScriptMessage) {
             if message.name == "nav", let body = message.body as? String {
-                DispatchQueue.main.async {
-                    if body == "next" { self.parent.onNext() }
-                    else if body == "prev" { self.parent.onPrev() }
-                    else if body == "center" { self.parent.onCenterTap() }
-                }
+                if body == "next" { self.parent.onNext() }
+                else if body == "prev" { self.parent.onPrev() }
+                else if body == "center" { self.parent.onCenterTap() }
             } else if message.name == "metrics", let body = message.body as? [String: Int] {
-                DispatchQueue.main.async {
-                    self.parent.currentPage = body["current"] ?? 0
-                    self.parent.totalPages = body["total"] ?? 1
-                }
+                self.parent.currentPage = body["current"] ?? 0
+                self.parent.totalPages = body["total"] ?? 1
             }
         }
         
                 // Intercept navigation for Footnotes, External links, and Chapters
-        func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-            if action.navigationType == .linkActivated {
-                if let url = action.request.url {
+        func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) {
+            if navigationAction.navigationType == .linkActivated {
+                if let url = navigationAction.request.url {
                     if url.scheme == "http" || url.scheme == "https" {
                         UIApplication.shared.open(url)
                     } else if let fragment = url.fragment {
