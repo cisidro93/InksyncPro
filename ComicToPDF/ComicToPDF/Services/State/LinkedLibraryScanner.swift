@@ -48,7 +48,7 @@ final class LinkedLibraryScanner: ObservableObject {
     /// Large drives are registered as a single DriveFolder card in the library
     /// rather than dumping every file flat into convertedPDFs, which would freeze
     /// SwiftUI diffing and produce multi-second JSON serializations.
-    static let largeDriveThreshold = 500
+    nonisolated static let largeDriveThreshold = 500
 
     // MARK: - Link Drive
 

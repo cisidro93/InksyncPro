@@ -5,7 +5,7 @@ struct ImageProcessor {
     
     // ✅ Performance Optimization: Shared Hardware-Accelerated Context
     // Prevents creating 1000+ GPU contexts during batch processing which kills battery
-    private static let sharedCIContext = CIContext(options: [.useSoftwareRenderer: false])
+    private static nonisolated(unsafe) let sharedCIContext = CIContext(options: [.useSoftwareRenderer: false])
     
     // Process a single image from disk based on settings
     static func process(imageURL: URL, settings: ConversionSettings) -> UIImage? {

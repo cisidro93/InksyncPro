@@ -2,7 +2,7 @@ import Foundation
 import UIKit
 
 /// Manages fresh-install detection to wipe ghost data safely.
-class InstallGuardService {
+final class InstallGuardService: Sendable {
     static let shared = InstallGuardService()
     
     private let userDefaults = UserDefaults.standard

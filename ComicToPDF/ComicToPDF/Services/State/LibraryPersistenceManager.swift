@@ -5,6 +5,7 @@ import Foundation
 // Do NOT move library.db into the iCloud Documents container.
 
 /// Coordinates the extraction of the massive Application Memory arrays into monolithic JSON bounds without violently throttling the Main Actor's 120Hz pipeline.
+@MainActor
 class LibraryPersistenceManager {
     static let shared = LibraryPersistenceManager()
     
@@ -49,56 +50,52 @@ class LibraryPersistenceManager {
     
     /// Awakens the Database structure from the filesystem memory blocks natively onto the Main Queue arrays.
     func load(manager: ConversionManager) {
-        Task.detached(priority: .userInitiated) {
+        Task {
             do {
                 let (sdPdfs, sdCols) = try await MigrationService.shared.fetchSwiftDataLegacyBridge()
                 
                 let legacyPDFs = sdPdfs.map { $0.toDTO() }
                 let legacyCols = sdCols.map { $0.toDTO() }
                 
-                await MainActor.run {
-                    manager.convertedPDFs = legacyPDFs
-                    manager.collections = legacyCols
+                manager.convertedPDFs = legacyPDFs
+                manager.collections = legacyCols
+                
+                if let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent(self.libraryFileName),
+                   FileManager.default.fileExists(atPath: url.path),
+                   let data = try? Data(contentsOf: url),
+                   let index = try? JSONDecoder().decode(LibraryIndex.self, from: data) {
                     
-                    if let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent(self.libraryFileName),
-                       FileManager.default.fileExists(atPath: url.path),
-                       let data = try? Data(contentsOf: url),
-                       let index = try? JSONDecoder().decode(LibraryIndex.self, from: data) {
-                        
-                        if let legacyPanels = index.panelOverrides, !legacyPanels.isEmpty {
-                            for (pdfID, pages) in legacyPanels {
-                                for (pageIndex, visionPanels) in pages {
-                                    var newModel = PageModel(pageIndex: pageIndex)
-                                    var allNormalized = true
-                                    newModel.panels = visionPanels.map { panel in
-                                        let rect = panel.boundingBox
-                                        if rect.maxX <= 1.1 && rect.maxY <= 1.1 {
-                                            return NormalizedRect(x: rect.minX * 1000, y: rect.minY * 1000, width: rect.width * 1000, height: rect.height * 1000)
-                                        } else {
-                                            allNormalized = false
-                                            return NormalizedRect(x: rect.minX, y: rect.minY, width: rect.width, height: rect.height)
-                                        }
-                                    }
-                                    if !newModel.panels.isEmpty && allNormalized {
-                                        newModel.coordinateSystem = .normalized
+                    if let legacyPanels = index.panelOverrides, !legacyPanels.isEmpty {
+                        for (pdfID, pages) in legacyPanels {
+                            for (pageIndex, visionPanels) in pages {
+                                var newModel = PageModel(pageIndex: pageIndex)
+                                var allNormalized = true
+                                newModel.panels = visionPanels.map { panel in
+                                    let rect = panel.boundingBox
+                                    if rect.maxX <= 1.1 && rect.maxY <= 1.1 {
+                                        return NormalizedRect(x: rect.minX * 1000, y: rect.minY * 1000, width: rect.width * 1000, height: rect.height * 1000)
                                     } else {
-                                        newModel.coordinateSystem = .unknown 
+                                        allNormalized = false
+                                        return NormalizedRect(x: rect.minX, y: rect.minY, width: rect.width, height: rect.height)
                                     }
-                                    PageModelStore.shared.savePageModel(newModel, for: pdfID)
                                 }
+                                if !newModel.panels.isEmpty && allNormalized {
+                                    newModel.coordinateSystem = .normalized
+                                } else {
+                                    newModel.coordinateSystem = .unknown 
+                                }
+                                PageModelStore.shared.savePageModel(newModel, for: pdfID)
                             }
                         }
-                        
-                        DeviceRegistry.shared.registeredDevices = index.registeredDevices ?? []
-                        DeviceRegistry.shared.primaryDeviceID = index.primaryDeviceID
-                        
-                        try? FileManager.default.removeItem(at: url)
                     }
+                    
+                    DeviceRegistry.shared.registeredDevices = index.registeredDevices ?? []
+                    DeviceRegistry.shared.primaryDeviceID = index.primaryDeviceID
+                    
+                    try? FileManager.default.removeItem(at: url)
                 }
             } catch {
-                await MainActor.run {
-                    Logger.shared.log("Critical Boot Error: Bridge Load Failed. \(error.localizedDescription)", category: "Library", type: .error)
-                }
+                Logger.shared.log("Critical Boot Error: Bridge Load Failed. \(error.localizedDescription)", category: "Library", type: .error)
             }
         }
     }

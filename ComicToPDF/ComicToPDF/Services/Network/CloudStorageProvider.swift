@@ -11,6 +11,7 @@ struct CloudFile: Identifiable, Codable {
 }
 
 /// A unified interface for interacting with cloud storage APIs (e.g., Dropbox, Google Drive)
+@MainActor
 protocol CloudStorageProvider {
     var providerName: String { get }
     var isConnected: Bool { get }

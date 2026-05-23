@@ -5,10 +5,10 @@ import SwiftUI
 // MARK: - Resume Reading
 
 struct ResumeReadingIntent: AppIntent {
-    static var title: LocalizedStringResource = "Resume Last Read Comic"
-    static var description = IntentDescription("Immediately opens the last comic you were reading in InksyncPro.")
+    static let title: LocalizedStringResource = "Resume Last Read Comic"
+    static let description = IntentDescription("Immediately opens the last comic you were reading in InksyncPro.")
 
-    static var openAppWhenRun: Bool = true
+    static let openAppWhenRun: Bool = true
 
     @MainActor
     func perform() async throws -> some IntentResult {
@@ -20,10 +20,10 @@ struct ResumeReadingIntent: AppIntent {
 // MARK: - Open Shelf
 
 struct OpenShelfIntent: AppIntent {
-    static var title: LocalizedStringResource = "Open Global Shelf"
-    static var description = IntentDescription("Opens InksyncPro and deploys the animated InkShelfComponent.")
+    static let title: LocalizedStringResource = "Open Global Shelf"
+    static let description = IntentDescription("Opens InksyncPro and deploys the animated InkShelfComponent.")
 
-    static var openAppWhenRun: Bool = true
+    static let openAppWhenRun: Bool = true
 
     @MainActor
     func perform() async throws -> some IntentResult {
@@ -35,10 +35,10 @@ struct OpenShelfIntent: AppIntent {
 // MARK: - Open Specific Book
 
 struct OpenSpecificBookIntent: AppIntent {
-    static var title: LocalizedStringResource = "Open a Specific Comic"
-    static var description = IntentDescription("Opens InksyncPro and jumps to a specific comic by title.")
+    static let title: LocalizedStringResource = "Open a Specific Comic"
+    static let description = IntentDescription("Opens InksyncPro and jumps to a specific comic by title.")
 
-    static var openAppWhenRun: Bool = true
+    static let openAppWhenRun: Bool = true
 
     @Parameter(title: "Comic Title", description: "Part of the title to search for in your library.", requestValueDialog: "Which comic would you like to open?")
     var bookTitle: String
@@ -57,10 +57,10 @@ struct OpenSpecificBookIntent: AppIntent {
 // MARK: - Start Guided Panel Mode
 
 struct StartGuidedModeIntent: AppIntent {
-    static var title: LocalizedStringResource = "Read in Panel Mode"
-    static var description = IntentDescription("Opens the last-read comic in Panel Navigation mode.")
+    static let title: LocalizedStringResource = "Read in Panel Mode"
+    static let description = IntentDescription("Opens the last-read comic in Panel Navigation mode.")
 
-    static var openAppWhenRun: Bool = true
+    static let openAppWhenRun: Bool = true
 
     @MainActor
     func perform() async throws -> some IntentResult {
@@ -76,10 +76,10 @@ struct StartGuidedModeIntent: AppIntent {
 // MARK: - Add Bookmark
 
 struct AddBookmarkIntent: AppIntent {
-    static var title: LocalizedStringResource = "Bookmark Current Page"
-    static var description = IntentDescription("Adds a bookmark to the current page in any open comic.")
+    static let title: LocalizedStringResource = "Bookmark Current Page"
+    static let description = IntentDescription("Adds a bookmark to the current page in any open comic.")
 
-    static var openAppWhenRun: Bool = false   // Background-capable
+    static let openAppWhenRun: Bool = false   // Background-capable
 
     @MainActor
     func perform() async throws -> some IntentResult {

@@ -4,7 +4,7 @@ import SwiftUI
 // Used by LibraryGridView and LibraryListView to report their scroll position
 // up through the view hierarchy so LibraryHeaderView can auto-collapse.
 struct LibraryScrollOffsetKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
+    static let defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = nextValue()
     }

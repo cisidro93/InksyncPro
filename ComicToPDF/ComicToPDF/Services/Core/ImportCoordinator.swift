@@ -3,6 +3,7 @@ import UniformTypeIdentifiers
 
 /// Presents a native iOS File/Folder picker globally, completely bypassing SwiftUI `.sheet`
 /// bugs that cause thread locks or frozen "Open" buttons.
+@MainActor
 final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
 
     enum ImportType {
@@ -96,12 +97,14 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
         // We do NOT use a completion block so processing is not gated on the animation.
         controller.dismiss(animated: true)
         
+        let type = self.currentType
+        
         // Process on background queue in parallel with the dismiss animation.
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let self else { return }
-
-            if self.currentType == .json || self.currentType == .smartList {
-                DispatchQueue.main.async { self.finish(with: urls) }
+        Task.detached(priority: .userInitiated) { [weak self] in
+            if type == .json || type == .smartList {
+                await MainActor.run {
+                    self?.finish(with: urls)
+                }
                 return
             }
 
@@ -162,7 +165,9 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
                 // Do NOT call stopAccessing again here — double-release corrupts the URL sandbox token.
             }
             
-            DispatchQueue.main.async { self.finish(with: foundURLs) }
+            await MainActor.run {
+                self?.finish(with: foundURLs)
+            }
         }
     }
 

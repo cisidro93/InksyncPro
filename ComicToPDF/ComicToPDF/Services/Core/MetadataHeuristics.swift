@@ -103,7 +103,7 @@ struct GoogleBookImageLinks: Codable {
 }
 
 /// Service responsible for fetching metadata for novels, textbooks, and EPUBs from the Google Books API.
-class BookMetadataService {
+final class BookMetadataService: Sendable {
     static let shared = BookMetadataService()
     
     private init() {}

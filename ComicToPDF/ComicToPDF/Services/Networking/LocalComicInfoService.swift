@@ -2,7 +2,7 @@ import Foundation
 import ZIPFoundation
 
 /// A deterministic local parser for `ComicInfo.xml` structured metadata.
-class LocalComicInfoService {
+final class LocalComicInfoService: Sendable {
     static let shared = LocalComicInfoService()
     
     private init() {}

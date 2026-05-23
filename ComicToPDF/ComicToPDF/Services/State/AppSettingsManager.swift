@@ -43,7 +43,7 @@ class AppSettingsManager: ObservableObject {
     @Published var watchedFolders: [WatchedFolder] = []
     
     // ✅ Linked Library: Registered external drives
-    struct LinkedDriveEntry: Codable, Identifiable {
+    struct LinkedDriveEntry: Codable, Identifiable, Sendable {
         var id: UUID = UUID()
         var displayName: String          // e.g. "Samsung T7 — Comics"
         var volumeBookmarkData: Data     // Bookmark to the root folder on the drive

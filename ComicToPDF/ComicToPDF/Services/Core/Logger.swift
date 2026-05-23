@@ -62,6 +62,7 @@ struct LogEntry: Identifiable, Codable {
     }
 }
 
+@MainActor
 class Logger: ObservableObject {
     static let shared = Logger()
     
@@ -78,9 +79,7 @@ class Logger: ObservableObject {
         // Load initial logs on startup (async)
         Task {
             let logs = self.getLogs()
-            await MainActor.run {
-                self.parsedLogs = self.parseLogFile(content: logs)
-            }
+            self.parsedLogs = self.parseLogFile(content: logs)
         }
     }
     
@@ -99,26 +98,24 @@ class Logger: ObservableObject {
         // Update UI Memory
         let entryObject = LogEntry(id: UUID(), timestamp: Date(), type: type, category: category, message: message)
         
-        Task { @MainActor in
-            self.parsedLogs.insert(entryObject, at: 0)
-            if self.parsedLogs.count > 500 { self.parsedLogs.removeLast() }
-            
-            // ✅ PHASE 8: Universal Alerts
-            // Immediately broadcast critical failures to the SwiftUI View layer
-            // so active bugs pop up on the user's screen instead of silently dropping.
-            if type == .error {
-                NotificationCenter.default.post(
-                    name: NSNotification.Name("GlobalErrorTriggered"),
-                    object: nil,
-                    userInfo: ["message": message, "category": category]
-                )
-            }
+        self.parsedLogs.insert(entryObject, at: 0)
+        if self.parsedLogs.count > 500 { self.parsedLogs.removeLast() }
+        
+        // ✅ PHASE 8: Universal Alerts
+        // Immediately broadcast critical failures to the SwiftUI View layer
+        // so active bugs pop up on the user's screen instead of silently dropping.
+        if type == .error {
+            NotificationCenter.default.post(
+                name: NSNotification.Name("GlobalErrorTriggered"),
+                object: nil,
+                userInfo: ["message": message, "category": category]
+            )
         }
         
+        let fileURL = self.logFileURL
         queue.async {
             // Append to file
             if let data = logEntry.data(using: .utf8) {
-                let fileURL = self.logFileURL
                 if FileManager.default.fileExists(atPath: fileURL.path) {
                     if let fileHandle = try? FileHandle(forWritingTo: fileURL) {
                         _ = try? fileHandle.seekToEnd()

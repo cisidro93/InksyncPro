@@ -31,7 +31,7 @@ actor MetadataBatchQueue {
     private var fetchTask: Task<Void, Never>?
     private let subject = PassthroughSubject<[MetadataBatchItem], Never>()
 
-    nonisolated var itemsPublisher: AnyPublisher<[MetadataBatchItem], Never> {
+    var itemsPublisher: AnyPublisher<[MetadataBatchItem], Never> {
         subject.eraseToAnyPublisher()
     }
 

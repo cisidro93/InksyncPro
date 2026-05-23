@@ -5,7 +5,7 @@ import CoreImage.CIFilterBuiltins
 /// Optimized Image Processor for E-Ink Displays
 /// Mathematically scales down images to device-native resolutions to prevent on-the-fly rendering lag
 /// and optionally applies hardware-accelerated CI filters to boost contrast and strip color saturation.
-final class EInkOptimizer: Sendable {
+final class EInkOptimizer: @unchecked Sendable {
     static let shared = EInkOptimizer()
     
     // Hardware-accelerated context
