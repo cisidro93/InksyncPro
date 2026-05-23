@@ -682,12 +682,14 @@ final class WiFiServer: ObservableObject, Sendable {
                 let tempZipURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".zip")
                 defer { try? FileManager.default.removeItem(at: tempZipURL) }
                 
-                var archive: ZIPFoundation.Archive?
+                let newArchive: ZIPFoundation.Archive
                 do {
-                    archive = try ZIPFoundation.Archive(url: tempZipURL, accessMode: .create)
+                    newArchive = try ZIPFoundation.Archive(url: tempZipURL, accessMode: .create)
                 } catch {
-                    archive = nil
+                    sendResponse(connection, 500, "Failed to create archive stream: \(error.localizedDescription)")
+                    return
                 }
+                var archive: ZIPFoundation.Archive? = newArchive
                 guard let validArchive = archive else {
                     sendResponse(connection, 500, "Failed to create archive stream.")
                     return
@@ -1006,7 +1008,9 @@ final class WiFiServer: ObservableObject, Sendable {
                         var hostname = [CChar](repeating: 0, count: Int(NI_MAXHOST))
                         getnameinfo(interface.ifa_addr, socklen_t(interface.ifa_addr.pointee.sa_len), &hostname, socklen_t(hostname.count), nil, socklen_t(0), NI_NUMERICHOST)
                         
-                        let ipString = String(cString: hostname)
+                        let ipString = hostname.withUnsafeBufferPointer { ptr in
+                            String(cString: ptr.baseAddress!)
+                        }
                         
                         // Prioritize "en0" (WiFi)
                         if name == "en0" {

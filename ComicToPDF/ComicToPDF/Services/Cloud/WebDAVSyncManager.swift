@@ -83,49 +83,54 @@ final class WebDAVSyncManager: NSObject, ObservableObject, URLSessionTaskDelegat
     
     // MARK: - URLSession Delegates
     
-    func urlSession(_ session: URLSession, task: URLSessionTask, didSendBodyData bytesSent: Int64, totalBytesSent: Int64, totalBytesExpectedToSend: Int64) {
+    nonisolated func urlSession(_ session: URLSession, task: URLSessionTask, didSendBodyData bytesSent: Int64, totalBytesSent: Int64, totalBytesExpectedToSend: Int64) {
         // Track Background Upload Progress Live
         let progress = totalBytesExpectedToSend > 0 ? Double(totalBytesSent) / Double(totalBytesExpectedToSend) : 0
-        self.syncProgress = progress
+        Task { @MainActor in
+            self.syncProgress = progress
+        }
     }
     
-    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+    nonisolated func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         let taskID = task.taskIdentifier
-        let fileURL = self.taskFiles[taskID]
-        
-        defer {
-            self.activeTasks.removeValue(forKey: taskID)
-            self.taskContinuations.removeValue(forKey: taskID)
-            self.taskFiles.removeValue(forKey: taskID)
-            if self.activeTasks.isEmpty {
-                self.isSyncing = false
+        let response = task.response
+        Task { @MainActor in
+            let fileURL = self.taskFiles[taskID]
+            
+            defer {
+                self.activeTasks.removeValue(forKey: taskID)
+                self.taskContinuations.removeValue(forKey: taskID)
+                self.taskFiles.removeValue(forKey: taskID)
+                if self.activeTasks.isEmpty {
+                    self.isSyncing = false
+                }
             }
-        }
-        
-        if let error = error {
-            let nsError = error as NSError
-            if nsError.code == NSURLErrorCancelled {
-                self.lastSyncStatus = "Upload Cancelled"
-                self.taskContinuations[taskID]?.resume(throwing: CancellationError())
+            
+            if let error = error {
+                let nsError = error as NSError
+                if nsError.code == NSURLErrorCancelled {
+                    self.lastSyncStatus = "Upload Cancelled"
+                    self.taskContinuations[taskID]?.resume(throwing: CancellationError())
+                } else {
+                    self.lastSyncStatus = "Upload Failed: \(error.localizedDescription)"
+                    self.taskContinuations[taskID]?.resume(throwing: error)
+                }
+                return
+            }
+            
+            if let httpResponse = response as? HTTPURLResponse {
+                if (200...299).contains(httpResponse.statusCode) {
+                    self.syncProgress = 1.0
+                    self.lastSyncStatus = fileURL != nil ? "Successfully uploaded \(fileURL!.lastPathComponent)" : "Upload Complete"
+                    self.taskContinuations[taskID]?.resume(returning: ())
+                } else {
+                    self.lastSyncStatus = "Server Error: \(httpResponse.statusCode)"
+                    self.taskContinuations[taskID]?.resume(throwing: CloudSyncError.httpError(statusCode: httpResponse.statusCode))
+                }
             } else {
-                self.lastSyncStatus = "Upload Failed: \(error.localizedDescription)"
-                self.taskContinuations[taskID]?.resume(throwing: error)
+                self.lastSyncStatus = "Server returned an unrecognizable response."
+                self.taskContinuations[taskID]?.resume(throwing: URLError(.badServerResponse))
             }
-            return
-        }
-        
-        if let httpResponse = task.response as? HTTPURLResponse {
-            if (200...299).contains(httpResponse.statusCode) {
-                self.syncProgress = 1.0
-                self.lastSyncStatus = fileURL != nil ? "Successfully uploaded \(fileURL!.lastPathComponent)" : "Upload Complete"
-                self.taskContinuations[taskID]?.resume(returning: ())
-            } else {
-                self.lastSyncStatus = "Server Error: \(httpResponse.statusCode)"
-                self.taskContinuations[taskID]?.resume(throwing: CloudSyncError.httpError(statusCode: httpResponse.statusCode))
-            }
-        } else {
-            self.lastSyncStatus = "Server returned an unrecognizable response."
-            self.taskContinuations[taskID]?.resume(throwing: URLError(.badServerResponse))
         }
     }
     

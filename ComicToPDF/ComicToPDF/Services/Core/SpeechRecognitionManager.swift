@@ -118,11 +118,11 @@ public final class SpeechRecognitionManager: ObservableObject {
             let inputNode = engine.inputNode
             
             let recordingFormat = inputNode.outputFormat(forBus: 0)
+            let req = self.recognitionRequest
             inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
-                guard let self = self else { return }
                 // Dynamically feed active recognition request
-                self.recognitionRequest?.append(buffer)
-                self.calculateAudioPower(buffer)
+                req?.append(buffer)
+                self?.calculateAudioPower(buffer)
             }
             
             engine.prepare()
@@ -201,7 +201,7 @@ public final class SpeechRecognitionManager: ObservableObject {
     }
     
     /// Computes RMS amplitude power to drive the voice visualizer node
-    private func calculateAudioPower(_ buffer: AVAudioPCMBuffer) {
+    nonisolated private func calculateAudioPower(_ buffer: AVAudioPCMBuffer) {
         guard let channelData = buffer.floatChannelData else { return }
         let channelDataPointer = channelData[0]
         let frameLength = Int(buffer.frameLength)
@@ -264,14 +264,16 @@ public final class SpeechRecognitionManager: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] notification in
-            guard let self = self,
-                  let userInfo = notification.userInfo,
-                  let typeValue = userInfo[AVAudioSessionInterruptionTypeKey] as? UInt,
-                  let type = AVAudioSession.InterruptionType(rawValue: typeValue) else { return }
-            
-            if type == .began {
-                if self.isRecording {
-                    self.stopDictation(commit: true)
+            guard let self = self else { return }
+            Task { @MainActor in
+                guard let userInfo = notification.userInfo,
+                      let typeValue = userInfo[AVAudioSessionInterruptionTypeKey] as? UInt,
+                      let type = AVAudioSession.InterruptionType(rawValue: typeValue) else { return }
+                
+                if type == .began {
+                    if self.isRecording {
+                        self.stopDictation(commit: true)
+                    }
                 }
             }
         }
@@ -281,14 +283,16 @@ public final class SpeechRecognitionManager: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] notification in
-            guard let self = self,
-                  let userInfo = notification.userInfo,
-                  let reasonValue = userInfo[AVAudioSessionRouteChangeReasonKey] as? UInt,
-                  let reason = AVAudioSession.RouteChangeReason(rawValue: reasonValue) else { return }
-            
-            if reason == .oldDeviceUnavailable {
-                if self.isRecording {
-                    self.stopDictation(commit: true)
+            guard let self = self else { return }
+            Task { @MainActor in
+                guard let userInfo = notification.userInfo,
+                      let reasonValue = userInfo[AVAudioSessionRouteChangeReasonKey] as? UInt,
+                      let reason = AVAudioSession.RouteChangeReason(rawValue: reasonValue) else { return }
+                
+                if reason == .oldDeviceUnavailable {
+                    if self.isRecording {
+                        self.stopDictation(commit: true)
+                    }
                 }
             }
         }

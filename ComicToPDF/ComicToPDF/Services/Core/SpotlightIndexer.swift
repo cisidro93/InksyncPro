@@ -1,5 +1,5 @@
 import Foundation
-import CoreSpotlight
+@preconcurrency import CoreSpotlight
 import MobileCoreServices
 import UIKit
 
@@ -24,17 +24,10 @@ final class SpotlightIndexer {
     // MARK: - Library Indexing
 
     /// Index the entire library — call after import or metadata changes.
-    /// PERF D-C2: Previously called pdfs.map { makeBookItem($0) } on @MainActor,
-    /// which allocated N ConvertedPDF copies AND decoded every coverImageData
-    /// blob into UIImage before handing off to the background task.
-    /// Now only lightweight value tuples are captured — no DTO copies, no image
-    /// decoding on the main thread. Cover thumbnails are omitted from bulk indexing
-    /// (Spotlight doesn't surface them for .content-type items).
     func indexLibrary(pdfs: [ConvertedPDF]) {
-        // Capture only primitive values — zero heap allocation on MainActor
+        // Capture only primitive values
         let tuples = pdfs.map { (id: $0.id, name: $0.name, series: $0.metadata.series, type: $0.contentType.rawValue) }
-        Task.detached(priority: .background) { [weak self] in
-            guard let self else { return }
+        Task {
             let items: [CSSearchableItem] = tuples.map { t in
                 let attrs = CSSearchableItemAttributeSet(contentType: .content)
                 attrs.title = t.name
@@ -58,16 +51,14 @@ final class SpotlightIndexer {
     /// Index (or re-index) a single book — call after metadata edit.
     func indexBook(_ pdf: ConvertedPDF) {
         let item = makeBookItem(pdf)
-        Task.detached(priority: .background) { [weak self] in
-            guard let self else { return }
+        Task {
             try? await self.index.indexSearchableItems([item])
         }
     }
 
     /// Remove a single book from the index — call on delete.
     func deindexBook(_ pdfID: UUID) {
-        Task.detached(priority: .background) { [weak self] in
-            guard let self else { return }
+        Task {
             try? await self.index.deleteSearchableItems(withIdentifiers: ["book-\(pdfID.uuidString)"])
         }
     }
@@ -81,23 +72,20 @@ final class SpotlightIndexer {
         guard hasSelectedText || hasNoteText || hasOCRText else { return }
         
         let item = makeAnnotationItem(annotation)
-        Task.detached(priority: .background) { [weak self] in
-            guard let self else { return }
+        Task {
             try? await self.index.indexSearchableItems([item])
         }
     }
 
     func deindexAnnotation(_ annotationID: UUID) {
-        Task.detached(priority: .background) { [weak self] in
-            guard let self else { return }
+        Task {
             try? await self.index.deleteSearchableItems(withIdentifiers: ["ann-\(annotationID.uuidString)"])
         }
     }
 
     /// Nuke the entire index — useful for settings reset.
     func clearAll() {
-        Task.detached(priority: .background) { [weak self] in
-            guard let self else { return }
+        Task {
             try? await self.index.deleteAllSearchableItems()
         }
     }
