@@ -81,7 +81,7 @@ class PDFContentEditorViewModel: ObservableObject {
         selectedIndices.removeAll()
     }
     
-    func saveChanges(completion: @escaping @Sendable () -> Void) {
+    func saveChanges(completion: @MainActor @escaping () -> Void) {
         guard let originalDoc = document else { return }
         isSaving = true
         
