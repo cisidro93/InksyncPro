@@ -67,7 +67,7 @@ class EPUBContentEditorViewModel: ObservableObject {
         }
     }
     
-    func saveChanges(completion: @escaping () -> Void) {
+    func saveChanges(completion: @MainActor @escaping () -> Void) {
         guard !deletedIds.isEmpty else {
             completion()
             return

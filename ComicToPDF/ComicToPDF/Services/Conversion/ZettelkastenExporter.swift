@@ -22,7 +22,7 @@ struct ZettelArchiveDocument: FileDocument {
     }
 }
 
-actor ZettelkastenExporter {
+@MainActor final class ZettelkastenExporter: Sendable {
     static let shared = ZettelkastenExporter()
     
     /// Compiles all SDAnnotations into an Obsidian-ready Markdown archive

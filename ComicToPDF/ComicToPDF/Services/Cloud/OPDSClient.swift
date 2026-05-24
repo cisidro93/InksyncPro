@@ -318,7 +318,7 @@ private extension String {
 // MARK: - OPDS Client
 
 /// `actor` ensures all async network calls are isolated without data races.
-actor OPDSClient {
+@MainActor final class OPDSClient: Sendable {
 
     static let shared = OPDSClient()
 

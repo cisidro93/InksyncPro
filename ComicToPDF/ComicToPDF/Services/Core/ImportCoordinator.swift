@@ -99,13 +99,9 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
         
         let type = self.currentType
         
-        // Process on background queue in parallel with the dismiss animation.
-        Task.detached(priority: .userInitiated) { [weak self] in
+        let stagingTask = Task.detached(priority: .userInitiated) { () -> [URL] in
             if type == .json || type == .smartList {
-                await MainActor.run {
-                    self?.finish(with: urls)
-                }
-                return
+                return urls
             }
 
             // --- 0bb6b38 Legacy extraction block + SeriesNameParser staging ---
@@ -160,14 +156,13 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
                         }
                     }
                 }
-                
-                // Security scope is released by the `defer` block at the top of this loop.
-                // Do NOT call stopAccessing again here — double-release corrupts the URL sandbox token.
             }
-            
-            await MainActor.run {
-                self?.finish(with: foundURLs)
-            }
+            return foundURLs
+        }
+        
+        Task {
+            let foundURLs = await stagingTask.value
+            self.finish(with: foundURLs)
         }
     }
 

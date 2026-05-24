@@ -7,7 +7,7 @@ import SwiftUI
 ///   • Divina / WebPub (entry.divinaPageURLs != nil) → OPDSDivinaReader
 ///   • PSE stream (entry.streamURL != nil)           → OPDSPSEReader
 ///   • Download-only (Calibre)                       → progressive download
-struct OPDSBookGrid: View {
+@MainActor struct OPDSBookGrid: View {
     let server: SDOPDSServer
     let entries: [OPDSEntry]
 

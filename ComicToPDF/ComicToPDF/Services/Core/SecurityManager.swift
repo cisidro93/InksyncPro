@@ -14,8 +14,6 @@ class SecurityManager: ObservableObject {
     @Published var isVaultEnabled: Bool = false // User preference
     @Published var shouldBlurContent: Bool = false
     
-    private var context = LAContext()
-    
     init() {
         // Load preference securely
         if let data = KeychainHelper.standard.read(service: "com.inksync.vault", account: "isVaultEnabled"),
@@ -40,7 +38,7 @@ class SecurityManager: ObservableObject {
     
     /// Attempt to unlock the vault using Device Authentication (FaceID/TouchID -> Passcode fallback)
     func authenticate() async -> Bool {
-        context = LAContext() // Reset context
+        let context = LAContext()
         
         do {
             // .deviceOwnerAuthentication natively tries Biometrics first, then automatically falls back to Passcode.

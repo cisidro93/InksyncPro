@@ -13,7 +13,7 @@ import Combine
 
 // MARK: - Write Request (for coalescer)
 
-private enum WriteRequest {
+private enum WriteRequest: Sendable {
     case saveFiles([ConvertedPDF])
     case saveProgress(ReadingProgress, String)
     case saveAnnotations([Annotation], String)
@@ -39,6 +39,8 @@ actor LibraryDatabaseService {
     private var db: LibraryDB?
     private var writeStream: AsyncStream<WriteRequest>.Continuation?
     private var coalesceTask: Task<Void, Never>?
+    private var buffer: [WriteRequest] = []
+    private var debounceTask: Task<Void, Never>?
 
     private init() {}
 
@@ -71,19 +73,22 @@ actor LibraryDatabaseService {
         self.writeStream = continuation
 
         coalesceTask = Task.detached(priority: .background) { [weak self] in
-            var buffer: [WriteRequest] = []
-            var deadline: Task<Void, Never>?
-
             for await request in stream {
-                buffer.append(request)
-                deadline?.cancel()
-                deadline = Task {
-                    try? await Task.sleep(nanoseconds: 150_000_000) // 150ms window
-                    guard !Task.isCancelled else { return }
-                    await self?.flushBuffer(buffer)
-                    buffer.removeAll()
-                }
+                guard let self = self else { break }
+                await self.enqueueCoalesce(request)
             }
+        }
+    }
+
+    private func enqueueCoalesce(_ request: WriteRequest) {
+        buffer.append(request)
+        debounceTask?.cancel()
+        debounceTask = Task {
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            guard !Task.isCancelled else { return }
+            let requestsToFlush = self.buffer
+            self.buffer.removeAll()
+            await self.flushBuffer(requestsToFlush)
         }
     }
 

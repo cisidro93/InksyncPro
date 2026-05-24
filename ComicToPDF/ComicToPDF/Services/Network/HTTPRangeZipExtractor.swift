@@ -3,7 +3,7 @@ import zlib
 
 /// A specialized utility that streams individual files from a remote ZIP/CBZ archive
 /// using HTTP Byte-Range requests, without downloading the entire archive.
-class HTTPRangeZipExtractor {
+@MainActor class HTTPRangeZipExtractor {
     
     struct ZipEntry: Identifiable {
         let id = UUID()

@@ -4,7 +4,7 @@ import SwiftUI
 
 /// Recursive catalog navigator. Each level loads one OPDS feed (navigation or acquisition).
 /// Navigation feeds push a new `OPDSBrowserView`; acquisition feeds show `OPDSBookGrid`.
-struct OPDSBrowserView: View {
+@MainActor struct OPDSBrowserView: View {
     let server: SDOPDSServer
     var feedURL: URL? = nil          // nil → use the server's root feed
     var title: String? = nil         // nil → use server name for root level
