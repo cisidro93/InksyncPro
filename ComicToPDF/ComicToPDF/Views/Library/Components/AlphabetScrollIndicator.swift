@@ -60,7 +60,7 @@ struct AlphabetScrollIndicator: View {
 /// Expose `currentLetter` and `isIndicatorVisible` as bindings to pass
 /// into `AlphabetScrollIndicator`. Call `didScroll(to:)` from your
 /// scroll offset tracker.
-@Observable
+@Observable @MainActor
 final class AlphabetIndicatorController {
 
     var currentLetter: String = ""

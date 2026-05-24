@@ -341,11 +341,15 @@ struct CalibreWirelessView: View {
     private func connectTo(_ host: CalibreHost) {
         Task {
             await client.connect(to: host,
-                onStateChange: { newState in
-                    withAnimation { sessionState = newState }
+                onStateChange: { @Sendable newState in
+                    Task { @MainActor in
+                        withAnimation { sessionState = newState }
+                    }
                 },
-                onBookReceived: { fileURL in
-                    importBook(from: fileURL)
+                onBookReceived: { @Sendable fileURL in
+                    Task { @MainActor in
+                        importBook(from: fileURL)
+                    }
                 }
             )
         }

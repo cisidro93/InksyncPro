@@ -346,20 +346,23 @@ final class ConversionOrchestrator: Sendable {
                             try PDFGenerator.generate(from: batchImages, to: finalOutputURL, mangaMode: jobSettings.mangaMode, chapters: mergedChapters, settings: jobSettings) { progress in
                                 let baseProgress = Double(batchIndex) / Double(totalBatches)
                                 let currentPartProgress = progress / Double(totalBatches)
-                                Task { @MainActor in manager.conversionProgress = 0.5 + (0.5 * (baseProgress + currentPartProgress)) }
+                                Task { @MainActor in
+                                    TaskEngine.shared.conversionProgress = 0.5 + (0.5 * (baseProgress + currentPartProgress))
+                                }
                             }
                         }.value
                     } else {
                         try await Task.detached {
-                            let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-                            try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
+                            let fm = FileManager.default
+                            let tempDir = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+                            try fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
                             for (idx, url) in batchImages.enumerated() {
                                 let pathExt = url.pathExtension.isEmpty ? "jpg" : url.pathExtension
                                 let dest = tempDir.appendingPathComponent(String(format: "page_%04d.%@", idx, pathExt))
-                                try fileManager.copyItem(at: url, to: dest)
+                                try fm.copyItem(at: url, to: dest)
                             }
                             try await ZipUtilities.zipDirectory(tempDir, to: finalOutputURL)
-                            try fileManager.removeItem(at: tempDir)
+                            try fm.removeItem(at: tempDir)
                         }.value
                     }
                     

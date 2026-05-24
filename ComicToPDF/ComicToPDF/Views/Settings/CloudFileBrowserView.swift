@@ -370,7 +370,7 @@ struct CloudFileBrowserView: View {
                 addedCount = 0 
             }
             do {
-                let folderFiles = try await provider.listAllFiles(folder.id) { count in
+                let folderFiles = try await provider.listAllFiles(folder.id) { @Sendable count in
                     Task { @MainActor in self.addedCount = count }
                 }
                 allFilesToAdd.append(contentsOf: folderFiles)
@@ -462,9 +462,9 @@ struct CloudFileBrowserView: View {
 struct CloudBrowserProvider {
     let name: String
     let providerID: String  // "dropbox" | "googledrive"
-    let listDirectory: (_ folderID: String?) async throws -> [CloudFile]
+    let listDirectory: @Sendable (_ folderID: String?) async throws -> [CloudFile]
     /// Recursively lists all supported files inside a folder (for bulk-add).
-    let listAllFiles: (_ folderID: String, _ onProgress: ((Int) -> Void)?) async throws -> [CloudFile]
+    let listAllFiles: @Sendable (_ folderID: String, _ onProgress: (@Sendable (Int) -> Void)?) async throws -> [CloudFile]
 
     /// The official brand icon image name in Assets.xcassets.
     /// Use with .renderingMode(.original) to preserve brand colours.
@@ -480,10 +480,10 @@ struct CloudBrowserProvider {
         CloudBrowserProvider(
             name: "Dropbox",
             providerID: "dropbox",
-            listDirectory: { folderID in
+            listDirectory: { @Sendable folderID in
                 try await DropboxProvider.shared.listDirectory(folderID: folderID)
             },
-            listAllFiles: { folderID, onProgress in
+            listAllFiles: { @Sendable folderID, onProgress in
                 try await DropboxProvider.shared.listAllFiles(inFolderID: folderID, onProgress: onProgress)
             }
         )
@@ -493,10 +493,10 @@ struct CloudBrowserProvider {
         CloudBrowserProvider(
             name: "Google Drive",
             providerID: "googledrive",
-            listDirectory: { folderID in
+            listDirectory: { @Sendable folderID in
                 try await GoogleDriveProvider.shared.listDirectory(folderID: folderID)
             },
-            listAllFiles: { _, _ in
+            listAllFiles: { @Sendable _, _ in
                 // Google Drive recursive enumeration — implement when GDrive folder-add is needed
                 []
             }

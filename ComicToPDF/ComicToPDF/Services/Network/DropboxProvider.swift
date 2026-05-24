@@ -302,7 +302,7 @@ class DropboxProvider: NSObject, CloudStorageProvider, ObservableObject {
     /// Returns ALL files (not folders) inside a given Dropbox folder, recursively.
     /// Handles Dropbox cursor-based pagination automatically.
     /// Used by CloudFileBrowserView when the user selects an entire folder to add.
-    func listAllFiles(inFolderID folderID: String, onProgress: ((Int) -> Void)? = nil) async throws -> [CloudFile] {
+    func listAllFiles(inFolderID folderID: String, onProgress: (@Sendable (Int) -> Void)? = nil) async throws -> [CloudFile] {
         try await refreshAccessTokenIfNeeded()
         guard let token = accessToken else {
             throw NSError(domain: "Dropbox", code: 401, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])

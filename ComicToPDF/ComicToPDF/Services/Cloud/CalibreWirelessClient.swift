@@ -3,7 +3,7 @@ import Network
 
 // MARK: - Calibre Wireless Session State
 
-enum CalibreSessionState: Equatable {
+enum CalibreSessionState: Equatable, Sendable {
     case idle
     case connecting
     case handshaking
@@ -64,8 +64,8 @@ actor CalibreWirelessClient {
     private(set) var state: CalibreSessionState = .idle
 
     // Delegate / callback
-    private var onStateChange: ((CalibreSessionState) -> Void)?
-    private var onBookReceived: ((URL) -> Void)?
+    private var onStateChange: (@Sendable (CalibreSessionState) -> Void)?
+    private var onBookReceived: (@Sendable (URL) -> Void)?
 
     // MARK: - Init
 
@@ -84,8 +84,8 @@ actor CalibreWirelessClient {
 
     func connect(
         to host: CalibreHost,
-        onStateChange: @escaping (CalibreSessionState) -> Void,
-        onBookReceived: @escaping (URL) -> Void
+        onStateChange: @escaping @Sendable (CalibreSessionState) -> Void,
+        onBookReceived: @escaping @Sendable (URL) -> Void
     ) {
         self.onStateChange = onStateChange
         self.onBookReceived = onBookReceived

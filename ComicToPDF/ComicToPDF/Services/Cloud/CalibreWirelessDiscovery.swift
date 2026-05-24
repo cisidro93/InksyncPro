@@ -4,7 +4,7 @@ import Network
 // MARK: - Calibre Host
 
 /// A discovered Calibre desktop instance on the local network.
-struct CalibreHost: Identifiable, Hashable {
+struct CalibreHost: Identifiable, Hashable, Sendable {
     let id: String           // hostname:devicePort
     let hostname: String
     let devicePort: UInt16   // TCP port for wireless device protocol (default 9090)

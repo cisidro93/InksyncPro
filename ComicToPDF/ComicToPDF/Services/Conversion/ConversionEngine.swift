@@ -36,10 +36,11 @@ actor ConversionEngine {
     func process(url: URL, settings: ConversionSettings) async throws -> URL {
         // ✅ PHASE 9: Unrestricted Execution
         let backgroundTaskToken = await MainActor.run {
-            var token: UIBackgroundTaskIdentifier = .invalid
-            token = UIApplication.shared.beginBackgroundTask(withName: "EngineProcess_\(url.lastPathComponent)") {
-                UIApplication.shared.endBackgroundTask(token)
+            let box = BackgroundTaskBox()
+            let token = UIApplication.shared.beginBackgroundTask(withName: "EngineProcess_\(url.lastPathComponent)") {
+                UIApplication.shared.endBackgroundTask(box.token)
             }
+            box.token = token
             return token
         }
         
@@ -142,10 +143,11 @@ actor ConversionEngine {
     func performPDFImport(url: URL, destFolder: URL) async throws -> URL {
         // ✅ PHASE 9: Unrestricted Execution
         let backgroundTaskToken = await MainActor.run {
-            var token: UIBackgroundTaskIdentifier = .invalid
-            token = UIApplication.shared.beginBackgroundTask(withName: "EngineImport_\(url.lastPathComponent)") {
-                UIApplication.shared.endBackgroundTask(token)
+            let box = BackgroundTaskBox()
+            let token = UIApplication.shared.beginBackgroundTask(withName: "EngineImport_\(url.lastPathComponent)") {
+                UIApplication.shared.endBackgroundTask(box.token)
             }
+            box.token = token
             return token
         }
         
@@ -212,5 +214,24 @@ actor ConversionEngine {
     // MARK: - Private Helpers
     private func reportProgress(url: URL, progress: Double) {
         progressSubject.send(.progress(file: url, current: Int(progress * 100), total: 100, message: "Converting..."))
+    }
+}
+
+// MARK: - Thread-safe Background Task Token Container
+private final class BackgroundTaskBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _token: UIBackgroundTaskIdentifier = .invalid
+    
+    var token: UIBackgroundTaskIdentifier {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return _token
+        }
+        set {
+            lock.lock()
+            defer { lock.unlock() }
+            _token = newValue
+        }
     }
 }
