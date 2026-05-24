@@ -88,6 +88,12 @@ struct MetalCanvasView: UIViewRepresentable {
                 return
             }
             
+            // Clear the texture first to prevent remnants from previous frames in recycled Metal textures
+            if let renderPassDescriptor = view.currentRenderPassDescriptor,
+               let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) {
+                encoder.endEncoding()
+            }
+            
             var ciImage = CIImage(cgImage: cgImage)
             let drawableSize = view.drawableSize
 

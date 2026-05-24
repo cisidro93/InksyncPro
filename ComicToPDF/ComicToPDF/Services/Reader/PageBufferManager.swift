@@ -114,11 +114,14 @@ class PageBufferManager: ObservableObject {
             // 2. Load neighbors in background (sequential on low-end, concurrent on others)
             let perfClass = ProcessInfo.processInfo.performanceClass
             if perfClass == .low {
-                // Low end: only preload next page, skip prev page to save memory
+                // Low end: load next page then prev page sequentially to avoid concurrent memory spikes
                 let nImage = await renderPage(at: pageIndex + 1, bounds: bounds)
                 if !Task.isCancelled, self.generation == gen {
                     self.nextImage = nImage
-                    self.prevImage = nil // free prev memory
+                }
+                let pImage = await renderPage(at: pageIndex - 1, bounds: bounds)
+                if !Task.isCancelled, self.generation == gen {
+                    self.prevImage = pImage
                 }
             } else {
                 // Medium/High: concurrent preload of both next and prev
@@ -166,17 +169,20 @@ class PageBufferManager: ObservableObject {
             // 2. Decode background pairs
             let perfClass = ProcessInfo.processInfo.performanceClass
             if perfClass == .low {
-                // Low end: Skip previous spread preloading entirely. Load next spread sequentially to avoid memory spikes.
-                let nL = await renderPage(at: nextPair.leftIndex, bounds: nil);  self.decodeProgress = 4/6
-                let nR = await renderPage(at: nextPair.rightIndex, bounds: nil); self.decodeProgress = 6/6
+                // Low end: Load next spread sequentially, then prev spread sequentially to avoid memory spikes.
+                let nL = await renderPage(at: nextPair.leftIndex, bounds: nil);  self.decodeProgress = 3/6
+                let nR = await renderPage(at: nextPair.rightIndex, bounds: nil); self.decodeProgress = 4/6
                 
                 guard !Task.isCancelled, self.generation == gen else { return }
-                
                 self.nextSpread = SpreadPair(leftIndex: nextPair.leftIndex, rightIndex: nextPair.rightIndex, leftImage: nL, rightImage: nR)
-                self.prevSpread = nil
-                
                 self.nextImage = nL ?? nR
-                self.prevImage = nil
+                
+                let pL = await renderPage(at: prevPair.leftIndex, bounds: nil);  self.decodeProgress = 5/6
+                let pR = await renderPage(at: prevPair.rightIndex, bounds: nil); self.decodeProgress = 6/6
+                
+                guard !Task.isCancelled, self.generation == gen else { return }
+                self.prevSpread = SpreadPair(leftIndex: prevPair.leftIndex, rightIndex: prevPair.rightIndex, leftImage: pL, rightImage: pR)
+                self.prevImage = pL ?? pR
             } else {
                 // Medium/High: concurrent preload of both prev and next spreads
                 async let prevL = renderPage(at: prevPair.leftIndex, bounds: nil)

@@ -477,11 +477,14 @@ struct PPLReaderView: View {
             if splitHalf == 0 { splitHalf = 1; return } else { splitHalf = 0 }
         }
 
-        // Always base hop arithmetic on the canonical lead so we never sit on a
+        // Always base hop arithmetic on the canonical lead in dual-page mode so we never sit on a
         // right-slot index and stall for a tap. This gives the natural
         // "every tap = one spread forward" feel the user expects.
-        let lead    = PageBufferManager.canonicalLeadIndex(for: currentPageIndex, isMangaMode: isMangaMode)
-        let isCover = lead == 0
+        // In single-page mode, just use the current page index.
+        let lead = showingDual
+            ? PageBufferManager.canonicalLeadIndex(for: currentPageIndex, isMangaMode: isMangaMode)
+            : currentPageIndex
+        let isCover = showingDual && lead == 0
 
         // In dual-page mode hop by 2 (one full spread) unless the current or next
         // page is a wide physical spread — those always occupy a solo slot.
@@ -509,9 +512,11 @@ struct PPLReaderView: View {
             if splitHalf == 1 { splitHalf = 0; return } else { splitHalf = 1 }
         }
 
-        // Always base hop arithmetic on the canonical lead — same reasoning as nextPage.
-        let lead    = PageBufferManager.canonicalLeadIndex(for: currentPageIndex, isMangaMode: isMangaMode)
-        let isCover = lead == 0
+        // Always base hop arithmetic on the canonical lead in dual-page mode — same reasoning as nextPage.
+        let lead = showingDual
+            ? PageBufferManager.canonicalLeadIndex(for: currentPageIndex, isMangaMode: isMangaMode)
+            : currentPageIndex
+        let isCover = showingDual && lead == 0
         guard lead > 0 else {
             Haptics.shared.playImpact(style: .rigid)
             return
