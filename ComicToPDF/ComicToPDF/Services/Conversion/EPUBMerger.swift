@@ -2,7 +2,7 @@ import Foundation
 import UIKit
 import ZIPFoundation
 
-class EPUBMerger {
+struct EPUBMerger: Sendable {
     
     // Merge multiple EPUBs into a single omnibus EPUB
     func mergeEPUBs(sourceURLs: [URL], outputURL: URL, settings: ConversionSettings, overrideCoverData: Data? = nil, sourceMetadata: PDFMetadata? = nil) async throws {
@@ -196,7 +196,7 @@ class EPUBMerger {
     }
     
     // MARK: - Smart Omnibus Parsing
-    func mergeWithSmartSplit(sourceURLs: [URL], baseOutputName: String, targetDir: URL, settings: ConversionSettings, overrideCoverData: Data? = nil, progressCallback: @escaping (Double) -> Void) async throws -> [URL] {
+    func mergeWithSmartSplit(sourceURLs: [URL], baseOutputName: String, targetDir: URL, settings: ConversionSettings, overrideCoverData: Data? = nil, progressCallback: @escaping @Sendable (Double) -> Void) async throws -> [URL] {
         let fileManager = FileManager.default
         var outputFiles: [URL] = []
         var currentVolumeIndex = 1

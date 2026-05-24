@@ -10,7 +10,7 @@ final class ChapterDetector: Sendable {
     
     /// Detects chapters by scanning the top 30% of each page for heading patterns.
     /// Runs on a background task — never call from the main thread.
-    func detectChapters(in pdf: ConvertedPDF, languages: [String] = ["en-US"], onProgress: ((Double) -> Void)? = nil) async throws -> [Chapter] {
+    func detectChapters(in pdf: ConvertedPDF, languages: [String] = ["en-US"], onProgress: (@Sendable (Double) -> Void)? = nil) async throws -> [Chapter] {
         guard pdf.contentType == .book || pdf.contentType == .hybrid else { return [] }
         
         let result = try await ZipUtilities.extractComic(from: pdf.url)

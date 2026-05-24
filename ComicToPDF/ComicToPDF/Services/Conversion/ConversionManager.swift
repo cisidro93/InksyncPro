@@ -131,10 +131,12 @@ class ConversionManager: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] notification in
+            let pdfID = notification.userInfo?["pdfID"] as? UUID
+            let image = notification.userInfo?["image"] as? UIImage
             Task { @MainActor [weak self] in
                 guard let self,
-                      let pdfID = notification.userInfo?["pdfID"] as? UUID,
-                      let image  = notification.userInfo?["image"]  as? UIImage else { return }
+                      let pdfID,
+                      let image else { return }
                 self.thumbnailCache.setObject(image, forKey: pdfID.uuidString as NSString)
                 self.objectWillChange.send()
             }

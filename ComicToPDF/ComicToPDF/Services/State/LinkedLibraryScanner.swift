@@ -261,21 +261,27 @@ final class LinkedLibraryScanner: ObservableObject {
     func unlinkDrive(_ entry: AppSettingsManager.LinkedDriveEntry) {
         guard let manager = conversionManager else { return }
 
-        Task.detached(priority: .userInitiated) { [weak manager] in
-            var isStale = false
-            var rootPath: String? = nil
-            if let rootURL = try? URL(
-                resolvingBookmarkData: entry.volumeBookmarkData,
-                options: .withoutUI,
-                relativeTo: nil,
-                bookmarkDataIsStale: &isStale
-            ) {
-                rootPath = rootURL.path
-            }
+        let volumeData = entry.volumeBookmarkData
+        let linkedPDFsData = manager.convertedPDFs.compactMap { pdf -> (UUID, Data)? in
+            guard case .linked(let bm) = pdf.sourceMode else { return nil }
+            return (pdf.id, bm)
+        }
 
-            await MainActor.run {
-                manager?.convertedPDFs.removeAll { pdf in
-                    guard case .linked(let bm) = pdf.sourceMode else { return false }
+        Task {
+            let idsToRemove = await Task.detached(priority: .userInitiated) { () -> Set<UUID> in
+                var toRemove = Set<UUID>()
+                var isStale = false
+                var rootPath: String? = nil
+                if let rootURL = try? URL(
+                    resolvingBookmarkData: volumeData,
+                    options: .withoutUI,
+                    relativeTo: nil,
+                    bookmarkDataIsStale: &isStale
+                ) {
+                    rootPath = rootURL.path
+                }
+
+                for (id, bm) in linkedPDFsData {
                     if let rp = rootPath {
                         var fileIsStale = false
                         if let resolved = try? URL(
@@ -284,15 +290,23 @@ final class LinkedLibraryScanner: ObservableObject {
                             relativeTo: nil,
                             bookmarkDataIsStale: &fileIsStale
                         ) {
-                            return resolved.path.hasPrefix(rp)
+                            if resolved.path.hasPrefix(rp) {
+                                toRemove.insert(id)
+                                continue
+                            }
                         }
                     }
-                    return bm == entry.volumeBookmarkData
+                    if bm == volumeData {
+                        toRemove.insert(id)
+                    }
                 }
-                AppSettingsManager.shared.removeLinkedDrive(entry)
-                manager?.saveLibrary()
-                Logger.shared.log("LinkedLibraryScanner: Unlinked drive '\(entry.displayName)'", category: "Drive")
-            }
+                return toRemove
+            }.value
+
+            manager.convertedPDFs.removeAll { idsToRemove.contains($0.id) }
+            AppSettingsManager.shared.removeLinkedDrive(entry)
+            manager.saveLibrary()
+            Logger.shared.log("LinkedLibraryScanner: Unlinked drive '\(entry.displayName)'", category: "Drive")
         }
     }
 

@@ -67,8 +67,9 @@ struct MailComposeView: UIViewControllerRepresentable {
         var parent: MailComposeView
         init(_ parent: MailComposeView) { self.parent = parent }
         func mailComposeController(_ controller: MFMailComposeViewController, didFinishWith result: MFMailComposeResult, error: Error?) {
+            let dismissAction = parent.dismiss
             Task { @MainActor in
-                parent.dismiss()
+                dismissAction()
             }
         }
     }

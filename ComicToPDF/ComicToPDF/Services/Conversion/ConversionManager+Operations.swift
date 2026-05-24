@@ -12,8 +12,9 @@ extension ConversionManager {
         let startCover = sourceFiles.first?.coverImageData
         let settings = AppSettingsManager.shared.conversionSettings
         let saveDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let taskId = task.id
         
-        Task.detached(priority: .userInitiated) {
+        Task {
             // ✅ Linked Library: Resolve all source URLs through BookmarkResolver
             // This handles both local files, linked drive files, and cloud files transparently.
             var resolvedURLs: [URL] = []
@@ -51,46 +52,46 @@ extension ConversionManager {
                 }
             }
             do {
-                let generatedFiles = try await EPUBMerger().mergeWithSmartSplit(
-                    sourceURLs: resolvedURLs,
-                    baseOutputName: name,
-                    targetDir: saveDir,
-                    settings: settings,
-                    overrideCoverData: startCover,
-                    progressCallback: { progress in
-                        Task { @MainActor in task.progress = progress }
-                    }
-                )
+                let generatedFiles = try await Task.detached(priority: .userInitiated) {
+                    try await EPUBMerger().mergeWithSmartSplit(
+                        sourceURLs: resolvedURLs,
+                        baseOutputName: name,
+                        targetDir: saveDir,
+                        settings: settings,
+                        overrideCoverData: startCover,
+                        progressCallback: { @Sendable progress in
+                            Task { @MainActor in
+                                TaskEngine.shared.updateTaskProgress(id: taskId, progress: progress)
+                            }
+                        }
+                    )
+                }.value
                 
-                Task { @MainActor in
-                    for fileURL in generatedFiles {
-                        do {
-                            let attrs = try FileManager.default.attributesOfItem(atPath: fileURL.path)
-                            let size = attrs[.size] as? Int64 ?? 0
-                            
-                            var newPDF = ConvertedPDF(
-                                id: UUID(),
-                                name: fileURL.deletingPathExtension().lastPathComponent,
-                                url: fileURL,
-                                pageCount: 0,
-                                fileSize: size,
-                                metadata: PDFMetadata(title: fileURL.deletingPathExtension().lastPathComponent),
-                                contentType: .book
-                            )
-                            newPDF.lastOutputFormat = settings.outputFormat
-                            newPDF.coverImageData = startCover
-                            self.convertedPDFs.append(newPDF)
-                        } catch {}
-                    }
-                    self.saveLibrary()
-                    self.activeTasks.removeAll(where: { $0.id == task.id })
-                    self.appAlert = AppAlert(title: "Omnibus Complete", message: "Successfully created \(generatedFiles.count) volumes for \(name)")
+                for fileURL in generatedFiles {
+                    do {
+                        let attrs = try FileManager.default.attributesOfItem(atPath: fileURL.path)
+                        let size = attrs[.size] as? Int64 ?? 0
+                        
+                        var newPDF = ConvertedPDF(
+                            id: UUID(),
+                            name: fileURL.deletingPathExtension().lastPathComponent,
+                            url: fileURL,
+                            pageCount: 0,
+                            fileSize: size,
+                            metadata: PDFMetadata(title: fileURL.deletingPathExtension().lastPathComponent),
+                            contentType: .book
+                        )
+                        newPDF.lastOutputFormat = settings.outputFormat
+                        newPDF.coverImageData = startCover
+                        self.convertedPDFs.append(newPDF)
+                    } catch {}
                 }
+                self.saveLibrary()
+                self.activeTasks.removeAll(where: { $0.id == taskId })
+                self.appAlert = AppAlert(title: "Omnibus Complete", message: "Successfully created \(generatedFiles.count) volumes for \(name)")
             } catch {
-                Task { @MainActor in
-                    self.activeTasks.removeAll(where: { $0.id == task.id })
-                    self.appAlert = AppAlert(title: "Omnibus Failed", message: error.localizedDescription)
-                }
+                self.activeTasks.removeAll(where: { $0.id == taskId })
+                self.appAlert = AppAlert(title: "Omnibus Failed", message: error.localizedDescription)
             }
         }
     }

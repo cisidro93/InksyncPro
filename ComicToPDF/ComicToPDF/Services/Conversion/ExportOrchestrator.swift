@@ -48,7 +48,7 @@ class ExportOrchestrator {
             
             do {
                 let imageURLs = try await EditorSessionManager.shared.extractImageURLs(from: localSourceURL)
-                try PDFGenerator.generate(from: imageURLs, to: exportURL, mangaMode: AppSettingsManager.shared.conversionSettings.mangaMode, chapters: pdf.chapters, settings: AppSettingsManager.shared.conversionSettings) { progress in
+                try PDFGenerator.generate(from: imageURLs, to: exportURL, mangaMode: AppSettingsManager.shared.conversionSettings.mangaMode, chapters: pdf.chapters, settings: AppSettingsManager.shared.conversionSettings) { @Sendable progress in
                     Task { @MainActor in TaskEngine.shared.processingStatus = "Processing \(Int(progress * 100))%" }
                 }
                 return exportURL
@@ -141,7 +141,7 @@ class ExportOrchestrator {
                 sourceURL: localSourceURL,
                 settings: AppSettingsManager.shared.conversionSettings,
                 metadata: pdf.metadata,
-                progress: { progress in
+                progress: { @Sendable progress in
                     Task { @MainActor in TaskEngine.shared.conversionProgress = progress }
                 }
             )
@@ -195,7 +195,7 @@ class ExportOrchestrator {
                 try? fileManager.removeItem(at: pdfURL)
 
                 let imageURLs = try await EditorSessionManager.shared.extractImageURLs(from: localSourceURL)
-                try PDFGenerator.generate(from: imageURLs, to: pdfURL, mangaMode: AppSettingsManager.shared.conversionSettings.mangaMode, chapters: pdf.chapters, settings: AppSettingsManager.shared.conversionSettings) { progress in
+                try PDFGenerator.generate(from: imageURLs, to: pdfURL, mangaMode: AppSettingsManager.shared.conversionSettings.mangaMode, chapters: pdf.chapters, settings: AppSettingsManager.shared.conversionSettings) { @Sendable progress in
                     Task { @MainActor in TaskEngine.shared.processingStatus = "Processing \(Int(progress * 100))%" }
                 }
                 return pdfURL

@@ -3,7 +3,7 @@ import UIKit
 import Foundation
 
 /// PDF Import Engine: Extracts pages from PDF documents as high-resolution images
-class PDFImporter {
+struct PDFImporter: Sendable {
     
     /// Get total page count
     func getPageCount(url: URL) -> Int {

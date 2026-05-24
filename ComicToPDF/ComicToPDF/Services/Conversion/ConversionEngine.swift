@@ -121,7 +121,7 @@ actor ConversionEngine {
             sourceURL: url,
             settings: settings,
             manualManifest: nil, // We could pass overrides here if we had them in settings
-            progress: { progress in
+            progress: { @Sendable progress in
                 // Adapt closure to async stream/subject if needed, but for now just fire and forget or ignore
                 // Since this is inside an actor, we need to be careful.
                 // The convert method expects a closure (User provided: @escaping (Double) -> Void)

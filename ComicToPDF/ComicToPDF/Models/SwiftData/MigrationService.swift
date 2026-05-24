@@ -130,59 +130,48 @@ class MigrationService {
         return generatedCount + assignedCount
     }
     
-    // ✅ Phase 5: NLP Tags Backfill Migration
-    // Processes all existing annotations that lack tags but have text, running them through Apple's NLP engine.
+    @MainActor
     func runZettelkastenNLPBackfill(context: ModelContext) {
         if UserDefaults.standard.bool(forKey: "zettelNLPBackfillVersion_v1") { return }
         
-        Task.detached(priority: .background) {
-            do {
-                let fetchDescriptor = FetchDescriptor<SDAnnotation>()
-                let allAnnotations = (try? context.fetch(fetchDescriptor)) ?? []
-                
-                // Target annotations without tags that are highlights and have selected text
-                let targets = allAnnotations.filter { 
-                    ($0.tags == nil || $0.tags!.isEmpty) && 
-                    $0.kindRaw == "highlight" && 
-                    $0.selectedText != nil && 
-                    !$0.selectedText!.isEmpty 
+        let fetchDescriptor = FetchDescriptor<SDAnnotation>()
+        let allAnnotations = (try? context.fetch(fetchDescriptor)) ?? []
+        
+        let targets = allAnnotations.filter { 
+            ($0.tags == nil || $0.tags!.isEmpty) && 
+            $0.kindRaw == "highlight" && 
+            $0.selectedText != nil && 
+            !$0.selectedText!.isEmpty 
+        }.map { ($0.id, $0.selectedText!) }
+        
+        guard !targets.isEmpty else {
+            UserDefaults.standard.set(true, forKey: "zettelNLPBackfillVersion_v1")
+            return
+        }
+        
+        Logger.shared.log("Starting NLP backfill for \(targets.count) annotations...", category: "Migration")
+        
+        Task {
+            let results = await Task.detached(priority: .background) { () -> [(UUID, [String])] in
+                var extracted: [(UUID, [String])] = []
+                for (id, text) in targets {
+                    let tags = await AnnotationStore.shared.extractNLPKeywords(from: text)
+                    extracted.append((id, tags))
                 }
-                
-                guard !targets.isEmpty else {
-                    UserDefaults.standard.set(true, forKey: "zettelNLPBackfillVersion_v1")
-                    return
+                return extracted
+            }.value
+            
+            for (id, tags) in results {
+                let refreshDescriptor = FetchDescriptor<SDAnnotation>(
+                    predicate: #Predicate { $0.id == id }
+                )
+                if let annotation = try? context.fetch(refreshDescriptor).first {
+                    annotation.tags = tags
                 }
-                
-                Logger.shared.log("Starting NLP backfill for \(targets.count) annotations...", category: "Migration")
-                
-                // Process in batches
-                let batchSize = 50
-                for i in stride(from: 0, to: targets.count, by: batchSize) {
-                    let end = min(i + batchSize, targets.count)
-                    let batch = Array(targets[i..<end])
-                    
-                    for annotation in batch {
-                        if let text = annotation.selectedText {
-                            let extractedTags = await AnnotationStore.shared.extractNLPKeywords(from: text)
-                            await MainActor.run {
-                                annotation.tags = extractedTags
-                            }
-                        }
-                    }
-                    
-                    await MainActor.run {
-                        try? context.save()
-                    }
-                    // Small delay to yield CPU
-                    try? await Task.sleep(nanoseconds: 100_000_000)
-                }
-                
-                UserDefaults.standard.set(true, forKey: "zettelNLPBackfillVersion_v1")
-                Logger.shared.log("Completed NLP backfill migration successfully.", category: "Migration")
-                
-            } catch {
-                Logger.shared.log("Error during NLP backfill migration: \(error.localizedDescription)", category: "Migration", type: .error)
             }
+            try? context.save()
+            UserDefaults.standard.set(true, forKey: "zettelNLPBackfillVersion_v1")
+            Logger.shared.log("Completed NLP backfill migration successfully.", category: "Migration")
         }
     }
     

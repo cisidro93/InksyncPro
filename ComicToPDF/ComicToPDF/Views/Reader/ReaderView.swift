@@ -1228,19 +1228,17 @@ struct ReaderView: View {
         
         if let annotation = targetAnnotation {
             let targetID = annotation.id
-            Task.detached(priority: .background) {
+            Task {
                 if let ocrText = await HandwritingOCRManager.shared.recognizeHandwriting(in: drawing) {
-                    await MainActor.run {
-                        let refreshDescriptor = FetchDescriptor<SDAnnotation>(
-                            predicate: #Predicate { $0.id == targetID }
-                        )
-                        if let active = try? self.modelContext.fetch(refreshDescriptor).first, active.drawingOCRText != ocrText {
-                            active.drawingOCRText = ocrText
-                            active.modifiedAt = Date()
-                            try? self.modelContext.save()
-                            Logger.shared.log("Reader ink OCR updated for page \(pIndex): \(ocrText.prefix(40))...", category: "OCR", type: .success)
-                            SpotlightIndexer.shared.indexAnnotation(active)
-                        }
+                    let refreshDescriptor = FetchDescriptor<SDAnnotation>(
+                        predicate: #Predicate { $0.id == targetID }
+                    )
+                    if let active = try? self.modelContext.fetch(refreshDescriptor).first, active.drawingOCRText != ocrText {
+                        active.drawingOCRText = ocrText
+                        active.modifiedAt = Date()
+                        try? self.modelContext.save()
+                        Logger.shared.log("Reader ink OCR updated for page \(pIndex): \(ocrText.prefix(40))...", category: "OCR", type: .success)
+                        SpotlightIndexer.shared.indexAnnotation(active)
                     }
                 }
             }

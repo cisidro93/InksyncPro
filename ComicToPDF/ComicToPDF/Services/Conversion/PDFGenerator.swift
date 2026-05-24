@@ -2,7 +2,7 @@ import UIKit
 import PDFKit
 
 /// Optimization: User Request - Use UIGraphicsPDFRenderer for better memory management
-class PDFGenerator {
+struct PDFGenerator: Sendable {
     
     enum PDFError: LocalizedError {
         case outputCreationFailed
@@ -23,7 +23,7 @@ class PDFGenerator {
     ///   - mangaMode: If true, reverses page order for RTL reading
     ///   - chapters: Optional list of chapters for Table of Contents generation
     ///   - progress: Progress callback
-    static func generate(from images: [URL], to outputURL: URL, mangaMode: Bool = false, chapters: [Chapter]? = nil, settings: ConversionSettings, coverOverrideData: Data? = nil, progress: ((Double) -> Void)? = nil) throws {
+    static func generate(from images: [URL], to outputURL: URL, mangaMode: Bool = false, chapters: [Chapter]? = nil, settings: ConversionSettings, coverOverrideData: Data? = nil, progress: (@Sendable (Double) -> Void)? = nil) throws {
         let total = Double(images.count)
         var current = 0.0
         

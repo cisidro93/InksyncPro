@@ -13,6 +13,12 @@ class TaskEngine: ObservableObject {
     @Published var appAlert: AppAlert?
     @Published var activeTasks: [AppBackgroundTask] = []
     
+    func updateTaskProgress(id: UUID, progress: Double) {
+        if let idx = activeTasks.firstIndex(where: { $0.id == id }) {
+            activeTasks[idx].progress = progress
+        }
+    }
+    
     private var progressSubscription: AnyCancellable?
     
     init() {

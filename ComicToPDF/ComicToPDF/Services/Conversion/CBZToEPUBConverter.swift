@@ -1,9 +1,9 @@
 import SwiftUI
 import ZIPFoundation
 
-class CBZToEPUBConverter {
+struct CBZToEPUBConverter: Sendable {
     
-    func convert(sourceURL: URL, settings: ConversionSettings, manualManifest: [Int: [PanelExtractor.Panel]]?, sourceIsMangaPDF: Bool = false, coverOverrideData: Data? = nil, progress: @escaping (Double) -> Void) async throws -> [URL] {
+    func convert(sourceURL: URL, settings: ConversionSettings, manualManifest: [Int: [PanelExtractor.Panel]]?, sourceIsMangaPDF: Bool = false, coverOverrideData: Data? = nil, progress: @escaping @Sendable (Double) -> Void) async throws -> [URL] {
         Logger.shared.log("Starting Enterprise Conversion (No TOC). Manual Manifest: \(manualManifest?.count ?? 0) pages", category: "Converter")
         
         let fileManager = FileManager.default
@@ -73,7 +73,7 @@ class CBZToEPUBConverter {
     }
 
     // Stage 2 — Process and batch images...
-    private func processAndBatch(imageURLs: [URL], settings: ConversionSettings, progress: @escaping (Double) -> Void) async throws -> [[(data: Data, sourceURL: URL, index: Int)]] {
+    private func processAndBatch(imageURLs: [URL], settings: ConversionSettings, progress: @escaping @Sendable (Double) -> Void) async throws -> [[(data: Data, sourceURL: URL, index: Int)]] {
         Logger.shared.log("Stage 2 Start: Processing and Batching", category: "Converter")
         var batches: [[(url: URL, index: Int, data: Data)]] = []
         var currentBatch: [(url: URL, index: Int, data: Data)] = []
@@ -368,7 +368,7 @@ class CBZToEPUBConverter {
         sourceURL: URL,
         settings: ConversionSettings,
         metadata: PDFMetadata,
-        progress: @escaping (Double) -> Void
+        progress: @escaping @Sendable (Double) -> Void
     ) async throws -> URL {
         Logger.shared.log("Stage 1 Start: Extracting \\(sourceURL.lastPathComponent) for KFX", category: "Converter")
         progress(0.1)

@@ -40,7 +40,7 @@ enum ComicReadingMode: String, CaseIterable, Codable {
 
 }
 
-class ComicImageCache: ObservableObject {
+final class ComicImageCache: ObservableObject, @unchecked Sendable {
     private var cache = NSCache<NSNumber, UIImage>()
     private var accessQueue: [Int] = []
     private var fetchingQueue: Set<Int> = [] // Track pending extractions
