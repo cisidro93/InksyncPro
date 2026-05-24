@@ -65,6 +65,8 @@ class PageBufferManager: ObservableObject {
     /// Incremented every time setup() is called. Any decode that finishes after a new
     /// setup() has started is stale — it must not write to any @Published property.
     private var generation: Int = 0
+    private var lastPageTurnTime: Date = Date()
+    private var isSkimming: Bool = false
 
     // ✅ Phase 1: Smart Margin Cropping
     var isAutoCropEnabled: Bool {
@@ -88,6 +90,8 @@ class PageBufferManager: ObservableObject {
         currentSpread = nil
         nextSpread = nil
         prevSpread = nil
+        lastPageTurnTime = Date()
+        isSkimming = false
     }
 
     func updateViewport(rect: NormalizedRect) {
@@ -97,6 +101,12 @@ class PageBufferManager: ObservableObject {
     // MARK: - Single Page Render
 
     func render(pageIndex: Int, bounds: CGSize) {
+        let now = Date()
+        let interval = now.timeIntervalSince(lastPageTurnTime)
+        lastPageTurnTime = now
+        let wasSkimming = isSkimming
+        isSkimming = (interval < 0.4) // skimming if turned within 400ms
+
         renderTask?.cancel()
         let gen = generation          // capture — guards against stale writes
         renderTask = Task {
@@ -109,6 +119,21 @@ class PageBufferManager: ObservableObject {
             if !Task.isCancelled, self.generation == gen {
                 self.currentImage = cImage
                 self.isLoading = false
+            }
+
+            if isSkimming {
+                // Skimming: Skip preloading neighbors immediately. Clears old preload memory.
+                if !Task.isCancelled, self.generation == gen {
+                    self.nextImage = nil
+                    self.prevImage = nil
+                }
+                // Dwell check: Wait 400ms. If user stops skimming, preloading will begin automatically.
+                try? await Task.sleep(nanoseconds: 400_000_000)
+                guard !Task.isCancelled, self.generation == gen else { return }
+            } else if wasSkimming {
+                // Settle delay: if we just stopped skimming, wait 150ms to ensure the user has rested
+                try? await Task.sleep(nanoseconds: 150_000_000)
+                guard !Task.isCancelled, self.generation == gen else { return }
             }
 
             // 2. Load neighbors in background (sequential on low-end, concurrent on others)
@@ -143,6 +168,12 @@ class PageBufferManager: ObservableObject {
     /// Render a spread window around `leadIndex` (the left page of the current spread).
     /// `isMangaMode` controls which physical page index maps to left vs right.
     func renderDual(leadIndex: Int, pages allPages: [URL], isMangaMode: Bool) {
+        let now = Date()
+        let interval = now.timeIntervalSince(lastPageTurnTime)
+        lastPageTurnTime = now
+        let wasSkimming = isSkimming
+        isSkimming = (interval < 0.4) // skimming if turned within 400ms
+
         renderTask?.cancel()
         let gen = generation          // capture — guards against stale writes
         renderTask = Task {
@@ -164,6 +195,23 @@ class PageBufferManager: ObservableObject {
                 self.currentSpread = SpreadPair(leftIndex: curPair.leftIndex, rightIndex: curPair.rightIndex, leftImage: cL, rightImage: cR)
                 self.currentImage  = cL ?? cR
                 self.isLoading     = false  // UI unlocks here
+            }
+
+            if isSkimming {
+                // Skimming: Skip preloading neighbors immediately. Clears old preload memory.
+                if !Task.isCancelled, self.generation == gen {
+                    self.nextSpread = nil
+                    self.prevSpread = nil
+                    self.nextImage = nil
+                    self.prevImage = nil
+                }
+                // Dwell check: Wait 400ms. If user stops skimming, preloading will begin automatically.
+                try? await Task.sleep(nanoseconds: 400_000_000)
+                guard !Task.isCancelled, self.generation == gen else { return }
+            } else if wasSkimming {
+                // Settle delay: if we just stopped skimming, wait 150ms to ensure the user has rested
+                try? await Task.sleep(nanoseconds: 150_000_000)
+                guard !Task.isCancelled, self.generation == gen else { return }
             }
 
             // 2. Decode background pairs
@@ -259,17 +307,21 @@ class PageBufferManager: ObservableObject {
         guard let index = index, index >= 0, index < pageURLs.count else { return nil }
         let url = pageURLs[index]
 
+        let scale = await MainActor.run { UIScreen.main.scale }
         let perfClass = ProcessInfo.processInfo.performanceClass
         let maxPixelSize: CGFloat? = {
             if let bounds = bounds, bounds.width > 0, bounds.height > 0 {
                 let maxDim = max(bounds.width, bounds.height)
                 switch perfClass {
                 case .low:
-                    return maxDim * 1.5
+                    // Low-tier gets slightly under Retina to save memory
+                    return maxDim * min(scale, 1.5)
                 case .medium:
-                    return maxDim * 2.0
+                    // Medium-tier gets exact Retina resolution
+                    return maxDim * scale
                 case .high:
-                    return maxDim * 3.0
+                    // High-tier gets super-sampled Retina resolution (1.5x Retina) for pin-sharp zooms
+                    return maxDim * scale * 1.5
                 }
             } else {
                 switch perfClass {
