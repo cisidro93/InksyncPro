@@ -5,7 +5,7 @@ import SwiftUI
 /// Fullscreen swipe-based reader that fetches individual pages via the OPDS-PSE
 /// URL template (`{pageNumber}` substitution, optional `{maxWidth}` injection).
 /// Manages an NSCache sliding window of ±2 pages to prevent swipe stall.
-struct OPDSPSEReader: View {
+@MainActor struct OPDSPSEReader: View {
     let server: SDOPDSServer
     let entry: OPDSEntry
 

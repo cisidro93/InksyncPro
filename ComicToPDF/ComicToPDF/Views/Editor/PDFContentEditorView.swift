@@ -28,38 +28,37 @@ class PDFContentEditorViewModel: ObservableObject {
         isLoading = true
         errorMessage = nil
         
+        guard let doc = PDFDocument(url: self.pdf.url) else {
+            self.errorMessage = "Could not open PDF file."
+            self.isLoading = false
+            return
+        }
+        
+        self.document = doc
+        let pageCount = doc.pageCount
+        var initialItems: [PDFPageItem] = []
+        for i in 0..<pageCount {
+            initialItems.append(PDFPageItem(index: i, thumbnail: nil))
+        }
+        self.pages = initialItems
+        self.isLoading = false
+        
+        let fileURL = self.pdf.url
         Task.detached(priority: .userInitiated) { [weak self] in
             guard let self = self else { return }
             
-            if let doc = PDFDocument(url: self.pdf.url) {
-                let pageCount = doc.pageCount
-                // Pre-create items
-                var initialItems: [PDFPageItem] = []
-                for i in 0..<pageCount {
-                    initialItems.append(PDFPageItem(index: i, thumbnail: nil))
-                }
-                
-                let itemsToAssign = initialItems
-                await MainActor.run {
-                    self.document = doc
-                    self.pages = itemsToAssign
-                    self.isLoading = false
-                }
-                
-                // Load thumbnails progressively
-                let size = CGSize(width: 150, height: 200)
-                for i in 0..<pageCount {
-                    if let page = doc.page(at: i) {
-                        let thumb = page.thumbnail(of: size, for: .mediaBox)
-                        await MainActor.run {
-                            if i < self.pages.count { self.pages[i].thumbnail = thumb }
+            guard let backgroundDoc = PDFDocument(url: fileURL) else { return }
+            let count = backgroundDoc.pageCount
+            let size = CGSize(width: 150, height: 200)
+            
+            for i in 0..<count {
+                if let page = backgroundDoc.page(at: i) {
+                    let thumb = page.thumbnail(of: size, for: .mediaBox)
+                    await MainActor.run {
+                        if i < self.pages.count {
+                            self.pages[i].thumbnail = thumb
                         }
                     }
-                }
-            } else {
-                await MainActor.run {
-                    self.errorMessage = "Could not open PDF file."
-                    self.isLoading = false
                 }
             }
         }
@@ -82,15 +81,13 @@ class PDFContentEditorViewModel: ObservableObject {
         selectedIndices.removeAll()
     }
     
-    func saveChanges(completion: @escaping () -> Void) {
+    func saveChanges(completion: @escaping @Sendable () -> Void) {
         guard let originalDoc = document else { return }
         isSaving = true
         
-        // 1. We have a list of remaining 'pages'. Their 'index' maps to the original PDF page index.
         let remainingOriginalIndices = pages.map { $0.index }
         let originalCount = originalDoc.pageCount
         
-        // Find indices to remove (in descending order)
         let setOfRemaining = Set(remainingOriginalIndices)
         let indicesToRemove = (0..<originalCount).filter { !setOfRemaining.contains($0) }.sorted(by: >)
         
@@ -100,25 +97,34 @@ class PDFContentEditorViewModel: ObservableObject {
             return
         }
         
+        let fileURL = self.pdf.url
+        
         Task.detached(priority: .userInitiated) { [weak self] in
             guard let self = self else { return }
             
-            // Remove pages from document
-            for idx in indicesToRemove {
-                originalDoc.removePage(at: idx)
+            guard let backgroundDoc = PDFDocument(url: fileURL) else {
+                await MainActor.run {
+                    self.errorMessage = "Failed to load document for saving."
+                    self.isSaving = false
+                }
+                return
             }
             
-            // Write to disk
-            let success = originalDoc.write(to: self.pdf.url)
+            for idx in indicesToRemove {
+                backgroundDoc.removePage(at: idx)
+            }
+            
+            let success = backgroundDoc.write(to: fileURL)
             
             await MainActor.run {
                 if success {
                     Logger.shared.log("PDF Editor: Removed \(indicesToRemove.count) pages from \(self.pdf.name)", category: "Editor")
                     
-                    // Update the global ConvertedPDF model
+                    self.document = PDFDocument(url: fileURL)
+                    
                     var updatedPDF = self.pdf
-                    updatedPDF.pageCount = originalDoc.pageCount
-                    if let fileAttrs = try? FileManager.default.attributesOfItem(atPath: self.pdf.url.path),
+                    updatedPDF.pageCount = self.document?.pageCount ?? 0
+                    if let fileAttrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
                        let size = fileAttrs[.size] as? Int64 {
                         updatedPDF.fileSize = size
                     }

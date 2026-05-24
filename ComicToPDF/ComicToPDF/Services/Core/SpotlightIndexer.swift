@@ -25,24 +25,21 @@ final class SpotlightIndexer {
 
     /// Index the entire library — call after import or metadata changes.
     func indexLibrary(pdfs: [ConvertedPDF]) {
-        // Capture only primitive values
         let tuples = pdfs.map { (id: $0.id, name: $0.name, series: $0.metadata.series, type: $0.contentType.rawValue) }
-        Task {
-            let items: [CSSearchableItem] = tuples.map { t in
-                let attrs = CSSearchableItemAttributeSet(contentType: .content)
-                attrs.title = t.name
-                attrs.contentDescription = t.series
-                attrs.keywords = [t.type]
-                attrs.identifier = t.id.uuidString
-                return CSSearchableItem(
-                    uniqueIdentifier: "book-\(t.id.uuidString)",
-                    domainIdentifier: "com.inksyncpro.library",
-                    attributeSet: attrs
-                )
-            }
-            do {
-                try await self.index.indexSearchableItems(items)
-            } catch {
+        let items: [CSSearchableItem] = tuples.map { t in
+            let attrs = CSSearchableItemAttributeSet(contentType: .content)
+            attrs.title = t.name
+            attrs.contentDescription = t.series
+            attrs.keywords = [t.type]
+            attrs.identifier = t.id.uuidString
+            return CSSearchableItem(
+                uniqueIdentifier: "book-\(t.id.uuidString)",
+                domainIdentifier: "com.inksyncpro.library",
+                attributeSet: attrs
+            )
+        }
+        self.index.indexSearchableItems(items) { error in
+            if let error = error {
                 Logger.shared.log("Spotlight: failed to index library — \(error)", category: "Spotlight", type: .error)
             }
         }
@@ -51,16 +48,12 @@ final class SpotlightIndexer {
     /// Index (or re-index) a single book — call after metadata edit.
     func indexBook(_ pdf: ConvertedPDF) {
         let item = makeBookItem(pdf)
-        Task {
-            try? await self.index.indexSearchableItems([item])
-        }
+        self.index.indexSearchableItems([item], completionHandler: nil)
     }
 
     /// Remove a single book from the index — call on delete.
     func deindexBook(_ pdfID: UUID) {
-        Task {
-            try? await self.index.deleteSearchableItems(withIdentifiers: ["book-\(pdfID.uuidString)"])
-        }
+        self.index.deleteSearchableItems(withIdentifiers: ["book-\(pdfID.uuidString)"], completionHandler: nil)
     }
 
     // MARK: - Annotation Indexing
@@ -72,22 +65,16 @@ final class SpotlightIndexer {
         guard hasSelectedText || hasNoteText || hasOCRText else { return }
         
         let item = makeAnnotationItem(annotation)
-        Task {
-            try? await self.index.indexSearchableItems([item])
-        }
+        self.index.indexSearchableItems([item], completionHandler: nil)
     }
 
     func deindexAnnotation(_ annotationID: UUID) {
-        Task {
-            try? await self.index.deleteSearchableItems(withIdentifiers: ["ann-\(annotationID.uuidString)"])
-        }
+        self.index.deleteSearchableItems(withIdentifiers: ["ann-\(annotationID.uuidString)"], completionHandler: nil)
     }
 
     /// Nuke the entire index — useful for settings reset.
     func clearAll() {
-        Task {
-            try? await self.index.deleteAllSearchableItems()
-        }
+        self.index.deleteAllSearchableItems(completionHandler: nil)
     }
 
     // MARK: - Item Builders

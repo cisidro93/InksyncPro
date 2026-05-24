@@ -11,7 +11,7 @@ import Foundation
 ///
 /// Fire-and-forget pattern: saveProgress never throws to the caller.
 /// All errors are logged and silently swallowed to avoid disrupting the reading UX.
-actor OPDSProgressSyncService {
+@MainActor final class OPDSProgressSyncService: Sendable {
 
     static let shared = OPDSProgressSyncService()
 

@@ -265,9 +265,9 @@ public final class SpeechRecognitionManager: ObservableObject {
             queue: .main
         ) { [weak self] notification in
             guard let self = self else { return }
+            let typeValue = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
             Task { @MainActor in
-                guard let userInfo = notification.userInfo,
-                      let typeValue = userInfo[AVAudioSessionInterruptionTypeKey] as? UInt,
+                guard let typeValue = typeValue,
                       let type = AVAudioSession.InterruptionType(rawValue: typeValue) else { return }
                 
                 if type == .began {
@@ -284,9 +284,9 @@ public final class SpeechRecognitionManager: ObservableObject {
             queue: .main
         ) { [weak self] notification in
             guard let self = self else { return }
+            let reasonValue = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt
             Task { @MainActor in
-                guard let userInfo = notification.userInfo,
-                      let reasonValue = userInfo[AVAudioSessionRouteChangeReasonKey] as? UInt,
+                guard let reasonValue = reasonValue,
                       let reason = AVAudioSession.RouteChangeReason(rawValue: reasonValue) else { return }
                 
                 if reason == .oldDeviceUnavailable {

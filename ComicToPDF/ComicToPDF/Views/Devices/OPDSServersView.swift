@@ -143,9 +143,11 @@ struct OPDSServersView: View {
     private func pingAllServers() async {
         await withTaskGroup(of: (UUID, Bool).self) { group in
             for server in servers {
+                let id = server.id
+                let baseURL = server.baseURL
                 group.addTask {
-                    let alive = await pingServer(server)
-                    return (server.id, alive)
+                    let alive = await pingServer(url: baseURL)
+                    return (id, alive)
                 }
             }
             for await (id, alive) in group {
@@ -154,8 +156,8 @@ struct OPDSServersView: View {
         }
     }
 
-    private func pingServer(_ server: SDOPDSServer) async -> Bool {
-        guard let url = server.baseURL else { return false }
+    private func pingServer(url: URL?) async -> Bool {
+        guard let url = url else { return false }
         var req = URLRequest(url: url)
         req.httpMethod = "HEAD"
         req.timeoutInterval = 5

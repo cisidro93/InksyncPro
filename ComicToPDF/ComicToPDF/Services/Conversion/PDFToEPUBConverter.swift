@@ -7,7 +7,7 @@ import MobileCoreServices
 
 /// Service to convert PDF files to EPUB format
 /// Extracts PDF pages as images and packages them into a valid EPUB structure
-class PDFToEPUBConverter {
+final class PDFToEPUBConverter: Sendable {
     
     enum ConversionError: LocalizedError {
         case pdfLoadFailed
@@ -32,7 +32,7 @@ class PDFToEPUBConverter {
         }
     }
     
-    struct ConversionOptions {
+    struct ConversionOptions: Sendable {
         var imageQuality: CGFloat = 0.85
         var maxImageWidth: CGFloat = 1600
         var maxImageHeight: CGFloat = 2400
@@ -46,12 +46,12 @@ class PDFToEPUBConverter {
         static let compressed = ConversionOptions(imageQuality: 0.7, maxImageWidth: 1200, maxImageHeight: 1800)
     }
     
-    struct ConversionProgress {
+    struct ConversionProgress: Sendable {
         let currentPage: Int
         let totalPages: Int
         let phase: Phase
         
-        enum Phase: String {
+        enum Phase: String, Sendable {
             case extracting = "Extracting pages"
             case packaging = "Creating EPUB"
             case complete = "Complete"

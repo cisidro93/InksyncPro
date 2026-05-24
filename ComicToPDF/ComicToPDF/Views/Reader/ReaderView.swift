@@ -1227,10 +1227,10 @@ struct ReaderView: View {
         try? modelContext.save()
         
         if let annotation = targetAnnotation {
+            let targetID = annotation.id
             Task.detached(priority: .background) {
                 if let ocrText = await HandwritingOCRManager.shared.recognizeHandwriting(in: drawing) {
                     await MainActor.run {
-                        let targetID = annotation.id
                         let refreshDescriptor = FetchDescriptor<SDAnnotation>(
                             predicate: #Predicate { $0.id == targetID }
                         )

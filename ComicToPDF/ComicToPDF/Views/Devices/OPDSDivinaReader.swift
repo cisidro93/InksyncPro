@@ -11,7 +11,7 @@ import SwiftUI
 /// maintains an NSCache sliding window (±2 pages) for smooth swipe performance.
 ///
 /// Progress sync uses OPDSProgressSyncService — same actor as the PSE reader.
-struct OPDSDivinaReader: View {
+@MainActor struct OPDSDivinaReader: View {
     let server: SDOPDSServer
     let entry: OPDSEntry
 

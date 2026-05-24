@@ -60,7 +60,7 @@ final class ZettelkastenGraphEngine: NSObject, ObservableObject {
     @Published var highlightedPathNodeIDs: Set<String> = []
     @Published var highlightedPathEdgeIDs: Set<String> = []
 
-    private var displayLink: CADisplayLink?
+    nonisolated(unsafe) private var displayLink: CADisplayLink?
     private var tickCount: Int = 0
 
     // ── Physics tuning ──────────────────────────────────────────────────────

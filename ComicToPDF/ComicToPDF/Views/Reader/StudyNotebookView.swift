@@ -949,7 +949,7 @@ struct MarkdownTextEditor: UIViewRepresentable {
     class Coordinator: NSObject, UITextViewDelegate, UIGestureRecognizerDelegate {
         var parent: MarkdownTextEditor
         weak var textView: UITextView?
-        private var dictationObserver: NSObjectProtocol?
+        nonisolated(unsafe) private var dictationObserver: NSObjectProtocol?
         
         init(_ parent: MarkdownTextEditor) {
             self.parent = parent
@@ -960,10 +960,11 @@ struct MarkdownTextEditor: UIViewRepresentable {
                 object: nil,
                 queue: .main
             ) { [weak self] notification in
+                let textToInsert = notification.userInfo?["text"] as? String
                 Task { @MainActor in
                     guard let self = self,
                           let textView = self.textView,
-                          let textToInsert = notification.userInfo?["text"] as? String else { return }
+                          let textToInsert = textToInsert else { return }
                     
                     self.insertText(textToInsert)
                 }
