@@ -534,7 +534,7 @@ struct PPLReaderView: View {
         bufferManager.setup(pages: pages)
         if dual {
             let lead = PageBufferManager.canonicalLeadIndex(for: currentPageIndex, isMangaMode: isMangaMode)
-            bufferManager.renderDual(leadIndex: lead, pages: pages, isMangaMode: isMangaMode)
+            bufferManager.renderDual(leadIndex: lead, pages: pages, isMangaMode: isMangaMode, bounds: geo.size)
         } else {
             bufferManager.render(pageIndex: currentPageIndex, bounds: geo.size)
         }
@@ -556,7 +556,7 @@ struct PPLReaderView: View {
     private func advanceBuffer(to index: Int, geo: GeometryProxy, dual: Bool) {
         if dual {
             let lead = PageBufferManager.canonicalLeadIndex(for: index, isMangaMode: isMangaMode)
-            bufferManager.renderDual(leadIndex: lead, pages: pages, isMangaMode: isMangaMode)
+            bufferManager.renderDual(leadIndex: lead, pages: pages, isMangaMode: isMangaMode, bounds: geo.size)
         } else {
             bufferManager.render(pageIndex: index, bounds: geo.size)
         }
@@ -580,7 +580,7 @@ struct PPLReaderView: View {
         bufferManager.updateViewport(rect: .full)
         if dual {
             let lead = PageBufferManager.canonicalLeadIndex(for: currentPageIndex, isMangaMode: isMangaMode)
-            bufferManager.renderDual(leadIndex: lead, pages: pages, isMangaMode: isMangaMode)
+            bufferManager.renderDual(leadIndex: lead, pages: pages, isMangaMode: isMangaMode, bounds: size)
         } else {
             bufferManager.render(pageIndex: currentPageIndex, bounds: size)
         }

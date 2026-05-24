@@ -112,28 +112,41 @@ class PageBufferManager: ObservableObject {
         renderTask = Task {
             self.isLoading = true
 
-            // 1. Decode current page first for zero-latency presentation
-            let cImage = await renderPage(at: pageIndex, bounds: bounds)
-            
-            // Publish current image immediately to unlock UI
-            if !Task.isCancelled, self.generation == gen {
-                self.currentImage = cImage
-                self.isLoading = false
-            }
-
             if isSkimming {
-                // Skimming: Skip preloading neighbors immediately. Clears old preload memory.
+                // 1. Skimming: Decode a low-res thumbnail first for absolute zero latency
+                let thumbBounds = CGSize(width: 512, height: 512)
+                let lowResImage = await renderPage(at: pageIndex, bounds: thumbBounds)
+                
                 if !Task.isCancelled, self.generation == gen {
+                    self.currentImage = lowResImage
                     self.nextImage = nil
                     self.prevImage = nil
+                    self.isLoading = false
                 }
-                // Dwell check: Wait 400ms. If user stops skimming, preloading will begin automatically.
+                
+                // Dwell check: Wait 400ms. If user stops skimming, promote to full resolution.
                 try? await Task.sleep(nanoseconds: 400_000_000)
                 guard !Task.isCancelled, self.generation == gen else { return }
-            } else if wasSkimming {
-                // Settle delay: if we just stopped skimming, wait 150ms to ensure the user has rested
-                try? await Task.sleep(nanoseconds: 150_000_000)
-                guard !Task.isCancelled, self.generation == gen else { return }
+                
+                // Promote to high resolution
+                let fullImage = await renderPage(at: pageIndex, bounds: bounds)
+                if !Task.isCancelled, self.generation == gen {
+                    self.currentImage = fullImage
+                }
+            } else {
+                // 1. Normal Mode: Decode full resolution immediately
+                let cImage = await renderPage(at: pageIndex, bounds: bounds)
+                
+                if !Task.isCancelled, self.generation == gen {
+                    self.currentImage = cImage
+                    self.isLoading = false
+                }
+                
+                if wasSkimming {
+                    // Settle delay: if we just stopped skimming, wait 150ms to ensure the user has rested
+                    try? await Task.sleep(nanoseconds: 150_000_000)
+                    guard !Task.isCancelled, self.generation == gen else { return }
+                }
             }
 
             // 2. Load neighbors in background (sequential on low-end, concurrent on others)
@@ -167,7 +180,7 @@ class PageBufferManager: ObservableObject {
 
     /// Render a spread window around `leadIndex` (the left page of the current spread).
     /// `isMangaMode` controls which physical page index maps to left vs right.
-    func renderDual(leadIndex: Int, pages allPages: [URL], isMangaMode: Bool) {
+    func renderDual(leadIndex: Int, pages allPages: [URL], isMangaMode: Bool, bounds: CGSize? = nil) {
         let now = Date()
         let interval = now.timeIntervalSince(lastPageTurnTime)
         lastPageTurnTime = now
@@ -185,58 +198,88 @@ class PageBufferManager: ObservableObject {
             let prevPair = buildSpreadPair(leadIndex: leadIndex - 2, allPages: allPages, isMangaMode: isMangaMode)
             let nextPair = buildSpreadPair(leadIndex: leadIndex + 2, allPages: allPages, isMangaMode: isMangaMode)
 
-            // 1. Decode current spread first (visible immediately)
-            async let curL  = renderPage(at: curPair.leftIndex, bounds: nil)
-            async let curR  = renderPage(at: curPair.rightIndex, bounds: nil)
-            let cL = await curL;  self.decodeProgress = 1/6
-            let cR = await curR;  self.decodeProgress = 2/6
-
-            if !Task.isCancelled, self.generation == gen {
-                self.currentSpread = SpreadPair(leftIndex: curPair.leftIndex, rightIndex: curPair.rightIndex, leftImage: cL, rightImage: cR)
-                self.currentImage  = cL ?? cR
-                self.isLoading     = false  // UI unlocks here
-            }
+            let pageBounds: CGSize? = {
+                if let bounds = bounds, bounds.width > 0, bounds.height > 0 {
+                    return CGSize(width: bounds.width / 2.0, height: bounds.height)
+                }
+                return nil
+            }()
 
             if isSkimming {
-                // Skimming: Skip preloading neighbors immediately. Clears old preload memory.
+                // 1. Skimming: Decode low-res thumbnails first for absolute zero latency
+                let thumbBounds = CGSize(width: 384, height: 384)
+                async let curL  = renderPage(at: curPair.leftIndex, bounds: thumbBounds)
+                async let curR  = renderPage(at: curPair.rightIndex, bounds: thumbBounds)
+                let cL = await curL
+                let cR = await curR
+
                 if !Task.isCancelled, self.generation == gen {
+                    self.currentSpread = SpreadPair(leftIndex: curPair.leftIndex, rightIndex: curPair.rightIndex, leftImage: cL, rightImage: cR)
+                    self.currentImage  = cL ?? cR
                     self.nextSpread = nil
                     self.prevSpread = nil
                     self.nextImage = nil
                     self.prevImage = nil
+                    self.isLoading     = false  // UI unlocks here
                 }
-                // Dwell check: Wait 400ms. If user stops skimming, preloading will begin automatically.
+
+                // Dwell check: Wait 400ms. If user stops skimming, promote to full resolution.
                 try? await Task.sleep(nanoseconds: 400_000_000)
                 guard !Task.isCancelled, self.generation == gen else { return }
-            } else if wasSkimming {
-                // Settle delay: if we just stopped skimming, wait 150ms to ensure the user has rested
-                try? await Task.sleep(nanoseconds: 150_000_000)
-                guard !Task.isCancelled, self.generation == gen else { return }
+
+                // Promote to high resolution
+                async let curLFull  = renderPage(at: curPair.leftIndex, bounds: pageBounds)
+                async let curRFull  = renderPage(at: curPair.rightIndex, bounds: pageBounds)
+                let cLFull = await curLFull
+                let cRFull = await curRFull
+
+                if !Task.isCancelled, self.generation == gen {
+                    self.currentSpread = SpreadPair(leftIndex: curPair.leftIndex, rightIndex: curPair.rightIndex, leftImage: cLFull, rightImage: cRFull)
+                    self.currentImage  = cLFull ?? cRFull
+                }
+            } else {
+                // 1. Normal Mode: Decode full resolution immediately
+                async let curL  = renderPage(at: curPair.leftIndex, bounds: pageBounds)
+                async let curR  = renderPage(at: curPair.rightIndex, bounds: pageBounds)
+                let cL = await curL;  self.decodeProgress = 1/6
+                let cR = await curR;  self.decodeProgress = 2/6
+
+                if !Task.isCancelled, self.generation == gen {
+                    self.currentSpread = SpreadPair(leftIndex: curPair.leftIndex, rightIndex: curPair.rightIndex, leftImage: cL, rightImage: cR)
+                    self.currentImage  = cL ?? cR
+                    self.isLoading     = false  // UI unlocks here
+                }
+
+                if wasSkimming {
+                    // Settle delay: if we just stopped skimming, wait 150ms to ensure the user has rested
+                    try? await Task.sleep(nanoseconds: 150_000_000)
+                    guard !Task.isCancelled, self.generation == gen else { return }
+                }
             }
 
             // 2. Decode background pairs
             let perfClass = ProcessInfo.processInfo.performanceClass
             if perfClass == .low {
                 // Low end: Load next spread sequentially, then prev spread sequentially to avoid memory spikes.
-                let nL = await renderPage(at: nextPair.leftIndex, bounds: nil);  self.decodeProgress = 3/6
-                let nR = await renderPage(at: nextPair.rightIndex, bounds: nil); self.decodeProgress = 4/6
+                let nL = await renderPage(at: nextPair.leftIndex, bounds: pageBounds);  self.decodeProgress = 3/6
+                let nR = await renderPage(at: nextPair.rightIndex, bounds: pageBounds); self.decodeProgress = 4/6
                 
                 guard !Task.isCancelled, self.generation == gen else { return }
                 self.nextSpread = SpreadPair(leftIndex: nextPair.leftIndex, rightIndex: nextPair.rightIndex, leftImage: nL, rightImage: nR)
                 self.nextImage = nL ?? nR
                 
-                let pL = await renderPage(at: prevPair.leftIndex, bounds: nil);  self.decodeProgress = 5/6
-                let pR = await renderPage(at: prevPair.rightIndex, bounds: nil); self.decodeProgress = 6/6
+                let pL = await renderPage(at: prevPair.leftIndex, bounds: pageBounds);  self.decodeProgress = 5/6
+                let pR = await renderPage(at: prevPair.rightIndex, bounds: pageBounds); self.decodeProgress = 6/6
                 
                 guard !Task.isCancelled, self.generation == gen else { return }
                 self.prevSpread = SpreadPair(leftIndex: prevPair.leftIndex, rightIndex: prevPair.rightIndex, leftImage: pL, rightImage: pR)
                 self.prevImage = pL ?? pR
             } else {
                 // Medium/High: concurrent preload of both prev and next spreads
-                async let prevL = renderPage(at: prevPair.leftIndex, bounds: nil)
-                async let prevR = renderPage(at: prevPair.rightIndex, bounds: nil)
-                async let nextL = renderPage(at: nextPair.leftIndex, bounds: nil)
-                async let nextR = renderPage(at: nextPair.rightIndex, bounds: nil)
+                async let prevL = renderPage(at: prevPair.leftIndex, bounds: pageBounds)
+                async let prevR = renderPage(at: prevPair.rightIndex, bounds: pageBounds)
+                async let nextL = renderPage(at: nextPair.leftIndex, bounds: pageBounds)
+                async let nextR = renderPage(at: nextPair.rightIndex, bounds: pageBounds)
                 
                 let pL = await prevL; self.decodeProgress = 3/6
                 let pR = await prevR; self.decodeProgress = 4/6
@@ -248,7 +291,6 @@ class PageBufferManager: ObservableObject {
                 self.prevSpread = SpreadPair(leftIndex: prevPair.leftIndex, rightIndex: prevPair.rightIndex, leftImage: pL, rightImage: pR)
                 self.nextSpread = SpreadPair(leftIndex: nextPair.leftIndex, rightIndex: nextPair.rightIndex, leftImage: nL, rightImage: nR)
                 
-                self.currentImage = cL ?? cR
                 self.nextImage    = nL ?? nR
                 self.prevImage    = pL ?? pR
             }
