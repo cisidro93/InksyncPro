@@ -65,16 +65,22 @@ struct MailComposeView: UIViewControllerRepresentable {
     
     class Coordinator: NSObject, MFMailComposeViewControllerDelegate {
         var parent: MailComposeView
-        init(_ parent: MailComposeView) { self.parent = parent }
+        let dismissAction: DismissAction
+        
+        init(_ parent: MailComposeView, dismissAction: DismissAction) {
+            self.parent = parent
+            self.dismissAction = dismissAction
+        }
+        
         func mailComposeController(_ controller: MFMailComposeViewController, didFinishWith result: MFMailComposeResult, error: Error?) {
-            let dismissAction = parent.dismiss
+            let action = dismissAction
             Task { @MainActor in
-                dismissAction()
+                action()
             }
         }
     }
     
-    func makeCoordinator() -> Coordinator { Coordinator(self) }
+    func makeCoordinator() -> Coordinator { Coordinator(self, dismissAction: dismiss) }
     
     func makeUIViewController(context: Context) -> MFMailComposeViewController {
         let vc = MFMailComposeViewController()

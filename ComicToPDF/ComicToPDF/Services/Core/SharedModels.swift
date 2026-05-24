@@ -7,7 +7,7 @@ import PDFKit
 import UniformTypeIdentifiers
 import PencilKit
 
-extension PKDrawing: @retroactive Sendable {}
+extension PKDrawing: @retroactive @unchecked Sendable {}
 
 // MARK: - Core Data Models
 
