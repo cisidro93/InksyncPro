@@ -342,8 +342,11 @@ final class ConversionOrchestrator: Sendable {
                     
                     if jobSettings.outputFormat == .pdf {
                         let totalBatches = batches.count
+                        let finalBatchImages = batchImages
+                        let finalMergedChapters = mergedChapters
+                        let settings = jobSettings
                         try await Task.detached {
-                            try PDFGenerator.generate(from: batchImages, to: finalOutputURL, mangaMode: jobSettings.mangaMode, chapters: mergedChapters, settings: jobSettings) { progress in
+                            try PDFGenerator.generate(from: finalBatchImages, to: finalOutputURL, mangaMode: settings.mangaMode, chapters: finalMergedChapters, settings: settings) { progress in
                                 let baseProgress = Double(batchIndex) / Double(totalBatches)
                                 let currentPartProgress = progress / Double(totalBatches)
                                 Task { @MainActor in
@@ -352,11 +355,12 @@ final class ConversionOrchestrator: Sendable {
                             }
                         }.value
                     } else {
+                        let finalBatchImages = batchImages
                         try await Task.detached {
                             let fm = FileManager.default
                             let tempDir = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
                             try fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
-                            for (idx, url) in batchImages.enumerated() {
+                            for (idx, url) in finalBatchImages.enumerated() {
                                 let pathExt = url.pathExtension.isEmpty ? "jpg" : url.pathExtension
                                 let dest = tempDir.appendingPathComponent(String(format: "page_%04d.%@", idx, pathExt))
                                 try fm.copyItem(at: url, to: dest)
