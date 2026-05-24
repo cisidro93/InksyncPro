@@ -58,6 +58,14 @@ struct MetalCanvasView: UIViewRepresentable {
         var lockedRect: NormalizedRect = .full
         var isPPLEnabled: Bool = false
         
+        // Double buffering offscreen textures & state cache
+        private var frontTexture: MTLTexture?
+        private var backTexture: MTLTexture?
+        private var lastRenderedImage: CGImage?
+        private var lastRenderedLockedRect: NormalizedRect?
+        private var lastRenderedPPLEnabled: Bool?
+        private var lastRenderedSize: CGSize = .zero
+        
         init(_ parent: MetalCanvasView) {
             self.parent = parent
         }
@@ -67,17 +75,29 @@ struct MetalCanvasView: UIViewRepresentable {
             view.setNeedsDisplay()
         }
         
-        // ✅ The Ultra-Low Latency Draw Pipe
+        // ✅ The Ultra-Low Latency Double-Buffered Draw Pipe
         func draw(in view: MTKView) {
-            guard let drawable = view.currentDrawable,
+            guard let device = view.device,
+                  let drawable = view.currentDrawable,
                   let commandBuffer = commandQueue?.makeCommandBuffer(),
-                  let cgImage = image,
                   let ciContext = ciContext else {
-                
-        // If nil image, just clear the screen
-                if let commandBuffer = commandQueue?.makeCommandBuffer(),
-                   let drawable = view.currentDrawable,
-                   let renderPassDescriptor = view.currentRenderPassDescriptor {
+                return
+            }
+            
+            let drawableSize = view.drawableSize
+            // ROTATION SAFETY: MTKView drawable can be .zero during orientation transitions.
+            guard drawableSize.width > 1, drawableSize.height > 1 else { return }
+            
+            // Recreate offscreen textures if size changed or if they don't exist yet
+            if drawableSize != lastRenderedSize || frontTexture == nil || backTexture == nil {
+                frontTexture = createOffscreenTexture(device: device, size: drawableSize, format: view.colorPixelFormat)
+                backTexture = createOffscreenTexture(device: device, size: drawableSize, format: view.colorPixelFormat)
+                lastRenderedSize = drawableSize
+            }
+            
+            guard let cgImage = image else {
+                // If nil image, just clear the screen using a render pass
+                if let renderPassDescriptor = view.currentRenderPassDescriptor {
                     renderPassDescriptor.colorAttachments[0].clearColor = MTLClearColorMake(0.05, 0.05, 0.05, 1.0)
                     if let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) {
                         encoder.endEncoding()
@@ -85,93 +105,134 @@ struct MetalCanvasView: UIViewRepresentable {
                     commandBuffer.present(drawable)
                     commandBuffer.commit()
                 }
+                lastRenderedImage = nil
+                lastRenderedLockedRect = nil
+                lastRenderedPPLEnabled = nil
                 return
             }
             
-            // Clear the texture first to prevent remnants from previous frames in recycled Metal textures
-            if let renderPassDescriptor = view.currentRenderPassDescriptor,
-               let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) {
-                encoder.endEncoding()
-            }
+            let contentChanged = cgImage !== lastRenderedImage || lockedRect != lastRenderedLockedRect || isPPLEnabled != lastRenderedPPLEnabled
             
-            var ciImage = CIImage(cgImage: cgImage)
-            let drawableSize = view.drawableSize
+            if contentChanged || frontTexture == nil {
+                // Render the new frame to the backTexture offscreen using Core Image
+                guard let targetTexture = backTexture ?? frontTexture else { return }
+                
+                var ciImage = CIImage(cgImage: cgImage)
+                
+                // PPL (Page Position Lock) Math Layer
+                if isPPLEnabled {
+                    let imgWidth = ciImage.extent.width
+                    let imgHeight = ciImage.extent.height
 
-            // ROTATION SAFETY: MTKView drawable can be .zero during orientation transitions.
-            // Creating a CIRenderDestination with zero dimensions crashes Core Image.
-            guard drawableSize.width > 1, drawableSize.height > 1 else { return }
+                    let cropX = (lockedRect.origin.x / 1000.0) * imgWidth
+                    let cropH = (lockedRect.size.height / 1000.0) * imgHeight
+                    let cropY = imgHeight - ((lockedRect.origin.y / 1000.0) * imgHeight) - cropH
+                    let cropW = (lockedRect.size.width / 1000.0) * imgWidth
 
-            // PPL (Page Position Lock) Math Layer
-            if isPPLEnabled {
-                // Denormalize the coordinate lock into raw pixel offsets
-                let imgWidth = ciImage.extent.width
-                let imgHeight = ciImage.extent.height
-
-                let cropX = (lockedRect.origin.x / 1000.0) * imgWidth
-                // CoreImage origin is bottom-left, we must invert Y
-                let cropH = (lockedRect.size.height / 1000.0) * imgHeight
-                let cropY = imgHeight - ((lockedRect.origin.y / 1000.0) * imgHeight) - cropH
-                let cropW = (lockedRect.size.width / 1000.0) * imgWidth
-
-                let cgCropRect = CGRect(x: cropX, y: cropY, width: cropW, height: cropH)
-                ciImage = ciImage.cropped(to: cgCropRect)
-
-                // Shift the origin back down to 0,0 avoiding blank offset gaps
-                ciImage = ciImage.transformed(by: CGAffineTransform(translationX: -cgCropRect.origin.x, y: -cgCropRect.origin.y))
-            }
-            
-            // ✅ Phase 1: Smart Upscaling & Auto Contrast Layer
-            let contrastLevel = UserDefaults.standard.double(forKey: "comic_autoContrastLevel")
-            if contrastLevel > 1.0 {
-                if let filter = CIFilter(name: "CIColorControls") {
-                    filter.setValue(ciImage, forKey: kCIInputImageKey)
-                    filter.setValue(contrastLevel, forKey: kCIInputContrastKey)
-                    if let output = filter.outputImage { ciImage = output }
+                    let cgCropRect = CGRect(x: cropX, y: cropY, width: cropW, height: cropH)
+                    ciImage = ciImage.cropped(to: cgCropRect)
+                    ciImage = ciImage.transformed(by: CGAffineTransform(translationX: -cgCropRect.origin.x, y: -cgCropRect.origin.y))
                 }
+                
+                // Phase 1: Smart Upscaling & Auto Contrast Layer
+                let contrastLevel = UserDefaults.standard.double(forKey: "comic_autoContrastLevel")
+                if contrastLevel > 1.0 {
+                    if let filter = CIFilter(name: "CIColorControls") {
+                        filter.setValue(ciImage, forKey: kCIInputImageKey)
+                        filter.setValue(contrastLevel, forKey: kCIInputContrastKey)
+                        if let output = filter.outputImage { ciImage = output }
+                    }
+                }
+                
+                let useSharpening = UserDefaults.standard.bool(forKey: "comic_smartSharpen")
+                if useSharpening {
+                    if let filter = CIFilter(name: "CISharpenLuminance") {
+                        filter.setValue(ciImage, forKey: kCIInputImageKey)
+                        filter.setValue(0.7, forKey: kCIInputSharpnessKey)
+                        if let output = filter.outputImage { ciImage = output }
+                    }
+                }
+
+                let imageSize = ciImage.extent.size
+                guard imageSize.width > 0, imageSize.height > 0,
+                      imageSize.width.isFinite, imageSize.height.isFinite else { return }
+
+                let scaleX = drawableSize.width / imageSize.width
+                let scaleY = drawableSize.height / imageSize.height
+                let scale = min(scaleX, scaleY)
+
+                let scaledImage = ciImage.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+                let xOffset = (drawableSize.width - scaledImage.extent.width) / 2.0
+                let yOffset = (drawableSize.height - scaledImage.extent.height) / 2.0
+                let centeredImage = scaledImage.transformed(by: CGAffineTransform(translationX: xOffset, y: yOffset))
+
+                let destination = CIRenderDestination(width: Int(drawableSize.width),
+                                                      height: Int(drawableSize.height),
+                                                      pixelFormat: view.colorPixelFormat,
+                                                      commandBuffer: commandBuffer,
+                                                      mtlTextureProvider: { () -> MTLTexture in
+                    return targetTexture
+                })
+
+                // Clear targetTexture first
+                let offscreenPassDesc = MTLRenderPassDescriptor()
+                offscreenPassDesc.colorAttachments[0].texture = targetTexture
+                offscreenPassDesc.colorAttachments[0].loadAction = .clear
+                offscreenPassDesc.colorAttachments[0].storeAction = .store
+                offscreenPassDesc.colorAttachments[0].clearColor = MTLClearColor(red: 0.05, green: 0.05, blue: 0.05, alpha: 1.0)
+                if let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: offscreenPassDesc) {
+                    encoder.endEncoding()
+                }
+
+                do {
+                    _ = try ciContext.startTask(toRender: centeredImage, from: CGRect(origin: .zero, size: drawableSize), to: destination, at: CGPoint.zero)
+                } catch {
+                    Logger.shared.log("Metal Engine Layout Error: \(error.localizedDescription)", category: "Engine", type: .error)
+                }
+                
+                // Swap textures
+                if backTexture != nil {
+                    let temp = frontTexture
+                    frontTexture = backTexture
+                    backTexture = temp
+                }
+                
+                lastRenderedImage = cgImage
+                lastRenderedLockedRect = lockedRect
+                lastRenderedPPLEnabled = isPPLEnabled
             }
             
-            let useSharpening = UserDefaults.standard.bool(forKey: "comic_smartSharpen")
-            if useSharpening {
-                if let filter = CIFilter(name: "CISharpenLuminance") {
-                    filter.setValue(ciImage, forKey: kCIInputImageKey)
-                    filter.setValue(0.7, forKey: kCIInputSharpnessKey) // A balanced sharp threshold
-                    if let output = filter.outputImage { ciImage = output }
+            // Blit frontTexture to MTKView drawable texture
+            if let sourceTexture = frontTexture {
+                if let blitEncoder = commandBuffer.makeBlitCommandEncoder() {
+                    blitEncoder.copy(from: sourceTexture,
+                                     sourceSlice: 0,
+                                     sourceLevel: 0,
+                                     sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
+                                     sourceSize: MTLSize(width: sourceTexture.width, height: sourceTexture.height, depth: 1),
+                                     to: drawable.texture,
+                                     destinationSlice: 0,
+                                     destinationLevel: 0,
+                                     destinationOrigin: MTLOrigin(x: 0, y: 0, z: 0))
+                    blitEncoder.endEncoding()
                 }
-            }
-
-            let imageSize = ciImage.extent.size
-            // SAFETY: Guard against zero or infinite image extent (e.g., corrupt PPL crop result)
-            guard imageSize.width > 0, imageSize.height > 0,
-                  imageSize.width.isFinite, imageSize.height.isFinite else { return }
-
-            let scaleX = drawableSize.width / imageSize.width
-            let scaleY = drawableSize.height / imageSize.height
-            // Fit to screen perfectly
-            let scale = min(scaleX, scaleY)
-
-            let scaledImage = ciImage.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
-
-            let xOffset = (drawableSize.width - scaledImage.extent.width) / 2.0
-            let yOffset = (drawableSize.height - scaledImage.extent.height) / 2.0
-
-            let centeredImage = scaledImage.transformed(by: CGAffineTransform(translationX: xOffset, y: yOffset))
-
-            let destination = CIRenderDestination(width: Int(drawableSize.width),
-                                                  height: Int(drawableSize.height),
-                                                  pixelFormat: view.colorPixelFormat,
-                                                  commandBuffer: commandBuffer,
-                                                  mtlTextureProvider: { () -> MTLTexture in
-                return drawable.texture
-            })
-
-            do {
-                _ = try ciContext.startTask(toRender: centeredImage, from: CGRect(origin: .zero, size: drawableSize), to: destination, at: CGPoint.zero)
-            } catch {
-                Logger.shared.log("Metal Engine Layout Error: \(error.localizedDescription)", category: "Engine", type: .error)
             }
             
             commandBuffer.present(drawable)
             commandBuffer.commit()
         }
+        
+        private func createOffscreenTexture(device: MTLDevice, size: CGSize, format: MTLPixelFormat) -> MTLTexture? {
+            let desc = MTLTextureDescriptor.texture2DDescriptor(
+                pixelFormat: format,
+                width: Int(size.width),
+                height: Int(size.height),
+                mipmapped: false
+            )
+            desc.usage = [.renderTarget, .shaderRead, .shaderWrite]
+            desc.storageMode = .shared
+            return device.makeTexture(descriptor: desc)
+        }
+    }
     }
 }
