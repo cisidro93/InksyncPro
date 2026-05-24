@@ -531,7 +531,13 @@ struct PPLReaderView: View {
     // MARK: - Buffer Setup
 
     private func setupBuffer(geo: GeometryProxy, dual: Bool) {
-        bufferManager.setup(pages: pages)
+        if let firstPage = pages.first,
+           let archiveURL = PageBufferManager.findArchiveURL(in: firstPage) {
+            bufferManager.setupDirectArchive(url: archiveURL)
+        } else {
+            bufferManager.setup(pages: pages)
+        }
+        
         if dual {
             let lead = PageBufferManager.canonicalLeadIndex(for: currentPageIndex, isMangaMode: isMangaMode)
             bufferManager.renderDual(leadIndex: lead, pages: pages, isMangaMode: isMangaMode, bounds: geo.size)

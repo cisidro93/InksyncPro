@@ -123,6 +123,34 @@ struct ZipUtilities {
                     continuation.resume(throwing: error)
                 }
             }
+    }
+
+    static func listComicEntries(from sourceURL: URL) async throws -> [URL] {
+        return try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                do {
+                    let secure = sourceURL.startAccessingSecurityScopedResource()
+                    defer { if secure { sourceURL.stopAccessingSecurityScopedResource() } }
+                    
+                    let archive = try Archive(url: sourceURL, accessMode: .read)
+                    let entries = archive.filter { entry in
+                        let name = entry.path
+                        let ext = URL(fileURLWithPath: name).pathExtension.lowercased()
+                        let filename = URL(fileURLWithPath: name).lastPathComponent
+                        return ["jpg", "jpeg", "png", "webp", "gif", "heic"].contains(ext)
+                            && !name.contains("__MACOSX")
+                            && !filename.hasPrefix("._")
+                            && filename != ".DS_Store"
+                            && !name.hasSuffix("/")
+                    }.sorted {
+                        $0.path.localizedStandardCompare($1.path) == .orderedAscending
+                    }
+                    let virtualURLs = entries.map { sourceURL.appendingPathComponent($0.path) }
+                    continuation.resume(returning: virtualURLs)
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
         }
     }
     

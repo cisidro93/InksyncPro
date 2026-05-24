@@ -848,16 +848,32 @@ struct ReaderView: View {
                 }
             } else {
                 // CBZ / ZIP
-                let result = try await ZipUtilities.extractComic(from: activeFileURL)
-                await MainActor.run {
-                    self.unzippedDir = result.workingDir
-                    self.pages = result.imageURLs
-                    self.isLoading = false
-                    if result.imageURLs.isEmpty {
-                        self.errorMessage = "No images found in comic archive."
-                        Logger.shared.log("extractAndOpen: CBZ/ZIP had no images at \(activeFileURL.lastPathComponent)", category: "ReaderView", type: .warning)
-                    } else {
-                        Logger.shared.log("extractAndOpen: CBZ/ZIP extracted \(result.imageURLs.count) page(s) from \(activeFileURL.lastPathComponent)", category: "ReaderView", type: .success)
+                do {
+                    let virtualPages = try await ZipUtilities.listComicEntries(from: activeFileURL)
+                    await MainActor.run {
+                        self.unzippedDir = nil
+                        self.pages = virtualPages
+                        self.isLoading = false
+                        if virtualPages.isEmpty {
+                            self.errorMessage = "No images found in comic archive."
+                            Logger.shared.log("extractAndOpen: CBZ/ZIP had no images at \(activeFileURL.lastPathComponent)", category: "ReaderView", type: .warning)
+                        } else {
+                            Logger.shared.log("extractAndOpen: Direct ZIP streaming initialized with \(virtualPages.count) pages for \(activeFileURL.lastPathComponent)", category: "ReaderView", type: .success)
+                        }
+                    }
+                } catch {
+                    Logger.shared.log("Direct ZIP streaming failed for \(activeFileURL.lastPathComponent): \(error.localizedDescription). Falling back to full extraction.", category: "ReaderView", type: .warning)
+                    let result = try await ZipUtilities.extractComic(from: activeFileURL)
+                    await MainActor.run {
+                        self.unzippedDir = result.workingDir
+                        self.pages = result.imageURLs
+                        self.isLoading = false
+                        if result.imageURLs.isEmpty {
+                            self.errorMessage = "No images found in comic archive."
+                            Logger.shared.log("extractAndOpen: CBZ/ZIP fallback had no images at \(activeFileURL.lastPathComponent)", category: "ReaderView", type: .warning)
+                        } else {
+                            Logger.shared.log("extractAndOpen: CBZ/ZIP fallback extracted \(result.imageURLs.count) page(s) from \(activeFileURL.lastPathComponent)", category: "ReaderView", type: .success)
+                        }
                     }
                 }
             }

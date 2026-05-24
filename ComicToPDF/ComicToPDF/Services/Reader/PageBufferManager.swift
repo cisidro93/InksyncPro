@@ -4,6 +4,7 @@ import CoreGraphics
 import CoreImage
 import Combine
 import ImageIO
+import ZIPFoundation
 
 
 // ============================================================================
@@ -61,6 +62,8 @@ class PageBufferManager: ObservableObject {
 
     // MARK: - Internal
     private var pageURLs: [URL] = []
+    private var archiveURL: URL?
+    private var zipEntries: [ZIPFoundation.Entry] = []
     private var renderTask: Task<Void, Never>?
     /// Incremented every time setup() is called. Any decode that finishes after a new
     /// setup() has started is stale — it must not write to any @Published property.
@@ -83,6 +86,8 @@ class PageBufferManager: ObservableObject {
         renderTask = nil
         generation &+= 1      // wrapping add — safe at Int.max
         pageURLs = pages
+        archiveURL = nil
+        zipEntries = []
         lockedRect = .full
         currentImage = nil
         nextImage = nil
@@ -92,6 +97,60 @@ class PageBufferManager: ObservableObject {
         prevSpread = nil
         lastPageTurnTime = Date()
         isSkimming = false
+    }
+
+    func setupDirectArchive(url: URL) {
+        renderTask?.cancel()
+        renderTask = nil
+        generation &+= 1
+        
+        archiveURL = url
+        lockedRect = .full
+        currentImage = nil
+        nextImage = nil
+        prevImage = nil
+        currentSpread = nil
+        nextSpread = nil
+        prevSpread = nil
+        lastPageTurnTime = Date()
+        isSkimming = false
+        
+        do {
+            let archive = try Archive(url: url, accessMode: .read)
+            let entries = archive.filter { entry in
+                let name = entry.path
+                let ext = URL(fileURLWithPath: name).pathExtension.lowercased()
+                let filename = URL(fileURLWithPath: name).lastPathComponent
+                return ["jpg", "jpeg", "png", "webp", "gif", "heic"].contains(ext)
+                    && !name.contains("__MACOSX")
+                    && !filename.hasPrefix("._")
+                    && filename != ".DS_Store"
+                    && !name.hasSuffix("/")
+            }.sorted {
+                $0.path.localizedStandardCompare($1.path) == .orderedAscending
+            }
+            self.zipEntries = entries
+            self.pageURLs = entries.map { url.appendingPathComponent($0.path) }
+            
+            Logger.shared.log("PageBufferManager: Setup direct ZIP streaming with \(entries.count) pages", category: "Engine", type: .success)
+        } catch {
+            Logger.shared.log("PageBufferManager: Failed to parse ZIP archive: \(error.localizedDescription)", category: "Engine", type: .error)
+            self.zipEntries = []
+            self.pageURLs = []
+        }
+    }
+    
+    static func findArchiveURL(in url: URL) -> URL? {
+        let path = url.path
+        if let range = path.range(of: ".cbz", options: .caseInsensitive) {
+            let archivePath = String(path[..<range.upperBound])
+            return URL(fileURLWithPath: archivePath)
+        }
+        if let range = path.range(of: ".zip", options: .caseInsensitive) {
+            let archivePath = String(path[..<range.upperBound])
+            return URL(fileURLWithPath: archivePath)
+        }
+        return nil
     }
 
     func updateViewport(rect: NormalizedRect) {
@@ -376,6 +435,48 @@ class PageBufferManager: ObservableObject {
                 }
             }
         }()
+
+        if let archiveURL = self.archiveURL, index < zipEntries.count {
+            let entryPath = zipEntries[index].path
+            return await Task.detached(priority: .userInitiated) {
+                do {
+                    guard let archive = try? Archive(url: archiveURL, accessMode: .read),
+                          let entry = archive[entryPath] else {
+                        return nil
+                    }
+                    var data = Data()
+                    _ = try archive.extract(entry) { chunk in
+                        data.append(chunk)
+                    }
+                    
+                    if let source = CGImageSourceCreateWithData(data as CFData, nil) {
+                        let options: [CFString: Any]
+                        if let maxSize = maxPixelSize {
+                            options = [
+                                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                                kCGImageSourceCreateThumbnailWithTransform: true,
+                                kCGImageSourceThumbnailMaxPixelSize: Int(maxSize),
+                                kCGImageSourceShouldCacheImmediately: true
+                            ]
+                        } else {
+                            options = [
+                                kCGImageSourceShouldCacheImmediately: true
+                            ]
+                        }
+                        
+                        if let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) {
+                            let cropEnabled = await MainActor.run { self.isAutoCropEnabled }
+                            return cropEnabled ? Self.autoCropMargins(from: cgImage) : cgImage
+                        }
+                    }
+                } catch {
+                    await MainActor.run {
+                        Logger.shared.log("Direct ZIP decompression failed for entry \(entryPath): \(error.localizedDescription)", category: "Engine", type: .error)
+                    }
+                }
+                return nil
+            }.value
+        }
 
         return await Task.detached(priority: .userInitiated) {
             // Strategy 1: CGImageSource (fastest, best memory usage)
