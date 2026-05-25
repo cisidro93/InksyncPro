@@ -156,13 +156,8 @@ struct SmartCollectionDetailView: View {
             .navigationBarHidden(true)
         }
         .fullScreenCover(item: $selectedPDF) { pdf in
-            if pdf.contentType == .book {
-                SplitStudyWorkspace(fileURL: pdf.url, contentType: pdf.contentType, pdf: pdf)
-                    .environmentObject(conversionManager)
-            } else {
-                ReaderView(fileURL: pdf.url, contentType: pdf.contentType, pdf: pdf)
-                    .environmentObject(conversionManager)
-            }
+            UnifiedReaderView(pdf: pdf)
+                .environmentObject(conversionManager)
         }
         .task { recomputeFilter() }
         .onChange(of: conversionManager.convertedPDFs.count) { recomputeFilter() }
@@ -282,41 +277,39 @@ struct SmartCollectionDetailView: View {
 
     // MARK: - Grid Cells
 
-    @ViewBuilder
-    private func cloudAwareSingleCell(pdf: ConvertedPDF) -> some View {
-        let isCloud = { if case .cloud = pdf.sourceMode { return true }; return false }()
-        let remoteID = { if case .cloud(_, let id) = pdf.sourceMode { return id }; return "" }()
-        let progress = downloader.streamProgress[remoteID] ?? downloader.activeDownloads[remoteID]
+        Button {
+            handleSingleTap(pdf)
+        } label: {
+            ZStack(alignment: .bottom) {
+                ModernGridFileCell(pdf: pdf, isSelected: false, isBatch: false)
 
-        ZStack(alignment: .bottom) {
-            ModernGridFileCell(pdf: pdf, isSelected: false, isBatch: false)
-
-            if isCloud {
-                if let p = progress {
-                    // In-progress download bar
-                    GeometryReader { geo in
-                        ZStack(alignment: .leading) {
-                            Rectangle().fill(.black.opacity(0.5)).frame(height: 3)
-                            Rectangle().fill(Theme.orange).frame(width: geo.size.width * p, height: 3)
+                if isCloud {
+                    if let p = progress {
+                        // In-progress download bar
+                        GeometryReader { geo in
+                            ZStack(alignment: .leading) {
+                                Rectangle().fill(.black.opacity(0.5)).frame(height: 3)
+                                Rectangle().fill(Theme.orange).frame(width: geo.size.width * p, height: 3)
+                            }
                         }
+                        .frame(height: 3)
+                    } else {
+                        // Download badge overlay
+                        HStack(spacing: 4) {
+                            Image(systemName: "icloud.and.arrow.down")
+                                .font(.system(size: 10, weight: .semibold))
+                            Text("Cloud")
+                                .font(.system(size: 9, weight: .bold))
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6).padding(.vertical, 3)
+                        .background(.ultraThinMaterial, in: Capsule())
+                        .padding(6)
                     }
-                    .frame(height: 3)
-                } else {
-                    // Download badge overlay
-                    HStack(spacing: 4) {
-                        Image(systemName: "icloud.and.arrow.down")
-                            .font(.system(size: 10, weight: .semibold))
-                        Text("Cloud")
-                            .font(.system(size: 9, weight: .bold))
-                    }
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 6).padding(.vertical, 3)
-                    .background(.ultraThinMaterial, in: Capsule())
-                    .padding(6)
                 }
             }
         }
-        .onTapGesture { handleSingleTap(pdf) }
+        .buttonStyle(CellButtonStyle())
         .contextMenu { singleContextMenu(pdf) }
     }
 

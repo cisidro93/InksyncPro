@@ -39,8 +39,12 @@ struct ContinueReadingShelf: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 12) {
                     ForEach(inProgress) { pdf in
-                        ContinueReadingCard(pdf: pdf)
-                            .onTapGesture { onTap(pdf) }
+                        Button {
+                            onTap(pdf)
+                        } label: {
+                            ContinueReadingCard(pdf: pdf)
+                        }
+                        .buttonStyle(CellButtonStyle())
                     }
                 }
                 .padding(.horizontal, h)

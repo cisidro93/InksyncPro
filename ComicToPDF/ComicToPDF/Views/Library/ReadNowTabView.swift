@@ -72,8 +72,12 @@ struct ReadNowTabView: View {
                                 ScrollView(.horizontal, showsIndicators: false) {
                                     HStack(spacing: 14) {
                                         ForEach(continueReadingItems) { pdf in
-                                            ReadNowCard(pdf: pdf)
-                                                .onTapGesture { pdfToRead = pdf }
+                                            Button {
+                                                pdfToRead = pdf
+                                            } label: {
+                                                ReadNowCard(pdf: pdf)
+                                            }
+                                            .buttonStyle(CellButtonStyle())
                                         }
                                     }
                                     .padding(.horizontal, 16)
@@ -92,8 +96,12 @@ struct ReadNowTabView: View {
                                 ScrollView(.horizontal, showsIndicators: false) {
                                     HStack(spacing: 14) {
                                         ForEach(recentlyAddedItems) { pdf in
-                                            CompactReadNowCard(pdf: pdf)
-                                                .onTapGesture { pdfToRead = pdf }
+                                            Button {
+                                                pdfToRead = pdf
+                                            } label: {
+                                                CompactReadNowCard(pdf: pdf)
+                                            }
+                                            .buttonStyle(CellButtonStyle())
                                         }
                                     }
                                     .padding(.horizontal, 16)
@@ -108,11 +116,7 @@ struct ReadNowTabView: View {
             .navigationTitle("Read Now")
             .navigationBarTitleDisplayMode(.large)
             .fullScreenCover(item: $pdfToRead) { pdf in
-                if pdf.contentType == .book {
-                    SplitStudyWorkspace(fileURL: pdf.url, contentType: pdf.contentType, pdf: pdf)
-                } else {
-                    ReaderView(fileURL: pdf.url, contentType: pdf.contentType, pdf: pdf)
-                }
+                UnifiedReaderView(pdf: pdf)
             }
         }
     }
@@ -187,7 +191,6 @@ struct ReadNowCard: View {
     let pdf: ConvertedPDF
     @EnvironmentObject var conversionManager: ConversionManager
     @ObservedObject private var tracker = ReaderProgressTracker.shared
-    @GestureState private var isPressed = false
 
     private var progress: Double {
         tracker.progress(for: pdf.id)?.completionFraction ?? 0
@@ -258,9 +261,6 @@ struct ReadNowCard: View {
         )
         .shadow(color: .black.opacity(0.25), radius: 4, y: 3)
         .shadow(color: .black.opacity(0.10), radius: 14, y: 10)
-        .scaleEffect(isPressed ? 0.96 : 1.0)
-        .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isPressed)
-        .gesture(DragGesture(minimumDistance: 0).updating($isPressed) { _, s, _ in s = true })
     }
 }
 
@@ -268,7 +268,6 @@ struct ReadNowCard: View {
 struct CompactReadNowCard: View {
     let pdf: ConvertedPDF
     @EnvironmentObject var conversionManager: ConversionManager
-    @GestureState private var isPressed = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -298,8 +297,5 @@ struct CompactReadNowCard: View {
                 .lineLimit(2)
                 .frame(width: 120, alignment: .leading)
         }
-        .scaleEffect(isPressed ? 0.96 : 1.0)
-        .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isPressed)
-        .gesture(DragGesture(minimumDistance: 0).updating($isPressed) { _, s, _ in s = true })
     }
 }

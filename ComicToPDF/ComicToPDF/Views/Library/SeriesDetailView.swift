@@ -24,6 +24,7 @@ struct SeriesDetailView: View {
     @State private var isSelectionMode: Bool = false
     @State private var showingMergeConfig: Bool = false
     @State private var showBatchMetadataEditor: Bool = false
+    @State private var showingBatchSeriesAssignment: Bool = false
     
     // Context Menu State
     @State private var pdfToRename: ConvertedPDF?
@@ -49,6 +50,8 @@ struct SeriesDetailView: View {
     }
     
     @State private var showBookmarksOnly = false // Added for filtering
+    @State private var showingRenameSeriesAlert = false
+    @State private var pendingRenameSeriesName = ""
 
     var sortedIssues: [ConvertedPDF] {
         var sorted = series.issues
@@ -418,6 +421,14 @@ struct SeriesDetailView: View {
                     
                     if !isSelectionMode {
                         Button {
+                            pendingRenameSeriesName = series.title
+                            showingRenameSeriesAlert = true
+                        } label: {
+                            Image(systemName: "pencil")
+                                .foregroundColor(.blue)
+                        }
+
+                        Button {
                             withAnimation { showBookmarksOnly.toggle() }
                         } label: {
                             Image(systemName: showBookmarksOnly ? "bookmark.fill" : "bookmark")
@@ -489,7 +500,7 @@ struct SeriesDetailView: View {
     var body: some View {
         contentList
         .fullScreenCover(item: $pdfToRead) { pdf in
-            if pdf.contentType == .book { SplitStudyWorkspace(fileURL: pdf.url, contentType: pdf.contentType, pdf: pdf) } else { ReaderView(fileURL: pdf.url, contentType: pdf.contentType, pdf: pdf) }
+            UnifiedReaderView(pdf: pdf)
         }
         .safeAreaInset(edge: .bottom) {
             if isSelectionMode {
@@ -529,14 +540,25 @@ struct SeriesDetailView: View {
                                 .font(.system(size: 12, weight: .bold))
                                 .foregroundColor(.secondary)
                             
-                            Button {
-                                showBatchVolumeAssignment = true
-                            } label: {
-                                Text("Assign Volume")
-                                    .font(.system(size: 10, weight: .semibold))
-                                    .foregroundColor(selection.isEmpty ? .gray : Theme.orange)
+                            HStack(spacing: 12) {
+                                Button {
+                                    showBatchVolumeAssignment = true
+                                } label: {
+                                    Text("Assign Volume")
+                                        .font(.system(size: 10, weight: .semibold))
+                                        .foregroundColor(selection.isEmpty ? .gray : Theme.orange)
+                                }
+                                .disabled(selection.isEmpty)
+                                
+                                Button {
+                                    showingBatchSeriesAssignment = true
+                                } label: {
+                                    Text("Move to Series")
+                                        .font(.system(size: 10, weight: .semibold))
+                                        .foregroundColor(selection.isEmpty ? .gray : Theme.orange)
+                                }
+                                .disabled(selection.isEmpty)
                             }
-                            .disabled(selection.isEmpty)
                         }
                         
                         Spacer()
@@ -660,6 +682,21 @@ struct SeriesDetailView: View {
             BatchVolumeAssignmentSheet(selectedIDs: selection)
                 .environmentObject(conversionManager)
         }
+        .sheet(isPresented: $showingBatchSeriesAssignment) {
+            CollectionEditorSheet { name, icon, color in
+                let cleanName = name.trimmingCharacters(in: .whitespaces)
+                if !cleanName.isEmpty {
+                    let selectedFiles = series.issues.filter { selection.contains($0.id) }
+                    for pdf in selectedFiles {
+                        conversionManager.assignToSeries(pdf, seriesName: cleanName)
+                    }
+                    conversionManager.createCollection(name: cleanName, icon: icon, color: color)
+                    isSelectionMode = false
+                    selection.removeAll()
+                }
+            }
+            .environmentObject(conversionManager)
+        }
         .overlay {
             if showVolumeGrouping && hasVolumeData && volumeGroups.count > 4 {
                 QuickVolumeJumpOverlay(volumeGroups: volumeGroups) { volKey in
@@ -678,6 +715,30 @@ struct SeriesDetailView: View {
                     conversionManager.renamePDF(pdf, to: renameText)
                 }
             }
+        }
+        .alert(isCollection ? "Rename Folder" : "Rename Series", isPresented: $showingRenameSeriesAlert) {
+            TextField(isCollection ? "Folder Name" : "Series Name", text: $pendingRenameSeriesName)
+                .autocorrectionDisabled()
+            Button("Rename") {
+                let newName = pendingRenameSeriesName.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !newName.isEmpty, newName != series.title else { return }
+                
+                if let collectionUUID = UUID(uuidString: series.id),
+                   let colIdx = conversionManager.collections.firstIndex(where: { $0.id == collectionUUID }) {
+                    conversionManager.collections[colIdx].name = newName
+                }
+                
+                for pdf in series.issues {
+                    if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                        conversionManager.convertedPDFs[idx].metadata.series = newName
+                    }
+                }
+                conversionManager.saveLibrary()
+                dismiss()
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text(isCollection ? "This will rename the folder." : "This will rename all \(series.count) issues in this series.")
         }
         .alert("Add to Series", isPresented: Binding(
             get: { pdfToAssignSeries != nil },
@@ -801,7 +862,7 @@ struct SeriesDetailView: View {
             } label: {
                 LibraryPDFRowWithCover(pdf: pdf, isSelected: selectedPDF?.id == pdf.id)
             }
-            .buttonStyle(PlainButtonStyle())
+            .buttonStyle(CellButtonStyle())
             .listRowBackground(selectedPDF?.id == pdf.id ? Theme.surfaceElevated : Theme.bg)
             .swipeActions(edge: .leading) { swipeActionsLeading(pdf) }
             .swipeActions(edge: .trailing) { swipeActionsTrailing(pdf) }

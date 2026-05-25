@@ -267,6 +267,12 @@ struct ModernLibraryView: View {
                     guard let group = listRenameGroup else { return }
                     let newName = listRenamePendingName.trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !newName.isEmpty, newName != group.title else { listRenameGroup = nil; return }
+                    
+                    if let folderUUID = UUID(uuidString: group.id),
+                       let colIdx = conversionManager.collections.firstIndex(where: { $0.id == folderUUID }) {
+                        conversionManager.collections[colIdx].name = newName
+                    }
+                    
                     for pdf in group.issues {
                         if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
                             conversionManager.convertedPDFs[idx].metadata.series = newName
@@ -317,8 +323,8 @@ struct ModernLibraryView: View {
             }
             .fullScreenCover(item: $router.activeFullScreen) { dest in
                 switch dest {
-                case .read(let pdf, let initialReadingMode):
-                    if pdf.contentType == .book { SplitStudyWorkspace(fileURL: pdf.url, contentType: pdf.contentType, pdf: pdf, initialReadingMode: initialReadingMode) } else { ReaderView(fileURL: pdf.url, contentType: pdf.contentType, pdf: pdf, initialReadingMode: initialReadingMode) }
+                case .read(let pdf, _):
+                    UnifiedReaderView(pdf: pdf)
                 case .advancedWorkspace(let pdf):
                     AdvancedWorkspaceView(pdf: pdf).environmentObject(conversionManager)
                 case .smartCollection(let rule):
@@ -394,7 +400,7 @@ struct ModernLibraryView: View {
             }
             
         case .stats: ReadingStatsView()
-
+ 
         case .smartListImporter: SmartListImporterView().environmentObject(conversionManager)
         case .wifi: WiFiView()
         case .merge: FileMergeView()
@@ -415,7 +421,7 @@ struct ModernLibraryView: View {
         case .batchMetadata(let pdfs): BatchMetadataEditorView(selectedPDFs: pdfs)
         case .cognitiveBatchRenamer(let pdfs):
             BatchLocalRenamerView(pdfs: pdfs).environmentObject(conversionManager)
-
+ 
         case .seriesAssignment(let pdf, let isBatch, let selection):
             CollectionEditorSheet { name, icon, color in
                 if let singlePDF = pdf, !name.trimmingCharacters(in: .whitespaces).isEmpty {
@@ -431,6 +437,7 @@ struct ModernLibraryView: View {
                     }
                 }
             }
+            .environmentObject(conversionManager)
         case .convert(let pdf):
             NavigationStack {
                 ConvertView(pdf: pdf)
@@ -594,6 +601,16 @@ struct ModernLibraryView: View {
                     onAction: { (action: LibraryRowAction, pdf: ConvertedPDF) in viewModel.handleDetailAction(action: action, for: pdf, conversionManager: conversionManager) },
                     onImport: { NotificationCenter.default.post(name: NSNotification.Name("ShowImportQueue"), object: nil) },
                     onFolderTap: { uuid in viewModel.currentFolderID = uuid },
+                    onDropApplied: {
+                        let livePDFs = settingsManager.isVaultUnlocked
+                            ? conversionManager.convertedPDFs
+                            : conversionManager.convertedPDFs.filter { !$0.isPrivate }
+                        viewModel.updateLibraryItemsCache(
+                            pdfs: livePDFs,
+                            collections: conversionManager.collections,
+                            sortOption: sortOption
+                        )
+                    },
                     scrollOffset: $scrollOffset
                 )
             } else {

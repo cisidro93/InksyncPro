@@ -115,6 +115,7 @@ struct GoConvertView: View {
     @State private var renameText: String = ""
     @State private var renameError: String? = nil
     @State private var showingMergeSheet = false
+    @State private var showingLibraryPicker = false
 
     private var previewPDF: ConvertedPDF? {
         guard let url = selectedFiles.first else { return nil }
@@ -194,6 +195,10 @@ struct GoConvertView: View {
         .sheet(isPresented: $viewModel.showingCalibreGuide) {
             CalibreGuideView()
         }
+        .sheet(isPresented: $showingLibraryPicker) {
+            LibraryFilePickerView(selectedFiles: $selectedFiles)
+                .environmentObject(conversionManager)
+        }
         .alert("Rename File", isPresented: Binding<Bool>(
             get: { pdfToRename != nil },
             set: { if !$0 { pdfToRename = nil } }
@@ -227,72 +232,135 @@ struct GoConvertView: View {
     // MARK: - Drop Zone
     @ViewBuilder
     private var dropZone: some View {
-        Button {
-            ImportCoordinator.present(type: .unified) { urls in processPickedFiles(urls) }
-        } label: {
-            ZStack {
-                Circle()
-                    .fill(Theme.blue.opacity(0.15))
-                    .frame(width: 150, height: 150)
-                    .blur(radius: 40)
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(.ultraThinMaterial)
-                    .background(Color.inkSurfaceRaised.opacity(0.5).cornerRadius(24))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 24, style: .continuous)
-                            .stroke(
-                                LinearGradient(
-                                    colors: [Theme.blue.opacity(0.4), Theme.blue.opacity(0.1)],
-                                    startPoint: .topLeading, endPoint: .bottomTrailing
-                                ),
-                                lineWidth: 1
-                            )
-                    )
-                    .shadow(color: Theme.blue.opacity(0.15), radius: 20, y: 10)
-                VStack(spacing: 16) {
-                    ZStack {
-                        Circle().fill(Theme.blue.opacity(0.1)).frame(width: 64, height: 64)
-                        Image(systemName: "square.and.arrow.down.on.square.fill")
-                            .font(.system(size: 28))
-                            .foregroundStyle(Theme.blue.gradient)
-                    }
-                    if selectedFiles.isEmpty {
+        ZStack {
+            Circle()
+                .fill(Theme.blue.opacity(0.15))
+                .frame(width: 150, height: 150)
+                .blur(radius: 40)
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .background(Color.inkSurfaceRaised.opacity(0.5).cornerRadius(24))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .stroke(
+                            LinearGradient(
+                                colors: [Theme.blue.opacity(0.4), Theme.blue.opacity(0.1)],
+                                startPoint: .topLeading, endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1
+                        )
+                )
+                .shadow(color: Theme.blue.opacity(0.15), radius: 20, y: 10)
+            VStack(spacing: 16) {
+                ZStack {
+                    Circle().fill(Theme.blue.opacity(0.1)).frame(width: 64, height: 64)
+                    Image(systemName: "square.and.arrow.down.on.square.fill")
+                        .font(.system(size: 28))
+                        .foregroundStyle(Theme.blue.gradient)
+                }
+                if selectedFiles.isEmpty {
+                    VStack(spacing: 12) {
                         VStack(spacing: 4) {
-                            Text("Tap to Select Files")
+                            Text("No Files Selected")
                                 .font(.system(size: 18, weight: .bold))
                                 .foregroundStyle(Theme.text)
-                            Text("or Drag & Drop CBZ/PDF here")
+                            Text("Import files or choose from Library")
                                 .font(.system(size: 14))
                                 .foregroundStyle(Theme.textSecondary)
                         }
-                    } else {
-                        VStack(spacing: 6) {
-                            Text("\(selectedFiles.count) File(s) Selected")
-                                .font(.system(size: 18, weight: .bold))
-                                .foregroundStyle(Theme.blue)
-                            VStack(spacing: 4) {
-                                ForEach(selectedFiles.prefix(3), id: \.self) { url in
-                                    Text(url.lastPathComponent)
-                                        .font(.system(size: 12, weight: .medium))
-                                        .foregroundStyle(Theme.textSecondary)
-                                        .lineLimit(1)
-                                        .padding(.horizontal, 12).padding(.vertical, 4)
-                                        .background(Theme.blue.opacity(0.1))
-                                        .clipShape(Capsule())
-                                }
+                        HStack(spacing: 12) {
+                            Button {
+                                ImportCoordinator.present(type: .unified) { urls in processPickedFiles(urls) }
+                            } label: {
+                                Label("Browse Files", systemImage: "folder.badge.plus")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 8)
+                                    .background(Theme.blue)
+                                    .foregroundColor(.white)
+                                    .cornerRadius(10)
                             }
-                            if selectedFiles.count > 3 {
-                                Text("+ \(selectedFiles.count - 3) more…")
-                                    .font(.system(size: 11, weight: .bold))
-                                    .foregroundStyle(Theme.textTertiary)
+                            .buttonStyle(.plain)
+                            
+                            Button {
+                                showingLibraryPicker = true
+                            } label: {
+                                Label("Library", systemImage: "books.vertical.fill")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 8)
+                                    .background(Color.inkSurfaceRaised)
+                                    .foregroundColor(Theme.blue)
+                                    .cornerRadius(10)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 10)
+                                            .stroke(Theme.blue.opacity(0.3), lineWidth: 1)
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding(.top, 4)
+                    }
+                } else {
+                    VStack(spacing: 6) {
+                        Text("\(selectedFiles.count) File(s) Selected")
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundStyle(Theme.blue)
+                        VStack(spacing: 4) {
+                            ForEach(selectedFiles.prefix(3), id: \.self) { url in
+                                Text(url.lastPathComponent)
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundStyle(Theme.textSecondary)
+                                    .lineLimit(1)
+                                    .padding(.horizontal, 12).padding(.vertical, 4)
+                                    .background(Theme.blue.opacity(0.1))
+                                    .clipShape(Capsule())
                             }
                         }
+                        if selectedFiles.count > 3 {
+                            Text("+ \(selectedFiles.count - 3) more…")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundStyle(Theme.textTertiary)
+                        }
+                        
+                        HStack(spacing: 12) {
+                            Button {
+                                ImportCoordinator.present(type: .unified) { urls in processPickedFiles(urls) }
+                            } label: {
+                                Text("Add Files")
+                                    .font(.caption).bold()
+                                    .padding(.horizontal, 10).padding(.vertical, 6)
+                                    .background(Color.inkSurfaceRaised).cornerRadius(6)
+                            }
+                            .buttonStyle(.plain)
+                            
+                            Button {
+                                showingLibraryPicker = true
+                            } label: {
+                                Text("Add from Library")
+                                    .font(.caption).bold()
+                                    .padding(.horizontal, 10).padding(.vertical, 6)
+                                    .background(Color.inkSurfaceRaised).cornerRadius(6)
+                            }
+                            .buttonStyle(.plain)
+                            
+                            Button(role: .destructive) {
+                                selectedFiles.removeAll()
+                            } label: {
+                                Text("Clear")
+                                    .font(.caption).bold()
+                                    .foregroundColor(.red)
+                                    .padding(.horizontal, 10).padding(.vertical, 6)
+                                    .background(Color.red.opacity(0.1)).cornerRadius(6)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding(.top, 8)
                     }
                 }
-                .padding(.vertical, 32)
             }
+            .padding(.vertical, 32)
         }
-        .buttonStyle(.plain)
         .frame(maxWidth: .infinity, minHeight: 220)
         .padding(.horizontal, 16)
         .padding(.top, 16)
@@ -630,5 +698,149 @@ struct GoConvertView: View {
         formatter.unitsStyle = .positional
         formatter.zeroFormattingBehavior = .pad
         return formatter.string(from: interval) ?? "00:00"
+    }
+}
+
+// MARK: - LibraryFilePickerView: checklist list of library files
+struct LibraryFilePickerView: View {
+    @Environment(\.dismiss) var dismiss
+    @EnvironmentObject var conversionManager: ConversionManager
+    
+    @Binding var selectedFiles: [URL]
+    
+    @State private var searchText = ""
+    @State private var localSelection: Set<UUID> = []
+    
+    var body: some View {
+        NavigationStack {
+            List {
+                let filtered = conversionManager.convertedPDFs.filter { pdf in
+                    searchText.isEmpty ||
+                    pdf.name.localizedCaseInsensitiveContains(searchText) ||
+                    (pdf.metadata.series?.localizedCaseInsensitiveContains(searchText) == true)
+                }
+                
+                ForEach(filtered) { pdf in
+                    Button {
+                        if localSelection.contains(pdf.id) {
+                            localSelection.remove(pdf.id)
+                        } else {
+                            localSelection.insert(pdf.id)
+                        }
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: localSelection.contains(pdf.id) ? "checkmark.circle.fill" : "circle")
+                                .foregroundColor(localSelection.contains(pdf.id) ? .inkBlue : .inkTextSecondary)
+                                .font(.title3)
+                            
+                            CoverThumbnailView(pdf: pdf)
+                                .frame(width: 40, height: 56)
+                                .clipShape(RoundedRectangle(cornerRadius: 6))
+                            
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(pdf.name)
+                                    .font(.system(size: 15, weight: .medium))
+                                    .foregroundColor(.inkTextPrimary)
+                                    .lineLimit(1)
+                                
+                                HStack(spacing: 8) {
+                                    Text(pdf.formattedSize)
+                                        .font(.caption)
+                                        .foregroundColor(.inkTextSecondary)
+                                    
+                                    if !pdf.fileExtensionString.isEmpty {
+                                        Text(pdf.fileExtensionString.uppercased())
+                                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                            .padding(.horizontal, 4)
+                                            .padding(.vertical, 1)
+                                            .background(Color.inkSurfaceRaised)
+                                            .cornerRadius(3)
+                                            .foregroundColor(.inkTextSecondary)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .navigationTitle("Select Library Files")
+            .navigationBarTitleDisplayMode(.inline)
+            .searchable(text: $searchText, prompt: "Search files...")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Add (\(localSelection.count))") {
+                        for id in localSelection {
+                            if let pdf = conversionManager.convertedPDFs.first(where: { $0.id == id }) {
+                                if !selectedFiles.contains(pdf.url) {
+                                    selectedFiles.append(pdf.url)
+                                }
+                            }
+                        }
+                        dismiss()
+                    }
+                    .fontWeight(.bold)
+                    .disabled(localSelection.isEmpty)
+                }
+            }
+            .onAppear {
+                for url in selectedFiles {
+                    if let pdf = conversionManager.convertedPDFs.first(where: { $0.url == url }) {
+                        localSelection.insert(pdf.id)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - CoverThumbnailView: optimized thumbnail loader
+struct CoverThumbnailView: View {
+    let pdf: ConvertedPDF
+    @EnvironmentObject var conversionManager: ConversionManager
+    @State private var cover: UIImage? = nil
+    
+    var body: some View {
+        Group {
+            if let cached = conversionManager.thumbnailCache.object(forKey: pdf.id.uuidString as NSString) ?? cover {
+                Image(uiImage: cached)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+            } else {
+                ZStack {
+                    Color.inkSurfaceRaised
+                    Image(systemName: "doc.text.fill")
+                        .foregroundColor(.inkTextSecondary.opacity(0.5))
+                }
+            }
+        }
+        .task {
+            let key = pdf.id.uuidString as NSString
+            if let cached = conversionManager.thumbnailCache.object(forKey: key) {
+                self.cover = cached
+                return
+            }
+            if let coverURL = conversionManager.getCoverURL(for: pdf),
+               FileManager.default.fileExists(atPath: coverURL.path) {
+                let safeURL = coverURL
+                let generated = await Task.detached(priority: .userInitiated) { () -> UIImage? in
+                    let opts = [kCGImageSourceShouldCache: false] as CFDictionary
+                    guard let src = CGImageSourceCreateWithURL(safeURL as CFURL, opts) else { return nil }
+                    let down = [kCGImageSourceCreateThumbnailFromImageAlways: true,
+                                kCGImageSourceShouldCacheImmediately: true,
+                                kCGImageSourceCreateThumbnailWithTransform: true,
+                                kCGImageSourceThumbnailMaxPixelSize: 120] as CFDictionary
+                    guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, down) else { return nil }
+                    return UIImage(cgImage: cg)
+                }.value
+                if let image = generated {
+                    conversionManager.thumbnailCache.setObject(image, forKey: key)
+                    self.cover = image
+                }
+            }
+        }
     }
 }

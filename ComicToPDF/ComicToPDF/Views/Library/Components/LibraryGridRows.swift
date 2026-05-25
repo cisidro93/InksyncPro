@@ -37,7 +37,6 @@ struct ModernGridFileCell: View {
 
     @State private var localCover: UIImage? = nil
     @State private var shimmerPhase: CGFloat = -1
-    @GestureState private var isPressed = false
 
     @AppStorage("mangaBadgeColorHex") private var mangaBadgeColorHex = "#2dd4a0"
     @AppStorage("comicBadgeColorHex") private var comicBadgeColorHex = "#3d6fff"
@@ -249,13 +248,6 @@ struct ModernGridFileCell: View {
             // Dual shadow: crisp near + soft ambient (Apple Books technique)
             .shadow(color: .black.opacity(0.22), radius: 3, y: 2)
             .shadow(color: .black.opacity(0.10), radius: 12, y: 8)
-            // Touch press animation
-            .scaleEffect(isPressed ? 0.97 : 1.0)
-            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isPressed)
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .updating($isPressed) { _, state, _ in state = true }
-            )
 
             // ── Text + type badge ────────────────────────────────────────────
             VStack(alignment: .leading, spacing: 3) {
@@ -655,5 +647,13 @@ struct SeriesProgressRing: View {
                     .foregroundColor(Theme.textSecondary)
             }
         }
+    }
+}
+
+struct CellButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.97 : 1.0)
+            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: configuration.isPressed)
     }
 }

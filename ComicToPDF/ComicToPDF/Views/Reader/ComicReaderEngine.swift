@@ -407,6 +407,8 @@ struct ComicReaderEngine: View {
             pdf: pdf,
             prefetchLimit: AppSettingsManager.shared.conversionSettings.readingPrefetchLimit
         ))
+        let isMangaComic = pdf.metadata.isManga == true || pdf.contentType == .manga
+        self._readingMode = State(initialValue: isMangaComic ? .mangaRTL : .pageHorizontal)
     }
     
     var body: some View {
@@ -504,12 +506,23 @@ struct ComicReaderEngine: View {
                 pageText: "\(currentIndex + 1) / \(cache.pageCount)",
                 isVisible: $chromeVisible,
                 onBack: {
-                    ReaderProgressTracker.shared.update(ReadingProgress(
+                    var progress = ReaderProgressTracker.shared.progress(for: pdf.id) ?? ReadingProgress(
                         pdfID: pdf.id, lastOpenedAt: Date(), currentPageIndex: currentIndex,
                         currentChapterIndex: nil, currentChapterOffset: nil,
                         totalPagesRead: 1, completionFraction: Double(currentIndex + 1) / Double(cache.pageCount),
                         readingSessionDates: [Date()], estimatedMinutesRemaining: nil
-                    ))
+                    )
+                    progress.currentPageIndex = currentIndex
+                    progress.lastOpenedAt = Date()
+                    progress.completionFraction = Double(currentIndex + 1) / Double(cache.pageCount)
+                    progress.prefersMangaMode = (readingMode == .mangaRTL)
+                    progress.colorFilter = activeFilterPreset.rawValue
+                    progress.lastCanonicalLeadIndex = currentIndex
+                    progress.wasInDualPageMode = (readingMode == .pageTwoUp)
+                    if !progress.readingSessionDates.contains(where: { Calendar.current.isDateInToday($0) }) {
+                        progress.readingSessionDates.append(Date())
+                    }
+                    ReaderProgressTracker.shared.update(progress)
                     onDismiss()
                 },
                 onBookmark: {
@@ -584,6 +597,20 @@ struct ComicReaderEngine: View {
         .onAppear {
             if let saved = ReaderProgressTracker.shared.progress(for: pdf.id) {
                 currentIndex = saved.currentPageIndex
+                if let filterString = saved.colorFilter,
+                   let filterPreset = ReadingFilterPreset(rawValue: filterString) {
+                    activeFilterPreset = filterPreset
+                }
+                if let prefersManga = saved.prefersMangaMode, prefersManga {
+                    readingMode = .mangaRTL
+                } else if let wasDual = saved.wasInDualPageMode, wasDual {
+                    readingMode = .pageTwoUp
+                }
+            } else {
+                let isMangaComic = pdf.metadata.isManga == true || pdf.contentType == .manga
+                if isMangaComic {
+                    readingMode = .mangaRTL
+                }
             }
             // On appear, honour the current physical orientation immediately
             // so opening in landscape already shows two pages.
@@ -694,7 +721,7 @@ struct ComicReaderEngine: View {
             } else if orientation.isPortrait {
                 // Portrait → restore single-page (manga keeps RTL)
                 if readingMode == .pageTwoUp {
-                    let isMangaComic = pdf.metadata.isManga == true
+                    let isMangaComic = pdf.metadata.isManga == true || pdf.contentType == .manga
                     readingMode = isMangaComic ? .mangaRTL : .pageHorizontal
                 }
             }

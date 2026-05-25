@@ -64,8 +64,7 @@ struct LinkedDriveBrowserView: View {
         .navigationBarTitleDisplayMode(.large)
         .task { await loadDirectory() }
         .fullScreenCover(item: $selectedPDF) { pdf in
-            ReaderView(fileURL: pdf.url, contentType: pdf.contentType, pdf: pdf)
-                .environmentObject(conversionManager)
+            UnifiedReaderView(pdf: pdf)
         }
     }
 

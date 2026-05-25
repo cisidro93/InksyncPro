@@ -4,7 +4,12 @@ extension ConversionManager {
     // MARK: - Collection Management
     
     func createCollection(name: String, icon: String, color: String) {
-        collections.append(PDFCollection(id: UUID(), name: name, icon: icon, color: color, creationDate: Date()))
+        if let idx = collections.firstIndex(where: { $0.name.lowercased() == name.lowercased() }) {
+            collections[idx].icon = icon
+            collections[idx].color = color
+        } else {
+            collections.append(PDFCollection(id: UUID(), name: name, icon: icon, color: color, creationDate: Date()))
+        }
         saveLibrary()
     }
     

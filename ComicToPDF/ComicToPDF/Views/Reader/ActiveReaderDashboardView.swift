@@ -46,7 +46,7 @@ struct ActiveReaderDashboardView: View {
                         } label: {
                             heroCard(for: hero)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(CellButtonStyle())
                     }
                     
                     // ── RECENT SHELF ─────────────────────────
@@ -64,7 +64,7 @@ struct ActiveReaderDashboardView: View {
                                         } label: {
                                             shelfCard(for: item)
                                         }
-                                        .buttonStyle(.plain)
+                                        .buttonStyle(CellButtonStyle())
                                     }
                                 }
                                 .padding(.horizontal, 20)
@@ -80,11 +80,7 @@ struct ActiveReaderDashboardView: View {
         }
         .background(Color.clear)
         .fullScreenCover(item: $pdfToRead) { pdf in
-             if pdf.contentType == .book {
-                 SplitStudyWorkspace(fileURL: pdf.url, contentType: pdf.contentType, pdf: pdf)
-             } else {
-                 ReaderView(fileURL: pdf.url, contentType: pdf.contentType, pdf: pdf)
-             }
+             UnifiedReaderView(pdf: pdf)
         }
     }
     

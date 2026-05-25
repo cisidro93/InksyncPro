@@ -1,50 +1,8 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-// MARK: - Drag Payload UTType
-extension UTType {
-    /// Use importedAs (not exportedAs) — importedAs works without a
-    /// UTExportedTypeDeclarations entry in Info.plist.
-    static let libraryDragPayload = UTType(importedAs: "com.inksyncpro.library.dragpayload")
-}
+// Drag infrastructure moved to LibraryDragDrop.swift
 
-// MARK: - Drag Payload
-
-/// What gets carried when the user drags a library item onto another.
-/// When `seriesGroupTitle` is non-nil the payload represents an entire series
-/// being dragged (series-to-series combine). `pdfID` is set to the cover
-/// issue's UUID so `applyDrop` still has a valid UUID anchor, and
-/// `issueIDs` carries every issue in the group so they can all be re-assigned.
-struct LibraryDragPayload: Codable, Transferable {
-    let pdfID: UUID                     // cover issue (or primary file)
-    let currentSeriesName: String?      // nil = ungrouped standalone file
-    /// Non-nil only when dragging an entire series group.
-    let seriesGroupTitle: String?
-    /// All issue IDs belonging to the dragged series (empty for single-file drags).
-    let issueIDs: [UUID]
-
-    /// Convenience init for single-file drags (preserves backward compat).
-    init(pdfID: UUID, currentSeriesName: String?) {
-        self.pdfID = pdfID
-        self.currentSeriesName = currentSeriesName
-        self.seriesGroupTitle = nil
-        self.issueIDs = []
-    }
-
-    /// Init for dragging an entire series group.
-    init(seriesGroup: SeriesGroup) {
-        self.pdfID = seriesGroup.coverIssueID ?? seriesGroup.issues.first?.id ?? UUID()
-        self.currentSeriesName = seriesGroup.title
-        self.seriesGroupTitle = seriesGroup.title
-        self.issueIDs = seriesGroup.issues.map(\.id)
-    }
-
-    var isSeriesDrag: Bool { seriesGroupTitle != nil }
-
-    static var transferRepresentation: some TransferRepresentation {
-        CodableRepresentation(contentType: .libraryDragPayload)
-    }
-}
 
 // MARK: - LibraryGridView
 
@@ -179,6 +137,12 @@ struct LibraryGridView: View {
                 guard let group = renamingGroup else { return }
                 let newName = pendingSeriesName.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !newName.isEmpty, newName != group.title else { renamingGroup = nil; return }
+                
+                if let folderUUID = UUID(uuidString: group.id),
+                   let colIdx = conversionManager.collections.firstIndex(where: { $0.id == folderUUID }) {
+                    conversionManager.collections[colIdx].name = newName
+                }
+                
                 for pdf in group.issues {
                     if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
                         conversionManager.convertedPDFs[idx].metadata.series = newName
@@ -343,10 +307,13 @@ struct LibraryGridView: View {
             dropTargetSeriesTitle = nil
             return true
         } isTargeted: { isOver in
-            withAnimation(.easeInOut(duration: 0.15)) {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                 dropTargetSeriesTitle = isOver ? group.title : nil
             }
         }
+        .scaleEffect(isDropTarget ? 0.93 : 1.0)
+        .shadow(color: Color.inkBlue.opacity(isDropTarget ? 0.5 : 0), radius: isDropTarget ? 15 : 0)
+        .animation(.spring(response: 0.35, dampingFraction: 0.7, blendDuration: 0), value: isDropTarget)
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(Color.inkBlue.opacity(isDropTarget ? 0.9 : 0), lineWidth: 3)
@@ -357,7 +324,7 @@ struct LibraryGridView: View {
     @ViewBuilder
     private func singleCell(pdf: ConvertedPDF) -> some View {
         let isDropTarget = dropTargetPDFID == pdf.id
-        let dragPayload = LibraryDragPayload(pdfID: pdf.id, currentSeriesName: pdf.metadata.series)
+        let dragPayload = LibraryDragPayload(pdfID: pdf.id, pdfName: pdf.name, currentSeriesName: pdf.metadata.series)
 
         Group {
             if isBatchMode {
@@ -370,7 +337,7 @@ struct LibraryGridView: View {
                 } label: {
                     ModernGridFileCell(pdf: pdf, isSelected: multiSelection.contains(pdf.id), isBatch: true)
                 }
-                .buttonStyle(PlainButtonStyle())
+                .buttonStyle(CellButtonStyle())
             } else {
                 // ── Cloud files: always open the detail sheet regardless of tapAction.
                 // Cloud-sourced files cannot be read locally — they need Download & Convert first.
@@ -384,7 +351,7 @@ struct LibraryGridView: View {
                     } label: {
                         ModernGridFileCell(pdf: pdf, isSelected: false, isBatch: false)
                     }
-                    .buttonStyle(PlainButtonStyle())
+                    .buttonStyle(CellButtonStyle())
                     .contextMenu {
                         if hSizeClass == .compact {
                             Button {
@@ -418,7 +385,7 @@ struct LibraryGridView: View {
                     } label: {
                         ModernGridFileCell(pdf: pdf, isSelected: false, isBatch: false)
                     }
-                    .buttonStyle(PlainButtonStyle())
+                    .buttonStyle(CellButtonStyle())
                     .contextMenu {
                         if hSizeClass == .compact {
                             Button {
@@ -454,9 +421,14 @@ struct LibraryGridView: View {
         // Smart rule: when dragging file A onto file B, keep B's series name (or B's title if ungrouped).
         .dropDestination(for: LibraryDragPayload.self) { payloads, _ in
             guard let payload = payloads.first, payload.pdfID != pdf.id else { return false }
-            let destinationName = pdf.metadata.series?.isEmpty == false
-                ? pdf.metadata.series!
-                : pdf.metadata.title    // ungrouped file — use its title as the proposed series name
+            let destinationName: String
+            if let draggedName = payload.pdfName {
+                destinationName = extractSmartGroupName(str1: draggedName, str2: pdf.name)
+            } else {
+                destinationName = pdf.metadata.series?.isEmpty == false
+                    ? pdf.metadata.series!
+                    : pdf.metadata.title
+            }
             pendingDropInfo = DropResolutionInfo(
                 draggedID: payload.pdfID,
                 draggedSeriesName: payload.currentSeriesName,
@@ -466,10 +438,13 @@ struct LibraryGridView: View {
             dropTargetPDFID = nil
             return true
         } isTargeted: { isOver in
-            withAnimation(.easeInOut(duration: 0.15)) {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                 dropTargetPDFID = isOver ? pdf.id : nil
             }
         }
+        .scaleEffect(isDropTarget ? 0.93 : 1.0)
+        .shadow(color: Color.inkGreen.opacity(isDropTarget ? 0.5 : 0), radius: isDropTarget ? 15 : 0)
+        .animation(.spring(response: 0.35, dampingFraction: 0.7, blendDuration: 0), value: isDropTarget)
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .stroke(Color.inkGreen.opacity(isDropTarget ? 0.9 : 0), lineWidth: 3)
@@ -807,206 +782,5 @@ private struct SeriesDragPreviewCard: View {
     }
 }
 
-// MARK: - Drop Resolution Info
 
-struct DropResolutionInfo: Identifiable {
-    let id = UUID()
-    let draggedID: UUID
-    let draggedSeriesName: String?
-    let destinationSeriesName: String
-    let isFileDroppingOntoSeries: Bool  // true = file→series or series→series, false = file→file
-    /// Non-empty when dragging an entire series (series→series combine).
-    let allDraggedIssueIDs: [UUID]
 
-    init(
-        draggedID: UUID,
-        draggedSeriesName: String?,
-        destinationSeriesName: String,
-        isFileDroppingOntoSeries: Bool,
-        allDraggedIssueIDs: [UUID] = []
-    ) {
-        self.draggedID = draggedID
-        self.draggedSeriesName = draggedSeriesName
-        self.destinationSeriesName = destinationSeriesName
-        self.isFileDroppingOntoSeries = isFileDroppingOntoSeries
-        self.allDraggedIssueIDs = allDraggedIssueIDs
-    }
-}
-
-// MARK: - Drop Resolution Sheet
-
-struct DropResolutionSheet: View {
-    let info: DropResolutionInfo
-    let onConfirm: (String) -> Void
-
-    @State private var customName: String = ""
-    @State private var useCustomName = false
-    @Environment(\.dismiss) private var dismiss
-
-    private var smartDefault: String { info.destinationSeriesName }
-    private var hasAlternative: Bool {
-        let dName = info.draggedSeriesName ?? ""
-        return !dName.isEmpty && dName != info.destinationSeriesName
-    }
-
-    var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                // Icon + headline
-                VStack(spacing: 12) {
-                    ZStack {
-                        Circle()
-                            .fill(Color.inkBlue.opacity(0.15))
-                            .frame(width: 80, height: 80)
-                        Image(systemName: "books.vertical.fill")
-                            .font(.system(size: 36))
-                            .foregroundStyle(Color.inkBlue.gradient)
-                    }
-                    .padding(.top, 32)
-
-                    Text(info.allDraggedIssueIDs.isEmpty
-                         ? (info.isFileDroppingOntoSeries ? "Add to Series" : "Create / Merge Series")
-                         : "Combine Series")
-                        .font(.title3.bold())
-                        .foregroundColor(.primary)
-
-                    Text(info.allDraggedIssueIDs.isEmpty
-                         ? (info.isFileDroppingOntoSeries
-                            ? "Which series name should this issue use?"
-                            : "These two files will be grouped. Choose a series name.")
-                         : "\(info.allDraggedIssueIDs.count) issue\(info.allDraggedIssueIDs.count == 1 ? "" : "s") from \"\(info.draggedSeriesName ?? "source")\" will move into this series. Which name should they use?")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 32)
-                }
-                .padding(.bottom, 28)
-
-                // Options
-                VStack(spacing: 10) {
-                    // Smart default: destination name
-                    OptionRow(
-                        label: "Keep destination series name",
-                        value: info.destinationSeriesName,
-                        isSelected: !useCustomName,
-                        accent: .inkBlue
-                    ) {
-                        useCustomName = false
-                    }
-
-                    // Alternative: dragged item's series name (only shown if different)
-                    if hasAlternative, let altName = info.draggedSeriesName {
-                        OptionRow(
-                            label: "Use dragged item's series name",
-                            value: altName,
-                            isSelected: false,
-                            accent: .inkViolet
-                        ) {
-                            useCustomName = true
-                            customName = altName
-                        }
-                    }
-
-                    // Custom name input
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack {
-                            Image(systemName: "pencil")
-                                .foregroundColor(useCustomName ? .inkAmber : .secondary)
-                            Text("Use a custom name")
-                                .font(.subheadline.weight(.medium))
-                                .foregroundColor(useCustomName ? .inkAmber : .secondary)
-                            Spacer()
-                            if useCustomName {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundColor(.inkAmber)
-                            }
-                        }
-                        .contentShape(Rectangle())
-                        .onTapGesture { useCustomName = true }
-
-                        if useCustomName {
-                            TextField("Series name…", text: $customName)
-                                .padding(12)
-                                .background(Color.inkSurface)
-                                .clipShape(RoundedRectangle(cornerRadius: 10))
-                                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.inkAmber.opacity(0.5), lineWidth: 1))
-                                .autocorrectionDisabled()
-                        }
-                    }
-                    .padding(14)
-                    .background(Color.inkSurface)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                }
-                .padding(.horizontal, 20)
-
-                Spacer()
-
-                // Confirm button
-                Button {
-                    let resolved = useCustomName
-                        ? customName.trimmingCharacters(in: .whitespacesAndNewlines)
-                        : smartDefault
-                    guard !resolved.isEmpty else { return }
-                    onConfirm(resolved)
-                    dismiss()
-                } label: {
-                    Text("Confirm")
-                        .font(.body.weight(.semibold))
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
-                        .background(Color.inkBlue)
-                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                }
-                .padding(.horizontal, 20)
-                .padding(.bottom, 32)
-                .disabled(useCustomName && customName.trimmingCharacters(in: .whitespaces).isEmpty)
-            }
-            .background(Color(UIColor.systemBackground).ignoresSafeArea())
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                        .foregroundColor(.secondary)
-                }
-            }
-        }
-    }
-}
-
-// MARK: - Option Row
-
-private struct OptionRow: View {
-    let label: String
-    let value: String
-    let isSelected: Bool
-    let accent: Color
-    let onTap: () -> Void
-
-    var body: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(label)
-                    .font(.caption.weight(.medium))
-                    .foregroundColor(.secondary)
-                Text(value)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundColor(.primary)
-                    .lineLimit(1)
-            }
-            Spacer()
-            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                .foregroundColor(isSelected ? accent : .secondary)
-                .font(.system(size: 22))
-        }
-        .padding(14)
-        .background(Color.inkSurface)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(accent.opacity(isSelected ? 0.6 : 0), lineWidth: 1.5)
-        )
-        .contentShape(Rectangle())
-        .onTapGesture { onTap() }
-    }
-}

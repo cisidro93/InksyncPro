@@ -37,8 +37,12 @@ struct RecentlyAddedBanner: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
                     ForEach(recent) { pdf in
-                        RecentAddedCompactCard(pdf: pdf, cardW: cardW, cardH: cardH)
-                            .onTapGesture { onTap(pdf) }
+                        Button {
+                            onTap(pdf)
+                        } label: {
+                            RecentAddedCompactCard(pdf: pdf, cardW: cardW, cardH: cardH)
+                        }
+                        .buttonStyle(CellButtonStyle())
                     }
                 }
                 .padding(.horizontal, hPad)
@@ -59,7 +63,6 @@ private struct RecentAddedCompactCard: View {
 
     @EnvironmentObject var conversionManager: ConversionManager
     @State private var cover: UIImage? = nil
-    @GestureState private var isPressed = false
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -102,9 +105,6 @@ private struct RecentAddedCompactCard: View {
                 .stroke(Color.white.opacity(0.1), lineWidth: 0.5)
         )
         .shadow(color: .black.opacity(0.22), radius: 4, y: 2)
-        .scaleEffect(isPressed ? 0.95 : 1.0)
-        .animation(.spring(response: 0.22, dampingFraction: 0.7), value: isPressed)
-        .gesture(DragGesture(minimumDistance: 0).updating($isPressed) { _, s, _ in s = true })
         .task(id: pdf.id) { await loadCover() }
     }
 

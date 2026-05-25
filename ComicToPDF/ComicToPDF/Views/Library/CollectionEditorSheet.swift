@@ -36,6 +36,7 @@ private struct CollectionGlassCard<Content: View>: View {
 
 struct CollectionEditorSheet: View {
     @Environment(\.dismiss) var dismiss
+    @EnvironmentObject var conversionManager: ConversionManager
     
     let isEditing: Bool
     let existingCollection: PDFCollection?
@@ -102,9 +103,47 @@ struct CollectionEditorSheet: View {
                             .overlay(
                                 RoundedRectangle(cornerRadius: 10)
                                     .stroke(Color.primary.opacity(0.08), lineWidth: 1)
-                            )
+                             )
                             .foregroundColor(.primary)
                             .tint(colorFromName(selectedColor))
+                    }
+                    
+                    // MARK: - Choose Existing Collection
+                    if !conversionManager.collections.isEmpty {
+                        CollectionGlassCard(title: "Choose Existing Collection", icon: "folder.badge.plus") {
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 12) {
+                                    ForEach(conversionManager.collections) { col in
+                                        Button {
+                                            withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                                                name = col.name
+                                                selectedIcon = col.icon
+                                                selectedColor = col.color
+                                            }
+                                        } label: {
+                                            HStack(spacing: 8) {
+                                                Image(systemName: col.icon)
+                                                    .foregroundColor(colorFromName(col.color))
+                                                Text(col.name)
+                                                    .font(.subheadline)
+                                                    .foregroundColor(.primary)
+                                            }
+                                            .padding(.horizontal, 12)
+                                            .padding(.vertical, 8)
+                                            .background(Color.inkSurface)
+                                            .cornerRadius(8)
+                                            .overlay(
+                                                RoundedRectangle(cornerRadius: 8)
+                                                    .stroke(name.lowercased() == col.name.lowercased() ? colorFromName(col.color) : Color.primary.opacity(0.08), lineWidth: 1)
+                                            )
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                                .padding(.vertical, 4)
+                                .padding(.horizontal, 2)
+                            }
+                        }
                     }
                     
                     // MARK: - Color Selection
