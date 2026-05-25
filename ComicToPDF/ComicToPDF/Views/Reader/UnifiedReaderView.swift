@@ -12,7 +12,7 @@ struct UnifiedReaderView: View {
             
             switch pdf.contentType {
             case .comic, .manga:
-                ComicReaderEngine(pdf: pdf, onDismiss: { dismiss() })
+                ComicReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
             case .book:
                 BookReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
             case .hybrid:

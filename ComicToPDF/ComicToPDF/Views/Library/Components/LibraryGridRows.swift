@@ -238,6 +238,11 @@ struct ModernGridFileCell: View {
                     }
                 }
             }
+            // ⚠️ WIDTH FIX: .fill content mode lets landscape-ratio covers expand
+            // the ZStack beyond the outer .aspectRatio frame, making column widths vary.
+            // Constraining to maxWidth/Height here forces every cover into its grid slot.
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipped()
             .frame(maxWidth: .infinity)
             .aspectRatio(0.63, contentMode: .fit)
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
