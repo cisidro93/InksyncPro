@@ -80,7 +80,7 @@ final class CalibreWirelessDiscovery {
         let browser = NWBrowser(for: .bonjour(type: "_calibrewireless._tcp", domain: "local"), using: params)
         self.browser = browser
 
-        browser.stateUpdateHandler = { [weak self] state in
+        browser.stateUpdateHandler = { state in
             switch state {
             case .failed(let error):
                 Logger.shared.log("CalibreDiscovery: mDNS error — \(error)", category: "Calibre", type: .warning)
@@ -91,7 +91,7 @@ final class CalibreWirelessDiscovery {
         browser.browseResultsChangedHandler = { [weak self] results, _ in
             for result in results {
                 if case .service(let name, _, let domain, _) = result.endpoint {
-                    Task { @MainActor [weak self] in
+                    Task { @MainActor in
                         self?.resolveBonjour(name: name, domain: domain)
                     }
                 }
@@ -113,7 +113,7 @@ final class CalibreWirelessDiscovery {
                    case .hostPort(let host, let port) = inner {
                     let hostname = "\(host)"
                     let devicePort = port.rawValue
-                    Task { @MainActor [weak self] in
+                    Task { @MainActor in
                         self?.addHost(CalibreHost(
                             id: "\(hostname):\(devicePort)",
                             hostname: hostname,
@@ -165,7 +165,7 @@ final class CalibreWirelessDiscovery {
 
         conn.receiveMessage { [weak self] data, _, _, _ in
             guard let data, let response = String(data: data, encoding: .utf8) else { return }
-            Task { @MainActor [weak self] in
+            Task { @MainActor in
                 self?.parseBroadcastResponse(response)
             }
         }
@@ -183,9 +183,10 @@ final class CalibreWirelessDiscovery {
 
         let q = self.queue
         listener.newConnectionHandler = { [weak self] conn in
-            conn.receiveMessage { data, _, _, _ in
+            guard let self else { return }
+            conn.receiveMessage { [weak self] data, _, _, _ in
                 guard let data, let response = String(data: data, encoding: .utf8) else { return }
-                Task { @MainActor [weak self] in
+                Task { @MainActor in
                     self?.parseBroadcastResponse(response)
                 }
             }

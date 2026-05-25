@@ -337,7 +337,7 @@ final class ComicImageCache: ObservableObject, @unchecked Sendable {
                 let data = try await ZipCentralDirectory.fetchEntryData(entry: entry, manifest: manifest)
                 let maxPixelSize = await Self.targetMaxPixelSize()
                 guard let image = Self.decodeImageData(data, maxPixelSize: maxPixelSize) else {
-                    await MainActor.run { [weak self] in self?.fetchingQueue.remove(index) }
+                    await MainActor.run { [weak self] in _ = self?.fetchingQueue.remove(index) }
                     return
                 }
                 self.cache.setObject(image, forKey: NSNumber(value: index))

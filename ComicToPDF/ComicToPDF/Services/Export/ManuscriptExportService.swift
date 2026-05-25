@@ -164,7 +164,7 @@ struct ManuscriptExportService {
         var zipData = Data()
         var centralDirectory = Data()
         var fileCount: UInt16 = 0
-        let centralDirOffset = UInt32(0) // will be corrected
+
 
         var localFileHeaders: [(offset: UInt32, data: Data)] = []
 

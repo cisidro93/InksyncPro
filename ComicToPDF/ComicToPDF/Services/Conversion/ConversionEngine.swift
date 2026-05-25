@@ -82,7 +82,7 @@ actor ConversionEngine {
             let wrappedError = NSError(
                 domain: "ConversionEngine.DriveError",
                 code: 901,
-                userInfo: [NSLocalizedDescriptionKey: bookmarkErr.localizedDescription ?? "Drive access failed"]
+                userInfo: [NSLocalizedDescriptionKey: bookmarkErr.localizedDescription]
             )
             progressSubject.send(.failed(file: url, error: wrappedError))
             throw wrappedError

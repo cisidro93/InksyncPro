@@ -123,6 +123,7 @@ struct ZipUtilities {
                     continuation.resume(throwing: error)
                 }
             }
+        }
     }
 
     static func listComicEntries(from sourceURL: URL) async throws -> [URL] {

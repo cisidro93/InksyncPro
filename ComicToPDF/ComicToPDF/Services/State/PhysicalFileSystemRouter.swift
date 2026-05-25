@@ -154,7 +154,7 @@ class PhysicalFileSystemRouter {
         
         let url: URL
         var needsStopAccess = false
-        if case .linked(let bm) = pdf.sourceMode, let resolved = try? await BookmarkResolver.shared.resolve(bm) {
+        if case .linked(let bm) = pdf.sourceMode, let resolved = try? BookmarkResolver.shared.resolve(bm) {
             needsStopAccess = resolved.startAccessingSecurityScopedResource()
             url = resolved
         } else if case .cloud = pdf.sourceMode {
@@ -344,7 +344,7 @@ class PhysicalFileSystemRouter {
                 }
             } else {
                 await MainActor.run {
-                    Task {
+                    _ = Task {
                         await self.generateCoverThumbnail(for: pdf, manager: manager)
                     }
                 }
@@ -636,7 +636,7 @@ class PhysicalFileSystemRouter {
                 let targetEntry = sortedEntries[pageIndex]
                 
                 var data = Data()
-                try archive.extract(targetEntry) { chunk in
+                _ = try archive.extract(targetEntry) { chunk in
                     data.append(chunk)
                 }
                 return UIImage(data: data)

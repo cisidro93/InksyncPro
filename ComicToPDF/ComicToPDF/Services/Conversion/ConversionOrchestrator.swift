@@ -345,7 +345,7 @@ final class ConversionOrchestrator: Sendable {
                         let finalBatchImages = batchImages
                         let finalMergedChapters = mergedChapters
                         let settings = jobSettings
-                        try await Task.detached {
+                        let task = Task.detached {
                             try PDFGenerator.generate(from: finalBatchImages, to: finalOutputURL, mangaMode: settings.mangaMode, chapters: finalMergedChapters, settings: settings) { progress in
                                 let baseProgress = Double(batchIndex) / Double(totalBatches)
                                 let currentPartProgress = progress / Double(totalBatches)
@@ -353,10 +353,11 @@ final class ConversionOrchestrator: Sendable {
                                     TaskEngine.shared.conversionProgress = 0.5 + (0.5 * (baseProgress + currentPartProgress))
                                 }
                             }
-                        }.value
+                        }
+                        try await task.value
                     } else {
                         let finalBatchImages = batchImages
-                        try await Task.detached {
+                        let task = Task.detached {
                             let fm = FileManager.default
                             let tempDir = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
                             try fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
@@ -367,7 +368,8 @@ final class ConversionOrchestrator: Sendable {
                             }
                             try await ZipUtilities.zipDirectory(tempDir, to: finalOutputURL)
                             try fm.removeItem(at: tempDir)
-                        }.value
+                        }
+                        try await task.value
                     }
                     
                     let finalFileSize = (try? finalOutputURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0

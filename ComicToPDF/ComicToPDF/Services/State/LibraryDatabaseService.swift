@@ -376,7 +376,7 @@ final class LibraryDB: @unchecked Sendable {
             try block(self)
             try execute("COMMIT")
         } catch {
-            try? execute("ROLLBACK")
+            _ = try? execute("ROLLBACK")
             throw error
         }
     }
@@ -396,7 +396,7 @@ final class LibraryDB: @unchecked Sendable {
             case let s as String: sqlite3_bind_text(stmt, idx, s, -1, SQLITE_TRANSIENT)
             case let n as Int:    sqlite3_bind_int64(stmt, idx, Int64(n))
             case let d as Double: sqlite3_bind_double(stmt, idx, d)
-            case let b as Data:   b.withUnsafeBytes { sqlite3_bind_blob(stmt, idx, $0.baseAddress, Int32(b.count), SQLITE_TRANSIENT) }
+            case let b as Data:   _ = b.withUnsafeBytes { sqlite3_bind_blob(stmt, idx, $0.baseAddress, Int32(b.count), SQLITE_TRANSIENT) }
             default:              sqlite3_bind_null(stmt, idx)
             }
         }

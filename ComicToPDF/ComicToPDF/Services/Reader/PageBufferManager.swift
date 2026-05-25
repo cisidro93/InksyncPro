@@ -440,8 +440,8 @@ class PageBufferManager: ObservableObject {
             let entryPath = zipEntries[index].path
             return await Task.detached(priority: .userInitiated) {
                 do {
-                    guard let archive = try? Archive(url: archiveURL, accessMode: .read),
-                          let entry = archive[entryPath] else {
+                    let archive = try Archive(url: archiveURL, accessMode: .read)
+                    guard let entry = archive[entryPath] else {
                         return nil
                     }
                     var data = Data()

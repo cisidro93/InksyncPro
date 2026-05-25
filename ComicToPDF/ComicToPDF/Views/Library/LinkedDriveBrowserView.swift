@@ -283,7 +283,8 @@ struct LinkedDriveBrowserView: View {
             url: url,
             pageCount: 0,
             fileSize: item.fileSize,
-            metadata: PDFMetadata(title: item.name)
+            metadata: PDFMetadata(title: item.name),
+            contentType: type
         )
         // Encode a per-file bookmark so the reader can acquire security scope
         if let bm = try? url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil) {

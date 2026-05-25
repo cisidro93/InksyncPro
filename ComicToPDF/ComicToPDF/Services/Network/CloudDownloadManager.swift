@@ -307,7 +307,7 @@ class CloudDownloadManager: NSObject, ObservableObject, URLSessionDownloadDelega
 
         // ── Step 5: Store in cache and clean up progress ──────────────────────────
         let expiry = Date().addingTimeInterval(cacheHoursLimit * 3600)
-        _ = tempFileCache.withLock { cache in
+        tempFileCache.withLock { cache in
             cache[remoteID] = CacheEntry(url: finalTemp, expires: expiry)
         }
         _ = await MainActor.run { self.streamProgress.removeValue(forKey: remoteID) }
@@ -355,7 +355,7 @@ class CloudDownloadManager: NSObject, ObservableObject, URLSessionDownloadDelega
 
     nonisolated func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
         // No-op: download-to-vault is now handled by downloadAndStore()
-        _ = downloadTaskMeta.withLock { _ = $0.removeValue(forKey: downloadTask) }
+        _ = downloadTaskMeta.withLock { $0.removeValue(forKey: downloadTask) }
     }
 
     nonisolated func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {

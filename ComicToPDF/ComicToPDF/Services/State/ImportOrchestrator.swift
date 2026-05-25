@@ -813,7 +813,7 @@ actor ImportOrchestrator {
                 pageCount: extractedCount, fileSize: fileSize,
                 metadata: PDFMetadata(title: fileName), contentType: contentType
             )
-            if newPDF.contentType == .hybrid || newPDF.contentType == .book {
+            if newPDF.contentType == ContentType.hybrid || newPDF.contentType == ContentType.book {
                 newPDF.documentSubtype = self.detectDocumentSubtype(url: cbzURL, fileSize: fileSize)
             }
             

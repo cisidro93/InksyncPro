@@ -234,5 +234,4 @@ struct MetalCanvasView: UIViewRepresentable {
             return device.makeTexture(descriptor: desc)
         }
     }
-    }
 }

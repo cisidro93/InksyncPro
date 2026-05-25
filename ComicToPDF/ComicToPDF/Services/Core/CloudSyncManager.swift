@@ -66,7 +66,7 @@ class CloudSyncManager: ObservableObject {
         }
         
         // 2. Fetch Default Conversion Settings
-        let settings = await ConversionQueueManager.shared.queue.first?.settings ?? ConversionSettings() 
+        let settings = ConversionQueueManager.shared.queue.first?.settings ?? ConversionSettings() 
         // Note: we should actually pull this from a global "AutoSyncSettings" instead, but doing best effort here.
         var autoSettings = settings
         autoSettings.outputFormat = .epub
