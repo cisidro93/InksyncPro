@@ -1178,21 +1178,26 @@ struct ReaderView: View {
     
     // MARK: - Per-Book Preference Persistence
     private func restorePerBookPreferences() {
-        guard let p = pdf,
-              let saved = ReaderProgressTracker.shared.progress(for: p.id) else {
+        guard let p = pdf else { return }
+        
+        let saved = ReaderProgressTracker.shared.progress(for: p.id)
+        
+        if let saved = saved {
+            self.currentPageIndex = saved.currentPageIndex
+            Logger.shared.log("Restored progress for '\(p.name)': page \(saved.currentPageIndex + 1), manga=\(saved.prefersMangaMode ?? false), filter=\(saved.colorFilter ?? "none")", category: "ReaderView", type: .success)
+            
+            if let mangaMode = saved.prefersMangaMode {
+                isMangaMode = mangaMode
+            } else {
+                isMangaMode = (p.contentType == .manga)
+            }
+            if let savedFilter = saved.colorFilter,
+               let filter = ReaderColorFilter(rawValue: savedFilter) {
+                colorFilter = filter
+            }
+        } else {
             Logger.shared.log("restorePerBookPreferences: no saved progress for '\(fileURL.lastPathComponent)'", category: "ReaderView", type: .info)
-            return
-        }
-        
-        self.currentPageIndex = saved.currentPageIndex
-        Logger.shared.log("Restored progress for '\(p.name)': page \(saved.currentPageIndex + 1), manga=\(saved.prefersMangaMode ?? false), filter=\(saved.colorFilter ?? "none")", category: "ReaderView", type: .success)
-        
-        if let mangaMode = saved.prefersMangaMode {
-            isMangaMode = mangaMode
-        }
-        if let savedFilter = saved.colorFilter,
-           let filter = ReaderColorFilter(rawValue: savedFilter) {
-            colorFilter = filter
+            isMangaMode = (p.contentType == .manga)
         }
     }
     
