@@ -165,14 +165,13 @@ struct SettingsView: View {
             titleVisibility: .visible
         ) {
             Button("Purge Everything", role: .destructive) {
-                if let context = try? InksyncProApp.sharedModelContainer.mainContext {
-                    let descriptor = FetchDescriptor<SDAnnotation>()
-                    if let annotations = try? context.fetch(descriptor) {
-                        for ann in annotations {
-                            context.delete(ann)
-                        }
-                        try? context.save()
+                let context = InksyncProApp.sharedModelContainer.mainContext
+                let descriptor = FetchDescriptor<SDAnnotation>()
+                if let annotations = try? context.fetch(descriptor) {
+                    for ann in annotations {
+                        context.delete(ann)
                     }
+                    try? context.save()
                 }
             }
             Button("Cancel", role: .cancel) {}

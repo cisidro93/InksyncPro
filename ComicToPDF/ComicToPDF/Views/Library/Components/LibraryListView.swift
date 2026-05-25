@@ -2,6 +2,7 @@ import SwiftUI
 
 import UniformTypeIdentifiers
 
+@MainActor
 struct LibraryListView: View {
     @EnvironmentObject var conversionManager: ConversionManager
     
@@ -46,299 +47,16 @@ struct LibraryListView: View {
                     .listRowInsets(EdgeInsets())
 
                     ForEach(items) { item in
-                    switch item {
-                    case .series(let group):
-                        let isDropTarget = dropTargetSeriesTitle == group.title
-                        let seriesPayload = LibraryDragPayload(seriesGroup: group)
-
-                        Group {
-                            if isBatchMode {
-                                Button {
-                                    let allSelected = group.issues.allSatisfy { multiSelection.contains($0.id) }
-                                    if allSelected {
-                                        for issue in group.issues { multiSelection.remove(issue.id) }
-                                    } else {
-                                        for issue in group.issues { multiSelection.insert(issue.id) }
-                                    }
-                                } label: {
-                                    ModernSeriesRow(group: group, isSelected: group.issues.allSatisfy { multiSelection.contains($0.id) }, isBatch: true)
-                                }
-                            } else {
-                                if let folderUUID = UUID(uuidString: group.id) {
-                                    Button {
-                                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                            onFolderTap(folderUUID)
-                                        }
-                                    } label: {
-                                        ModernSeriesRow(group: group, isSelected: false, isBatch: false)
-                                    }
-                                    .contextMenu {
-                                        Button {
-                                            if let next = nextUnread(in: group) {
-                                                HapticEngine.success()
-                                                onAction(.read, next)
-                                            }
-                                        } label: { Label("Read Next Issue", systemImage: "play.fill") }
-                                        Divider()
-                                        Button {
-                                            NotificationCenter.default.post(name: Notification.Name("RequestSeriesRename"), object: group)
-                                        } label: { Label("Rename Folder", systemImage: "pencil") }
-                                        Divider()
-                                        Button(role: .destructive) {
-                                            for issue in group.issues { conversionManager.deletePDF(issue) }
-                                        } label: { Label("Delete Folder", systemImage: "trash") }
-                                    }
-                                    .swipeActions(edge: .leading, allowsFullSwipe: true) {
-                                        Button {
-                                            if let next = nextUnread(in: group) {
-                                                HapticEngine.success()
-                                                onAction(.read, next)
-                                            }
-                                        } label: { Label("Read Next", systemImage: "play.fill") }
-                                        .tint(Color.inkBlue)
-                                    }
-                                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                                        Button {
-                                            isBatchMode = true
-                                            for issue in group.issues { multiSelection.insert(issue.id) }
-                                        } label: { Label("Select Group", systemImage: "checkmark.circle.fill") }
-                                        .tint(.green)
-                                        Button(role: .destructive) {
-                                            for issue in group.issues { conversionManager.deletePDF(issue) }
-                                        } label: { Label("Delete Folder", systemImage: "trash") }
-                                    }
-                                } else {
-                                    NavigationLink(destination: SeriesDetailView(series: group, selectedPDF: $selectedPDF, useNavigationStack: useNavigationStack)) {
-                                        ModernSeriesRow(group: group, isSelected: false, isBatch: false)
-                                    }
-                                    .contextMenu {
-                                        Button {
-                                            if let next = nextUnread(in: group) {
-                                                HapticEngine.success()
-                                                onAction(.read, next)
-                                            }
-                                        } label: { Label("Read Next Issue", systemImage: "play.fill") }
-
-                                        Divider()
-                                        
-                                        let allPinned = group.issues.allSatisfy { WorkspaceFocusManager.shared.isPinned($0) }
-                                        Button {
-                                            if allPinned {
-                                                for issue in group.issues { WorkspaceFocusManager.shared.unpin(issue) }
-                                            } else {
-                                                for issue in group.issues { WorkspaceFocusManager.shared.pin(issue) }
-                                            }
-                                        } label: {
-                                            Label(
-                                                allPinned ? "Remove from Work Area" : "Send Series to Work Area",
-                                                systemImage: allPinned ? "pin.slash" : "pin"
-                                            )
-                                        }
-
-                                        Divider()
-
-                                        Button {
-                                            NotificationCenter.default.post(name: Notification.Name("RequestSeriesRename"), object: group)
-                                        } label: { Label("Rename Series", systemImage: "pencil") }
-
-                                        Divider()
-
-                                        Button(role: .destructive) {
-                                            for issue in group.issues { conversionManager.deletePDF(issue) }
-                                        } label: { Label("Delete Series", systemImage: "trash") }
-                                    }
-                                    // Swipe right → Read next unread issue immediately
-                                    .swipeActions(edge: .leading, allowsFullSwipe: true) {
-                                        Button {
-                                            if let next = nextUnread(in: group) {
-                                                HapticEngine.success()
-                                                onAction(.read, next)
-                                            }
-                                        } label: { Label("Read Next", systemImage: "play.fill") }
-                                        .tint(Color.inkBlue)
-                                    }
-                                    // Swipe left → select all or delete
-                                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                                        Button {
-                                            isBatchMode = true
-                                            for issue in group.issues { multiSelection.insert(issue.id) }
-                                        } label: { Label("Select Group", systemImage: "checkmark.circle.fill") }
-                                        .tint(.green)
-                                        
-                                        Button(role: .destructive) {
-                                            for issue in group.issues { conversionManager.deletePDF(issue) }
-                                        } label: { Label("Delete Series", systemImage: "trash") }
-                                    }
-                                }
-                            }
-                        }
-                        .listRowBackground(Color.inkSurface.opacity(0.4))
-                        .listRowSeparatorTint(Color(UIColor.separator))
-                        .draggable(seriesPayload) {
-                            ListSeriesDragPreviewRow(group: group)
-                        }
-                        .dropDestination(for: LibraryDragPayload.self) { payloads, _ in
-                            guard let payload = payloads.first else { return false }
-                            if payload.isSeriesDrag, payload.seriesGroupTitle == group.title { return false }
-                            if !payload.isSeriesDrag, payload.pdfID == group.issues.first?.id { return false }
-
-                            pendingDropInfo = DropResolutionInfo(
-                                draggedID: payload.pdfID,
-                                draggedSeriesName: payload.currentSeriesName,
-                                destinationSeriesName: group.title,
-                                isFileDroppingOntoSeries: true,
-                                allDraggedIssueIDs: payload.issueIDs
-                            )
-                            dropTargetSeriesTitle = nil
-                            return true
-                        } isTargeted: { isOver in
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                dropTargetSeriesTitle = isOver ? group.title : nil
-                            }
-                        }
-                        .scaleEffect(isDropTarget ? 0.96 : 1.0)
-                        .shadow(color: Color.inkBlue.opacity(isDropTarget ? 0.5 : 0), radius: isDropTarget ? 15 : 0)
-                        .animation(.spring(response: 0.35, dampingFraction: 0.7, blendDuration: 0), value: isDropTarget)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .stroke(Color.inkBlue.opacity(isDropTarget ? 0.8 : 0), lineWidth: 2)
-                                .animation(.easeInOut(duration: 0.15), value: isDropTarget)
-                        )
-                    case .single(let pdf):
-                        let isDropTarget = dropTargetPDFID == pdf.id
-                        let dragPayload = LibraryDragPayload(pdfID: pdf.id, pdfName: pdf.name, currentSeriesName: pdf.metadata.series)
-
-                        Group {
-                            if isBatchMode {
-                                 Button {
-                                     if multiSelection.contains(pdf.id) {
-                                         multiSelection.remove(pdf.id)
-                                     } else {
-                                         multiSelection.insert(pdf.id)
-                                     }
-                                 } label: {
-                                     ModernFileRow(pdf: pdf, isSelected: multiSelection.contains(pdf.id), isBatch: true)
-                                  }
-                             } else {
-                                 Button {
-                                     if case .cloud = pdf.sourceMode {
-                                         if tapAction == .convert {
-                                             onAction(.convert, pdf)
-                                         } else {
-                                             onAction(.details, pdf)
-                                         }
-                                     } else {
-                                         if tapAction == .read {
-                                             onAction(.read, pdf)
-                                         } else if tapAction == .convert {
-                                             onAction(.convert, pdf)
-                                         } else {
-                                             onAction(.details, pdf)
-                                         }
-                                     }
-                                 } label: {
-                                     ModernFileRow(pdf: pdf, isSelected: false, isBatch: false)
-                                 }
-                                 .tag(pdf)
-                                 .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                                     Button {
-                                         isBatchMode = true
-                                         multiSelection.insert(pdf.id)
-                                     } label: { Label("Select", systemImage: "checkmark.circle.fill") }
-                                     .tint(.green)
-                                     
-                                     swipeActionsTrailing(pdf)
-                                 }
-                                 .swipeActions(edge: .leading) {
-                                     if case .cloud = pdf.sourceMode {
-                                         Button {
-                                             onAction(.details, pdf)
-                                         } label: { Label("Details", systemImage: "info.circle.fill") }
-                                         .tint(Theme.orange)
-                                     } else {
-                                         swipeActionsLeading(pdf)
-                                     }
-                                 }
-                                 .contextMenu {
-                                     contextMenuContent(pdf)
-                                 }
-                             }
-                        }
-                        .listRowBackground(Color.inkSurface.opacity(0.4))
-                        .listRowSeparatorTint(Color(UIColor.separator))
-                        .draggable(dragPayload) {
-                            ListFileDragPreviewRow(pdf: pdf)
-                        }
-                        .dropDestination(for: LibraryDragPayload.self) { payloads, _ in
-                            guard let payload = payloads.first, payload.pdfID != pdf.id else { return false }
-                            let destinationName: String
-                            if let draggedName = payload.pdfName {
-                                destinationName = extractSmartGroupName(str1: draggedName, str2: pdf.name)
-                            } else {
-                                destinationName = pdf.metadata.series?.isEmpty == false
-                                    ? pdf.metadata.series!
-                                    : pdf.metadata.title
-                            }
-                            pendingDropInfo = DropResolutionInfo(
-                                draggedID: payload.pdfID,
-                                draggedSeriesName: payload.currentSeriesName,
-                                destinationSeriesName: destinationName,
-                                isFileDroppingOntoSeries: false
-                            )
-                            dropTargetPDFID = nil
-                            return true
-                        } isTargeted: { isOver in
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                dropTargetPDFID = isOver ? pdf.id : nil
-                            }
-                        }
-                        .scaleEffect(isDropTarget ? 0.96 : 1.0)
-                        .shadow(color: Color.inkGreen.opacity(isDropTarget ? 0.5 : 0), radius: isDropTarget ? 15 : 0)
-                        .animation(.spring(response: 0.35, dampingFraction: 0.7, blendDuration: 0), value: isDropTarget)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .stroke(Color.inkGreen.opacity(isDropTarget ? 0.8 : 0), lineWidth: 2)
-                                .animation(.easeInOut(duration: 0.15), value: isDropTarget)
-                        )
-                    case .driveFolder(let entry):
-                        let isConnected = DriveMonitor.shared.isConnected(driveID: entry.id)
-                        NavigationLink(destination:
-                            LinkedDriveBrowserView(driveEntry: entry)
-                                .environmentObject(conversionManager)
-                        ) {
-                            HStack(spacing: 12) {
-                                Image(systemName: "externaldrive.fill")
-                                    .font(.title3)
-                                    .foregroundStyle(isConnected ? Color(hex: "#6AB0F5") : .secondary)
-                                    .frame(width: 32)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(entry.displayName)
-                                        .font(.headline)
-                                        .foregroundStyle(Theme.text)
-                                    Text("\(entry.fileCount) files · \(isConnected ? "Connected" : "Disconnected")")
-                                        .font(.caption)
-                                        .foregroundStyle(isConnected ? .green : .secondary)
-                                }
-                                Spacer()
-                                Image(systemName: "chevron.right")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            .padding(.vertical, 2)
-                        }
-                        .disabled(!isConnected)
-                        .listRowBackground(Color.inkSurface.opacity(0.4))
-                        .listRowSeparatorTint(Color(UIColor.separator))
-                        .contextMenu {
-                            if isConnected {
-                                Button {
-                                    Task { await LinkedLibraryScanner.shared.syncDrive(entry) }
-                                } label: { Label("Sync Drive", systemImage: "arrow.triangle.2.circlepath") }
-                            }
+                        switch item {
+                        case .series(let group):
+                            seriesRow(group: group)
+                        case .single(let pdf):
+                            singleRow(pdf: pdf)
+                        case .driveFolder(let entry):
+                            driveFolderRow(entry: entry)
                         }
                     }
-                }
-            } // end List
+                } // end List
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .background(Color.clear)
@@ -579,6 +297,304 @@ struct LibraryListView: View {
         conversionManager.saveLibrary()
         HapticEngine.success()
         onDropApplied()
+    }
+
+    // MARK: - Row Sub-views
+
+    @ViewBuilder
+    private func seriesRow(group: SeriesGroup) -> some View {
+        let isDropTarget = dropTargetSeriesTitle == group.title
+        let seriesPayload = LibraryDragPayload(seriesGroup: group)
+
+        Group {
+            if isBatchMode {
+                Button {
+                    let allSelected = group.issues.allSatisfy { multiSelection.contains($0.id) }
+                    if allSelected {
+                        for issue in group.issues { multiSelection.remove(issue.id) }
+                    } else {
+                        for issue in group.issues { multiSelection.insert(issue.id) }
+                    }
+                } label: {
+                    ModernSeriesRow(group: group, isSelected: group.issues.allSatisfy { multiSelection.contains($0.id) }, isBatch: true)
+                }
+            } else {
+                if let folderUUID = UUID(uuidString: group.id) {
+                    Button {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                            onFolderTap(folderUUID)
+                        }
+                    } label: {
+                        ModernSeriesRow(group: group, isSelected: false, isBatch: false)
+                    }
+                    .contextMenu {
+                        Button {
+                            if let next = nextUnread(in: group) {
+                                HapticEngine.success()
+                                onAction(.read, next)
+                            }
+                        } label: { Label("Read Next Issue", systemImage: "play.fill") }
+                        Divider()
+                        Button {
+                            NotificationCenter.default.post(name: Notification.Name("RequestSeriesRename"), object: group)
+                        } label: { Label("Rename Folder", systemImage: "pencil") }
+                        Divider()
+                        Button(role: .destructive) {
+                            for issue in group.issues { conversionManager.deletePDF(issue) }
+                        } label: { Label("Delete Folder", systemImage: "trash") }
+                    }
+                    .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                        Button {
+                            if let next = nextUnread(in: group) {
+                                HapticEngine.success()
+                                onAction(.read, next)
+                            }
+                        } label: { Label("Read Next", systemImage: "play.fill") }
+                        .tint(Color.inkBlue)
+                    }
+                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                        Button {
+                            isBatchMode = true
+                            for issue in group.issues { multiSelection.insert(issue.id) }
+                        } label: { Label("Select Group", systemImage: "checkmark.circle.fill") }
+                        .tint(.green)
+                        Button(role: .destructive) {
+                            for issue in group.issues { conversionManager.deletePDF(issue) }
+                        } label: { Label("Delete Folder", systemImage: "trash") }
+                    }
+                } else {
+                    NavigationLink(destination: SeriesDetailView(series: group, selectedPDF: $selectedPDF, useNavigationStack: useNavigationStack)) {
+                        ModernSeriesRow(group: group, isSelected: false, isBatch: false)
+                    }
+                    .contextMenu {
+                        Button {
+                            if let next = nextUnread(in: group) {
+                                HapticEngine.success()
+                                onAction(.read, next)
+                            }
+                        } label: { Label("Read Next Issue", systemImage: "play.fill") }
+
+                        Divider()
+                        
+                        let allPinned = group.issues.allSatisfy { WorkspaceFocusManager.shared.isPinned($0) }
+                        Button {
+                            if allPinned {
+                                for issue in group.issues { WorkspaceFocusManager.shared.unpin(issue) }
+                            } else {
+                                for issue in group.issues { WorkspaceFocusManager.shared.pin(issue) }
+                            }
+                        } label: {
+                            Label(
+                                allPinned ? "Remove from Work Area" : "Send Series to Work Area",
+                                systemImage: allPinned ? "pin.slash" : "pin"
+                            )
+                        }
+
+                        Divider()
+
+                        Button {
+                            NotificationCenter.default.post(name: Notification.Name("RequestSeriesRename"), object: group)
+                        } label: { Label("Rename Series", systemImage: "pencil") }
+
+                        Divider()
+
+                        Button(role: .destructive) {
+                            for issue in group.issues { conversionManager.deletePDF(issue) }
+                        } label: { Label("Delete Series", systemImage: "trash") }
+                    }
+                    .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                        Button {
+                            if let next = nextUnread(in: group) {
+                                HapticEngine.success()
+                                onAction(.read, next)
+                            }
+                        } label: { Label("Read Next", systemImage: "play.fill") }
+                        .tint(Color.inkBlue)
+                    }
+                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                        Button {
+                            isBatchMode = true
+                            for issue in group.issues { multiSelection.insert(issue.id) }
+                        } label: { Label("Select Group", systemImage: "checkmark.circle.fill") }
+                        .tint(.green)
+                        
+                        Button(role: .destructive) {
+                            for issue in group.issues { conversionManager.deletePDF(issue) }
+                        } label: { Label("Delete Series", systemImage: "trash") }
+                    }
+                }
+            }
+        }
+        .listRowBackground(Color.inkSurface.opacity(0.4))
+        .listRowSeparatorTint(Color(UIColor.separator))
+        .draggable(seriesPayload) {
+            ListSeriesDragPreviewRow(group: group)
+        }
+        .dropDestination(for: LibraryDragPayload.self) { payloads, _ in
+            guard let payload = payloads.first else { return false }
+            if payload.isSeriesDrag, payload.seriesGroupTitle == group.title { return false }
+            if !payload.isSeriesDrag, payload.pdfID == group.issues.first?.id { return false }
+
+            pendingDropInfo = DropResolutionInfo(
+                draggedID: payload.pdfID,
+                draggedSeriesName: payload.currentSeriesName,
+                destinationSeriesName: group.title,
+                isFileDroppingOntoSeries: true,
+                allDraggedIssueIDs: payload.issueIDs
+            )
+            dropTargetSeriesTitle = nil
+            return true
+        } isTargeted: { isOver in
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                dropTargetSeriesTitle = isOver ? group.title : nil
+            }
+        }
+        .scaleEffect(isDropTarget ? 0.96 : 1.0)
+        .shadow(color: Color.inkBlue.opacity(isDropTarget ? 0.5 : 0), radius: isDropTarget ? 15 : 0)
+        .animation(.spring(response: 0.35, dampingFraction: 0.7, blendDuration: 0), value: isDropTarget)
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color.inkBlue.opacity(isDropTarget ? 0.8 : 0), lineWidth: 2)
+                .animation(.easeInOut(duration: 0.15), value: isDropTarget)
+        )
+    }
+
+    @ViewBuilder
+    private func singleRow(pdf: ConvertedPDF) -> some View {
+        let isDropTarget = dropTargetPDFID == pdf.id
+        let dragPayload = LibraryDragPayload(pdfID: pdf.id, pdfName: pdf.name, currentSeriesName: pdf.metadata.series)
+
+        Group {
+            if isBatchMode {
+                 Button {
+                     if multiSelection.contains(pdf.id) {
+                         multiSelection.remove(pdf.id)
+                     } else {
+                         multiSelection.insert(pdf.id)
+                     }
+                 } label: {
+                     ModernFileRow(pdf: pdf, isSelected: multiSelection.contains(pdf.id), isBatch: true)
+                  }
+             } else {
+                 Button {
+                     if case .cloud = pdf.sourceMode {
+                         if tapAction == .convert {
+                             onAction(.convert, pdf)
+                         } else {
+                             onAction(.details, pdf)
+                         }
+                     } else {
+                         if tapAction == .read {
+                             onAction(.read, pdf)
+                         } else if tapAction == .convert {
+                             onAction(.convert, pdf)
+                         } else {
+                             onAction(.details, pdf)
+                         }
+                     }
+                 } label: {
+                     ModernFileRow(pdf: pdf, isSelected: false, isBatch: false)
+                 }
+                 .tag(pdf)
+                 .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                     Button {
+                         isBatchMode = true
+                         multiSelection.insert(pdf.id)
+                     } label: { Label("Select", systemImage: "checkmark.circle.fill") }
+                     .tint(.green)
+                     
+                     swipeActionsTrailing(pdf)
+                 }
+                 .swipeActions(edge: .leading) {
+                     if case .cloud = pdf.sourceMode {
+                         Button {
+                             onAction(.details, pdf)
+                         } label: { Label("Details", systemImage: "info.circle.fill") }
+                         .tint(Theme.orange)
+                     } else {
+                         swipeActionsLeading(pdf)
+                     }
+                 }
+                 .contextMenu {
+                     contextMenuContent(pdf)
+                 }
+             }
+        }
+        .listRowBackground(Color.inkSurface.opacity(0.4))
+        .listRowSeparatorTint(Color(UIColor.separator))
+        .draggable(dragPayload) {
+            ListFileDragPreviewRow(pdf: pdf)
+        }
+        .dropDestination(for: LibraryDragPayload.self) { payloads, _ in
+            guard let payload = payloads.first, payload.pdfID != pdf.id else { return false }
+            let destinationName: String
+            if let draggedName = payload.pdfName {
+                destinationName = extractSmartGroupName(str1: draggedName, str2: pdf.name)
+            } else {
+                destinationName = pdf.metadata.series?.isEmpty == false
+                    ? pdf.metadata.series!
+                    : pdf.metadata.title
+            }
+            pendingDropInfo = DropResolutionInfo(
+                draggedID: payload.pdfID,
+                draggedSeriesName: payload.currentSeriesName,
+                destinationSeriesName: destinationName,
+                isFileDroppingOntoSeries: false
+            )
+            dropTargetPDFID = nil
+            return true
+        } isTargeted: { isOver in
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                dropTargetPDFID = isOver ? pdf.id : nil
+            }
+        }
+        .scaleEffect(isDropTarget ? 0.96 : 1.0)
+        .shadow(color: Color.inkGreen.opacity(isDropTarget ? 0.5 : 0), radius: isDropTarget ? 15 : 0)
+        .animation(.spring(response: 0.35, dampingFraction: 0.7, blendDuration: 0), value: isDropTarget)
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color.inkGreen.opacity(isDropTarget ? 0.8 : 0), lineWidth: 2)
+                .animation(.easeInOut(duration: 0.15), value: isDropTarget)
+        )
+    }
+
+    @ViewBuilder
+    private func driveFolderRow(entry: DriveEntry) -> some View {
+        let isConnected = DriveMonitor.shared.isConnected(driveID: entry.id)
+        NavigationLink(destination:
+            LinkedDriveBrowserView(driveEntry: entry)
+                .environmentObject(conversionManager)
+        ) {
+            HStack(spacing: 12) {
+                Image(systemName: "externaldrive.fill")
+                    .font(.title3)
+                    .foregroundStyle(isConnected ? Color(hex: "#6AB0F5") : .secondary)
+                    .frame(width: 32)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(entry.displayName)
+                        .font(.headline)
+                        .foregroundStyle(Theme.text)
+                    Text("\(entry.fileCount) files · \(isConnected ? "Connected" : "Disconnected")")
+                        .font(.caption)
+                        .foregroundStyle(isConnected ? .green : .secondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.vertical, 2)
+        }
+        .disabled(!isConnected)
+        .listRowBackground(Color.inkSurface.opacity(0.4))
+        .listRowSeparatorTint(Color(UIColor.separator))
+        .contextMenu {
+            if isConnected {
+                Button {
+                    Task { await LinkedLibraryScanner.shared.syncDrive(entry) }
+                } label: { Label("Sync Drive", systemImage: "arrow.triangle.2.circlepath") }
+            }
+        }
     }
 }
 
