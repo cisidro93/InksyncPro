@@ -547,7 +547,8 @@ struct EBookReaderView: View {
 /// This breaks the retain cycle:
 ///   WKWebView → UCC → WeakProxy (weak) → Coordinator
 /// Without this, WKWebView is never deallocated and JS runs indefinitely → OOM crash.
-private final class WeakScriptMessageProxy: NSObject, WKScriptMessageHandler {
+/// Internal (not private) so BookReaderEngine.swift can also use it.
+final class WeakScriptMessageProxy: NSObject, WKScriptMessageHandler {
     weak var target: WKScriptMessageHandler?
     init(_ target: WKScriptMessageHandler) { self.target = target }
     func userContentController(_ ucc: WKUserContentController, didReceive message: WKScriptMessage) {

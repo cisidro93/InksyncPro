@@ -571,7 +571,7 @@ struct BookReaderEngine: View {
             } else {
                 if !vm.chapterHtmlFiles.isEmpty {
                     let currentChapterURL = vm.chapterHtmlFiles[vm.currentChapterIndex]
-                    EPUBWebView(htmlContent: $vm.currentChapterHTML, baseUrl: .constant(currentChapterURL), onHighlightCreated: { selectedText, _ in
+                    EPUBWebView(htmlContent: $vm.currentChapterHTML, baseUrl: .constant(currentChapterURL), prefs: EBookPreferences.shared, onHighlightCreated: { selectedText, _ in
                         
                         let highlight = Annotation(
                             pdfID: pdf.id,
