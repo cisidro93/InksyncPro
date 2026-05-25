@@ -29,46 +29,51 @@ struct LibraryListView: View {
     @State private var pendingDropInfo: DropResolutionInfo? = nil
     
     var body: some View {
-        if conversionManager.visiblePDFs.isEmpty {
-            ModernEmptyState(onImport: onImport, onFolderImport: nil)
-        } else {
-            ScrollViewReader { proxy in
-                List(selection: useNavigationStack ? nil : $selectedPDF) {
-                    // ── Scroll offset anchor (zero-height row) ──────────────
-                    GeometryReader { geo in
-                        Color.clear
-                            .preference(
-                                key: LibraryScrollOffsetKey.self,
-                                value: -geo.frame(in: .named("libraryListScroll")).minY
-                            )
-                    }
-                    .frame(height: 0)
-                    .listRowSeparator(.hidden)
-                    .listRowInsets(EdgeInsets())
+        // Wrap in Group so .sheet can chain on a concrete view instance.
+        // A bare if/else at the top level of body means the trailing .sheet
+        // modifier can't find a view instance to attach to (hits View protocol).
+        Group {
+            if conversionManager.visiblePDFs.isEmpty {
+                ModernEmptyState(onImport: onImport, onFolderImport: nil)
+            } else {
+                ScrollViewReader { proxy in
+                    List(selection: useNavigationStack ? nil : $selectedPDF) {
+                        // ── Scroll offset anchor (zero-height row) ──────────────
+                        GeometryReader { geo in
+                            Color.clear
+                                .preference(
+                                    key: LibraryScrollOffsetKey.self,
+                                    value: -geo.frame(in: .named("libraryListScroll")).minY
+                                )
+                        }
+                        .frame(height: 0)
+                        .listRowSeparator(.hidden)
+                        .listRowInsets(EdgeInsets())
 
-                    ForEach(items) { item in
-                        listRow(for: item)
-                    }
-                } // end List
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
-            .background(Color.clear)
-            .coordinateSpace(name: "libraryListScroll")
-            .onPreferenceChange(LibraryScrollOffsetKey.self) { offset in
-                scrollOffset = max(0, offset)
-            }
-            .overlay(alignment: .trailing) {
-                // ✅ PHASE 10: Comic Zeal Feature Restored
-                LibraryIndexScrubber { letter in
-                    if let targetID = firstItemId(for: letter) {
-                        withAnimation { proxy.scrollTo(targetID, anchor: .top) }
-                    }
+                        ForEach(items) { item in
+                            listRow(for: item)
+                        }
+                    } // end List
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .background(Color.clear)
+                .coordinateSpace(name: "libraryListScroll")
+                .onPreferenceChange(LibraryScrollOffsetKey.self) { offset in
+                    scrollOffset = max(0, offset)
                 }
-                .padding(.vertical, 30)
-                .padding(.trailing, 2)
+                .overlay(alignment: .trailing) {
+                    // ✅ PHASE 10: Comic Zeal Feature Restored
+                    LibraryIndexScrubber { letter in
+                        if let targetID = firstItemId(for: letter) {
+                            withAnimation { proxy.scrollTo(targetID, anchor: .top) }
+                        }
+                    }
+                    .padding(.vertical, 30)
+                    .padding(.trailing, 2)
+                }
+                .id(tapAction)
+                } // end ScrollViewReader
             }
-            .id(tapAction)
-            } // end ScrollViewReader
         }
         // MARK: Drop Resolution Sheet
         .sheet(item: $pendingDropInfo) { info in
