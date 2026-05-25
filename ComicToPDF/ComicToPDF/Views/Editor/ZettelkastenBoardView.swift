@@ -1,6 +1,14 @@
 import SwiftUI
 import SwiftData
 
+// MARK: - Identifiable String wrapper
+// Used by sheet(item:) to present a rename sheet for a specific column name.
+private struct IdentifiableString: Identifiable {
+    let id: String
+    let value: String
+    init(value: String) { self.id = value; self.value = value }
+}
+
 struct ZettelkastenBoardView: View {
     let annotations: [SDAnnotation]
     let pdfs: [SDConvertedPDF]
@@ -33,6 +41,11 @@ struct ZettelkastenBoardView: View {
     @State private var customColumns: [String] = ["Intro", "Section 1", "Section 2"]
     @State private var newColumnName: String = ""
     @State private var showingAddColumn = false
+
+    // Column rename — SwiftUI sheet replaces UIAlertController
+    @State private var renamingColumn: String? = nil
+    @State private var renameText: String = ""
+    @FocusState private var renameFieldFocused: Bool
     
     // Collapsed/visible states
     @State private var isShowingInbox = true
@@ -148,6 +161,13 @@ struct ZettelkastenBoardView: View {
         }
         .sheet(isPresented: $showingCompileSheet) {
             compileToManuscriptSheet
+        }
+        // SwiftUI-native column rename sheet
+        .sheet(item: Binding(
+            get: { renamingColumn.map { IdentifiableString(value: $0) } },
+            set: { renamingColumn = $0?.value }
+        )) { item in
+            columnRenameSheet(for: item.value)
         }
         .navigationDestination(isPresented: Binding(
             get: { compiledProject != nil },
@@ -472,27 +492,73 @@ struct ZettelkastenBoardView: View {
     }
 
     private func renameColumn(_ oldName: String) {
-        // Basic prompt logic
-        let alert = UIAlertController(title: "Rename Column", message: "Enter new name for '\(oldName)'", preferredStyle: .alert)
-        alert.addTextField { tf in tf.text = oldName }
-        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-        alert.addAction(UIAlertAction(title: "Save", style: .default, handler: { _ in
-            if let text = alert.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
-                if let idx = customColumns.firstIndex(of: oldName) {
-                    customColumns[idx] = text
+        // SwiftUI sheet — works correctly on both iPhone and iPad
+        renameText = oldName
+        renamingColumn = oldName
+    }
+
+    @ViewBuilder
+    private func columnRenameSheet(for oldName: String) -> some View {
+        NavigationStack {
+            VStack(spacing: 24) {
+                Image(systemName: "pencil.line")
+                    .font(.system(size: 36))
+                    .foregroundStyle(Color.inkAccentKnowledge)
+                    .padding(.top, 32)
+
+                Text("Rename Column")
+                    .font(.title3.bold())
+                    .foregroundStyle(Color.inkTextPrimary)
+
+                TextField("Column name", text: $renameText)
+                    .focused($renameFieldFocused)
+                    .font(.body)
+                    .padding(12)
+                    .background(Color.inkSurface, in: RoundedRectangle(cornerRadius: 10))
+                    .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.inkBorderSubtle, lineWidth: 0.5))
+                    .padding(.horizontal, 24)
+                    .onSubmit { commitRename(oldName: oldName) }
+
+                Button {
+                    commitRename(oldName: oldName)
+                } label: {
+                    Text("Save")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(renameText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Color.gray : Color.inkAccentKnowledge,
+                                    in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
-                // Update all annotations assigned to it
-                for ann in annotations where ann.outlineColumn == oldName {
-                    ann.outlineColumn = text
-                }
-                try? modelContext.save()
+                .disabled(renameText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .padding(.horizontal, 24)
+
+                Spacer()
             }
-        }))
-        
-        if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-           let root = scene.windows.first?.rootViewController {
-            root.present(alert, animated: true)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { renamingColumn = nil }
+                        .foregroundStyle(Color.inkTextSecondary)
+                }
+            }
+            .onAppear { renameFieldFocused = true }
         }
+        .presentationDetents([.medium])
+        .presentationDragIndicator(.visible)
+    }
+
+    private func commitRename(oldName: String) {
+        let text = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        if let idx = customColumns.firstIndex(of: oldName) {
+            customColumns[idx] = text
+        }
+        for ann in annotations where ann.outlineColumn == oldName {
+            ann.outlineColumn = text
+        }
+        try? modelContext.save()
+        renamingColumn = nil
     }
 
     private func deleteColumn(_ colName: String) {

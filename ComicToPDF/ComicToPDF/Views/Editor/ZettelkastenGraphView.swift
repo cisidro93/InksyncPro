@@ -52,6 +52,8 @@ final class ZettelkastenGraphEngine: NSObject, ObservableObject {
     @Published var scale: CGFloat = 1.0
     @Published var offset: CGSize = .zero
     @Published var draggedNodeID: String? = nil
+    /// Captured at the start of each pinch gesture — allows multiplicative scaling
+    var pinchBaseScale: CGFloat = 1.0
 
     @Published var pathAnchorA: String? = nil
     @Published var pathAnchorB: String? = nil
@@ -321,11 +323,11 @@ final class ZettelkastenGraphEngine: NSObject, ObservableObject {
             nodes[i].position.y += nodes[i].velocity.dy
         }
 
-        let threshold: Double = 0.4
+        let threshold: Double = 0.35
         let isAsleep = nodes.allSatisfy {
             abs($0.velocity.dx) < threshold && abs($0.velocity.dy) < threshold
         }
-        if (isAsleep || tickCount > 400) && draggedNodeID == nil { stopSimulation() }
+        if (isAsleep || tickCount > 200) && draggedNodeID == nil { stopSimulation() }
     }
 
     deinit { displayLink?.invalidate() }
@@ -607,7 +609,13 @@ struct ZettelkastenGraphView: View {
             .gesture(
                 MagnificationGesture()
                     .onChanged { val in
-                        engine.scale = min(max(val.magnitude, 0.15), 4.0)
+                        // Multiplicative: multiply the scale captured at gesture-start by the
+                        // gesture's relative magnitude. This prevents scale jumping back to 1.0
+                        // every time a new pinch begins (magnitude always starts near 1.0).
+                        engine.scale = min(max(engine.pinchBaseScale * val.magnitude, 0.15), 4.0)
+                    }
+                    .onEnded { val in
+                        engine.pinchBaseScale = engine.scale
                     }
             )
 

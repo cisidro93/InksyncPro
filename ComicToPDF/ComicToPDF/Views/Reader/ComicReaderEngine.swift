@@ -396,6 +396,8 @@ struct ComicReaderEngine: View {
     @State private var showingFilterHUD = false
     @State private var showingSettingsHUD = false
     @State private var lastBrightnessDragValue: CGFloat = 0
+    /// Panels-style ambient chrome tint — sampled from the current page edges
+    @State private var ambientPageColor: Color = .clear
     /// Debounce task — prevents rapid mode flips when the notification fires
     /// multiple times during the iPhone rotation animation (portrait→landscape).
     @State private var orientationTask: Task<Void, Never>? = nil
@@ -550,7 +552,8 @@ struct ComicReaderEngine: View {
                 isEnhanced: activeFilterPreset != .original,
                 onEnhanceToggle: { withAnimation(.easeInOut) { showingFilterHUD.toggle() } },
                 isSettingsActive: readingMode != .pageHorizontal,
-                currentModeLabel: readingMode != .pageHorizontal ? readingMode.hudLabel : nil
+                currentModeLabel: readingMode != .pageHorizontal ? readingMode.hudLabel : nil,
+                ambientColor: ambientPageColor
             )
             
             if showingFilterHUD {
@@ -632,6 +635,8 @@ struct ComicReaderEngine: View {
         }
         .onChange(of: currentIndex) { _, _ in
             GamificationManager.shared.logPageRead()
+            // Panels-style ambient colour — sample edge pixels on page change
+            extractAmbientColor(for: currentIndex)
         }
 
         // ✅ Phase 5: Apple Handoff (Reader State Sync)
@@ -728,7 +733,70 @@ struct ComicReaderEngine: View {
             // .faceUp / .faceDown / .unknown → leave mode unchanged
         }
     }
-}
+
+    // MARK: - Ambient Colour Extraction
+
+    /// Samples 5 pixels from each of the 4 edges of the current page image,
+    /// averages them, and sets `ambientPageColor`. Runs on a background priority
+    /// detached Task so it never blocks the main thread or scroll gestures.
+    private func extractAmbientColor(for index: Int) {
+        guard let image = cache.getImage(at: index),
+              let cgImage = image.cgImage else { return }
+
+        Task.detached(priority: .utility) {
+            let width  = cgImage.width
+            let height = cgImage.height
+            guard width > 1, height > 1 else { return }
+
+            // Sample points: 5 per edge, equally spaced
+            var samples: [(CGFloat, CGFloat, CGFloat)] = []
+            let sampleCount = 5
+
+            // Safe pixel reader — renders a 1×1 context at each sample point
+            func pixelAt(x: Int, y: Int) -> (CGFloat, CGFloat, CGFloat)? {
+                let clampedX = max(0, min(x, width - 1))
+                let clampedY = max(0, min(y, height - 1))
+                let colorSpace = CGColorSpaceCreateDeviceRGB()
+                var pixelData: [UInt8] = [0, 0, 0, 0]
+                guard let ctx = CGContext(
+                    data: &pixelData, width: 1, height: 1,
+                    bitsPerComponent: 8, bytesPerRow: 4,
+                    space: colorSpace,
+                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+                ) else { return nil }
+                ctx.draw(cgImage, in: CGRect(x: -clampedX, y: -(height - clampedY - 1), width: width, height: height))
+                let r = CGFloat(pixelData[0]) / 255
+                let g = CGFloat(pixelData[1]) / 255
+                let b = CGFloat(pixelData[2]) / 255
+                return (r, g, b)
+            }
+
+            for i in 0..<sampleCount {
+                let t = Int(Double(i + 1) / Double(sampleCount + 1) * Double(height))
+                // Left and right edges
+                if let p = pixelAt(x: 1, y: t)          { samples.append(p) }
+                if let p = pixelAt(x: width - 2, y: t)  { samples.append(p) }
+            }
+            for i in 0..<sampleCount {
+                let t = Int(Double(i + 1) / Double(sampleCount + 1) * Double(width))
+                // Top and bottom edges
+                if let p = pixelAt(x: t, y: 1)           { samples.append(p) }
+                if let p = pixelAt(x: t, y: height - 2)  { samples.append(p) }
+            }
+
+            guard !samples.isEmpty else { return }
+            let avgR = samples.map(\.0).reduce(0, +) / CGFloat(samples.count)
+            let avgG = samples.map(\.1).reduce(0, +) / CGFloat(samples.count)
+            let avgB = samples.map(\.2).reduce(0, +) / CGFloat(samples.count)
+
+            await MainActor.run {
+                withAnimation(.easeInOut(duration: 0.6)) {
+                    ambientPageColor = Color(red: avgR, green: avgG, blue: avgB)
+                }
+            }
+        }
+    }
+} // end ComicReaderEngine
 
 struct WebtoonImageCell: View {
     let index: Int
@@ -741,8 +809,10 @@ struct WebtoonImageCell: View {
             Image(uiImage: image)
                 .resizable()
                 .applyFilterPreset(activeFilterPreset)
-                .aspectRatio(contentMode: .fill)
-                .padding(.bottom, 2)
+                // .fit ensures the full panel width is never clipped — critical for
+                // webtoon panels that are taller than the screen width.
+                .aspectRatio(contentMode: .fit)
+                .frame(maxWidth: .infinity)
                 .onAppear { onAppearAction() }
         } else {
             ZStack {
