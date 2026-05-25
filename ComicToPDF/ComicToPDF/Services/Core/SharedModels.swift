@@ -619,7 +619,7 @@ struct ConversionSettings: Codable, Equatable, Sendable {
     // Static (not instance) because ConversionSettings is a struct — getters are
     // non-mutating, so instance properties cannot be assigned inside get {}.
     // There is exactly one ComicVine API key per app install, so static is correct.
-    private static var _cachedComicVineAPIKey: String? = nil
+    private nonisolated(unsafe) static var _cachedComicVineAPIKey: String? = nil
     var comicVineAPIKey: String {
         get {
             if let cached = Self._cachedComicVineAPIKey { return cached }
