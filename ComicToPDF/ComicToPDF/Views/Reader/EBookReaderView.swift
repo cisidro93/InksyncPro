@@ -41,10 +41,13 @@ struct EBookReaderView: View {
     @State private var showHUD = true
     @State private var errorMessage: String?
     @State private var unzipDir: URL?
-    
+
     // Page state matching current chapter
     @State private var chapterPage: Int = 0
     @State private var chapterTotalPages: Int = 1
+
+    /// Direction of last chapter navigation — used to drive the push transition.
+    @State private var isGoingForward: Bool = true
     
 
     private var totalChapters: Int { metadata?.spineItems.count ?? 1 }
@@ -79,20 +82,43 @@ struct EBookReaderView: View {
                     } else if let err = errorMessage {
                         readerErrorView(err)
                     } else if let meta = metadata, !meta.spineItems.isEmpty {
-                                                                        EBookWebReader(
-                            spineItem:  meta.spineItems[currentIndex],
-                            unzipDir:   unzipDir,
-                            prefs:      prefs,
+                        EBookWebReader(
+                            spineItem:   meta.spineItems[currentIndex],
+                            unzipDir:    unzipDir,
+                            prefs:       prefs,
                             colorScheme: colorScheme,
                             currentPage: $chapterPage,
                             initialPage: chapterPage,
-                            totalPages: $chapterTotalPages,
-                            onNext: nextChapter,
-                            onPrev: prevChapter,
-                            onCenterTap: { withAnimation(.easeInOut(duration: 0.2)) { showHUD.toggle() } }
+                            totalPages:  $chapterTotalPages,
+                            onNext:      nextChapter,
+                            onPrev:      prevChapter,
+                            onCenterTap: { withAnimation(.easeInOut(duration: 0.2)) { showHUD.toggle() } },
+                            onHighlightCreated: { selectedText in
+                                let highlight = Annotation(
+                                    pdfID: pdf?.id ?? UUID(),
+                                    pageIndex: currentIndex,
+                                    chapterTitle: meta.spineItems[currentIndex].label,
+                                    kind: .highlight,
+                                    createdAt: Date(),
+                                    modifiedAt: Date(),
+                                    colorHex: "#ffd700",
+                                    selectedText: selectedText
+                                )
+                                AnnotationStore.shared.add(highlight)
+                                StudyNotesStore.shared.appendHighlight(selectedText, chapter: meta.spineItems[currentIndex].label)
+                            }
                         )
-                        .transition(.opacity)
-                        .animation(.easeInOut(duration: 0.2), value: currentIndex)
+                        // Directional page-turn: slide left for forward, right for back.
+                        // Using .id(currentIndex) forces SwiftUI to create a new view identity
+                        // on every chapter change, guaranteeing the transition fires.
+                        .id(currentIndex)
+                        .transition(
+                            .asymmetric(
+                                insertion: .push(from: isGoingForward ? .trailing : .leading),
+                                removal:   .push(from: isGoingForward ? .leading  : .trailing)
+                            )
+                        )
+                        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: currentIndex)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -410,16 +436,18 @@ struct EBookReaderView: View {
     // MARK: - Navigation
         private func nextChapter() {
         guard currentIndex < totalChapters - 1 else { return }
+        isGoingForward = true
         chapterPage = 0 // Start next chapter at page 0
-        withAnimation(.easeInOut(duration: 0.18)) { currentIndex += 1 }
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { currentIndex += 1 }
         saveProgress()
         trackEBookProgress()
     }
-    
+
     private func prevChapter() {
         guard currentIndex > 0 else { return }
-        chapterPage = 99999 // Send a signal to JS to jump to the END of the previous chapter
-        withAnimation(.easeInOut(duration: 0.18)) { currentIndex -= 1 }
+        isGoingForward = false
+        chapterPage = 99999 // Signal JS to jump to END of the previous chapter
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { currentIndex -= 1 }
         saveProgress()
         trackEBookProgress()
     }
@@ -568,6 +596,8 @@ struct EBookWebReader: UIViewRepresentable {
     var onNext: () -> Void
     var onPrev: () -> Void
     var onCenterTap: () -> Void
+    /// Called when the user highlights text — receives the selected string.
+    var onHighlightCreated: ((String) -> Void)? = nil
 
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
@@ -575,13 +605,18 @@ struct EBookWebReader: UIViewRepresentable {
         let proxy = WeakScriptMessageProxy(context.coordinator)
         config.userContentController.add(proxy, name: "nav")
         config.userContentController.add(proxy, name: "metrics")
+        // `highlight` handler: receives selected text when user taps Highlight
+        config.userContentController.add(proxy, name: "highlight")
 
-        let wv = WKWebView(frame: .zero, configuration: config)
+        let wv = HighlightableWebView(frame: .zero, configuration: config)
         wv.isOpaque = false
         wv.backgroundColor = .clear
         wv.scrollView.backgroundColor = .clear
         wv.scrollView.contentInsetAdjustmentBehavior = .always
         wv.navigationDelegate = context.coordinator
+        wv.onHighlightRequested = {
+            wv.evaluateJavaScript("window.applyInksyncHighlight('#ffd700');")
+        }
         return wv
     }
 
@@ -593,6 +628,7 @@ struct EBookWebReader: UIViewRepresentable {
         coordinator.loadTask = nil
         uiView.configuration.userContentController.removeScriptMessageHandler(forName: "nav")
         uiView.configuration.userContentController.removeScriptMessageHandler(forName: "metrics")
+        uiView.configuration.userContentController.removeScriptMessageHandler(forName: "highlight")
         uiView.navigationDelegate = nil
     }
     
@@ -804,6 +840,39 @@ struct EBookWebReader: UIViewRepresentable {
                 e.preventDefault();
             }
         });
+
+        // ── Highlight Engine ─────────────────────────────────────────────────
+        // Invoked by the iOS text-selection menu "Highlight" button (see
+        // HighlightableWebView.buildMenu / UIEditMenuInteraction).
+        window.applyInksyncHighlight = function(colorHex) {
+            var sel = window.getSelection();
+            if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
+            var text = sel.toString();
+            if (!text.trim()) return;
+            // Apply visual highlight via execCommand (supported in WKWebView)
+            document.execCommand('hiliteColor', false, colorHex || '#ffd700');
+            window.getSelection().removeAllRanges();
+            // Post selected text back to Swift for persistence
+            window.webkit.messageHandlers.highlight.postMessage(text);
+        };
+
+        // Restore a previously saved highlight on chapter reload.
+        // Called from Swift after didFinishNavigation.
+        window.restoreInksyncHighlight = function(textToFind, colorHex) {
+            var sel = window.getSelection();
+            var savedRange = sel.rangeCount > 0 ? sel.getRangeAt(0) : null;
+            sel.removeAllRanges();
+            var found = window.find(textToFind, true, false, true, false, false, false);
+            if (found) { document.execCommand('hiliteColor', false, colorHex); }
+            sel.removeAllRanges();
+            if (savedRange) sel.addRange(savedRange);
+        };
+
+        // Make text selectable (required in paged/column mode)
+        document.addEventListener('DOMContentLoaded', function() {
+            document.body.style.webkitUserSelect = 'text';
+            document.body.style.userSelect = 'text';
+        });
         </script>
         """
     }
@@ -830,10 +899,12 @@ struct EBookWebReader: UIViewRepresentable {
             } else if message.name == "metrics", let body = message.body as? [String: Int] {
                 self.parent.currentPage = body["current"] ?? 0
                 self.parent.totalPages = body["total"] ?? 1
+            } else if message.name == "highlight", let text = message.body as? String, !text.isEmpty {
+                self.parent.onHighlightCreated?(text)
             }
         }
         
-                // Intercept navigation for Footnotes, External links, and Chapters
+        // Intercept navigation for Footnotes, External links, and Chapters
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) {
             if navigationAction.navigationType == .linkActivated {
                 if let url = navigationAction.request.url {
@@ -856,7 +927,24 @@ struct EBookWebReader: UIViewRepresentable {
                 decisionHandler(.allow)
             }
         }
-    }
+
+        /// Restore saved highlights after every chapter load.
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            guard let pdfID = parent.pdf?.id else { return }
+            let chapter = parent.spineItem.href
+            let annotations = AnnotationStore.shared.annotations(for: pdfID)
+                .filter { $0.kind == .highlight && $0.chapterTitle == parent.spineItem.label }
+            for ann in annotations {
+                guard let text = ann.selectedText, let color = ann.colorHex else { continue }
+                let safeText = text
+                    .replacingOccurrences(of: "`", with: "\\`")
+                    .replacingOccurrences(of: "\"", with: "\\\"")
+                    .replacingOccurrences(of: "\n", with: " ")
+                let _ = chapter // suppress unused warning
+                let js = "window.restoreInksyncHighlight(`\(safeText)`, '\(color)');"
+                webView.evaluateJavaScript(js)
+            }
+        }
 }
 
 // MARK: - Safe array subscript

@@ -503,7 +503,22 @@ struct ReaderView: View {
                                 onSingleTap: {
                                     withAnimation(.easeInOut(duration: 0.2)) { isToolbarVisible.toggle() }
                                 },
-                                onViewCreated: { ref in pdfViewRef = ref }
+                                onViewCreated: { ref in pdfViewRef = ref },
+                                onHighlightRequested: { selectedText in
+                                    guard let pdfID = pdf?.id else { return }
+                                    let ann = Annotation(
+                                        pdfID: pdfID,
+                                        pageIndex: currentPageIndex,
+                                        chapterTitle: "Page \(currentPageIndex + 1)",
+                                        kind: .highlight,
+                                        createdAt: Date(),
+                                        modifiedAt: Date(),
+                                        colorHex: "#ffd700",
+                                        selectedText: selectedText
+                                    )
+                                    AnnotationStore.shared.add(ann)
+                                    StudyNotesStore.shared.appendHighlight(selectedText, chapter: "Page \(currentPageIndex + 1)")
+                                }
                             )
                             .colorMultiply(.white)
                             .colorInvertIfDark(theme: EBookPreferences.shared.activeTheme)
@@ -1288,6 +1303,27 @@ struct ReaderView: View {
 
 // ✅ EPUBSmartReader completely removed and renovated into the PPL Metal Engine.
 
+// MARK: - PDF Highlightable View
+/// PDFView subclass that injects a "Highlight" item into the iOS text-selection UIEditMenu.
+/// Works on iOS 16+ with UIMenuBuilder; falls back gracefully on older OS.
+class PDFHighlightableView: PDFView {
+    var onHighlightRequested: (() -> Void)?
+
+    override func buildMenu(with builder: UIMenuBuilder) {
+        super.buildMenu(with: builder)
+        let cmd = UICommand(title: "Highlight", action: #selector(applyHighlightAction(_:)))
+        let menu = UIMenu(title: "Inksync", options: .displayInline, children: [cmd])
+        builder.insertSibling(menu, afterMenu: .standardEdit)
+    }
+
+    override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
+        if action == #selector(applyHighlightAction(_:)) { return currentSelection != nil }
+        return super.canPerformAction(action, withSender: sender)
+    }
+
+    @objc func applyHighlightAction(_ sender: Any?) { onHighlightRequested?() }
+}
+
 // MARK: - Standard PDF Component
 struct PDFKitView: UIViewRepresentable {
     let url: URL
@@ -1299,11 +1335,13 @@ struct PDFKitView: UIViewRepresentable {
     @Binding var loadedDocument: PDFDocument?
     let onSingleTap: () -> Void
     var onViewCreated: ((PDFView) -> Void)? = nil  // surfaces the UIKit view reference
+    /// Called after a highlight annotation is created — receives the selected text.
+    var onHighlightRequested: ((String) -> Void)? = nil
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
     func makeUIView(context: Context) -> PDFView {
-        let pdfView = PDFView()
+        let pdfView = PDFHighlightableView()
         pdfView.autoScales = true
         // 🚨 PANEL PARITY: True Dual Spread Engine
         pdfView.displayMode = isDoublePageMode ? .twoUpContinuous : .singlePage
@@ -1321,6 +1359,13 @@ struct PDFKitView: UIViewRepresentable {
         
         pdfView.addGestureRecognizer(doubleTap)
         pdfView.addGestureRecognizer(tap)
+
+        // Wire highlight action
+        if let highlightable = pdfView as? PDFHighlightableView {
+            highlightable.onHighlightRequested = { [weak context] in
+                context?.coordinator.applyHighlight(in: pdfView)
+            }
+        }
 
         NotificationCenter.default.addObserver(
             context.coordinator,
@@ -1426,13 +1471,35 @@ struct PDFKitView: UIViewRepresentable {
             guard let pdfView = notification.object as? PDFView,
                   let currentPage = pdfView.currentPage,
                   let document = pdfView.document else { return }
-            
+
             let index = document.index(for: currentPage)
             if index != parent.currentPageIndex {
                 DispatchQueue.main.async { self.parent.currentPageIndex = index }
             }
         }
-        
+
+        /// Creates a native PDFAnnotation highlight on all selected lines and
+        /// persists it by calling `onHighlightRequested` with the selected text.
+        func applyHighlight(in pdfView: PDFView) {
+            guard let selection = pdfView.currentSelection else { return }
+            let selectedText = selection.string ?? ""
+
+            // PDFSelection can span multiple pages — iterate each
+            let pages = selection.pages
+            for page in pages {
+                let bounds = selection.bounds(for: page)
+                guard bounds != .zero else { continue }
+                let annotation = PDFAnnotation(bounds: bounds, forType: .highlight, withProperties: nil)
+                annotation.color = UIColor.systemYellow.withAlphaComponent(0.5)
+                page.addAnnotation(annotation)
+            }
+
+            pdfView.clearSelection()
+            if !selectedText.isEmpty {
+                parent.onHighlightRequested?(selectedText)
+            }
+        }
+
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
             return true
         }

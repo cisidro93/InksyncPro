@@ -339,12 +339,16 @@ struct EPUBWebView: UIViewRepresentable {
     @ObservedObject var prefs: EBookPreferences
     var onHighlightCreated: ((String, String) -> Void)?
     var onPageLoaded: ((WKWebView) -> Void)?
+    /// Fired when user taps the center third of the page (toggles chrome)
+    var onCenterTap: (() -> Void)? = nil
+    /// Fired when a forward swipe reaches the end of the last column
+    var onNextChapter: (() -> Void)? = nil
+    /// Fired when a backward swipe is at the first column
+    var onPrevChapter: (() -> Void)? = nil
 
     class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         var parent: EPUBWebView
         /// Stable hash of the last HTML loaded — prevents reload loop.
-        /// webView.title stays nil until didFinishNavigation, so using it as a
-        /// guard causes every SwiftUI update to trigger a redundant reload.
         var lastContentHash: Int = 0
 
         init(_ parent: EPUBWebView) { self.parent = parent }
@@ -353,6 +357,13 @@ struct EPUBWebView: UIViewRepresentable {
             if message.name == "highlightHandler", let dict = message.body as? [String: String] {
                 if let text = dict["text"], let html = dict["html"] {
                     parent.onHighlightCreated?(text, html)
+                }
+            } else if message.name == "nav", let body = message.body as? String {
+                switch body {
+                case "center": parent.onCenterTap?()
+                case "next":   parent.onNextChapter?()
+                case "prev":   parent.onPrevChapter?()
+                default: break
                 }
             }
         }
@@ -373,9 +384,10 @@ struct EPUBWebView: UIViewRepresentable {
         config.defaultWebpagePreferences = webpagePrefs
 
         // Use WeakProxy — WKUserContentController strongly retains handlers by default.
-        // Without this, the coordinator (and WKWebView) are never deallocated → memory leak.
         let proxy = WeakScriptMessageProxy(context.coordinator)
         config.userContentController.add(proxy, name: "highlightHandler")
+        // `nav` bridge: center tap (toggle chrome), next/prev chapter boundary swipes
+        config.userContentController.add(proxy, name: "nav")
 
         // CSS + JS Injection (runs once after each page load, not on every SwiftUI update)
         let userScript = WKUserScript(
@@ -480,6 +492,39 @@ struct EPUBWebView: UIViewRepresentable {
                 currentSel.removeAllRanges();
                 if(savedRange) currentSel.addRange(savedRange);
             };
+
+            // ── Navigation (swipe + tap) bridge ──────────────────────────────
+            // WKWebView absorbs all SwiftUI gesture recognizers, so we must
+            // post navigation messages from JS to toggle chrome and turn chapters.
+            var _sx = 0, _sy = 0;
+            document.addEventListener('touchstart', function(e) {
+                _sx = e.changedTouches[0].clientX;
+                _sy = e.changedTouches[0].clientY;
+            }, {passive: true});
+            document.addEventListener('touchend', function(e) {
+                var dx = e.changedTouches[0].clientX - _sx;
+                var dy = e.changedTouches[0].clientY - _sy;
+                if (Math.abs(dx) < 8 && Math.abs(dy) < 8) {
+                    // Tap: determine zone
+                    var x = e.changedTouches[0].clientX;
+                    var w = window.innerWidth;
+                    if (x > w * 0.35 && x < w * 0.65) {
+                        window.webkit.messageHandlers.nav.postMessage('center');
+                    }
+                } else if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) {
+                    // Horizontal swipe
+                    if (dx < 0) {
+                        // Forward swipe: check right scroll boundary
+                        var sv = document.scrollingElement || document.documentElement;
+                        var atEnd = (sv.scrollLeft + window.innerWidth) >= sv.scrollWidth - 4;
+                        if (atEnd) window.webkit.messageHandlers.nav.postMessage('next');
+                    } else {
+                        // Backward swipe: check left scroll boundary
+                        var sv2 = document.scrollingElement || document.documentElement;
+                        if (sv2.scrollLeft <= 4) window.webkit.messageHandlers.nav.postMessage('prev');
+                    }
+                }
+            }, {passive: true});
             """,
             injectionTime: .atDocumentEnd,
             forMainFrameOnly: true
@@ -505,9 +550,10 @@ struct EPUBWebView: UIViewRepresentable {
         return webView
     }
 
-    /// Remove message handler so UCC releases the WeakProxy and WKWebView can be deallocated.
+    /// Remove message handlers so UCC releases the WeakProxy and WKWebView can be deallocated.
     static func dismantleUIView(_ uiView: WKWebView, coordinator: Coordinator) {
         uiView.configuration.userContentController.removeScriptMessageHandler(forName: "highlightHandler")
+        uiView.configuration.userContentController.removeScriptMessageHandler(forName: "nav")
         uiView.navigationDelegate = nil
     }
 
@@ -572,7 +618,7 @@ struct BookReaderEngine: View {
                 if !vm.chapterHtmlFiles.isEmpty {
                     let currentChapterURL = vm.chapterHtmlFiles[vm.currentChapterIndex]
                     EPUBWebView(htmlContent: $vm.currentChapterHTML, baseUrl: .constant(currentChapterURL), prefs: EBookPreferences.shared, onHighlightCreated: { selectedText, _ in
-                        
+
                         let highlight = Annotation(
                             pdfID: pdf.id,
                             pageIndex: vm.currentChapterIndex,
@@ -585,17 +631,16 @@ struct BookReaderEngine: View {
                         )
                         AnnotationStore.shared.add(highlight)
                         StudyNotesStore.shared.appendHighlight(selectedText, chapter: "Chapter \(vm.currentChapterIndex + 1)")
-                        
+
                         // Zettelkasten Integration: Instantly pop up editor for new highlight
                         let sdAnnotation = SDAnnotation(from: highlight)
                         self.activeHighlightToEdit = sdAnnotation
-                        
+
                     }, onPageLoaded: { webView in
                         self.webViewReference = webView
                         let pageAnnotations = AnnotationStore.shared.annotations(for: pdf.id).filter { $0.pageIndex == vm.currentChapterIndex && $0.kind == .highlight }
                         for ann in pageAnnotations {
                             if let text = ann.selectedText, let color = ann.colorHex {
-                                // Escape backticks and standard quotes for JS interpolation
                                 let safeText = text.replacingOccurrences(of: "`", with: "\\`")
                                                    .replacingOccurrences(of: "\"", with: "\\\"")
                                                    .replacingOccurrences(of: "\n", with: " ")
@@ -603,31 +648,15 @@ struct BookReaderEngine: View {
                                 webView.evaluateJavaScript(js)
                             }
                         }
+                    },
+                    onCenterTap: { chromeVisible.toggle() },
+                    onNextChapter: {
+                        vm.loadChapter(index: min(vm.chapterHtmlFiles.count - 1, vm.currentChapterIndex + 1))
+                    },
+                    onPrevChapter: {
+                        vm.loadChapter(index: max(0, vm.currentChapterIndex - 1))
                     })
                     .edgesIgnoringSafeArea(.horizontal)
-                    .onTapGesture(coordinateSpace: .global) { location in
-                        // Tap edges to change chapter if pagination reaches boundaries (simplified chapter navigation)
-                        let screenWidth = UIScreen.main.bounds.width
-                        if location.x < screenWidth * 0.2 {
-                            if let scrollView = webViewReference?.scrollView {
-                                if scrollView.contentOffset.x <= 0 {
-                                    vm.loadChapter(index: max(0, vm.currentChapterIndex - 1))
-                                } else {
-                                    scrollView.setContentOffset(CGPoint(x: scrollView.contentOffset.x - screenWidth, y: 0), animated: true)
-                                }
-                            }
-                        } else if location.x > screenWidth * 0.8 {
-                            if let scrollView = webViewReference?.scrollView {
-                                if scrollView.contentOffset.x >= scrollView.contentSize.width - screenWidth {
-                                    vm.loadChapter(index: min(vm.chapterHtmlFiles.count - 1, vm.currentChapterIndex + 1))
-                                } else {
-                                    scrollView.setContentOffset(CGPoint(x: scrollView.contentOffset.x + screenWidth, y: 0), animated: true)
-                                }
-                            }
-                        } else {
-                            chromeVisible.toggle()
-                        }
-                    }
                     
                     // Edge Brightness Gesture Zones
                     HStack {
