@@ -336,14 +336,19 @@ class HighlightableWebView: WKWebView {
 struct EPUBWebView: UIViewRepresentable {
     @Binding var htmlContent: String
     @Binding var baseUrl: URL
-    @ObservedObject var prefs = EBookPreferences.shared
+    @ObservedObject var prefs: EBookPreferences
     var onHighlightCreated: ((String, String) -> Void)?
     var onPageLoaded: ((WKWebView) -> Void)?
-    
+
     class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         var parent: EPUBWebView
+        /// Stable hash of the last HTML loaded — prevents reload loop.
+        /// webView.title stays nil until didFinishNavigation, so using it as a
+        /// guard causes every SwiftUI update to trigger a redundant reload.
+        var lastContentHash: Int = 0
+
         init(_ parent: EPUBWebView) { self.parent = parent }
-        
+
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
             if message.name == "highlightHandler", let dict = message.body as? [String: String] {
                 if let text = dict["text"], let html = dict["html"] {
@@ -351,12 +356,12 @@ struct EPUBWebView: UIViewRepresentable {
                 }
             }
         }
-        
+
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             parent.onPageLoaded?(webView)
         }
     }
-    
+
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
     }
@@ -366,11 +371,13 @@ struct EPUBWebView: UIViewRepresentable {
         webpagePrefs.allowsContentJavaScript = true
         let config = WKWebViewConfiguration()
         config.defaultWebpagePreferences = webpagePrefs
-        
-        // Add JS Bridge Listener
-        config.userContentController.add(context.coordinator, name: "highlightHandler")
-        
-        // CSS Injection
+
+        // Use WeakProxy — WKUserContentController strongly retains handlers by default.
+        // Without this, the coordinator (and WKWebView) are never deallocated → memory leak.
+        let proxy = WeakScriptMessageProxy(context.coordinator)
+        config.userContentController.add(proxy, name: "highlightHandler")
+
+        // CSS + JS Injection (runs once after each page load, not on every SwiftUI update)
         let userScript = WKUserScript(
             source: """
             var meta = document.createElement('meta');
@@ -378,7 +385,7 @@ struct EPUBWebView: UIViewRepresentable {
             meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
             var head = document.getElementsByTagName('head')[0];
             head.appendChild(meta);
-            
+
             var style = document.createElement('style');
             style.innerHTML = `
                 html {
@@ -393,7 +400,9 @@ struct EPUBWebView: UIViewRepresentable {
                     color: \(prefs.activeTheme.cssText) !important;
                     letter-spacing: \(String(format: "%.4f", prefs.letterSpacing))em !important;
                     word-spacing: \(String(format: "%.4f", prefs.wordSpacing))em !important;
-                    
+                    -webkit-user-select: text !important;
+                    user-select: text !important;
+
                     /* Layout */
                     height: \(prefs.paginationMode == EBookPaginationMode.continuous.rawValue ? "auto" : "calc(100vh - 100px)") !important;
                     padding-top: 40px !important;
@@ -401,9 +410,9 @@ struct EPUBWebView: UIViewRepresentable {
                     padding-left: 0 !important;
                     padding-right: 0 !important;
                     margin: 0 !important;
-                    
+
                     \(prefs.paginationMode == EBookPaginationMode.continuous.rawValue ? "" : (prefs.columnCount == 2 ? "column-width: calc(50vw - 30px) !important; column-gap: 60px !important;" : (prefs.columnCount == 1 ? "column-width: 100vw !important; column-gap: 0 !important;" : "column-width: 100vw !important; column-gap: 0 !important;")))
-                    
+
                     /* Typography enhancements */
                     text-align: \(prefs.textAlign) !important;
                     -webkit-hyphens: \(prefs.hyphenation ? "auto" : "manual") !important;
@@ -431,7 +440,7 @@ struct EPUBWebView: UIViewRepresentable {
                 .inksync-highlight { background-color: #ffd700; color: inherit; border-radius: 2px; mix-blend-mode: multiply; -webkit-mix-blend-mode: multiply; padding: 0 1px; }
             `;
             head.appendChild(style);
-            
+
             // Wrap body content in a container for margins while keeping columns full-width
             if (!document.getElementById('inksync-container')) {
                 var container = document.createElement('div');
@@ -442,37 +451,32 @@ struct EPUBWebView: UIViewRepresentable {
                 }
                 document.body.appendChild(container);
             }
-            
+
             // Highlight Engine JS
             window.applyInksyncHighlight = function(colorHex) {
                 var sel = window.getSelection();
                 if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
-                
+
                 var text = sel.toString();
                 document.execCommand("hiliteColor", false, colorHex);
                 window.getSelection().removeAllRanges();
-                
-                // We no longer send thousands of lines of HTML back. We just send the text string!
+
                 window.webkit.messageHandlers.highlightHandler.postMessage({
                     "text": text,
                     "html": "N/A"
                 });
             };
-            
-            // Restores highlights perfectly dynamically on page load without EPUB mutation!
+
             window.restoreInksyncHighlight = function(textToFind, colorHex) {
-                // Save current selection just in case
                 var currentSel = window.getSelection();
                 var savedRange = currentSel.rangeCount > 0 ? currentSel.getRangeAt(0) : null;
-                
+
                 currentSel.removeAllRanges();
-                // Find and highlight every instance gracefully
-                // window.find(aString, aCaseSensitive, aBackwards, aWrapAround, aWholeWord, aSearchInFrames, aShowDialog);
                 var found = window.find(textToFind, true, false, true, false, false, false);
                 if(found) {
                     document.execCommand("hiliteColor", false, colorHex);
                 }
-                
+
                 currentSel.removeAllRanges();
                 if(savedRange) currentSel.addRange(savedRange);
             };
@@ -481,37 +485,50 @@ struct EPUBWebView: UIViewRepresentable {
             forMainFrameOnly: true
         )
         config.userContentController.addUserScript(userScript)
-        
+
         let webView = HighlightableWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
         webView.isOpaque = false
         webView.backgroundColor = UIColor(prefs.activeTheme.background)
         webView.scrollView.backgroundColor = webView.backgroundColor
-        
-        // Native Scrolling Mode Toggle
         webView.scrollView.isPagingEnabled = prefs.paginationMode == EBookPaginationMode.paged.rawValue
         webView.scrollView.showsHorizontalScrollIndicator = false
         webView.scrollView.showsVerticalScrollIndicator = prefs.paginationMode == EBookPaginationMode.continuous.rawValue
         webView.scrollView.bounces = true
         webView.scrollView.alwaysBounceVertical = prefs.paginationMode == EBookPaginationMode.continuous.rawValue
         webView.scrollView.contentInsetAdjustmentBehavior = .never
-        
-        // Setup custom UIMenuController item
-        // UIMenuItem deprecated in iOS 16
-        
+
         webView.onHighlightRequested = {
             webView.evaluateJavaScript("window.applyInksyncHighlight('#ffd700');")
         }
-        
+
         return webView
     }
-    
+
+    /// Remove message handler so UCC releases the WeakProxy and WKWebView can be deallocated.
+    static func dismantleUIView(_ uiView: WKWebView, coordinator: Coordinator) {
+        uiView.configuration.userContentController.removeScriptMessageHandler(forName: "highlightHandler")
+        uiView.navigationDelegate = nil
+    }
+
     func updateUIView(_ webView: WKWebView, context: Context) {
-        if webView.url?.absoluteString != baseUrl.absoluteString || webView.title == nil {
-            webView.loadHTMLString(htmlContent, baseURL: baseUrl)
+        // Guard reloads with a stable content hash.
+        // webView.title is nil until didFinishNavigation fires — using it as a guard
+        // caused every SwiftUI update pass to trigger a reload (infinite loop).
+        let newHash = htmlContent.hashValue
+        guard context.coordinator.lastContentHash != newHash else {
+            // HTML hasn't changed — just update appearance properties
+            webView.backgroundColor = UIColor(prefs.activeTheme.background)
+            webView.scrollView.backgroundColor = webView.backgroundColor
+            webView.scrollView.isPagingEnabled = prefs.paginationMode == EBookPaginationMode.paged.rawValue
+            webView.scrollView.showsVerticalScrollIndicator = prefs.paginationMode == EBookPaginationMode.continuous.rawValue
+            webView.scrollView.alwaysBounceVertical = prefs.paginationMode == EBookPaginationMode.continuous.rawValue
+            return
         }
-        
-        // Dynamically update UI appearance properties
+        context.coordinator.lastContentHash = newHash
+        webView.loadHTMLString(htmlContent, baseURL: baseUrl)
+
+        // Sync appearance after triggering a new load
         webView.backgroundColor = UIColor(prefs.activeTheme.background)
         webView.scrollView.backgroundColor = webView.backgroundColor
         webView.scrollView.isPagingEnabled = prefs.paginationMode == EBookPaginationMode.paged.rawValue
@@ -519,6 +536,8 @@ struct EPUBWebView: UIViewRepresentable {
         webView.scrollView.alwaysBounceVertical = prefs.paginationMode == EBookPaginationMode.continuous.rawValue
     }
 }
+
+
 
 struct BookReaderEngine: View {
     let pdf: ConvertedPDF

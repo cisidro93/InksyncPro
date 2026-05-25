@@ -542,24 +542,39 @@ struct EBookReaderView: View {
     }
 }
 
+// MARK: - Weak Script Message Proxy
+/// WKUserContentController.add(_:name:) takes a STRONG reference to the handler.
+/// This breaks the retain cycle:
+///   WKWebView → UCC → WeakProxy (weak) → Coordinator
+/// Without this, WKWebView is never deallocated and JS runs indefinitely → OOM crash.
+private final class WeakScriptMessageProxy: NSObject, WKScriptMessageHandler {
+    weak var target: WKScriptMessageHandler?
+    init(_ target: WKScriptMessageHandler) { self.target = target }
+    func userContentController(_ ucc: WKUserContentController, didReceive message: WKScriptMessage) {
+        target?.userContentController(ucc, didReceive: message)
+    }
+}
+
 // MARK: - EBookWebReader (single reused WKWebView)
 struct EBookWebReader: UIViewRepresentable {
     let spineItem:  EBookMetadata.SpineItem
     let unzipDir:   URL?
     @ObservedObject var prefs: EBookPreferences
-        let colorScheme: ColorScheme
+    let colorScheme: ColorScheme
     @Binding var currentPage: Int
     var initialPage: Int
     @Binding var totalPages: Int
     var onNext: () -> Void
     var onPrev: () -> Void
     var onCenterTap: () -> Void
-    
+
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
-        config.userContentController.add(context.coordinator, name: "nav")
-        config.userContentController.add(context.coordinator, name: "metrics")
-        
+        // Use WeakProxy so UCC doesn't strongly retain the coordinator
+        let proxy = WeakScriptMessageProxy(context.coordinator)
+        config.userContentController.add(proxy, name: "nav")
+        config.userContentController.add(proxy, name: "metrics")
+
         let wv = WKWebView(frame: .zero, configuration: config)
         wv.isOpaque = false
         wv.backgroundColor = .clear
@@ -567,6 +582,17 @@ struct EBookWebReader: UIViewRepresentable {
         wv.scrollView.contentInsetAdjustmentBehavior = .always
         wv.navigationDelegate = context.coordinator
         return wv
+    }
+
+    /// Called by SwiftUI when the view is removed from the hierarchy.
+    /// Remove message handlers so WKUserContentController releases the proxy
+    /// and the WKWebView can be fully deallocated.
+    static func dismantleUIView(_ uiView: WKWebView, coordinator: Coordinator) {
+        coordinator.loadTask?.cancel()
+        coordinator.loadTask = nil
+        uiView.configuration.userContentController.removeScriptMessageHandler(forName: "nav")
+        uiView.configuration.userContentController.removeScriptMessageHandler(forName: "metrics")
+        uiView.navigationDelegate = nil
     }
     
     func updateUIView(_ wv: WKWebView, context: Context) {
