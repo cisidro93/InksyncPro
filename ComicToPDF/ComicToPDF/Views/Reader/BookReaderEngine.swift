@@ -691,9 +691,10 @@ struct BookReaderEngine: View {
     @State private var extractedTextParams: String = "Chapter reading is not extracted to string yet."
     @State private var lastBrightnessDragValue: CGFloat = 0
     
-    init(pdf: ConvertedPDF, onDismiss: @escaping () -> Void) {
+    init(pdf: ConvertedPDF, onDismiss: @escaping () -> Void, allBooks: [ConvertedPDF] = []) {
         self.pdf = pdf
         self.onDismiss = onDismiss
+        self.allBooks = allBooks
         self._vm = StateObject(wrappedValue: BookReaderViewModel(pdf: pdf))
     }
     
