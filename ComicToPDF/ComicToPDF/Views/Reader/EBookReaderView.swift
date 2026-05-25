@@ -456,23 +456,28 @@ struct EBookReaderView: View {
         guard let currentPDF = pdf,
               let seriesName = currentPDF.metadata.series, !seriesName.isEmpty else { return }
 
-        // Sort series siblings by issue number
+        // Robust sort: numeric-first, localizedStandardCompare fallback for "HC", "TPB", "#0" etc.
         let siblings = allBooks
             .filter { $0.metadata.series == seriesName && $0.id != currentPDF.id }
-            .sorted {
-                let a = Double($0.metadata.issueNumber ?? $0.metadata.volume ?? "") ?? 0
-                let b = Double($1.metadata.issueNumber ?? $1.metadata.volume ?? "") ?? 0
-                return a < b
+            .sorted { lhs, rhs in
+                let lhsNum = Double(lhs.metadata.issueNumber ?? lhs.metadata.volume ?? "")
+                let rhsNum = Double(rhs.metadata.issueNumber ?? rhs.metadata.volume ?? "")
+                if let l = lhsNum, let r = rhsNum { return l < r }
+                let lKey = lhs.metadata.issueNumber ?? lhs.metadata.volume ?? lhs.name
+                let rKey = rhs.metadata.issueNumber ?? rhs.metadata.volume ?? rhs.name
+                return lKey.localizedStandardCompare(rKey) == .orderedAscending
             }
 
-        guard let selfNum = Double(currentPDF.metadata.issueNumber ?? currentPDF.metadata.volume ?? "") else { return }
-        // Next is the first sibling whose number exceeds ours
-        guard let nextBook = siblings.first(where: {
-            (Double($0.metadata.issueNumber ?? $0.metadata.volume ?? "") ?? 0) > selfNum
-        }) else { return }
-
-        // Post the same notification ReaderView uses — ModernLibraryView receives it
-        NotificationCenter.default.post(name: .openMergedBook, object: nextBook)
+        let selfKey = currentPDF.metadata.issueNumber ?? currentPDF.metadata.volume ?? currentPDF.name
+        guard let currentIdx = siblings.firstIndex(where: { b in
+            (b.metadata.issueNumber ?? b.metadata.volume ?? b.name) == selfKey
+        }) else {
+            if let first = siblings.first { NotificationCenter.default.post(name: .openMergedBook, object: first) }
+            return
+        }
+        let nextIdx = siblings.index(after: currentIdx)
+        guard siblings.indices.contains(nextIdx) else { return }
+        NotificationCenter.default.post(name: .openMergedBook, object: siblings[nextIdx])
     }
 
     private func prevChapter() {

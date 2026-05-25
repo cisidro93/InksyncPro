@@ -49,21 +49,27 @@ class SyncCoordinator: ObservableObject {
         
         // 2. Safely Extract Missing UUIDs for collections
         let existingCollections = try context.fetch(FetchDescriptor<SDPDFCollection>())
-        var localCollectionMapping = [String: SDPDFCollection]()
+        // Index by UUID (primary) AND name (fallback for cross-device imports where UUIDs diverge)
+        var localCollectionByID   = [UUID:   SDPDFCollection]()
+        var localCollectionByName = [String: SDPDFCollection]()
         for col in existingCollections {
-            // Using Name as the unique identifier for series mapping across disparate devices
-            localCollectionMapping[col.name] = col
+            localCollectionByID[col.id]     = col
+            localCollectionByName[col.name] = col
         }
-        
+        // Build a name-to-local-ID map for remapping incoming PDF collectionIds
+        var localCollectionMapping = [String: SDPDFCollection]()
+        for col in existingCollections { localCollectionMapping[col.name] = col }
+
         for incomingCol in payload.collections {
-            if let existing = localCollectionMapping[incomingCol.name] {
-                // Update properties
+            if let existing = localCollectionByID[incomingCol.id] ?? localCollectionByName[incomingCol.name] {
+                // Update mutable properties; preserve the local UUID
                 existing.name = incomingCol.name
                 existing.icon = incomingCol.icon
                 existing.color = incomingCol.color
                 existing.creationDate = incomingCol.creationDate
                 existing.explicitCoverFileID = incomingCol.explicitCoverFileID
                 existing.parentId = incomingCol.parentId
+                localCollectionMapping[incomingCol.name] = existing
             } else {
                 let newCol = SDPDFCollection(id: incomingCol.id, name: incomingCol.name, icon: incomingCol.icon, color: incomingCol.color, creationDate: incomingCol.creationDate, explicitCoverFileID: incomingCol.explicitCoverFileID, parentId: incomingCol.parentId)
                 context.insert(newCol)
@@ -205,6 +211,20 @@ class SyncCoordinator: ObservableObject {
         let session = URLSession(configuration: config)
         
         for filename in filenames {
+            // Security: only accept known document extensions to prevent a rogue peer
+            // from writing arbitrary files into the app's Documents directory.
+            let ext = (filename as NSString).pathExtension.lowercased()
+            let allowedExtensions: Set<String> = ["pdf", "epub", "cbz", "cbr", "cbt", "cb7"]
+            guard allowedExtensions.contains(ext) else {
+                Logger.shared.log("P2P blocked disallowed file type: \(filename)", category: "Network", type: .warning)
+                continue
+            }
+            // Additional guard: reject path components to prevent directory traversal
+            guard !filename.contains("/"), !filename.contains("..") else {
+                Logger.shared.log("P2P blocked suspicious filename: \(filename)", category: "Network", type: .warning)
+                continue
+            }
+
             guard let encodedName = filename.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
                   let url = URL(string: "http://\(peerIP):8080/\(encodedName)") else { continue }
             

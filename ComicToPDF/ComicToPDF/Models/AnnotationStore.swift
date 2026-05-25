@@ -254,6 +254,8 @@ class AnnotationStore: ObservableObject {
     static let shared = AnnotationStore()
     
     @Published private var store: [UUID: [Annotation]] = [:]
+    /// O(1) lookup by annotation ID — eliminates flatMap scans in hot paths.
+    private var idIndex: [UUID: Annotation] = [:]
     private var modelContext: ModelContext?
 
     // Maps SHA-256 page content hash → [annotation IDs] for cross-format lookup.
@@ -276,10 +278,10 @@ class AnnotationStore: ObservableObject {
     }
 
     // Returns all annotations whose page content hash matches (cross-format lookup).
+    // O(k) where k = number of annotations sharing that hash (typically 1).
     func annotations(forContentHash hash: String) -> [Annotation] {
         guard let ids = hashIndex[hash] else { return [] }
-        let idSet = Set(ids)
-        return allAnnotations.filter { idSet.contains($0.id.uuidString) }
+        return ids.compactMap { UUID(uuidString: $0).flatMap { idIndex[$0] } }
     }
 
     // Associates a SHA-256 page content hash with an annotation (call at annotation creation time).
@@ -293,36 +295,49 @@ class AnnotationStore: ObservableObject {
     }
     
     func add(_ annotation: Annotation) {
-        let newAnnotation = annotation
-        store[newAnnotation.pdfID, default: []].append(newAnnotation)
+        // Deduplication guard — prevents double-insert from accidental rapid taps
+        guard store[annotation.pdfID]?.contains(where: { $0.id == annotation.id }) != true else { return }
+
+        store[annotation.pdfID, default: []].append(annotation)
+        idIndex[annotation.id] = annotation
+
+        // Insert into SwiftData immediately so the record exists before NLP runs.
+        // Tags will be backfilled asynchronously below.
+        if let context = modelContext {
+            context.insert(SDAnnotation(from: annotation))
+            do {
+                try context.save()
+            } catch {
+                Logger.shared.log("Annotation insert FAILED: \(error.localizedDescription)", category: "Annotations", type: .error)
+            }
+        }
 
         // ✅ PERF: Skip NLP for Readwise imports (they already carry CSV tags) and
-        // for annotations with no text content. Previously every add() spawned a
-        // Task.detached regardless, creating a thundering herd of 1315 simultaneous
-        // NLP jobs when importing a full Readwise CSV export.
-        guard let text = newAnnotation.selectedText, !text.isEmpty,
-              newAnnotation.kind == .highlight else { return }
+        // for annotations with no text content.
+        guard let text = annotation.selectedText, !text.isEmpty,
+              annotation.kind == .highlight,
+              annotation.tags == nil else { return }
 
         // Execute heavy NLP Lexical Tagging asynchronously to prevent Main Thread 120Hz lockups
-        Task.detached(priority: .background) {
-            var backgroundAnnotation = newAnnotation
-            if backgroundAnnotation.tags == nil {
-                backgroundAnnotation.tags = await self.extractNLPKeywords(from: text)
-            }
-
-            let finalAnnotation = backgroundAnnotation
+        Task.detached(priority: .background) { [weak self] in
+            guard let self else { return }
+            let tags = await self.extractNLPKeywords(from: text)
             await MainActor.run {
-                if let index = self.store[finalAnnotation.pdfID]?.firstIndex(where: { $0.id == finalAnnotation.id }) {
-                    self.store[finalAnnotation.pdfID]?[index] = finalAnnotation
+                // Update in-memory store and idIndex
+                if let idx = self.store[annotation.pdfID]?.firstIndex(where: { $0.id == annotation.id }) {
+                    self.store[annotation.pdfID]?[idx].tags = tags
+                    self.idIndex[annotation.id]?.tags = tags
                 }
+                // Backfill tags on the already-saved SwiftData record
                 if let context = self.modelContext {
-                    let sdModel = SDAnnotation(from: finalAnnotation)
-                    context.insert(sdModel)
-                    do {
-                        try context.save()
-                        Logger.shared.log("Annotation saved (kind=\(finalAnnotation.kind.rawValue), page=\(finalAnnotation.pageIndex), tags=\(finalAnnotation.tags?.count ?? 0))", category: "Annotations", type: .success)
-                    } catch {
-                        Logger.shared.log("Annotation save FAILED: \(error.localizedDescription)", category: "Annotations", type: .error)
+                    var descriptor = FetchDescriptor<SDAnnotation>(
+                        predicate: #Predicate { $0.id == annotation.id }
+                    )
+                    descriptor.fetchLimit = 1
+                    if let target = try? context.fetch(descriptor).first {
+                        target.tags = tags
+                        try? context.save()
+                        Logger.shared.log("NLP tags backfilled (id=\(annotation.id), count=\(tags.count))", category: "Annotations", type: .success)
                     }
                 }
             }
@@ -368,11 +383,15 @@ class AnnotationStore: ObservableObject {
         var updated = annotation
         updated.modifiedAt = Date()
         store[annotation.pdfID]?[index] = updated
+        idIndex[annotation.id] = updated
         
         if let context = modelContext {
-            let fetchDescriptor = FetchDescriptor<SDAnnotation>()
-            if let allAnnotations = try? context.fetch(fetchDescriptor),
-               let target = allAnnotations.first(where: { $0.id == annotation.id }) {
+            // O(1) predicated fetch instead of loading entire table
+            var descriptor = FetchDescriptor<SDAnnotation>(
+                predicate: #Predicate { $0.id == annotation.id }
+            )
+            descriptor.fetchLimit = 1
+            if let target = try? context.fetch(descriptor).first {
                 target.update(from: updated)
                 do {
                     try context.save()
@@ -386,12 +405,16 @@ class AnnotationStore: ObservableObject {
     
     func delete(id: UUID, pdfID: UUID) {
         store[pdfID]?.removeAll(where: { $0.id == id })
+        idIndex.removeValue(forKey: id)
         Logger.shared.log("Annotation deleted (id=\(id), pdfID=\(pdfID))", category: "Annotations", type: .info)
         
         if let context = modelContext {
-            let fetchDescriptor = FetchDescriptor<SDAnnotation>()
-            if let allAnnotations = try? context.fetch(fetchDescriptor),
-               let target = allAnnotations.first(where: { $0.id == id }) {
+            // O(1) predicated fetch instead of loading entire table
+            var descriptor = FetchDescriptor<SDAnnotation>(
+                predicate: #Predicate { $0.id == id }
+            )
+            descriptor.fetchLimit = 1
+            if let target = try? context.fetch(descriptor).first {
                 context.delete(target)
                 do {
                     try context.save()
@@ -411,12 +434,15 @@ class AnnotationStore: ObservableObject {
             let allAnnotations = try context.fetch(descriptor)
             
             var loadedStore: [UUID: [Annotation]] = [:]
+            var loadedIndex: [UUID: Annotation] = [:]
             for sd in allAnnotations {
                 let dto = sd.toDTO()
                 loadedStore[dto.pdfID, default: []].append(dto)
+                loadedIndex[dto.id] = dto
             }
             
             self.store = loadedStore
+            self.idIndex = loadedIndex
             let totalBooks = loadedStore.keys.count
             let totalAnnotations = loadedStore.values.reduce(0) { $0 + $1.count }
             Logger.shared.log("AnnotationStore loaded: \(totalAnnotations) annotation(s) across \(totalBooks) book(s)", category: "Annotations", type: .success)

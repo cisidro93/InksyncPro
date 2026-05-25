@@ -606,27 +606,30 @@ struct ConversionSettings: Codable, Equatable, Sendable {
     // Metadata Strategy
     var deepFetchComicVineIssues: Bool = false
     
-    // Export pipeline â€” the canonical source of truth for which converter to use.
-    // .standard  â†’ plain EPUB/PDF, no panel zoom metadata, cloud-safe
-    // .proPanel  â†’ KF8 EPUB (Kindle Region Magnification Panels) for sideloading/previewer
+    // Export pipeline — the canonical source of truth for which converter to use.
+    // .standard  → plain EPUB/PDF, no panel zoom metadata, cloud-safe
+    // .proPanel  → KF8 EPUB (Kindle Region Magnification Panels) for sideloading/previewer
     var outputPipeline: OutputPipeline = .standard
     
-    // Legacy computed property â€” kept for compatibility with existing code.
+    // Legacy computed property — kept for compatibility with existing code.
     // Do NOT set this directly; change outputPipeline instead.
     var isGuidedView: Bool { outputPipeline == .proPanel }
-    
-    // âœ… Keychain Integration
-    // We remove the stored property and use a computed one.
-    // For migration, we define a private coding key to read old JSON.
+
+    // Computed property backed by Keychain with an in-memory cache.
+    // Avoids hitting the Keychain on every Equatable/settings-render pass (Keychain reads are ~10–50ms).
+    private(set) var _cachedComicVineAPIKey: String? = nil
     var comicVineAPIKey: String {
         get {
+            if let cached = _cachedComicVineAPIKey { return cached }
             if let data = KeychainHelper.standard.read(service: "com.antigravity.InksyncPro", account: "comicVineAPIKey"),
                let key = String(data: data, encoding: .utf8) {
+                _cachedComicVineAPIKey = key
                 return key
             }
             return ""
         }
         set {
+            _cachedComicVineAPIKey = newValue.isEmpty ? nil : newValue
             if newValue.isEmpty {
                 KeychainHelper.standard.delete(service: "com.antigravity.InksyncPro", account: "comicVineAPIKey")
             } else {
@@ -1051,11 +1054,11 @@ enum PageCoordinateSystem: String, Codable, Equatable, Hashable {
     
     // Bridge to Legacy Architecture during Phase 2 transitions
     func toDTO() -> ConvertedPDF {
-        var pdf = ConvertedPDF(id: self.id, name: self.name, url: self.url, pageCount: self.pageCount, fileSize: self.fileSize, metadata: self.metadata, collectionId: self.collectionId, isFavorite: self.isFavorite, isPrivate: self.isPrivate, coverImageData: nil)
+        // coverImageData is passed through — was previously hardcoded nil, losing stored cover art
+        var pdf = ConvertedPDF(id: self.id, name: self.name, url: self.url, pageCount: self.pageCount, fileSize: self.fileSize, metadata: self.metadata, collectionId: self.collectionId, isFavorite: self.isFavorite, isPrivate: self.isPrivate, coverImageData: self.coverImageData)
         pdf.contentType = self.contentType
         pdf.chapters = self.chapters
         pdf.addedByMode = self.addedByMode
-        pdf.contentType = self.contentType
         pdf.documentSubtype = self.documentSubtype
         pdf.isOnDevice = self.isOnDevice
         pdf.lastTransferFailed = self.lastTransferFailed

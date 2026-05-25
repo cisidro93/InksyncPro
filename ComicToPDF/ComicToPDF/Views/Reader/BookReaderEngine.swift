@@ -188,22 +188,34 @@ class BookReaderViewModel: NSObject, ObservableObject, WKNavigationDelegate {
     func loadChapter(index: Int) {
         guard index >= 0 && index < chapterHtmlFiles.count else { return }
         currentChapterIndex = index
+        isLoading = true
         let url = chapterHtmlFiles[index]
-                var rawHTML: String?
-        var usedEncoding: String.Encoding = .utf8
-        if let html = try? String(contentsOf: url, usedEncoding: &usedEncoding) {
-            rawHTML = html
-        } else if let data = try? Data(contentsOf: url) {
-            rawHTML = String(data: data, encoding: .isoLatin1) ?? String(data: data, encoding: .ascii)
-        }
-        
-        if var html = rawHTML {
+        // Dispatch synchronous file I/O off the main thread to prevent UI freeze.
+        // Large chapters (500KB–2MB) would stall the 120Hz render loop otherwise.
+        Task {
+            let rawHTML: String? = await Task.detached(priority: .userInitiated) {
+                var enc: String.Encoding = .utf8
+                if let html = try? String(contentsOf: url, usedEncoding: &enc) { return html }
+                if let data = try? Data(contentsOf: url) {
+                    return String(data: data, encoding: .isoLatin1) ?? String(data: data, encoding: .ascii)
+                }
+                return nil
+            }.value
+
+            guard var html = rawHTML else {
+                await MainActor.run { self.isLoading = false }
+                return
+            }
+            // Normalise charset declaration so WKWebView always uses UTF-8
             let pattern = "<meta[^>]*charset[^>]*>"
             if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) {
                 html = regex.stringByReplacingMatches(in: html, options: [], range: NSRange(html.startIndex..., in: html), withTemplate: "<meta charset=\\\"utf-8\\\">")
             }
-            self.currentChapterHTML = html
-            self.isLoading = false
+            // Return to main actor to update @Published properties
+            await MainActor.run {
+                self.currentChapterHTML = html
+                self.isLoading = false
+            }
         }
     }
     
@@ -865,20 +877,32 @@ struct BookReaderEngine: View {
     private func attemptBookSeriesContinuation() {
         guard let seriesName = pdf.metadata.series, !seriesName.isEmpty else { return }
 
+        // Robust sort: parse issue/volume as Double first (handles "12.1", "0.5");
+        // fall back to localizedStandardCompare for non-numeric labels like "HC", "TPB", "#0".
         let siblings = allBooks
             .filter { $0.metadata.series == seriesName && $0.id != pdf.id }
-            .sorted {
-                let a = Double($0.metadata.issueNumber ?? $0.metadata.volume ?? "") ?? 0
-                let b = Double($1.metadata.issueNumber ?? $1.metadata.volume ?? "") ?? 0
-                return a < b
+            .sorted { lhs, rhs in
+                let lhsNum = Double(lhs.metadata.issueNumber ?? lhs.metadata.volume ?? "")
+                let rhsNum = Double(rhs.metadata.issueNumber ?? rhs.metadata.volume ?? "")
+                if let l = lhsNum, let r = rhsNum { return l < r }
+                let lKey = lhs.metadata.issueNumber ?? lhs.metadata.volume ?? lhs.name
+                let rKey = rhs.metadata.issueNumber ?? rhs.metadata.volume ?? rhs.name
+                return lKey.localizedStandardCompare(rKey) == .orderedAscending
             }
 
-        guard let selfNum = Double(pdf.metadata.issueNumber ?? pdf.metadata.volume ?? "") else { return }
-        guard let nextBook = siblings.first(where: {
-            (Double($0.metadata.issueNumber ?? $0.metadata.volume ?? "") ?? 0) > selfNum
-        }) else { return }
-
-        NotificationCenter.default.post(name: .openMergedBook, object: nextBook)
+        let selfKey = pdf.metadata.issueNumber ?? pdf.metadata.volume ?? pdf.name
+        // Find the first sibling that sorts strictly after the current book
+        guard let currentIdx = siblings.firstIndex(where: { b in
+            let bKey = b.metadata.issueNumber ?? b.metadata.volume ?? b.name
+            return bKey == selfKey
+        }) else {
+            // Current book not in sibling list — open the first unread one
+            if let first = siblings.first { NotificationCenter.default.post(name: .openMergedBook, object: first) }
+            return
+        }
+        let nextIdx = siblings.index(after: currentIdx)
+        guard siblings.indices.contains(nextIdx) else { return }
+        NotificationCenter.default.post(name: .openMergedBook, object: siblings[nextIdx])
     }
 }
 
