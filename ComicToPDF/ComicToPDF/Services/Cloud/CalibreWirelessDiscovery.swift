@@ -89,10 +89,11 @@ final class CalibreWirelessDiscovery {
         }
 
         browser.browseResultsChangedHandler = { [weak self] results, _ in
+            guard let self else { return }
             for result in results {
                 if case .service(let name, _, let domain, _) = result.endpoint {
                     Task { @MainActor in
-                        self?.resolveBonjour(name: name, domain: domain)
+                        self.resolveBonjour(name: name, domain: domain)
                     }
                 }
             }
@@ -108,13 +109,14 @@ final class CalibreWirelessDiscovery {
         let endpoint = NWEndpoint.service(name: name, type: "_calibrewireless._tcp", domain: domain, interface: nil)
         let connection = NWConnection(to: endpoint, using: .tcp)
         connection.stateUpdateHandler = { [weak self] state in
+            guard let self else { return }
             if case .ready = state {
                 if let inner = connection.currentPath?.remoteEndpoint,
                    case .hostPort(let host, let port) = inner {
                     let hostname = "\(host)"
                     let devicePort = port.rawValue
                     Task { @MainActor in
-                        self?.addHost(CalibreHost(
+                        self.addHost(CalibreHost(
                             id: "\(hostname):\(devicePort)",
                             hostname: hostname,
                             devicePort: devicePort,
@@ -164,9 +166,10 @@ final class CalibreWirelessDiscovery {
         }
 
         conn.receiveMessage { [weak self] data, _, _, _ in
+            guard let self else { return }
             guard let data, let response = String(data: data, encoding: .utf8) else { return }
             Task { @MainActor in
-                self?.parseBroadcastResponse(response)
+                self.parseBroadcastResponse(response)
             }
         }
 
@@ -185,9 +188,10 @@ final class CalibreWirelessDiscovery {
         listener.newConnectionHandler = { [weak self] conn in
             guard let self else { return }
             conn.receiveMessage { [weak self] data, _, _, _ in
+                guard let self else { return }
                 guard let data, let response = String(data: data, encoding: .utf8) else { return }
                 Task { @MainActor in
-                    self?.parseBroadcastResponse(response)
+                    self.parseBroadcastResponse(response)
                 }
             }
             conn.start(queue: q)
@@ -239,12 +243,9 @@ final class CalibreWirelessDiscovery {
     // MARK: - Helpers
 
     private func addHost(_ host: CalibreHost) {
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            if !self.discovered.contains(where: { $0.id == host.id }) {
-                self.discovered.append(host)
-                Logger.shared.log("CalibreDiscovery: found \(host.hostname):\(host.devicePort)", category: "Calibre")
-            }
+        if !self.discovered.contains(where: { $0.id == host.id }) {
+            self.discovered.append(host)
+            Logger.shared.log("CalibreDiscovery: found \(host.hostname):\(host.devicePort)", category: "Calibre")
         }
     }
 }
