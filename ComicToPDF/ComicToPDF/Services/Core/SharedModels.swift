@@ -615,21 +615,23 @@ struct ConversionSettings: Codable, Equatable, Sendable {
     // Do NOT set this directly; change outputPipeline instead.
     var isGuidedView: Bool { outputPipeline == .proPanel }
 
-    // Computed property backed by Keychain with an in-memory cache.
-    // Avoids hitting the Keychain on every Equatable/settings-render pass (Keychain reads are ~10–50ms).
-    private(set) var _cachedComicVineAPIKey: String? = nil
+    // Keychain-backed computed property with a static in-memory cache.
+    // Static (not instance) because ConversionSettings is a struct — getters are
+    // non-mutating, so instance properties cannot be assigned inside get {}.
+    // There is exactly one ComicVine API key per app install, so static is correct.
+    private static var _cachedComicVineAPIKey: String? = nil
     var comicVineAPIKey: String {
         get {
-            if let cached = _cachedComicVineAPIKey { return cached }
+            if let cached = Self._cachedComicVineAPIKey { return cached }
             if let data = KeychainHelper.standard.read(service: "com.antigravity.InksyncPro", account: "comicVineAPIKey"),
                let key = String(data: data, encoding: .utf8) {
-                _cachedComicVineAPIKey = key
+                Self._cachedComicVineAPIKey = key
                 return key
             }
             return ""
         }
         set {
-            _cachedComicVineAPIKey = newValue.isEmpty ? nil : newValue
+            Self._cachedComicVineAPIKey = newValue.isEmpty ? nil : newValue
             if newValue.isEmpty {
                 KeychainHelper.standard.delete(service: "com.antigravity.InksyncPro", account: "comicVineAPIKey")
             } else {
