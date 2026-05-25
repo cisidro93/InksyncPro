@@ -295,6 +295,9 @@ struct TwoUpBookPager: View {
                     .transition(.opacity)
             }
         }
-        .animation(.easeIn(duration: 0.18), value: cache.getImage(at: index) != nil)
+        // cacheUpdatedTick is @Published on MainActor — safe to use as animation
+        // trigger. Avoids calling cache.getImage() during SwiftUI's diffing phase
+        // which can race with background prefetch mutations on NSCache.
+        .animation(.easeIn(duration: 0.18), value: cache.cacheUpdatedTick)
     }
 }
