@@ -398,6 +398,8 @@ struct ComicReaderEngine: View {
     @State private var lastBrightnessDragValue: CGFloat = 0
     /// Panels-style ambient chrome tint — sampled from the current page edges
     @State private var ambientPageColor: Color = .clear
+    /// Tracks in-flight ambient colour extraction so it can be cancelled on rapid page swipes.
+    @State private var ambientColorTask: Task<Void, Never>? = nil
     /// Debounce task — prevents rapid mode flips when the notification fires
     /// multiple times during the iPhone rotation animation (portrait→landscape).
     @State private var orientationTask: Task<Void, Never>? = nil
@@ -736,58 +738,71 @@ struct ComicReaderEngine: View {
 
     // MARK: - Ambient Colour Extraction
 
-    /// Samples 5 pixels from each of the 4 edges of the current page image,
-    /// averages them, and sets `ambientPageColor`. Runs on a background priority
-    /// detached Task so it never blocks the main thread or scroll gestures.
+    /// Extracts the average edge colour of the current page for Panels-style chrome tinting.
+    /// Uses a SINGLE 32×32 downscale of the full page, then samples the edge pixels from
+    /// the tiny bitmap. This avoids the OOM crash that occurred when drawing a full 4K+
+    /// CGImage into a 1×1 context 20 times per page change.
     private func extractAmbientColor(for index: Int) {
         guard let image = cache.getImage(at: index),
               let cgImage = image.cgImage else { return }
 
-        Task.detached(priority: .utility) {
-            let width  = cgImage.width
-            let height = cgImage.height
-            guard width > 1, height > 1 else { return }
+        // Cancel any in-flight task so rapid page swipes don’t stack up allocations.
+        ambientColorTask?.cancel()
+        ambientColorTask = Task.detached(priority: .utility) {
+            guard !Task.isCancelled else { return }
 
-            // Sample points: 5 per edge, equally spaced
-            var samples: [(CGFloat, CGFloat, CGFloat)] = []
-            let sampleCount = 5
+            // ── Step 1: Scale the full page down to 32×32 once ──────────────────
+            // Drawing a large CGImage into a tiny context is inexpensive; the GPU
+            // driver bilinear-scales it. Doing it once costs ~50–200µs on M2.
+            let thumbSize = 32
+            let colorSpace = CGColorSpaceCreateDeviceRGB()
+            let bytesPerRow = thumbSize * 4
+            var pixelBuffer = [UInt8](repeating: 0, count: thumbSize * bytesPerRow)
 
-            // Safe pixel reader — renders a 1×1 context at each sample point
-            func pixelAt(x: Int, y: Int) -> (CGFloat, CGFloat, CGFloat)? {
-                let clampedX = max(0, min(x, width - 1))
-                let clampedY = max(0, min(y, height - 1))
-                let colorSpace = CGColorSpaceCreateDeviceRGB()
-                var pixelData: [UInt8] = [0, 0, 0, 0]
-                guard let ctx = CGContext(
-                    data: &pixelData, width: 1, height: 1,
-                    bitsPerComponent: 8, bytesPerRow: 4,
-                    space: colorSpace,
-                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-                ) else { return nil }
-                ctx.draw(cgImage, in: CGRect(x: -clampedX, y: -(height - clampedY - 1), width: width, height: height))
-                let r = CGFloat(pixelData[0]) / 255
-                let g = CGFloat(pixelData[1]) / 255
-                let b = CGFloat(pixelData[2]) / 255
+            guard let ctx = CGContext(
+                data: &pixelBuffer,
+                width: thumbSize,
+                height: thumbSize,
+                bitsPerComponent: 8,
+                bytesPerRow: bytesPerRow,
+                space: colorSpace,
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else { return }
+
+            ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: thumbSize, height: thumbSize))
+
+            guard !Task.isCancelled else { return }
+
+            // ── Step 2: Sample edge pixels from the 32×32 bitmap ─────────────────
+            // pixelBuffer layout: RGBA, row-major, top-to-bottom (CoreGraphics default).
+            func pixel(x: Int, y: Int) -> (CGFloat, CGFloat, CGFloat) {
+                let offset = (y * bytesPerRow) + (x * 4)
+                let r = CGFloat(pixelBuffer[offset])     / 255
+                let g = CGFloat(pixelBuffer[offset + 1]) / 255
+                let b = CGFloat(pixelBuffer[offset + 2]) / 255
                 return (r, g, b)
             }
 
-            for i in 0..<sampleCount {
-                let t = Int(Double(i + 1) / Double(sampleCount + 1) * Double(height))
-                // Left and right edges
-                if let p = pixelAt(x: 1, y: t)          { samples.append(p) }
-                if let p = pixelAt(x: width - 2, y: t)  { samples.append(p) }
-            }
-            for i in 0..<sampleCount {
-                let t = Int(Double(i + 1) / Double(sampleCount + 1) * Double(width))
-                // Top and bottom edges
-                if let p = pixelAt(x: t, y: 1)           { samples.append(p) }
-                if let p = pixelAt(x: t, y: height - 2)  { samples.append(p) }
+            var rSum: CGFloat = 0
+            var gSum: CGFloat = 0
+            var bSum: CGFloat = 0
+            var count: CGFloat = 0
+
+            // Sample 4 pixels per edge (left, right, top, bottom)
+            let sampleSteps = 4
+            for s in 0..<sampleSteps {
+                let t = Int(Double(s + 1) / Double(sampleSteps + 1) * Double(thumbSize))
+                for (x, y) in [(0, t), (thumbSize - 1, t), (t, 0), (t, thumbSize - 1)] {
+                    let (r, g, b) = pixel(x: x, y: y)
+                    rSum += r; gSum += g; bSum += b; count += 1
+                }
             }
 
-            guard !samples.isEmpty else { return }
-            let avgR = samples.map(\.0).reduce(0, +) / CGFloat(samples.count)
-            let avgG = samples.map(\.1).reduce(0, +) / CGFloat(samples.count)
-            let avgB = samples.map(\.2).reduce(0, +) / CGFloat(samples.count)
+            guard count > 0, !Task.isCancelled else { return }
+
+            let avgR = rSum / count
+            let avgG = gSum / count
+            let avgB = bSum / count
 
             await MainActor.run {
                 withAnimation(.easeInOut(duration: 0.6)) {

@@ -1040,7 +1040,7 @@ enum PageCoordinateSystem: String, Codable, Equatable, Hashable {
         self.addedByMode = addedByMode
         
         self.lastModified = Date()
-        self.contentType = .comic
+        // contentType already set from parameter above — do NOT overwrite with .comic here.
         self.documentSubtype = .unknown
         self.isOnDevice = false
         self.lastTransferFailed = false
