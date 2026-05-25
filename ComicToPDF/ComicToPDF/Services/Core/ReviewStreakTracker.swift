@@ -12,6 +12,7 @@ final class ReviewStreakTracker: Sendable {
     private let streakKey      = "ink_review_streak_count"
     private let lastDateKey    = "ink_review_last_date"
     private let totalReviewKey = "ink_review_total_cards"
+    private let historyKey     = "ink_review_history_volume"
 
     // MARK: - Public API
 
@@ -23,6 +24,11 @@ final class ReviewStreakTracker: Sendable {
     /// Total cards ever reviewed across all sessions.
     var totalCardsReviewed: Int {
         UserDefaults.standard.integer(forKey: totalReviewKey)
+    }
+
+    /// Retrieve the history of daily review volumes.
+    var reviewHistory: [String: Int] {
+        UserDefaults.standard.dictionary(forKey: historyKey) as? [String: Int] ?? [:]
     }
 
     /// True if the user has already completed a review session today.
@@ -43,6 +49,14 @@ final class ReviewStreakTracker: Sendable {
         // Increment total cards
         let previousTotal = defaults.integer(forKey: totalReviewKey)
         defaults.set(previousTotal + cardCount, forKey: totalReviewKey)
+
+        // Record history log
+        let df = DateFormatter()
+        df.dateFormat = "yyyy-MM-dd"
+        let dateString = df.string(from: now)
+        var history = defaults.dictionary(forKey: historyKey) as? [String: Int] ?? [:]
+        history[dateString, default: 0] += cardCount
+        defaults.set(history, forKey: historyKey)
 
         // Already reviewed today — don't double-count streak
         if hasReviewedToday {

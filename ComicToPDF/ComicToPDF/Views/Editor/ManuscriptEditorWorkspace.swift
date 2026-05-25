@@ -19,6 +19,28 @@ struct ManuscriptEditorWorkspace: View {
     enum EditorMode: String, CaseIterable { case write = "Write"; case preview = "Preview" }
     @State private var editorMode: EditorMode = .write
 
+    // Workspace View Mode selector
+    enum WorkspaceViewMode: String, CaseIterable { case editor = "Editor"; case corkboard = "Corkboard" }
+    @State private var workspaceViewMode: WorkspaceViewMode = .editor
+
+    private func handleDroppedNoteID(_ uuidString: String, onto document: SDManuscriptDocument) {
+        guard let uuid = UUID(uuidString: uuidString) else { return }
+        let fetchDescriptor = FetchDescriptor<SDAnnotation>()
+        guard let all = try? modelContext.fetch(fetchDescriptor),
+              let note = all.first(where: { $0.id == uuid }) else { return }
+        
+        let text = note.selectedText ?? note.drawingOCRText ?? ""
+        let author = note.readwiseAuthor ?? "Unknown Author"
+        let book = note.readwiseBookTitle ?? note.chapterTitle ?? "Unknown Book"
+        let page = note.pageIndex + 1
+        
+        let blockquote = "\n\n> \"\(text)\"\n> — \(author), _\(book)_ (p. \(page))\n\n"
+        
+        document.contentMarkdown += blockquote
+        document.modifiedAt = Date()
+        try? modelContext.save()
+    }
+
     // Export
     @State private var showExportMenu = false
     @State private var exportItems: [Any] = []
@@ -75,7 +97,17 @@ struct ManuscriptEditorWorkspace: View {
         NavigationSplitView {
             binderList
         } detail: {
-            if let document = selectedDocument {
+            if workspaceViewMode == .corkboard {
+                CorkboardView(project: project, selectedDocumentID: Binding(
+                    get: { selectedDocumentID },
+                    set: { newID in
+                        selectedDocumentID = newID
+                        if newID != nil {
+                            workspaceViewMode = .editor
+                        }
+                    }
+                ))
+            } else if let document = selectedDocument {
                 editorWithInspector(document: document)
             } else {
                 noSelectionPlaceholder
@@ -115,6 +147,13 @@ struct ManuscriptEditorWorkspace: View {
         .background(Color.inkBackground)
         .toolbar {
             ToolbarItemGroup(placement: .navigationBarTrailing) {
+                Picker("View Mode", selection: $workspaceViewMode) {
+                    Image(systemName: "doc.text").tag(WorkspaceViewMode.editor)
+                    Image(systemName: "square.grid.2x2").tag(WorkspaceViewMode.corkboard)
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 90)
+
                 // Export menu
                 Menu {
                     Button {
@@ -159,7 +198,9 @@ struct ManuscriptEditorWorkspace: View {
                     editorHeader(document: document)
                     Divider()
                     if editorMode == .write {
-                        InkTextEditor(document: document, modelContext: modelContext)
+                        InkTextEditor(document: document, modelContext: modelContext) { droppedNoteID in
+                            handleDroppedNoteID(droppedNoteID, onto: document)
+                        }
                     } else {
                         MarkdownPreviewPane(markdown: document.contentMarkdown)
                     }
@@ -557,6 +598,7 @@ private struct WikilinkChip: View {
 struct InkTextEditor: View {
     let document: SDManuscriptDocument
     let modelContext: ModelContext
+    var onDropReceived: ((String) -> Void)? = nil
 
     var body: some View {
         TextEditor(text: Binding(
@@ -573,6 +615,18 @@ struct InkTextEditor: View {
         .background(Color.inkBackground)
         .padding(.horizontal, 24)
         .padding(.vertical, 16)
+        .onDrop(of: [.text], isTargeted: nil) { providers in
+            for provider in providers {
+                _ = provider.loadObject(ofClass: String.self) { string, error in
+                    if let noteID = string {
+                        DispatchQueue.main.async {
+                            onDropReceived?(noteID)
+                        }
+                    }
+                }
+            }
+            return true
+        }
     }
 }
 
@@ -838,6 +892,9 @@ struct InspectorNoteCard: View {
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .inkCard(radius: InkRadius.thumbnail)
+        .onDrag {
+            NSItemProvider(object: note.id.uuidString as NSString)
+        }
     }
 }
 

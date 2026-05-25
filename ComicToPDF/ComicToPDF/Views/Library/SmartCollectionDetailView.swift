@@ -10,7 +10,7 @@ import SwiftUI
 //    a full series download to form the group
 // ============================================================================
 
-struct SmartCollectionDetailView: View {
+@MainActor struct SmartCollectionDetailView: View {
     let rule: SmartCollectionRule
     @EnvironmentObject var conversionManager: ConversionManager
     @Environment(\.dismiss) var dismiss
@@ -276,6 +276,12 @@ struct SmartCollectionDetailView: View {
     }
 
     // MARK: - Grid Cells
+
+    @ViewBuilder
+    private func cloudAwareSingleCell(pdf: ConvertedPDF) -> some View {
+        let isCloud = { if case .cloud = pdf.sourceMode { return true }; return false }()
+        let remoteID = { if case .cloud(_, let id) = pdf.sourceMode { return id }; return "" }()
+        let progress = downloader.streamProgress[remoteID] ?? downloader.activeDownloads[remoteID]
 
         Button {
             handleSingleTap(pdf)
