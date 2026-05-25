@@ -47,14 +47,7 @@ struct LibraryListView: View {
                     .listRowInsets(EdgeInsets())
 
                     ForEach(items) { item in
-                        switch item {
-                        case .series(let group):
-                            seriesRow(group: group)
-                        case .single(let pdf):
-                            singleRow(pdf: pdf)
-                        case .driveFolder(let entry):
-                            driveFolderRow(entry: entry)
-                        }
+                        listRow(for: item)
                     }
                 } // end List
             .listStyle(.plain)
@@ -300,6 +293,21 @@ struct LibraryListView: View {
     }
 
     // MARK: - Row Sub-views
+
+    /// Top-level @ViewBuilder dispatcher. The switch-inside-ForEach pattern causes
+    /// "generic parameter V could not be inferred" because each branch produces a
+    /// different concrete type. Routing through this @ViewBuilder func resolves it.
+    @ViewBuilder
+    private func listRow(for item: LibraryListItem) -> some View {
+        switch item {
+        case .series(let group):
+            seriesRow(group: group)
+        case .single(let pdf):
+            singleRow(pdf: pdf)
+        case .driveFolder(let entry):
+            driveFolderRow(entry: entry)
+        }
+    }
 
     @ViewBuilder
     private func seriesRow(group: SeriesGroup) -> some View {
@@ -559,7 +567,7 @@ struct LibraryListView: View {
     }
 
     @ViewBuilder
-    private func driveFolderRow(entry: DriveEntry) -> some View {
+    private func driveFolderRow(entry: AppSettingsManager.LinkedDriveEntry) -> some View {
         let isConnected = DriveMonitor.shared.isConnected(driveID: entry.id)
         NavigationLink(destination:
             LinkedDriveBrowserView(driveEntry: entry)

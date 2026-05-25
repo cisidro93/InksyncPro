@@ -340,6 +340,8 @@ struct ZettelkastenGraphView: View {
     let pdfs: [SDConvertedPDF]
 
     @Environment(\.modelContext) private var modelContext
+    /// Used to bridge SDConvertedPDF (SwiftData) → ConvertedPDF (Codable) for AppRouter navigation.
+    @EnvironmentObject private var conversionManager: ConversionManager
     @StateObject private var engine = ZettelkastenGraphEngine()
     @Environment(\.colorScheme) private var colorScheme
 
@@ -901,7 +903,8 @@ struct ZettelkastenGraphView: View {
                             }
                             
                             if let uuid = UUID(uuidString: node.id),
-                               let matchedPDF = pdfs.first(where: { $0.id == annotations.first(where: { $0.id == uuid })?.pdfID }) {
+                               let sdPDF = pdfs.first(where: { $0.id == annotations.first(where: { $0.id == uuid })?.pdfID }),
+                               let matchedPDF = conversionManager.convertedPDFs.first(where: { $0.id == sdPDF.id }) {
                                 Button {
                                     // Jump to reader
                                     let ann = annotations.first(where: { $0.id == uuid })
