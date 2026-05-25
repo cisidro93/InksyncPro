@@ -1361,9 +1361,10 @@ struct PDFKitView: UIViewRepresentable {
         pdfView.addGestureRecognizer(tap)
 
         // Wire highlight action
+        let coordinator = context.coordinator
         if let highlightable = pdfView as? PDFHighlightableView {
-            highlightable.onHighlightRequested = { [weak context] in
-                context?.coordinator.applyHighlight(in: pdfView)
+            highlightable.onHighlightRequested = { [weak coordinator] in
+                coordinator?.applyHighlight(in: pdfView)
             }
         }
 

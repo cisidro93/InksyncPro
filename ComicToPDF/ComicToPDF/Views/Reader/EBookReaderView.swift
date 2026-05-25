@@ -106,7 +106,8 @@ struct EBookReaderView: View {
                                 )
                                 AnnotationStore.shared.add(highlight)
                                 StudyNotesStore.shared.appendHighlight(selectedText, chapter: meta.spineItems[currentIndex].label)
-                            }
+                            },
+                            pdfID: pdf?.id
                         )
                         // Directional page-turn: slide left for forward, right for back.
                         // Using .id(currentIndex) forces SwiftUI to create a new view identity
@@ -598,6 +599,8 @@ struct EBookWebReader: UIViewRepresentable {
     var onCenterTap: () -> Void
     /// Called when the user highlights text — receives the selected string.
     var onHighlightCreated: ((String) -> Void)? = nil
+    /// The PDF/book identity — used to restore previously saved highlights on chapter load.
+    var pdfID: UUID? = nil
 
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
@@ -930,7 +933,7 @@ struct EBookWebReader: UIViewRepresentable {
 
         /// Restore saved highlights after every chapter load.
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            guard let pdfID = parent.pdf?.id else { return }
+            guard let pdfID = parent.pdfID else { return }
             let chapter = parent.spineItem.href
             let annotations = AnnotationStore.shared.annotations(for: pdfID)
                 .filter { $0.kind == .highlight && $0.chapterTitle == parent.spineItem.label }
@@ -945,7 +948,8 @@ struct EBookWebReader: UIViewRepresentable {
                 webView.evaluateJavaScript(js)
             }
         }
-}
+    }
+} // end EBookWebReader
 
 // MARK: - Safe array subscript
 extension Array {
