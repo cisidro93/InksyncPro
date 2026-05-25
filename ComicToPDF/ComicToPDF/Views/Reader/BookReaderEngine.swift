@@ -348,8 +348,10 @@ struct EPUBWebView: UIViewRepresentable {
 
     class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         var parent: EPUBWebView
-        /// Stable hash of the last HTML loaded — prevents reload loop.
+        /// Stable hash of the combined (content + prefs) state — prevents update loops.
         var lastContentHash: Int = 0
+        /// Hash of the raw HTML only — used to distinguish content changes from prefs-only changes.
+        var lastContentOnlyHash: Int = 0
 
         init(_ parent: EPUBWebView) { self.parent = parent }
 
@@ -465,13 +467,30 @@ struct EPUBWebView: UIViewRepresentable {
             }
 
             // Highlight Engine JS
+            // Uses DOM Range + <mark> element wrapping.
+            // document.execCommand('hiliteColor') is deprecated and produces no
+            // visual output in WKWebView on iOS 16+, so we use Range.surroundContents().
             window.applyInksyncHighlight = function(colorHex) {
                 var sel = window.getSelection();
                 if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
 
-                var text = sel.toString();
-                document.execCommand("hiliteColor", false, colorHex);
-                window.getSelection().removeAllRanges();
+                var text = sel.toString().trim();
+                if (!text) return;
+                var range = sel.getRangeAt(0);
+                var mark = document.createElement('mark');
+                mark.className = 'inksync-highlight';
+                mark.style.backgroundColor = colorHex || '#ffd700';
+                mark.style.color = 'inherit';
+                mark.style.borderRadius = '2px';
+                mark.style.mixBlendMode = 'multiply';
+                try {
+                    range.surroundContents(mark);
+                } catch(e) {
+                    var frag = range.extractContents();
+                    mark.appendChild(frag);
+                    range.insertNode(mark);
+                }
+                sel.removeAllRanges();
 
                 window.webkit.messageHandlers.highlightHandler.postMessage({
                     "text": text,
@@ -479,18 +498,30 @@ struct EPUBWebView: UIViewRepresentable {
                 });
             };
 
+            // Restore a previously saved highlight on chapter reload.
+            // Uses TreeWalker to locate the text node — window.find() is unreliable
+            // in column/paged mode and execCommand('hiliteColor') is dead in iOS 16+.
             window.restoreInksyncHighlight = function(textToFind, colorHex) {
-                var currentSel = window.getSelection();
-                var savedRange = currentSel.rangeCount > 0 ? currentSel.getRangeAt(0) : null;
-
-                currentSel.removeAllRanges();
-                var found = window.find(textToFind, true, false, true, false, false, false);
-                if(found) {
-                    document.execCommand("hiliteColor", false, colorHex);
+                if (!textToFind) return;
+                var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
+                var node;
+                while ((node = walker.nextNode())) {
+                    var idx = node.nodeValue.indexOf(textToFind);
+                    if (idx !== -1) {
+                        try {
+                            var range = document.createRange();
+                            range.setStart(node, idx);
+                            range.setEnd(node, idx + textToFind.length);
+                            var mark = document.createElement('mark');
+                            mark.className = 'inksync-highlight';
+                            mark.style.backgroundColor = colorHex || '#ffd700';
+                            mark.style.color = 'inherit';
+                            mark.style.borderRadius = '2px';
+                            range.surroundContents(mark);
+                        } catch(e) {}
+                        break;
+                    }
                 }
-
-                currentSel.removeAllRanges();
-                if(savedRange) currentSel.addRange(savedRange);
             };
 
             // ── Navigation (swipe + tap) bridge ──────────────────────────────
@@ -558,36 +589,95 @@ struct EPUBWebView: UIViewRepresentable {
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {
-        // Guard reloads with a stable content hash.
-        // webView.title is nil until didFinishNavigation fires — using it as a guard
-        // caused every SwiftUI update pass to trigger a reload (infinite loop).
-        let newHash = htmlContent.hashValue
-        guard context.coordinator.lastContentHash != newHash else {
-            // HTML hasn't changed — just update appearance properties
-            webView.backgroundColor = UIColor(prefs.activeTheme.background)
-            webView.scrollView.backgroundColor = webView.backgroundColor
-            webView.scrollView.isPagingEnabled = prefs.paginationMode == EBookPaginationMode.paged.rawValue
-            webView.scrollView.showsVerticalScrollIndicator = prefs.paginationMode == EBookPaginationMode.continuous.rawValue
-            webView.scrollView.alwaysBounceVertical = prefs.paginationMode == EBookPaginationMode.continuous.rawValue
-            return
-        }
+        let contentHash = htmlContent.hashValue
+        let prefsState = "\(prefs.themeRaw)_\(prefs.fontSize)_\(prefs.fontFamily)_\(prefs.lineHeight)_\(prefs.letterSpacing)_\(prefs.wordSpacing)_\(prefs.textAlign)_\(prefs.paginationMode)_\(prefs.columnCount)_\(prefs.textMargin)_\(prefs.hyphenation)"
+        let newHash = contentHash ^ prefsState.hashValue
+        
+        guard context.coordinator.lastContentHash != newHash else { return }
+        
+        // True when the chapter HTML itself changed (not just prefs)
+        let contentChanged = contentHash != context.coordinator.lastContentOnlyHash
         context.coordinator.lastContentHash = newHash
-        webView.loadHTMLString(htmlContent, baseURL: baseUrl)
+        context.coordinator.lastContentOnlyHash = contentHash
 
-        // Sync appearance after triggering a new load
+        if contentChanged {
+            // Chapter changed — full reload so WKUserScript reruns with latest values.
+            webView.loadHTMLString(htmlContent, baseURL: baseUrl)
+        } else {
+            // Prefs-only change — inject updated CSS directly into the live DOM.
+            // This avoids losing scroll position and is instant.
+            injectLiveCSS(into: webView)
+        }
+
+        // Always sync native appearance
         webView.backgroundColor = UIColor(prefs.activeTheme.background)
         webView.scrollView.backgroundColor = webView.backgroundColor
         webView.scrollView.isPagingEnabled = prefs.paginationMode == EBookPaginationMode.paged.rawValue
         webView.scrollView.showsVerticalScrollIndicator = prefs.paginationMode == EBookPaginationMode.continuous.rawValue
         webView.scrollView.alwaysBounceVertical = prefs.paginationMode == EBookPaginationMode.continuous.rawValue
     }
+
+    /// Injects a live CSS update into the existing WebView DOM — no reload required.
+    /// Creates or replaces the `__inksync_live__` style tag.
+    private func injectLiveCSS(into webView: WKWebView) {
+        let bg    = prefs.activeTheme.cssBackground
+        let fg    = prefs.activeTheme.cssText
+        let link  = prefs.activeTheme.cssLink
+        let ff    = prefs.fontFamily
+        let fs    = Int(prefs.fontSize)
+        let lh    = String(format: "%.2f", prefs.lineHeight)
+        let ls    = String(format: "%.4f", prefs.letterSpacing)
+        let ws    = String(format: "%.4f", prefs.wordSpacing)
+        let hyph  = prefs.hyphenation ? "auto" : "manual"
+        let align = prefs.textAlign
+        let marg  = prefs.textMargin
+        let isPaged = prefs.paginationMode == EBookPaginationMode.paged.rawValue
+        let colW: String
+        switch prefs.columnCount {
+        case 2:  colW = "column-width: calc(50vw - 30px) !important; column-gap: 60px !important;"
+        case 1:  colW = "column-width: 100vw !important; column-gap: 0 !important;"
+        default: colW = isPaged ? "column-width: 100vw !important; column-gap: 0 !important;" : ""
+        }
+
+        let css = """
+        body {
+            font-family: '\(ff)' !important;
+            font-size: \(fs)px !important;
+            line-height: \(lh) !important;
+            background-color: \(bg) !important;
+            color: \(fg) !important;
+            letter-spacing: \(ls)em !important;
+            word-spacing: \(ws)em !important;
+            text-align: \(align) !important;
+            -webkit-hyphens: \(hyph) !important;
+            hyphens: \(hyph) !important;
+            \(colW)
+        }
+        body, p, div, span, li { color: \(fg) !important; }
+        a { color: \(link) !important; }
+        html { background-color: \(bg) !important; }
+        .content-container { padding-left: \(marg)px !important; padding-right: \(marg)px !important; }
+        """
+
+        let js = """
+        (function() {
+            var el = document.getElementById('__inksync_live__');
+            if (!el) { el = document.createElement('style'); el.id = '__inksync_live__'; document.head.appendChild(el); }
+            el.textContent = \("`\(css.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "`", with: "\\`"))`");
+        })();
+        """
+        webView.evaluateJavaScript(js)
+    }
 }
+
 
 
 
 struct BookReaderEngine: View {
     let pdf: ConvertedPDF
     var onDismiss: () -> Void
+    /// All books in the library — used to find the next volume in a series.
+    var allBooks: [ConvertedPDF] = []
     
     @StateObject private var vm: BookReaderViewModel
     @ObservedObject private var tts = TTSManager.shared
@@ -651,7 +741,13 @@ struct BookReaderEngine: View {
                     },
                     onCenterTap: { chromeVisible.toggle() },
                     onNextChapter: {
-                        vm.loadChapter(index: min(vm.chapterHtmlFiles.count - 1, vm.currentChapterIndex + 1))
+                        let lastIdx = vm.chapterHtmlFiles.count - 1
+                        if vm.currentChapterIndex >= lastIdx {
+                            // Last chapter — attempt series continuation
+                            attemptBookSeriesContinuation()
+                        } else {
+                            vm.loadChapter(index: min(lastIdx, vm.currentChapterIndex + 1))
+                        }
                     },
                     onPrevChapter: {
                         vm.loadChapter(index: max(0, vm.currentChapterIndex - 1))
@@ -761,6 +857,27 @@ struct BookReaderEngine: View {
         .onChange(of: vm.currentChapterIndex) { _, _ in
             GamificationManager.shared.logPageRead()
         }
+    }
+
+    // MARK: - Series Continuation
+    /// Posts openMergedBook with the next volume in the series when the user finishes the last chapter.
+    private func attemptBookSeriesContinuation() {
+        guard let seriesName = pdf.metadata.series, !seriesName.isEmpty else { return }
+
+        let siblings = allBooks
+            .filter { $0.metadata.series == seriesName && $0.id != pdf.id }
+            .sorted {
+                let a = Double($0.metadata.issueNumber ?? $0.metadata.volume ?? "") ?? 0
+                let b = Double($1.metadata.issueNumber ?? $1.metadata.volume ?? "") ?? 0
+                return a < b
+            }
+
+        guard let selfNum = Double(pdf.metadata.issueNumber ?? pdf.metadata.volume ?? "") else { return }
+        guard let nextBook = siblings.first(where: {
+            (Double($0.metadata.issueNumber ?? $0.metadata.volume ?? "") ?? 0) > selfNum
+        }) else { return }
+
+        NotificationCenter.default.post(name: .openMergedBook, object: nextBook)
     }
 }
 

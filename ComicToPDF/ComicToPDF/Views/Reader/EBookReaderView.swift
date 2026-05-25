@@ -8,6 +8,8 @@ struct EBookReaderView: View {
     let title: String
     var pdf: ConvertedPDF? = nil
     var onExit: (() -> Void)? = nil
+    /// All books in the library — used to find the next volume in a series.
+    var allBooks: [ConvertedPDF] = []
     
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var conversionManager: ConversionManager
@@ -435,13 +437,42 @@ struct EBookReaderView: View {
     }
     
     // MARK: - Navigation
-        private func nextChapter() {
-        guard currentIndex < totalChapters - 1 else { return }
+    private func nextChapter() {
+        if currentIndex >= totalChapters - 1 {
+            // Last chapter — try to jump to next volume in series
+            attemptSeriesContinuation()
+            return
+        }
         isGoingForward = true
-        chapterPage = 0 // Start next chapter at page 0
+        chapterPage = 0
         withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { currentIndex += 1 }
         saveProgress()
         trackEBookProgress()
+    }
+
+    /// Looks up the next unread book in the same series and posts OpenMergedBook so the
+    /// library router opens it seamlessly — identical to the binge-mode flow in ReaderView.
+    private func attemptSeriesContinuation() {
+        guard let currentPDF = pdf,
+              let seriesName = currentPDF.metadata.series, !seriesName.isEmpty else { return }
+
+        // Sort series siblings by issue number
+        let siblings = allBooks
+            .filter { $0.metadata.series == seriesName && $0.id != currentPDF.id }
+            .sorted {
+                let a = Double($0.metadata.issueNumber ?? $0.metadata.volume ?? "") ?? 0
+                let b = Double($1.metadata.issueNumber ?? $1.metadata.volume ?? "") ?? 0
+                return a < b
+            }
+
+        guard let selfNum = Double(currentPDF.metadata.issueNumber ?? currentPDF.metadata.volume ?? "") else { return }
+        // Next is the first sibling whose number exceeds ours
+        guard let nextBook = siblings.first(where: {
+            (Double($0.metadata.issueNumber ?? $0.metadata.volume ?? "") ?? 0) > selfNum
+        }) else { return }
+
+        // Post the same notification ReaderView uses — ModernLibraryView receives it
+        NotificationCenter.default.post(name: .openMergedBook, object: nextBook)
     }
 
     private func prevChapter() {
@@ -779,6 +810,7 @@ struct EBookWebReader: UIViewRepresentable {
         img { max-width: 100%; height: auto; border-radius: 4px; object-fit: contain; max-height: calc(100vh - 120px); }
         a { color: \(linkColor) !important; }
         blockquote { border-left: 3px solid \(linkColor); margin-left: 0; padding-left: 16px; opacity: 0.85; }
+        mark.inksync-highlight { background-color: #ffd700; color: inherit; border-radius: 2px; mix-blend-mode: multiply; -webkit-mix-blend-mode: multiply; padding: 0 1px; }
         </style>
         <script>
         document.addEventListener('DOMContentLoaded', function() {
@@ -845,30 +877,58 @@ struct EBookWebReader: UIViewRepresentable {
         });
 
         // ── Highlight Engine ─────────────────────────────────────────────────
-        // Invoked by the iOS text-selection menu "Highlight" button (see
-        // HighlightableWebView.buildMenu / UIEditMenuInteraction).
+        // Uses DOM Range + <mark> element wrapping.
+        // document.execCommand('hiliteColor') is deprecated and produces no
+        // visual output in WKWebView on iOS 16+, so we use Range.surroundContents().
         window.applyInksyncHighlight = function(colorHex) {
             var sel = window.getSelection();
             if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
-            var text = sel.toString();
-            if (!text.trim()) return;
-            // Apply visual highlight via execCommand (supported in WKWebView)
-            document.execCommand('hiliteColor', false, colorHex || '#ffd700');
-            window.getSelection().removeAllRanges();
-            // Post selected text back to Swift for persistence
+            var text = sel.toString().trim();
+            if (!text) return;
+            var range = sel.getRangeAt(0);
+            var mark = document.createElement('mark');
+            mark.className = 'inksync-highlight';
+            mark.style.backgroundColor = colorHex || '#ffd700';
+            mark.style.color = 'inherit';
+            mark.style.borderRadius = '2px';
+            mark.style.mixBlendMode = 'multiply';
+            try {
+                range.surroundContents(mark);
+            } catch(e) {
+                // Range crosses element boundaries — extract + rewrap
+                var frag = range.extractContents();
+                mark.appendChild(frag);
+                range.insertNode(mark);
+            }
+            sel.removeAllRanges();
             window.webkit.messageHandlers.highlight.postMessage(text);
         };
 
         // Restore a previously saved highlight on chapter reload.
         // Called from Swift after didFinishNavigation.
+        // Uses TreeWalker to locate the text node — window.find() is unreliable
+        // in column/paged mode and execCommand('hiliteColor') is dead in iOS 16+.
         window.restoreInksyncHighlight = function(textToFind, colorHex) {
-            var sel = window.getSelection();
-            var savedRange = sel.rangeCount > 0 ? sel.getRangeAt(0) : null;
-            sel.removeAllRanges();
-            var found = window.find(textToFind, true, false, true, false, false, false);
-            if (found) { document.execCommand('hiliteColor', false, colorHex); }
-            sel.removeAllRanges();
-            if (savedRange) sel.addRange(savedRange);
+            if (!textToFind) return;
+            var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
+            var node;
+            while ((node = walker.nextNode())) {
+                var idx = node.nodeValue.indexOf(textToFind);
+                if (idx !== -1) {
+                    try {
+                        var range = document.createRange();
+                        range.setStart(node, idx);
+                        range.setEnd(node, idx + textToFind.length);
+                        var mark = document.createElement('mark');
+                        mark.className = 'inksync-highlight';
+                        mark.style.backgroundColor = colorHex || '#ffd700';
+                        mark.style.color = 'inherit';
+                        mark.style.borderRadius = '2px';
+                        range.surroundContents(mark);
+                    } catch(e) {}
+                    break;
+                }
+            }
         };
 
         // Make text selectable (required in paged/column mode)

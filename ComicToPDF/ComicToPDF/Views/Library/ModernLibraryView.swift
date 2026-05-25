@@ -324,7 +324,7 @@ struct ModernLibraryView: View {
             .fullScreenCover(item: $router.activeFullScreen) { dest in
                 switch dest {
                 case .read(let pdf, _):
-                    UnifiedReaderView(pdf: pdf)
+                    UnifiedReaderView(pdf: pdf, allBooks: conversionManager.convertedPDFs)
                 case .advancedWorkspace(let pdf):
                     AdvancedWorkspaceView(pdf: pdf).environmentObject(conversionManager)
                 case .smartCollection(let rule):
