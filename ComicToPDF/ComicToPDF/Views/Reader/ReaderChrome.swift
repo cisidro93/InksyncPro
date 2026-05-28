@@ -63,6 +63,11 @@ struct ReaderChrome: View {
     // Ambient tint from current page (Panels-style)
     var ambientColor: Color = .clear
 
+    // Phase 3: Live Reading Room
+    var isInRoom: Bool = false
+    var roomPeerCount: Int = 0
+    var onRoomToggle: (() -> Void)? = nil
+
     // MARK: - Body
 
     var body: some View {
@@ -110,6 +115,17 @@ struct ReaderChrome: View {
 
             // ── Action cluster ─────────────────────────────────────────────────
             HStack(spacing: 0) {
+                // Phase 3: Reading Room button — glows teal when active, shows peer badge
+                if let onRoomToggle {
+                    chromeButton(
+                        icon: isInRoom ? "person.2.wave.2.fill" : "person.2.wave.2",
+                        active: isInRoom,
+                        activeColor: Color(hex: "#4ECDC4"),
+                        badgeText: (isInRoom && roomPeerCount > 0) ? "\(roomPeerCount)" : nil,
+                        action: onRoomToggle
+                    )
+                }
+
                 if onEnhanceToggle != nil {
                     chromeButton(
                         icon: "wand.and.stars",

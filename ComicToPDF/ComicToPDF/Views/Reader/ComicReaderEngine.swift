@@ -408,6 +408,8 @@ struct ComicReaderEngine: View {
     /// AI Narration Engine — connects to the image cache on appear
     @StateObject private var narrationEngine = NarrationEngine()
     @ObservedObject private var gamification = GamificationManager.shared
+    /// Phase 3: Live Reading Room — MultipeerConnectivity co-reading session.
+    @StateObject private var readingRoom = ReadingRoomSession()
     
     init(pdf: ConvertedPDF, onDismiss: @escaping () -> Void, allBooks: [ConvertedPDF] = []) {
         self.pdf = pdf
@@ -485,6 +487,15 @@ struct ComicReaderEngine: View {
             filterHUDView
             settingsHUDView
             achievementToastView
+            // Phase 3: Live Reading Room overlay (peer avatars + reactions + HUD pill)
+            if readingRoom.isHosting {
+                ReadingRoomOverlay(
+                    session: readingRoom,
+                    currentPage: currentIndex,
+                    totalPages: cache.pageCount
+                )
+                .zIndex(15)
+            }
         }
         .onAppear {
             if let saved = ReaderProgressTracker.shared.progress(for: pdf.id) {
@@ -537,6 +548,8 @@ struct ComicReaderEngine: View {
             if narrationEngine.isNarrating {
                 narrationEngine.didManuallyChangePage(to: newIndex)
             }
+            // Phase 3: broadcast page change to any connected reading room peers
+            readingRoom.broadcastPage(newIndex, totalPages: cache.pageCount)
             // Series continuation: when the reader reaches the final page,
             // post openMergedBook so the library transitions to the next volume.
             if cache.pageCount > 0 && newIndex == cache.pageCount - 1 {
@@ -833,7 +846,16 @@ struct ComicReaderEngine: View {
             onEnhanceToggle: { withAnimation(.easeInOut) { showingFilterHUD.toggle() } },
             isSettingsActive: readingMode != .pageHorizontal,
             currentModeLabel: readingMode != .pageHorizontal ? readingMode.hudLabel : nil,
-            ambientColor: ambientPageColor
+            ambientColor: ambientPageColor,
+            isInRoom: readingRoom.isHosting,
+            roomPeerCount: readingRoom.peers.count,
+            onRoomToggle: {
+                if readingRoom.isHosting {
+                    readingRoom.stop()
+                } else {
+                    readingRoom.startHosting(bookID: pdf.id.uuidString)
+                }
+            }
         )
     }
 
