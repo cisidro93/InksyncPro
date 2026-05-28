@@ -275,16 +275,20 @@ extension ComicReadingMode {
         case .pageTwoUp:       return "rectangle.split.2x1"
         case .panelNavigation: return "viewfinder"
         case .webtoonScroll:   return "arrow.down.doc"
+        case .pageSlide:       return "rectangle.on.rectangle.slash"
+        case .pageFade:        return "waveform.path.ecg"
         }
     }
 
     var hudLabel: String {
         switch self {
-        case .pageHorizontal:  return "Standard"
+        case .pageHorizontal:  return "Standard (3D Curl)"
         case .mangaRTL:        return "Manga (Right-to-Left)"
         case .pageTwoUp:       return "Two-Page Spread"
         case .panelNavigation: return "Panel Navigation"
         case .webtoonScroll:   return "Webtoon Scroll"
+        case .pageSlide:       return "Slide"
+        case .pageFade:        return "Fade"
         }
     }
 
@@ -295,6 +299,8 @@ extension ComicReadingMode {
         case .pageTwoUp:       return "Side-by-side spreads (landscape)"
         case .panelNavigation: return "Auto-zoom per panel using Vision"
         case .webtoonScroll:   return "Continuous vertical strip"
+        case .pageSlide:       return "Flat horizontal page slide"
+        case .pageFade:        return "Crossfade between pages"
         }
     }
 }

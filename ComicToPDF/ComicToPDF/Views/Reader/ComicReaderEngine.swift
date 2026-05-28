@@ -410,6 +410,8 @@ struct ComicReaderEngine: View {
     @ObservedObject private var gamification = GamificationManager.shared
     /// Phase 3: Live Reading Room — MultipeerConnectivity co-reading session.
     @StateObject private var readingRoom = ReadingRoomSession()
+    /// Phase 4A: Auto-hide chrome — cancellable idle timer.
+    @State private var chromeIdleTask: Task<Void, Never>? = nil
     
     init(pdf: ConvertedPDF, onDismiss: @escaping () -> Void, allBooks: [ConvertedPDF] = []) {
         self.pdf = pdf
@@ -475,7 +477,13 @@ struct ComicReaderEngine: View {
                             cache: cache,
                             readingMode: readingMode,
                             activeFilterPreset: activeFilterPreset,
-                            onChromeTap: { chromeVisible.toggle() }
+                            onChromeTap: {
+                                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                    chromeVisible.toggle()
+                                }
+                                // Phase 4A: start / reset 4-second auto-hide timer
+                                if chromeVisible { startChromeIdleTimer() }
+                            }
                         )
                     }
                 }
@@ -855,7 +863,8 @@ struct ComicReaderEngine: View {
                 } else {
                     readingRoom.startHosting(bookID: pdf.id.uuidString)
                 }
-            }
+            },
+            onSwipeDown: saveProgressAndDismiss
         )
     }
 
@@ -936,7 +945,19 @@ struct ComicReaderEngine: View {
             progress.readingSessionDates.append(Date())
         }
         ReaderProgressTracker.shared.update(progress)
+        readingRoom.stop() // Phase 3: ensure room tears down on dismiss
         onDismiss()
+    }
+
+    /// Phase 4A: Start (or restart) the 4-second idle timer that auto-hides the chrome.
+    /// Cancels any in-flight timer so rapid taps don't stack timers.
+    private func startChromeIdleTimer() {
+        chromeIdleTask?.cancel()
+        chromeIdleTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 4_000_000_000) // 4 seconds
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.3)) { chromeVisible = false }
+        }
     }
 
     private func handleNarrationToggle() {
@@ -988,8 +1009,14 @@ struct WebtoonImageCell: View {
 struct ComicPageView: View {
     let image: UIImage?
     let forceRedrawTick: Int?
+    /// Callbacks wired from BookFlipGesture / BookPager for context menu actions.
+    var onSaveToPhotos: (() -> Void)? = nil
+    var onShare: (() -> Void)? = nil
+    var onBookmark: (() -> Void)? = nil
     @State private var currentScale: CGFloat = 1.0
     @State private var offset: CGSize = .zero
+    @State private var shareItem: UIImage? = nil
+    @State private var showShareSheet = false
 
     /// Compute the rendered width/height that fits the image inside `container`
     /// without overflowing, preserving aspect ratio.
@@ -1055,6 +1082,42 @@ struct ComicPageView: View {
                                 let dy = (centerY - loc.y) * (currentScale - 1)
                                 offset = CGSize(width: dx, height: dy)
                             }
+                        }
+                    }
+                    // Phase 4A: long-press context menu (Save / Share / Bookmark)
+                    .contextMenu {
+                        if let onSaveToPhotos {
+                            Button {
+                                onSaveToPhotos()
+                            } label: {
+                                Label("Save to Photos", systemImage: "photo.badge.arrow.down")
+                            }
+                        }
+                        Button {
+                            shareItem = image
+                            showShareSheet = true
+                        } label: {
+                            Label("Share Page", systemImage: "square.and.arrow.up")
+                        }
+                        if let onBookmark {
+                            Button {
+                                HapticEngine.success()
+                                onBookmark()
+                            } label: {
+                                Label("Add Bookmark", systemImage: "bookmark.fill")
+                            }
+                        }
+                    } preview: {
+                        // System shows a scaled preview of the page in the context menu blur
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(maxWidth: 280)
+                    }
+                    .sheet(isPresented: $showShareSheet) {
+                        if let item = shareItem {
+                            ShareSheet(items: [item])
+                                .presentationDetents([.medium, .large])
                         }
                     }
             }

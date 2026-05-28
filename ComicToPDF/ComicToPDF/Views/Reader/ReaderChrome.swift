@@ -68,12 +68,25 @@ struct ReaderChrome: View {
     var roomPeerCount: Int = 0
     var onRoomToggle: (() -> Void)? = nil
 
+    // Phase 4A: Swipe-down-to-dismiss
+    var onSwipeDown: (() -> Void)? = nil
+
     // MARK: - Body
 
     var body: some View {
         VStack {
             topBar
                 .offset(y: isVisible ? 0 : -12)
+                // Phase 4A: swipe downward on the top bar to dismiss the reader
+                .gesture(
+                    DragGesture(minimumDistance: 20)
+                        .onEnded { val in
+                            if val.translation.height > 80 {
+                                HapticEngine.light()
+                                onSwipeDown?()
+                            }
+                        }
+                )
 
             Spacer()
 

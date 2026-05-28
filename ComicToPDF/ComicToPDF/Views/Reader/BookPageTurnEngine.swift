@@ -178,6 +178,18 @@ struct BookPager: View {
     var onChromeTap: () -> Void
 
     var body: some View {
+        switch readingMode {
+        case .pageSlide:
+            slidePager
+        case .pageFade:
+            fadePager
+        default:
+            curlPager
+        }
+    }
+
+    // ── 3D Curl (default, original behaviour) ─────────────────────────
+    private var curlPager: some View {
         BookFlipGesture(
             currentIndex: $currentIndex,
             content: { idx in
@@ -195,6 +207,50 @@ struct BookPager: View {
             canFlipBack:    { currentIndex > 0 },
             onFlipForward:  { currentIndex += 1 },
             onFlipBack:     { currentIndex -= 1 }
+        )
+    }
+
+    // ── Flat Slide (TabView / PageTabViewStyle) ────────────────────────
+    private var slidePager: some View {
+        TabView(selection: $currentIndex) {
+            ForEach(0..<totalPages, id: \.self) { idx in
+                ComicPageView(
+                    image: cache.getImage(at: idx),
+                    forceRedrawTick: cache.cacheUpdatedTick
+                )
+                .applyFilterPreset(activeFilterPreset)
+                .tag(idx)
+                .onTapGesture { onChromeTap() }
+            }
+        }
+        .tabViewStyle(.page(indexDisplayMode: .never))
+        .ignoresSafeArea()
+    }
+
+    // ── Fade Crossfade ─────────────────────────────────────────────────
+    @ViewBuilder
+    private var fadePager: some View {
+        ZStack {
+            ComicPageView(
+                image: cache.getImage(at: currentIndex),
+                forceRedrawTick: cache.cacheUpdatedTick
+            )
+            .applyFilterPreset(activeFilterPreset)
+            .id(currentIndex) // forces view replacement on change → triggers transition
+            .transition(.opacity)
+            .animation(.easeInOut(duration: 0.28), value: currentIndex)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { onChromeTap() }
+        .gesture(
+            DragGesture(minimumDistance: 30)
+                .onEnded { val in
+                    if val.translation.width < -30, currentIndex < totalPages - 1 {
+                        withAnimation(.easeInOut(duration: 0.28)) { currentIndex += 1 }
+                    } else if val.translation.width > 30, currentIndex > 0 {
+                        withAnimation(.easeInOut(duration: 0.28)) { currentIndex -= 1 }
+                    }
+                }
         )
     }
 }
