@@ -826,14 +826,14 @@ struct ComicReaderEngine: View {
                     isMangaMode: readingMode == .mangaRTL
                 )
             ),
-            isSettingsActive: readingMode != .pageHorizontal,
-            currentModeLabel: readingMode != .pageHorizontal ? readingMode.hudLabel : nil,
-            ambientColor: ambientPageColor,
             isNarrating: narrationEngine.isNarrating,
             isNarrationOCRing: narrationEngine.isOCRing,
             onNarrationToggle: handleNarrationToggle,
             isEnhanced: activeFilterPreset != .original,
-            onEnhanceToggle: { withAnimation(.easeInOut) { showingFilterHUD.toggle() } }
+            onEnhanceToggle: { withAnimation(.easeInOut) { showingFilterHUD.toggle() } },
+            isSettingsActive: readingMode != .pageHorizontal,
+            currentModeLabel: readingMode != .pageHorizontal ? readingMode.hudLabel : nil,
+            ambientColor: ambientPageColor
         )
     }
 
