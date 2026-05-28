@@ -4,6 +4,12 @@ import MultipeerConnectivity
 import Combine
 import UIKit
 
+// MARK: - Swift 6 Sendable conformances for ObjC MC types
+// MCPeerID is immutable after creation; MCNearbyServiceBrowser is an ObjC object
+// safe to pass across concurrency domains when used with the care shown below.
+extension MCPeerID: @unchecked Sendable {}
+extension MCNearbyServiceBrowser: @unchecked Sendable {}
+
 // MARK: - Data Packets
 
 /// Every message sent between peers over the MCSession.
@@ -330,14 +336,16 @@ final class ReadingRoomSession: NSObject, ObservableObject {
 extension ReadingRoomSession: MCSessionDelegate {
 
     nonisolated func session(_ session: MCSession, peer peerID: MCPeerID, didChange state: MCSessionState) {
+        // Extract Sendable-safe primitives before hopping to the main actor
+        let name = peerID.displayName
         Task { @MainActor in
             switch state {
             case .connected:
-                Logger.shared.log("ReadingRoom: peer connected — \(peerID.displayName)", category: "Room", type: .success)
+                Logger.shared.log("ReadingRoom: peer connected — \(name)", category: "Room", type: .success)
                 if !peers.contains(where: { $0.id == peerID }) {
                     let newPeer = RoomPeer(
                         id: peerID,
-                        displayName: peerID.displayName,
+                        displayName: name,
                         currentPage: 0,
                         totalPages: 0,
                         avatarColor: avatarColor(for: peerID),
@@ -349,7 +357,7 @@ extension ReadingRoomSession: MCSessionDelegate {
                 HapticEngine.success()
 
             case .notConnected:
-                Logger.shared.log("ReadingRoom: peer disconnected — \(peerID.displayName)", category: "Room", type: .warning)
+                Logger.shared.log("ReadingRoom: peer disconnected — \(name)", category: "Room", type: .warning)
                 self.peers.removeAll { $0.id == peerID }
                 self.isConnected = !self.peers.isEmpty
 
@@ -376,8 +384,12 @@ extension ReadingRoomSession: MCSessionDelegate {
 
 extension ReadingRoomSession: MCNearbyServiceAdvertiserDelegate {
     nonisolated func advertiser(_ advertiser: MCNearbyServiceAdvertiser, didReceiveInvitationFromPeer peerID: MCPeerID, withContext context: Data?, invitationHandler: @escaping (Bool, MCSession?) -> Void) {
+        // invitationHandler is @escaping but not @Sendable — mark nonisolated(unsafe) so
+        // we can carry it into the @MainActor Task without a data-race warning.
+        // MC invitation callbacks are safe to call from any thread.
+        nonisolated(unsafe) let handler = invitationHandler
         Task { @MainActor in
-            invitationHandler(true, self.session) // auto-accept all invitations within same room
+            handler(true, self.session)
         }
     }
     nonisolated func advertiser(_ advertiser: MCNearbyServiceAdvertiser, didNotStartAdvertisingPeer error: Error) {
@@ -389,11 +401,14 @@ extension ReadingRoomSession: MCNearbyServiceAdvertiserDelegate {
 
 extension ReadingRoomSession: MCNearbyServiceBrowserDelegate {
     nonisolated func browser(_ browser: MCNearbyServiceBrowser, foundPeer peerID: MCPeerID, withDiscoveryInfo info: [String: String]?) {
+        // browser is @unchecked Sendable (ObjC object); capture it explicitly so the
+        // compiler doesn't treat it as a task-isolated value crossing an actor boundary.
+        let b = browser
+        let name = peerID.displayName
         Task { @MainActor in
             guard let session = self.session else { return }
-            // Auto-invite anyone we find on the same service type (same room code)
-            browser.invitePeer(peerID, to: session, withContext: nil, timeout: 30)
-            Logger.shared.log("ReadingRoom: found peer \(peerID.displayName), inviting…", category: "Room", type: .info)
+            b.invitePeer(peerID, to: session, withContext: nil, timeout: 30)
+            Logger.shared.log("ReadingRoom: found peer \(name), inviting…", category: "Room", type: .info)
         }
     }
     nonisolated func browser(_ browser: MCNearbyServiceBrowser, lostPeer peerID: MCPeerID) {
