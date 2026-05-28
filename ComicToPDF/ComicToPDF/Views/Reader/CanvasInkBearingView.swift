@@ -18,15 +18,11 @@ struct CanvasInkBearingView: UIViewRepresentable {
         // Wire up delegate for save callbacks
         canvasView.delegate = context.coordinator
 
-        // Phase 4E-1: attach PKToolPicker to this canvas
-        if let window = UIApplication.shared.connectedScenes
-            .compactMap({ $0 as? UIWindowScene })
-            .first?.windows.first {
-            let picker = PKToolPicker()
-            picker.setVisible(true, forFirstResponder: canvasView)
-            picker.addObserver(canvasView)
-            context.coordinator.toolPicker = picker
-        }
+        // Phase 4E-1: attach PKToolPicker to this canvas (no window reference needed on iOS 14+)
+        let picker = PKToolPicker()
+        picker.setVisible(true, forFirstResponder: canvasView)
+        picker.addObserver(canvasView)
+        context.coordinator.toolPicker = picker
 
         // Power Optimization: disable interaction when not in drawing mode
         canvasView.isUserInteractionEnabled = isDrawingMode

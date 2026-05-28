@@ -36,8 +36,8 @@ enum ComicReadingMode: String, CaseIterable, Codable {
     case panelNavigation  // Panel-by-panel using pageModels Vision data
     case webtoonScroll    // Continuous vertical scroll
     case mangaRTL         // Single page, horizontal swipe, right-to-left
-    
-
+    case pageSlide        // Flat horizontal slide transition
+    case pageFade         // Crossfade between pages
 }
 
 final class ComicImageCache: ObservableObject, @unchecked Sendable {
@@ -1119,7 +1119,7 @@ struct ComicPageView: View {
                     }
                     .sheet(isPresented: $showShareSheet) {
                         if let item = shareItem {
-                            ShareSheet(items: [item])
+                            ShareSheet(activityItems: [item])
                                 .presentationDetents([.medium, .large])
                         }
                     }

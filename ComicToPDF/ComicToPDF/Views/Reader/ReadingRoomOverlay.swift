@@ -126,97 +126,10 @@ struct ReadingRoomOverlay: View {
     private var drawerContent: some View {
         NavigationStack {
             List {
-                // Room code section
-                Section {
-                    VStack(spacing: 8) {
-                        Text("Room Code")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Text(session.roomCode)
-                            .font(.system(size: 36, weight: .bold, design: .monospaced))
-                            .foregroundStyle(
-                                LinearGradient(colors: [Color(hex: "#4ECDC4"), Color(hex: "#45B7D1")],
-                                               startPoint: .leading, endPoint: .trailing)
-                            )
-                            .onTapGesture { UIPasteboard.general.string = session.roomCode; HapticEngine.light() }
-                        Text("Tap to copy • Share with friends")
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
-                }
-
-                // Peer list
-                Section("Readers in Room (\(session.peers.count))") {
-                    if session.peers.isEmpty {
-                        Label("Waiting for readers…", systemImage: "clock")
-                            .foregroundStyle(.secondary)
-                            .font(.subheadline)
-                    } else {
-                        ForEach(session.peers) { peer in
-                            HStack(spacing: 12) {
-                                Circle()
-                                    .fill(peer.avatarColor)
-                                    .frame(width: 36, height: 36)
-                                    .overlay(
-                                        Text(peer.initials)
-                                            .font(.system(size: 13, weight: .bold))
-                                            .foregroundColor(.white)
-                                    )
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(peer.displayName)
-                                        .font(.subheadline.bold())
-                                    Text("Page \(peer.currentPage + 1) of \(peer.totalPages)")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                // Mini progress arc
-                                CircularProgressArc(fraction: peer.progressFraction, color: peer.avatarColor)
-                                    .frame(width: 28, height: 28)
-                            }
-                        }
-                    }
-                }
-
-                // Reaction bar
-                Section("Send Reaction") {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 16) {
-                            ForEach(["🔥", "❤️", "😮", "😂", "👏", "💯", "⚡️", "🎉"], id: \.self) { emoji in
-                                Button {
-                                    session.sendReaction(emoji)
-                                    HapticEngine.light()
-                                } label: {
-                                    Text(emoji)
-                                        .font(.system(size: 32))
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                        .padding(.horizontal, 4)
-                    }
-                }
-
-                // Manual join section
-                Section("Join by Code") {
-                    HStack {
-                        TextField("6-char code", text: $joinCodeEntry)
-                            .textCase(.uppercase)
-                            .font(.system(.body, design: .monospaced))
-                            .autocorrectionDisabled()
-                            .textInputAutocapitalization(.characters)
-                        Button("Join") {
-                            let code = joinCodeEntry.trimmingCharacters(in: .whitespacesAndNewlines)
-                            guard code.count == 6 else { return }
-                            session.joinWithCode(code)
-                            joinCodeEntry = ""
-                        }
-                        .disabled(joinCodeEntry.count != 6)
-                    }
-                }
-
+                roomCodeSection
+                peerListSection
+                reactionSection
+                joinCodeSection
                 // Leave room
                 Section {
                     Button(role: .destructive) {
@@ -233,6 +146,104 @@ struct ReadingRoomOverlay: View {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Done") { showDrawer = false }
                 }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var roomCodeSection: some View {
+        Section {
+            VStack(spacing: 8) {
+                Text("Room Code")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(session.roomCode)
+                    .font(.system(size: 36, weight: .bold, design: .monospaced))
+                    .foregroundStyle(
+                        LinearGradient(colors: [Color(hex: "#4ECDC4"), Color(hex: "#45B7D1")],
+                                       startPoint: .leading, endPoint: .trailing)
+                    )
+                    .onTapGesture { UIPasteboard.general.string = session.roomCode; HapticEngine.light() }
+                Text("Tap to copy • Share with friends")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+        }
+    }
+
+    @ViewBuilder
+    private var peerListSection: some View {
+        Section("Readers in Room (\(session.peers.count))") {
+            if session.peers.isEmpty {
+                Label("Waiting for readers…", systemImage: "clock")
+                    .foregroundStyle(.secondary)
+                    .font(.subheadline)
+            } else {
+                ForEach(session.peers) { peer in
+                    HStack(spacing: 12) {
+                        Circle()
+                            .fill(peer.avatarColor)
+                            .frame(width: 36, height: 36)
+                            .overlay(
+                                Text(peer.initials)
+                                    .font(.system(size: 13, weight: .bold))
+                                    .foregroundColor(.white)
+                            )
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(peer.displayName)
+                                .font(.subheadline.bold())
+                            Text("Page \(peer.currentPage + 1) of \(peer.totalPages)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        CircularProgressArc(fraction: peer.progressFraction, color: peer.avatarColor)
+                            .frame(width: 28, height: 28)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var reactionSection: some View {
+        Section("Send Reaction") {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 16) {
+                    ForEach(["🔥", "❤️", "😮", "😂", "👏", "💯", "⚡️", "🎉"], id: \.self) { emoji in
+                        Button {
+                            session.sendReaction(emoji)
+                            HapticEngine.light()
+                        } label: {
+                            Text(emoji)
+                                .font(.system(size: 32))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 4)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var joinCodeSection: some View {
+        Section("Join by Code") {
+            HStack {
+                TextField("6-char code", text: $joinCodeEntry)
+                    .textCase(.uppercase)
+                    .font(.system(.body, design: .monospaced))
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.characters)
+                Button("Join") {
+                    let code = joinCodeEntry.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard code.count == 6 else { return }
+                    session.joinWithCode(code)
+                    joinCodeEntry = ""
+                }
+                .disabled(joinCodeEntry.count != 6)
             }
         }
     }
