@@ -41,6 +41,9 @@ struct ModernLibraryView: View {
     /// into compact mode regardless of pin/scroll state.
     @State private var isLandscape: Bool = false
     @Environment(\.verticalSizeClass) private var vSizeClass
+    @Environment(\.horizontalSizeClass) private var hSizeClass
+    // Phase 4B/4C: iPad sidebar — tracks selected series/collection filter
+    @State private var iPadSidebarSelection: String? = nil
 
     /// Derived header collapse state.
     /// Priority: landscape (always collapsed) → pin lock → scroll threshold.
@@ -309,31 +312,100 @@ struct ModernLibraryView: View {
     // MARK: - Root Shell (split out to avoid type-checker timeout)
     @ViewBuilder
     private var rootShell: some View {
-        ZStack(alignment: .top) {
-            Color.clear.ignoresSafeArea()
+        if hSizeClass == .regular {
+            // Phase 4B/4C: iPad — NavigationSplitView with series sidebar
+            NavigationSplitView(columnVisibility: .constant(.doubleColumn)) {
+                iPadSidebar
+                    .navigationTitle("Library")
+                    .navigationBarTitleDisplayMode(.inline)
+            } detail: {
+                ZStack(alignment: .top) {
+                    Color.clear.ignoresSafeArea()
+                    libraryContent
+                        .safeAreaInset(edge: .bottom) {
+                            if isBatchMode { batchBottomToolbar.transition(.move(edge: .bottom)) }
+                        }
+                        .overlay(alignment: .top) { storageTransferBanner }
+                        .fullScreenCover(item: $router.activeFullScreen) { dest in
+                            switch dest {
+                            case .read(let pdf, _):
+                                UnifiedReaderView(pdf: pdf, allBooks: conversionManager.convertedPDFs)
+                            case .advancedWorkspace(let pdf):
+                                AdvancedWorkspaceView(pdf: pdf).environmentObject(conversionManager)
+                            case .smartCollection(let rule):
+                                SmartCollectionDetailView(rule: rule).environmentObject(conversionManager)
+                            }
+                        }
+                        .sheet(item: $router.activeSheet) { item in destinationSheet(for: item) }
+                }
+            }
+            .navigationSplitViewStyle(.balanced)
+        } else {
+            // iPhone — existing single-column layout
+            ZStack(alignment: .top) {
+                Color.clear.ignoresSafeArea()
+                libraryContent
+                    .safeAreaInset(edge: .bottom) {
+                        if isBatchMode { batchBottomToolbar.transition(.move(edge: .bottom)) }
+                    }
+                    .overlay(alignment: .top) { storageTransferBanner }
+                    .fullScreenCover(item: $router.activeFullScreen) { dest in
+                        switch dest {
+                        case .read(let pdf, _):
+                            UnifiedReaderView(pdf: pdf, allBooks: conversionManager.convertedPDFs)
+                        case .advancedWorkspace(let pdf):
+                            AdvancedWorkspaceView(pdf: pdf).environmentObject(conversionManager)
+                        case .smartCollection(let rule):
+                            SmartCollectionDetailView(rule: rule).environmentObject(conversionManager)
+                        }
+                    }
+                    .sheet(item: $router.activeSheet) { item in destinationSheet(for: item) }
+            }
+        }
+    }
 
-            libraryContent
-            .safeAreaInset(edge: .bottom) {
-                if isBatchMode {
-                    batchBottomToolbar.transition(.move(edge: .bottom))
+    // MARK: - iPad Sidebar (series + collection picker)
+    @ViewBuilder
+    private var iPadSidebar: some View {
+        List(selection: $iPadSidebarSelection) {
+            Section("Browse") {
+                Label("All Books", systemImage: "books.vertical.fill")
+                    .tag("all")
+                Label("Continue Reading", systemImage: "book.open.fill")
+                    .tag("continue")
+                Label("Recently Added", systemImage: "clock.fill")
+                    .tag("recent")
+                Label("Favorites", systemImage: "heart.fill")
+                    .tag("favorites")
+            }
+            if !conversionManager.collections.isEmpty {
+                Section("Collections") {
+                    ForEach(conversionManager.collections) { collection in
+                        Label(collection.name, systemImage: "folder.fill")
+                            .tag(collection.id.uuidString)
+                    }
                 }
             }
-            .overlay(alignment: .top) {
-                storageTransferBanner
-            }
-            .fullScreenCover(item: $router.activeFullScreen) { dest in
-                switch dest {
-                case .read(let pdf, _):
-                    UnifiedReaderView(pdf: pdf, allBooks: conversionManager.convertedPDFs)
-                case .advancedWorkspace(let pdf):
-                    AdvancedWorkspaceView(pdf: pdf).environmentObject(conversionManager)
-                case .smartCollection(let rule):
-                    SmartCollectionDetailView(rule: rule)
-                        .environmentObject(conversionManager)
+        }
+        .listStyle(.sidebar)
+        .onChange(of: iPadSidebarSelection) { _, selection in
+            guard let sel = selection else { return }
+            // Reset first so each case starts from a clean state
+            viewModel.currentFolderID = nil
+            viewModel.contentShelf = .all
+            viewModel.filterState = .all
+            switch sel {
+            case "continue":
+                viewModel.filterState = .reading   // currently in-progress books
+            case "recent":
+                sortOption = .dateAdded            // re-sort by newest first
+            case "favorites":
+                sortOption = .favorites            // favorites bubble to top
+            default:
+                if let uuid = UUID(uuidString: sel) {
+                    viewModel.currentFolderID = uuid
                 }
-            }
-            .sheet(item: $router.activeSheet) { item in
-                destinationSheet(for: item)
+                // "all" just resets to defaults (already done above)
             }
         }
     }
