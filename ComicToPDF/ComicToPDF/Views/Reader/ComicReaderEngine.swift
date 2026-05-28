@@ -571,7 +571,9 @@ struct ComicReaderEngine: View {
                 conversionManager.convertedPDFs[idx].metadata.isManga = isManga
                 conversionManager.saveLibrary()
             }
-    } // end body
+        }
+    } // closes GeometryReader
+} // end body
 
     var guidedView: some View {
         TabView(selection: $currentIndex) {
