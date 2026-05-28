@@ -77,6 +77,10 @@ class ReaderProgressTracker: ObservableObject {
     func recentSessions() -> [ReadingProgress] {
         return progressMap.values.sorted { $0.lastOpenedAt > $1.lastOpenedAt }
     }
+
+    /// Phase 4D-3: All progress records — used by ZettelkastenGraphEngine session auto-nodes.
+    var allProgress: [ReadingProgress] { Array(progressMap.values) }
+
     func update(_ progress: ReadingProgress) {
         var updated = progress
 

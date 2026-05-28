@@ -60,9 +60,27 @@ struct ModernGridFileCell: View {
                 // Image or placeholder
                 Group {
                     if let img = conversionManager.thumbnailCache.object(forKey: pdf.id.uuidString as NSString) ?? localCover {
-                        Image(uiImage: img)
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
+                        // Phase 4B: Landscape cover normalization — blur-background technique.
+                        // For any cover (portrait or landscape) we always maintain the 2:3 cell.
+                        // A blurred, darkened copy of the image fills the background; the real
+                        // cover is rendered .scaledToFit on top, centred. Portrait covers that
+                        // naturally fill .fill are unaffected visually; landscape covers benefit
+                        // from the blurred halo instead of an ugly hard crop.
+                        ZStack {
+                            // Blurred background layer (always fills the 2:3 frame)
+                            Image(uiImage: img)
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .blur(radius: 18, opaque: true)
+                                .overlay(Color.black.opacity(0.45))
+
+                            // Foreground: actual cover scaled to fit
+                            Image(uiImage: img)
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                // Subtle drop shadow so the cover lifts off the blur bg
+                                .shadow(color: .black.opacity(0.5), radius: 8, y: 4)
+                        }
 
                         // Book spine overlay — left-edge depth cue
                         HStack(spacing: 0) {

@@ -847,20 +847,32 @@ struct MarkdownTextEditor: UIViewRepresentable {
         tapGesture.cancelsTouchesInView = true
         textView.addGestureRecognizer(tapGesture)
 
-        // MARK: Formatting Shortcut Bar (Bear/Notability pattern)
-        // Replaces the plain "Done" toolbar with a 7-button formatting bar.
-        let bar = UIInputView(frame: CGRect(x: 0, y: 0, width: UIScreen.main.bounds.width, height: 44),
+        // MARK: Formatting Shortcut Bar — Phase 4E-2 expanded (Bear/Notability pattern)
+        // Replaces the plain "Done" toolbar with a 10-button formatting bar.
+        let bar = UIInputView(frame: CGRect(x: 0, y: 0, width: UIScreen.main.bounds.width, height: 48),
                               inputViewStyle: .keyboard)
-        bar.backgroundColor = UIColor.systemBackground.withAlphaComponent(0.92)
+        // Glassmorphic blur background
+        let blurEffect = UIBlurEffect(style: .systemChromeMaterial)
+        let blurView  = UIVisualEffectView(effect: blurEffect)
+        blurView.frame = bar.bounds
+        blurView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        bar.addSubview(blurView)
 
         let items: [(title: String, insert: String, after: String?)] = [
-            ("B",   "**",    "**"),
-            ("I",   "_",     "_"),
-            ("H1",  "# ",    nil),
-            ("H2",  "## ",   nil),
-            ("[[",  "[[",    "]]"),
-            ("#",   "#",     nil),
-            (">",   "> ",    nil),
+            // Text formatting
+            ("B",       "**",     "**"),
+            ("I",       "_",      "_"),
+            // Structural
+            ("H1",      "# ",     nil),
+            ("H2",      "## ",    nil),
+            // Rich elements — Phase 4E-2 additions
+            ("≡ List",  "- ",     nil),    // bullet list item
+            ("`Code`",  "`",      "`"),     // inline code
+            ("—— Rule", "---\n",  nil),    // horizontal rule
+            // Zettelkasten linking
+            ("[[",      "[[",     "]]"),
+            ("#",       "#",      nil),
+            ("> Quote", "> ",     nil),
         ]
 
         let stack = UIStackView()
@@ -905,11 +917,22 @@ struct MarkdownTextEditor: UIViewRepresentable {
         doneBtn.addTarget(context.coordinator, action: #selector(Coordinator.doneButtonTapped), for: .touchUpInside)
         stack.addArrangedSubview(doneBtn)
 
-        bar.addSubview(stack)
+        // Phase 4E-2: wrap in UIScrollView so all 10 buttons fit on any screen width
+        let scrollView = UIScrollView()
+        scrollView.showsHorizontalScrollIndicator = false
+        scrollView.alwaysBounceHorizontal = true
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        bar.addSubview(scrollView)
+        scrollView.addSubview(stack)
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: bar.leadingAnchor, constant: 12),
-            stack.trailingAnchor.constraint(equalTo: bar.trailingAnchor, constant: -12),
-            stack.centerYAnchor.constraint(equalTo: bar.centerYAnchor)
+            scrollView.leadingAnchor.constraint(equalTo: bar.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: bar.trailingAnchor),
+            scrollView.topAnchor.constraint(equalTo: bar.topAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: bar.bottomAnchor),
+            stack.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor, constant: 8),
+            stack.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor, constant: -8),
+            stack.centerYAnchor.constraint(equalTo: scrollView.centerYAnchor),
+            stack.heightAnchor.constraint(equalTo: scrollView.heightAnchor)
         ])
         textView.inputAccessoryView = bar
 

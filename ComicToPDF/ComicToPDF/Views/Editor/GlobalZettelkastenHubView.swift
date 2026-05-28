@@ -48,7 +48,10 @@ struct GlobalZettelkastenHubView: View {
     @State private var showingDailyReview = false
     @State private var showingMarkdownExporter = false
     @State private var markdownExportURL: URL? = nil
-    
+
+    // Phase 4B: iPad NavigationSplitView sidebar
+    @Environment(\.horizontalSizeClass) private var hSizeClass
+    @State private var sidebarVisibility: NavigationSplitViewVisibility = .automatic
     // ── PERF C1: Single rebuild function — called via .task(id: cacheInputKey) ─
     // Runs on a background priority task so the main thread stays free.
     private func rebuildCache() {
@@ -126,6 +129,122 @@ struct GlobalZettelkastenHubView: View {
     }
     
     var body: some View {
+        if hSizeClass == .regular {
+            // ── iPad: NavigationSplitView with sidebar inspector ──────────────
+            NavigationSplitView(columnVisibility: $sidebarVisibility) {
+                iPadSidebar
+                    .navigationTitle("Zettelkasten")
+                    .navigationBarTitleDisplayMode(.inline)
+            } detail: {
+                hubContent
+            }
+        } else {
+            // ── iPhone: original ZStack layout ───────────────────────────────
+            hubContent
+        }
+    }
+
+    // MARK: - iPad Sidebar
+    @ViewBuilder
+    private var iPadSidebar: some View {
+        List {
+            // ── Stats card ────────────────────────────────────────────────
+            Section {
+                HStack(spacing: 16) {
+                    statBadge(value: allAnnotations.count, label: "Highlights", icon: "highlighter", color: Color(hex: "#F5A623"))
+                    Divider().frame(height: 44)
+                    statBadge(value: cachedTotalBookCount, label: "Books", icon: "book.closed.fill", color: Color(hex: "#30D5C8"))
+                    Divider().frame(height: 44)
+                    statBadge(value: cachedDueCount, label: "Due", icon: "clock.badge.exclamationmark", color: Color(hex: "#BF5AF2"))
+                }
+                .padding(.vertical, 4)
+            }
+
+            // ── View mode ─────────────────────────────────────────────────
+            Section("View") {
+                viewModeSidebarRow(.list,  label: "List",       icon: "list.bullet")
+                viewModeSidebarRow(.board, label: "Zettel Board", icon: "square.grid.2x2")
+                viewModeSidebarRow(.map,   label: "Mind Map",   icon: "point.3.connected.trianglepath.dotted")
+            }
+
+            // ── Filter ────────────────────────────────────────────────────
+            Section("Filter") {
+                filterSidebarRow(.all,            label: "All Annotations",  icon: "note.text")
+                filterSidebarRow(.annotated,      label: "Annotated Only",   icon: "text.bubble.fill")
+                filterSidebarRow(.highlightsOnly, label: "Highlights Only",  icon: "highlighter")
+            }
+
+            // ── Sort ──────────────────────────────────────────────────────
+            Section("Sort By") {
+                ForEach(ZettelSortMode.allCases, id: \.self) { mode in
+                    Button {
+                        sortMode = mode
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    } label: {
+                        Label(mode.rawValue, systemImage: sortMode == mode ? "checkmark" : "")
+                            .foregroundStyle(sortMode == mode ? Color.inkAccentKnowledge : Color.inkTextPrimary)
+                    }
+                }
+            }
+
+            // ── Daily Review shortcut ─────────────────────────────────────
+            if cachedDueCount > 0 {
+                Section {
+                    Button {
+                        showingDailyReview = true
+                    } label: {
+                        Label("\(cachedDueCount) Due for Review", systemImage: "clock.badge.exclamationmark.fill")
+                            .foregroundStyle(Color(hex: "#BF5AF2"))
+                    }
+                }
+            }
+        }
+        .listStyle(.sidebar)
+    }
+
+    @ViewBuilder
+    private func statBadge(value: Int, label: String, icon: String, color: Color) -> some View {
+        VStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(color)
+            Text("\(value)")
+                .font(.system(size: 18, weight: .bold, design: .rounded))
+                .foregroundStyle(Color.inkTextPrimary)
+            Text(label)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(Color.inkTextSecondary)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    @ViewBuilder
+    private func viewModeSidebarRow(_ mode: ZettelViewMode, label: String, icon: String) -> some View {
+        Button {
+            withAnimation(.spring(response: 0.28, dampingFraction: 0.78)) { viewMode = mode }
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        } label: {
+            Label(label, systemImage: icon)
+                .foregroundStyle(viewMode == mode ? Color.inkAccentKnowledge : Color.inkTextPrimary)
+                .fontWeight(viewMode == mode ? .semibold : .regular)
+        }
+    }
+
+    @ViewBuilder
+    private func filterSidebarRow(_ mode: ZettelFilterMode, label: String, icon: String) -> some View {
+        Button {
+            filterMode = mode
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        } label: {
+            Label(label, systemImage: icon)
+                .foregroundStyle(filterMode == mode ? Color.inkAccentKnowledge : Color.inkTextPrimary)
+                .fontWeight(filterMode == mode ? .semibold : .regular)
+        }
+    }
+
+    // MARK: - Main Content (shared by both iPhone and iPad)
+    @ViewBuilder
+    private var hubContent: some View {
         ZStack {
             Color.clear.ignoresSafeArea()
 

@@ -422,7 +422,10 @@ struct ComicReaderEngine: View {
             prefetchLimit: AppSettingsManager.shared.conversionSettings.readingPrefetchLimit
         ))
         let isMangaComic = pdf.metadata.isManga == true || pdf.contentType == .manga
-        self._readingMode = State(initialValue: isMangaComic ? .mangaRTL : .pageHorizontal)
+        let isiPad = UIDevice.current.userInterfaceIdiom == .pad
+        // Phase 4B: iPad defaults to two-page spread; manga always opens RTL regardless of device.
+        let defaultMode: ComicReadingMode = isMangaComic ? .mangaRTL : (isiPad ? .pageTwoUp : .pageHorizontal)
+        self._readingMode = State(initialValue: defaultMode)
     }
 
     var body: some View {

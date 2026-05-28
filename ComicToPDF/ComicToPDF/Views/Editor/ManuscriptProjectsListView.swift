@@ -10,6 +10,8 @@ struct ManuscriptProjectsListView: View {
     @State private var newProjectGoal = ""
     @State private var glowPulse = false
     @State private var projectToDelete: SDManuscriptProject? = nil
+    // Phase 4E-3: Template gallery
+    @State private var showingTemplateGallery = false
 
     var body: some View {
         ZStack {
@@ -40,6 +42,15 @@ struct ManuscriptProjectsListView: View {
         }
         .navigationTitle("Writer's Studio")
         .toolbar {
+            // Phase 4E-3: Template gallery button
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button {
+                    showingTemplateGallery = true
+                } label: {
+                    Label("Templates", systemImage: "books.vertical.fill")
+                        .foregroundStyle(Color.inkAccentKnowledge)
+                }
+            }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button {
                     showingNewProjectDialog = true
@@ -48,6 +59,12 @@ struct ManuscriptProjectsListView: View {
                         .fontWeight(.semibold)
                         .foregroundStyle(Color.inkAccentKnowledge)
                 }
+            }
+        }
+        // Phase 4E-3: Template gallery sheet
+        .sheet(isPresented: $showingTemplateGallery) {
+            TemplateGallerySheet { template in
+                createFromTemplate(template)
             }
         }
         .alert("Delete Project?", isPresented: Binding(
@@ -184,6 +201,25 @@ struct ManuscriptProjectsListView: View {
         newProjectTitle = ""
         newProjectGoal = ""
     }
+
+    // Phase 4E-3: Create a project from a template
+    private func createFromTemplate(_ template: WritingTemplate) {
+        let project = SDManuscriptProject(
+            title: template.defaultTitle,
+            targetWordCount: template.targetWordCount
+        )
+        modelContext.insert(project)
+        // Seed the first chapter with a scaffold outline
+        let chapter = SDManuscriptDocument(
+            title: template.firstChapterTitle,
+            contentMarkdown: template.scaffoldMarkdown,
+            orderIndex: 0
+        )
+        chapter.project = project
+        modelContext.insert(chapter)
+        try? modelContext.save()
+        showingTemplateGallery = false
+    }
 }
 
 // MARK: - Project Row
@@ -245,5 +281,328 @@ struct ProjectRowView: View {
         }
         .padding(InkSpacing.cardPadding)
         .inkCard()
+    }
+}
+
+// MARK: - Phase 4E-3: Writing Templates
+
+struct WritingTemplate: Identifiable {
+    let id: String
+    let name: String
+    let icon: String
+    let accent: Color
+    let description: String
+    let defaultTitle: String
+    let targetWordCount: Int
+    let firstChapterTitle: String
+    let scaffoldMarkdown: String
+
+    static let all: [WritingTemplate] = [
+        WritingTemplate(
+            id: "novel",
+            name: "Novel",
+            icon: "book.closed.fill",
+            accent: Color(hex: "#F5A623"),
+            description: "Long-form fiction with chapters, character arcs, and world-building.",
+            defaultTitle: "My Novel",
+            targetWordCount: 80000,
+            firstChapterTitle: "Chapter 1 — The Beginning",
+            scaffoldMarkdown: """
+# Chapter 1 — The Beginning
+
+## Scene Setup
+_Where are we? Establish time, place, and mood._
+
+## Protagonist Introduction
+_Who do we meet first? What do they want?_
+
+## Inciting Incident
+_What disrupts the ordinary world?_
+
+---
+> **Note:** Keep your first chapter under 4,000 words. Hook the reader in the first paragraph.
+"""
+        ),
+        WritingTemplate(
+            id: "screenplay",
+            name: "Screenplay",
+            icon: "film.fill",
+            accent: Color(hex: "#30D5C8"),
+            description: "Feature-length or short-film script in standard industry format.",
+            defaultTitle: "My Screenplay",
+            targetWordCount: 25000,
+            firstChapterTitle: "ACT ONE",
+            scaffoldMarkdown: """
+# ACT ONE
+
+## FADE IN:
+
+**EXT. LOCATION — DAY**
+
+_Description of the opening image. Set the tone._
+
+**CHARACTER NAME**
+Dialogue goes here.
+
+---
+
+## STORY BEAT: The Ordinary World
+
+_Establish protagonist's life before everything changes._
+
+## STORY BEAT: The Inciting Incident (p. 10–12)
+
+_Something happens that sets the story in motion._
+
+## STORY BEAT: Plot Point I (p. 25–30)
+
+_The protagonist crosses the threshold. No going back._
+
+## FADE OUT.
+"""
+        ),
+        WritingTemplate(
+            id: "comic_script",
+            name: "Comic Script",
+            icon: "character.bubble.fill",
+            accent: Color(hex: "#BF5AF2"),
+            description: "Panel-by-panel script for sequential art with dialogue and action lines.",
+            defaultTitle: "My Comic Script",
+            targetWordCount: 8000,
+            firstChapterTitle: "Issue #1",
+            scaffoldMarkdown: """
+# Issue #1 — Title Here
+
+**PAGES: 22  |  PANELS PER PAGE: 3–6**
+
+---
+
+## PAGE 1
+
+**PANEL 1**
+_Wide establishing shot. Describe setting and mood._
+*(No dialogue — let the art breathe.)*
+
+**PANEL 2**
+_Medium shot. Introduce protagonist._
+
+**CHARACTER:** Dialogue here.
+
+**PANEL 3**
+_Close-up. React to something off-panel._
+
+---
+
+## PAGE 2
+
+**PANEL 1**
+_Action beat. Describe movement clearly._
+
+**CAPTION:** Narration or inner monologue.
+
+---
+
+> **Script tip:** One page of script ≈ one page of art. Keep panel descriptions concise — artists need creative room.
+"""
+        ),
+        WritingTemplate(
+            id: "essay",
+            name: "Essay",
+            icon: "doc.text.fill",
+            accent: Color(hex: "#34C759"),
+            description: "Argumentative or analytical essay with thesis, evidence, and conclusion.",
+            defaultTitle: "My Essay",
+            targetWordCount: 3000,
+            firstChapterTitle: "Draft",
+            scaffoldMarkdown: """
+# Essay Title
+
+## Introduction
+_Hook the reader. State your thesis clearly in the final sentence._
+
+**Thesis:** _Your central argument goes here._
+
+---
+
+## Body — Point 1
+_State the point. Provide evidence. Explain relevance._
+
+### Evidence
+> "Quote or data source here." — Author, Year
+
+### Analysis
+_How does this support your thesis?_
+
+---
+
+## Body — Point 2
+_State the point. Provide evidence. Explain relevance._
+
+---
+
+## Body — Point 3 (Counter-argument)
+_Acknowledge opposing view. Rebut it._
+
+---
+
+## Conclusion
+_Restate thesis in light of evidence. Broader implications._
+"""
+        ),
+        WritingTemplate(
+            id: "research_notes",
+            name: "Research Notes",
+            icon: "magnifyingglass",
+            accent: Color(hex: "#FF9F0A"),
+            description: "Structured research document with source tracking and key findings.",
+            defaultTitle: "Research: [Topic]",
+            targetWordCount: 5000,
+            firstChapterTitle: "Key Findings",
+            scaffoldMarkdown: """
+# Research: [Topic]
+
+**Date started:** [Date]
+**Status:** In progress
+
+---
+
+## Research Question
+_What are you trying to find out?_
+
+---
+
+## Key Sources
+
+| # | Source | Type | Relevance |
+|---|--------|------|-----------|
+| 1 |        | Book |           |
+| 2 |        | Paper|           |
+
+---
+
+## Key Findings
+
+### Finding 1
+_Summary of what you found._
+- Evidence:
+- Implication:
+
+### Finding 2
+_Summary of what you found._
+
+---
+
+## Synthesis
+_How do the findings connect? What patterns emerge?_
+
+---
+
+## Open Questions
+- [ ] Question 1
+- [ ] Question 2
+
+---
+
+## Bibliography
+_Full citations in your preferred format._
+"""
+        ),
+    ]
+}
+
+// MARK: - Template Gallery Sheet UI
+
+struct TemplateGallerySheet: View {
+    let onSelect: (WritingTemplate) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var hovered: String? = nil
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 160), spacing: 16)],
+                    spacing: 16
+                ) {
+                    ForEach(WritingTemplate.all) { template in
+                        TemplateCard(template: template, isHovered: hovered == template.id)
+                            .onTapGesture {
+                                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                                onSelect(template)
+                            }
+                            .onHover { over in hovered = over ? template.id : nil }
+                    }
+                }
+                .padding(20)
+            }
+            .background(Color.inkBackground.ignoresSafeArea())
+            .navigationTitle("Choose a Template")
+            .navigationBarTitleDisplayMode(.large)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+        }
+    }
+}
+
+struct TemplateCard: View {
+    let template: WritingTemplate
+    let isHovered: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Icon badge
+            ZStack {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(template.accent.opacity(0.15))
+                    .frame(width: 52, height: 52)
+                Image(systemName: template.icon)
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(template.accent)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(template.name)
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(Color.inkTextPrimary)
+                Text(template.description)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.inkTextSecondary)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 0)
+
+            HStack {
+                Text("\(template.targetWordCount / 1000)k words")
+                    .font(.caption2.bold())
+                    .foregroundStyle(template.accent)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(template.accent.opacity(0.12), in: Capsule())
+                Spacer()
+                Image(systemName: "arrow.right")
+                    .font(.caption.bold())
+                    .foregroundStyle(template.accent)
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.inkSurfaceRaised)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(
+                    isHovered ? template.accent.opacity(0.5) : Color.inkBorderSubtle,
+                    lineWidth: isHovered ? 1.5 : 0.5
+                )
+        )
+        .shadow(color: isHovered ? template.accent.opacity(0.15) : .black.opacity(0.04),
+                radius: isHovered ? 12 : 4, y: isHovered ? 4 : 2)
+        .scaleEffect(isHovered ? 1.02 : 1.0)
+        .animation(.spring(response: 0.25, dampingFraction: 0.75), value: isHovered)
     }
 }

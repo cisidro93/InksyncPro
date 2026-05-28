@@ -100,7 +100,8 @@ final class ZettelkastenGraphEngine: NSObject, ObservableObject {
         for pdf in pdfs { pdfNames[pdf.id] = pdf.name }
         
         // Filter annotations based on search and basic visibility
-        var targetAnnotations = annotations.filter { $0.kindRaw == "highlight" }
+        // Phase 4D-2: include both highlight AND note kinds so backlink targets are always resolvable
+        var targetAnnotations = annotations.filter { $0.kindRaw == "highlight" || $0.kindRaw == "note" }
         
         if !searchText.isEmpty {
             targetAnnotations = targetAnnotations.filter {
@@ -239,6 +240,68 @@ final class ZettelkastenGraphEngine: NSObject, ObservableObject {
         startSimulation()
     }
 
+    // MARK: - Phase 4D-3: Reading Session Auto-Nodes
+
+    /// Adds reading-session nodes (≥5 min) for each book that has qualifying sessions.
+    /// Call after buildGraph so book nodes already exist and can be connected.
+    func buildSessionNodes(sessions: [ReadingProgress], pdfs: [SDConvertedPDF]) {
+        let minSeconds: Double = 300 // 5 minutes
+        let screenCenter = CGPoint(
+            x: UIScreen.main.bounds.width / 2,
+            y: UIScreen.main.bounds.height / 2
+        )
+        let pdfNames = Dictionary(uniqueKeysWithValues: pdfs.map { ($0.id, $0.name) })
+        let formatter = DateFormatter()
+        formatter.dateStyle = .short
+        formatter.timeStyle = .none
+
+        var newNodes = Dictionary(uniqueKeysWithValues: nodes.map { ($0.id, $0) })
+        var newEdges = edges
+        var edgeIDSet = Set(edges.map { $0.id })
+
+        for progress in sessions {
+            guard let events = progress.sessionEvents else { continue }
+            let qualifyingEvents = events.filter { $0.secondsSpent >= minSeconds }
+            guard !qualifyingEvents.isEmpty else { continue }
+
+            let bookID = progress.pdfID.uuidString
+            let bookName = pdfNames[progress.pdfID] ?? "Book"
+
+            for event in qualifyingEvents {
+                let sessionID = "session_\(bookID)_\(event.date.timeIntervalSince1970)"
+                guard newNodes[sessionID] == nil else { continue }
+
+                let angle = Double.random(in: 0..<2 * .pi)
+                let radius = Double.random(in: 80...180)
+                let pos = CGPoint(x: screenCenter.x + radius * cos(angle),
+                                  y: screenCenter.y + radius * sin(angle))
+
+                let mins = Int(event.secondsSpent / 60)
+                let label = "📖 \(mins)min · \(formatter.string(from: event.date))"
+
+                newNodes[sessionID] = GraphNode(
+                    id: sessionID,
+                    position: pos,
+                    title: label,
+                    nodeType: .book,
+                    bookTitle: bookName
+                )
+
+                // Connect session node → book node (dashed visual cue handled by edgeID prefix)
+                let edgeID = "session_edge_\(sessionID)"
+                if !edgeIDSet.contains(edgeID), newNodes[bookID] != nil {
+                    edgeIDSet.insert(edgeID)
+                    newEdges.append(GraphEdge(id: edgeID, sourceID: sessionID, targetID: bookID))
+                }
+            }
+        }
+
+        self.nodes = Array(newNodes.values)
+        self.edges = newEdges
+        rebuildNodeIndex()
+        startSimulation()
+    }
+
     // MARK: Simulation Loop
 
     func startSimulation() {
@@ -349,6 +412,7 @@ struct ZettelkastenGraphView: View {
     @State private var showBooks = true
     @State private var showTags = true
     @State private var showNotes = true
+    @State private var showSessions = false  // Phase 4D-3: reading-session auto-nodes
     @State private var searchText = ""
 
     // Selection and Link drawing states
@@ -364,6 +428,12 @@ struct ZettelkastenGraphView: View {
 
     // Sidebar Note editing state
     @State private var editingNoteText = ""
+
+    // Phase 4D-4: In-canvas node creation (long-press → ghost → confirm title)
+    @State private var ghostNodePosition: CGPoint? = nil
+    @State private var showingNodeCreationAlert = false
+    @State private var pendingNodeTitle = ""
+    @State private var ghostPulse = false
 
     // MARK: Theme styles
 
@@ -385,9 +455,10 @@ struct ZettelkastenGraphView: View {
         colorScheme == .dark ? Color.white.opacity(0.7) : Color.black.opacity(0.7)
     }
 
-    private func bookColor(_ alpha: CGFloat) -> Color { Color.inkAccentKnowledge.opacity(alpha) }
-    private func tagColor(_ alpha: CGFloat) -> Color { Color.orange.opacity(alpha) }
-    private func noteColor(_ alpha: CGFloat) -> Color { Color.green.opacity(alpha) }
+    // Phase 4D-1: Curated semantic node colour palette
+    private func bookColor(_ alpha: CGFloat) -> Color { Color(hex: "#F5A623").opacity(alpha) } // Amber
+    private func tagColor(_ alpha: CGFloat) -> Color  { Color(hex: "#BF5AF2").opacity(alpha) } // Violet
+    private func noteColor(_ alpha: CGFloat) -> Color { Color(hex: "#30D5C8").opacity(alpha) } // Teal
 
     private func nodeFill(for node: GraphNode, alpha: CGFloat) -> Color {
         switch node.nodeType {
@@ -535,6 +606,28 @@ struct ZettelkastenGraphView: View {
             .ignoresSafeArea()
             // Gestures
             .gesture(
+                LongPressGesture(minimumDuration: 0.5)
+                    .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .local))
+                    .onEnded { value in
+                        // Phase 4D-4: Only trigger on empty canvas (no node hit)
+                        if case .second(true, let drag?) = value {
+                            let rawPos = drag.location
+                            let canvasPos = applyInverseCamera(rawPos)
+                            let hitNode = engine.nodes.first {
+                                distance(from: $0.position, to: canvasPos) < $0.hitRadius
+                            }
+                            guard hitNode == nil else { return }
+                            UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+                            ghostNodePosition = canvasPos
+                            ghostPulse = false
+                            withAnimation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true)) {
+                                ghostPulse = true
+                            }
+                            showingNodeCreationAlert = true
+                        }
+                    }
+            )
+            .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { val in
                         let touchPos = applyInverseCamera(val.location)
@@ -628,10 +721,27 @@ struct ZettelkastenGraphView: View {
         }
         .onAppear { rebuildGraph() }
         .onDisappear { engine.stopSimulation() }
-        .onChange(of: searchText) { _, _ in rebuildGraph() }
-        .onChange(of: showNotes) { _, _ in rebuildGraph() }
-        .onChange(of: showTags) { _, _ in rebuildGraph() }
-        .onChange(of: showBooks) { _, _ in rebuildGraph() }
+        .onChange(of: searchText)  { _, _ in rebuildGraph() }
+        .onChange(of: showNotes)   { _, _ in rebuildGraph() }
+        .onChange(of: showTags)    { _, _ in rebuildGraph() }
+        .onChange(of: showBooks)   { _, _ in rebuildGraph() }
+        .onChange(of: showSessions){ _, _ in rebuildGraph() }  // Phase 4D-3
+        // Phase 4D-4: node creation alert
+        .alert("New Note Node", isPresented: $showingNodeCreationAlert) {
+            TextField("Node title", text: $pendingNodeTitle)
+                .autocorrectionDisabled(true)
+            Button("Create") {
+                createManualNode(title: pendingNodeTitle, at: ghostNodePosition)
+                pendingNodeTitle = ""
+                withAnimation(.easeOut(duration: 0.2)) { ghostNodePosition = nil }
+            }
+            Button("Cancel", role: .cancel) {
+                pendingNodeTitle = ""
+                withAnimation(.easeOut(duration: 0.2)) { ghostNodePosition = nil }
+            }
+        } message: {
+            Text("This creates a standalone note node in your Zettelkasten graph.")
+        }
         .onChange(of: selectedNodeID) { _, newID in
             if let newID = newID,
                let node = engine.nodes.first(where: { $0.id == newID }),
@@ -680,12 +790,30 @@ struct ZettelkastenGraphView: View {
             }
             .padding(.top, 16)
             .padding(.leading, 16)
+            // Phase 4D-4: Ghost node overlay — pulsing ring shown while naming a new node
+            if let ghostPos = ghostNodePosition {
+                let screenPos = applyCamera(ghostPos)
+                ZStack {
+                    Circle()
+                        .stroke(noteColor(0.6), lineWidth: 2)
+                        .frame(width: ghostPulse ? 44 : 30, height: ghostPulse ? 44 : 30)
+                        .opacity(ghostPulse ? 0.3 : 0.7)
+                    Circle()
+                        .fill(noteColor(0.85))
+                        .frame(width: 20, height: 20)
+                        .overlay(Image(systemName: "plus").font(.system(size: 10, weight: .bold)).foregroundStyle(.white))
+                }
+                .position(screenPos)
+                .allowsHitTesting(false)
+            }
 
             // Filtering capsules
             HStack(spacing: 8) {
                 filterBadge(isOn: $showNotes, label: "Notes", color: noteColor(0.9))
                 filterBadge(isOn: $showBooks, label: "Books", color: bookColor(0.9))
                 filterBadge(isOn: $showTags, label: "Tags", color: tagColor(0.9))
+                // Phase 4D-3: sessions toggle
+                filterBadge(isOn: $showSessions, label: "Sessions", color: Color(hex: "#FF9F0A").opacity(0.9))
             }
             .padding(.leading, 16)
 
@@ -1021,6 +1149,11 @@ struct ZettelkastenGraphView: View {
             showNotes: showNotes,
             searchText: searchText
         )
+        // Phase 4D-3: inject session nodes after the base graph is built
+        if showSessions {
+            let sessions = ReaderProgressTracker.shared.allProgress
+            engine.buildSessionNodes(sessions: sessions, pdfs: pdfs)
+        }
     }
 
     // MARK: - Helpers
@@ -1035,8 +1168,55 @@ struct ZettelkastenGraphView: View {
         return p
     }
 
+    /// Forward transform: canvas coordinates → screen coordinates.
+    /// Inverse of applyInverseCamera — used to position the ghost node overlay.
+    private func applyCamera(_ point: CGPoint) -> CGPoint {
+        let size = canvasSize.width > 0 ? canvasSize : UIScreen.main.bounds.size
+        var p = point
+        p.x -= size.width / 2; p.y -= size.height / 2
+        p.x += engine.offset.width; p.y += engine.offset.height
+        p.x *= engine.scale;   p.y *= engine.scale
+        p.x += size.width / 2;  p.y += size.height / 2
+        return p
+    }
+
     private func distance(from p1: CGPoint, to p2: CGPoint) -> CGFloat {
         let dx = p1.x - p2.x; let dy = p1.y - p2.y
         return sqrt(dx * dx + dy * dy)
+    }
+
+    // Phase 4D-4: Create a freeform note annotation at the given canvas position.
+    // Uses the first available PDF ID (or a stable sentinel UUID) so the node
+    // appears in the graph immediately after the next rebuildGraph() call.
+    private func createManualNode(title: String, at canvasPos: CGPoint?) {
+        guard !title.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+
+        let sentinelPDFID: UUID = pdfs.first?.id ?? UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+
+        // Build the lightweight DTO then promote it to SwiftData model
+        var dto = Annotation(
+            id: UUID(),
+            pdfID: sentinelPDFID,
+            pageIndex: 0,
+            chapterTitle: nil,
+            kind: .note,
+            createdAt: Date(),
+            modifiedAt: Date(),
+            colorHex: "#30D5C8",   // Teal — note colour
+            selectedText: title,
+            noteText: nil,
+            tags: ["zettel"],
+            bounds: nil
+        )
+        dto.linkedAnnotationIDs = []
+
+        let sd = SDAnnotation(from: dto)
+        modelContext.insert(sd)
+        try? modelContext.save()
+
+        // Rebuild graph so the new node appears; optionally seed it near the ghost position
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            rebuildGraph()
+        }
     }
 }
