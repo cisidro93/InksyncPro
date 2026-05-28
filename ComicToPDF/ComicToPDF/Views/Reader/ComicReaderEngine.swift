@@ -651,8 +651,11 @@ struct ComicReaderEngine: View {
         // Once the archive finishes loading, honour the current orientation.
         // syncReadingModeToOrientation() is a no-op while isLoading == true,
         // so this catch-up call is needed for comics opened in landscape.
+        // IMPORTANT: Only fire in landscape — in portrait the user's saved
+        // readingMode preference (e.g. pageTwoUp restored from progress) is
+        // authoritative and must not be overridden.
         .onChange(of: cache.isLoading) { _, isLoading in
-            guard !isLoading else { return }
+            guard !isLoading, UIDevice.current.orientation.isLandscape else { return }
             syncReadingModeToOrientation()
         }
 

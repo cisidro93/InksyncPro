@@ -75,7 +75,7 @@ class PhysicalFileSystemRouter {
                         kCGImageSourceCreateThumbnailFromImageAlways: true,
                         kCGImageSourceShouldCacheImmediately: true,
                         kCGImageSourceCreateThumbnailWithTransform: true,
-                        kCGImageSourceThumbnailMaxPixelSize: 360
+                        kCGImageSourceThumbnailMaxPixelSize: 200
                     ] as CFDictionary
                     
                     if let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, downsampleOpts) {
@@ -96,7 +96,7 @@ class PhysicalFileSystemRouter {
         try? data.write(to: coverURL)
         
         if let image = UIImage(data: data) {
-            let thumbnail = image.preparingThumbnail(of: CGSize(width: 240, height: 360)) ?? image
+            let thumbnail = image.preparingThumbnail(of: CGSize(width: 160, height: 240)) ?? image
             let key = pdf.id.uuidString as NSString
             // ✅ PERF: Cost annotation makes totalCostLimit enforcement accurate
             let cost = thumbnail.jpegData(compressionQuality: 0.8)?.count ?? 0

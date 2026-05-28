@@ -44,6 +44,7 @@ struct InkTabBar: View {
         InkTabItem(tag: 1, label: "Workspace",  icon: "briefcase",                  activeIcon: "briefcase.fill"),
         InkTabItem(tag: 2, label: "Studio",     icon: "pencil.and.list.clipboard",  activeIcon: "pencil.and.list.clipboard"),
         InkTabItem(tag: 3, label: "Devices",    icon: "ipad.and.iphone",            activeIcon: "ipad.and.iphone.fill"),
+        InkTabItem(tag: 4, label: "Universe",   icon: "point.3.connected.trianglepath.dotted", activeIcon: "point.3.connected.trianglepath.dotted.fill"),
     ]
 
 

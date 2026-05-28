@@ -3,6 +3,7 @@ import SwiftUI
 struct ReadNowTabView: View {
     @EnvironmentObject var conversionManager: ConversionManager
     @ObservedObject private var tracker = ReaderProgressTracker.shared
+    @StateObject private var velocityVM = VelocityViewModel()
 
     @State private var pdfToRead: ConvertedPDF?
 
@@ -75,12 +76,43 @@ struct ReadNowTabView: View {
                                             Button {
                                                 pdfToRead = pdf
                                             } label: {
-                                                ReadNowCard(pdf: pdf)
+                                                ReadNowCard(
+                                                    pdf: pdf,
+                                                    forecast: velocityVM.forecast(for: pdf.id)
+                                                )
                                             }
                                             .buttonStyle(CellButtonStyle())
                                         }
                                     }
                                     .padding(.horizontal, 16)
+                                }
+
+                                // ── Velocity stats footer ──────────────────────
+                                if let report = velocityVM.report, report.global.pagesPerDay > 0 {
+                                    HStack(spacing: 20) {
+                                        velocityPill(
+                                            icon: "gauge.medium",
+                                            value: String(format: "%.0f", report.global.pagesPerDay),
+                                            label: "pages/day",
+                                            color: Theme.blue
+                                        )
+                                        if let days = report.global.projectedLibraryFinishDays, days > 0 {
+                                            velocityPill(
+                                                icon: "calendar.badge.clock",
+                                                value: days < 365 ? "\(days)d" : "\(days/365)y",
+                                                label: "to clear queue",
+                                                color: Theme.orange
+                                            )
+                                        }
+                                        velocityPill(
+                                            icon: "bolt.fill",
+                                            value: String(format: "%.0f", report.global.pagesPerSession),
+                                            label: "pages/session",
+                                            color: .purple
+                                        )
+                                    }
+                                    .padding(.horizontal, 16)
+                                    .padding(.top, 4)
                                 }
                             }
                         }
@@ -117,6 +149,12 @@ struct ReadNowTabView: View {
             .navigationBarTitleDisplayMode(.large)
             .fullScreenCover(item: $pdfToRead) { pdf in
                 UnifiedReaderView(pdf: pdf)
+            }
+            .onAppear {
+                velocityVM.refresh(pdfs: conversionManager.convertedPDFs, tracker: tracker)
+            }
+            .onChange(of: conversionManager.convertedPDFs.count) { _, _ in
+                velocityVM.refresh(pdfs: conversionManager.convertedPDFs, tracker: tracker)
             }
         }
     }
@@ -184,11 +222,32 @@ struct ReadNowTabView: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 12)
     }
+
+    // MARK: - Velocity Pill Helper
+    private func velocityPill(icon: String, value: String, label: String, color: Color) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 11, weight: .bold))
+                .foregroundColor(color)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(value)
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundColor(Theme.text)
+                Text(label)
+                    .font(.system(size: 10))
+                    .foregroundColor(Theme.textSecondary)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(.ultraThinMaterial, in: Capsule())
+    }
 }
 
 // MARK: - Large Continue Reading Card (Panels / Netflix style)
 struct ReadNowCard: View {
     let pdf: ConvertedPDF
+    var forecast: VelocityReport.BookForecast? = nil
     @EnvironmentObject var conversionManager: ConversionManager
     @ObservedObject private var tracker = ReaderProgressTracker.shared
 
@@ -255,6 +314,28 @@ struct ReadNowCard: View {
         }
         .frame(width: 180, height: 260)
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(alignment: .topTrailing) {
+            // ── "Finish By" velocity badge ─────────────────────
+            if let forecast, forecast.finishDate != nil {
+                HStack(spacing: 3) {
+                    Image(systemName: "clock.badge.checkmark")
+                        .font(.system(size: 9, weight: .bold))
+                    Text(forecast.finishByShortLabel)
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 4)
+                .background(
+                    Capsule()
+                        .fill(forecast.isAheadOfPace
+                            ? Color.green.opacity(0.85)
+                            : Color.orange.opacity(0.85))
+                )
+                .padding(8)
+                .transition(.scale.combined(with: .opacity))
+            }
+        }
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .stroke(Color.white.opacity(0.1), lineWidth: 0.5)

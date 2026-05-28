@@ -108,6 +108,7 @@ struct GoConvertView: View {
     
     @State private var selectedFiles: [URL] = []
     @StateObject private var viewModel = ConversionViewModel()
+    @StateObject private var previewVM = DevicePreviewViewModel()
     @State private var showingActionSheet = false
     @State private var shareItems: [URL] = []
     @State private var showingShareSheet = false
@@ -159,6 +160,19 @@ struct GoConvertView: View {
             VStack(spacing: 24) {
                 dropZone
                 settingsCards
+
+                // ── Live Device Preview Panel ───────────────────────
+                if !selectedFiles.isEmpty {
+                    DevicePreviewPanel(
+                        viewModel: previewVM,
+                        profile: settingsManager.conversionSettings.targetDeviceProfile,
+                        settings: settingsManager.conversionSettings
+                    )
+                    .padding(.horizontal, 16)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    .animation(.spring(response: 0.4, dampingFraction: 0.85), value: selectedFiles.isEmpty)
+                }
+
                 convertButton
                 if !goConvertedFiles.isEmpty { readyToSendPanel }
                 Spacer(minLength: 40)
@@ -225,7 +239,13 @@ struct GoConvertView: View {
                 } else if lowerName.contains("issue") || lowerName.contains("comic") || lowerName.contains("marvel") || lowerName.contains("dc") {
                     viewModel.isMangaMode = false
                 }
+                // ── Trigger device preview on file load ────────────────
+                previewVM.loadSourceImage(from: first)
+                previewVM.requestRender(settings: settingsManager.conversionSettings)
             }
+        }
+        .onChange(of: settingsManager.conversionSettings) { _, newSettings in
+            previewVM.requestRender(settings: newSettings)
         }
     }
 

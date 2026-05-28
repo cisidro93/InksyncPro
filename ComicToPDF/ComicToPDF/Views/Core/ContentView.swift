@@ -307,6 +307,15 @@ struct ContentView: View {
                 // Tab 3: Devices & Settings
                 DevicesView()
                     .tabVisible(selectedTab == 3)
+
+                // Tab 4: Universe Graph
+                NavigationStack {
+                    UniverseGraphView()
+                        .navigationTitle("Comic Universe")
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbar(.hidden, for: .navigationBar)
+                }
+                .tabVisible(selectedTab == 4)
             }
             // Reserve space at the bottom so content scrolls above the pill.
             // Use a smaller inset in landscape where screen height is precious.
@@ -368,6 +377,9 @@ struct ContentView: View {
                     NavigationLink(value: 3) {
                         Label("Devices", systemImage: "ipad.and.iphone")
                     }
+                    NavigationLink(value: 4) {
+                        Label("Universe", systemImage: "point.3.connected.trianglepath.dotted")
+                    }
                 }
                 .navigationTitle("Inksync")
                 
@@ -416,6 +428,8 @@ struct ContentView: View {
                     InkStudioView()
                 } else if selectedTab == 3 {
                     DevicesView()
+                } else if selectedTab == 4 {
+                    UniverseGraphView()
                 }
             }
             // ✅ iPad Settings Inspector

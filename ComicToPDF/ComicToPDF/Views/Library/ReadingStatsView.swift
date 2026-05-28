@@ -5,6 +5,7 @@ struct ReadingStatsView: View {
     @ObservedObject private var tracker = ReaderProgressTracker.shared
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var conversionManager: ConversionManager
+    @StateObject private var velocityVM = VelocityViewModel()
     
     var body: some View {
         NavigationStack {
@@ -159,6 +160,89 @@ struct ReadingStatsView: View {
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
                             .fill(Color(UIColor.secondarySystemGroupedBackground))
                     )
+
+                    // ── Reading Velocity Forecast ────────────────────────────────
+                    if let report = velocityVM.report, !report.books.isEmpty {
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack {
+                                Image(systemName: "gauge.with.needle")
+                                    .font(.system(size: 14, weight: .bold))
+                                    .foregroundColor(Theme.blue)
+                                Text("READING VELOCITY")
+                                    .font(.system(size: 12, weight: .black, design: .rounded))
+                                    .tracking(1.2)
+                                    .foregroundColor(Theme.text)
+                                Spacer()
+                                if report.global.pagesPerDay > 0 {
+                                    Text(String(format: "%.0f p/day", report.global.pagesPerDay))
+                                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                        .foregroundColor(Theme.textSecondary)
+                                }
+                            }
+
+                            // Global pace summary chips
+                            HStack(spacing: 10) {
+                                velocityStatChip(
+                                    value: String(format: "%.0f", report.global.pagesPerDay),
+                                    unit: "pages/day",
+                                    icon: "gauge.medium",
+                                    color: Theme.blue
+                                )
+                                velocityStatChip(
+                                    value: String(format: "%.0f", report.global.pagesPerSession),
+                                    unit: "per session",
+                                    icon: "bolt.fill",
+                                    color: .purple
+                                )
+                                if let days = report.global.projectedLibraryFinishDays, days > 0 {
+                                    velocityStatChip(
+                                        value: days < 365 ? "\(days)d" : "\(days/365)yr",
+                                        unit: "to finish all",
+                                        icon: "calendar.badge.clock",
+                                        color: Theme.orange
+                                    )
+                                }
+                            }
+
+                            Divider().opacity(0.4)
+
+                            // Per-book forecasts (up to 6)
+                            ForEach(report.books.prefix(6)) { book in
+                                HStack(spacing: 12) {
+                                    Circle()
+                                        .fill(book.finishDate != nil ? Theme.blue : Color.gray.opacity(0.4))
+                                        .frame(width: 8, height: 8)
+
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(book.name)
+                                            .font(.system(size: 13, weight: .medium))
+                                            .lineLimit(1)
+                                        Text("\(book.pagesRemaining) pages left")
+                                            .font(.system(size: 10))
+                                            .foregroundColor(.secondary)
+                                    }
+
+                                    Spacer()
+
+                                    Text(book.finishByShortLabel)
+                                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                                        .foregroundColor(.white)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 3)
+                                        .background(
+                                            Capsule().fill(
+                                                book.finishDate != nil ? Theme.blue.opacity(0.85) : Color.gray.opacity(0.5)
+                                            )
+                                        )
+                                }
+                            }
+                        }
+                        .padding()
+                        .background(
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .fill(Color(UIColor.secondarySystemGroupedBackground))
+                        )
+                    }
                     
                     // ── Format Distribution ──────────────────────────────
                     VStack(alignment: .leading, spacing: 12) {
@@ -210,8 +294,36 @@ struct ReadingStatsView: View {
                     Button("Done") { dismiss() }.bold()
                 }
             }
+            .onAppear {
+                velocityVM.refresh(pdfs: conversionManager.convertedPDFs, tracker: tracker)
+            }
         }
     }
+
+    // MARK: - Velocity Stat Chip
+    @ViewBuilder
+    private func velocityStatChip(value: String, unit: String, icon: String, color: Color) -> some View {
+        VStack(spacing: 3) {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(color)
+                Text(value)
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .foregroundColor(Theme.text)
+            }
+            Text(unit)
+                .font(.system(size: 9, weight: .medium))
+                .foregroundColor(Theme.textSecondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(color.opacity(0.1))
+        )
+    }
+
     
     // MARK: - Computed Data
     
