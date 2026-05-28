@@ -235,7 +235,6 @@ struct CorkboardDropDelegate: DropDelegate {
     func performDrop(info: DropInfo) -> Bool {
         guard let dragged = dragged, dragged.id != target.id else { return false }
         
-        let targetIndex = target.orderIndex
         var newDocuments = documents
         
         // Remove dragged

@@ -420,7 +420,7 @@ struct ComicReaderEngine: View {
         let isMangaComic = pdf.metadata.isManga == true || pdf.contentType == .manga
         self._readingMode = State(initialValue: isMangaComic ? .mangaRTL : .pageHorizontal)
     }
-    
+
     var body: some View {
         GeometryReader { geo in
         ZStack {
@@ -443,9 +443,7 @@ struct ComicReaderEngine: View {
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 32)
 
-                    Button {
-                        onDismiss()
-                    } label: {
+                    Button { onDismiss() } label: {
                         Label("Close Reader", systemImage: "xmark.circle.fill")
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundColor(.black)
@@ -479,158 +477,14 @@ struct ComicReaderEngine: View {
                         )
                     }
                 }
-                .ignoresSafeArea()   // ← images fill the full screen edge-to-edge
-            }
-            
-            // Edge Brightness Gesture Zones
-            HStack {
-                Color.clear
-                    .contentShape(Rectangle())
-                    .frame(width: 30)
-                    .gesture(
-                        DragGesture()
-                            .onChanged { value in
-                                let delta = value.translation.height - lastBrightnessDragValue
-                                lastBrightnessDragValue = value.translation.height
-                                UIScreen.main.brightness -= delta * 0.005
-                            }
-                            .onEnded { _ in lastBrightnessDragValue = 0 }
-                    )
-                Spacer()
-                Color.clear
-                    .contentShape(Rectangle())
-                    .frame(width: 30)
-                    .gesture(
-                        DragGesture()
-                            .onChanged { value in
-                                let delta = value.translation.height - lastBrightnessDragValue
-                                lastBrightnessDragValue = value.translation.height
-                                UIScreen.main.brightness -= delta * 0.005
-                            }
-                            .onEnded { _ in lastBrightnessDragValue = 0 }
-                    )
-            }
-            
-            ReaderChrome(
-                title: pdf.name,
-                pageText: "\(currentIndex + 1) / \(cache.pageCount)",
-                isVisible: $chromeVisible,
-                onBack: {
-                    var progress = ReaderProgressTracker.shared.progress(for: pdf.id) ?? ReadingProgress(
-                        pdfID: pdf.id, lastOpenedAt: Date(), currentPageIndex: currentIndex,
-                        currentChapterIndex: nil, currentChapterOffset: nil,
-                        totalPagesRead: 1, completionFraction: Double(currentIndex + 1) / Double(cache.pageCount),
-                        readingSessionDates: [Date()], estimatedMinutesRemaining: nil
-                    )
-                    progress.currentPageIndex = currentIndex
-                    progress.lastOpenedAt = Date()
-                    progress.completionFraction = Double(currentIndex + 1) / Double(cache.pageCount)
-                    progress.prefersMangaMode = (readingMode == .mangaRTL)
-                    progress.colorFilter = activeFilterPreset.rawValue
-                    progress.lastCanonicalLeadIndex = currentIndex
-                    progress.wasInDualPageMode = (readingMode == .pageTwoUp)
-                    if !progress.readingSessionDates.contains(where: { Calendar.current.isDateInToday($0) }) {
-                        progress.readingSessionDates.append(Date())
-                    }
-                    ReaderProgressTracker.shared.update(progress)
-                    onDismiss()
-                },
-                onBookmark: {
-                    let bookmark = Annotation(pdfID: pdf.id, pageIndex: currentIndex, kind: .bookmark, createdAt: Date(), modifiedAt: Date())
-                    AnnotationStore.shared.add(bookmark)
-                },
-                onSettingsToggle: {
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                        showingSettingsHUD.toggle()
-                    }
-                },
-                currentProgress: Binding(
-                    get: { Double(currentIndex) / Double(max(1, cache.pageCount - 1)) },
-                    set: { currentIndex = Int($0 * Double(max(1, cache.pageCount - 1))) }
-                ),
-                totalPages: cache.pageCount,
-                customScrubber: AnyView(
-                    VisualComicScrubber(
-                        currentIndex: $currentIndex,
-                        totalPages: cache.pageCount,
-                        cache: cache,
-                        isMangaMode: readingMode == .mangaRTL
-                    )
-                ),
-                isEnhanced: activeFilterPreset != .original,
-                onEnhanceToggle: { withAnimation(.easeInOut) { showingFilterHUD.toggle() } },
-                isSettingsActive: readingMode != .pageHorizontal,
-                currentModeLabel: readingMode != .pageHorizontal ? readingMode.hudLabel : nil,
-                ambientColor: ambientPageColor,
-                isNarrating: narrationEngine.isNarrating,
-                isNarrationOCRing: narrationEngine.isNarrationOCRing,
-                onNarrationToggle: {
-                    if narrationEngine.isNarrating {
-                        if narrationEngine.isSpeaking {
-                            narrationEngine.togglePause()
-                        } else {
-                            narrationEngine.stop()
-                        }
-                    } else {
-                        narrationEngine.isMangaMode = (readingMode == .mangaRTL)
-                        narrationEngine.startNarrating(from: currentIndex)
-                        GamificationManager.shared.logNarrationUsed()
-                    }
-                }
-            )
-            
-            if showingFilterHUD {
-                VStack {
-                    Spacer()
-                    FilterHUDView(activePreset: $activeFilterPreset, onDismiss: {
-                        withAnimation(.easeInOut) { showingFilterHUD = false }
-                    })
-                    .padding(.bottom, 80)
-                }
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-                .zIndex(10)
+                .ignoresSafeArea()
             }
 
-            // ── Reader Settings HUD (replaces cycling tap) ─────────────────────
-            if showingSettingsHUD {
-                Color.black.opacity(0.4)
-                    .ignoresSafeArea()
-                    .onTapGesture {
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                            showingSettingsHUD = false
-                        }
-                    }
-                    .zIndex(11)
-
-                VStack {
-                    Spacer()
-                    ReaderSettingsHUD(
-                        readingMode: $readingMode,
-                        activeFilterPreset: $activeFilterPreset,
-                        onDismiss: {
-                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                                showingSettingsHUD = false
-                            }
-                        }
-                    )
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 12)
-                }
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-                .zIndex(12)
-            }
-
-            // ── Achievement Toast ──────────────────────────────────────────────
-            if let achievement = gamification.newlyUnlocked {
-                VStack {
-                    AchievementToastView(achievement: achievement)
-                        .padding(.top, 60)
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                        .animation(.spring(response: 0.45, dampingFraction: 0.8), value: gamification.newlyUnlocked?.id)
-                    Spacer()
-                }
-                .zIndex(20)
-            }
+            brightnessZones
+            readerChromeView
+            filterHUDView
+            settingsHUDView
+            achievementToastView
         }
         .onAppear {
             if let saved = ReaderProgressTracker.shared.progress(for: pdf.id) {
@@ -717,11 +571,8 @@ struct ComicReaderEngine: View {
                 conversionManager.convertedPDFs[idx].metadata.isManga = isManga
                 conversionManager.saveLibrary()
             }
-        }
-    } // end GeometryReader body
-}
+    } // end body
 
-    
     var guidedView: some View {
         TabView(selection: $currentIndex) {
             ForEach(0..<cache.pageCount, id: \.self) { index in
@@ -911,6 +762,173 @@ struct ComicReaderEngine: View {
             }
         }
     }
+
+    // MARK: - Extracted sub-views
+
+    /// Left + right brightness drag zones.
+    @ViewBuilder private var brightnessZones: some View {
+        HStack {
+            Color.clear
+                .contentShape(Rectangle())
+                .frame(width: 30)
+                .gesture(
+                    DragGesture()
+                        .onChanged { value in
+                            let delta = value.translation.height - lastBrightnessDragValue
+                            lastBrightnessDragValue = value.translation.height
+                            UIScreen.main.brightness -= delta * 0.005
+                        }
+                        .onEnded { _ in lastBrightnessDragValue = 0 }
+                )
+            Spacer()
+            Color.clear
+                .contentShape(Rectangle())
+                .frame(width: 30)
+                .gesture(
+                    DragGesture()
+                        .onChanged { value in
+                            let delta = value.translation.height - lastBrightnessDragValue
+                            lastBrightnessDragValue = value.translation.height
+                            UIScreen.main.brightness -= delta * 0.005
+                        }
+                        .onEnded { _ in lastBrightnessDragValue = 0 }
+                )
+        }
+    }
+
+    /// Full ReaderChrome view — extracted so the compiler can type-check it independently.
+    @ViewBuilder private var readerChromeView: some View {
+        ReaderChrome(
+            title: pdf.name,
+            pageText: "\(currentIndex + 1) / \(cache.pageCount)",
+            isVisible: $chromeVisible,
+            onBack: saveProgressAndDismiss,
+            onBookmark: {
+                let bookmark = Annotation(pdfID: pdf.id, pageIndex: currentIndex,
+                                          kind: .bookmark, createdAt: Date(), modifiedAt: Date())
+                AnnotationStore.shared.add(bookmark)
+            },
+            onSettingsToggle: {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { showingSettingsHUD.toggle() }
+            },
+            currentProgress: Binding(
+                get: { Double(currentIndex) / Double(max(1, cache.pageCount - 1)) },
+                set: { currentIndex = Int($0 * Double(max(1, cache.pageCount - 1))) }
+            ),
+            totalPages: cache.pageCount,
+            customScrubber: AnyView(
+                VisualComicScrubber(
+                    currentIndex: $currentIndex,
+                    totalPages: cache.pageCount,
+                    cache: cache,
+                    isMangaMode: readingMode == .mangaRTL
+                )
+            ),
+            isEnhanced: activeFilterPreset != .original,
+            onEnhanceToggle: { withAnimation(.easeInOut) { showingFilterHUD.toggle() } },
+            isSettingsActive: readingMode != .pageHorizontal,
+            currentModeLabel: readingMode != .pageHorizontal ? readingMode.hudLabel : nil,
+            ambientColor: ambientPageColor,
+            isNarrating: narrationEngine.isNarrating,
+            isNarrationOCRing: narrationEngine.isNarrationOCRing,
+            onNarrationToggle: handleNarrationToggle
+        )
+    }
+
+    /// Filter preset HUD (eink / vintage / etc).
+    @ViewBuilder private var filterHUDView: some View {
+        if showingFilterHUD {
+            VStack {
+                Spacer()
+                FilterHUDView(activePreset: $activeFilterPreset, onDismiss: {
+                    withAnimation(.easeInOut) { showingFilterHUD = false }
+                })
+                .padding(.bottom, 80)
+            }
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+            .zIndex(10)
+        }
+    }
+
+    /// Reading mode settings sheet (page-turn style, filter, etc).
+    @ViewBuilder private var settingsHUDView: some View {
+        if showingSettingsHUD {
+            Color.black.opacity(0.4)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { showingSettingsHUD = false }
+                }
+                .zIndex(11)
+            VStack {
+                Spacer()
+                ReaderSettingsHUD(
+                    readingMode: $readingMode,
+                    activeFilterPreset: $activeFilterPreset,
+                    onDismiss: {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { showingSettingsHUD = false }
+                    }
+                )
+                .padding(.horizontal, 12)
+                .padding(.bottom, 12)
+            }
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+            .zIndex(12)
+        }
+    }
+
+    /// Achievement unlock toast (slides in from the top edge).
+    @ViewBuilder private var achievementToastView: some View {
+        if let achievement = gamification.newlyUnlocked {
+            VStack {
+                AchievementToastView(achievement: achievement)
+                    .padding(.top, 60)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .animation(.spring(response: 0.45, dampingFraction: 0.8),
+                               value: gamification.newlyUnlocked?.id)
+                Spacer()
+            }
+            .zIndex(20)
+        }
+    }
+
+    // MARK: - Private Helpers
+
+    private func saveProgressAndDismiss() {
+        var progress = ReaderProgressTracker.shared.progress(for: pdf.id) ?? ReadingProgress(
+            pdfID: pdf.id, lastOpenedAt: Date(), currentPageIndex: currentIndex,
+            currentChapterIndex: nil, currentChapterOffset: nil,
+            totalPagesRead: 1,
+            completionFraction: Double(currentIndex + 1) / Double(cache.pageCount),
+            readingSessionDates: [Date()], estimatedMinutesRemaining: nil
+        )
+        progress.currentPageIndex = currentIndex
+        progress.lastOpenedAt = Date()
+        progress.completionFraction = Double(currentIndex + 1) / Double(cache.pageCount)
+        progress.prefersMangaMode = (readingMode == .mangaRTL)
+        progress.colorFilter = activeFilterPreset.rawValue
+        progress.lastCanonicalLeadIndex = currentIndex
+        progress.wasInDualPageMode = (readingMode == .pageTwoUp)
+        if !progress.readingSessionDates.contains(where: { Calendar.current.isDateInToday($0) }) {
+            progress.readingSessionDates.append(Date())
+        }
+        ReaderProgressTracker.shared.update(progress)
+        onDismiss()
+    }
+
+    private func handleNarrationToggle() {
+        if narrationEngine.isNarrating {
+            if narrationEngine.isSpeaking {
+                narrationEngine.togglePause()
+            } else {
+                narrationEngine.stop()
+            }
+        } else {
+            narrationEngine.isMangaMode = (readingMode == .mangaRTL)
+            narrationEngine.startNarrating(from: currentIndex)
+            GamificationManager.shared.logNarrationUsed()
+        }
+    }
+
 } // end ComicReaderEngine
 
 struct WebtoonImageCell: View {
