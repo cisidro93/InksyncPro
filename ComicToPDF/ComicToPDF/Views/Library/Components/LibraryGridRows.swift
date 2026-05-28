@@ -53,7 +53,7 @@ struct ModernGridFileCell: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 5) {
 
             // ── Cover ─────────────────────────────────────────────────────────
             ZStack(alignment: .bottom) {
@@ -67,10 +67,10 @@ struct ModernGridFileCell: View {
                         // Book spine overlay — left-edge depth cue
                         HStack(spacing: 0) {
                             LinearGradient(
-                                colors: [.black.opacity(0.28), .black.opacity(0.06), .clear],
+                                colors: [.black.opacity(0.30), .black.opacity(0.06), .clear],
                                 startPoint: .leading, endPoint: .trailing
                             )
-                            .frame(width: 20)
+                            .frame(width: 18)
                             Spacer()
                         }
                     } else if isCloudPending {
@@ -124,24 +124,24 @@ struct ModernGridFileCell: View {
                     }
                 }
 
-                // Bottom scrim + progress bar (Kindle-style)
+                // Bottom scrim + progress bar (premium Panels-style)
                 if isInProgress || isFullyRead {
                     VStack(spacing: 0) {
                         Spacer()
                         LinearGradient(
-                            colors: [.clear, .black.opacity(0.65)],
+                            colors: [.clear, .black.opacity(0.72)],
                             startPoint: .top,
                             endPoint: .bottom
                         )
-                        .frame(height: 52)
+                        .frame(height: 60)
                     }
 
-                    VStack(spacing: 4) {
+                    VStack(spacing: 5) {
                         Spacer()
                         HStack {
-                            Text(isFullyRead ? "Finished" : "\(Int(readingProgress * 100))% read")
-                                .font(.system(size: 9, weight: .bold, design: .rounded))
-                                .foregroundColor(.white.opacity(0.9))
+                            Text(isFullyRead ? "Finished" : "\(Int(readingProgress * 100))%")
+                                .font(.system(size: 9, weight: .black, design: .rounded))
+                                .foregroundColor(isFullyRead ? Color.green : .white)
                             Spacer()
                         }
                         .padding(.horizontal, 8)
@@ -149,29 +149,46 @@ struct ModernGridFileCell: View {
                         GeometryReader { g in
                             ZStack(alignment: .leading) {
                                 Capsule()
-                                    .fill(Color.white.opacity(0.2))
-                                    .frame(height: 3)
+                                    .fill(Color.white.opacity(0.18))
+                                    .frame(height: 4)
                                 Capsule()
-                                    .fill(isFullyRead ? Color.green : Color.white)
-                                    .frame(width: g.size.width * CGFloat(readingProgress), height: 3)
+                                    .fill(
+                                        isFullyRead
+                                            ? AnyShapeStyle(Color.green)
+                                            : AnyShapeStyle(LinearGradient(
+                                                colors: [Color(hue: 0.56, saturation: 0.8, brightness: 1.0),
+                                                         Color(hue: 0.52, saturation: 0.9, brightness: 0.95)],
+                                                startPoint: .leading, endPoint: .trailing
+                                              ))
+                                    )
+                                    .frame(width: g.size.width * CGFloat(readingProgress), height: 4)
+                                    .shadow(color: isFullyRead ? Color.green.opacity(0.6) : Color.blue.opacity(0.5), radius: 4, y: 0)
                             }
                         }
-                        .frame(height: 3)
+                        .frame(height: 4)
                         .padding(.horizontal, 8)
                         .padding(.bottom, 8)
                     }
                 }
 
-                // "New" badge — frosted pill at bottom-left (Manga Plus style)
+                // "NEW" badge — gradient pill at bottom-left
                 if isNew {
                     HStack {
                         Text("NEW")
                             .font(.system(size: 8, weight: .black, design: .rounded))
                             .foregroundColor(.white)
-                            .tracking(0.6)
+                            .tracking(0.8)
                             .padding(.horizontal, 7)
                             .padding(.vertical, 4)
-                            .background(Color.blue, in: Capsule())
+                            .background(
+                                LinearGradient(
+                                    colors: [Color(hue: 0.56, saturation: 0.85, brightness: 1.0),
+                                             Color(hue: 0.63, saturation: 0.9, brightness: 0.9)],
+                                    startPoint: .leading, endPoint: .trailing
+                                ),
+                                in: Capsule()
+                            )
+                            .shadow(color: Color.blue.opacity(0.35), radius: 4, y: 2)
                             .padding(8)
                         Spacer()
                     }
@@ -245,34 +262,35 @@ struct ModernGridFileCell: View {
             .clipped()
             .frame(maxWidth: .infinity)
             .aspectRatio(0.63, contentMode: .fit)
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(Color.white.opacity(isSelected && !isBatch ? 0.7 : 0.1), lineWidth: isSelected && !isBatch ? 2 : 0.5)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(Color.white.opacity(isSelected && !isBatch ? 0.7 : 0.08), lineWidth: isSelected && !isBatch ? 2 : 0.5)
             )
             // Dual shadow: crisp near + soft ambient (Apple Books technique)
-            .shadow(color: .black.opacity(0.22), radius: 3, y: 2)
-            .shadow(color: .black.opacity(0.10), radius: 12, y: 8)
+            .shadow(color: .black.opacity(0.28), radius: 4, y: 3)
+            .shadow(color: .black.opacity(0.12), radius: 14, y: 10)
 
             // ── Text + type badge ────────────────────────────────────────────
             VStack(alignment: .leading, spacing: 3) {
                 Text(pdf.name)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 13, weight: .bold))
                     .foregroundColor(Theme.text)
                     .lineLimit(2)
-                    .frame(height: 36, alignment: .topLeading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(minHeight: 32, maxHeight: 38, alignment: .topLeading)
 
                 if pdf.contentType == .comic {
                     let isManga = pdf.metadata.isManga ?? false
                     Text(isManga ? "MANGA" : "COMIC")
                         .font(.system(size: 9, weight: .black, design: .rounded))
                         .foregroundColor(Color(hex: isManga ? mangaBadgeColorHex : comicBadgeColorHex))
-                        .tracking(0.8)
+                        .tracking(1.0)
                 } else {
                     Text(pdf.fileExtensionString.uppercased())
-                        .font(.system(size: 9, weight: .semibold, design: .rounded))
+                        .font(.system(size: 9, weight: .bold, design: .rounded))
                         .foregroundColor(Theme.textTertiary)
-                        .tracking(0.8)
+                        .tracking(1.0)
                 }
             }
             .padding(.horizontal, 2)
@@ -394,29 +412,29 @@ struct ModernGridSeriesCell: View {
     @AppStorage("comicBadgeColorHex") private var comicBadgeColorHex = "#3d6fff"
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            
-            // Cover Image with Stack Effect
-            ZStack(alignment: .bottom) {
+        VStack(alignment: .leading, spacing: 6) {
+
+            // Cover Image with refined Stack Effect
+            ZStack(alignment: .bottomTrailing) {
                 ZStack {
-                    if group.count > 1 { // Stack Effect Backgrounds
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(Theme.surface.opacity(0.8))
-                            .aspectRatio(0.66, contentMode: .fit)
-                            .shadow(color: Color(.sRGBLinear, white: 0, opacity: 0.2), radius: 4, y: 2)
-                            .rotationEffect(.degrees(-3))
+                    if group.count > 1 { // Natural fan stack — back cards peek behind
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(Theme.surface.opacity(0.75))
+                            .aspectRatio(0.63, contentMode: .fit)
+                            .rotationEffect(.degrees(-4))
                             .scaleEffect(0.9)
-                            .offset(y: -8)
-                        
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(Theme.surfaceElevated.opacity(0.9))
-                            .aspectRatio(0.66, contentMode: .fit)
-                            .shadow(color: Color(.sRGBLinear, white: 0, opacity: 0.25), radius: 5, y: 3)
-                            .rotationEffect(.degrees(2))
+                            .offset(y: -7)
+                            .shadow(color: .black.opacity(0.18), radius: 5, y: 3)
+
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(Theme.surfaceElevated.opacity(0.88))
+                            .aspectRatio(0.63, contentMode: .fit)
+                            .rotationEffect(.degrees(2.5))
                             .scaleEffect(0.95)
-                            .offset(y: -4)
+                            .offset(y: -3)
+                            .shadow(color: .black.opacity(0.22), radius: 6, y: 3)
                     }
-                    
+
                     if let issueID = group.coverIssueID, let directCacheImg = conversionManager.thumbnailCache.object(forKey: issueID.uuidString as NSString) {
                         Image(uiImage: directCacheImg)
                             .resizable()
@@ -432,35 +450,27 @@ struct ModernGridSeriesCell: View {
                             .foregroundColor(Theme.textSecondary)
                     }
                 }
-                .aspectRatio(0.63, contentMode: .fit) // Standard comic aspect ratio
-                .cornerRadius(12)
-                .clipped()
+                .aspectRatio(0.63, contentMode: .fit)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(Color.white.opacity(0.15), lineWidth: 0.5)
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(Color.white.opacity(0.12), lineWidth: 0.5)
                 )
-                .shadow(color: .black.opacity(0.15), radius: 10, y: 5)
-                
-                // Floating Glass Series Badge
-                HStack(spacing: 4) {
-                    Image(systemName: "books.vertical.fill").font(.system(size: 10))
-                    Text("\(group.count) \(group.count == 1 ? "Issue" : "Issues")").font(.system(size: 10, weight: .bold))
-                    
-                    if let first = group.issues.first(where: { $0.contentType == .comic }) {
-                        let isManga = first.metadata.isManga ?? false
-                        Text("· \(isManga ? "MANGA" : "COMIC")")
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundColor(Color(hex: isManga ? mangaBadgeColorHex : comicBadgeColorHex))
-                    }
+                .shadow(color: .black.opacity(0.28), radius: 10, y: 6)
+
+                // Issue count pill — bottom-right corner (compact)
+                if !isBatch {
+                    Text("\(group.count)")
+                        .font(.system(size: 10, weight: .black, design: .rounded))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 4)
+                        .background(.ultraThinMaterial, in: Capsule())
+                        .overlay(Capsule().stroke(.white.opacity(0.2), lineWidth: 0.5))
+                        .shadow(color: .black.opacity(0.25), radius: 3, y: 1)
+                        .padding(6)
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(.ultraThinMaterial)
-                .clipShape(Capsule())
-                .overlay(Capsule().stroke(.white.opacity(0.2), lineWidth: 0.5))
-                .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
-                .padding(.bottom, 6)
-                
+
                 // Batch Selection Overlay
                 if isBatch {
                     VStack {
@@ -480,52 +490,68 @@ struct ModernGridSeriesCell: View {
                 if !isBatch && cachedReadCount > 0 && cachedReadCount >= group.count {
                     VStack {
                         HStack {
-                            Spacer()
                             Image(systemName: "checkmark.seal.fill")
-                                .font(.system(size: 18, weight: .bold))
+                                .font(.system(size: 16, weight: .bold))
                                 .foregroundStyle(.white)
-                                .padding(6)
+                                .padding(5)
                                 .background(Color.inkGreen, in: Circle())
-                                .overlay(Circle().stroke(.white.opacity(0.4), lineWidth: 1))
-                                .shadow(color: Color.inkGreen.opacity(0.6), radius: 6, y: 2)
-                                .padding(6)
+                                .overlay(Circle().stroke(.white.opacity(0.35), lineWidth: 0.8))
+                                .shadow(color: Color.inkGreen.opacity(0.55), radius: 5, y: 2)
+                                .padding(7)
+                            Spacer()
                         }
                         Spacer()
                     }
                 }
             }
             .frame(maxWidth: .infinity)
-            
+
             // Text Details
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 4) {
                     Text(group.title)
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.system(size: 14, weight: .bold))
                         .foregroundColor(Theme.text)
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
-                    
+
                     if UserDefaults.standard.bool(forKey: "showSeriesHealthScore") {
                         SeriesHealthBadge(issues: group.issues)
                     }
                 }
-                .frame(height: 38, alignment: .topLeading)
-                
-                // Reading progress: segmented arc ring
-                if cachedReadCount > 0 || group.count > 0 {
-                    SeriesProgressRing(
-                        readCount: cachedReadCount,
-                        totalCount: group.count
-                    )
-                    .frame(width: 36, height: 36)
-                } else if cachedNewCount > 0 {
-                    Text("\(cachedNewCount) new")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundColor(Theme.blue)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(minHeight: 32, maxHeight: 38, alignment: .topLeading)
+
+                // Publisher / type metadata line
+                HStack(spacing: 5) {
+                    if let publisher = group.issues.first?.metadata.publisher, !publisher.isEmpty {
+                        Text(publisher.uppercased())
+                            .font(.system(size: 8, weight: .semibold, design: .rounded))
+                            .foregroundColor(Theme.textTertiary)
+                            .tracking(0.6)
+                            .lineLimit(1)
+                    } else if let first = group.issues.first(where: { $0.contentType == .comic }) {
+                        let isManga = first.metadata.isManga ?? false
+                        Text(isManga ? "MANGA" : "COMICS")
+                            .font(.system(size: 8, weight: .bold, design: .rounded))
+                            .foregroundColor(Color(hex: isManga ? mangaBadgeColorHex : comicBadgeColorHex))
+                            .tracking(0.8)
+                    }
+
+                    Spacer()
+
+                    // Reading progress ring
+                    if cachedReadCount > 0 || group.count > 0 {
+                        SeriesProgressRing(
+                            readCount: cachedReadCount,
+                            totalCount: group.count
+                        )
+                        .frame(width: 30, height: 30)
+                    }
                 }
             }
         }
-        .padding(8)
+        .padding(6)
         .background(isSelected && !isBatch ? Theme.surfaceElevated : Color.clear)
         .cornerRadius(12)
         .contentShape(Rectangle())

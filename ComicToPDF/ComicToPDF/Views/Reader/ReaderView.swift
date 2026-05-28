@@ -255,11 +255,13 @@ struct ReaderView: View {
                     hasRestoredProgress = true
                     restorePerBookPreferences()
                 }
+                // Sample ambient color from the first page on open
+                sampleAmbientColor(from: newPages[0])
             }
             .onChange(of: loadedPDFDocument) {
                 if let doc = loadedPDFDocument { toc = buildPDFTOC(from: doc) }
             }
-            .onChange(of: currentPageIndex) { _, _ in
+            .onChange(of: currentPageIndex) { _, newIdx in
                 trackProgress(isPageTurn: true)
                 pagesReadThisSession += 1
                 if pagesReadThisSession % 10 == 0, let id = pdf?.id {
@@ -267,6 +269,10 @@ struct ReaderView: View {
                     ReaderProgressTracker.shared.logPageTurn(pdfID: id, pages: 10, seconds: elapsed)
                     sessionStartTime = Date()
                     pagesReadThisSession = 0
+                }
+                // Re-sample ambient color every 5 pages to reduce CPU load
+                if !pages.isEmpty && newIdx < pages.count && newIdx % 5 == 0 {
+                    sampleAmbientColor(from: pages[newIdx])
                 }
             }
             .onChange(of: isMangaMode) { savePerBookPreferences() }
@@ -633,6 +639,27 @@ struct ReaderView: View {
             }
         }
     }
+
+    // MARK: - Ambient Color Sampling (Panels-style chrome tinting)
+    /// Extracts the dominant color from a page image and animates it into
+    /// `ambientPageColor` which feeds `ReaderChrome`'s ambient tint.
+    /// Runs off-main to avoid blocking the scroll gesture.
+    private func sampleAmbientColor(from pageURL: URL) {
+        Task(priority: .utility) {
+            let color = await Task.detached(priority: .utility) { () -> Color in
+                guard let data = try? Data(contentsOf: pageURL),
+                      let img = UIImage(data: data) else { return .clear }
+                return img.dominantColor()
+            }.value
+            await MainActor.run {
+                withAnimation(.easeInOut(duration: 1.5)) {
+                    ambientPageColor = color
+                }
+            }
+        }
+    }
+
+
 
     // MARK: - PDF Table of Contents Parser
     private func buildPDFTOC(from doc: PDFDocument) -> CBZTableOfContents {

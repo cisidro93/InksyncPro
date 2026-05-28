@@ -171,6 +171,11 @@ struct ReaderChrome: View {
                 .padding(.top, 14)
                 .padding(.bottom, 10)
             }
+            
+            Text("\(Int(currentProgress * 100))%")
+                .font(.system(size: 10, weight: .bold, design: .rounded))
+                .foregroundColor(.white.opacity(0.4))
+                .padding(.bottom, 8)
 
             // ── Thin divider ───────────────────────────────────────────────────
             Rectangle()
@@ -252,8 +257,13 @@ struct ReaderChrome: View {
 
     // MARK: - Shared Backgrounds
 
-    private var topBarBackground: some ShapeStyle {
-        AnyShapeStyle(.ultraThinMaterial)
+    private var topBarBackground: some View {
+        ZStack {
+            Color.clear.background(.ultraThinMaterial)
+            if ambientColor != .clear {
+                ambientColor.opacity(0.10)
+            }
+        }
     }
 
     private var bottomCardBackground: some View {

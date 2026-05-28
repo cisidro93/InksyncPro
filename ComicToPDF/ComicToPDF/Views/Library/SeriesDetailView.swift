@@ -871,26 +871,31 @@ struct SeriesDetailView: View {
     }
 
     var headerView: some View {
-        VStack(spacing: 12) {
-            HStack {
+        VStack(spacing: 14) {
+            HStack(alignment: .top, spacing: 16) {
                 if let img = headerCover {
                     Image(uiImage: img)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
-                        .frame(width: 80, height: 120)
-                        .cornerRadius(10)
-                        .shadow(color: .black.opacity(0.35), radius: 10, x: 0, y: 6)
-                        .clipped()
+                        .frame(width: 110, height: 165)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .stroke(Color.white.opacity(0.10), lineWidth: 0.5)
+                        )
+                        // Dual shadow: crisp near + ambient book-pile depth
+                        .shadow(color: .black.opacity(0.40), radius: 6, x: 0, y: 4)
+                        .shadow(color: .black.opacity(0.20), radius: 22, x: 0, y: 14)
                 } else {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .fill(Theme.surface)
-                        .frame(width: 80, height: 120)
+                        .frame(width: 110, height: 165)
                         .overlay(
                             Image(systemName: "books.vertical")
-                                .font(.system(size: 24, weight: .light))
+                                .font(.system(size: 28, weight: .light))
                                 .foregroundStyle(Theme.textTertiary)
                         )
-                        .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 4)
+                        .shadow(color: .black.opacity(0.20), radius: 10, x: 0, y: 6)
                 }
 
                 VStack(alignment: .leading, spacing: 6) {

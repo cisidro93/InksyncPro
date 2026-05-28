@@ -32,6 +32,7 @@ struct LibraryHeaderView: View {
     @State private var showImportQueue = false
     @State private var dragAccumulated: CGFloat = 0
     @State private var showPillCustomize = false
+    @State private var importPulse: Bool = false
     @ObservedObject private var pillConfig = LibraryPillConfig.shared
 
     var body: some View {
@@ -366,8 +367,9 @@ struct LibraryHeaderView: View {
 
             // ── Row A: Fixed Primary Actions ──────────────────────────────────
             // Always visible — the 3 actions 95% of users actually need.
+            let isLibraryEmpty = conversionManager.convertedPDFs.isEmpty
             HStack(spacing: 10) {
-                // Import — gradient fill matching empty-state CTA
+                // Import — gradient fill, subtle pulse when library is empty
                 Button(action: { showImportQueue = true }) {
                     HStack(spacing: 7) {
                         Image(systemName: "plus.circle.fill")
@@ -378,6 +380,7 @@ struct LibraryHeaderView: View {
                     .foregroundColor(.white)
                     .padding(.horizontal, 18)
                     .padding(.vertical, 10)
+                    .frame(height: 40)
                     .background(
                         LinearGradient(
                             colors: [Theme.orange, Color(red: 0.9, green: 0.45, blue: 0.1)],
@@ -385,10 +388,22 @@ struct LibraryHeaderView: View {
                         ),
                         in: Capsule()
                     )
-                    .shadow(color: Theme.orange.opacity(0.3), radius: 6, y: 3)
+                    .shadow(color: Theme.orange.opacity(importPulse ? 0.55 : 0.30), radius: importPulse ? 10 : 6, y: 3)
+                    .scaleEffect(importPulse ? 1.03 : 1.0)
                 }
                 .sheet(isPresented: $showImportQueue) {
                     ImportQueueView().environmentObject(conversionManager)
+                }
+                .onAppear {
+                    guard isLibraryEmpty else { return }
+                    withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) {
+                        importPulse = true
+                    }
+                }
+                .onChange(of: conversionManager.convertedPDFs.count) { _, count in
+                    if count > 0 && importPulse {
+                        withAnimation(.easeOut(duration: 0.3)) { importPulse = false }
+                    }
                 }
 
                 // Cloud — live status tint (Infuse/Plex pattern)
@@ -404,6 +419,7 @@ struct LibraryHeaderView: View {
                     }
                     .padding(.horizontal, 18)
                     .padding(.vertical, 10)
+                    .frame(height: 40)
                     .background(.regularMaterial, in: Capsule())
                     .overlay(
                         Capsule().stroke(
@@ -446,6 +462,7 @@ struct LibraryHeaderView: View {
                     .foregroundColor(isBatchMode ? .white : Theme.text)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
+                    .frame(height: 40)
                     .background(
                         isBatchMode
                             ? AnyShapeStyle(Theme.orange)
