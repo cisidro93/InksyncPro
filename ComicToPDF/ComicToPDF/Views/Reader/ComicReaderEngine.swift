@@ -405,6 +405,9 @@ struct ComicReaderEngine: View {
     /// Debounce task — prevents rapid mode flips when the notification fires
     /// multiple times during the iPhone rotation animation (portrait→landscape).
     @State private var orientationTask: Task<Void, Never>? = nil
+    /// AI Narration Engine — connects to the image cache on appear
+    @StateObject private var narrationEngine = NarrationEngine()
+    @ObservedObject private var gamification = GamificationManager.shared
     
     init(pdf: ConvertedPDF, onDismiss: @escaping () -> Void, allBooks: [ConvertedPDF] = []) {
         self.pdf = pdf
@@ -558,7 +561,22 @@ struct ComicReaderEngine: View {
                 onEnhanceToggle: { withAnimation(.easeInOut) { showingFilterHUD.toggle() } },
                 isSettingsActive: readingMode != .pageHorizontal,
                 currentModeLabel: readingMode != .pageHorizontal ? readingMode.hudLabel : nil,
-                ambientColor: ambientPageColor
+                ambientColor: ambientPageColor,
+                isNarrating: narrationEngine.isNarrating,
+                isNarrationOCRing: narrationEngine.isNarrationOCRing,
+                onNarrationToggle: {
+                    if narrationEngine.isNarrating {
+                        if narrationEngine.isSpeaking {
+                            narrationEngine.togglePause()
+                        } else {
+                            narrationEngine.stop()
+                        }
+                    } else {
+                        narrationEngine.isMangaMode = (readingMode == .mangaRTL)
+                        narrationEngine.startNarrating(from: currentIndex)
+                        GamificationManager.shared.logNarrationUsed()
+                    }
+                }
             )
             
             if showingFilterHUD {
@@ -601,6 +619,18 @@ struct ComicReaderEngine: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
                 .zIndex(12)
             }
+
+            // ── Achievement Toast ──────────────────────────────────────────────
+            if let achievement = gamification.newlyUnlocked {
+                VStack {
+                    AchievementToastView(achievement: achievement)
+                        .padding(.top, 60)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                        .animation(.spring(response: 0.45, dampingFraction: 0.8), value: gamification.newlyUnlocked?.id)
+                    Spacer()
+                }
+                .zIndex(20)
+            }
         }
         .onAppear {
             if let saved = ReaderProgressTracker.shared.progress(for: pdf.id) {
@@ -619,6 +649,13 @@ struct ComicReaderEngine: View {
                 if isMangaComic {
                     readingMode = .mangaRTL
                 }
+            }
+            // Connect narration engine to the reader's image cache
+            narrationEngine.connect(totalPages: cache.pageCount) { [cache] index in
+                cache.getImage(at: index)
+            }
+            narrationEngine.onPageComplete = { nextIndex in
+                withAnimation { currentIndex = nextIndex }
             }
             // On appear, honour the current physical orientation immediately
             // so opening in landscape already shows two pages.
@@ -642,6 +679,10 @@ struct ComicReaderEngine: View {
             GamificationManager.shared.logPageRead()
             // Panels-style ambient colour — sample edge pixels on page change
             extractAmbientColor(for: newIndex)
+            // Notify narration engine of manual page changes (distinct from narration-driven advances)
+            if narrationEngine.isNarrating {
+                narrationEngine.didManuallyChangePage(to: newIndex)
+            }
             // Series continuation: when the reader reaches the final page,
             // post openMergedBook so the library transitions to the next volume.
             if cache.pageCount > 0 && newIndex == cache.pageCount - 1 {

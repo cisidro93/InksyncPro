@@ -36,10 +36,15 @@ struct ReaderChrome: View {
     var timeRemainingText: String? = nil
     var onProgressModeToggle: (() -> Void)? = nil
 
-    // TTS
+    // TTS / Narration
     var hasTTS: Bool = false
     var isSpeaking: Bool = false
     var onTTSToggle: (() -> Void)? = nil
+
+    // Narration (AI read-aloud mode)
+    var isNarrating: Bool = false
+    var isNarrationOCRing: Bool = false
+    var onNarrationToggle: (() -> Void)? = nil
 
     // PDF tools
     var isPDF: Bool = false
@@ -201,6 +206,33 @@ struct ReaderChrome: View {
                             tint: isSpeaking ? .orange : .white
                         ) {
                             onTTSToggle?()
+                        }
+                    }
+
+                    if onNarrationToggle != nil {
+                        Button {
+                            onNarrationToggle?()
+                            HapticEngine.light()
+                        } label: {
+                            ZStack {
+                                if isNarrationOCRing {
+                                    ProgressView()
+                                        .progressViewStyle(CircularProgressViewStyle(tint: .orange))
+                                        .scaleEffect(0.7)
+                                        .frame(width: 44, height: 44)
+                                } else if isNarrating {
+                                    NarrationWaveformView(isActive: true, barColor: .orange)
+                                        .frame(width: 44, height: 44)
+                                } else {
+                                    Image(systemName: "waveform.and.mic")
+                                        .font(.system(size: 17, weight: .medium))
+                                        .foregroundColor(.white.opacity(0.85))
+                                        .frame(width: 44, height: 44)
+                                }
+                            }
+                            .background(isNarrating ? Color.orange.opacity(0.18) : Color.clear)
+                            .clipShape(Circle())
+                            .contentShape(Rectangle())
                         }
                     }
                 }
