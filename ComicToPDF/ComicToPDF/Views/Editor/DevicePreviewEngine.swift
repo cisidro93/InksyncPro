@@ -2,6 +2,7 @@ import SwiftUI
 import CoreImage
 import Accelerate
 import UIKit
+import ZIPFoundation
 
 // MARK: - DevicePreviewEngine
 //
@@ -99,7 +100,11 @@ final class DevicePreviewViewModel: ObservableObject {
 
     // MARK: - Private Helpers
 
-    private static func previewResolution(for profile: TargetDeviceProfile) -> CGSize {
+    // `nonisolated` is required so Task.detached (which runs off the MainActor) can call
+    // these static methods synchronously. Without it, Swift 6 treats all statics on a
+    // @MainActor class as actor-isolated and forces an `await` at every call site.
+
+    nonisolated private static func previewResolution(for profile: TargetDeviceProfile) -> CGSize {
         // Scale device resolution to 50% for preview (fast, still representative)
         if let res = profile.resolution {
             return CGSize(width: min(res.width * 0.5, 800), height: min(res.height * 0.5, 1000))
@@ -107,7 +112,7 @@ final class DevicePreviewViewModel: ObservableObject {
         return CGSize(width: 600, height: 800)  // fallback for .original
     }
 
-    private static func downsample(image: UIImage, to size: CGSize) -> UIImage? {
+    nonisolated private static func downsample(image: UIImage, to size: CGSize) -> UIImage? {
         guard let cgImage = image.cgImage else { return image }
         let widthRatio = size.width / CGFloat(cgImage.width)
         let heightRatio = size.height / CGFloat(cgImage.height)
@@ -134,7 +139,7 @@ final class DevicePreviewViewModel: ObservableObject {
         return UIImage(cgImage: cg.takeRetainedValue())
     }
 
-    private static func extractFirstPage(url: URL) -> UIImage? {
+    nonisolated private static func extractFirstPage(url: URL) -> UIImage? {
         let ext = url.pathExtension.lowercased()
 
         // PDF: render page 0 to CGImage
@@ -442,7 +447,7 @@ struct DeviceBezelView: View {
                 .padding(width * 0.04)
 
                 // E-ink badge
-                if let profile, !isColor {
+                if profile != nil, !isColor {
                     Text("E-Ink")
                         .font(.system(size: 7, weight: .bold, design: .monospaced))
                         .foregroundColor(.white.opacity(0.5))
