@@ -20,6 +20,8 @@ struct BookFlipGesture: View {
     @State private var dragOffset: CGFloat = 0
     /// Guards the full flip sequence — prevents double-advance from rapid taps.
     @State private var isAnimating = false
+    /// Stored so new flips can cancel the previous in-flight animation Task.
+    @State private var flipTask: Task<Void, Never>? = nil
 
     var body: some View {
         GeometryReader { geo in
@@ -97,6 +99,13 @@ struct BookFlipGesture: View {
                 }
             }
         }
+        .onDisappear {
+            // Cancel any in-flight animation when the view is torn down
+            // (e.g. orientation changes switching between pageTwoUp and pageHorizontal).
+            flipTask?.cancel()
+            flipTask = nil
+            isAnimating = false
+        }
     }
 
     // MARK: - Flip Forward
@@ -104,6 +113,8 @@ struct BookFlipGesture: View {
         guard !isAnimating, canFlipForward() else { return }
         isAnimating = true
         HapticEngine.light()
+        // Cancel any lingering previous task before starting fresh
+        flipTask?.cancel()
 
         // Phase 1 — peel the page offscreen
         let exitOffset: CGFloat = isMangaRTL ? width * 0.6 : -width * 0.6
@@ -111,9 +122,10 @@ struct BookFlipGesture: View {
             dragOffset = exitOffset
         }
 
-        Task { @MainActor in
+        flipTask = Task { @MainActor in
             // Phase 2 — swap content while curl is offscreen
             try? await Task.sleep(nanoseconds: 160_000_000)
+            guard !Task.isCancelled else { isAnimating = false; return }
             onFlipForward()
 
             // Phase 3 — bounce snap back to reveal new page
@@ -122,6 +134,7 @@ struct BookFlipGesture: View {
 
             // Phase 4 — unlock gate after settle
             try? await Task.sleep(nanoseconds: 300_000_000)
+            guard !Task.isCancelled else { return }
             isAnimating = false
         }
     }
@@ -131,20 +144,23 @@ struct BookFlipGesture: View {
         guard !isAnimating, canFlipBack() else { return }
         isAnimating = true
         HapticEngine.light()
+        flipTask?.cancel()
 
         let exitOffset: CGFloat = isMangaRTL ? -width * 0.6 : width * 0.6
         withAnimation(.interactiveSpring(response: 0.28, dampingFraction: 0.78)) {
             dragOffset = exitOffset
         }
 
-        Task { @MainActor in
+        flipTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 160_000_000)
+            guard !Task.isCancelled else { isAnimating = false; return }
             onFlipBack()
 
             dragOffset = isMangaRTL ? 28 : -28
             withAnimation(.spring(response: 0.22, dampingFraction: 0.88)) { dragOffset = 0 }
 
             try? await Task.sleep(nanoseconds: 300_000_000)
+            guard !Task.isCancelled else { return }
             isAnimating = false
         }
     }

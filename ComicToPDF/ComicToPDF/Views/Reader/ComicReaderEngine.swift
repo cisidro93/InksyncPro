@@ -648,6 +648,13 @@ struct ComicReaderEngine: View {
                 attemptComicSeriesContinuation()
             }
         }
+        // Once the archive finishes loading, honour the current orientation.
+        // syncReadingModeToOrientation() is a no-op while isLoading == true,
+        // so this catch-up call is needed for comics opened in landscape.
+        .onChange(of: cache.isLoading) { _, isLoading in
+            guard !isLoading else { return }
+            syncReadingModeToOrientation()
+        }
 
         // ✅ Phase 5: Apple Handoff (Reader State Sync)
         .userActivity("com.inksync.read", isActive: true) { activity in
@@ -757,6 +764,11 @@ struct ComicReaderEngine: View {
     /// Switches between single-page and two-up based on physical device orientation.
     /// Intentional modes (webtoon, panel navigation) are never auto-overridden.
     private func syncReadingModeToOrientation() {
+        // Do not switch mode while the archive is still being indexed: creating
+        // TwoUpBookPager with pageCount == 0 produces an empty TabView that
+        // never recovers because spreadIdx.onChange fires before entries are loaded.
+        guard !cache.isLoading else { return }
+
         let orientation = UIDevice.current.orientation
         let isLandscape = orientation.isLandscape
 

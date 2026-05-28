@@ -321,7 +321,7 @@ struct ModernGridFileCell: View {
                     let down = [kCGImageSourceCreateThumbnailFromImageAlways: true,
                                 kCGImageSourceShouldCacheImmediately: true,
                                 kCGImageSourceCreateThumbnailWithTransform: true,
-                                kCGImageSourceThumbnailMaxPixelSize: 360] as CFDictionary
+                                kCGImageSourceThumbnailMaxPixelSize: 200] as CFDictionary
                     guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, down) else { return nil }
                     return UIImage(cgImage: cg)
                 }.value
@@ -591,7 +591,7 @@ struct ModernGridSeriesCell: View {
                     kCGImageSourceCreateThumbnailFromImageAlways: true,
                     kCGImageSourceShouldCacheImmediately: true,
                     kCGImageSourceCreateThumbnailWithTransform: true,
-                    kCGImageSourceThumbnailMaxPixelSize: 360
+                    kCGImageSourceThumbnailMaxPixelSize: 200
                 ] as CFDictionary
                 guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, downsampleOptions) else { return nil }
                 return UIImage(cgImage: cgImage)

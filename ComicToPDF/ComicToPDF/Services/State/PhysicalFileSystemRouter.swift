@@ -231,7 +231,7 @@ class PhysicalFileSystemRouter {
                         kCGImageSourceCreateThumbnailFromImageAlways: true,
                         kCGImageSourceShouldCacheImmediately: true,
                         kCGImageSourceCreateThumbnailWithTransform: true,
-                        kCGImageSourceThumbnailMaxPixelSize: 360
+                        kCGImageSourceThumbnailMaxPixelSize: 200
                     ] as CFDictionary
                     guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, downsampleOpts) else { return nil }
                     return UIImage(cgImage: cg)
@@ -252,14 +252,25 @@ class PhysicalFileSystemRouter {
 
 
         // Pass 2 — generate covers for files that have no on-disk cover yet.
+        // IMPORTANT: Process in batches of 5 with yield between batches to prevent
+        // saturating the NAND / memory bus when importing hundreds of files at once.
+        // Without batching, every generateCoverThumbnail runs concurrently via
+        // Task.detached which causes OOM crashes on large library imports.
         let pdfsNeedingCovers = allPDFs.filter { pdf in
             guard let coverURL = getCoverURL(for: pdf) else { return true }
             return !FileManager.default.fileExists(atPath: coverURL.path)
         }
         guard !pdfsNeedingCovers.isEmpty else { return }
         Task(priority: .background) {
-            for pdf in pdfsNeedingCovers {
-                await generateCoverThumbnail(for: pdf, manager: manager)
+            let batchSize = 5
+            for batchStart in stride(from: 0, to: pdfsNeedingCovers.count, by: batchSize) {
+                let batch = pdfsNeedingCovers[batchStart ..< min(batchStart + batchSize, pdfsNeedingCovers.count)]
+                for pdf in batch {
+                    await generateCoverThumbnail(for: pdf, manager: manager)
+                }
+                // Yield after each batch so the system can reclaim memory and
+                // service other lower-priority tasks (UI, scrolling).
+                await Task.yield()
             }
         }
 
@@ -287,7 +298,7 @@ class PhysicalFileSystemRouter {
                     kCGImageSourceCreateThumbnailFromImageAlways: true,
                     kCGImageSourceShouldCacheImmediately: true,
                     kCGImageSourceCreateThumbnailWithTransform: true,
-                    kCGImageSourceThumbnailMaxPixelSize: 400
+                    kCGImageSourceThumbnailMaxPixelSize: 200
                 ] as CFDictionary
                 
                 if let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, downsampleOptions) {
@@ -326,7 +337,7 @@ class PhysicalFileSystemRouter {
                         kCGImageSourceCreateThumbnailFromImageAlways: true,
                         kCGImageSourceShouldCacheImmediately: true,
                         kCGImageSourceCreateThumbnailWithTransform: true,
-                        kCGImageSourceThumbnailMaxPixelSize: 400
+                        kCGImageSourceThumbnailMaxPixelSize: 200
                     ] as CFDictionary
                     
                     if let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, downsampleOptions) {
