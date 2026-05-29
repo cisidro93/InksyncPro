@@ -181,8 +181,10 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
                     let dst = job.dest
                     group.addTask {
                         do {
-                            if fm.fileExists(atPath: dst.path) { try fm.removeItem(at: dst) }
-                            try fm.copyItem(at: src, to: dst)
+                            // Use FileManager.default inline — avoids capturing the non-Sendable
+                            // local `fm` reference across the task group isolation boundary.
+                            if FileManager.default.fileExists(atPath: dst.path) { try FileManager.default.removeItem(at: dst) }
+                            try FileManager.default.copyItem(at: src, to: dst)
                             return dst
                         } catch {
                             Logger.shared.log("ImportCoordinator: Copy failed \(src.lastPathComponent)",
