@@ -157,7 +157,9 @@ struct ZipUtilities {
 
                                         // createDirectory(withIntermediateDirectories:) is idempotent
                                         // and safe to call concurrently from multiple threads.
-                                        try? fileManager.createDirectory(
+                                        // Use FileManager.default inline to avoid capturing the non-Sendable
+                                        // local `fileManager` reference across isolation boundaries.
+                                        try? FileManager.default.createDirectory(
                                             at: parentDir, withIntermediateDirectories: true
                                         )
 

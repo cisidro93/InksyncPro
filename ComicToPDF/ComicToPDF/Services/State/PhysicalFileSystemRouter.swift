@@ -474,7 +474,7 @@ class PhysicalFileSystemRouter {
 
                 // Collect and sort only image entries (central directory read is fast;
                 // we still need sorted order so page 1 is the cover, not a random entry).
-                var imageEntries: [(String, Archive.Element)] = []
+                var imageEntries: [(String, ZIPFoundation.Entry)] = []
                 for entry in archive {
                     if entry.type == .directory { continue }
                     let entryExt = (entry.path as NSString).pathExtension.lowercased()
