@@ -53,6 +53,16 @@ final class ComicImageCache: ObservableObject, @unchecked Sendable {
     // to appear in the reader. Each extraction opens its own fresh file handle.
     private var cbzURL: URL?
     private var entries: [ZIPFoundation.Entry] = []
+
+    // ── CBR/RAR path ──────────────────────────────────────────────────────────
+    // CBRExtractor fully extracts all images to a temp directory on open.
+    // extractedCBRImageURLs holds the sorted, flat list of extracted image files.
+    // ZIPFoundation is never used for CBR — it would throw on RAR magic bytes.
+    private var extractedCBRImageURLs: [URL] = []
+    // Temp dir owned by this cache instance; deleted in deinit.
+    private var extractedCBRTempDir: URL? = nil
+    /// True when this cache is backed by pre-extracted CBR images instead of a ZIP.
+    var isCBR: Bool = false
     
     // ✅ OPDS-style cloud page streaming
     private var cloudPageSource: CloudPageSource?
@@ -75,6 +85,7 @@ final class ComicImageCache: ObservableObject, @unchecked Sendable {
         
         let ext = pdf.url.pathExtension.lowercased()
         isPDF = (ext == "pdf")
+        let isCBRFile = (ext == "cbr" || ext == "rar")
         
         if isStream {
             // Cloud stream placeholder — pageCount will be set via setupCloudSource
@@ -104,6 +115,47 @@ final class ComicImageCache: ObservableObject, @unchecked Sendable {
                     self?.pdfDocument = doc
                     self?.pageCount = count
                     self?.isLoading = false
+                }
+            }
+        } else if isCBRFile {
+            // ── CBR / RAR path ────────────────────────────────────────────────
+            // ZIPFoundation cannot open RAR archives — it throws on the RAR magic bytes
+            // and crashes if the guard is not explicit. Use CBRExtractor (libunrar) instead.
+            // We fully extract to a temp directory once on open, then serve images by index.
+            // This is faster than per-page random-access extraction on RAR5 compressed archives.
+            self.pdfDocument = nil
+            self.isCBR = true
+            Task.detached(priority: .userInitiated) { [weak self] in
+                guard let self else { return }
+                let resolvedURL: URL
+                if case .linked(let bm) = pdf.sourceMode,
+                   let url = try? BookmarkResolver.shared.resolve(bm) {
+                    _ = url.startAccessingSecurityScopedResource()
+                    resolvedURL = url
+                } else {
+                    resolvedURL = pdf.url
+                }
+                do {
+                    // CBRExtractor.extract returns (tempDir, sortedImageURLs)
+                    let (tempDir, imageURLs) = try await CBRExtractor.extract(from: resolvedURL)
+                    await MainActor.run {
+                        self.extractedCBRTempDir = tempDir
+                        self.extractedCBRImageURLs = imageURLs
+                        self.pageCount = imageURLs.count
+                        self.isLoading = false
+                        if imageURLs.isEmpty {
+                            self.loadError = "The CBR/RAR archive contained no readable images."
+                        }
+                    }
+                } catch {
+                    Logger.shared.log(
+                        "ComicImageCache: CBR extraction failed for '\(pdf.name)': \(error.localizedDescription)",
+                        category: "Engine", type: .error
+                    )
+                    await MainActor.run {
+                        self.loadError = "Could not open this CBR/RAR file. It may be encrypted, corrupted, or use an unsupported RAR version.\n\n\(error.localizedDescription)"
+                        self.isLoading = false
+                    }
                 }
             }
         } else {
@@ -161,9 +213,14 @@ final class ComicImageCache: ObservableObject, @unchecked Sendable {
         }
     }
     
-    /// Stop security-scoped access when the cache is released (reader dismissed).
+    /// Stop security-scoped access and clean up CBR temp dir when the cache is released.
     deinit {
         activelyAccessedURL?.stopAccessingSecurityScopedResource()
+        // CBR: clean up the temp extraction directory so the ~50-300MB of extracted
+        // images don't persist in the tmp directory after the reader is dismissed.
+        if let tempDir = extractedCBRTempDir {
+            try? FileManager.default.removeItem(at: tempDir)
+        }
     }
     
     // MARK: - Cloud Page Source Setup
@@ -235,7 +292,7 @@ final class ComicImageCache: ObservableObject, @unchecked Sendable {
             accessQueue.remove(at: pos)
         }
         accessQueue.append(index)
-        
+
         // Evict if over maxCacheSize
         while accessQueue.count > maxCacheSize {
             let evictIndex = accessQueue.removeFirst()
@@ -271,6 +328,31 @@ final class ComicImageCache: ObservableObject, @unchecked Sendable {
                 cgCtx.scaleBy(x: scale, y: -scale)
                 page.draw(with: .mediaBox, to: cgCtx)
             }
+        } else if isCBR {
+            // CBR: images are fully extracted to disk on open.
+            // Read directly from the extracted file URL — no Archive overhead, no per-page
+            // RAR decompression stall. Thread-safe: each call reads an independent file.
+            guard index < extractedCBRImageURLs.count else { return nil }
+            let imageURL = extractedCBRImageURLs[index]
+            let srcOpts: [CFString: Any] = [kCGImageSourceShouldCache: false]
+            guard let source = CGImageSourceCreateWithURL(imageURL as CFURL, srcOpts as CFDictionary) else {
+                // Fallback: raw Data read
+                return UIImage(data: (try? Data(contentsOf: imageURL)) ?? Data())
+            }
+            let (bounds, scale) = await MainActor.run {
+                (UIScreen.main.bounds, UIScreen.main.scale)
+            }
+            let maxPixelSize = max(bounds.width, bounds.height) * scale
+            let downOpts: [CFString: Any] = [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceShouldCacheImmediately: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceThumbnailMaxPixelSize: maxPixelSize
+            ]
+            guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, downOpts as CFDictionary) else {
+                return UIImage(data: (try? Data(contentsOf: imageURL)) ?? Data())
+            }
+            return UIImage(cgImage: cgImage)
         } else {
             // Open a fresh Archive for every extraction.
             // A single shared Archive is NOT thread-safe — concurrent Task.detached calls
