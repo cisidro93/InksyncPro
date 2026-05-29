@@ -2,9 +2,9 @@ name: Build Native iOS App
 
 on:
   push:
-    branches: [ "main", "ios-port" ]
+    branches: [ "main", "ios-port", "beta" ]
   pull_request:
-    branches: [ "main", "ios-port" ]
+    branches: [ "main", "ios-port", "beta" ]
 
 jobs:
   build:
