@@ -60,6 +60,11 @@ extension ConversionManager {
             }
         }
         
+        // C3: Collect non-PDF/EPUB copy jobs then execute them concurrently.
+        // PDF and EPUB formats have their own dedicated Task paths above.
+        // CBZ/CBR/ZIP files are collected here and copied in parallel (8 slots)
+        // matching ImportCoordinator's proven APFS parallel I/O pattern.
+        var copyJobs: [(source: URL, dest: URL)] = []
         for url in filesToProcess {
             let accessing = url.startAccessingSecurityScopedResource()
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }
@@ -108,12 +113,29 @@ extension ConversionManager {
                  continue
             }
             
-            do {
-                let fileName = url.lastPathComponent
-                let destURL = documentsDir.appendingPathComponent(fileName)
-                try FileManager.default.copyItem(at: url, to: destURL)
-            } catch { 
-                Logger.shared.log("Failed to copy imported file \(url.lastPathComponent): \(error.localizedDescription)", category: "Import", type: .error)
+            // Generic archive (CBZ/CBR/ZIP) — stage for concurrent copy below
+            let destURL = documentsDir.appendingPathComponent(url.lastPathComponent)
+            copyJobs.append((source: url, dest: destURL))
+        }
+
+        // Parallel copy: up to 8 concurrent APFS copy streams
+        if !copyJobs.isEmpty {
+            await withTaskGroup(of: Void.self) { group in
+                var inFlight = 0
+                for job in copyJobs {
+                    if inFlight >= 8 { await group.next() ; inFlight -= 1 }
+                    let src = job.source, dst = job.dest
+                    group.addTask {
+                        do {
+                            if FileManager.default.fileExists(atPath: dst.path) { try FileManager.default.removeItem(at: dst) }
+                            try FileManager.default.copyItem(at: src, to: dst)
+                        } catch {
+                            Logger.shared.log("Failed to copy \(src.lastPathComponent): \(error.localizedDescription)", category: "Import", type: .error)
+                        }
+                    }
+                    inFlight += 1
+                }
+                for await _ in group {}
             }
         }
         scanLibrary()

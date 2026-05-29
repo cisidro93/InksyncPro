@@ -27,6 +27,13 @@ class ConversionManager: ObservableObject {
         return cache
     }()
     
+    // H2: Debounced thumbnail-ready signal.
+    // Thumbnail loaders fire this subject; the pipeline coalesces bursts into a single
+    // objectWillChange pulse at most every 150ms — preventing 200 full-tree SwiftUI diffs
+    // during a grid scroll where cells load covers concurrently.
+    let thumbnailReadySubject = PassthroughSubject<Void, Never>()
+    private var thumbnailPulseCancellable: AnyCancellable?
+    
     // UI State (Forwarded to TaskEngine)
     var isConverting: Bool { get { TaskEngine.shared.isConverting } set { TaskEngine.shared.isConverting = newValue } }
     var conversionProgress: Double { get { TaskEngine.shared.conversionProgress } set { TaskEngine.shared.conversionProgress = newValue } }
@@ -81,6 +88,12 @@ class ConversionManager: ObservableObject {
         createWelcomeFile()
         performStartupOptimization()
         migrateCoversToDisk()  // @MainActor class — direct call, no Task wrapper needed
+        
+        // H2: Wire the debounced thumbnail pulse. Thumbnail loaders fire thumbnailReadySubject;
+        // this pipeline coalesces bursts into a single objectWillChange at most every 150ms.
+        thumbnailPulseCancellable = thumbnailReadySubject
+            .debounce(for: .milliseconds(150), scheduler: RunLoop.main)
+            .sink { [weak self] in self?.objectWillChange.send() }
         
         NotificationCenter.default.addObserver(forName: .libraryNeedsRescan, object: nil, queue: .main) { [weak self] notification in
             let modeRaw = notification.userInfo?["mode"] as? String

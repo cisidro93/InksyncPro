@@ -16,8 +16,9 @@ struct ImageProcessor {
     // Process a single in-memory image based on settings
     static func process(image: UIImage, settings: ConversionSettings) -> UIImage? {
         // 0. Ensure Upright Orientation Before GPU/Math processing
-        // vImage and CoreImage strip UI orientation metadata, so we must bake the pixels upright first
-        var finalImage = fixOrientation(of: image) ?? image
+        // vImage and CoreImage strip UI orientation metadata, so we must bake the pixels upright first.
+        // Guard skips UIGraphicsImageRenderer allocation for the common .up case (most comic pages).
+        var finalImage = image.imageOrientation == .up ? image : (fixOrientation(of: image) ?? image)
         
         // 0.5. Smart Margin Removal (Full-Bleed) - ✅ NEW
         if settings.trimMargins {

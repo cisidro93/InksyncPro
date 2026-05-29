@@ -108,7 +108,17 @@ actor LibraryScanner {
                     func enqueue() {
                         guard let pdf = pending.next() else { return }
                         group.addTask {
-                            await manager.generateCoverThumbnail(for: pdf)
+                            // H3: Call extractCoverImageStatic directly — it is `nonisolated static`
+                            // and runs freely on the background thread pool. This eliminates the
+                            // background→main→background double actor-hop that generateCoverThumbnail
+                            // caused (it bounces to @MainActor then re-dispatches to Task.detached).
+                            let image = PhysicalFileSystemRouter.extractCoverImageStatic(from: pdf.url)
+                            if let image, let jpegData = image.jpegData(compressionQuality: 0.7) {
+                                // Single MainActor round-trip: write cover + warm NSCache
+                                await MainActor.run {
+                                    PhysicalFileSystemRouter.shared.saveCoverImage(jpegData, for: pdf, manager: manager)
+                                }
+                            }
                             let count = PhysicalFileSystemRouter.getPageCountStatic(from: pdf.url)
                             return count > 0 ? (pdf.id, count) : nil
                         }

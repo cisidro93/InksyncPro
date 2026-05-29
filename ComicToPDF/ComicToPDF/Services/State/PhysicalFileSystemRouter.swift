@@ -310,12 +310,14 @@ class PhysicalFileSystemRouter {
         if let image = generatedImage {
             await MainActor.run {
                 manager.thumbnailCache.setObject(image, forKey: pdf.id.uuidString as NSString)
-                manager.objectWillChange.send()
+                // H2: Fire the debounced subject instead of objectWillChange directly.
+                // Up to 200 concurrent cell loads coalesce into one SwiftUI diff per 150ms window.
+                manager.thumbnailReadySubject.send()
             }
         } else {
             await self.generateCoverThumbnail(for: pdf, manager: manager)
             if manager.thumbnailCache.object(forKey: pdf.id.uuidString as NSString) != nil {
-                await MainActor.run { manager.objectWillChange.send() }
+                await MainActor.run { manager.thumbnailReadySubject.send() }
             }
         }
     }
@@ -351,7 +353,8 @@ class PhysicalFileSystemRouter {
             if let image = generatedImage {
                 await MainActor.run {
                     manager.thumbnailCache.setObject(image, forKey: keyStr as NSString)
-                    manager.objectWillChange.send()
+                    // H2: debounced pulse — prevents 200 per-cell full-tree re-renders during scroll
+                    manager.thumbnailReadySubject.send()
                 }
             } else {
                 await MainActor.run {

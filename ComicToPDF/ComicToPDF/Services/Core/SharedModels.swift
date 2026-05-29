@@ -9,6 +9,15 @@ import PencilKit
 
 extension PKDrawing: @retroactive @unchecked Sendable {}
 
+// MARK: - Shared Image Extension Sets
+// Single source of truth — prevents 6+ duplicate inline definitions across the codebase.
+extension Set where Element == String {
+    /// Covers and page images: the 4 formats supported by all archive readers.
+    static let coverImageExtensions: Set<String> = ["jpg", "jpeg", "png", "webp"]
+    /// Full comic image set including less-common formats.
+    static let comicImageExtensions: Set<String> = ["jpg", "jpeg", "png", "webp", "gif", "heic"]
+}
+
 // MARK: - Core Data Models
 
 // ✅ NEW: Unified App UI Mode
