@@ -492,7 +492,12 @@ class PhysicalFileSystemRouter {
                 imageEntries.sort { $0.0.localizedStandardCompare($1.0) == .orderedAscending }
 
                 for (_, entry) in imageEntries {
-                    if Task.isCancelled { return nil }
+                    // Safe cancellation check inside a synchronous nonisolated func:
+                    // Task.isCancelled can only be called from async context; using
+                    // withUnsafeCurrentTask avoids a Swift runtime crash.
+                    var cancelled = false
+                    withUnsafeCurrentTask { cancelled = $0?.isCancelled ?? false }
+                    if cancelled { return nil }
                     var data = Data()
                     do {
                         _ = try archive.extract(entry) { data.append($0) }

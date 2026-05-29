@@ -78,16 +78,17 @@ class SmartImportViewModel: ObservableObject {
             }
         }
 
-        // 5. Streaming panel scan — extract images one-by-one, stop after 15
+        // 5. Streaming panel scan — extract images one-by-one, stop after 15.
+        // Security scope is managed INTERNALLY by ZipUtilities.extractComic and its
+        // delegates (CBRExtractor, CBTExtractor). Do NOT wrap with an outer scope here:
+        // nested startAccessingSecurityScopedResource calls are ref-counted but the
+        // defer below firing before the async continuation resumes can drop the count
+        // to zero, causing libunrar to receive ERAR_EOPEN mid-extraction on CBR files.
         do {
-            let secure = sourceURL.startAccessingSecurityScopedResource()
-            defer { if secure { sourceURL.stopAccessingSecurityScopedResource() } }
-
-            // For CBR use CBRExtractor, for others use ZipFoundation streaming
             let extraction = try await ZipUtilities.extractComic(from: sourceURL)
             let allImages = extraction.imageURLs
             pageCount = allImages.count
-            firstPageURL = allImages.first  // cover preview
+            firstPageURL = allImages.first  // cover preview — kept alive for UI
 
             let sample = Array(allImages.prefix(15))
             var confidences: [Double] = []
@@ -101,7 +102,10 @@ class SmartImportViewModel: ObservableObject {
                 }
             }
             overallConfidence = confidences.isEmpty ? 0.8 : confidences.reduce(0, +) / Double(confidences.count)
-            // Clean up all extracted images except the first (used as cover preview)
+
+            // Clean up extracted images except the first (used as live cover preview).
+            // For CBR: the CBRExtractor temp dir is self-managing; these are the extracted
+            // image file URLs and can be removed individually without removing the parent dir.
             let toDelete = allImages.dropFirst()
             for url in toDelete { try? FileManager.default.removeItem(at: url) }
         } catch {
