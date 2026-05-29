@@ -4,10 +4,8 @@ import {
   Laptop, 
   Smartphone, 
   Wifi, 
-  FolderOpen, 
   BookOpen, 
   RefreshCw, 
-  FileText, 
   Download, 
   Plus, 
   Settings, 
@@ -38,7 +36,6 @@ interface Highlight {
 export default function App() {
   const [connectionInfo, setConnectionInfo] = useState<string>("Loading server...");
   const [activeTab, setActiveTab] = useState<"library" | "highlights" | "settings">("library");
-  const [isScanning, setIsScanning] = useState<boolean>(true);
   const [logs, setLogs] = useState<string[]>([
     "mDNS: Registered Calibre Wireless Service on port 9090",
     "mDNS: Registered Inksync Sync Service on port 8080",
@@ -53,7 +50,7 @@ export default function App() {
     { id: "4", title: "Attack on Titan Vol. 30", path: "C:\\InksyncLibrary\\aot_30.cbz", format: "CBZ", size: "52.9 MB", status: "converting" }
   ]);
 
-  const [highlights, setHighlights] = useState<Highlight[]>([
+  const [highlights] = useState<Highlight[]>([
     { id: "h1", bookTitle: "Manga Volume 01", text: "Even when things seem impossible, we must persevere.", note: "Inspirational quote from chapter 4", page: 12, time: "2 mins ago" },
     { id: "h2", bookTitle: "Spiderman", text: "With great power comes great responsibility.", note: "Classic line re-verified in notes", page: 54, time: "10 mins ago" }
   ]);
