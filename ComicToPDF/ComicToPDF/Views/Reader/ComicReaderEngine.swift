@@ -252,22 +252,25 @@ final class ComicImageCache: ObservableObject, @unchecked Sendable {
         if isPDF {
             guard let page = pdfDocument?.page(at: index) else { return nil }
             let pageRect = page.bounds(for: .mediaBox)
-            // Retina scale × 1.5
+            // Guard against zero-size pages during rotation transitions when PDFKit
+            // briefly reports .zero bounds before the new geometry is committed.
+            guard pageRect.width > 0, pageRect.height > 0 else { return nil }
+
             let scale = await MainActor.run { UIScreen.main.scale } * 1.5
             let size = CGSize(width: pageRect.width * scale, height: pageRect.height * scale)
-            
-            UIGraphicsBeginImageContextWithOptions(size, false, 1.0)
-            guard let context = UIGraphicsGetCurrentContext() else { return nil }
-            context.setFillColor(UIColor.white.cgColor)
-            context.fill(CGRect(origin: .zero, size: size))
-            
-            context.translateBy(x: 0, y: size.height)
-            context.scaleBy(x: scale, y: -scale)
-            page.draw(with: .mediaBox, to: context)
-            
-            let image = UIGraphicsGetImageFromCurrentImageContext()
-            UIGraphicsEndImageContext()
-            return image
+
+            // UIGraphicsImageRenderer is thread-safe (unlike UIGraphicsBeginImageContextWithOptions
+            // which is deprecated in iOS 17 and unsafe off-main). Fixes crashes during rotation
+            // when the background task races with the drawable resize.
+            let renderer = UIGraphicsImageRenderer(size: size)
+            return renderer.image { ctx in
+                let cgCtx = ctx.cgContext
+                cgCtx.setFillColor(UIColor.white.cgColor)
+                cgCtx.fill(CGRect(origin: .zero, size: size))
+                cgCtx.translateBy(x: 0, y: size.height)
+                cgCtx.scaleBy(x: scale, y: -scale)
+                page.draw(with: .mediaBox, to: cgCtx)
+            }
         } else {
             // Open a fresh Archive for every extraction.
             // A single shared Archive is NOT thread-safe — concurrent Task.detached calls
