@@ -15,7 +15,7 @@ impl CalibreSession {
     }
 
     /// Read length-prefixed JSON packet
-    pub async fn receive_packet(&mut self) -> Result<Value, Box<dyn Error>> {
+    pub async fn receive_packet(&mut self) -> Result<Value, Box<dyn Error + Send + Sync>> {
         let mut length_buf = [0u8; 4];
         self.stream.read_exact(&mut length_buf).await?;
         let length = u32::from_be_bytes(length_buf) as usize;
@@ -32,7 +32,7 @@ impl CalibreSession {
     }
 
     /// Write length-prefixed JSON packet
-    pub async fn send_packet(&mut self, payload: &Value) -> Result<(), Box<dyn Error>> {
+    pub async fn send_packet(&mut self, payload: &Value) -> Result<(), Box<dyn Error + Send + Sync>> {
         let bytes = serde_json::to_vec(payload)?;
         let length = bytes.len() as u32;
         
@@ -43,7 +43,7 @@ impl CalibreSession {
     }
 
     /// Helper to send an OK response
-    pub async fn send_ok(&mut self, extra: Value) -> Result<(), Box<dyn Error>> {
+    pub async fn send_ok(&mut self, extra: Value) -> Result<(), Box<dyn Error + Send + Sync>> {
         let mut payload = json!({ "op": 0 }); // OK opcode is 0
         if let Value::Object(map) = extra {
             for (k, v) in map {
@@ -55,7 +55,7 @@ impl CalibreSession {
 
     /// Sends a book to the connected device (iOS app)
     /// Opcode: SEND_BOOK (8)
-    pub async fn send_book(&mut self, file_path: &Path, title: &str) -> Result<(), Box<dyn Error>> {
+    pub async fn send_book(&mut self, file_path: &Path, title: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
         let mut file = File::open(file_path).await?;
         let file_len = file.metadata().await?.len();
         let filename = file_path.file_name().and_then(|s| s.to_str()).unwrap_or("book.epub");

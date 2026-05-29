@@ -1,14 +1,14 @@
 use axum::{
-    routing::{get, post},
+    routing::get,
     Router,
     extract::{ws::{WebSocket, WebSocketUpgrade, Message}, State},
-    response::{Html, IntoResponse, Response},
+    response::{IntoResponse, Response},
     Json,
 };
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tower_http::cors::CorsLayer;
-use serde::{Serialize, Deserialize};
+use serde::Serialize;
 use std::path::PathBuf;
 
 #[derive(Clone)]
