@@ -105,9 +105,9 @@ class PhysicalFileSystemRouter {
         
         if let index = manager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
             manager.convertedPDFs[index].coverImageData = nil
-            // ✅ Notify grid/list cells that a new cover is available (needed for cloud covers
-            // written asynchronously after the cell's .task has already exited).
-            Task { @MainActor in manager.objectWillChange.send() }
+            // Route through the debounced subject so rapid backfill saves coalesce
+            // into one SwiftUI diff per 150ms window instead of one per cover write.
+            manager.thumbnailReadySubject.send()
         }
     }
     

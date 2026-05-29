@@ -32,11 +32,12 @@ extension ConversionManager {
         let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         var skippedFiles: [String] = []
         var filesToProcess: [URL] = []
-        
+
+        // Phase 1: Duplicate detection (security scope needed only to read the filename/ext)
         for url in urls {
             let accessing = url.startAccessingSecurityScopedResource()
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-            
+
             let ext = url.pathExtension.lowercased()
             let finalName: String
             if ext == "epub" {
@@ -45,87 +46,83 @@ extension ConversionManager {
                 finalName = url.lastPathComponent
             }
             let destURL = documentsDir.appendingPathComponent(finalName)
-            
+
             if FileManager.default.fileExists(atPath: destURL.path) {
                 skippedFiles.append(finalName)
             } else {
                 filesToProcess.append(url)
             }
         }
-        
+
         if !skippedFiles.isEmpty {
-            let message = skippedFiles.count == 1 ? "Skipped duplicate file:\n\(skippedFiles[0])" : "Skipped \(skippedFiles.count) duplicate files."
-            await MainActor.run {
-                self.appAlert = AppAlert(title: "Duplicates Skipped", message: message)
-            }
+            let message = skippedFiles.count == 1
+                ? "Skipped duplicate file:\n\(skippedFiles[0])"
+                : "Skipped \(skippedFiles.count) duplicate files."
+            await MainActor.run { self.appAlert = AppAlert(title: "Duplicates Skipped", message: message) }
         }
-        
-        // C3: Collect non-PDF/EPUB copy jobs then execute them concurrently.
-        // PDF and EPUB formats have their own dedicated Task paths above.
-        // CBZ/CBR/ZIP files are collected here and copied in parallel (8 slots)
-        // matching ImportCoordinator's proven APFS parallel I/O pattern.
+
+        // Phase 2: Format dispatch + staging
+        // PDF and EPUB each launch their own async Task (handles security scope internally).
+        // Generic archives (CBZ/CBR/ZIP) are staged for parallel copy below — we do NOT open
+        // their security scope here because the defer would fire before withTaskGroup runs.
         var copyJobs: [(source: URL, dest: URL)] = []
         for url in filesToProcess {
-            let accessing = url.startAccessingSecurityScopedResource()
-            defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-            
             let ext = url.pathExtension.lowercased()
 
             if ext == "pdf" {
+                let captured = url
                 Task {
+                    let accessing = captured.startAccessingSecurityScopedResource()
+                    defer { if accessing { captured.stopAccessingSecurityScopedResource() } }
                     do {
-                        let _ = try await ConversionEngine.shared.performPDFImport(url: url, destFolder: documentsDir)
+                        let _ = try await ConversionEngine.shared.performPDFImport(url: captured, destFolder: documentsDir)
                     } catch {
                         Logger.shared.log("Engine Import Failed: \(error)", category: "Import", type: .error)
-                        await MainActor.run {
-                            self.appAlert = AppAlert(title: "Import Failed", message: error.localizedDescription)
-                        }
+                        await MainActor.run { self.appAlert = AppAlert(title: "Import Failed", message: error.localizedDescription) }
                     }
                 }
                 continue
-            } else if ext == "epub" {
-                 Task {
-                     do {
-                         let cleanName = (url.lastPathComponent as NSString).deletingPathExtension
-                         let cbzName = cleanName + ".cbz"
-                         let cbzURL = documentsDir.appendingPathComponent(cbzName)
-                         
-                         let tempExtractDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-                         try FileManager.default.createDirectory(at: tempExtractDir, withIntermediateDirectories: true)
-                         
-                         _ = try EPUBImporter.extractImages(from: url, to: tempExtractDir)
-                         
-                         try await ZipUtilities.zipDirectory(tempExtractDir, to: cbzURL)
-                         
-                         try? FileManager.default.removeItem(at: tempExtractDir)
-                         // Note: scanLibrary() is called once at the end of processImportedFiles
-                         // for all formats — no need for a per-file call inside the Task.
-                         await MainActor.run {
-                             self.appAlert = AppAlert(title: "Import Success", message: "Imported EPUB as Comic.")
-                         }
-                     } catch {
-                         Logger.shared.log("EPUB Import Failed: \(error.localizedDescription)", category: "Import", type: .error)
-                         await MainActor.run {
-                             self.appAlert = AppAlert(title: "EPUB Import Failed", message: error.localizedDescription)
-                         }
-                     }
-                 }
-                 continue
             }
-            
-            // Generic archive (CBZ/CBR/ZIP) — stage for concurrent copy below
-            let destURL = documentsDir.appendingPathComponent(url.lastPathComponent)
-            copyJobs.append((source: url, dest: destURL))
+
+            if ext == "epub" {
+                let captured = url
+                Task {
+                    let accessing = captured.startAccessingSecurityScopedResource()
+                    defer { if accessing { captured.stopAccessingSecurityScopedResource() } }
+                    do {
+                        let cleanName = (captured.lastPathComponent as NSString).deletingPathExtension
+                        let cbzURL = documentsDir.appendingPathComponent(cleanName + ".cbz")
+                        let tempExtractDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+                        try FileManager.default.createDirectory(at: tempExtractDir, withIntermediateDirectories: true)
+                        _ = try EPUBImporter.extractImages(from: captured, to: tempExtractDir)
+                        try await ZipUtilities.zipDirectory(tempExtractDir, to: cbzURL)
+                        try? FileManager.default.removeItem(at: tempExtractDir)
+                        await MainActor.run { self.appAlert = AppAlert(title: "Import Success", message: "Imported EPUB as Comic.") }
+                    } catch {
+                        Logger.shared.log("EPUB Import Failed: \(error.localizedDescription)", category: "Import", type: .error)
+                        await MainActor.run { self.appAlert = AppAlert(title: "EPUB Import Failed", message: error.localizedDescription) }
+                    }
+                }
+                continue
+            }
+
+            // Generic archive (CBZ/CBR/ZIP) — stage for concurrent copy.
+            // Security scope is opened INSIDE the task group task below, not here.
+            copyJobs.append((source: url, dest: documentsDir.appendingPathComponent(url.lastPathComponent)))
         }
 
-        // Parallel copy: up to 8 concurrent APFS copy streams
+        // Phase 3: Parallel copy — up to 8 concurrent APFS copy streams.
+        // Security scope is opened and closed inside each task so the entitlement is held
+        // for the full duration of the copy operation and no longer.
         if !copyJobs.isEmpty {
             await withTaskGroup(of: Void.self) { group in
                 var inFlight = 0
                 for job in copyJobs {
-                    if inFlight >= 8 { await group.next() ; inFlight -= 1 }
+                    if inFlight >= 8 { await group.next(); inFlight -= 1 }
                     let src = job.source, dst = job.dest
                     group.addTask {
+                        let accessing = src.startAccessingSecurityScopedResource()
+                        defer { if accessing { src.stopAccessingSecurityScopedResource() } }
                         do {
                             if FileManager.default.fileExists(atPath: dst.path) { try FileManager.default.removeItem(at: dst) }
                             try FileManager.default.copyItem(at: src, to: dst)
@@ -138,6 +135,7 @@ extension ConversionManager {
                 for await _ in group {}
             }
         }
+
         scanLibrary()
     }
     
