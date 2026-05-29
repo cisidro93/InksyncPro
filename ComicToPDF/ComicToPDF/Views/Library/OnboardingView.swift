@@ -146,7 +146,9 @@ struct OnboardingView: View {
                         .foregroundColor(.gray)
                         .padding(.top, 4)
                     } else {
-                        Text("ABORT / SKIP INTRO").opacity(0).font(.system(size: 14)).padding(.top, 4)
+                        // Keep layout height consistent without polluting the accessibility tree.
+                        // An opacity-0 Text is still read by VoiceOver; a Spacer frame is not.
+                        Spacer().frame(height: 22)
                     }
                 }
                 .padding(.bottom, 40)

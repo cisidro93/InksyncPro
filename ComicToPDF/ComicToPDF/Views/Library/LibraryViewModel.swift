@@ -378,9 +378,10 @@ class LibraryViewModel: ObservableObject {
                     )
                     await MainActor.run {
                         if let updated = conversionManager.convertedPDFs.first(where: { $0.id == pdf.id }) {
-                            DispatchQueue.main.async {
-                                AppRouter.shared.presentSheet(.convert(updated))
-                            }
+                            // Already on @MainActor — call directly instead of dispatching again.
+                            // DispatchQueue.main.async inside MainActor.run adds an extra hop
+                            // and leaves a confusing breadcrumb in async stack traces.
+                            AppRouter.shared.presentSheet(.convert(updated))
                         }
                     }
                 }

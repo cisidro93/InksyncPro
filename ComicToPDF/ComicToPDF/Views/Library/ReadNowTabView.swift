@@ -7,15 +7,29 @@ struct ReadNowTabView: View {
 
     @State private var pdfToRead: ConvertedPDF?
 
+    // MARK: - O(N) derived state
+    // Build a single progress lookup dict so filter + sort each get O(1) access.
+    // Previously tracker.progress(for:) was called twice per book (once in filter,
+    // once in sorted), making continueReadingItems O(N²) on every body evaluation.
+    private var progressByID: [UUID: ReadingProgress] {
+        Dictionary(uniqueKeysWithValues: tracker.allProgress.compactMap { p in
+            (p.pdfID, p) as (UUID, ReadingProgress)?
+        })
+    }
+
     var continueReadingItems: [ConvertedPDF] {
-        conversionManager.convertedPDFs.filter { pdf in
-            guard let prog = tracker.progress(for: pdf.id) else { return false }
-            return prog.completionFraction > 0.0 && prog.completionFraction < 0.98
-        }.sorted {
-            let a = tracker.progress(for: $0.id)?.lastOpenedAt ?? .distantPast
-            let b = tracker.progress(for: $1.id)?.lastOpenedAt ?? .distantPast
-            return a > b
-        }.prefix(8).map { $0 }
+        let prog = progressByID
+        return conversionManager.convertedPDFs
+            .filter { pdf in
+                guard let p = prog[pdf.id] else { return false }
+                return p.completionFraction > 0.0 && p.completionFraction < 0.98
+            }
+            .sorted {
+                let a = prog[$0.id]?.lastOpenedAt ?? .distantPast
+                let b = prog[$1.id]?.lastOpenedAt ?? .distantPast
+                return a > b
+            }
+            .prefix(8).map { $0 }
     }
 
     var recentlyAddedItems: [ConvertedPDF] {
@@ -24,8 +38,9 @@ struct ReadNowTabView: View {
 
     // Stats for the summary row (StoryGraph / Goodreads influence)
     private var completedCount: Int {
-        conversionManager.convertedPDFs.filter {
-            (tracker.progress(for: $0.id)?.completionFraction ?? 0) >= 0.98
+        let prog = progressByID
+        return conversionManager.convertedPDFs.filter {
+            (prog[$0.id]?.completionFraction ?? 0) >= 0.98
         }.count
     }
 
@@ -68,7 +83,14 @@ struct ReadNowTabView: View {
                                 title: "Continue Reading",
                                 icon: "book.fill",
                                 iconColor: Theme.orange,
-                                count: continueReadingItems.count
+                                count: continueReadingItems.count,
+                                onSeeAll: {
+                                    // Route to library with the "In Progress" filter active
+                                    NotificationCenter.default.post(
+                                        name: .inksyncOpenShelf, object: nil,
+                                        userInfo: ["filterState": "reading"]
+                                    )
+                                }
                             ) {
                                 ScrollView(.horizontal, showsIndicators: false) {
                                     HStack(spacing: 14) {
@@ -123,7 +145,14 @@ struct ReadNowTabView: View {
                                 title: "Recently Added",
                                 icon: "plus.circle.fill",
                                 iconColor: Theme.blue,
-                                count: nil
+                                count: nil,
+                                onSeeAll: {
+                                    // Route to library sorted by most recently added
+                                    NotificationCenter.default.post(
+                                        name: .inksyncOpenShelf, object: nil,
+                                        userInfo: ["sortOption": "dateAdded"]
+                                    )
+                                }
                             ) {
                                 ScrollView(.horizontal, showsIndicators: false) {
                                     HStack(spacing: 14) {
@@ -166,6 +195,7 @@ struct ReadNowTabView: View {
         icon: String,
         iconColor: Color,
         count: Int?,
+        onSeeAll: (() -> Void)? = nil,
         @ViewBuilder content: () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -183,14 +213,19 @@ struct ReadNowTabView: View {
                         .foregroundColor(Theme.textSecondary)
                 }
                 Spacer()
-                // "See All" chevron (Panels pattern)
-                HStack(spacing: 3) {
-                    Text("See All")
-                        .font(.system(size: 13, weight: .semibold))
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 11, weight: .semibold))
+                // "See All" — only shown if a handler is wired up
+                if let onSeeAll {
+                    Button(action: onSeeAll) {
+                        HStack(spacing: 3) {
+                            Text("See All")
+                                .font(.system(size: 13, weight: .semibold))
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 11, weight: .semibold))
+                        }
+                        .foregroundColor(Theme.textSecondary)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .foregroundColor(Theme.textSecondary)
             }
             .padding(.horizontal, 16)
 
