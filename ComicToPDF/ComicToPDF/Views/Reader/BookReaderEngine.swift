@@ -814,7 +814,13 @@ struct BookReaderEngine: View {
                 onAnnotationsToggle: { showAnnotations = true },
                 currentProgress: Binding(
                     get: { Double(vm.currentChapterIndex) / Double(max(1, vm.chapterHtmlFiles.count - 1)) },
-                    set: { vm.currentChapterIndex = Int($0 * Double(max(1, vm.chapterHtmlFiles.count - 1))) }
+                    set: { newVal in
+                        // loadChapter() updates currentChapterHTML which drives EPUBWebView.updateUIView.
+                        // A direct assignment to currentChapterIndex alone doesn't trigger a reload
+                        // because updateUIView hashes currentChapterHTML, not the index.
+                        let target = Int(newVal * Double(max(1, vm.chapterHtmlFiles.count - 1)))
+                        vm.loadChapter(index: target)
+                    }
                 ),
                 totalPages: vm.chapterHtmlFiles.count,
                 hasTTS: true,

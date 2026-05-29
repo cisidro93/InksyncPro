@@ -270,6 +270,17 @@ struct PDFKitRepresentedView: UIViewRepresentable {
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
     }
+
+    /// Remove the PDFViewPageChanged observer so it doesn't accumulate across
+    /// repeated opens. Without this, each reader open registers a new observer
+    /// and the Coordinator is retained by NotificationCenter indefinitely.
+    static func dismantleUIView(_ uiView: UIView, coordinator: Coordinator) {
+        if let pdfView = coordinator.pdfView {
+            NotificationCenter.default.removeObserver(coordinator, name: .PDFViewPageChanged, object: pdfView)
+        }
+        coordinator.pdfView = nil
+        coordinator.canvasView = nil
+    }
     
     class Coordinator: NSObject, PDFViewDelegate, PKCanvasViewDelegate, PKToolPickerObserver {
         var parent: PDFKitRepresentedView

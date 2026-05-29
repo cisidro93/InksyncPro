@@ -84,6 +84,15 @@ struct WebtoonScrollView: UIViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
+    /// Cancel the display link and all in-flight image loads so the Coordinator
+    /// can be released when the scroll view is torn down.
+    /// Without this, CADisplayLink(target: coordinator) holds a strong reference
+    /// and keeps the Coordinator (and its closure-captured SwiftUI state) alive
+    /// past the view's lifetime → EXC_BAD_ACCESS on the next page-change callback.
+    static func dismantleUIView(_ uiView: UIScrollView, coordinator: Coordinator) {
+        coordinator.invalidate()
+    }
+
     // MARK: - Coordinator
 
     final class Coordinator: NSObject, UIScrollViewDelegate, UIGestureRecognizerDelegate {
@@ -154,10 +163,9 @@ struct WebtoonScrollView: UIViewRepresentable {
             loadTasks[index] = Task.detached(priority: .userInitiated) {
                 guard let data = try? Data(contentsOf: url),
                       let img  = UIImage(data: data) else { return }
-                
+
                 let isSmartCrop = UserDefaults.standard.bool(forKey: "isAutoCropEnabled")
                 let contrast = UserDefaults.standard.double(forKey: "comic_autoContrastLevel")
-                // CoreImage filters applied universally
                 let processed = await ReaderImageFilterEngine.shared.process(
                     url: url,
                     image: img,
@@ -166,12 +174,22 @@ struct WebtoonScrollView: UIViewRepresentable {
                     saturation: 1.0,
                     warmth: 0.0
                 )
-                
-                await MainActor.run {
-                    guard !Task.isCancelled else { return }
-                    iv.image = processed
-                }
+
+                // Check cancellation BEFORE the await so the guard can actually fire.
+                // Task.isCancelled inside MainActor.run is always false because the
+                // cooperative check is not re-evaluated inside a synchronous block.
+                guard !Task.isCancelled else { return }
+                await MainActor.run { iv.image = processed }
             }
+        }
+
+        /// Tear-down: invalidate the display link and cancel all image loads.
+        /// Called from dismantleUIView to break the CADisplayLink strong-reference cycle.
+        func invalidate() {
+            displayLink?.invalidate()
+            displayLink = nil
+            for task in loadTasks.values { task.cancel() }
+            loadTasks.removeAll()
         }
 
         private func unloadImage(at index: Int) {

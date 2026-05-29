@@ -533,8 +533,13 @@ struct EBookReaderView: View {
 
         do {
             if !FileManager.default.fileExists(atPath: dest.path) {
-                try FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
-                try FileManager.default.unzipItem(at: resolvedURL, to: dest)
+                // Unzip is a synchronous, potentially multi-second operation.
+                // Doing it on the main actor blocks the runloop and risks a watchdog
+                // kill during device orientation changes — move to a detached task.
+                try await Task.detached(priority: .userInitiated) {
+                    try FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
+                    try FileManager.default.unzipItem(at: resolvedURL, to: dest)
+                }.value
             }
         } catch {
             accessedURL?.stopAccessingSecurityScopedResource()
@@ -732,7 +737,13 @@ struct EBookWebReader: UIViewRepresentable {
 
             // Back on main: write injected file + load
             await MainActor.run {
-                let injectedURL = capturedURL.deletingPathExtension().appendingPathExtension("injected.html")
+                // Use a per-spine-item path keyed by the href hash so concurrent
+                // chapter swipes never overwrite each other's injected file.
+                // Previously both tasks wrote to the same "chapter.injected.html",
+                // causing the WKWebView to load corrupted / wrong-chapter HTML.
+                let hrefHash = abs(capturedURL.lastPathComponent.hashValue)
+                let injectedURL = capturedURL.deletingLastPathComponent()
+                    .appendingPathComponent("__inksync_\(hrefHash).injected.html")
                 try? html.write(to: injectedURL, atomically: true, encoding: .utf8)
                 wv.loadFileURL(injectedURL, allowingReadAccessTo: capturedDir)
             }
