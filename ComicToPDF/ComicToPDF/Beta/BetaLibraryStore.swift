@@ -51,13 +51,66 @@ public final class BetaLibraryStore: ObservableObject {
         return fileManager.fileExists(atPath: fileURL.path) ? fileURL : nil
     }
     
-    /// Imports files asynchronously
+    /// Imports files and folders asynchronously
     public func importFiles(from urls: [URL]) async {
         isImporting = true
         importProgress = 0
         
-        let total = Double(urls.count)
-        for (index, url) in urls.enumerated() {
+        // 1. Scan and collect files in background task
+        let collectedFiles = await Task.detached(priority: .userInitiated) { () -> [URL] in
+            var files: [URL] = []
+            let fm = FileManager.default
+            let allowedExtensions: Set<String> = ["cbz", "cbr", "pdf", "epub", "zip", "rar"]
+            
+            for url in urls {
+                let secured = url.startAccessingSecurityScopedResource()
+                
+                var isDirectory: ObjCBool = false
+                if fm.fileExists(atPath: url.path, isDirectory: &isDirectory) {
+                    if isDirectory.boolValue {
+                        let keys: [URLResourceKey] = [.isDirectoryKey]
+                        if let enumerator = fm.enumerator(at: url, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) {
+                            var count = 0
+                            while let fileURL = enumerator.nextObject() as? URL {
+                                count += 1
+                                if count % 25 == 0 {
+                                    // Yield to keep scheduler responsive
+                                    await Task.yield()
+                                }
+                                
+                                var fileIsDir: ObjCBool = false
+                                if fm.fileExists(atPath: fileURL.path, isDirectory: &fileIsDir), !fileIsDir.boolValue {
+                                    let ext = fileURL.pathExtension.lowercased()
+                                    if allowedExtensions.contains(ext) {
+                                        files.append(fileURL)
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        let ext = url.pathExtension.lowercased()
+                        if allowedExtensions.contains(ext) {
+                            files.append(url)
+                        }
+                    }
+                }
+                
+                if secured {
+                    url.stopAccessingSecurityScopedResource()
+                }
+            }
+            return files
+        }.value
+        
+        // 2. Import collected files
+        let total = Double(collectedFiles.count)
+        guard total > 0 else {
+            fetchBooks()
+            isImporting = false
+            return
+        }
+        
+        for (index, url) in collectedFiles.enumerated() {
             do {
                 try await importSingleFile(at: url)
             } catch {

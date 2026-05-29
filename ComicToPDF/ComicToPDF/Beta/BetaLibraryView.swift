@@ -71,6 +71,7 @@ struct BetaLibraryView: View {
                         .pdf,
                         .zip,
                         .epub,
+                        .folder,
                         UTType(filenameExtension: "cbz"),
                         UTType(filenameExtension: "cbr"),
                         UTType(filenameExtension: "cb7")
