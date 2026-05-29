@@ -53,16 +53,8 @@ struct ContentView: View {
     @State private var globalErrorCategory = "System"
 
     var body: some View {
-        ZStack {
-            if sizeClass == .compact || !useSidebar {
-                liquidGlassLayout
-                    .transition(.opacity)
-            } else {
-                iPadLayout
-                    .transition(.opacity)
-            }
-        }
-        .animation(.easeInOut, value: appUIMode)
+        BetaMainView(modelContext: modelContext)
+            .animation(.easeInOut, value: appUIMode)
         .secureVaultPrivacy()
         .environmentObject(conversionManager)
         .environmentObject(settingsManager)
