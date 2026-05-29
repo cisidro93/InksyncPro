@@ -284,6 +284,19 @@ export default function App() {
                   </div>
                 </div>
               </div>
+
+              <div style={styles.settingsGroup}>
+                <h4 style={styles.settingsGroupTitle}>Cloud Storage Integrations</h4>
+                <div style={styles.settingsRow}>
+                  <label style={styles.settingsLabel}>Dropbox Link Status</label>
+                  <div style={{ display: "flex", alignItems: "center", gap: 15, flex: 1 }}>
+                    <span style={{ fontSize: 13, color: "#888" }}>Account: Not Linked</span>
+                    <button style={{ ...styles.actionButton, backgroundColor: "#0061FE", color: "#fff" }}>
+                      Link Dropbox Account
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         )}
