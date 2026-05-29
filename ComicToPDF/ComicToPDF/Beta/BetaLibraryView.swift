@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import UniformTypeIdentifiers
 
 struct BetaLibraryView: View {
     @EnvironmentObject var libraryStore: BetaLibraryStore
@@ -64,19 +65,23 @@ struct BetaLibraryView: View {
                     }
                 }
             }
-            .fileImporter(
-                isPresented: $showingImportSheet,
-                allowedContentTypes: [.zip, .pdf, .epub, .data], // data covers .cbz / .cbr fallback
-                allowsMultipleSelection: true
-            ) { result in
-                switch result {
-                case .success(let urls):
-                    Task {
-                        await libraryStore.importFiles(from: urls)
-                    }
-                case .failure(let error):
-                    print("BetaLibraryView: File picker error: \(error)")
-                }
+            .sheet(isPresented: $showingImportSheet) {
+                BetaDocumentPicker(
+                    allowedContentTypes: [
+                        .pdf,
+                        .zip,
+                        .epub,
+                        UTType(filenameExtension: "cbz"),
+                        UTType(filenameExtension: "cbr"),
+                        UTType(filenameExtension: "cb7")
+                    ].compactMap { $0 },
+                    onPick: { urls in
+                        Task {
+                            await libraryStore.importFiles(from: urls)
+                        }
+                    },
+                    onCancel: {}
+                )
             }
             .fullScreenCover(item: $selectedBookForReader) { book in
                 BetaReaderView(book: book)
@@ -470,6 +475,43 @@ struct BookListRow: View {
             } label: {
                 Label("Delete Book", systemImage: "trash")
             }
+        }
+    }
+}
+
+// MARK: - Native Document Picker wrapper for robust 'asCopy' file importing
+struct BetaDocumentPicker: UIViewControllerRepresentable {
+    let allowedContentTypes: [UTType]
+    let onPick: ([URL]) -> Void
+    let onCancel: () -> Void
+
+    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: allowedContentTypes, asCopy: true)
+        picker.allowsMultipleSelection = true
+        picker.delegate = context.coordinator
+        picker.shouldShowFileExtensions = true
+        return picker
+    }
+
+    func updateUIViewController(_ uiViewController: UIDocumentPickerViewController, context: Context) {}
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    class Coordinator: NSObject, UIDocumentPickerDelegate {
+        let parent: BetaDocumentPicker
+
+        init(_ parent: BetaDocumentPicker) {
+            self.parent = parent
+        }
+
+        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+            parent.onPick(urls)
+        }
+
+        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+            parent.onCancel()
         }
     }
 }
