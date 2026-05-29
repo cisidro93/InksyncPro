@@ -221,7 +221,6 @@ final class ConversionOrchestrator: Sendable {
                     await MainActor.run { manager.scanLibrary() }
                 } else if jobSettings.outputPipeline == .proPanel {
                     await MainActor.run { manager.processingStatus = "Reading panels for \(pdf.name)..." }
-                    try? await Task.sleep(nanoseconds: 1_000_000_000)
                     let combinedManifest = await manager.getCombinedManifest(for: pdf)
                     let pvConverter = PanelViewEPUBConverter()
                     let newURLs = try await pvConverter.convert(sourceURL: pdf.url, settings: jobSettings, panels: combinedManifest, sourceIsMangaPDF: false, coverOverrideData: coverOverrideData) { p in
@@ -412,7 +411,6 @@ final class ConversionOrchestrator: Sendable {
                 }
                 
                 await MainActor.run { manager.processingStatus = "Reading Source Panels..." }
-                try? await Task.sleep(nanoseconds: 1_500_000_000)
                 let combinedManifest = await manager.getCombinedManifest(for: file)
                 let isMangaPDF = file.url.pathExtension.lowercased() == "pdf" && (file.metadata.isManga == true)
                 let resultingURLs: [URL]

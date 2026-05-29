@@ -104,59 +104,101 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
                 return urls
             }
 
-            // --- 0bb6b38 Legacy extraction block + SeriesNameParser staging ---
+            // --- Parallel Staging: Phase 1 enumerate, Phase 2 concurrent copy ---
             let fm = FileManager.default
             let allowedExts: Set<String> = ["cbz", "cbr", "cb7", "epub", "zip", "pdf"]
-            
+
             let stagingDir = fm.temporaryDirectory.appendingPathComponent("InksyncStaging_\(UUID().uuidString)")
             try? fm.createDirectory(at: stagingDir, withIntermediateDirectories: true)
-            
-            var foundURLs: [URL] = []
+
+            // ── Phase 1: Collect candidate (source, dest) pairs without copying ──
+            // Enumeration is cheap (metadata only); we yield every 25 items to keep
+            // the Swift runtime scheduler responsive during large folder scans.
+            struct CopyJob {
+                let source: URL
+                let dest: URL
+            }
+            var jobs: [CopyJob] = []
 
             for url in urls {
                 let secured = url.startAccessingSecurityScopedResource()
                 defer { if secured { url.stopAccessingSecurityScopedResource() } }
-                
+
                 var isDirectory: ObjCBool = false
                 if fm.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue {
-                    // Recursively spider the directory synchronously
-                    if let enumerator = fm.enumerator(at: url, includingPropertiesForKeys: [.isDirectoryKey]) {
+                    // Recursively spider — metadata-only, no I/O
+                    let keys: [URLResourceKey] = [.isDirectoryKey]
+                    if let enumerator = fm.enumerator(at: url,
+                                                       includingPropertiesForKeys: keys,
+                                                       options: [.skipsHiddenFiles]) {
+                        var enumCount = 0
                         while let fileURL = enumerator.nextObject() as? URL {
-                            if allowedExts.contains(fileURL.pathExtension.lowercased()) {
-                                // Preserve native structure for SeriesNameParser Context
-                                let originalParent = fileURL.deletingLastPathComponent().lastPathComponent
-                                let destFolder = stagingDir.appendingPathComponent(originalParent)
-                                try? fm.createDirectory(at: destFolder, withIntermediateDirectories: true)
-                                
-                                let destURL = destFolder.appendingPathComponent(fileURL.lastPathComponent)
-                                do {
-                                    if fm.fileExists(atPath: destURL.path) { try fm.removeItem(at: destURL) }
-                                    try fm.copyItem(at: fileURL, to: destURL)
-                                    foundURLs.append(destURL)
-                                } catch {
-                                    Logger.shared.log("ImportCoordinator: Copy failed \(fileURL.lastPathComponent)", category: "System", type: .warning)
-                                }
-                            }
+                            enumCount += 1
+                            if enumCount % 25 == 0 { await Task.yield() }
+
+                            guard let rsrc = try? fileURL.resourceValues(forKeys: Set(keys)),
+                                  rsrc.isDirectory == false else { continue }
+                            guard allowedExts.contains(fileURL.pathExtension.lowercased()) else { continue }
+
+                            // Preserve native structure for SeriesNameParser Context
+                            let originalParent = fileURL.deletingLastPathComponent().lastPathComponent
+                            let destFolder = stagingDir.appendingPathComponent(originalParent)
+                            try? fm.createDirectory(at: destFolder, withIntermediateDirectories: true)
+                            jobs.append(CopyJob(source: fileURL,
+                                                dest: destFolder.appendingPathComponent(fileURL.lastPathComponent)))
                         }
                     }
                 } else {
-                    // It's a standard single file selection
+                    // Standard single-file selection
                     if allowedExts.contains(url.pathExtension.lowercased()) {
                         let originalParent = url.deletingLastPathComponent().lastPathComponent
                         let destFolder = stagingDir.appendingPathComponent(originalParent)
                         try? fm.createDirectory(at: destFolder, withIntermediateDirectories: true)
-                        
-                        let destURL = destFolder.appendingPathComponent(url.lastPathComponent)
-                        do {
-                            if fm.fileExists(atPath: destURL.path) { try fm.removeItem(at: destURL) }
-                            try fm.copyItem(at: url, to: destURL)
-                            foundURLs.append(destURL)
-                        } catch {
-                            Logger.shared.log("ImportCoordinator: Copy failed \(url.lastPathComponent)", category: "System", type: .warning)
-                        }
+                        jobs.append(CopyJob(source: url,
+                                            dest: destFolder.appendingPathComponent(url.lastPathComponent)))
                     }
                 }
             }
+
+            // ── Phase 2: Concurrent copy — up to 8 in-flight (APFS parallel I/O) ──
+            // FileManager.copyItem is thread-safe for independent source/dest pairs.
+            let maxConcurrent = 8
+            var foundURLs: [URL] = []
+
+            await withTaskGroup(of: URL?.self) { group in
+                var inFlight = 0
+
+                for job in jobs {
+                    // Back-pressure: drain one slot before adding when at capacity
+                    if inFlight >= maxConcurrent {
+                        if let result = await group.next() {
+                            if let url = result { foundURLs.append(url) }
+                            inFlight -= 1
+                        }
+                    }
+
+                    let src = job.source
+                    let dst = job.dest
+                    group.addTask {
+                        do {
+                            if fm.fileExists(atPath: dst.path) { try fm.removeItem(at: dst) }
+                            try fm.copyItem(at: src, to: dst)
+                            return dst
+                        } catch {
+                            Logger.shared.log("ImportCoordinator: Copy failed \(src.lastPathComponent)",
+                                              category: "System", type: .warning)
+                            return nil
+                        }
+                    }
+                    inFlight += 1
+                }
+
+                // Drain remaining in-flight tasks
+                for await result in group {
+                    if let url = result { foundURLs.append(url) }
+                }
+            }
+
             return foundURLs
         }
         

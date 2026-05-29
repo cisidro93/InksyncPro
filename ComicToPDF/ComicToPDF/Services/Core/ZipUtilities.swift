@@ -71,44 +71,114 @@ struct ZipUtilities {
 
                     } else {
                         // --- ZIP / CBZ PATH ---
-                        // Restore stable-build approach: failable initializer + full internal entry path.
-                        // ZIPFoundation.extract(entry:to:) creates parent directories automatically (v0.9.9+).
-                        // We add an explicit createDirectory before each extract as belt-and-suspenders.
-                        let archive: ZIPFoundation.Archive
+                        //
+                        // ZIPFoundation.Archive is NOT thread-safe when SHARED across threads.
+                        // However, opening N *independent* Archive instances on the same file
+                        // is completely safe — each gets its own POSIX file descriptor and its
+                        // own internal read/seek position. ZIPFoundation also builds a
+                        // pathToEntryMapping [String:Entry] dictionary at init time, so
+                        // `archive[path]` is an O(1) lookup per worker with no shared state.
+                        //
+                        // Strategy:
+                        //   Phase 1 — Serial: open one Archive, enumerate qualifying entry
+                        //             paths into an array. No image data is loaded into memory.
+                        //   Phase 2 — Parallel: split paths into N chunks (N = active CPU count,
+                        //             capped at 4). Each chunk worker opens its OWN Archive
+                        //             instance, looks up its assigned paths in O(1), and streams
+                        //             each entry directly to disk via extract(entry:to:).
+                        //             Peak memory = O(1 decompressed image) per worker, not
+                        //             O(all images) — eliminates the iOS memory pressure crash.
+
+                        // ── Phase 1: Enumerate qualifying entry paths (no I/O, metadata only) ──
+                        let enumerationArchive: ZIPFoundation.Archive
                         do {
-                            archive = try ZIPFoundation.Archive(url: sourceURL, accessMode: .read)
+                            enumerationArchive = try ZIPFoundation.Archive(url: sourceURL, accessMode: .read)
                         } catch {
                             throw NSError(domain: "ZipError", code: 1,
-                                          userInfo: [NSLocalizedDescriptionKey: "Could not open CBZ archive at \(sourceURL.lastPathComponent): \(error.localizedDescription)"])
+                                          userInfo: [NSLocalizedDescriptionKey:
+                                            "Could not open CBZ archive '\(sourceURL.lastPathComponent)': \(error.localizedDescription)"])
                         }
 
-                        for entry in archive {
-                            try autoreleasepool {
-                                let path = entry.path
-                                let filename = URL(fileURLWithPath: path).lastPathComponent
+                        let imageExtensions: Set<String> = ["jpg", "jpeg", "png", "webp", "gif", "heic"]
+                        var qualifiedPaths: [String] = []
 
-                                // Skip macOS hidden files and directories
-                                if path.contains("__MACOSX") || filename.hasPrefix("._") || filename == ".DS_Store" || path.hasSuffix("/") { return }
+                        for entry in enumerationArchive {
+                            let path = entry.path
+                            let filename = (path as NSString).lastPathComponent
+                            guard !path.contains("__MACOSX"),
+                                  !filename.hasPrefix("._"),
+                                  filename != ".DS_Store",
+                                  !path.hasSuffix("/") else { continue }
+                            let fileExt = (filename as NSString).pathExtension.lowercased()
+                            guard imageExtensions.contains(fileExt) else { continue }
+                            qualifiedPaths.append(path)
+                        }
 
-                                let destinationURL = tempDir.appendingPathComponent(path)
+                        guard !qualifiedPaths.isEmpty else {
+                            throw NSError(domain: "ZipError", code: 2,
+                                          userInfo: [NSLocalizedDescriptionKey:
+                                            "No image entries found in '\(sourceURL.lastPathComponent)'"])
+                        }
 
-                                // ✅ Defensive: ensure parent directory exists before extracting.
-                                // ZIPFoundation does this internally, but we do it explicitly for safety.
-                                let parentDir = destinationURL.deletingLastPathComponent()
-                                if !fileManager.fileExists(atPath: parentDir.path) {
-                                    try fileManager.createDirectory(at: parentDir, withIntermediateDirectories: true)
+                        // ── Phase 2: N-archive parallel decompression + streaming disk write ──
+                        // Cap at 4 to avoid thermal throttling on iOS devices.
+                        let concurrency = min(ProcessInfo.processInfo.activeProcessorCount, 4)
+                        let chunkSize = max(1, Int(ceil(Double(qualifiedPaths.count) / Double(concurrency))))
+                        let chunks = stride(from: 0, to: qualifiedPaths.count, by: chunkSize)
+                            .map { Array(qualifiedPaths[$0 ..< min($0 + chunkSize, qualifiedPaths.count)]) }
+
+                        // Serial queue guards appends to extractedFiles from concurrent workers.
+                        let appendQueue = DispatchQueue(label: "inksync.zip.append")
+                        let workerGroup = DispatchGroup()
+
+                        for chunk in chunks {
+                            workerGroup.enter()
+                            DispatchQueue.global(qos: .userInitiated).async {
+                                defer { workerGroup.leave() }
+
+                                // Each worker opens its own Archive — independent file handle & position.
+                                guard let workerArchive = try? ZIPFoundation.Archive(
+                                    url: sourceURL, accessMode: .read
+                                ) else {
+                                    Logger.shared.log(
+                                        "ZipUtilities: worker failed to open archive \(sourceURL.lastPathComponent)",
+                                        category: "System", type: .warning
+                                    )
+                                    return
                                 }
 
-                                _ = try archive.extract(entry, to: destinationURL)
+                                for path in chunk {
+                                    autoreleasepool {
+                                        // O(1) lookup via ZIPFoundation's internal pathToEntryMapping dict.
+                                        guard let entry = workerArchive[path] else { return }
 
-                                // Validate it is a supported image format
-                                let fileExt = destinationURL.pathExtension.lowercased()
-                                if ["jpg", "jpeg", "png", "webp", "gif", "heic"].contains(fileExt) {
-                                    extractedFiles.append(destinationURL)
+                                        let destinationURL = tempDir.appendingPathComponent(path)
+                                        let parentDir = destinationURL.deletingLastPathComponent()
+
+                                        // createDirectory(withIntermediateDirectories:) is idempotent
+                                        // and safe to call concurrently from multiple threads.
+                                        try? fileManager.createDirectory(
+                                            at: parentDir, withIntermediateDirectories: true
+                                        )
+
+                                        // stream entry directly to disk — no intermediate Data buffer.
+                                        do {
+                                            _ = try workerArchive.extract(entry, to: destinationURL)
+                                            appendQueue.sync { extractedFiles.append(destinationURL) }
+                                        } catch {
+                                            Logger.shared.log(
+                                                "ZipUtilities: failed to extract \(path): \(error.localizedDescription)",
+                                                category: "System", type: .warning
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
+                        workerGroup.wait()
                     }
+
+
 
                     // 5. Sort and Finish
                     let sortedURLs = extractedFiles.sorted {
