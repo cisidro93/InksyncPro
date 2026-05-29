@@ -1,18 +1,16 @@
-name: Build Native iOS App
+name: Build Beta iOS App
 
 on:
   push:
-    branches: [ "main", "ios-port" ]
+    branches: [ "beta" ]
   pull_request:
-    branches: [ "main", "ios-port" ]
+    branches: [ "beta" ]
 
 jobs:
   build:
     runs-on: macos-latest
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-      # Redirect module cache to /tmp so it is NEVER cached between runs.
-      # This is the definitive fix for "mtime changed" SwiftShims errors.
       CLANG_MODULE_CACHE_PATH: /tmp/clang-module-cache
 
     steps:
@@ -20,7 +18,6 @@ jobs:
 
     - name: Select Xcode
       run: |
-        # Log the Xcode version for traceability
         xcodebuild -version
         sudo xcode-select -p
 
@@ -39,7 +36,6 @@ jobs:
     - name: Cache SPM Packages
       uses: actions/cache@v4
       with:
-        # Only cache resolved SPM source checkouts — never compiled .pcm or .o files
         path: ComicToPDF/build/SourcePackages/checkouts
         key: ${{ runner.os }}-spm-${{ hashFiles('ComicToPDF/project.yml') }}
         restore-keys: |
@@ -70,10 +66,10 @@ jobs:
         cd ComicToPDF
         mkdir Payload
         cp -r build/Build/Products/Release-iphoneos/InksyncPro.app Payload/
-        zip -r InksyncPro_Unsigned.ipa Payload
+        zip -r InksyncPro_Beta_Unsigned.ipa Payload
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: InksyncPro_Unsigned_IPA
-        path: ComicToPDF/InksyncPro_Unsigned.ipa
+        name: InksyncPro_Beta_Unsigned_IPA
+        path: ComicToPDF/InksyncPro_Beta_Unsigned.ipa
