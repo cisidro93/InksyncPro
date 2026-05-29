@@ -2,6 +2,7 @@ import SwiftUI
 import PDFKit
 import WebKit
 import SwiftData
+import ZIPFoundation
 
 struct BetaReaderView: View {
     let book: BetaBook
@@ -434,15 +435,13 @@ struct BetaPDFView: UIViewRepresentable {
             self.parent = parent
         }
         
-        @objc func handlePageChanged(notification: Notification) {
+        @objc @MainActor func handlePageChanged(notification: Notification) {
             guard let pdfView = notification.object as? PDFView,
                   let document = pdfView.document,
                   let currentPage = pdfView.currentPage else { return }
             
             let index = document.index(for: currentPage)
-            DispatchQueue.main.async {
-                self.parent.currentPageIndex = index
-            }
+            self.parent.currentPageIndex = index
         }
     }
 }
@@ -512,11 +511,21 @@ struct BetaEPUBView: UIViewRepresentable {
     }
     
     private func parseOPFPath(from data: Data) -> String? {
-        let delegate = OPFPathDelegate()
+        let delegate = ReaderOPFPathDelegate()
         let parser = XMLParser(data: data)
         parser.delegate = delegate
         parser.parse()
         return delegate.opfPath
+    }
+}
+
+private class ReaderOPFPathDelegate: NSObject, XMLParserDelegate {
+    var opfPath: String?
+    
+    func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?, qualifiedName qName: String?, attributes: [String: String] = [:]) {
+        if elementName.lowercased() == "rootfile", let path = attributes["full-path"] {
+            opfPath = path
+        }
     }
 }
 

@@ -412,7 +412,7 @@ public final class BetaKindleService: ObservableObject {
         
         do {
             let data = try Data(contentsOf: fileURL, options: .mappedIfSafe)
-            let mimeType = fileName.pathExtension == "epub" ? "application/epub+zip" : "application/octet-stream"
+            let mimeType = (fileName as NSString).pathExtension == "epub" ? "application/epub+zip" : "application/octet-stream"
             
             var header = "HTTP/1.1 200 OK\r\n"
                 + "Content-Type: \(mimeType)\r\n"
@@ -420,9 +420,13 @@ public final class BetaKindleService: ObservableObject {
                 + "Content-Disposition: attachment; filename=\"\(fileName)\"\r\n"
                 + "Connection: close\r\n\r\n"
             
-            connection.send(content: header.data(using: .utf8), completion: .idempotent)
+            connection.send(content: header.data(using: String.Encoding.utf8), completion: .idempotent)
             connection.send(content: data, completion: .contentProcessed({ [weak self] _ in
-                self?.closeConnection(connection)
+                if let self = self {
+                    Task { @MainActor in
+                        self.closeConnection(connection)
+                    }
+                }
             }))
         } catch {
             sendResponse(connection, statusCode: 500, html: "Internal Server Error: \(error.localizedDescription)")
@@ -430,17 +434,21 @@ public final class BetaKindleService: ObservableObject {
     }
     
     private func sendResponse(_ connection: NWConnection, statusCode: Int, html: String) {
-        let data = html.data(using: .utf8) ?? Data()
+        let data = html.data(using: String.Encoding.utf8) ?? Data()
         let header = "HTTP/1.1 \(statusCode) OK\r\n"
             + "Content-Type: text/html; charset=utf-8\r\n"
             + "Content-Length: \(data.count)\r\n"
             + "Connection: close\r\n\r\n"
         
-        var resp = header.data(using: .utf8)!
+        var resp = header.data(using: String.Encoding.utf8)!
         resp.append(data)
         
         connection.send(content: resp, completion: .contentProcessed({ [weak self] _ in
-            self?.closeConnection(connection)
+            if let self = self {
+                Task { @MainActor in
+                    self.closeConnection(connection)
+                }
+            }
         }))
     }
     
@@ -480,14 +488,4 @@ public final class BetaKindleService: ObservableObject {
     }
 }
 
-// Helper to escape XML special characters
-extension String {
-    func xmlEscaped() -> String {
-        return self
-            .replacingOccurrences(of: "&", with: "&amp;")
-            .replacingOccurrences(of: "<", with: "&lt;")
-            .replacingOccurrences(of: ">", with: "&gt;")
-            .replacingOccurrences(of: "\"", with: "&quot;")
-            .replacingOccurrences(of: "'", with: "&apos;")
-    }
-}
+

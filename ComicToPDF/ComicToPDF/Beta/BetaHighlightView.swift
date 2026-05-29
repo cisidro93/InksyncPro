@@ -74,16 +74,16 @@ struct BetaHighlightView: View {
         .background(Color.black.opacity(0.2))
     }
     
-    // MARK: - Highlights List
+    private var groupedHighlights: [String: [BetaHighlight]] {
+        Dictionary(grouping: filteredHighlights, by: { $0.book?.title ?? "Unknown Book" })
+    }
     
     private var highlightsList: some View {
-        List {
-            // Group by Book Title
-            let grouped = Dictionary(grouping: filteredHighlights, by: { $0.book?.title ?? "Unknown Book" })
-            
-            ForEach(grouped.keys.sorted(), id: \.self) { title in
+        let groups = groupedHighlights
+        return List {
+            ForEach(groups.keys.sorted(), id: \.self) { title in
                 Section(header: Text(title).font(.subheadline.bold()).foregroundStyle(Color.orange)) {
-                    ForEach(grouped[title] ?? []) { highlight in
+                    ForEach(groups[title] ?? []) { highlight in
                         highlightRow(highlight: highlight)
                             .listRowBackground(Color(hex: "#1E1E24").opacity(0.6))
                             .listRowSeparatorTint(Color.white.opacity(0.1))
