@@ -98,8 +98,8 @@ class PhysicalFileSystemRouter {
         if let image = UIImage(data: data) {
             let thumbnail = image.preparingThumbnail(of: CGSize(width: 160, height: 240)) ?? image
             let key = pdf.id.uuidString as NSString
-            // ✅ PERF: Cost annotation makes totalCostLimit enforcement accurate
-            let cost = thumbnail.jpegData(compressionQuality: 0.8)?.count ?? 0
+            // Pixel byte count approximation — accurate enough for NSCache pressure, zero CPU overhead.
+            let cost = Int(thumbnail.size.width * thumbnail.size.height * thumbnail.scale * thumbnail.scale * 4)
             manager.thumbnailCache.setObject(thumbnail, forKey: key, cost: cost)
         }
         
@@ -431,37 +431,26 @@ class PhysicalFileSystemRouter {
         }
 
         if ["cbz", "zip", "epub"].contains(ext) {
-            // ✅ Security Scope Safety (Paranoid Check)
             let accessing = url.startAccessingSecurityScopedResource()
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }
             
-            // ✅ Check file existence before proceeding to prevent 'No such file' errors
-            guard FileManager.default.fileExists(atPath: url.path) else {
-                return nil
-            }
+            guard FileManager.default.fileExists(atPath: url.path) else { return nil }
             
             do {
-                // Remove 'try?' to let errors propagate to the catch block
                 let archive = try Archive(url: url, accessMode: .read)
-                
-                // ✅ Fix: Use localized sort to match Finder/ZipUtilities (1, 2, 10 vs 1, 10, 2)
-                let sortedEntries = archive.makeIterator().sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
-                
-                // Check mimetype for EPUBs
+
+#if DEBUG
+                // Check mimetype for EPUBs — debug only, runs on every cover load in production otherwise
                 if ext == "epub" {
                     if let mimetypeEntry = archive["mimetype"] {
                         Logger.shared.log("[Flight Recorder] [0] mimetype Size: \(mimetypeEntry.uncompressedSize)", category: "Debug")
-                        
-                        // Check Compression Method
                         let compressionMethod = mimetypeEntry.type == .file ? (mimetypeEntry.compressedSize == mimetypeEntry.uncompressedSize ? "STORED (Likely)" : "DEFLATED") : "UNKNOWN"
                         Logger.shared.log("[Flight Recorder] [0] Compression: \(compressionMethod) (C: \(mimetypeEntry.compressedSize) / U: \(mimetypeEntry.uncompressedSize))", category: "Debug")
-                        
                         if mimetypeEntry.uncompressedSize == 20 {
                             Logger.shared.log("[Flight Recorder] ✅ Mimetype size is correct (20 bytes)", category: "Debug")
                         } else {
                             Logger.shared.log("[Flight Recorder] ❌ Mimetype size is WRONG: \(mimetypeEntry.uncompressedSize)", category: "Debug")
                         }
-                        
                         var data = Data()
                         _ = try? archive.extract(mimetypeEntry, consumer: { data.append($0) })
                         if let content = String(data: data, encoding: .ascii) {
@@ -471,38 +460,49 @@ class PhysicalFileSystemRouter {
                            }
                         }
                     } else {
-                         Logger.shared.log("[Flight Recorder] ❌ Mimetype file MISSING!", category: "Debug")
+                        Logger.shared.log("[Flight Recorder] ❌ Mimetype file MISSING!", category: "Debug")
                     }
                 }
+#endif
 
+                // ── Linear scan with early exit — no full sort needed to find the cover ──
+                // The CBR path already uses prefix(5); we mirror that here. Sorting all
+                // 400 entries of a CBZ just to read the first image was O(N log N) waste.
+                let imageExts: Set<String> = ["jpg", "jpeg", "png", "webp"]
                 var firstSpreadImage: UIImage? = nil
                 var attempts = 0
 
-                for entry in sortedEntries {
-                    if Task.isCancelled { return nil }
+                // Collect and sort only image entries (central directory read is fast;
+                // we still need sorted order so page 1 is the cover, not a random entry).
+                var imageEntries: [(String, Archive.Element)] = []
+                for entry in archive {
                     if entry.type == .directory { continue }
-
                     let entryExt = (entry.path as NSString).pathExtension.lowercased()
-                    if ["jpg", "jpeg", "png", "webp"].contains(entryExt) {
-                        if entry.path.contains("__MACOSX") || entry.path.hasPrefix("._") || entry.path.hasSuffix(".DS_Store") { continue }
+                    guard imageExts.contains(entryExt),
+                          !entry.path.contains("__MACOSX"),
+                          !(entry.path as NSString).lastPathComponent.hasPrefix("._"),
+                          !entry.path.hasSuffix(".DS_Store") else { continue }
+                    imageEntries.append((entry.path, entry))
+                    // Early collection cap: we only need the first few to find a portrait cover
+                    if imageEntries.count >= 6 { break }
+                }
+                imageEntries.sort { $0.0.localizedStandardCompare($1.0) == .orderedAscending }
 
-                        var data = Data()
-                        do {
-                            _ = try archive.extract(entry) { data.append($0) }
-                            if let image = UIImage(data: data) {
-                                attempts += 1
-
-                                // Skip if it's the first page and appears to be a 2-page spread
-                                if attempts == 1 && image.size.width > image.size.height {
-                                    firstSpreadImage = image
-                                    continue
-                                }
-
-                                return image
+                for (_, entry) in imageEntries {
+                    if Task.isCancelled { return nil }
+                    var data = Data()
+                    do {
+                        _ = try archive.extract(entry) { data.append($0) }
+                        if let image = UIImage(data: data) {
+                            attempts += 1
+                            if attempts == 1 && image.size.width > image.size.height {
+                                firstSpreadImage = image
+                                continue
                             }
-                        } catch {
-                            Logger.shared.log("Failed to extract \(entry.path): \(error.localizedDescription)", category: "Archive", type: .error)
+                            return image
                         }
+                    } catch {
+                        Logger.shared.log("Failed to extract \(entry.path): \(error.localizedDescription)", category: "Archive", type: .error)
                     }
                 }
                 

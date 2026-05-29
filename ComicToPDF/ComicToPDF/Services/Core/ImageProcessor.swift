@@ -89,11 +89,9 @@ struct ImageProcessor {
     /// functions don't invert or rotate the image unexpectedly.
     static func fixOrientation(of image: UIImage) -> UIImage? {
         if image.imageOrientation == .up { return image }
-        UIGraphicsBeginImageContextWithOptions(image.size, false, image.scale)
-        image.draw(in: CGRect(origin: .zero, size: image.size))
-        let normalizedImage = UIGraphicsGetImageFromCurrentImageContext()
-        UIGraphicsEndImageContext()
-        return normalizedImage
+        // UIGraphicsImageRenderer uses Metal-backed rendering and is not deprecated on iOS 17+.
+        let renderer = UIGraphicsImageRenderer(size: image.size)
+        return renderer.image { _ in image.draw(at: .zero) }
     }
     
     static func crop(image: UIImage, to rect: CGRect) -> UIImage? {

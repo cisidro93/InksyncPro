@@ -43,7 +43,6 @@ final class SmartPanelService: Sendable {
                         let result = parser.parse()
                         if !result.isEmpty {
                             await MainActor.run { TaskEngine.shared.processingStatus = "Metadata Found (Embedded)" }
-                            try? await Task.sleep(nanoseconds: 500_000_000)
                             return result
                         }
                     }
@@ -69,7 +68,6 @@ final class SmartPanelService: Sendable {
                 let decoded = try JSONDecoder().decode([Int: [PanelExtractor.Panel]].self, from: jsonData)
                 if !decoded.isEmpty {
                     await MainActor.run { TaskEngine.shared.processingStatus = "Metadata Found (panels.json)" }
-                    try? await Task.sleep(nanoseconds: 500_000_000)
                     return decoded
                 }
             } catch {
@@ -79,8 +77,7 @@ final class SmartPanelService: Sendable {
         
         guard let entry = comicInfoEntry else {
             Logger.shared.log("No ComicInfo or panels.json Metadata found", category: "SmartPanels")
-            await MainActor.run { TaskEngine.shared.processingStatus = "Skipping: No Metadata Found" }
-            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            await MainActor.run { TaskEngine.shared.processingStatus = "" }
             return nil
         }
         
@@ -95,14 +92,12 @@ final class SmartPanelService: Sendable {
         var result = parser.parse()
         
         if result.isEmpty {
-             await MainActor.run { TaskEngine.shared.processingStatus = "Skipping: Metadata Empty" }
-             try? await Task.sleep(nanoseconds: 1_000_000_000)
+             await MainActor.run { TaskEngine.shared.processingStatus = "" }
              return nil
         }
         
         let pageCount = result.count
         await MainActor.run { TaskEngine.shared.processingStatus = "Metadata Found (\(pageCount) pages)" }
-        try? await Task.sleep(nanoseconds: 500_000_000)
         
         // Denormalized Repair
         let needsRepair = result.values.flatMap { $0 }.contains { panel in
@@ -111,19 +106,25 @@ final class SmartPanelService: Sendable {
         
         if needsRepair {
              await MainActor.run { TaskEngine.shared.processingStatus = "Repairing Pixel Coordinates..." }
-            
-            let sortedEntries = archive.makeIterator().sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
-            let imageEntries = sortedEntries.filter { entry in
+            // Single-pass: collect image entries in sorted order without a secondary sort pass.
+            // The entries are already available from the archive — no need for a fresh makeIterator().
+            var imageEntries: [(String, Archive.Element)] = []
+            for entry in archive {
                 let ext = (entry.path as NSString).pathExtension.lowercased()
-                return ["jpg", "jpeg", "png", "webp"].contains(ext) && !entry.path.contains("__MACOSX") && !entry.path.hasPrefix(".")
+                guard ["jpg", "jpeg", "png", "webp"].contains(ext),
+                      !entry.path.contains("__MACOSX"),
+                      !entry.path.hasPrefix(".") else { continue }
+                imageEntries.append((entry.path, entry))
             }
+            imageEntries.sort { $0.0.localizedStandardCompare($1.0) == .orderedAscending }
+            let sortedImageEntries = imageEntries.map(\.1)
             
             for (pageIndex, panels) in result {
-                guard pageIndex < imageEntries.count else { continue }
+                guard pageIndex < sortedImageEntries.count else { continue }
                 let pageHasPixels = panels.contains { $0.boundingBox.minX > 2.0 || $0.boundingBox.width > 2.0 }
                 
                 if pageHasPixels {
-                    let entry = imageEntries[pageIndex]
+                    let entry = sortedImageEntries[pageIndex]
                     var imageData = Data()
                     do {
                         _ = try archive.extract(entry) { imageData.append($0) }

@@ -74,6 +74,9 @@ class LibraryViewModel: ObservableObject {
             var singles: [ConvertedPDF] = []
             var firstAppearanceIndex: [String: Int] = [:]
 
+            // O(1) lookup dict — replaces the O(N×M) collections.first(where:) scan inside the hot loop below.
+            let collectionByID: [UUID: PDFCollection] = Dictionary(uniqueKeysWithValues: collections.map { ($0.id, $0) })
+
             // ── LARGE DRIVE CARDS ───────────────────────────────────────────────
             // Drives above the file-count threshold surface as a single DriveFolder
             // card rather than flooding the grid. They always appear at position 0
@@ -138,7 +141,7 @@ class LibraryViewModel: ObservableObject {
                 }
                 
                 // 2. Process Custom Collections (Events / Folders)
-                if let cid = pdf.collectionId, let collection = collections.first(where: { $0.id == cid }) {
+                if let cid = pdf.collectionId, let collection = collectionByID[cid] {
                     // Only render if the collection is a direct child of the current view
                     if collection.parentId == folderID {
                         let colKey = "col_\(collection.id.uuidString)"

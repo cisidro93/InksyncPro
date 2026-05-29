@@ -65,7 +65,6 @@ extension ConversionManager {
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }
             
             let ext = url.pathExtension.lowercased()
-            let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
 
             if ext == "pdf" {
                 Task {
@@ -94,9 +93,9 @@ extension ConversionManager {
                          try await ZipUtilities.zipDirectory(tempExtractDir, to: cbzURL)
                          
                          try? FileManager.default.removeItem(at: tempExtractDir)
-                         
+                         // Note: scanLibrary() is called once at the end of processImportedFiles
+                         // for all formats — no need for a per-file call inside the Task.
                          await MainActor.run {
-                             self.scanLibrary()
                              self.appAlert = AppAlert(title: "Import Success", message: "Imported EPUB as Comic.")
                          }
                      } catch {
@@ -111,8 +110,7 @@ extension ConversionManager {
             
             do {
                 let fileName = url.lastPathComponent
-                let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-                let destURL = docDir.appendingPathComponent(fileName)
+                let destURL = documentsDir.appendingPathComponent(fileName)
                 try FileManager.default.copyItem(at: url, to: destURL)
             } catch { 
                 Logger.shared.log("Failed to copy imported file \(url.lastPathComponent): \(error.localizedDescription)", category: "Import", type: .error)

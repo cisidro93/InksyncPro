@@ -80,7 +80,7 @@ class ConversionManager: ObservableObject {
         
         createWelcomeFile()
         performStartupOptimization()
-        Task { await MainActor.run { self.migrateCoversToDisk() } }
+        migrateCoversToDisk()  // @MainActor class — direct call, no Task wrapper needed
         
         NotificationCenter.default.addObserver(forName: .libraryNeedsRescan, object: nil, queue: .main) { [weak self] notification in
             let modeRaw = notification.userInfo?["mode"] as? String
