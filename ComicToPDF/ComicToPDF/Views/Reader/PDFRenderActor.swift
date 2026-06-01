@@ -16,18 +16,36 @@ actor PDFRenderActor {
         if currentURL == url, let doc = currentDocument {
             return doc.pageCount
         }
+        
+        Logger.shared.log("Loading PDF document from \(url.lastPathComponent)", category: "PDFRenderActor", type: .info)
+        
         let doc = PDFDocument(url: url)
+        guard let doc = doc else {
+            Logger.shared.log("Failed to load PDF document from \(url.lastPathComponent). Corrupt or inaccessible file.", category: "PDFRenderActor", type: .error)
+            return 0
+        }
+        
         self.currentDocument = doc
         self.currentURL = url
-        return doc?.pageCount ?? 0
+        Logger.shared.log("Successfully loaded PDF with \(doc.pageCount) pages.", category: "PDFRenderActor", type: .success)
+        return doc.pageCount
     }
     
     /// Renders a specific page thread-safely.
     func renderPage(at index: Int, scale: CGFloat) -> UIImage? {
-        guard let doc = currentDocument else { return nil }
-        guard let page = doc.page(at: index) else { return nil }
+        guard let doc = currentDocument else {
+            Logger.shared.log("Attempted to render page \(index) but currentDocument is nil.", category: "PDFRenderActor", type: .error)
+            return nil
+        }
+        guard let page = doc.page(at: index) else {
+            Logger.shared.log("Page index \(index) is out of bounds (total pages: \(doc.pageCount)).", category: "PDFRenderActor", type: .warning)
+            return nil
+        }
         let pageRect = page.bounds(for: .mediaBox)
-        guard pageRect.width > 0, pageRect.height > 0 else { return nil }
+        guard pageRect.width > 0, pageRect.height > 0 else {
+            Logger.shared.log("Page index \(index) has invalid/zero bounds.", category: "PDFRenderActor", type: .warning)
+            return nil
+        }
         
         let size = CGSize(width: pageRect.width * scale, height: pageRect.height * scale)
         
@@ -46,6 +64,9 @@ actor PDFRenderActor {
     
     /// Clears the cached document to release resources.
     func clear() {
+        if let url = currentURL {
+            Logger.shared.log("Releasing PDF document resource for \(url.lastPathComponent)", category: "PDFRenderActor", type: .info)
+        }
         self.currentDocument = nil
         self.currentURL = nil
     }

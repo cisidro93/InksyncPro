@@ -184,6 +184,7 @@ final class ComicImageCache: ObservableObject, @unchecked Sendable {
                     resolvedURL = pdf.url
                 }
                 guard let archive = try? Archive(url: resolvedURL, accessMode: .read, pathEncoding: .utf8) else {
+                    Logger.shared.log("Failed to open CBZ Archive at \(resolvedURL.lastPathComponent)", category: "ComicImageCache", type: .error)
                     await MainActor.run { [weak self] in
                         self?.loadError = "Could not open the comic archive. The file may be corrupted, password-protected, or in an unsupported format."
                         self?.isLoading = false
@@ -382,6 +383,7 @@ final class ComicImageCache: ObservableObject, @unchecked Sendable {
                     
                     return UIImage(cgImage: downsampledImage)
                 } catch {
+                    Logger.shared.log("CBZ page \(index) extraction error: \(error.localizedDescription)", category: "ComicImageCache", type: .error)
                     return nil
                 }
             }

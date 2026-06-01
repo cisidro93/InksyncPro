@@ -414,6 +414,98 @@ struct ModernGridFileCell: View {
     }
 }
 
+/// A glassmorphic folder representing a collection or series folder.
+/// Shows a smaller thumbnail of the artwork peeking out of a transparent glass pocket.
+struct FolderThumbnailView: View {
+    let image: UIImage?
+    let count: Int
+    
+    var body: some View {
+        ZStack {
+            // Folder Back
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [Color.primary.opacity(0.08), Color.primary.opacity(0.02)],
+                        startPoint: .topLeading, endPoint: .bottomTrailing
+                    )
+                )
+                .background(.ultraThinMaterial)
+            
+            // Folder Tab (Top-Left)
+            VStack(spacing: 0) {
+                HStack {
+                    Path { path in
+                        path.move(to: CGPoint(x: 10, y: 0))
+                        path.addLine(to: CGPoint(x: 50, y: 0))
+                        path.addQuadCurve(to: CGPoint(x: 58, y: 8), control: CGPoint(x: 55, y: 0))
+                        path.addLine(to: CGPoint(x: 65, y: 16))
+                        path.addLine(to: CGPoint(x: 10, y: 16))
+                        path.closeSubpath()
+                    }
+                    .fill(Color.primary.opacity(0.08))
+                    .frame(width: 80, height: 16)
+                    .offset(y: -8)
+                    Spacer()
+                }
+                Spacer()
+            }
+            
+            // Artwork Cover (Centered, smaller, tilted with shadow)
+            Group {
+                if let img = image {
+                    Image(uiImage: img)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                } else {
+                    ZStack {
+                        Color.secondary.opacity(0.1)
+                        Image(systemName: "books.vertical.fill")
+                            .font(.system(size: 28))
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            .frame(width: 76, height: 108)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(Color.white.opacity(0.1), lineWidth: 0.5)
+            )
+            .shadow(color: .black.opacity(0.4), radius: 8, y: 4)
+            .rotationEffect(.degrees(-3))
+            .offset(y: -4)
+            .clipped()
+            
+            // Folder Front Pocket (overlapping bottom portion)
+            VStack {
+                Spacer()
+                ZStack(alignment: .top) {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [Color.white.opacity(0.12), Color.white.opacity(0.02)],
+                                startPoint: .top, endPoint: .bottom
+                            )
+                        )
+                        .background(.thinMaterial)
+                    
+                    // Folder front flap edge highlight line
+                    Capsule()
+                        .fill(Color.white.opacity(0.20))
+                        .frame(height: 1.2)
+                        .padding(.top, 0.5)
+                }
+                .frame(height: 64)
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color.white.opacity(0.12), lineWidth: 0.5)
+        )
+    }
+}
 
 struct ModernGridSeriesCell: View {
     let group: SeriesGroup
@@ -429,52 +521,21 @@ struct ModernGridSeriesCell: View {
     @AppStorage("mangaBadgeColorHex") private var mangaBadgeColorHex = "#2dd4a0"
     @AppStorage("comicBadgeColorHex") private var comicBadgeColorHex = "#3d6fff"
     
+    private var coverImage: UIImage? {
+        if let issueID = group.coverIssueID,
+           let cached = conversionManager.thumbnailCache.object(forKey: issueID.uuidString as NSString) {
+            return cached
+        }
+        return localCover
+    }
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
 
-            // Cover Image with refined Stack Effect
+            // Folder Image with pocket stack design
             ZStack(alignment: .bottomTrailing) {
-                ZStack {
-                    if group.count > 1 { // Natural fan stack — back cards peek behind
-                        RoundedRectangle(cornerRadius: 10)
-                            .fill(Theme.surface.opacity(0.75))
-                            .aspectRatio(0.63, contentMode: .fit)
-                            .rotationEffect(.degrees(-4))
-                            .scaleEffect(0.9)
-                            .offset(y: -7)
-                            .shadow(color: .black.opacity(0.18), radius: 5, y: 3)
-
-                        RoundedRectangle(cornerRadius: 10)
-                            .fill(Theme.surfaceElevated.opacity(0.88))
-                            .aspectRatio(0.63, contentMode: .fit)
-                            .rotationEffect(.degrees(2.5))
-                            .scaleEffect(0.95)
-                            .offset(y: -3)
-                            .shadow(color: .black.opacity(0.22), radius: 6, y: 3)
-                    }
-
-                    if let issueID = group.coverIssueID, let directCacheImg = conversionManager.thumbnailCache.object(forKey: issueID.uuidString as NSString) {
-                        Image(uiImage: directCacheImg)
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                    } else if let img = localCover {
-                        Image(uiImage: img)
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                    } else {
-                        Rectangle().fill(Theme.surfaceElevated)
-                        Image(systemName: "books.vertical.fill")
-                            .font(.largeTitle)
-                            .foregroundColor(Theme.textSecondary)
-                    }
-                }
-                .aspectRatio(0.63, contentMode: .fit)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(Color.white.opacity(0.12), lineWidth: 0.5)
-                )
-                .shadow(color: .black.opacity(0.28), radius: 10, y: 6)
+                FolderThumbnailView(image: coverImage, count: group.count)
+                    .aspectRatio(0.63, contentMode: .fit)
 
                 // Issue count pill — bottom-right corner (compact)
                 if !isBatch {
