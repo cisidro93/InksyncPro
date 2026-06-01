@@ -323,39 +323,43 @@ struct ContentView: View {
 
     var iPadLayout: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
-            VStack(spacing: 0) {
-                let tabBinding = Binding<Int?>(
-                    get: { selectedTab },
-                    set: { selectedTab = $0 ?? 0 }
-                )
-                List(selection: tabBinding) {
-                    NavigationLink(value: 0) {
-                        Label("Library", systemImage: "books.vertical.fill")
-                    }
-                    NavigationLink(value: 1) {
-                        Label("Workspace", systemImage: "briefcase.fill")
-                    }
-                    NavigationLink(value: 2) {
-                        Label("Devices", systemImage: "ipad.and.iphone")
-                    }
-                }
-                .navigationTitle("Inksync")
+            ZStack {
+                NeuralExpressiveBackground()
+                Color.inkBackground.opacity(0.45)
+                    .ignoresSafeArea()
                 
-                Spacer()
+                VStack(spacing: 0) {
+                    // Header Label
+                    HStack {
+                        Text("Inksync Pro")
+                            .font(.system(size: 18, weight: .bold, design: .serif))
+                            .foregroundStyle(Color.inkTextPrimary)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 24)
+                    .padding(.top, 24)
+                    .padding(.bottom, 16)
 
-                // ── iPad Sidebar Progress Panel ────────────────────────────────
-                iPadProgressPanel
+                    ScrollView {
+                        VStack(spacing: 6) {
+                            SidebarRowView(tabIndex: 0, label: "Library", icon: "books.vertical.fill", selectedTab: $selectedTab)
+                            SidebarRowView(tabIndex: 1, label: "Workspace", icon: "briefcase.fill", selectedTab: $selectedTab)
+                            SidebarRowView(tabIndex: 2, label: "Devices", icon: "ipad.and.iphone", selectedTab: $selectedTab)
+                        }
+                        .padding(.horizontal, 12)
+                    }
 
-                // Settings button pinned at the bottom of the sidebar
-                Button {
-                    showingSettingsInspector.toggle()
-                } label: {
-                    Label("Settings", systemImage: showingSettingsInspector ? "gearshape.fill" : "gear")
-                        .padding()
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .foregroundStyle(showingSettingsInspector ? Color.orange : Color.primary)
+                    Spacer()
+
+                    // ── iPad Sidebar Progress Panel ────────────────────────────────
+                    iPadProgressPanel
+
+                    SettingsSidebarButton(isPresented: $showingSettingsInspector)
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 12)
                 }
             }
+            .navigationBarHidden(true)
         } detail: {
             NavigationStack {
                 if selectedTab == 0 {
@@ -404,6 +408,114 @@ struct ContentView: View {
         }
         .navigationSplitViewStyle(.balanced)
         .environmentObject(router)
+    }
+}
+
+// MARK: - Custom Sidebar Components
+struct SidebarRowView: View {
+    let tabIndex: Int
+    let label: String
+    let icon: String
+    @Binding var selectedTab: Int
+    @State private var isHovered = false
+    
+    var body: some View {
+        let isSelected = selectedTab == tabIndex
+        Button {
+            withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                selectedTab = tabIndex
+            }
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: icon)
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundColor(isSelected ? .orange : .inkTextSecondary)
+                    .frame(width: 22)
+                
+                Text(label)
+                    .font(.system(size: 14, weight: isSelected ? .semibold : .medium))
+                    .foregroundColor(isSelected ? .inkTextPrimary : .inkTextSecondary)
+                
+                Spacer()
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(
+                ZStack {
+                    if isSelected {
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(Color.inkSurface)
+                        
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .strokeBorder(Color.inkBorderVisible, lineWidth: 1)
+                        
+                        // Left accent bar
+                        HStack {
+                            Rectangle()
+                                .fill(Color.orange)
+                                .frame(width: 3, height: 16)
+                                .cornerRadius(1.5)
+                                .padding(.leading, 1)
+                            Spacer()
+                        }
+                    } else if isHovered {
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(Color.inkSurface.opacity(0.4))
+                    }
+                }
+            )
+            .scaleEffect(isHovered && !isSelected ? 1.02 : 1.0)
+            .animation(.easeInOut(duration: 0.2), value: isHovered)
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            isHovered = hovering
+        }
+    }
+}
+
+struct SettingsSidebarButton: View {
+    @Binding var isPresented: Bool
+    @State private var isHovered = false
+    
+    var body: some View {
+        Button {
+            isPresented.toggle()
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: isPresented ? "gearshape.fill" : "gear")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundColor(isPresented ? .orange : .inkTextSecondary)
+                    .frame(width: 22)
+                
+                Text("Settings")
+                    .font(.system(size: 14, weight: isPresented ? .semibold : .medium))
+                    .foregroundColor(isPresented ? .inkTextPrimary : .inkTextSecondary)
+                
+                Spacer()
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(
+                ZStack {
+                    if isPresented {
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(Color.inkSurface)
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .strokeBorder(Color.inkBorderVisible, lineWidth: 1)
+                    } else if isHovered {
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(Color.inkSurface.opacity(0.4))
+                    }
+                }
+            )
+            .scaleEffect(isHovered && !isPresented ? 1.02 : 1.0)
+            .animation(.easeInOut(duration: 0.2), value: isHovered)
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            isHovered = hovering
+        }
     }
 }
 

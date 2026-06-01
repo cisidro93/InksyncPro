@@ -45,6 +45,7 @@ struct ModernLibraryView: View {
     @Environment(\.horizontalSizeClass) private var hSizeClass
     // Phase 4B/4C: iPad sidebar — tracks selected series/collection filter
     @State private var iPadSidebarSelection: String? = nil
+    @State private var isCollectionsExpanded: Bool = true
 
     /// Derived header collapse state.
     /// Priority: landscape (always collapsed) → pin lock → scroll threshold.
@@ -373,30 +374,140 @@ struct ModernLibraryView: View {
         }
     }
 
+    // MARK: - iPad Sidebar Helper Row
+    @ViewBuilder
+    private func librarySidebarRow(tag: String, label: String, icon: String, count: Int? = nil, color: Color? = nil) -> some View {
+        let isSelected = iPadSidebarSelection == tag
+        Button {
+            withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                iPadSidebarSelection = tag
+            }
+        } label: {
+            HStack(spacing: 12) {
+                if let color = color {
+                    Circle()
+                        .fill(color)
+                        .frame(width: 8, height: 8)
+                        .padding(.horizontal, 4)
+                } else {
+                    Image(systemName: icon)
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundColor(isSelected ? .orange : .inkTextSecondary)
+                        .frame(width: 22)
+                }
+                
+                Text(label)
+                    .font(.system(size: 14, weight: isSelected ? .semibold : .medium))
+                    .foregroundColor(isSelected ? .inkTextPrimary : .inkTextSecondary)
+                
+                Spacer()
+                
+                if let count = count {
+                    Text("\(count)")
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .foregroundColor(isSelected ? .inkTextPrimary : .inkTextSecondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 2)
+                        .background(Color.inkSurfaceRaised.opacity(0.4), in: Capsule())
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(
+                ZStack {
+                    if isSelected {
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(Color.inkSurface)
+                        
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .strokeBorder(Color.inkBorderVisible, lineWidth: 1)
+                        
+                        // Left accent bar
+                        HStack {
+                            Rectangle()
+                                .fill(Color.orange)
+                                .frame(width: 3, height: 16)
+                                .cornerRadius(1.5)
+                                .padding(.leading, 1)
+                            Spacer()
+                        }
+                    }
+                }
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
     // MARK: - iPad Sidebar (series + collection picker)
     @ViewBuilder
     private var iPadSidebar: some View {
-        List(selection: $iPadSidebarSelection) {
-            Section("Browse") {
-                Label("All Books", systemImage: "books.vertical.fill")
-                    .tag("all")
-                Label("Continue Reading", systemImage: "book.open.fill")
-                    .tag("continue")
-                Label("Recently Added", systemImage: "clock.fill")
-                    .tag("recent")
-                Label("Favorites", systemImage: "heart.fill")
-                    .tag("favorites")
-            }
-            if !conversionManager.collections.isEmpty {
-                Section("Collections") {
-                    ForEach(conversionManager.collections) { collection in
-                        Label(collection.name, systemImage: "folder.fill")
-                            .tag(collection.id.uuidString)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                // Browse Section
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Browse")
+                        .font(.system(size: 11, weight: .bold))
+                        .tracking(1.0)
+                        .foregroundColor(.inkTextTertiary)
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 4)
+                    
+                    librarySidebarRow(tag: "all", label: "All Books", icon: "books.vertical.fill")
+                    librarySidebarRow(tag: "continue", label: "Continue Reading", icon: "book.open.fill")
+                    librarySidebarRow(tag: "recent", label: "Recently Added", icon: "clock.fill")
+                    librarySidebarRow(tag: "favorites", label: "Favorites", icon: "heart.fill")
+                }
+                
+                // Collections Accordion Section
+                if !conversionManager.collections.isEmpty {
+                    VStack(alignment: .leading, spacing: 0) {
+                        Button {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                isCollectionsExpanded.toggle()
+                            }
+                        } label: {
+                            HStack {
+                                Text("Collections")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .tracking(1.0)
+                                    .foregroundColor(.inkTextTertiary)
+                                
+                                Spacer()
+                                
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundColor(.inkTextTertiary)
+                                    .rotationEffect(.degrees(isCollectionsExpanded ? 90 : 0))
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        
+                        if isCollectionsExpanded {
+                            VStack(alignment: .leading, spacing: 6) {
+                                ForEach(conversionManager.collections) { collection in
+                                    let bookCount = conversionManager.visiblePDFs.filter { $0.collectionId == collection.id }.count
+                                    librarySidebarRow(
+                                        tag: collection.id.uuidString,
+                                        label: collection.name,
+                                        icon: "folder.fill",
+                                        count: bookCount,
+                                        color: colorFor(collection.color)
+                                    )
+                                }
+                            }
+                            .padding(.top, 4)
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                        }
                     }
                 }
             }
+            .padding(.horizontal, 12)
+            .padding(.top, 24)
         }
-        .listStyle(.sidebar)
+        .background(Color.inkBackground)
         .onChange(of: iPadSidebarSelection) { _, selection in
             guard let sel = selection else { return }
             // Reset first so each case starts from a clean state

@@ -12,7 +12,7 @@ class PhysicalFileSystemRouter {
     private init() {}
     
     // MARK: - Core File IO Storage
-    static func getCoversDirectory() -> URL {
+    nonisolated static func getCoversDirectory() -> URL {
         let fileManager = FileManager.default
         guard let appSupportDir = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
             return fileManager.temporaryDirectory
