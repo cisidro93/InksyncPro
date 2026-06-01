@@ -1,5 +1,7 @@
 import SwiftUI
 import ZIPFoundation
+import Foundation
+import SwiftData
 
 struct CBZToEPUBConverter: Sendable {
     
