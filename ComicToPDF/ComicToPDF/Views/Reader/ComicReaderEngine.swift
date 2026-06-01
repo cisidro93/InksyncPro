@@ -73,7 +73,6 @@ final class ComicImageCache: ObservableObject, @unchecked Sendable {
     var pageCount: Int = 0
     let isPDF: Bool
     let isStream: Bool
-    private var pdfDocument: PDFDocument?
     /// Holds the URL whose security scope is currently active for linked CBZ files.
     /// Released in `deinit` when the reader is dismissed.
     var activelyAccessedURL: URL?
@@ -89,11 +88,9 @@ final class ComicImageCache: ObservableObject, @unchecked Sendable {
         
         if isStream {
             // Cloud stream placeholder — pageCount will be set via setupCloudSource
-            self.pdfDocument = nil
             self.pageCount = 0
             self.isLoading = true
         } else if isPDF {
-            self.pdfDocument = nil
             Task.detached(priority: .userInitiated) { [weak self] in
                 // Linked Library: resolve and access the security-scoped URL.
                 // PDFDocument reads data lazily on draw, so we hold onto the access scope until deinit.
@@ -107,7 +104,9 @@ final class ComicImageCache: ObservableObject, @unchecked Sendable {
                 } else {
                     resolvedURL = pdf.url
                 }
-                let doc = PDFDocument(url: resolvedURL)
+                
+                let count = await PDFRenderActor.shared.loadDocument(at: resolvedURL)
+                
                 if let accessed = accessedURL {
                     if let self = self {
                         self.activelyAccessedURL = accessed
@@ -115,9 +114,7 @@ final class ComicImageCache: ObservableObject, @unchecked Sendable {
                         accessed.stopAccessingSecurityScopedResource()
                     }
                 }
-                let count = doc?.pageCount ?? 0
                 await MainActor.run { [weak self] in
-                    self?.pdfDocument = doc
                     self?.pageCount = count
                     self?.isLoading = false
                 }
@@ -221,6 +218,11 @@ final class ComicImageCache: ObservableObject, @unchecked Sendable {
     /// Stop security-scoped access and clean up CBR temp dir when the cache is released.
     deinit {
         activelyAccessedURL?.stopAccessingSecurityScopedResource()
+        if isPDF {
+            Task {
+                await PDFRenderActor.shared.clear()
+            }
+        }
         // CBR: clean up the temp extraction directory so the ~50-300MB of extracted
         // images don't persist in the tmp directory after the reader is dismissed.
         if let tempDir = extractedCBRTempDir {
@@ -312,29 +314,8 @@ final class ComicImageCache: ObservableObject, @unchecked Sendable {
     
     private func extractOrRenderImage(at index: Int) async -> UIImage? {
         if isPDF {
-            guard let page = pdfDocument?.page(at: index) else { return nil }
-            let pageRect = page.bounds(for: .mediaBox)
-            // Guard against zero-size pages during rotation transitions when PDFKit
-            // briefly reports .zero bounds before the new geometry is committed.
-            guard pageRect.width > 0, pageRect.height > 0 else { return nil }
-
             let scale = await MainActor.run { UIScreen.main.scale } * 1.5
-            let size = CGSize(width: pageRect.width * scale, height: pageRect.height * scale)
-
-            // UIGraphicsImageRenderer is thread-safe (unlike UIGraphicsBeginImageContextWithOptions
-            // which is deprecated in iOS 17 and unsafe off-main). Fixes crashes during rotation
-            // when the background task races with the drawable resize.
-            return autoreleasepool {
-                let renderer = UIGraphicsImageRenderer(size: size)
-                return renderer.image { ctx in
-                    let cgCtx = ctx.cgContext
-                    cgCtx.setFillColor(UIColor.white.cgColor)
-                    cgCtx.fill(CGRect(origin: .zero, size: size))
-                    cgCtx.translateBy(x: 0, y: size.height)
-                    cgCtx.scaleBy(x: scale, y: -scale)
-                    page.draw(with: .mediaBox, to: cgCtx)
-                }
-            }
+            return await PDFRenderActor.shared.renderPage(at: index, scale: scale)
         } else if isCBR {
             // CBR: images are fully extracted to disk on open.
             // Read directly from the extracted file URL — no Archive overhead, no per-page

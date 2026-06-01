@@ -44,13 +44,17 @@ struct InksyncProApp: App {
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false, cloudKitDatabase: .none)
         
         do {
-            return try ModelContainer(for: schema, configurations: [modelConfiguration])
+            let container = try ModelContainer(for: schema, configurations: [modelConfiguration])
+            container.mainContext.automaticallyMergesChangesFromParent = true
+            return container
         } catch {
-            print("Could not create ModelContainer: \\(error)")
+            print("Could not create ModelContainer: \(error)")
             do {
-                 return try ModelContainer(for: schema, configurations: [ModelConfiguration(isStoredInMemoryOnly: true)])
+                 let container = try ModelContainer(for: schema, configurations: [ModelConfiguration(isStoredInMemoryOnly: true)])
+                 container.mainContext.automaticallyMergesChangesFromParent = true
+                 return container
             } catch {
-                 fatalError("Could not create Fallback ModelContainer: \\(error)")
+                 fatalError("Could not create Fallback ModelContainer: \(error)")
             }
         }
     }()

@@ -23,8 +23,6 @@ struct iPadKeyboardShortcuts: ViewModifier {
                         .keyboardShortcut("2", modifiers: .command)
                     Button("") { selectedTab = 2 }
                         .keyboardShortcut("3", modifiers: .command)
-                    Button("") { selectedTab = 3 }
-                        .keyboardShortcut("4", modifiers: .command)
                     Button("") { showImport = true }
                         .keyboardShortcut("o", modifiers: .command) // ⌘O = Open file
                 }

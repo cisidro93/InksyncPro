@@ -18,8 +18,6 @@ struct ContentView: View {
     @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
     @State private var selectedPDF: ConvertedPDF?
     
-    @Query private var allAnnotations: [SDAnnotation]
-
     // Global Sheets
     @State private var pdfToShare: ConvertedPDF?
     @State private var pdfToEdit: ConvertedPDF?
@@ -300,22 +298,9 @@ struct ContentView: View {
                 WorkspaceView()
                     .tabVisible(selectedTab == 1)
 
-                // Tab 2: Studio (Reader, Writing Research)
-                InkStudioView()
-                    .tabVisible(selectedTab == 2)
-
-                // Tab 3: Devices & Settings
+                // Tab 2: Devices & Settings
                 DevicesView()
-                    .tabVisible(selectedTab == 3)
-
-                // Tab 4: Universe Graph
-                NavigationStack {
-                    UniverseGraphView()
-                        .navigationTitle("Comic Universe")
-                        .navigationBarTitleDisplayMode(.inline)
-                        .toolbar(.hidden, for: .navigationBar)
-                }
-                .tabVisible(selectedTab == 4)
+                    .tabVisible(selectedTab == 2)
             }
             // Reserve space at the bottom so content scrolls above the pill.
             // Use a smaller inset in landscape where screen height is precious.
@@ -327,7 +312,7 @@ struct ContentView: View {
             InkTabBar(
                 selectedTab: $selectedTab,
                 isHidden: $tabBarHidden,
-                annotationCount: allAnnotations.count,
+                annotationCount: 0,
                 convertingProgress: conversionManager.conversionProgress,
                 isConverting: conversionManager.isConverting,
                 convertingMessage: conversionManager.processingStatus,
@@ -361,24 +346,7 @@ struct ContentView: View {
                         Label("Workspace", systemImage: "briefcase.fill")
                     }
                     NavigationLink(value: 2) {
-                        HStack {
-                            Label("Studio", systemImage: "pencil.and.list.clipboard")
-                            Spacer()
-                            if allAnnotations.count > 0 {
-                                Text("\(allAnnotations.count)")
-                                    .font(.caption2.bold())
-                                    .foregroundColor(.white)
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
-                                    .background(Color(hex: "#7B5EA7"), in: Capsule())
-                            }
-                        }
-                    }
-                    NavigationLink(value: 3) {
                         Label("Devices", systemImage: "ipad.and.iphone")
-                    }
-                    NavigationLink(value: 4) {
-                        Label("Universe", systemImage: "point.3.connected.trianglepath.dotted")
                     }
                 }
                 .navigationTitle("Inksync")
@@ -425,11 +393,7 @@ struct ContentView: View {
                 } else if selectedTab == 1 {
                     WorkspaceView()
                 } else if selectedTab == 2 {
-                    InkStudioView()
-                } else if selectedTab == 3 {
                     DevicesView()
-                } else if selectedTab == 4 {
-                    UniverseGraphView()
                 }
             }
             // ✅ iPad Settings Inspector
