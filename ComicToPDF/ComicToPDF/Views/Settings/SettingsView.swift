@@ -341,6 +341,10 @@ struct SettingsView: View {
                     }
                     .pickerStyle(.menu)
                 }
+                HStack {
+                    settingsIcon("character.book.closed.fill", color: .purple)
+                    Toggle("Embed Character Glossary", isOn: $settingsManager.conversionSettings.embedCharacterGlossary)
+                }
             }
             
             HStack {

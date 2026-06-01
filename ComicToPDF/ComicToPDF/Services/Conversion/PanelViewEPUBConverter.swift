@@ -222,6 +222,37 @@ class PanelViewEPUBConverter {
                 }
             }
 
+            // Step 3.5: Build Glossary Page if enabled
+            if settings.embedCharacterGlossary {
+                let metadataInfo = await MainActor.run { () -> (seriesID: String?, seriesName: String?, issueNum: Int?) in
+                    let context = InksyncProApp.sharedModelContainer.mainContext
+                    let urlStr = sourceURL.absoluteString
+                    let nameStr = sourceURL.lastPathComponent
+                    let descriptor = FetchDescriptor<SDConvertedPDF>()
+                    if let pdfs = try? context.fetch(descriptor) {
+                        if let pdf = pdfs.first(where: { $0.url.absoluteString == urlStr || $0.name == nameStr }) {
+                            let seriesID = pdf.metadata.universalSeriesID
+                            let seriesName = pdf.metadata.series
+                            let issueNum = Int(pdf.metadata.issueNumber ?? "")
+                            return (seriesID, seriesName, issueNum)
+                        }
+                    }
+                    return (nil, nil, nil)
+                }
+                
+                let glossaryHTML = await MainActor.run {
+                    CharacterGlossaryBuilder.shared.buildGlossaryHTML(
+                        seriesIDString: metadataInfo.seriesID,
+                        seriesName: metadataInfo.seriesName ?? baseFilename,
+                        issueNumber: metadataInfo.issueNum
+                    )
+                }
+                
+                if let html = glossaryHTML {
+                    try? html.write(to: pagesDir.appendingPathComponent("glossary.xhtml"), atomically: true, encoding: .utf8)
+                }
+            }
+
             // Step 4: Validation
             try validate(pagesDir: pagesDir, pageCatalog: pageCatalog)
 
@@ -249,7 +280,8 @@ class PanelViewEPUBConverter {
                 isManga: isManga,
                 pageCatalog: pageCatalog,
                 needsBlank: needsBlank,
-                comicInfo: comicInfo
+                comicInfo: comicInfo,
+                settings: settings
             )
             try opf.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8)
 
@@ -284,7 +316,8 @@ class PanelViewEPUBConverter {
         isManga: Bool,
         pageCatalog: [PageEntry],
         needsBlank: Bool,
-        comicInfo: ComicInfoParser.ComicInfo?
+        comicInfo: ComicInfoParser.ComicInfo?,
+        settings: ConversionSettings
     ) -> String {
         // let orientation  = "auto"
         // let orientationLock = "none"
@@ -311,9 +344,12 @@ class PanelViewEPUBConverter {
         if needsBlank {
             manifestItems.append(#"<item id="page-blank" href="pages/blank.xhtml" media-type="application/xhtml+xml"/>"#)
         }
+        if settings.embedCharacterGlossary {
+            manifestItems.append(#"<item id="character-glossary" href="pages/glossary.xhtml" media-type="application/xhtml+xml"/>"#)
+        }
 
         // Step 2: Spine with synthetic spreads
-        let spineItems = buildSpineItems(pageCatalog: pageCatalog, isManga: isManga, needsBlank: needsBlank)
+        let spineItems = buildSpineItems(pageCatalog: pageCatalog, isManga: isManga, needsBlank: needsBlank, embedCharacterGlossary: settings.embedCharacterGlossary)
 
         return """
         <?xml version="1.0" encoding="UTF-8"?>
@@ -376,7 +412,7 @@ class PanelViewEPUBConverter {
     /// Western Logic: 1->left, 2->right, 3->left, 4->right
     /// Manga Logic: 1->facing-right, 2->facing-left (First pair)
     ///              3->page-spread-right, 4->page-spread-left (Subsequent pairs)
-    private func buildSpineItems(pageCatalog: [PageEntry], isManga: Bool, needsBlank: Bool) -> [String] {
+    private func buildSpineItems(pageCatalog: [PageEntry], isManga: Bool, needsBlank: Bool, embedCharacterGlossary: Bool) -> [String] {
         var items: [String] = []
 
         if isManga {
@@ -403,6 +439,9 @@ class PanelViewEPUBConverter {
                 let prop = (idx % 2 == 0) ? "page-spread-right" : "page-spread-left"
                 items.append(#"<itemref idref="\#(idref)" properties="\#(prop)"/>"#)
             }
+        }
+        if embedCharacterGlossary {
+            items.append(#"<itemref idref="character-glossary"/>"#)
         }
         return items
     }

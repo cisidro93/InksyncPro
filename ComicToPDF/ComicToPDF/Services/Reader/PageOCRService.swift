@@ -2,7 +2,7 @@ import Foundation
 import UIKit
 import Vision
 
-class PageOCRService {
+final class PageOCRService: Sendable {
     static let shared = PageOCRService()
     
     private init() {}

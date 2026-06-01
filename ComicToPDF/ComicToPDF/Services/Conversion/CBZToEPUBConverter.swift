@@ -42,6 +42,7 @@ struct CBZToEPUBConverter: Sendable {
             }
             
             let batchDir = try await buildEPUBDirectory(
+                sourceURL: sourceURL,
                 batch: batch,
                 batchIndex: batchIndex,
                 totalBatches: batches.count,
@@ -186,7 +187,7 @@ struct CBZToEPUBConverter: Sendable {
     }
 
     // Stage 3 — Build EPUB directory structure...
-    private func buildEPUBDirectory(batch: [(data: Data, sourceURL: URL, index: Int)], batchIndex: Int, totalBatches: Int, baseFilename: String, settings: ConversionSettings, coverData: Data?, isCoverOverrideActive: Bool = false) async throws -> URL {
+    private func buildEPUBDirectory(sourceURL: URL, batch: [(data: Data, sourceURL: URL, index: Int)], batchIndex: Int, totalBatches: Int, baseFilename: String, settings: ConversionSettings, coverData: Data?, isCoverOverrideActive: Bool = false) async throws -> URL {
         Logger.shared.log("Stage 3 Start: Building EPUB Directory for Part \(batchIndex + 1)", category: "Converter")
         let fileManager = FileManager.default
         let tempDir = fileManager.temporaryDirectory // Or pass it if needed, but we can generate a unique one
@@ -294,6 +295,41 @@ struct CBZToEPUBConverter: Sendable {
             
             globalPageCounter += 1
             currentChunkImages.removeAll()
+        }
+        
+        if settings.embedCharacterGlossary {
+            let metadataInfo = await MainActor.run { () -> (seriesID: String?, seriesName: String?, issueNum: Int?) in
+                let context = InksyncProApp.sharedModelContainer.mainContext
+                let urlStr = sourceURL.absoluteString
+                let nameStr = sourceURL.lastPathComponent
+                let descriptor = FetchDescriptor<SDConvertedPDF>()
+                if let pdfs = try? context.fetch(descriptor) {
+                    if let pdf = pdfs.first(where: { $0.url.absoluteString == urlStr || $0.name == nameStr }) {
+                        let seriesID = pdf.metadata.universalSeriesID
+                        let seriesName = pdf.metadata.series
+                        let issueNum = Int(pdf.metadata.issueNumber ?? "")
+                        return (seriesID, seriesName, issueNum)
+                    }
+                }
+                return (nil, nil, nil)
+            }
+            
+            let glossaryHTML = await MainActor.run {
+                CharacterGlossaryBuilder.shared.buildGlossaryHTML(
+                    seriesIDString: metadataInfo.seriesID,
+                    seriesName: metadataInfo.seriesName ?? baseFilename,
+                    issueNumber: metadataInfo.issueNum
+                )
+            }
+            
+            if let html = glossaryHTML {
+                let glossaryFilename = "glossary.xhtml"
+                let glossaryURL = textDir.appendingPathComponent(glossaryFilename)
+                try? html.write(to: glossaryURL, atomically: true, encoding: .utf8)
+                
+                manifestItems.append("<item id=\"character-glossary\" href=\"text/\(glossaryFilename)\" media-type=\"application/xhtml+xml\"/>")
+                spineItems.append("<itemref idref=\"character-glossary\"/>")
+            }
         }
         
         let opfContent = EPUBManifestBuilder.buildOPFContent(

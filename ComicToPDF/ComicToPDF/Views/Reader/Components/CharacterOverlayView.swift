@@ -39,7 +39,7 @@ struct CharacterOverlayView: View {
     
     var body: some View {
         ZStack {
-            Theme.background.ignoresSafeArea()
+            Theme.bg.ignoresSafeArea()
             
             VStack(spacing: 0) {
                 // Header with Swipe-down bar & Spoilers reveal toggle

@@ -8,7 +8,7 @@ struct MetadataInboxView: View {
     var body: some View {
         ZStack {
             // Premium dark theme background
-            Theme.background.ignoresSafeArea()
+            Theme.bg.ignoresSafeArea()
             
             let unmatched = matchService.activeClusters.filter {
                 if case .matched = $0.status { return false }

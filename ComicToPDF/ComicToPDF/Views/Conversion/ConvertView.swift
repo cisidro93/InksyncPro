@@ -96,6 +96,23 @@ struct ConvertView: View {
                             .labelsHidden()
                             .tint(.inkBlue)
                     }
+                    if settingsManager.conversionSettings.optimizeForDevice {
+                        Divider().overlay(Color.inkBorderSubtle)
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Embed Character Glossary")
+                                    .font(.system(size: 14, weight: .medium))
+                                    .foregroundColor(.inkTextPrimary)
+                                Text("Appends character dossiers & relationships to the EPUB")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.inkTextSecondary)
+                            }
+                            Spacer()
+                            Toggle("", isOn: $settingsManager.conversionSettings.embedCharacterGlossary)
+                                .labelsHidden()
+                                .tint(.inkBlue)
+                        }
+                    }
                 }
 
                 // MARK: Export Pipeline (EPUB only)
