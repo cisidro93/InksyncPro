@@ -127,7 +127,7 @@ actor CloudCoverExtractor {
             let coverURL  = coversDir.appendingPathComponent("cover_\(pdf.id.uuidString).jpg")
             let tmpURL    = coversDir.appendingPathComponent("cover_\(pdf.id.uuidString).tmp.jpg")
 
-            try jpegData.write(to: tmpURL)
+            try data.write(to: tmpURL)
             _ = try FileManager.default.replaceItemAt(coverURL, withItemAt: tmpURL)
 
             // ── Step 5: Invalidate NSCache + wake SwiftUI cells ───────────────

@@ -45,13 +45,11 @@ struct InksyncProApp: App {
         
         do {
             let container = try ModelContainer(for: schema, configurations: [modelConfiguration])
-            container.mainContext.automaticallyMergesChangesFromParent = true
             return container
         } catch {
             print("Could not create ModelContainer: \(error)")
             do {
                  let container = try ModelContainer(for: schema, configurations: [ModelConfiguration(isStoredInMemoryOnly: true)])
-                 container.mainContext.automaticallyMergesChangesFromParent = true
                  return container
             } catch {
                  fatalError("Could not create Fallback ModelContainer: \(error)")

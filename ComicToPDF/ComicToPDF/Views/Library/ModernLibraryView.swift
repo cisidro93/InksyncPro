@@ -2,6 +2,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 import Combine
 import SwiftData
+import CoreData
 
 struct ModernLibraryView: View {
     @EnvironmentObject var conversionManager: ConversionManager
@@ -190,6 +191,13 @@ struct ModernLibraryView: View {
                 if let fileURL = note.userInfo?["fileURL"] as? URL {
                     Task { await conversionManager.processImportedFiles(urls: [fileURL]) }
                 }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: Notification.Name.NSManagedObjectContextDidSave)) { _ in
+                // Background context saves trigger NSManagedObjectContextDidSave.
+                // We force-merge changes on the main context and refresh the cached items.
+                InksyncProApp.sharedModelContainer.mainContext.processPendingChanges()
+                rebuildNativeCache()
+                viewModel.updateLibraryItemsCache(pdfs: cachedVisiblePDFs, collections: cachedCollections, sortOption: sortOption)
             }
             .overlay(alignment: .bottomTrailing) {
                 if settingsManager.conversionSettings.showEditorDebug {

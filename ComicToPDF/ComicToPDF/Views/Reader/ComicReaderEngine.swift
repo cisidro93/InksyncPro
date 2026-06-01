@@ -125,7 +125,6 @@ final class ComicImageCache: ObservableObject, @unchecked Sendable {
             // and crashes if the guard is not explicit. Use CBRExtractor (libunrar) instead.
             // We fully extract to a temp directory once on open, then serve images by index.
             // This is faster than per-page random-access extraction on RAR5 compressed archives.
-            self.pdfDocument = nil
             self.isCBR = true
             Task.detached(priority: .userInitiated) { [weak self] in
                 guard let self else { return }
@@ -161,7 +160,6 @@ final class ComicImageCache: ObservableObject, @unchecked Sendable {
                 }
             }
         } else {
-            self.pdfDocument = nil
             Task.detached(priority: .userInitiated) { [weak self] in
                 // Linked Library: for CBZ, we need the security scope live for the entire
                 // reader session since images are extracted lazily page-by-page on demand.
