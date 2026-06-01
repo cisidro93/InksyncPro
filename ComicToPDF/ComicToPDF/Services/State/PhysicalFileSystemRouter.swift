@@ -498,19 +498,25 @@ class PhysicalFileSystemRouter {
                     var cancelled = false
                     withUnsafeCurrentTask { cancelled = $0?.isCancelled ?? false }
                     if cancelled { return nil }
-                    var data = Data()
-                    do {
-                        _ = try archive.extract(entry) { data.append($0) }
-                        if let image = UIImage(data: data) {
-                            attempts += 1
-                            if attempts == 1 && image.size.width > image.size.height {
-                                firstSpreadImage = image
-                                continue
-                            }
-                            return image
+                    
+                    let image = autoreleasepool { () -> UIImage? in
+                        var data = Data()
+                        do {
+                            _ = try archive.extract(entry) { data.append($0) }
+                            return UIImage(data: data)
+                        } catch {
+                            Logger.shared.log("Failed to extract \(entry.path): \(error.localizedDescription)", category: "Archive", type: .error)
+                            return nil
                         }
-                    } catch {
-                        Logger.shared.log("Failed to extract \(entry.path): \(error.localizedDescription)", category: "Archive", type: .error)
+                    }
+                    
+                    if let img = image {
+                        attempts += 1
+                        if attempts == 1 && img.size.width > img.size.height {
+                            firstSpreadImage = img
+                            continue
+                        }
+                        return img
                     }
                 }
                 
@@ -543,15 +549,22 @@ class PhysicalFileSystemRouter {
                 var firstSpread: UIImage? = nil
                 var attempts = 0
                 for entry in sorted.prefix(5) {
-                    let data = try archive.extract(entry)
-                    guard let image = UIImage(data: data) else { continue }
+                    let image = autoreleasepool { () -> UIImage? in
+                        do {
+                            let data = try archive.extract(entry)
+                            return UIImage(data: data)
+                        } catch {
+                            return nil
+                        }
+                    }
+                    guard let img = image else { continue }
                     attempts += 1
                     // Skip landscape (two-page spread) on first attempt — prefer portrait cover
-                    if attempts == 1 && image.size.width > image.size.height && sorted.count > 1 {
-                        firstSpread = image
+                    if attempts == 1 && img.size.width > img.size.height && sorted.count > 1 {
+                        firstSpread = img
                         continue
                     }
-                    return image
+                    return img
                 }
                 return firstSpread  // fallback if every page is landscape
             } catch {
@@ -654,11 +667,17 @@ class PhysicalFileSystemRouter {
                 guard pageIndex >= 0 && pageIndex < sortedEntries.count else { return nil }
                 let targetEntry = sortedEntries[pageIndex]
                 
-                var data = Data()
-                _ = try archive.extract(targetEntry) { chunk in
-                    data.append(chunk)
+                return autoreleasepool {
+                    var data = Data()
+                    do {
+                        _ = try archive.extract(targetEntry) { chunk in
+                            data.append(chunk)
+                        }
+                        return UIImage(data: data)
+                    } catch {
+                        return nil
+                    }
                 }
-                return UIImage(data: data)
             } catch {
                 Logger.shared.log("Failed to extract page image at index \(pageIndex) from archive: \(error.localizedDescription)", category: "Archive", type: .error)
             }
@@ -685,8 +704,14 @@ class PhysicalFileSystemRouter {
 
                 guard pageIndex >= 0 && pageIndex < sorted.count else { return nil }
                 let targetEntry = sorted[pageIndex]
-                let data = try archive.extract(targetEntry)
-                return UIImage(data: data)
+                return autoreleasepool {
+                    do {
+                        let data = try archive.extract(targetEntry)
+                        return UIImage(data: data)
+                    } catch {
+                        return nil
+                    }
+                }
             } catch {
                 Logger.shared.log("PhysicalFileSystemRouter: CBR page image extraction failed for index \(pageIndex): \(error.localizedDescription)", category: "Archive", type: .error)
             }

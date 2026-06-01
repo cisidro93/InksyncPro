@@ -439,71 +439,81 @@ class PageBufferManager: ObservableObject {
         if let archiveURL = self.archiveURL, index < zipEntries.count {
             let entryPath = zipEntries[index].path
             return await Task.detached(priority: .userInitiated) {
-                do {
-                    let archive = try Archive(url: archiveURL, accessMode: .read)
-                    guard let entry = archive[entryPath] else {
-                        return nil
-                    }
-                    var data = Data()
-                    _ = try archive.extract(entry) { chunk in
-                        data.append(chunk)
-                    }
-                    
-                    if let source = CGImageSourceCreateWithData(data as CFData, nil) {
-                        let options: [CFString: Any]
-                        if let maxSize = maxPixelSize {
-                            options = [
-                                kCGImageSourceCreateThumbnailFromImageAlways: true,
-                                kCGImageSourceCreateThumbnailWithTransform: true,
-                                kCGImageSourceThumbnailMaxPixelSize: Int(maxSize),
-                                kCGImageSourceShouldCacheImmediately: true
-                            ]
-                        } else {
-                            options = [
-                                kCGImageSourceShouldCacheImmediately: true
-                            ]
+                var cgImage: CGImage? = nil
+                autoreleasepool {
+                    do {
+                        let archive = try Archive(url: archiveURL, accessMode: .read)
+                        guard let entry = archive[entryPath] else { return }
+                        var data = Data()
+                        _ = try archive.extract(entry) { chunk in
+                            data.append(chunk)
                         }
                         
-                        if let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) {
-                            let cropEnabled = await MainActor.run { self.isAutoCropEnabled }
-                            return cropEnabled ? Self.autoCropMargins(from: cgImage) : cgImage
+                        if let source = CGImageSourceCreateWithData(data as CFData, nil) {
+                            let options: [CFString: Any]
+                            if let maxSize = maxPixelSize {
+                                options = [
+                                    kCGImageSourceCreateThumbnailFromImageAlways: true,
+                                    kCGImageSourceCreateThumbnailWithTransform: true,
+                                    kCGImageSourceThumbnailMaxPixelSize: Int(maxSize),
+                                    kCGImageSourceShouldCacheImmediately: true
+                                ]
+                            } else {
+                                options = [
+                                    kCGImageSourceShouldCacheImmediately: true
+                                ]
+                            }
+                            
+                            cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
                         }
-                    }
-                } catch {
-                    await MainActor.run {
+                    } catch {
                         Logger.shared.log("Direct ZIP decompression failed for entry \(entryPath): \(error.localizedDescription)", category: "Engine", type: .error)
                     }
                 }
-                return nil
+                
+                guard let image = cgImage else { return nil }
+                let cropEnabled = await MainActor.run { self.isAutoCropEnabled }
+                return cropEnabled ? Self.autoCropMargins(from: image) : image
             }.value
         }
 
         return await Task.detached(priority: .userInitiated) {
             // Strategy 1: CGImageSource (fastest, best memory usage)
-            if let source = CGImageSourceCreateWithURL(url as CFURL, nil) {
-                let options: [CFString: Any]
-                if let maxSize = maxPixelSize {
-                    options = [
-                        kCGImageSourceCreateThumbnailFromImageAlways: true,
-                        kCGImageSourceCreateThumbnailWithTransform: true,
-                        kCGImageSourceThumbnailMaxPixelSize: Int(maxSize),
-                        kCGImageSourceShouldCacheImmediately: true
-                    ]
-                } else {
-                    options = [
-                        kCGImageSourceShouldCacheImmediately: true
-                    ]
+            var cgImage: CGImage? = nil
+            autoreleasepool {
+                if let source = CGImageSourceCreateWithURL(url as CFURL, nil) {
+                    let options: [CFString: Any]
+                    if let maxSize = maxPixelSize {
+                        options = [
+                            kCGImageSourceCreateThumbnailFromImageAlways: true,
+                            kCGImageSourceCreateThumbnailWithTransform: true,
+                            kCGImageSourceThumbnailMaxPixelSize: Int(maxSize),
+                            kCGImageSourceShouldCacheImmediately: true
+                        ]
+                    } else {
+                        options = [
+                            kCGImageSourceShouldCacheImmediately: true
+                        ]
+                    }
+                    cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
                 }
-                
-                if let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) {
-                    let cropEnabled = await MainActor.run { self.isAutoCropEnabled }
-                    return cropEnabled ? Self.autoCropMargins(from: cgImage) : cgImage
-                }
+            }
+
+            if let image = cgImage {
+                let cropEnabled = await MainActor.run { self.isAutoCropEnabled }
+                return cropEnabled ? Self.autoCropMargins(from: image) : image
             }
 
             // Strategy 2: UIImage fallback (different OS codec path — handles some edge cases
             // where CGImageSource returns nil for valid JPEGs on certain iOS versions)
-            if let uiImage = UIImage(contentsOfFile: url.path), let cgImage = uiImage.cgImage {
+            var fallbackImage: CGImage? = nil
+            autoreleasepool {
+                if let uiImage = UIImage(contentsOfFile: url.path), let cgImage = uiImage.cgImage {
+                    fallbackImage = cgImage
+                }
+            }
+
+            if let cgImage = fallbackImage {
                 await MainActor.run {
                     Logger.shared.log(
                         "PageBufferManager: CGImageSource failed but UIImage succeeded for page \(index) — \(url.lastPathComponent)",
@@ -514,7 +524,9 @@ class PageBufferManager: ObservableObject {
                 let finalImage = cropEnabled ? Self.autoCropMargins(from: cgImage) : cgImage
                 
                 if let maxSize = maxPixelSize, CGFloat(max(finalImage.width, finalImage.height)) > maxSize {
-                    return Self.downsample(cgImage: finalImage, toMaxPixelSize: Int(maxSize))
+                    return autoreleasepool {
+                        Self.downsample(cgImage: finalImage, toMaxPixelSize: Int(maxSize))
+                    }
                 }
                 return finalImage
             }
@@ -569,39 +581,23 @@ class PageBufferManager: ObservableObject {
     // MARK: - Smart Margin Crop Engine
 
     nonisolated static func autoCropMargins(from image: CGImage) -> CGImage {
-        guard let data = image.dataProvider?.data,
-              let ptr = CFDataGetBytePtr(data) else { return image }
+        return autoreleasepool {
+            guard let data = image.dataProvider?.data,
+                  let ptr = CFDataGetBytePtr(data) else { return image }
 
-        let width = image.width
-        let height = image.height
-        let bytesPerRow = image.bytesPerRow
-        let bytesPerPixel = image.bitsPerPixel / 8
-        guard bytesPerPixel >= 3 else { return image }
+            let width = image.width
+            let height = image.height
+            let bytesPerRow = image.bytesPerRow
+            let bytesPerPixel = image.bitsPerPixel / 8
+            guard bytesPerPixel >= 3 else { return image }
 
-        let threshold: UInt8 = 245
-        let strideVal = 8
+            let threshold: UInt8 = 245
+            let strideVal = 8
 
-        // Top margin search
-        var top = 0
-        var foundTopRow = -1
-        for y in stride(from: 0, to: height, by: strideVal) {
-            let rowOffset = y * bytesPerRow
-            var found = false
-            for x in stride(from: 0, to: width, by: 10) {
-                let o = rowOffset + (x * bytesPerPixel)
-                if ptr[o] < threshold || ptr[o+1] < threshold || ptr[o+2] < threshold {
-                    found = true
-                    break
-                }
-            }
-            if found {
-                foundTopRow = y
-                break
-            }
-        }
-        if foundTopRow != -1 {
-            let startY = max(0, foundTopRow - strideVal + 1)
-            for y in startY...foundTopRow {
+            // Top margin search
+            var top = 0
+            var foundTopRow = -1
+            for y in stride(from: 0, to: height, by: strideVal) {
                 let rowOffset = y * bytesPerRow
                 var found = false
                 for x in stride(from: 0, to: width, by: 10) {
@@ -612,33 +608,33 @@ class PageBufferManager: ObservableObject {
                     }
                 }
                 if found {
-                    top = y
+                    foundTopRow = y
                     break
                 }
             }
-        }
+            if foundTopRow != -1 {
+                let startY = max(0, foundTopRow - strideVal + 1)
+                for y in startY...foundTopRow {
+                    let rowOffset = y * bytesPerRow
+                    var found = false
+                    for x in stride(from: 0, to: width, by: 10) {
+                        let o = rowOffset + (x * bytesPerPixel)
+                        if ptr[o] < threshold || ptr[o+1] < threshold || ptr[o+2] < threshold {
+                            found = true
+                            break
+                        }
+                    }
+                    if found {
+                        top = y
+                        break
+                    }
+                }
+            }
 
-        // Bottom margin search
-        var bottom = height - 1
-        var foundBottomRow = -1
-        for y in stride(from: height - 1, through: top, by: -strideVal) {
-            let rowOffset = y * bytesPerRow
-            var found = false
-            for x in stride(from: 0, to: width, by: 10) {
-                let o = rowOffset + (x * bytesPerPixel)
-                if ptr[o] < threshold || ptr[o+1] < threshold || ptr[o+2] < threshold {
-                    found = true
-                    break
-                }
-            }
-            if found {
-                foundBottomRow = y
-                break
-            }
-        }
-        if foundBottomRow != -1 {
-            let startY = min(height - 1, foundBottomRow + strideVal - 1)
-            for y in stride(from: startY, through: foundBottomRow, by: -1) {
+            // Bottom margin search
+            var bottom = height - 1
+            var foundBottomRow = -1
+            for y in stride(from: height - 1, through: top, by: -strideVal) {
                 let rowOffset = y * bytesPerRow
                 var found = false
                 for x in stride(from: 0, to: width, by: 10) {
@@ -649,32 +645,33 @@ class PageBufferManager: ObservableObject {
                     }
                 }
                 if found {
-                    bottom = y
+                    foundBottomRow = y
                     break
                 }
             }
-        }
+            if foundBottomRow != -1 {
+                let startY = min(height - 1, foundBottomRow + strideVal - 1)
+                for y in stride(from: startY, through: foundBottomRow, by: -1) {
+                    let rowOffset = y * bytesPerRow
+                    var found = false
+                    for x in stride(from: 0, to: width, by: 10) {
+                        let o = rowOffset + (x * bytesPerPixel)
+                        if ptr[o] < threshold || ptr[o+1] < threshold || ptr[o+2] < threshold {
+                            found = true
+                            break
+                        }
+                    }
+                    if found {
+                        bottom = y
+                        break
+                    }
+                }
+            }
 
-        // Left margin search
-        var left = 0
-        var foundLeftCol = -1
-        for x in stride(from: 0, to: width, by: strideVal) {
-            var found = false
-            for y in stride(from: top, to: bottom, by: 10) {
-                let o = (y * bytesPerRow) + (x * bytesPerPixel)
-                if ptr[o] < threshold || ptr[o+1] < threshold || ptr[o+2] < threshold {
-                    found = true
-                    break
-                }
-            }
-            if found {
-                foundLeftCol = x
-                break
-            }
-        }
-        if foundLeftCol != -1 {
-            let startX = max(0, foundLeftCol - strideVal + 1)
-            for x in startX...foundLeftCol {
+            // Left margin search
+            var left = 0
+            var foundLeftCol = -1
+            for x in stride(from: 0, to: width, by: strideVal) {
                 var found = false
                 for y in stride(from: top, to: bottom, by: 10) {
                     let o = (y * bytesPerRow) + (x * bytesPerPixel)
@@ -684,32 +681,32 @@ class PageBufferManager: ObservableObject {
                     }
                 }
                 if found {
-                    left = x
+                    foundLeftCol = x
                     break
                 }
             }
-        }
+            if foundLeftCol != -1 {
+                let startX = max(0, foundLeftCol - strideVal + 1)
+                for x in startX...foundLeftCol {
+                    var found = false
+                    for y in stride(from: top, to: bottom, by: 10) {
+                        let o = (y * bytesPerRow) + (x * bytesPerPixel)
+                        if ptr[o] < threshold || ptr[o+1] < threshold || ptr[o+2] < threshold {
+                            found = true
+                            break
+                        }
+                    }
+                    if found {
+                        left = x
+                        break
+                    }
+                }
+            }
 
-        // Right margin search
-        var right = width - 1
-        var foundRightCol = -1
-        for x in stride(from: width - 1, through: left, by: -strideVal) {
-            var found = false
-            for y in stride(from: top, to: bottom, by: 10) {
-                let o = (y * bytesPerRow) + (x * bytesPerPixel)
-                if ptr[o] < threshold || ptr[o+1] < threshold || ptr[o+2] < threshold {
-                    found = true
-                    break
-                }
-            }
-            if found {
-                foundRightCol = x
-                break
-            }
-        }
-        if foundRightCol != -1 {
-            let startX = min(width - 1, foundRightCol + strideVal - 1)
-            for x in stride(from: startX, through: foundRightCol, by: -1) {
+            // Right margin search
+            var right = width - 1
+            var foundRightCol = -1
+            for x in stride(from: width - 1, through: left, by: -strideVal) {
                 var found = false
                 for y in stride(from: top, to: bottom, by: 10) {
                     let o = (y * bytesPerRow) + (x * bytesPerPixel)
@@ -719,23 +716,40 @@ class PageBufferManager: ObservableObject {
                     }
                 }
                 if found {
-                    right = x
+                    foundRightCol = x
                     break
                 }
             }
+            if foundRightCol != -1 {
+                let startX = min(width - 1, foundRightCol + strideVal - 1)
+                for x in stride(from: startX, through: foundRightCol, by: -1) {
+                    var found = false
+                    for y in stride(from: top, to: bottom, by: 10) {
+                        let o = (y * bytesPerRow) + (x * bytesPerPixel)
+                        if ptr[o] < threshold || ptr[o+1] < threshold || ptr[o+2] < threshold {
+                            found = true
+                            break
+                        }
+                    }
+                    if found {
+                        right = x
+                        break
+                    }
+                }
+            }
+
+            let pad = 10
+            let cropRect = CGRect(
+                x: max(0, left - pad),
+                y: max(0, top - pad),
+                width: min(width - 1, right + pad) - max(0, left - pad),
+                height: min(height - 1, bottom + pad) - max(0, top - pad)
+            )
+
+            guard cropRect.width > CGFloat(width) * 0.3,
+                  cropRect.height > CGFloat(height) * 0.3 else { return image }
+
+            return image.cropping(to: cropRect) ?? image
         }
-
-        let pad = 10
-        let cropRect = CGRect(
-            x: max(0, left - pad),
-            y: max(0, top - pad),
-            width: min(width - 1, right + pad) - max(0, left - pad),
-            height: min(height - 1, bottom + pad) - max(0, top - pad)
-        )
-
-        guard cropRect.width > CGFloat(width) * 0.3,
-              cropRect.height > CGFloat(height) * 0.3 else { return image }
-
-        return image.cropping(to: cropRect) ?? image
     }
 }

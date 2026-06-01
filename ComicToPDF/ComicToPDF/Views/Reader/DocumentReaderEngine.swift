@@ -10,6 +10,7 @@ struct DocumentReaderEngine: View {
     @State private var currentPageIndex: Int = 0
     @State private var isPencilMode = false
     @State private var pdfDocument: PDFDocument?
+    @State private var accessedURL: URL? = nil
     
     // KOReader Parity
     @State private var isReflowMode = false
@@ -100,21 +101,20 @@ struct DocumentReaderEngine: View {
         }
         .task {
             // Linked Library: Resolve security-scoped URL before opening.
-            // PDFDocument copies data internally on open, so we stop access immediately after.
+            // PDFDocument reads data lazily on draw, so we hold onto the access scope until disappear.
             let resolvedURL: URL
-            var accessedURL: URL? = nil
+            var accessed: URL? = nil
             if case .linked(let bm) = pdf.sourceMode,
                let url = try? BookmarkResolver.shared.resolve(bm) {
                 let didAccess = url.startAccessingSecurityScopedResource()
                 resolvedURL = url
-                if didAccess { accessedURL = url }
+                if didAccess { accessed = url }
             } else {
                 resolvedURL = pdf.url
             }
 
             let doc = PDFDocument(url: resolvedURL)
-            // PDFDocument has fully loaded — release the scope.
-            accessedURL?.stopAccessingSecurityScopedResource()
+            self.accessedURL = accessed
             pdfDocument = doc
             if let saved = ReaderProgressTracker.shared.progress(for: pdf.id) {
                 currentPageIndex = saved.currentPageIndex
@@ -123,6 +123,9 @@ struct DocumentReaderEngine: View {
         }
         .onChange(of: currentPageIndex) { old, new in
             if isReflowMode { updateReflowText() }
+        }
+        .onDisappear {
+            accessedURL?.stopAccessingSecurityScopedResource()
         }
     }
     

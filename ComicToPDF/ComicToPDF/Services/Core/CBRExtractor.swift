@@ -88,10 +88,12 @@ struct CBRExtractor {
                         // Flatten the path — all images land directly in tempDir
                         let destURL = tempDir.appendingPathComponent(flatName)
 
-                        // Extract entry to Data then persist atomically
-                        let data = try archive.extract(entry)
-                        try data.write(to: destURL, options: .atomic)
-                        imageURLs.append(destURL)
+                        try autoreleasepool {
+                            // Extract entry to Data then persist atomically
+                            let data = try archive.extract(entry)
+                            try data.write(to: destURL, options: .atomic)
+                            imageURLs.append(destURL)
+                        }
                     }
 
                     guard !imageURLs.isEmpty else {

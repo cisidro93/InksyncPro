@@ -96,7 +96,7 @@ final class ComicImageCache: ObservableObject, @unchecked Sendable {
             self.pdfDocument = nil
             Task.detached(priority: .userInitiated) { [weak self] in
                 // Linked Library: resolve and access the security-scoped URL.
-                // PDFDocument copies data on open, so we can stop access immediately after init.
+                // PDFDocument reads data lazily on draw, so we hold onto the access scope until deinit.
                 let resolvedURL: URL
                 var accessedURL: URL? = nil
                 if case .linked(let bm) = pdf.sourceMode,
@@ -108,8 +108,13 @@ final class ComicImageCache: ObservableObject, @unchecked Sendable {
                     resolvedURL = pdf.url
                 }
                 let doc = PDFDocument(url: resolvedURL)
-                // PDFDocument has loaded its data — release the security scope.
-                if let accessed = accessedURL { accessed.stopAccessingSecurityScopedResource() }
+                if let accessed = accessedURL {
+                    if let self = self {
+                        self.activelyAccessedURL = accessed
+                    } else {
+                        accessed.stopAccessingSecurityScopedResource()
+                    }
+                }
                 let count = doc?.pageCount ?? 0
                 await MainActor.run { [weak self] in
                     self?.pdfDocument = doc
@@ -319,14 +324,16 @@ final class ComicImageCache: ObservableObject, @unchecked Sendable {
             // UIGraphicsImageRenderer is thread-safe (unlike UIGraphicsBeginImageContextWithOptions
             // which is deprecated in iOS 17 and unsafe off-main). Fixes crashes during rotation
             // when the background task races with the drawable resize.
-            let renderer = UIGraphicsImageRenderer(size: size)
-            return renderer.image { ctx in
-                let cgCtx = ctx.cgContext
-                cgCtx.setFillColor(UIColor.white.cgColor)
-                cgCtx.fill(CGRect(origin: .zero, size: size))
-                cgCtx.translateBy(x: 0, y: size.height)
-                cgCtx.scaleBy(x: scale, y: -scale)
-                page.draw(with: .mediaBox, to: cgCtx)
+            return autoreleasepool {
+                let renderer = UIGraphicsImageRenderer(size: size)
+                return renderer.image { ctx in
+                    let cgCtx = ctx.cgContext
+                    cgCtx.setFillColor(UIColor.white.cgColor)
+                    cgCtx.fill(CGRect(origin: .zero, size: size))
+                    cgCtx.translateBy(x: 0, y: size.height)
+                    cgCtx.scaleBy(x: scale, y: -scale)
+                    page.draw(with: .mediaBox, to: cgCtx)
+                }
             }
         } else if isCBR {
             // CBR: images are fully extracted to disk on open.
@@ -334,64 +341,68 @@ final class ComicImageCache: ObservableObject, @unchecked Sendable {
             // RAR decompression stall. Thread-safe: each call reads an independent file.
             guard index < extractedCBRImageURLs.count else { return nil }
             let imageURL = extractedCBRImageURLs[index]
-            let srcOpts: [CFString: Any] = [kCGImageSourceShouldCache: false]
-            guard let source = CGImageSourceCreateWithURL(imageURL as CFURL, srcOpts as CFDictionary) else {
-                // Fallback: raw Data read
-                return UIImage(data: (try? Data(contentsOf: imageURL)) ?? Data())
-            }
             let (bounds, scale) = await MainActor.run {
                 (UIScreen.main.bounds, UIScreen.main.scale)
             }
-            let maxPixelSize = max(bounds.width, bounds.height) * scale
-            let downOpts: [CFString: Any] = [
-                kCGImageSourceCreateThumbnailFromImageAlways: true,
-                kCGImageSourceShouldCacheImmediately: true,
-                kCGImageSourceCreateThumbnailWithTransform: true,
-                kCGImageSourceThumbnailMaxPixelSize: maxPixelSize
-            ]
-            guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, downOpts as CFDictionary) else {
-                return UIImage(data: (try? Data(contentsOf: imageURL)) ?? Data())
-            }
-            return UIImage(cgImage: cgImage)
-        } else {
-            // Open a fresh Archive for every extraction.
-            // A single shared Archive is NOT thread-safe — concurrent Task.detached calls
-            // corrupt each other's file-pointer state, producing wrong image data per index.
-            guard let url = cbzURL, index < entries.count else { return nil }
-            guard let archive = try? Archive(url: url, accessMode: .read, pathEncoding: .utf8) else { return nil }
-            let entry = entries[index]
-            var data = Data()
-            do {
-                _ = try archive.extract(entry, bufferSize: 32768) { chunk in
-                    data.append(chunk)
-                }
-                
-                // Extremely safe downsampling to prevent OOM on 4K CBZ images (ImageIO trick)
-                let options: [CFString: Any] = [
-                    kCGImageSourceShouldCache: false
-                ]
-                guard let imageSource = CGImageSourceCreateWithData(data as CFData, options as CFDictionary) else {
-                    return UIImage(data: data) // Fallback
-                }
-                
-                let (bounds, scale) = await MainActor.run {
-                    (UIScreen.main.bounds, UIScreen.main.scale)
+            return autoreleasepool {
+                let srcOpts: [CFString: Any] = [kCGImageSourceShouldCache: false]
+                guard let source = CGImageSourceCreateWithURL(imageURL as CFURL, srcOpts as CFDictionary) else {
+                    // Fallback: raw Data read
+                    return UIImage(data: (try? Data(contentsOf: imageURL)) ?? Data())
                 }
                 let maxPixelSize = max(bounds.width, bounds.height) * scale
-                let downsampleOptions: [CFString: Any] = [
+                let downOpts: [CFString: Any] = [
                     kCGImageSourceCreateThumbnailFromImageAlways: true,
                     kCGImageSourceShouldCacheImmediately: true,
                     kCGImageSourceCreateThumbnailWithTransform: true,
                     kCGImageSourceThumbnailMaxPixelSize: maxPixelSize
                 ]
-                
-                guard let downsampledImage = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, downsampleOptions as CFDictionary) else {
-                    return UIImage(data: data) // Fallback
+                guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, downOpts as CFDictionary) else {
+                    return UIImage(data: (try? Data(contentsOf: imageURL)) ?? Data())
                 }
-                
-                return UIImage(cgImage: downsampledImage)
-            } catch {
-                return nil
+                return UIImage(cgImage: cgImage)
+            }
+        } else {
+            // Open a fresh Archive for every extraction.
+            // A single shared Archive is NOT thread-safe — concurrent Task.detached calls
+            // corrupt each other's file-pointer state, producing wrong image data per index.
+            guard let url = cbzURL, index < entries.count else { return nil }
+            let entry = entries[index]
+            let (bounds, scale) = await MainActor.run {
+                (UIScreen.main.bounds, UIScreen.main.scale)
+            }
+            return autoreleasepool {
+                guard let archive = try? Archive(url: url, accessMode: .read, pathEncoding: .utf8) else { return nil }
+                var data = Data()
+                do {
+                    _ = try archive.extract(entry, bufferSize: 32768) { chunk in
+                        data.append(chunk)
+                    }
+                    
+                    // Extremely safe downsampling to prevent OOM on 4K CBZ images (ImageIO trick)
+                    let options: [CFString: Any] = [
+                        kCGImageSourceShouldCache: false
+                    ]
+                    guard let imageSource = CGImageSourceCreateWithData(data as CFData, options as CFDictionary) else {
+                        return UIImage(data: data) // Fallback
+                    }
+                    
+                    let maxPixelSize = max(bounds.width, bounds.height) * scale
+                    let downsampleOptions: [CFString: Any] = [
+                        kCGImageSourceCreateThumbnailFromImageAlways: true,
+                        kCGImageSourceShouldCacheImmediately: true,
+                        kCGImageSourceCreateThumbnailWithTransform: true,
+                        kCGImageSourceThumbnailMaxPixelSize: maxPixelSize
+                    ]
+                    
+                    guard let downsampledImage = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, downsampleOptions as CFDictionary) else {
+                        return UIImage(data: data) // Fallback
+                    }
+                    
+                    return UIImage(cgImage: downsampledImage)
+                } catch {
+                    return nil
+                }
             }
         }
     }
@@ -443,20 +454,22 @@ final class ComicImageCache: ObservableObject, @unchecked Sendable {
 
     /// Decode raw image data with downsampling to avoid OOM on 4K images.
     private static func decodeImageData(_ data: Data, maxPixelSize: CGFloat) -> UIImage? {
-        let sourceOptions: [CFString: Any] = [kCGImageSourceShouldCache: false]
-        guard let source = CGImageSourceCreateWithData(data as CFData, sourceOptions as CFDictionary) else {
-            return UIImage(data: data)
+        return autoreleasepool {
+            let sourceOptions: [CFString: Any] = [kCGImageSourceShouldCache: false]
+            guard let source = CGImageSourceCreateWithData(data as CFData, sourceOptions as CFDictionary) else {
+                return UIImage(data: data)
+            }
+            let downsampleOptions: [CFString: Any] = [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceShouldCacheImmediately: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceThumbnailMaxPixelSize: maxPixelSize
+            ]
+            guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, downsampleOptions as CFDictionary) else {
+                return UIImage(data: data)
+            }
+            return UIImage(cgImage: cgImage)
         }
-        let downsampleOptions: [CFString: Any] = [
-            kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceShouldCacheImmediately: true,
-            kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize
-        ]
-        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, downsampleOptions as CFDictionary) else {
-            return UIImage(data: data)
-        }
-        return UIImage(cgImage: cgImage)
     }
 
     private static func targetMaxPixelSize() async -> CGFloat {

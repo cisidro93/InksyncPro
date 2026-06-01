@@ -111,6 +111,18 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
             let stagingDir = fm.temporaryDirectory.appendingPathComponent("InksyncStaging_\(UUID().uuidString)")
             try? fm.createDirectory(at: stagingDir, withIntermediateDirectories: true)
 
+            var securedURLs: [URL] = []
+            for url in urls {
+                if url.startAccessingSecurityScopedResource() {
+                    securedURLs.append(url)
+                }
+            }
+            defer {
+                for url in securedURLs {
+                    url.stopAccessingSecurityScopedResource()
+                }
+            }
+
             // ── Phase 1: Collect candidate (source, dest) pairs without copying ──
             // Enumeration is cheap (metadata only); we yield every 25 items to keep
             // the Swift runtime scheduler responsive during large folder scans.
@@ -121,9 +133,6 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
             var jobs: [CopyJob] = []
 
             for url in urls {
-                let secured = url.startAccessingSecurityScopedResource()
-                defer { if secured { url.stopAccessingSecurityScopedResource() } }
-
                 var isDirectory: ObjCBool = false
                 if fm.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue {
                     // Recursively spider — metadata-only, no I/O
