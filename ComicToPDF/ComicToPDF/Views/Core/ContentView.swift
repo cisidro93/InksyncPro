@@ -36,10 +36,10 @@ struct ContentView: View {
 
     // UI Mode
     @AppStorage("appUIMode") private var appUIMode: AppUIMode = .pro
-
-    // iPad Layout
     @AppStorage("useSidebar") private var useSidebar = true
     @State private var showingSettingsInspector = false
+
+
 
     // Universal Error State
     @State private var showingGlobalError = false
@@ -47,16 +47,13 @@ struct ContentView: View {
     @State private var globalErrorCategory = "System"
 
     var body: some View {
-        ZStack {
-            if sizeClass == .compact || !useSidebar {
-                liquidGlassLayout
-                    .transition(.opacity)
-            } else {
+        Group {
+            if useSidebar && sizeClass == .regular {
                 iPadLayout
-                    .transition(.opacity)
+            } else {
+                liquidGlassLayout
             }
         }
-        .animation(.easeInOut, value: appUIMode)
         .secureVaultPrivacy()
         .environmentObject(conversionManager)
         .environmentObject(settingsManager)
@@ -172,84 +169,7 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - iPad Sidebar Progress Panel
 
-    @ViewBuilder
-    private var iPadProgressPanel: some View {
-        let isConverting  = conversionManager.isConverting
-        let isImporting   = ImportMonitorManager.shared.isImporting
-        let isActive      = isConverting || isImporting
-
-        let progress: Double = {
-            if isImporting  { return ImportMonitorManager.shared.progress }
-            if isConverting { return conversionManager.conversionProgress }
-            return 0
-        }()
-
-        let label: String = {
-            if isImporting {
-                let done  = ImportMonitorManager.shared.filesProcessed
-                let total = ImportMonitorManager.shared.totalFilesToProcess
-                return "Importing \(done) / \(total)"
-            }
-            if isConverting {
-                let msg = conversionManager.processingStatus
-                return msg.isEmpty ? "Converting…" : msg
-            }
-            return ""
-        }()
-
-        if isActive {
-            VStack(alignment: .leading, spacing: 10) {
-                // Header row
-                HStack(spacing: 8) {
-                    Text(label)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.primary)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    Spacer()
-
-                    // Percentage badge
-                    Text(progress < 0.01 && progress > 0 ? "<1%" : "\(Int(progress * 100))%")
-                        .font(.system(size: 14, weight: .bold, design: .rounded))
-                        .foregroundStyle(Color.orange)
-                        .contentTransition(.numericText())
-                        .animation(.easeInOut(duration: 0.2), value: progress)
-                }
-
-                // Animated progress track
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        Capsule()
-                            .fill(Color.primary.opacity(0.1))
-                            .frame(height: 4)
-                        Capsule()
-                            .fill(
-                                LinearGradient(
-                                    colors: [Color.orange, Color.orange.opacity(0.55)],
-                                    startPoint: .leading, endPoint: .trailing
-                                )
-                            )
-                            .frame(width: geo.size.width * max(0.02, progress), height: 4)
-                            .animation(.easeInOut(duration: 0.35), value: progress)
-                    }
-                }
-                .frame(height: 4)
-            }
-            .padding(14)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .strokeBorder(Color.orange.opacity(0.25), lineWidth: 0.75)
-            )
-            .padding(.horizontal, 12)
-            .padding(.bottom, 6)
-            .transition(.move(edge: .bottom).combined(with: .opacity))
-            .animation(.spring(response: 0.4, dampingFraction: 0.8), value: isActive)
-        }
-    }
 
     // ✅ iOS + iPad Layout — Pure Custom Tab Router (NO TabView = NO native tab bar)
     var liquidGlassLayout: some View {
@@ -321,6 +241,7 @@ struct ContentView: View {
         }
     }
 
+    // MARK: - Premium Desktop iPad Layout
     var iPadLayout: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             ZStack {
@@ -332,8 +253,14 @@ struct ContentView: View {
                     // Header Label
                     HStack {
                         Text("Inksync Pro")
-                            .font(.system(size: 18, weight: .bold, design: .serif))
-                            .foregroundStyle(Color.inkTextPrimary)
+                            .font(.system(size: 20, weight: .bold, design: .serif))
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [.primary, .primary.opacity(0.75)],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
                         Spacer()
                     }
                     .padding(.horizontal, 24)
@@ -341,7 +268,7 @@ struct ContentView: View {
                     .padding(.bottom, 16)
 
                     ScrollView {
-                        VStack(spacing: 6) {
+                        VStack(spacing: 8) {
                             SidebarRowView(tabIndex: 0, label: "Library", icon: "books.vertical.fill", selectedTab: $selectedTab)
                             SidebarRowView(tabIndex: 1, label: "Workspace", icon: "briefcase.fill", selectedTab: $selectedTab)
                             SidebarRowView(tabIndex: 2, label: "Devices", icon: "ipad.and.iphone", selectedTab: $selectedTab)
@@ -373,7 +300,7 @@ struct ContentView: View {
                         onFolderImport: {
                             ImportCoordinator.present(type: .folder) { urls in
                                 guard !urls.isEmpty else { return }
-                                Task { await conversionManager.importFilesAsSeries(urls: urls) }
+                                _ = ImportQueueManager.shared.stageWithDuplicateCheck(urls)
                             }
                         }
                     )
@@ -408,6 +335,84 @@ struct ContentView: View {
         }
         .navigationSplitViewStyle(.balanced)
         .environmentObject(router)
+    }
+
+    private var iPadProgressPanel: some View {
+        let isConverting  = conversionManager.isConverting
+        let isImporting   = ImportMonitorManager.shared.isImporting
+        let isActive      = isConverting || isImporting
+
+        let progress: Double = {
+            if isImporting  { return ImportMonitorManager.shared.progress }
+            if isConverting { return conversionManager.conversionProgress }
+            return 0
+        }()
+
+        let label: String = {
+            if isImporting {
+                let done  = ImportMonitorManager.shared.filesProcessed
+                let total = ImportMonitorManager.shared.totalFilesToProcess
+                return "Importing \(done) / \(total)"
+            }
+            if isConverting {
+                let msg = conversionManager.processingStatus
+                return msg.isEmpty ? "Converting…" : msg
+            }
+            return ""
+        }()
+
+        return Group {
+            if isActive {
+                VStack(alignment: .leading, spacing: 10) {
+                    // Header row
+                    HStack(spacing: 8) {
+                        Text(label)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(.primary)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        Spacer()
+
+                        // Percentage badge
+                        Text(progress < 0.01 && progress > 0 ? "<1%" : "\(Int(progress * 100))%")
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                            .foregroundStyle(Color.orange)
+                            .contentTransition(.numericText())
+                            .animation(.easeInOut(duration: 0.2), value: progress)
+                    }
+
+                    // Animated progress track
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            Capsule()
+                                .fill(Color.primary.opacity(0.1))
+                                .frame(height: 4)
+                            Capsule()
+                                .fill(
+                                    LinearGradient(
+                                        colors: [Color.orange, Color.orange.opacity(0.55)],
+                                        startPoint: .leading, endPoint: .trailing
+                                    )
+                                )
+                                .frame(width: geo.size.width * max(0.02, progress), height: 4)
+                                .animation(.easeInOut(duration: 0.35), value: progress)
+                        }
+                    }
+                    .frame(height: 4)
+                }
+                .padding(14)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .strokeBorder(Color.orange.opacity(0.25), lineWidth: 0.75)
+                )
+                .padding(.horizontal, 12)
+                .padding(.bottom, 6)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .animation(.spring(response: 0.4, dampingFraction: 0.8), value: isActive)
+            }
+        }
     }
 }
 
@@ -518,5 +523,7 @@ struct SettingsSidebarButton: View {
         }
     }
 }
+
+
 
 

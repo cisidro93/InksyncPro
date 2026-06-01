@@ -813,6 +813,13 @@ enum OutputPipeline: String, CaseIterable, Codable, Identifiable {
     case proPanel = "Pro Panel (Guided View)"
 
     var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .standard: return "Standard Convert"
+        case .proPanel: return "Pro Panel (Guided View)"
+        }
+    }
 }
 
 enum OutputFormat: String, CaseIterable, Codable, Identifiable {

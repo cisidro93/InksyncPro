@@ -115,52 +115,50 @@ struct ConvertView: View {
                     }
                 }
 
-                // MARK: Export Pipeline (EPUB only)
-                if settingsManager.conversionSettings.outputFormat == .epub {
-                    InkCard(header: "EPUB Export Mode") {
-                        VStack(spacing: 10) {
-                            ForEach(OutputPipeline.allCases) { pipeline in
-                                let isDisabled = viewModel.pipelineIsDisabled(pipeline, for: pdf, format: settingsManager.conversionSettings.outputFormat)
-                                Button(action: {
-                                    if !isDisabled {
-                                        viewModel.selectedPipeline = pipeline
-                                        viewModel.applyPipeline(pipeline, to: &settingsManager.conversionSettings)
-                                    }
-                                }) {
-                                    PipelineCardView(
-                                        pipeline: pipeline,
-                                        isDisabled: isDisabled,
-                                        isSelected: viewModel.selectedPipeline == pipeline,
-                                        viewModel: viewModel,
-                                        currentFormat: settingsManager.conversionSettings.outputFormat
-                                    )
+                // MARK: Export Pipeline
+                InkCard(header: "Conversion Mode") {
+                    VStack(spacing: 10) {
+                        ForEach(OutputPipeline.allCases) { pipeline in
+                            let isDisabled = viewModel.pipelineIsDisabled(pipeline, for: pdf, format: settingsManager.conversionSettings.outputFormat)
+                            Button(action: {
+                                if !isDisabled {
+                                    viewModel.selectedPipeline = pipeline
+                                    viewModel.applyPipeline(pipeline, to: &settingsManager.conversionSettings)
+                                }
+                            }) {
+                                PipelineCardView(
+                                    pipeline: pipeline,
+                                    isDisabled: isDisabled,
+                                    isSelected: viewModel.selectedPipeline == pipeline,
+                                    viewModel: viewModel,
+                                    currentFormat: settingsManager.conversionSettings.outputFormat
+                                )
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                            .disabled(conversionManager.isConverting || isDisabled)
+                            .opacity(isDisabled || conversionManager.isConverting ? 0.55 : 1.0)
+                        }
+
+                        if viewModel.selectedPipeline == .proPanel {
+                            VStack(spacing: 8) {
+                                Button(action: { viewModel.showingPreview = true }) {
+                                    Label("Preview Panel Detection (Page 4)", systemImage: "eye")
+                                        .font(.system(size: 14))
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 10)
+                                        .background(Color.inkSurfaceRaised)
+                                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                                        .foregroundColor(.inkTextPrimary)
                                 }
                                 .buttonStyle(PlainButtonStyle())
-                                .disabled(conversionManager.isConverting || isDisabled)
-                                .opacity(isDisabled || conversionManager.isConverting ? 0.55 : 1.0)
-                            }
-
-                            if viewModel.selectedPipeline == .proPanel {
-                                VStack(spacing: 8) {
-                                    Button(action: { viewModel.showingPreview = true }) {
-                                        Label("Preview Panel Detection (Page 4)", systemImage: "eye")
-                                            .font(.system(size: 14))
-                                            .frame(maxWidth: .infinity)
-                                            .padding(.vertical, 10)
-                                            .background(Color.inkSurfaceRaised)
-                                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                                            .foregroundColor(.inkTextPrimary)
-                                    }
-                                    .buttonStyle(PlainButtonStyle())
-                                    Button(action: { viewModel.showingCalibreGuide = true }) {
-                                        Label("How to Sideload to Kindle", systemImage: "questionmark.circle")
-                                            .font(.caption)
-                                            .foregroundColor(.inkBlue)
-                                    }
-                                    .buttonStyle(PlainButtonStyle())
+                                Button(action: { viewModel.showingCalibreGuide = true }) {
+                                    Label("How to Sideload to Kindle", systemImage: "questionmark.circle")
+                                        .font(.caption)
+                                        .foregroundColor(.inkBlue)
                                 }
-                                .padding(.top, 4)
+                                .buttonStyle(PlainButtonStyle())
                             }
+                            .padding(.top, 4)
                         }
                     }
                 }
@@ -341,7 +339,7 @@ struct PipelineCardView: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
-                    Text(pipeline.rawValue).font(.headline).foregroundColor(textColor)
+                    Text(pipeline.displayName).font(.headline).foregroundColor(textColor)
                     if pipeline == .proPanel {
                         if isDisabled {
                             if currentFormat != .epub {
@@ -354,7 +352,7 @@ struct PipelineCardView: View {
                         }
                     }
                 }
-                Text(viewModel.pipelineSubtitle(for: pipeline)).font(.caption).foregroundColor(subtextColor)
+                Text(viewModel.pipelineSubtitle(for: pipeline, format: currentFormat)).font(.caption).foregroundColor(subtextColor)
             }
             Spacer()
             if isSelected {

@@ -4,10 +4,10 @@ import SwiftData
 struct SettingsView: View {
     @EnvironmentObject var conversionManager: ConversionManager
     @EnvironmentObject var settingsManager: AppSettingsManager
-    // Core Navigation & Overarching Variables
-    @AppStorage("useSidebar") private var useSidebar = true
+
     @AppStorage("fastBundleOmnibus") private var fastBundleOmnibus = false
     @AppStorage("appUIMode") private var appUIMode: AppUIMode = .pro
+    @AppStorage("useSidebar") private var useSidebar = true
 
     // Kindle Email Storage
     @AppStorage("kindleEmail") private var kindleEmail: String = ""
@@ -215,11 +215,12 @@ struct SettingsView: View {
                 settingsIcon("book.fill", color: .purple)
                 Toggle("Default Manga Mode (RTL)", isOn: $settingsManager.conversionSettings.mangaMode)
             }
-            
             HStack {
                 settingsIcon("sidebar.left", color: .indigo)
                 Toggle("Use Sidebar Navigation (iPad)", isOn: $useSidebar)
             }
+            
+
 
             VStack(alignment: .leading) {
                 Toggle("Async Background Conversions", isOn: $settingsManager.conversionSettings.enableBackgroundQueue)
@@ -305,7 +306,7 @@ struct SettingsView: View {
                 HStack {
                     settingsIcon("rectangle.grid.1x2.fill", color: .indigo)
                     Picker("EPUB Conversion Mode", selection: $settingsManager.conversionSettings.outputPipeline) {
-                        ForEach(OutputPipeline.allCases) { pipeline in Text(pipeline.rawValue).tag(pipeline) }
+                        ForEach(OutputPipeline.allCases) { pipeline in Text(pipeline.displayName).tag(pipeline) }
                     }
                     .pickerStyle(.menu)
                 }

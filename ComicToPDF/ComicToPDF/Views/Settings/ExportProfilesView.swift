@@ -81,7 +81,7 @@ struct ExportProfilesView: View {
                     if newPresetSettings.outputFormat == .epub {
                         Section(header: Text("EPUB Advanced")) {
                             Picker("Conversion Pipeline", selection: $newPresetSettings.outputPipeline) {
-                                ForEach(OutputPipeline.allCases) { pipeline in Text(pipeline.rawValue).tag(pipeline) }
+                                ForEach(OutputPipeline.allCases) { pipeline in Text(pipeline.displayName).tag(pipeline) }
                             }
                         }
                     }
