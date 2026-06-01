@@ -51,6 +51,8 @@ struct EBookReaderView: View {
     /// Direction of last chapter navigation — used to drive the push transition.
     @State private var isGoingForward: Bool = true
     
+    @State private var activeHighlightToEdit: SDAnnotation? = nil
+    
 
     private var totalChapters: Int { metadata?.spineItems.count ?? 1 }
     private var progressFraction: Double {
@@ -108,6 +110,10 @@ struct EBookReaderView: View {
                                 )
                                 AnnotationStore.shared.add(highlight)
                                 StudyNotesStore.shared.appendHighlight(selectedText, chapter: meta.spineItems[currentIndex].label)
+                                
+                                // Zettelkasten Integration: Instantly pop up editor for new highlight
+                                let sdAnnotation = SDAnnotation(from: highlight)
+                                self.activeHighlightToEdit = sdAnnotation
                             },
                             pdfID: pdf?.id
                         )
@@ -155,6 +161,11 @@ struct EBookReaderView: View {
         }
         .sheet(isPresented: $showShareSheet) {
             ShareSheet(activityItems: [fileURL])
+        }
+        .sheet(item: $activeHighlightToEdit) { annotation in
+            AnnotationEditSheet(annotation: annotation)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
         }
         .task { await loadBook() }
         .onDisappear { cleanup(); saveProgress() }
