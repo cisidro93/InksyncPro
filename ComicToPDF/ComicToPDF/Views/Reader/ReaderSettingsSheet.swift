@@ -46,6 +46,7 @@ struct ReaderSettingsSheet: View {
                     readingModeSection
                     layoutSection
                     pageTurnSection
+                    tapZoneSection
                     imageEnhancementSection
                     colorFilterSection
                     ambientSection
@@ -99,12 +100,21 @@ struct ReaderSettingsSheet: View {
                 icon: "iphone.landscape",
                 isOn: $autoLandscapeDualPage
             )
+            Divider().padding(.leading, 44)
+            SettingsToggleRow(
+                label: "Zoom Lock (Preserve Zoom)",
+                icon: "lock.magnifyingglass",
+                isOn: $isZoomLockEnabled
+            )
         }
     }
 
     // MARK: - Page Turn Style
     @AppStorage("pageTurnStyle") private var pageTurnStyleRaw = PageTurnStyle.slide.rawValue
     private var currentTurnStyle: PageTurnStyle { PageTurnStyle(rawValue: pageTurnStyleRaw) ?? .slide }
+
+    @AppStorage("isZoomLockEnabled") private var isZoomLockEnabled = false
+    @AppStorage("tapZoneStyle") private var tapZoneStyleRaw = TapZoneStyle.classic.rawValue
 
     private var pageTurnSection: some View {
         SettingsSection(title: "Page Turn Style", icon: "hand.draw") {
@@ -116,6 +126,22 @@ struct ReaderSettingsSheet: View {
                 }
             }
             .padding(.vertical, 4)
+        }
+    }
+
+    private var tapZoneStyle: TapZoneStyle { TapZoneStyle(rawValue: tapZoneStyleRaw) ?? .classic }
+
+    private var tapZoneSection: some View {
+        SettingsSection(title: "Tap Zone Style", icon: "hand.tap") {
+            HStack(spacing: 8) {
+                ForEach(TapZoneStyle.allCases, id: \.self) { style in
+                    TapZoneStyleCard(style: style, isSelected: tapZoneStyle == style) {
+                        UserDefaults.standard.set(style.rawValue, forKey: "tapZoneStyle")
+                    }
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
         }
     }
 
@@ -444,6 +470,42 @@ private struct SettingsSliderRow: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
+    }
+}
+
+private struct TapZoneStyleCard: View {
+    let style: TapZoneStyle
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 8) {
+                Image(systemName: style.icon)
+                    .font(.system(size: 20, weight: .medium))
+                    .foregroundStyle(isSelected ? Color.orange : Color.inkTextSecondary)
+                Text(style.label)
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(isSelected ? Color.orange : Color.inkTextSecondary)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 70)
+            .padding(.vertical, 8)
+            .padding(.horizontal, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(isSelected ? Color.orange.opacity(0.12) : Color.inkSurfaceRaised)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(isSelected ? Color.orange.opacity(0.5) : Color.clear, lineWidth: 1.5)
+            )
+        }
+        .buttonStyle(.plain)
+        .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isSelected)
     }
 }
 

@@ -42,6 +42,7 @@ struct PPLReaderView: View {
     @AppStorage("pageTurnStyle")          private var pageTurnStyleRaw    = PageTurnStyle.slide.rawValue
     @AppStorage("showSpreadSeam")         private var showSpreadSeam      = true
     @AppStorage("isAutoCropEnabled")      private var isAutoCropEnabled   = false
+    @AppStorage("isZoomLockEnabled")      private var isZoomLockEnabled   = false
 
     private var tapZoneStyle:  TapZoneStyle  { TapZoneStyle(rawValue: tapZoneStyleRaw)   ?? .classic }
     private var pageTurnStyle: PageTurnStyle { PageTurnStyle(rawValue: pageTurnStyleRaw) ?? .slide   }
@@ -75,7 +76,21 @@ struct PPLReaderView: View {
                 }
             }
             .onAppear       { setupBuffer(geo: geo, dual: showingDual) }
-            .onChange(of: currentPageIndex) { _, newIndex in advanceBuffer(to: newIndex, geo: geo, dual: showingDual) }
+            .onChange(of: currentPageIndex) { _, newIndex in
+                if !isZoomLockEnabled {
+                    withAnimation(.easeOut(duration: 0.15)) {
+                        scale = 1.0
+                        lastScale = 1.0
+                        offset = .zero
+                        dragOffset = .zero
+                    }
+                    bufferManager.isPPLEnabled = false
+                    bufferManager.updateViewport(rect: .full)
+                } else if scale > 1.0 {
+                    updatePPL(in: geo.size)
+                }
+                advanceBuffer(to: newIndex, geo: geo, dual: showingDual)
+            }
             .onChange(of: geo.size)         { _, size   in resetOnResize(to: size, dual: effectiveDoublePage && size.width > size.height) }
             .onChange(of: isDoublePageStored) { _, _ in setupBuffer(geo: geo, dual: effectiveDoublePage && geo.size.width > geo.size.height) }
             .onChange(of: isAutoCropEnabled) { _, _ in setupBuffer(geo: geo, dual: showingDual) }
@@ -419,7 +434,7 @@ struct PPLReaderView: View {
     }
 
     private func handleSingleTap(at location: CGPoint, geo: GeometryProxy) {
-        guard scale <= 1.0 || isGuidedReadingActive else { return }
+        guard scale <= 1.0 || isZoomLockEnabled || isGuidedReadingActive else { return }
         let w = geo.size.width
         let isLandscape = geo.size.width > geo.size.height
         let showingDual = effectiveDoublePage && isLandscape

@@ -197,6 +197,15 @@ struct EBookReaderView: View {
                 }
             }
 
+            // Bookmark
+            Button { toggleBookmark() } label: {
+                Image(systemName: isBookmarked ? "bookmark.fill" : "bookmark")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(isBookmarked ? Color.orange : .white)
+                    .frame(width: 34, height: 34)
+                    .background(.ultraThinMaterial, in: Circle())
+            }
+
             // Orientation lock
             Button { orientationLock.toggleLock(current: deviceOrientation) } label: {
                 Image(systemName: orientationLock.isLocked ? "lock.rotation" : "lock.rotation.open")
@@ -609,6 +618,36 @@ struct EBookReaderView: View {
             progress.readingSessionDates.append(Date())
         }
         ReaderProgressTracker.shared.update(progress)
+    }
+
+    // MARK: - Bookmarks
+    private var isBookmarked: Bool {
+        guard let p = pdf ?? conversionManager.convertedPDFs.first(where: { $0.url.lastPathComponent == fileURL.lastPathComponent }) else { return false }
+        return p.metadata.bookmarkedPages.contains(currentIndex)
+    }
+
+    private func toggleBookmark() {
+        guard let p = pdf ?? conversionManager.convertedPDFs.first(where: { $0.url.lastPathComponent == fileURL.lastPathComponent }),
+              let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == p.id }) else {
+            Logger.shared.log("toggleBookmark: could not find pdf in conversionManager", category: "EBookReaderView", type: .warning)
+            return
+        }
+        
+        var updated = conversionManager.convertedPDFs[idx]
+        if isBookmarked {
+            updated.metadata.bookmarkedPages.removeAll(where: { $0 == currentIndex })
+            Logger.shared.log("Bookmark removed: chapter \(currentIndex + 1) of '\(p.name)'", category: "EBookReaderView", type: .info)
+        } else {
+            updated.metadata.bookmarkedPages.append(currentIndex)
+            Logger.shared.log("Bookmark added: chapter \(currentIndex + 1) of '\(p.name)'", category: "EBookReaderView", type: .success)
+        }
+        
+        conversionManager.convertedPDFs[idx] = updated
+        conversionManager.saveLibrary()
+        
+        // Haptic feedback
+        let generator = UIImpactFeedbackGenerator(style: .light)
+        generator.impactOccurred()
     }
 }
 
