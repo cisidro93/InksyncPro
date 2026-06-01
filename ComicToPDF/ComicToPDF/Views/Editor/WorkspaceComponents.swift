@@ -145,7 +145,7 @@ struct WorkspaceToolPalette: View {
                 
             } else if selectedPages.count == 1 {
                 // Single Selection Palette
-                let index = selectedPages.first!
+                let index = selectedPages.first ?? 0
                 
                 Button(action: {
                     // Navigate strictly through AdvancedWorkspaceView binding. 

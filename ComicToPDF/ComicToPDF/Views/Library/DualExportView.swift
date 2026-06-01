@@ -363,7 +363,7 @@ struct InstructionStep: View {
                 
                 // Provide text styling fallback for basic markdown
                 if #available(iOS 15.0, *) {
-                    Text(try! AttributedString(markdown: description))
+                    Text((try? AttributedString(markdown: description)) ?? AttributedString(description))
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                         .fixedSize(horizontal: false, vertical: true)

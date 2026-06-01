@@ -285,7 +285,7 @@ struct LinkedLibrarySettingsView: View {
                     if totalFiles == 0 {
                         self.errorMessage = "Folder\(linked > 1 ? "s" : "") linked but no comic files were found inside. Make sure you selected the folder containing your .cbz / .pdf / .epub files."
                     } else {
-                        let folderLabel = linked == 1 ? "\"\(urls.first!.lastPathComponent)\"" : "\(linked) folders"
+                        let folderLabel = linked == 1 ? "\"\(urls.first?.lastPathComponent ?? "Folder")\"" : "\(linked) folders"
                         self.successMessage = "Linked \(folderLabel) — \(totalFiles) comic\(totalFiles == 1 ? "" : "s") found."
                         Task {
                             try? await Task.sleep(nanoseconds: 6_000_000_000)

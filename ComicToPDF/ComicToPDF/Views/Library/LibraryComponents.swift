@@ -565,7 +565,7 @@ struct MissingIssueDetector {
         if gaps.count <= 5 {
             return "Missing: #" + gaps.joined(separator: ", #")
         } else {
-            return "Missing \(gaps.count) issues (#\(gaps.first!)...#\(gaps.last!))"
+            return "Missing \(gaps.count) issues (#\(gaps.first ?? "")...#\(gaps.last ?? ""))"
         }
     }
 }

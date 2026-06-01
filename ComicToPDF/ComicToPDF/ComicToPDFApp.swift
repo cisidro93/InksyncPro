@@ -66,7 +66,11 @@ struct InksyncProApp: App {
         
         // Register Background Task for Auto-Sync
         BGTaskScheduler.shared.register(forTaskWithIdentifier: "com.antigravity.InksyncPro.autosync", using: nil) { task in
-            InksyncProApp.handleAppRefresh(task: task as! BGAppRefreshTask)
+            if let refreshTask = task as? BGAppRefreshTask {
+                InksyncProApp.handleAppRefresh(task: refreshTask)
+            } else {
+                task.setTaskCompleted(success: false)
+            }
         }
     }
     
