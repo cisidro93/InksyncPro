@@ -365,7 +365,10 @@ struct ReaderView: View {
                     isAutoCropEnabled: $isAutoCropEnabled,
                     colorFilter: $colorFilter,
                     ambientBrightness: ambientBrightness,
+                    brightnessLevel: $brightnessLevel,
+                    warmthLevel: $warmthLevel,
                     isWebtoonAutoScrolling: $isWebtoonAutoScrolling,
+                    webtoonScrollSpeed: $webtoonScrollSpeed,
                     onJumpToPage: { jumpToPageText = ""; showJumpToPage = true },
                     onTOC: { showTOC = true },
                     onSleepTimer: { showSleepTimerPicker = true },
@@ -384,6 +387,9 @@ struct ReaderView: View {
                 )
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
+            }
+            .onChange(of: brightnessLevel) { _, newValue in
+                UIScreen.main.brightness = newValue
             }
     }
 

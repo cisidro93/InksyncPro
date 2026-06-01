@@ -138,6 +138,7 @@ enum EBookTheme: String, CaseIterable, Identifiable {
     case sepia     = "Sepia"
     case slate     = "Slate"
     case night     = "Night"
+    case oled      = "OLED"
     case custom    = "Custom"
 
     nonisolated var id: String { rawValue }
@@ -151,6 +152,7 @@ enum EBookTheme: String, CaseIterable, Identifiable {
         case .sepia:     return Color(hex: "#F8F0E3")
         case .slate:     return Color(hex: "#1A2332")
         case .night:     return Color(hex: "#0D0D0D")
+        case .oled:      return Color(hex: "#000000")
         case .custom:    return Color(hex: EBookPreferences.shared.customThemeBg)
         }
     }
@@ -162,6 +164,7 @@ enum EBookTheme: String, CaseIterable, Identifiable {
         case .sepia:     return Color(hex: "#5C4033")
         case .slate:     return Color(hex: "#E8ECF0")
         case .night:     return Color(hex: "#CCCCCC")
+        case .oled:      return Color(hex: "#CBD5E1")
         case .custom:    return Color(hex: EBookPreferences.shared.customThemeText)
         }
     }
@@ -173,13 +176,14 @@ enum EBookTheme: String, CaseIterable, Identifiable {
         case .sepia:     return Color(hex: "#A0522D")
         case .slate:     return Color(hex: "#6EA4D0")
         case .night:     return Color(hex: "#FF7B2C")
+        case .oled:      return Color(hex: "#A855F7")
         case .custom:    return Color(hex: "#7B5EA7")
         }
     }
 
     var isDark: Bool {
         switch self {
-        case .slate, .night: return true
+        case .slate, .night, .oled: return true
         default: return false
         }
     }
@@ -193,6 +197,7 @@ enum EBookTheme: String, CaseIterable, Identifiable {
         case .sepia:     return "#F8F0E3"
         case .slate:     return "#1A2332"
         case .night:     return "#0D0D0D"
+        case .oled:      return "#000000"
         case .custom:    return EBookPreferences.shared.customThemeBg
         }
     }
@@ -205,6 +210,7 @@ enum EBookTheme: String, CaseIterable, Identifiable {
         case .sepia:     return "#5C4033"
         case .slate:     return "#E8ECF0"
         case .night:     return "#CCCCCC"
+        case .oled:      return "#CBD5E1"
         case .custom:    return EBookPreferences.shared.customThemeText
         }
     }
@@ -217,6 +223,7 @@ enum EBookTheme: String, CaseIterable, Identifiable {
         case .sepia:     return "#A0522D"
         case .slate:     return "#6EA4D0"
         case .night:     return "#FF7B2C"
+        case .oled:      return "#A855F7"
         case .custom:    return "#7B5EA7"
         }
     }

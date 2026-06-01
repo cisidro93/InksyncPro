@@ -137,7 +137,7 @@ struct EBookSettingsPanel: View {
     // MARK: - Themes Tab
     private var themesTab: some View {
         VStack(spacing: 20) {
-            // Built-in 5 themes
+            // Built-in themes
             ReaderSettingsSection(title: "Reading Themes", icon: "paintpalette") {
                 VStack(spacing: 12) {
                     // Row 1
@@ -148,11 +148,15 @@ struct EBookSettingsPanel: View {
                     }
                     // Row 2
                     HStack(spacing: 10) {
-                        ForEach([EBookTheme.slate, .night], id: \.self) { theme in
+                        ForEach([EBookTheme.slate, .night, .oled], id: \.self) { theme in
                             themeCard(theme)
                         }
-                        // Custom slot
+                    }
+                    // Row 3
+                    HStack(spacing: 10) {
                         themeCard(.custom)
+                        Spacer()
+                        Spacer()
                     }
                 }
                 .padding(.vertical, 8)

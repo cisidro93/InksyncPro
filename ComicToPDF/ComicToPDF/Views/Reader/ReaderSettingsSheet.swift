@@ -23,9 +23,12 @@ struct ReaderSettingsSheet: View {
 
     // Ambient
     @ObservedObject var ambientBrightness: AmbientBrightnessManager
+    @Binding var brightnessLevel: CGFloat
+    @Binding var warmthLevel: Double
 
     // Webtoon
     @Binding var isWebtoonAutoScrolling: Bool
+    @Binding var webtoonScrollSpeed: Double
 
     // Callbacks
     var onJumpToPage: () -> Void
@@ -125,13 +128,13 @@ struct ReaderSettingsSheet: View {
                 isOn: $isAutoCropEnabled
             )
             Divider().padding(.leading, 44)
-            SettingsToggleRow(
-                label: "Auto Contrast",
+            SettingsSliderRow(
+                label: "Auto Contrast Level",
                 icon: "circle.lefthalf.filled",
-                isOn: Binding(
-                    get: { autoContrastLevel > 1.0 },
-                    set: { val in autoContrastLevel = val ? 1.5 : 1.0 }
-                )
+                value: $autoContrastLevel,
+                range: 1.0...2.0,
+                step: 0.05,
+                displayFormat: { String(format: "%.2f×", $0) }
             )
             Divider().padding(.leading, 44)
             SettingsToggleRow(
@@ -172,6 +175,27 @@ struct ReaderSettingsSheet: View {
                     }
                 )
             )
+            Divider().padding(.leading, 44)
+            SettingsSliderRow(
+                label: "Screen Brightness",
+                icon: "sun.max.fill",
+                value: Binding<Double>(
+                    get: { Double(brightnessLevel) },
+                    set: { brightnessLevel = CGFloat($0) }
+                ),
+                range: 0.0...1.0,
+                step: 0.05,
+                displayFormat: { String(format: "%.0f%%", $0 * 100) }
+            )
+            Divider().padding(.leading, 44)
+            SettingsSliderRow(
+                label: "Night Warmth",
+                icon: "flame.fill",
+                value: $warmthLevel,
+                range: 0.0...0.4,
+                step: 0.02,
+                displayFormat: { String(format: "%.0f%%", ($0 / 0.4) * 100) }
+            )
             if ambientBrightness.autoNightMode {
                 Divider().padding(.leading, 44)
                 HStack(spacing: 10) {
@@ -198,6 +222,17 @@ struct ReaderSettingsSheet: View {
                 icon: "play.circle.fill",
                 isOn: $isWebtoonAutoScrolling
             )
+            if isWebtoonAutoScrolling {
+                Divider().padding(.leading, 44)
+                SettingsSliderRow(
+                    label: "Scroll Speed",
+                    icon: "speedometer",
+                    value: $webtoonScrollSpeed,
+                    range: 10.0...150.0,
+                    step: 5.0,
+                    displayFormat: { String(format: "%.0f px/s", $0) }
+                )
+            }
         }
     }
 
@@ -378,3 +413,37 @@ private struct ColorFilterCard: View {
         .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isSelected)
     }
 }
+
+private struct SettingsSliderRow: View {
+    let label: String
+    let icon: String
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    let step: Double
+    let displayFormat: (Double) -> String
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(Color.inkTextSecondary)
+                .frame(width: 28)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text(label)
+                        .font(.system(size: 15))
+                        .foregroundStyle(Color.inkTextPrimary)
+                    Spacer()
+                    Text(displayFormat(value))
+                        .font(.system(size: 13, weight: .semibold, design: .rounded).monospacedDigit())
+                        .foregroundStyle(Color.orange)
+                }
+                Slider(value: $value, in: range, step: step)
+                    .tint(Color.orange)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+    }
+}
+
