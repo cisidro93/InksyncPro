@@ -66,11 +66,20 @@ final class EInkOptimizer: @unchecked Sendable {
     /// Mathematically scales a UIImage using UIGraphicsImageRenderer boundary
     private func scale(_ image: UIImage, toFit targetSize: CGSize) -> UIImage {
         let originalSize = image.size
+        guard originalSize.width > 0, originalSize.height > 0,
+              targetSize.width > 0, targetSize.height > 0,
+              !originalSize.width.isNaN, !originalSize.height.isNaN,
+              !targetSize.width.isNaN, !targetSize.height.isNaN else {
+            return image
+        }
         let widthRatio  = targetSize.width  / originalSize.width
         let heightRatio = targetSize.height / originalSize.height
         
         // Aspect Fit
         let factor = min(widthRatio, heightRatio)
+        guard !factor.isInfinite, !factor.isNaN, factor > 0 else {
+            return image
+        }
         let renderSize = CGSize(width: originalSize.width * factor, height: originalSize.height * factor)
         
         let format = UIGraphicsImageRendererFormat()
@@ -85,6 +94,11 @@ final class EInkOptimizer: @unchecked Sendable {
     /// Pads the image with white space on the specified side
     private func applyBindingMargin(to image: UIImage, offset: CGFloat, side: BindingMarginSide, isOddPage: Bool) -> UIImage {
         let originalSize = image.size
+        guard originalSize.width > 0, originalSize.height > 0,
+              !originalSize.width.isNaN, !originalSize.height.isNaN,
+              offset > 0, !offset.isNaN else {
+            return image
+        }
         let newWidth = originalSize.width + offset
         let newSize = CGSize(width: newWidth, height: originalSize.height)
         

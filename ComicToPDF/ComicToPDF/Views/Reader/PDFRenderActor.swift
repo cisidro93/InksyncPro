@@ -42,12 +42,16 @@ actor PDFRenderActor {
             return nil
         }
         let pageRect = page.bounds(for: .mediaBox)
-        guard pageRect.width > 0, pageRect.height > 0 else {
-            Logger.shared.log("Page index \(index) has invalid/zero bounds.", category: "PDFRenderActor", type: .warning)
+        guard pageRect.width > 0 && pageRect.height > 0 && !pageRect.width.isNaN && !pageRect.height.isNaN && scale > 0 && !scale.isNaN else {
+            Logger.shared.log("Page index \(index) has invalid/zero bounds or scale (width: \(pageRect.width), height: \(pageRect.height), scale: \(scale)).", category: "PDFRenderActor", type: .warning)
             return nil
         }
         
         let size = CGSize(width: pageRect.width * scale, height: pageRect.height * scale)
+        guard size.width > 0 && size.height > 0 && !size.width.isNaN && !size.height.isNaN else {
+            Logger.shared.log("Computed render size for page index \(index) is invalid: \(size).", category: "PDFRenderActor", type: .warning)
+            return nil
+        }
         
         return autoreleasepool {
             let renderer = UIGraphicsImageRenderer(size: size)

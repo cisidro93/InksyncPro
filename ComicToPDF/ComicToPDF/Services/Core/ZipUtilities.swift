@@ -47,7 +47,10 @@ struct ZipUtilities {
                                 try autoreleasepool {
                                     if let page = document.page(at: i) {
                                         // Render full page
-                                        let pageRect = page.bounds(for: .mediaBox)
+                                        var pageRect = page.bounds(for: .mediaBox)
+                                        if pageRect.width <= 0 || pageRect.height <= 0 || pageRect.width.isNaN || pageRect.height.isNaN {
+                                            pageRect = CGRect(x: 0, y: 0, width: 612, height: 792)
+                                        }
                                         let renderer = UIGraphicsImageRenderer(size: pageRect.size)
                                         let image = renderer.image { ctx in
                                         UIColor.white.set()

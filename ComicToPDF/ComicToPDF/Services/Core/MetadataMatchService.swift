@@ -61,15 +61,23 @@ class MetadataMatchService: ObservableObject {
         }.sorted(by: { $0.name < $1.name })
     }
     
+    private func updateClusterStatus(clusterID: UUID, status: SeriesCluster.Status) {
+        if let idx = activeClusters.firstIndex(where: { $0.id == clusterID }) {
+            activeClusters[idx].status = status
+        }
+    }
+    
     // Run throttled matching query on background Task
     func startMatching(clusterID: UUID) async {
-        guard let idx = activeClusters.firstIndex(where: { $0.id == clusterID }) else { return }
-        activeClusters[idx].status = .searching
+        guard let initialIdx = activeClusters.firstIndex(where: { $0.id == clusterID }) else { return }
+        activeClusters[initialIdx].status = .searching
         
-        let cluster = activeClusters[idx]
+        let cluster = activeClusters[initialIdx]
+        let clusterName = cluster.name
+        let clusterPDFs = cluster.pdfs
         
         // 1. Local Metadata Extraction check (ComicInfo.xml / tags)
-        for pdf in cluster.pdfs {
+        for pdf in clusterPDFs {
             if let embedded = try? await extractComicInfoXML(for: pdf) {
                 await bindMetadataToCluster(clusterID: clusterID, metadata: embedded)
                 return
@@ -80,24 +88,24 @@ class MetadataMatchService: ObservableObject {
         do {
             let apiKey = AppSettingsManager.shared.conversionSettings.comicVineAPIKey
             guard !apiKey.isEmpty else {
-                activeClusters[idx].status = .failed(error: "Please enter your ComicVine API Key in Settings.")
+                updateClusterStatus(clusterID: clusterID, status: .failed(error: "Please enter your ComicVine API Key in Settings."))
                 return
             }
             
             // Guideline compliance: enforce throttled delay
             try await Task.sleep(nanoseconds: 2_000_000_000)
             
-            let candidates = try await searchSeriesAPI(query: cluster.name, apiKey: apiKey)
+            let candidates = try await searchSeriesAPI(query: clusterName, apiKey: apiKey)
             
             if candidates.count == 1 {
                 await bindCandidateToCluster(clusterID: clusterID, candidate: candidates[0])
             } else if candidates.count > 1 {
-                activeClusters[idx].status = .ambiguous(candidates: candidates)
+                updateClusterStatus(clusterID: clusterID, status: .ambiguous(candidates: candidates))
             } else {
-                activeClusters[idx].status = .failed(error: "No matching series found.")
+                updateClusterStatus(clusterID: clusterID, status: .failed(error: "No matching series found."))
             }
         } catch {
-            activeClusters[idx].status = .failed(error: error.localizedDescription)
+            updateClusterStatus(clusterID: clusterID, status: .failed(error: error.localizedDescription))
         }
     }
     
@@ -105,8 +113,9 @@ class MetadataMatchService: ObservableObject {
     func bindCandidateToCluster(clusterID: UUID, candidate: SeriesCandidate) async {
         guard let idx = activeClusters.firstIndex(where: { $0.id == clusterID }) else { return }
         let cluster = activeClusters[idx]
+        let pdfsToUpdate = cluster.pdfs
         
-        for pdf in cluster.pdfs {
+        for pdf in pdfsToUpdate {
             let issueNum = extractIssueNumber(from: pdf.name)
             
             var updatedMetadata = pdf.metadata
@@ -121,13 +130,16 @@ class MetadataMatchService: ObservableObject {
         // Download and pre-cache mock Character nodes & relationship updates
         await downloadCharacterMap(seriesID: candidate.id, seriesName: candidate.name)
         
-        activeClusters[idx].status = .matched(seriesName: candidate.name)
+        updateClusterStatus(clusterID: clusterID, status: .matched(seriesName: candidate.name))
     }
     
     func bindMetadataToCluster(clusterID: UUID, metadata: PDFMetadata) async {
         guard let idx = activeClusters.firstIndex(where: { $0.id == clusterID }) else { return }
         let cluster = activeClusters[idx]
-        for pdf in cluster.pdfs {
+        let pdfsToUpdate = cluster.pdfs
+        let defaultSeriesName = cluster.name
+        
+        for pdf in pdfsToUpdate {
             var updated = pdf.metadata
             updated.series = metadata.series
             updated.universalSeriesID = metadata.universalSeriesID
@@ -135,7 +147,8 @@ class MetadataMatchService: ObservableObject {
             updated.issueNumber = extractIssueNumber(from: pdf.name)
             await updatePDFMetadata(pdfID: pdf.id, metadata: updated)
         }
-        activeClusters[idx].status = .matched(seriesName: metadata.series ?? cluster.name)
+        
+        updateClusterStatus(clusterID: clusterID, status: .matched(seriesName: metadata.series ?? defaultSeriesName))
     }
     
     private func updatePDFMetadata(pdfID: UUID, metadata: PDFMetadata) async {

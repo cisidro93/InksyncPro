@@ -146,9 +146,18 @@ final class DevicePreviewViewModel: ObservableObject {
         if ext == "pdf" {
             guard let doc = CGPDFDocument(url as CFURL),
                   let page = doc.page(at: 1) else { return nil }
-            let mediaBox = page.getBoxRect(.mediaBox)
-            let scale: CGFloat = min(800 / mediaBox.width, 1200 / mediaBox.height, 2.0)
+            var mediaBox = page.getBoxRect(.mediaBox)
+            if mediaBox.width <= 0 || mediaBox.height <= 0 || mediaBox.width.isNaN || mediaBox.height.isNaN {
+                mediaBox = CGRect(x: 0, y: 0, width: 612, height: 792)
+            }
+            var scale: CGFloat = min(800 / mediaBox.width, 1200 / mediaBox.height, 2.0)
+            if scale <= 0 || scale.isNaN {
+                scale = 1.0
+            }
             let size = CGSize(width: mediaBox.width * scale, height: mediaBox.height * scale)
+            guard size.width > 0 && size.height > 0 && !size.width.isNaN && !size.height.isNaN else {
+                return nil
+            }
             let renderer = UIGraphicsImageRenderer(size: size)
             return renderer.image { ctx in
                 UIColor.white.setFill()

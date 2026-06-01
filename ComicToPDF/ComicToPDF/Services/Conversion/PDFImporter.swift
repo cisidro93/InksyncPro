@@ -44,9 +44,15 @@ struct PDFImporter: Sendable {
             return nil
         }
         
-        let pageBounds = page.bounds(for: .mediaBox)
+        var pageBounds = page.bounds(for: .mediaBox)
+        if pageBounds.width <= 0 || pageBounds.height <= 0 || pageBounds.width.isNaN || pageBounds.height.isNaN {
+            pageBounds = CGRect(x: 0, y: 0, width: 400, height: 600) // Safe fallback
+        }
         let scale = min(maxSize.width / pageBounds.width, maxSize.height / pageBounds.height)
         let scaledSize = CGSize(width: pageBounds.width * scale, height: pageBounds.height * scale)
+        guard scaledSize.width > 0 && scaledSize.height > 0 && !scaledSize.width.isNaN && !scaledSize.height.isNaN else {
+            return nil
+        }
         
         let renderer = UIGraphicsImageRenderer(size: scaledSize)
         return renderer.image { context in
@@ -93,13 +99,19 @@ struct PDFImporter: Sendable {
     
     /// Render a PDF page at specified DPI
     private func renderPage(_ page: PDFPage, dpi: CGFloat) -> UIImage {
-        let pageBounds = page.bounds(for: .mediaBox)
+        var pageBounds = page.bounds(for: .mediaBox)
+        if pageBounds.width <= 0 || pageBounds.height <= 0 || pageBounds.width.isNaN || pageBounds.height.isNaN {
+            pageBounds = CGRect(x: 0, y: 0, width: 612, height: 792) // Letter size fallback
+        }
         let scale = dpi / 72.0  // PDF default is 72 DPI
         
-        let scaledSize = CGSize(
+        var scaledSize = CGSize(
             width: pageBounds.width * scale,
             height: pageBounds.height * scale
         )
+        if scaledSize.width <= 0 || scaledSize.height <= 0 || scaledSize.width.isNaN || scaledSize.height.isNaN {
+            scaledSize = CGSize(width: 612 * scale, height: 792 * scale)
+        }
         
         let renderer = UIGraphicsImageRenderer(size: scaledSize)
         return renderer.image { context in

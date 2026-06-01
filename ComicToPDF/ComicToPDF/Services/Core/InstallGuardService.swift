@@ -67,6 +67,10 @@ final class InstallGuardService: @unchecked Sendable {
         if !isNotFreshInstall {
             userDefaults.set(true, forKey: "isNotFreshInstall_v3")
         }
+        
+        // Auto-complete onboarding
+        userDefaults.set(true, forKey: "hasCompletedOnboarding")
+        userDefaults.set(true, forKey: "hasSeenOnboarding")
     }
     
     private func performNuke(supportDir: URL) {

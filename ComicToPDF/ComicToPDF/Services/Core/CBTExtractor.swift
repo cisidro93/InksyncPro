@@ -98,14 +98,32 @@ struct CBTExtractor {
             let fileSize = Int(sizeOctal.trimmingCharacters(in: .whitespaces)
                                 .trimmingCharacters(in: CharacterSet(charactersIn: "\0")), radix: 8) ?? 0
 
+            guard fileSize >= 0 else {
+                offset += blockSize
+                continue
+            }
+
+            let dataBlocks = (fileSize / blockSize) + (fileSize % blockSize > 0 ? 1 : 0)
+
+            // Safe offset calculation to avoid integer overflow crashes
+            let advanceOffset: () throws -> Void = {
+                let (blockOffset, overflow1) = dataBlocks.multipliedReportingOverflow(by: blockSize)
+                let (totalAdvance, overflow2) = blockOffset.addingReportingOverflow(blockSize)
+                let (newOffset, overflow3) = offset.addingReportingOverflow(totalAdvance)
+                
+                if overflow1 || overflow2 || overflow3 || newOffset < 0 || newOffset > data.count {
+                    throw CBTError.corruptedArchive
+                }
+                offset = newOffset
+            }
+
             // Type flag byte: '0' or '\0' = regular file, '5' = directory
             let typeflag = headerBlock[headerBlock.startIndex + 156]
 
             // Skip non-regular-file entries (directories, symlinks, etc.)
             let isRegular = typeflag == UInt8(ascii: "0") || typeflag == 0
             if !isRegular || fileSize == 0 {
-                let dataBlocks = (fileSize + blockSize - 1) / blockSize
-                offset += blockSize + (dataBlocks * blockSize)
+                try advanceOffset()
                 continue
             }
 
@@ -126,14 +144,12 @@ struct CBTExtractor {
             guard !fullName.contains("__MACOSX"),
                   !flatName.hasPrefix("._"),
                   flatName != ".DS_Store" else {
-                let dataBlocks = (fileSize + blockSize - 1) / blockSize
-                offset += blockSize + (dataBlocks * blockSize)
+                try advanceOffset()
                 continue
             }
 
             let ext = (flatName as NSString).pathExtension.lowercased()
             let dataStart = offset + blockSize
-            let dataBlocks = (fileSize + blockSize - 1) / blockSize
             let dataEnd = dataStart + fileSize
 
             if imageExtensions.contains(ext), dataEnd <= data.count {
@@ -143,7 +159,7 @@ struct CBTExtractor {
                 imageURLs.append(destURL)
             }
 
-            offset += blockSize + (dataBlocks * blockSize)
+            try advanceOffset()
         }
 
         return imageURLs
@@ -168,11 +184,14 @@ struct CBTExtractor {
 
 enum CBTError: LocalizedError {
     case noImagesFound
+    case corruptedArchive
 
     var errorDescription: String? {
         switch self {
         case .noImagesFound:
             return "No images were found inside the CBT archive."
+        case .corruptedArchive:
+            return "The TAR/CBT archive is corrupted or contains invalid offsets."
         }
     }
 }

@@ -2,8 +2,6 @@ import SwiftUI
 
 // MARK: - Help Center View
 struct HelpCenterView: View {
-    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
-    @State private var showingOnboarding = false
     @Environment(\.dismiss) private var dismiss
     
     var body: some View {
@@ -18,17 +16,6 @@ struct HelpCenterView: View {
                         iconColor: .orange,
                         title: "Quick Start Guide",
                         subtitle: "Get started in 5 minutes"
-                    )
-                }
-                
-                Button {
-                    showingOnboarding = true
-                } label: {
-                    HelpRow(
-                        icon: "play.circle.fill",
-                        iconColor: .blue,
-                        title: "Replay Welcome Tour",
-                        subtitle: "View the feature walkthrough again"
                     )
                 }
             } header: {
@@ -145,9 +132,6 @@ struct HelpCenterView: View {
         .background(Color.clear)
         .listRowBackground(Color.inkSurface.opacity(0.4))
         .navigationTitle("Help Center")
-        .fullScreenCover(isPresented: $showingOnboarding) {
-            OnboardingView()
-        }
     }
 }
 

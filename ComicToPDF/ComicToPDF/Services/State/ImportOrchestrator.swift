@@ -134,7 +134,16 @@ actor ImportOrchestrator {
                         smartMetadata.series = seriesName
                     }
 
+                    let pdfID = UUID()
+                    if let img = PhysicalFileSystemRouter.extractCoverImageStatic(from: destURL),
+                       let jpegData = img.jpegData(compressionQuality: 0.7) {
+                        let coversDir = PhysicalFileSystemRouter.getCoversDirectory()
+                        let coverURL = coversDir.appendingPathComponent("cover_\(pdfID.uuidString).jpg")
+                        try? jpegData.write(to: coverURL)
+                    }
+
                     var pdf = ConvertedPDF(
+                        id: pdfID,
                         name: smartDisplayName,
                         url: destURL,
                         pageCount: 0,
@@ -309,7 +318,16 @@ actor ImportOrchestrator {
                         }
                     }
 
+                    let pdfID = UUID()
+                    if let img = PhysicalFileSystemRouter.extractCoverImageStatic(from: destURL),
+                       let jpegData = img.jpegData(compressionQuality: 0.7) {
+                        let coversDir = PhysicalFileSystemRouter.getCoversDirectory()
+                        let coverURL = coversDir.appendingPathComponent("cover_\(pdfID.uuidString).jpg")
+                        try? jpegData.write(to: coverURL)
+                    }
+
                     var pdf = ConvertedPDF(
+                        id: pdfID,
                         name: smartDisplayName,
                         url: destURL,
                         pageCount: 0,
@@ -395,39 +413,34 @@ actor ImportOrchestrator {
         
         let finalClusters = clusters
         await MainActor.run {
-            // Optimize O(N^2) removeAll by building a Set of incoming names
-            var unclusteredPDFs: [ConvertedPDF] = []
+            var allImported: [ConvertedPDF] = []
             
-            for (series, clusterPDFs) in finalClusters {
+            for (series, var clusterPDFs) in finalClusters {
                 if clusterPDFs.count > 1 && series != "Ungrouped" {
-                    Task { await self.finalizeSeriesImport(pdfs: clusterPDFs, seriesName: series, manager: manager) }
-                } else {
-                    unclusteredPDFs.append(contentsOf: clusterPDFs)
+                    let targetCollection: PDFCollection
+                    if let existing = manager.collections.first(where: { $0.name == series }), !series.isEmpty {
+                        targetCollection = existing
+                    } else {
+                        let newCol = PDFCollection(id: UUID(), name: series, icon: "books.vertical", color: "orange", creationDate: Date())
+                        manager.collections.append(newCol)
+                        targetCollection = newCol
+                    }
+                    
+                    for i in 0..<clusterPDFs.count {
+                        clusterPDFs[i].collectionId = targetCollection.id
+                        clusterPDFs[i].metadata.series = series
+                    }
                 }
+                allImported.append(contentsOf: clusterPDFs)
             }
             
-            if !unclusteredPDFs.isEmpty {
-                let incomingNames = Set(unclusteredPDFs.map { $0.url.lastPathComponent })
+            if !allImported.isEmpty {
+                let incomingNames = Set(allImported.map { $0.url.lastPathComponent })
                 manager.convertedPDFs.removeAll(where: { incomingNames.contains($0.url.lastPathComponent) })
-                manager.convertedPDFs.append(contentsOf: unclusteredPDFs)
+                manager.convertedPDFs.append(contentsOf: allImported)
             }
             
             manager.saveLibrary()
-        } // End MainActor.run
-
-        // ✅ PERF: Thumbnail generation — detached to prevent locking the UI banner at 100%
-        Task.detached(priority: .background) {
-            await withTaskGroup(of: Void.self) { group in
-                var inFlight = 0
-                for pdf in importedPDFs {
-                    if inFlight >= 4 {
-                        await group.next()
-                        inFlight -= 1
-                    }
-                    group.addTask { await manager.generateCoverThumbnail(for: pdf) }
-                    inFlight += 1
-                }
-            }
         }
     }
     
@@ -458,21 +471,6 @@ actor ImportOrchestrator {
                 // The 300ms-debounced save below is called ONCE after all PDFs are appended.
             }
             manager.saveLibrary() // single debounced write for the entire series
-        }
-
-        // ✅ PERF: Thumbnail generation — detached to prevent UI blocking
-        Task.detached(priority: .background) {
-            await withTaskGroup(of: Void.self) { group in
-                var inFlight = 0
-                for pdf in pdfs {
-                    if inFlight >= 4 {
-                        await group.next()
-                        inFlight -= 1
-                    }
-                    group.addTask { await manager.generateCoverThumbnail(for: pdf) }
-                    inFlight += 1
-                }
-            }
         }
     }
     
@@ -607,7 +605,16 @@ actor ImportOrchestrator {
                             
                             let cType = MetadataHeuristics.detectAsymmetricContentType(url: destURL)
                             
+                            let pdfID = UUID()
+                            if let img = PhysicalFileSystemRouter.extractCoverImageStatic(from: destURL),
+                               let jpegData = img.jpegData(compressionQuality: 0.7) {
+                                let coversDir = PhysicalFileSystemRouter.getCoversDirectory()
+                                let coverURL = coversDir.appendingPathComponent("cover_\(pdfID.uuidString).jpg")
+                                try? jpegData.write(to: coverURL)
+                            }
+
                             var pdf = ConvertedPDF(
+                                id: pdfID,
                                 name: smartDisplayName,
                                 url: destURL,
                                 pageCount: 0,
@@ -662,21 +669,7 @@ actor ImportOrchestrator {
             }
             manager.saveLibrary()
         }
-        // FIX: was one unstructured Task per file — floods thread pool with 1400 simultaneous zip opens.
-        // Now uses the same 4-slot TaskGroup pattern as importFilesAsSeries.
-        Task.detached(priority: .background) {
-            await withTaskGroup(of: Void.self) { group in
-                var inFlight = 0
-                for pdf in newPDFs {
-                    if inFlight >= 4 {
-                        await group.next()
-                        inFlight -= 1
-                    }
-                    group.addTask { await manager.generateCoverThumbnail(for: pdf) }
-                    inFlight += 1
-                }
-            }
-        }
+
     }
     
     nonisolated func detectContentType(from url: URL, mangaMode: Bool) -> ContentType {

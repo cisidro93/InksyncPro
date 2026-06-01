@@ -420,7 +420,7 @@ class EPUBGenerator {
         let finalCanvas = canvasSize ?? size
         
         // Check for sanity
-        if finalCanvas.width > 5000 || finalCanvas.height > 5000 { return image }
+        if finalCanvas.width <= 0 || finalCanvas.height <= 0 || finalCanvas.width.isNaN || finalCanvas.height.isNaN || finalCanvas.width > 5000 || finalCanvas.height > 5000 { return image }
         
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1.0

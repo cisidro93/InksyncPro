@@ -34,10 +34,6 @@ struct ContentView: View {
     @State private var showingWebExport = false
     @State private var webExportPDF: ConvertedPDF?
 
-    // Onboarding State
-    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
-    @State private var showOnboarding = false
-
     // UI Mode
     @AppStorage("appUIMode") private var appUIMode: AppUIMode = .pro
 
@@ -71,13 +67,7 @@ struct ContentView: View {
         .alert(item: $conversionManager.appAlert) { alert in
             Alert(title: Text(alert.title), message: Text(alert.message), dismissButton: .default(Text("OK")))
         }
-        .fullScreenCover(isPresented: $showOnboarding) {
-            OnboardingView()
-        }
         .onAppear {
-            if !hasCompletedOnboarding {
-                showOnboarding = true
-            }
             // Wire LinkedLibraryScanner to this live ConversionManager instance.
             LinkedLibraryScanner.shared.conversionManager = conversionManager
             // Bind legacy memory-cache mapping to active SwiftData context
