@@ -75,7 +75,7 @@ struct ConvertView: View {
                             }
                         }
                         .pickerStyle(.menu)
-                        .tint(.orange)
+                        .tint(.inkBlue)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(10)
                         .background(Color.inkSurfaceRaised)
@@ -94,7 +94,7 @@ struct ConvertView: View {
                         Spacer()
                         Toggle("", isOn: $settingsManager.conversionSettings.optimizeForDevice)
                             .labelsHidden()
-                            .tint(.orange)
+                            .tint(.inkBlue)
                     }
                     if settingsManager.conversionSettings.optimizeForDevice {
                         Divider().overlay(Color.inkBorderSubtle)
@@ -110,7 +110,7 @@ struct ConvertView: View {
                             Spacer()
                             Toggle("", isOn: $settingsManager.conversionSettings.embedCharacterGlossary)
                                 .labelsHidden()
-                                .tint(.orange)
+                                .tint(.inkBlue)
                         }
                     }
                 }
@@ -155,7 +155,7 @@ struct ConvertView: View {
                                     Button(action: { viewModel.showingCalibreGuide = true }) {
                                         Label("How to Sideload to Kindle", systemImage: "questionmark.circle")
                                             .font(.caption)
-                                            .foregroundColor(.orange)
+                                            .foregroundColor(.inkBlue)
                                     }
                                     .buttonStyle(PlainButtonStyle())
                                 }
@@ -179,7 +179,7 @@ struct ConvertView: View {
                         Spacer()
                         Toggle("", isOn: $viewModel.isMangaMode)
                             .labelsHidden()
-                            .tint(.orange)
+                            .tint(.inkBlue)
                             .disabled(conversionManager.isConverting)
                     }
                 }
@@ -188,7 +188,7 @@ struct ConvertView: View {
                 if let status = conversionManager.statusMessage {
                     HStack(spacing: 8) {
                         Image(systemName: status.contains("Error") ? "exclamationmark.triangle.fill" : "info.circle.fill")
-                            .foregroundColor(status.contains("Error") ? .inkRed : .orange)
+                            .foregroundColor(status.contains("Error") ? .inkRed : .inkBlue)
                         Text(status)
                             .font(.caption)
                             .foregroundColor(status.contains("Error") ? .inkRed : .inkTextSecondary)
@@ -218,7 +218,7 @@ struct ConvertView: View {
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 16)
-                    .background(conversionManager.isConverting ? Color.inkTextTertiary : Color.orange)
+                    .background(conversionManager.isConverting ? Color.inkTextTertiary : Color.inkBlue)
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                     .animation(.easeInOut(duration: 0.2), value: conversionManager.isConverting)
                 }
@@ -439,8 +439,8 @@ struct CalibreGuideView: View {
     private func guideStep(number: Int, title: String, description: String, icon: String) -> some View {
         HStack(alignment: .top, spacing: 16) {
             ZStack {
-                Circle().fill(Color.orange.opacity(0.1)).frame(width: 36, height: 36)
-                Text("\(number)").font(.headline).foregroundColor(.orange)
+                Circle().fill(Color.blue.opacity(0.1)).frame(width: 36, height: 36)
+                Text("\(number)").font(.headline).foregroundColor(.blue)
             }
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
