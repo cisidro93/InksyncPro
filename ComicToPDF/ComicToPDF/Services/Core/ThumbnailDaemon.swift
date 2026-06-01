@@ -66,13 +66,19 @@ actor ThumbnailDaemon {
                         url = pdf.url
                     }
 
-                    if let image = PhysicalFileSystemRouter.extractCoverImageStatic(from: url) {
+                    let thumbnailImage: UIImage? = autoreleasepool {
+                        guard let image = PhysicalFileSystemRouter.extractCoverImageStatic(from: url) else { return nil }
                         let thumbnail = image.preparingThumbnail(of: CGSize(width: 240, height: 360)) ?? image
                         if let data = thumbnail.jpegData(compressionQuality: 0.5) {
                             try? data.write(to: cachedURL, options: .atomic)
-                            // Populate in-memory cache so subsequent getCachedThumbnail calls are O(1)
-                            await ThumbnailDaemon.shared.cacheInMemory(thumbnail, for: pdf.id)
+                            return thumbnail
                         }
+                        return nil
+                    }
+
+                    if let thumbnail = thumbnailImage {
+                        // Populate in-memory cache so subsequent getCachedThumbnail calls are O(1)
+                        await ThumbnailDaemon.shared.cacheInMemory(thumbnail, for: pdf.id)
                     }
 
                     accessedURL?.stopAccessingSecurityScopedResource()

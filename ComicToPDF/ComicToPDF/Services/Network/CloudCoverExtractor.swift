@@ -106,16 +106,21 @@ actor CloudCoverExtractor {
             }
 
             // ── Step 3: Decode → thumbnail ────────────────────────────────────
-            guard let image = UIImage(data: imageData),
-                  let thumbnail = image.preparingThumbnail(of: CGSize(width: 360, height: 540)) else {
+            let (thumbnailImage, jpegData) = autoreleasepool { () -> (UIImage?, Data?) in
+                guard let image = UIImage(data: imageData),
+                      let thumbnail = image.preparingThumbnail(of: CGSize(width: 360, height: 540)) else {
+                    return (nil, nil)
+                }
+                return (thumbnail, thumbnail.jpegData(compressionQuality: 0.85))
+            }
+
+            guard let thumbnail = thumbnailImage, let data = jpegData else {
                 Logger.shared.log(
                     "CloudCoverExtractor: Could not decode cover image for \(pdf.name)",
                     category: "Cloud", type: .error
                 )
                 return
             }
-
-            guard let jpegData = thumbnail.jpegData(compressionQuality: 0.85) else { return }
 
             // ── Step 4: Atomic write ──────────────────────────────────────────
             let coversDir = coversDirectory()
@@ -191,8 +196,11 @@ actor CloudCoverExtractor {
             let localURL = try await CloudDownloadManager.shared.streamCloudFile(pdf: pdf)
             defer { try? FileManager.default.removeItem(at: localURL) }
 
-            guard let image = PhysicalFileSystemRouter.extractCoverImageStatic(from: localURL),
-                  let data = image.jpegData(compressionQuality: 0.85) else {
+            let extractedData = autoreleasepool { () -> Data? in
+                guard let image = PhysicalFileSystemRouter.extractCoverImageStatic(from: localURL) else { return nil }
+                return image.jpegData(compressionQuality: 0.85)
+            }
+            guard let data = extractedData else {
                 throw NSError(domain: "CloudCoverExtractor", code: 2,
                               userInfo: [NSLocalizedDescriptionKey: "Could not extract cover from downloaded CBR: \(pdfName)"])
             }

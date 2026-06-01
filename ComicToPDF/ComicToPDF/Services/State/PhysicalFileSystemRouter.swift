@@ -95,12 +95,14 @@ class PhysicalFileSystemRouter {
         guard let coverURL = getCoverURL(for: pdf) else { return }
         try? data.write(to: coverURL)
         
-        if let image = UIImage(data: data) {
-            let thumbnail = image.preparingThumbnail(of: CGSize(width: 160, height: 240)) ?? image
-            let key = pdf.id.uuidString as NSString
-            // Pixel byte count approximation — accurate enough for NSCache pressure, zero CPU overhead.
-            let cost = Int(thumbnail.size.width * thumbnail.size.height * thumbnail.scale * thumbnail.scale * 4)
-            manager.thumbnailCache.setObject(thumbnail, forKey: key, cost: cost)
+        autoreleasepool {
+            if let image = UIImage(data: data) {
+                let thumbnail = image.preparingThumbnail(of: CGSize(width: 160, height: 240)) ?? image
+                let key = pdf.id.uuidString as NSString
+                // Pixel byte count approximation — accurate enough for NSCache pressure, zero CPU overhead.
+                let cost = Int(thumbnail.size.width * thumbnail.size.height * thumbnail.scale * thumbnail.scale * 4)
+                manager.thumbnailCache.setObject(thumbnail, forKey: key, cost: cost)
+            }
         }
         
         if let index = manager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
@@ -140,12 +142,18 @@ class PhysicalFileSystemRouter {
     
     // MARK: - Heavy Graphics Generation
     func generateCoverThumbnail(for pdf: ConvertedPDF, manager: ConversionManager) async {
-        if let variantID = pdf.metadata.selectedCoverID,
-           let variantURL = pdf.metadata.coverVariants[variantID],
-           FileManager.default.fileExists(atPath: variantURL.path),
-           let data = try? Data(contentsOf: variantURL),
-           let image = UIImage(data: data),
-           let jpegData = image.jpegData(compressionQuality: 0.7) {
+        let variantData: Data? = autoreleasepool {
+            if let variantID = pdf.metadata.selectedCoverID,
+               let variantURL = pdf.metadata.coverVariants[variantID],
+               FileManager.default.fileExists(atPath: variantURL.path),
+               let data = try? Data(contentsOf: variantURL),
+               let image = UIImage(data: data) {
+                return image.jpegData(compressionQuality: 0.7)
+            }
+            return nil
+        }
+        
+        if let jpegData = variantData {
             saveCoverImage(jpegData, for: pdf, manager: manager)
             return
         }
@@ -172,8 +180,11 @@ class PhysicalFileSystemRouter {
         // Release scope after background work completes.
         if needsStopAccess { url.stopAccessingSecurityScopedResource() }
         
-        guard let image = image, let jpegData = image.jpegData(compressionQuality: 0.7) else { return }
-        saveCoverImage(jpegData, for: pdf, manager: manager)
+        let jpegData = autoreleasepool {
+            image?.jpegData(compressionQuality: 0.7)
+        }
+        guard let data = jpegData else { return }
+        saveCoverImage(data, for: pdf, manager: manager)
     }
 
     /// Generates and persists a cover thumbnail from an already-downloaded temp file.
@@ -186,8 +197,11 @@ class PhysicalFileSystemRouter {
             PhysicalFileSystemRouter.extractCoverImageStatic(from: localURL)
         }.value
         
-        guard let image, let jpegData = image.jpegData(compressionQuality: 0.7) else { return }
-        saveCoverImage(jpegData, for: pdf, manager: manager)
+        let jpegData = autoreleasepool {
+            image?.jpegData(compressionQuality: 0.7)
+        }
+        guard let data = jpegData else { return }
+        saveCoverImage(data, for: pdf, manager: manager)
         Logger.shared.log("PhysicalFileSystemRouter: Cloud cover generated for '\(pdf.name)'", category: "Cloud", type: .success)
     }
 
