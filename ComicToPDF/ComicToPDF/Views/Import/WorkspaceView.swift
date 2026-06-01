@@ -3,13 +3,15 @@ import SwiftUI
 enum WorkspaceMode: String, CaseIterable {
     case inbox = "Inbox"
     case convert = "Convert"
-    case editor = "Work Area"
+    case editor = "Editor"
+    case zettel = "Zettel"
 
     var icon: String {
         switch self {
         case .inbox: return "tray"
         case .convert: return "arrow.triangle.2.circlepath"
         case .editor: return "scissors"
+        case .zettel: return "brain.head.profile"
         }
     }
     var activeIcon: String {
@@ -17,6 +19,7 @@ enum WorkspaceMode: String, CaseIterable {
         case .inbox: return "tray.fill"
         case .convert: return "arrow.triangle.2.circlepath.circle.fill"
         case .editor: return "scissors.badge.ellipsis"
+        case .zettel: return "brain.head.profile.fill"
         }
     }
     var tint: Color {
@@ -24,6 +27,7 @@ enum WorkspaceMode: String, CaseIterable {
         case .inbox: return Color.inkAmber
         case .convert: return Color.inkBlue
         case .editor: return Color(hex: "#7B5EA7")
+        case .zettel: return Color.inkAccentKnowledge
         }
     }
 }
@@ -54,6 +58,9 @@ struct WorkspaceView: View {
 
                     EditorDashboardView()
                         .workspaceVisible(mode == .editor)
+
+                    GlobalZettelkastenHubView()
+                        .workspaceVisible(mode == .zettel)
                 }
             }
             .background(Color.clear)
@@ -66,7 +73,8 @@ struct WorkspaceView: View {
         switch mode {
         case .inbox: return "Inbox Review"
         case .convert: return "Go Convert"
-        case .editor: return "Work Area"
+        case .editor: return "Editor"
+        case .zettel: return "Zettelkasten Hub"
         }
     }
 

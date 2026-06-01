@@ -50,41 +50,6 @@ struct EditorDashboardView: View {
             } else {
                 ScrollView {
                     LazyVStack(spacing: InkSpacing.rowGap) {
-                        // Zettelkasten Hub anchor card
-                        NavigationLink(destination: GlobalZettelkastenHubView()) {
-                            HStack(spacing: 14) {
-                                // Icon badge
-                                ZStack {
-                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                        .fill(
-                                            LinearGradient(
-                                                colors: [Color.inkAccentKnowledge, Color.inkBlue],
-                                                startPoint: .topLeading, endPoint: .bottomTrailing
-                                            )
-                                        )
-                                        .frame(width: 48, height: 48)
-                                    Image(systemName: "sparkles.rectangle.stack.fill")
-                                        .font(.system(size: 20, weight: .medium))
-                                        .foregroundStyle(.white)
-                                }
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text("Zettelkasten Hub")
-                                        .font(.system(size: 16, weight: .semibold))
-                                        .foregroundStyle(Color.inkTextPrimary)
-                                    Text("Global Reading Highlights & Notes")
-                                        .font(.caption)
-                                        .foregroundStyle(Color.inkTextSecondary)
-                                }
-                                Spacer()
-                                Image(systemName: "chevron.right")
-                                    .font(.caption.bold())
-                                    .foregroundStyle(Color.inkTextTertiary)
-                            }
-                            .padding(InkSpacing.cardPadding)
-                            .inkCard()
-                        }
-                        .buttonStyle(.plain)
-
                         // Book Instances
                         ForEach(filteredPDFs) { pdf in
                             EditorRowView(pdf: pdf) {
