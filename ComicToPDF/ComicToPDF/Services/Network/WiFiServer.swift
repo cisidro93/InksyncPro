@@ -2,6 +2,7 @@ import Foundation
 import Network
 import UIKit
 import ZIPFoundation
+import SwiftData
 
 @MainActor
 final class WiFiServer: ObservableObject, Sendable {
@@ -100,7 +101,7 @@ final class WiFiServer: ObservableObject, Sendable {
                         Logger.shared.log("WiFi Server ready on port \(port). PIN: \(self.securityCode)", category: "Network")
                         self.bindRetryCount = 0
                         self.isRunning = true
-                        let ip = self.getIPAddress() ?? "localhost"
+                        let ip = Self.getIPAddress() ?? "localhost"
                         self.serverURL = "http://\(ip):\(port)"
                         self.advertiseBonjourService(port: port)
 
@@ -379,18 +380,38 @@ final class WiFiServer: ObservableObject, Sendable {
         }
         
         let method = parts[0]
-        let path = parts[1].removingPercentEncoding ?? "/"
+        let rawPath = parts[1]
+        let path = rawPath.removingPercentEncoding ?? rawPath
+        
+        // Extract cleanPath and queryItems
+        var cleanPath = path
+        var queryItems: [URLQueryItem] = []
+        if let components = URLComponents(string: rawPath) {
+            cleanPath = components.path
+            queryItems = components.queryItems ?? []
+        } else if let qMarkIdx = path.firstIndex(of: "?") {
+            cleanPath = String(path[..<qMarkIdx])
+            let queryStr = String(path[path.index(after: qMarkIdx)...])
+            let pairs = queryStr.components(separatedBy: "&")
+            for pair in pairs {
+                let kv = pair.components(separatedBy: "=")
+                if kv.count == 2 {
+                    queryItems.append(URLQueryItem(name: kv[0], value: kv[1].removingPercentEncoding ?? kv[1]))
+                }
+            }
+        }
         
         // 2. Handle Login POST separately (Does not require auth)
-        if method == "POST" && path == "/login" {
+        if method == "POST" && cleanPath == "/login" {
             handleLogin(lines: lines, bodyData: bodyData, connection: connection, remoteIP: context.remoteIP)
             return
         }
         
-        // 3. Enforce Auth for everything else
-        guard context.isAuthenticated else {
+        // 3. Enforce Auth for everything else (except page_sync GET)
+        let isPageSync = (method == "GET" && cleanPath == "/page_sync")
+        guard context.isAuthenticated || isPageSync else {
             // Distinguish between API requests and Browser fallback requests
-            if path.hasPrefix("/api/") {
+            if cleanPath.hasPrefix("/api/") {
                 sendResponse(connection, 401, "{\"error\": \"Unauthorized. PIN required.\"}", contentType: "application/json")
             } else {
                 // Serve Login Page to Web Browsers
@@ -400,9 +421,9 @@ final class WiFiServer: ObservableObject, Sendable {
             return
         }
         
-        // 4. Handle Authorized Requests
+        // 4. Handle Requests
         if method == "GET" {
-            handleGetRequest(path: path, connection: connection)
+            handleGetRequest(cleanPath: cleanPath, queryItems: queryItems, connection: connection)
         } else if method == "POST" {
             // Extract Headers
             var explicitFileName: String? = nil
@@ -644,15 +665,13 @@ final class WiFiServer: ObservableObject, Sendable {
     
     // MARK: - Handlers
     
-    private func handleGetRequest(path: String, connection: NWConnection) {
+    private func handleGetRequest(cleanPath: String, queryItems: [URLQueryItem], connection: NWConnection) {
         let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         
-
-        
-        if path == "/" {
+        if cleanPath == "/" {
             let html = generateHTML()
             sendResponse(connection, 200, html, contentType: "text/html")
-        } else if path == "/api/sync" {
+        } else if cleanPath == "/api/sync" {
             // ✅ NEW: Full P2P SwiftData Cross-Device Payload Export
             Task { @MainActor in
                 do {
@@ -667,7 +686,7 @@ final class WiFiServer: ObservableObject, Sendable {
                     self.sendResponse(connection, 500, "Internal Sync Formatting Error")
                 }
             }
-        } else if path == "/queue.zip" {
+        } else if cleanPath == "/queue.zip" {
             // Hybrid P2P On-The-Fly ZIP Streaming
             // stagedFilesSnapshot() is nonisolated — safe to call from this background queue.
             let stagedFiles = TransferQueueManager.shared.stagedFilesSnapshot()
@@ -708,11 +727,12 @@ final class WiFiServer: ObservableObject, Sendable {
                 Logger.shared.log("WiFi Transfer ZIP Error: \(error.localizedDescription)", category: "Network", type: .error)
                 sendResponse(connection, 500, "Internal Server Error during ZIP creation.")
             }
+        } else if cleanPath == "/page_sync" {
+            handlePageSync(queryItems: queryItems, connection: connection)
         } else {
             // URL Decode the path (critical for filenames with spaces!)
             // e.g. /my%20comic.epub -> my comic.epub
-            let rawFileName = String(path.dropFirst())
-            let fileName = rawFileName.removingPercentEncoding ?? rawFileName
+            let fileName = cleanPath.hasPrefix("/") ? String(cleanPath.dropFirst()) : cleanPath
             
             let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
             let inboxDir = appSupport.appendingPathComponent("InksyncVault/Inbox", isDirectory: true)
@@ -726,7 +746,7 @@ final class WiFiServer: ObservableObject, Sendable {
             } else if FileManager.default.fileExists(atPath: docFileURL.path) && docFileURL.path.hasPrefix(docDir.standardizedFileURL.path) {
                 fileURL = docFileURL
             } else {
-                Logger.shared.log("WiFi Transfer - File not found or Path Traversal rejected: \(path)", category: "Network", type: .warning)
+                Logger.shared.log("WiFi Transfer - File not found or Path Traversal rejected: \(cleanPath)", category: "Network", type: .warning)
                 sendResponse(connection, 404, "Not Found")
                 return
             }
@@ -758,6 +778,68 @@ final class WiFiServer: ObservableObject, Sendable {
         }
     }
     
+    private func handlePageSync(queryItems: [URLQueryItem], connection: NWConnection) {
+        let bookIdStr = queryItems.first(where: { $0.name == "book_id" })?.value
+        let pageStr = queryItems.first(where: { $0.name == "page" })?.value
+        
+        guard let bookIdStr = bookIdStr,
+              let bookUUID = UUID(uuidString: bookIdStr) else {
+            Logger.shared.log("Page sync failed: missing or invalid book_id", category: "Network", type: .warning)
+            sendResponse(connection, 400, "Invalid book_id")
+            return
+        }
+        
+        guard let pageStr = pageStr,
+              let pageNum = Int(pageStr),
+              pageNum > 0 else {
+            Logger.shared.log("Page sync failed: missing or invalid page number", category: "Network", type: .warning)
+            sendResponse(connection, 400, "Invalid page")
+            return
+        }
+        
+        Logger.shared.log("Page sync request received: book \(bookUUID), page \(pageNum)", category: "Network")
+        
+        // 1x1 transparent PNG data
+        let pngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+        let pngData = Data(base64Encoded: pngBase64) ?? Data()
+        
+        sendResponse(connection, 200, data: pngData, contentType: "image/png")
+        
+        Task { @MainActor in
+            let context = InksyncProApp.sharedModelContainer.mainContext
+            let descriptor = FetchDescriptor<SDConvertedPDF>()
+            
+            let pdfs = try? context.fetch(descriptor)
+            let pdf = pdfs?.first(where: { $0.id == bookUUID })
+            
+            let totalPages = pdf?.pageCount ?? 100
+            let pageIndex = max(0, min(pageNum - 1, totalPages - 1))
+            
+            var progress = ReaderProgressTracker.shared.progress(for: bookUUID)
+                ?? ReadingProgress(pdfID: bookUUID, lastOpenedAt: Date(), currentPageIndex: pageIndex, totalPagesRead: 1, completionFraction: 0.0, readingSessionDates: [])
+            
+            let isPageTurn = progress.currentPageIndex != pageIndex
+            progress.lastOpenedAt = Date()
+            progress.currentPageIndex = pageIndex
+            
+            if isPageTurn {
+                progress.totalPagesRead += 1
+                GamificationManager.shared.logPageRead()
+            }
+            
+            progress.completionFraction = Double(pageIndex) / Double(max(1, totalPages - 1))
+            
+            if !progress.readingSessionDates.contains(where: { Calendar.current.isDateInToday($0) }) {
+                progress.readingSessionDates.append(Date())
+            }
+            
+            ReaderProgressTracker.shared.update(progress)
+            Logger.shared.log("Page sync successful for \(pdf?.name ?? bookIdStr) -> pageIndex: \(pageIndex)", category: "Network", type: .success)
+            
+            NotificationCenter.default.post(name: Notification.Name("ReaderProgressUpdated"), object: nil, userInfo: ["pdfID": bookUUID, "currentPageIndex": pageIndex])
+        }
+    }
+
     private func sendResponse(_ connection: NWConnection, _ code: Int, _ body: String, contentType: String = "text/plain") {
         let bodyData = body.data(using: .utf8) ?? Data()
         let header = "HTTP/1.1 \(code) OK\r\n"
@@ -983,7 +1065,7 @@ final class WiFiServer: ObservableObject, Sendable {
     // ... (Existing properties)
 
     // Robust IP Address Detection
-    private func getIPAddress() -> String? {
+    nonisolated static func getIPAddress() -> String? {
         var address: String?
         var ifaddr: UnsafeMutablePointer<ifaddrs>?
         

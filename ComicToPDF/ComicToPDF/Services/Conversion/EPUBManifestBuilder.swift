@@ -106,7 +106,7 @@ public struct EPUBManifestBuilder {
         """
     }
 
-    public static func buildChunkXHTML(chunkIndex: Int, images: [String], title: String) -> String {
+    public static func buildChunkXHTML(chunkIndex: Int, images: [String], title: String, bookUUID: String? = nil, pageIndex: Int? = nil) -> String {
         let imageElements = images.enumerated().map { _, imageName in
             """
                 <div class="page">
@@ -114,6 +114,13 @@ public struct EPUBManifestBuilder {
                 </div>
             """
         }.joined(separator: "\n")
+        
+        var trackingImg = ""
+        if let bookUUID = bookUUID,
+           let pageIndex = pageIndex,
+           let localIP = WiFiServer.getIPAddress() {
+            trackingImg = "\n        <img src=\"http://\(localIP):8080/page_sync?book_id=\(bookUUID)&amp;page=\(pageIndex + 1)\" width=\"1\" height=\"1\" style=\"display:none; position:absolute; visibility:hidden;\" alt=\"\"/>\n"
+        }
         
         return """
         <?xml version="1.0" encoding="UTF-8"?>
@@ -132,7 +139,7 @@ public struct EPUBManifestBuilder {
                 .page-image { max-width: 100vw; max-height: 100vh; height: 100%; width: 100%; object-fit: contain; object-position: center; }
             </style>
         </head>
-        <body>
+        <body>\(trackingImg)
             <div class="chunk-container">
             \(imageElements)
             </div>

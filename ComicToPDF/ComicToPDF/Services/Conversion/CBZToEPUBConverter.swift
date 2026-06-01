@@ -230,7 +230,18 @@ struct CBZToEPUBConverter: Sendable {
             try? coverXHTML.write(to: textDir.appendingPathComponent("cover.xhtml"), atomically: true, encoding: .utf8)
         }
         
-        let bookUUID = UUID().uuidString
+        let bookUUID = await MainActor.run { () -> String in
+            let context = InksyncProApp.sharedModelContainer.mainContext
+            let urlStr = sourceURL.absoluteString
+            let nameStr = sourceURL.lastPathComponent
+            let descriptor = FetchDescriptor<SDConvertedPDF>()
+            if let pdfs = try? context.fetch(descriptor) {
+                if let pdf = pdfs.first(where: { $0.url.absoluteString == urlStr || $0.name == nameStr }) {
+                    return pdf.id.uuidString
+                }
+            }
+            return UUID().uuidString
+        }
         manifestItems.append("<item id=\"css\" href=\"css/comic.css\" media-type=\"text/css\"/>")
         manifestItems.append("<item id=\"ncx\" href=\"toc.ncx\" media-type=\"application/x-dtbncx+xml\"/>")
         manifestItems.append("<item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/>")
@@ -277,7 +288,9 @@ struct CBZToEPUBConverter: Sendable {
             let chunkXHTML = CBZToEPUBConverter.generateChunkXHTML(
                 chunkIndex: chunkIndex,
                 images: currentChunkImages,
-                title: "Page \(chunkIndex)"
+                title: "Page \(chunkIndex)",
+                bookUUID: bookUUID,
+                pageIndex: item.index
             )
             let chunkName = String(format: "page_%04d.xhtml", chunkIndex)
             try chunkXHTML.write(to: textDir.appendingPathComponent(chunkName), atomically: true, encoding: .utf8)
@@ -395,8 +408,8 @@ struct CBZToEPUBConverter: Sendable {
         return outputURL
     }
 
-    static func generateChunkXHTML(chunkIndex: Int, images: [String], title: String, width: Int? = nil, height: Int? = nil) -> String {
-        return EPUBManifestBuilder.buildChunkXHTML(chunkIndex: chunkIndex, images: images, title: title)
+    static func generateChunkXHTML(chunkIndex: Int, images: [String], title: String, width: Int? = nil, height: Int? = nil, bookUUID: String? = nil, pageIndex: Int? = nil) -> String {
+        return EPUBManifestBuilder.buildChunkXHTML(chunkIndex: chunkIndex, images: images, title: title, bookUUID: bookUUID, pageIndex: pageIndex)
     }
     
     // MARK: - KFX Export Pipeline
