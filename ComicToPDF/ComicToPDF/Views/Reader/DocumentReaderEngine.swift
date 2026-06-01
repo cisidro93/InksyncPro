@@ -11,6 +11,10 @@ struct DocumentReaderEngine: View {
     @State private var isPencilMode = false
     @State private var pdfDocument: PDFDocument?
     @State private var accessedURL: URL? = nil
+
+    private var totalPages: Int {
+        pdfDocument?.pageCount ?? pdf.pageCount
+    }
     
     // KOReader Parity
     @State private var isReflowMode = false
@@ -47,13 +51,13 @@ struct DocumentReaderEngine: View {
             
             ReaderChrome(
                 title: pdf.name,
-                pageText: "\(currentPageIndex + 1) / \(pdf.pageCount)",
+                pageText: "\(currentPageIndex + 1) / \(totalPages)",
                 isVisible: $chromeVisible,
                 onBack: {
                     ReaderProgressTracker.shared.update(ReadingProgress(
                         pdfID: pdf.id, lastOpenedAt: Date(), currentPageIndex: currentPageIndex,
                         currentChapterIndex: nil, currentChapterOffset: nil,
-                        totalPagesRead: 1, completionFraction: Double(currentPageIndex + 1) / Double(max(1, pdf.pageCount)),
+                        totalPagesRead: 1, completionFraction: Double(currentPageIndex + 1) / Double(max(1, totalPages)),
                         readingSessionDates: [Date()], estimatedMinutesRemaining: nil
                     ))
                     onDismiss()
@@ -65,12 +69,12 @@ struct DocumentReaderEngine: View {
                 onSettingsToggle: {},
                 onAnnotationsToggle: { isPencilMode.toggle() },
                 currentProgress: Binding(
-                    get: { Double(currentPageIndex) / Double(max(1, pdf.pageCount - 1)) },
+                    get: { Double(currentPageIndex) / Double(max(1, totalPages - 1)) },
                     set: {
-                        currentPageIndex = Int($0 * Double(max(1, pdf.pageCount - 1)))
+                        currentPageIndex = Int($0 * Double(max(1, totalPages - 1)))
                     }
                 ),
-                totalPages: pdf.pageCount,
+                totalPages: totalPages,
                 isPDF: true,
                 isReflowActive: isReflowMode,
                 onCropToggle: { applySmartCrop() },
