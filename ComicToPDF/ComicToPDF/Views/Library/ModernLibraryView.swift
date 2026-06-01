@@ -109,6 +109,7 @@ struct ModernLibraryView: View {
             let titleEmpty  = pdf.metadata.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             return seriesEmpty || authorEmpty || titleEmpty
         }.count
+        MetadataMatchService.shared.rebuildClusters(pdfs: cachedVisiblePDFs)
     }
 
     var body: some View {
@@ -479,6 +480,19 @@ struct ModernLibraryView: View {
                     }
             }
             
+        case .metadataInbox:
+            NavigationStack {
+                MetadataInboxView()
+                    .toolbar {
+                        ToolbarItem(placement: .navigationBarTrailing) {
+                            Button("Done") {
+                                AppRouter.shared.dismissSheet()
+                            }
+                            .foregroundColor(.inkBlue)
+                        }
+                    }
+            }
+            
         case .stats: ReadingStatsView()
  
         case .smartListImporter: SmartListImporterView().environmentObject(conversionManager)
@@ -657,6 +671,38 @@ struct ModernLibraryView: View {
                     HapticEngine.selection()
                 }
             )
+
+            if MetadataMatchService.shared.activeClusters.contains(where: {
+                if case .matched = $0.status { return false }
+                return true
+            }) {
+                HStack {
+                    Image(systemName: "square.stack.3d.up.badge.a.fill")
+                        .foregroundColor(.purple)
+                        .font(.system(size: 16))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Metadata Review")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundColor(Theme.text)
+                        Text("Identify your series to activate Character Maps.")
+                            .font(.system(size: 11))
+                            .foregroundColor(Theme.textSecondary)
+                    }
+                    Spacer()
+                    Button("Match Now") {
+                        AppRouter.shared.presentSheet(.metadataInbox)
+                    }
+                    .font(.system(size: 12, weight: .semibold))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Color.purple.opacity(0.2), in: Capsule())
+                    .foregroundColor(.purple)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(.ultraThinMaterial)
+                .overlay(Rectangle().frame(height: 1).foregroundColor(Color.white.opacity(0.1)), alignment: .bottom)
+            }
 
             disconnectedDrivesBanner
             pendingJobsBanner

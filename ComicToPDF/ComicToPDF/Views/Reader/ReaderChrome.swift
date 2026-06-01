@@ -26,6 +26,7 @@ struct ReaderChrome: View {
     var onSettingsToggle: () -> Void
     var onTOCToggle: (() -> Void)? = nil
     var onAnnotationsToggle: (() -> Void)? = nil
+    var onCharacterMapToggle: (() -> Void)? = nil
 
     // Scrubber
     @Binding var currentProgress: Double
@@ -298,6 +299,9 @@ struct ReaderChrome: View {
                     }
                     if let onAnnotations = onAnnotationsToggle {
                         barButton(icon: "pencil.and.outline", tint: .white, action: onAnnotations)
+                    }
+                    if let onCharacterMap = onCharacterMapToggle {
+                        barButton(icon: "square.stack.3d.up.badge.a", tint: .white, action: onCharacterMap)
                     }
                 }
             }

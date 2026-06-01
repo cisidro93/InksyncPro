@@ -476,6 +476,7 @@ struct ComicReaderEngine: View {
     @State private var activeFilterPreset: ReadingFilterPreset = .original
     @State private var showingFilterHUD = false
     @State private var showingSettingsHUD = false
+    @State private var showingCharacterMap = false
     @State private var lastBrightnessDragValue: CGFloat = 0
     /// Panels-style ambient chrome tint — sampled from the current page edges
     @State private var ambientPageColor: Color = .clear
@@ -674,6 +675,13 @@ struct ComicReaderEngine: View {
                 conversionManager.convertedPDFs[idx].metadata.isManga = isManga
                 conversionManager.saveLibrary()
             }
+        }
+        .sheet(isPresented: $showingCharacterMap) {
+            CharacterOverlayView(
+                seriesName: pdf.metadata.series ?? pdf.name,
+                issueNumber: Int(pdf.metadata.issueNumber ?? "") ?? 1,
+                pageIndex: currentIndex
+            )
         }
     } // closes GeometryReader
 } // end body
@@ -915,6 +923,9 @@ struct ComicReaderEngine: View {
             },
             onSettingsToggle: {
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { showingSettingsHUD.toggle() }
+            },
+            onCharacterMapToggle: {
+                showingCharacterMap.toggle()
             },
             currentProgress: Binding(
                 get: { Double(currentIndex) / Double(max(1, cache.pageCount - 1)) },

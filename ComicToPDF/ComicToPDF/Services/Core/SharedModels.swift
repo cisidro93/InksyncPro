@@ -1110,3 +1110,55 @@ enum PageCoordinateSystem: String, Codable, Equatable, Hashable {
     }
 }
 
+@Model final class SDCharacterNode: Identifiable {
+    @Attribute(.unique) var id: UUID
+    var name: String
+    var avatarUrl: String?
+    var bio: String?
+    var firstAppearanceIssue: String?
+    
+    init(id: UUID = UUID(), name: String, avatarUrl: String? = nil, bio: String? = nil, firstAppearanceIssue: String? = nil) {
+        self.id = id
+        self.name = name
+        self.avatarUrl = avatarUrl
+        self.bio = bio
+        self.firstAppearanceIssue = firstAppearanceIssue
+    }
+}
+
+@Model final class SDRelationship: Identifiable {
+    @Attribute(.unique) var id: UUID
+    var sourceCharacterID: UUID
+    var targetCharacterID: UUID
+    var type: String // e.g. "ally", "enemy", "family"
+    
+    // Spoilers Activation Index
+    var visibleAfterIssueNumber: Int
+    var visibleAfterPageIndex: Int
+    
+    init(id: UUID = UUID(), sourceCharacterID: UUID, targetCharacterID: UUID, type: String, visibleAfterIssueNumber: Int = 0, visibleAfterPageIndex: Int = 0) {
+        self.id = id
+        self.sourceCharacterID = sourceCharacterID
+        self.targetCharacterID = targetCharacterID
+        self.type = type
+        self.visibleAfterIssueNumber = visibleAfterIssueNumber
+        self.visibleAfterPageIndex = visibleAfterPageIndex
+    }
+}
+
+@Model final class SDCharacterAppearance: Identifiable {
+    @Attribute(.unique) var id: UUID
+    var seriesID: UUID
+    var issueNumber: Int
+    var pageIndex: Int
+    var characterID: UUID
+    
+    init(id: UUID = UUID(), seriesID: UUID, issueNumber: Int, pageIndex: Int, characterID: UUID) {
+        self.id = id
+        self.seriesID = seriesID
+        self.issueNumber = issueNumber
+        self.pageIndex = pageIndex
+        self.characterID = characterID
+    }
+}
+
