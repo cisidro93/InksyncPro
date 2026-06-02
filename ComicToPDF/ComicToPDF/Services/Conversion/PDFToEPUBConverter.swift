@@ -162,7 +162,7 @@ final class PDFToEPUBConverter: Sendable {
             ))
             
             try autoreleasepool {
-                let rawCGImage = try ConcurrencyLocks.pdfLock.withLock { () -> CGImage? in
+                let rawCGImage = try ConcurrencyLocks.pdfLock.withLock {
                     guard let page = pdfDocument.page(at: pageIndex) else {
                         throw ConversionError.pageRenderFailed(pageIndex + 1)
                     }

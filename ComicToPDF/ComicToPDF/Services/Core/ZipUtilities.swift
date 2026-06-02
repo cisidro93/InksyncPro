@@ -41,7 +41,7 @@ struct ZipUtilities {
                     // 3. Extraction Strategy
                     if ext == "pdf" {
                         // --- PDF PATH ---
-                        let images = try ConcurrencyLocks.pdfLock.withLock { () -> [UIImage] in
+                        let images = try ConcurrencyLocks.pdfLock.withLock {
                             guard let document = PDFDocument(url: sourceURL) else { return [] }
                             let pageCount = document.pageCount
                             var rendered: [UIImage] = []

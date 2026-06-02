@@ -66,7 +66,7 @@ struct CBRExtractor {
                         .appendingPathComponent("cbr_\(stem)_\(uniqueID)")
                     try fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
 
-                    let imageURLs = try ConcurrencyLocks.unrarLock.withLock { () -> [URL] in
+                    let imageURLs = try ConcurrencyLocks.unrarLock.withLock {
                         // Open archive — Unrar.Archive disambiguates from ZIPFoundation.Archive
                         let archive = try Unrar.Archive(fileURL: localSourceURL)
 
