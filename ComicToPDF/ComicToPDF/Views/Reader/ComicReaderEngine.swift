@@ -588,7 +588,8 @@ struct ComicReaderEngine: View {
                                 }
                                 // Phase 4A: start / reset 4-second auto-hide timer
                                 if chromeVisible { startChromeIdleTimer() }
-                            }
+                            },
+                            onFlipPastEnd: { attemptComicSeriesContinuation() }
                         )
                     }
                 }
@@ -663,11 +664,6 @@ struct ComicReaderEngine: View {
             }
             // Phase 3: broadcast page change to any connected reading room peers
             readingRoom.broadcastPage(newIndex, totalPages: cache.pageCount)
-            // Series continuation: when the reader reaches the final page,
-            // post openMergedBook so the library transitions to the next volume.
-            if cache.pageCount > 0 && newIndex == cache.pageCount - 1 {
-                attemptComicSeriesContinuation()
-            }
         }
         // Once the archive finishes loading, honour the current orientation.
         // syncReadingModeToOrientation() is a no-op while isLoading == true,
@@ -738,6 +734,23 @@ struct ComicReaderEngine: View {
                         onAppearAction: { currentIndex = index }
                     )
                 }
+                
+                // Add an explicit button to load the next volume in the series
+                Button(action: {
+                    attemptComicSeriesContinuation()
+                }) {
+                    HStack {
+                        Text("Next Volume in Series")
+                            .font(.system(size: 16, weight: .semibold))
+                        Image(systemName: "chevron.right")
+                    }
+                    .foregroundColor(.white)
+                    .padding(.vertical, 16)
+                    .padding(.horizontal, 32)
+                    .background(Color.white.opacity(0.15))
+                    .cornerRadius(12)
+                }
+                .padding(.vertical, 40)
             }
         }
     }
@@ -748,7 +761,8 @@ struct ComicReaderEngine: View {
             cache: cache,
             activeFilterPreset: activeFilterPreset,
             isMangaRTL: readingMode == .mangaRTL || pdf.metadata.isManga == true,
-            onChromeTap: { chromeVisible.toggle() }
+            onChromeTap: { chromeVisible.toggle() },
+            onFlipPastEnd: { attemptComicSeriesContinuation() }
         )
     }
 

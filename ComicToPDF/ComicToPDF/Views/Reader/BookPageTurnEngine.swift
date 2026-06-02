@@ -16,6 +16,7 @@ struct BookFlipGesture: View {
     var canFlipBack: () -> Bool
     var onFlipForward: () -> Void
     var onFlipBack: () -> Void
+    var onFlipPastEnd: (() -> Void)? = nil
 
     @State private var dragOffset: CGFloat = 0
     /// Guards the full flip sequence — prevents double-advance from rapid taps.
@@ -74,8 +75,13 @@ struct BookFlipGesture: View {
                         let goNext = isMangaRTL ? swipeRight : swipeLeft
                         let goPrev = isMangaRTL ? swipeLeft  : swipeRight
 
-                        if goNext && canFlipForward() {
-                            flipForward(width: geo.size.width)
+                        if goNext {
+                            if canFlipForward() {
+                                flipForward(width: geo.size.width)
+                            } else {
+                                onFlipPastEnd?()
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { dragOffset = 0 }
+                            }
                         } else if goPrev && canFlipBack() {
                             flipBack(width: geo.size.width)
                         } else {
@@ -89,11 +95,17 @@ struct BookFlipGesture: View {
                 guard !isAnimating else { return }
                 let third = geo.size.width / 3
                 if location.x < third {
-                    if isMangaRTL { flipForward(width: geo.size.width) }
-                    else          { flipBack(width: geo.size.width) }
+                    if isMangaRTL { 
+                        if canFlipForward() { flipForward(width: geo.size.width) } else { onFlipPastEnd?() }
+                    } else { 
+                        if canFlipBack() { flipBack(width: geo.size.width) } 
+                    }
                 } else if location.x > geo.size.width - third {
-                    if isMangaRTL { flipBack(width: geo.size.width) }
-                    else          { flipForward(width: geo.size.width) }
+                    if isMangaRTL { 
+                        if canFlipBack() { flipBack(width: geo.size.width) } 
+                    } else { 
+                        if canFlipForward() { flipForward(width: geo.size.width) } else { onFlipPastEnd?() }
+                    }
                 } else {
                     onChromeTap()
                 }
@@ -176,6 +188,7 @@ struct BookPager: View {
     let readingMode: ComicReadingMode
     let activeFilterPreset: ReadingFilterPreset
     var onChromeTap: () -> Void
+    var onFlipPastEnd: (() -> Void)? = nil
 
     var body: some View {
         switch readingMode {
@@ -206,7 +219,8 @@ struct BookPager: View {
             canFlipForward: { currentIndex < totalPages - 1 },
             canFlipBack:    { currentIndex > 0 },
             onFlipForward:  { currentIndex += 1 },
-            onFlipBack:     { currentIndex -= 1 }
+            onFlipBack:     { currentIndex -= 1 },
+            onFlipPastEnd:  onFlipPastEnd
         )
     }
 
@@ -245,8 +259,12 @@ struct BookPager: View {
         .gesture(
             DragGesture(minimumDistance: 30)
                 .onEnded { val in
-                    if val.translation.width < -30, currentIndex < totalPages - 1 {
-                        withAnimation(.easeInOut(duration: 0.28)) { currentIndex += 1 }
+                    if val.translation.width < -30 {
+                        if currentIndex < totalPages - 1 {
+                            withAnimation(.easeInOut(duration: 0.28)) { currentIndex += 1 }
+                        } else {
+                            onFlipPastEnd?()
+                        }
                     } else if val.translation.width > 30, currentIndex > 0 {
                         withAnimation(.easeInOut(duration: 0.28)) { currentIndex -= 1 }
                     }
@@ -268,6 +286,7 @@ struct TwoUpBookPager: View {
     let activeFilterPreset: ReadingFilterPreset
     let isMangaRTL: Bool
     var onChromeTap: () -> Void
+    var onFlipPastEnd: (() -> Void)? = nil
 
     @State private var spreadIdx: Int = 0
 
@@ -322,7 +341,8 @@ struct TwoUpBookPager: View {
             canFlipForward: { spreadIdx < totalSpreads - 1 },
             canFlipBack:    { spreadIdx > 0 },
             onFlipForward:  { spreadIdx += 1 },
-            onFlipBack:     { spreadIdx -= 1 }
+            onFlipBack:     { spreadIdx -= 1 },
+            onFlipPastEnd:  onFlipPastEnd
         )
         .onAppear { updateSpreadIdx(from: currentIndex) }
         .onChange(of: spreadIdx) { _, newVal in
