@@ -28,7 +28,7 @@ class PDFContentEditorViewModel: ObservableObject {
         isLoading = true
         errorMessage = nil
         
-        guard let doc = PDFDocument(url: self.pdf.url) else {
+        guard let doc = ConcurrencyLocks.pdfLock.withLock({ PDFDocument(url: self.pdf.url) }) else {
             self.errorMessage = "Could not open PDF file."
             self.isLoading = false
             return
@@ -47,13 +47,41 @@ class PDFContentEditorViewModel: ObservableObject {
         Task.detached(priority: .userInitiated) { [weak self] in
             guard let self = self else { return }
             
-            guard let backgroundDoc = PDFDocument(url: fileURL) else { return }
-            let count = backgroundDoc.pageCount
             let size = CGSize(width: 150, height: 200)
+            let drawPage: (PDFPage) -> UIImage? = { page in
+                let pageBounds = page.bounds(for: .mediaBox)
+                guard pageBounds.width > 0 && pageBounds.height > 0 && !pageBounds.width.isNaN && !pageBounds.height.isNaN else { return nil }
+                let scale = min(size.width / pageBounds.width, size.height / pageBounds.height)
+                let scaledSize = CGSize(width: pageBounds.width * scale, height: pageBounds.height * scale)
+                guard scaledSize.width > 0 && scaledSize.height > 0 && !scaledSize.width.isNaN && !scaledSize.height.isNaN else { return nil }
+                
+                let renderer = UIGraphicsImageRenderer(size: scaledSize)
+                return renderer.image { context in
+                    UIColor.white.setFill()
+                    context.fill(CGRect(origin: .zero, size: scaledSize))
+                    
+                    context.cgContext.translateBy(x: 0, y: scaledSize.height)
+                    context.cgContext.scaleBy(x: scale, y: -scale)
+                    
+                    page.draw(with: .mediaBox, to: context.cgContext)
+                }
+            }
+            
+            var count = 0
+            ConcurrencyLocks.pdfLock.withLock {
+                if let backgroundDoc = PDFDocument(url: fileURL) {
+                    count = backgroundDoc.pageCount
+                }
+            }
             
             for i in 0..<count {
-                if let page = backgroundDoc.page(at: i) {
-                    let thumb = page.thumbnail(of: size, for: .mediaBox)
+                let thumb = ConcurrencyLocks.pdfLock.withLock { () -> UIImage? in
+                    guard let backgroundDoc = PDFDocument(url: fileURL),
+                          let page = backgroundDoc.page(at: i) else { return nil }
+                    return drawPage(page)
+                }
+                
+                if let thumb = thumb {
                     await MainActor.run {
                         if i < self.pages.count {
                             self.pages[i].thumbnail = thumb
@@ -102,28 +130,30 @@ class PDFContentEditorViewModel: ObservableObject {
         Task.detached(priority: .userInitiated) { [weak self] in
             guard let self = self else { return }
             
-            guard let backgroundDoc = PDFDocument(url: fileURL) else {
-                await MainActor.run {
-                    self.errorMessage = "Failed to load document for saving."
-                    self.isSaving = false
+            let (success, newPageCount) = ConcurrencyLocks.pdfLock.withLock { () -> (Bool, Int) in
+                guard let backgroundDoc = PDFDocument(url: fileURL) else {
+                    return (false, 0)
                 }
-                return
+                
+                for idx in indicesToRemove {
+                    backgroundDoc.removePage(at: idx)
+                }
+                
+                let success = backgroundDoc.write(to: fileURL)
+                let pageCount = backgroundDoc.pageCount
+                return (success, pageCount)
             }
-            
-            for idx in indicesToRemove {
-                backgroundDoc.removePage(at: idx)
-            }
-            
-            let success = backgroundDoc.write(to: fileURL)
             
             await MainActor.run {
                 if success {
                     Logger.shared.log("PDF Editor: Removed \(indicesToRemove.count) pages from \(self.pdf.name)", category: "Editor")
                     
-                    self.document = PDFDocument(url: fileURL)
+                    self.document = ConcurrencyLocks.pdfLock.withLock {
+                        PDFDocument(url: fileURL)
+                    }
                     
                     var updatedPDF = self.pdf
-                    updatedPDF.pageCount = self.document?.pageCount ?? 0
+                    updatedPDF.pageCount = newPageCount
                     if let fileAttrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
                        let size = fileAttrs[.size] as? Int64 {
                         updatedPDF.fileSize = size

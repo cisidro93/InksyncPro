@@ -1413,10 +1413,8 @@ struct PDFKitView: UIViewRepresentable {
 
         // Wire highlight action
         let coordinator = context.coordinator
-        if let highlightable = pdfView as? PDFHighlightableView {
-            highlightable.onHighlightRequested = { [weak coordinator] in
-                coordinator?.applyHighlight(in: pdfView)
-            }
+        pdfView.onHighlightRequested = { [weak coordinator] in
+            coordinator?.applyHighlight(in: pdfView)
         }
 
         NotificationCenter.default.addObserver(
@@ -1427,12 +1425,18 @@ struct PDFKitView: UIViewRepresentable {
         )
 
         context.coordinator.loadTask = Task.detached(priority: .userInitiated) {
-            if let document = PDFDocument(url: url) {
+            let (document, pageCount) = ConcurrencyLocks.pdfLock.withLock { () -> (PDFDocument?, Int) in
+                if let doc = PDFDocument(url: url) {
+                    return (doc, doc.pageCount)
+                }
+                return (nil, 0)
+            }
+            if let document = document {
                 if Task.isCancelled { return }
                 await MainActor.run {
                     if Task.isCancelled { return }
                     pdfView.document = document
-                    self.totalPages = Array(repeating: url, count: document.pageCount)
+                    self.totalPages = Array(repeating: url, count: pageCount)
                     self.loadedDocument = document
                 }
             }

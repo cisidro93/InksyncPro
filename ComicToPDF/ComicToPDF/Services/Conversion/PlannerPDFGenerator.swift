@@ -103,26 +103,29 @@ class PlannerPDFGenerator {
         }
         
         // 4. Inject Hyperlink Annotations dynamically based on UUIDs
-        if !pendingLinks.isEmpty, let pdfDocument = PDFDocument(url: outputURL) {
-            for link in pendingLinks {
-                guard let physicalTargetIndex = pageUUIDToIndexMap[link.targetUUID],
-                      let sourcePage = pdfDocument.page(at: link.pageIndex),
-                      let destPage = pdfDocument.page(at: physicalTargetIndex) else {
-                    continue
+        if !pendingLinks.isEmpty {
+            ConcurrencyLocks.pdfLock.withLock {
+                guard let pdfDocument = PDFDocument(url: outputURL) else { return }
+                for link in pendingLinks {
+                    guard let physicalTargetIndex = pageUUIDToIndexMap[link.targetUUID],
+                          let sourcePage = pdfDocument.page(at: link.pageIndex),
+                          let destPage = pdfDocument.page(at: physicalTargetIndex) else {
+                        continue
+                    }
+                    
+                    // Flip Y coordinate for PDFKit standard bounds
+                    let pdfBounds = sourcePage.bounds(for: .mediaBox)
+                    let pdfY = pdfBounds.height - link.linkRect.maxY
+                    let annotationRect = CGRect(x: link.linkRect.minX, y: pdfY, width: link.linkRect.width, height: link.linkRect.height)
+                    
+                    let linkAnnotation = PDFAnnotation(bounds: annotationRect, forType: .link, withProperties: nil)
+                    let destination = PDFDestination(page: destPage, at: CGPoint(x: 0, y: destPage.bounds(for: .mediaBox).height))
+                    linkAnnotation.action = PDFActionGoTo(destination: destination)
+                    
+                    sourcePage.addAnnotation(linkAnnotation)
                 }
-                
-                // Flip Y coordinate for PDFKit standard bounds
-                let pdfBounds = sourcePage.bounds(for: .mediaBox)
-                let pdfY = pdfBounds.height - link.linkRect.maxY
-                let annotationRect = CGRect(x: link.linkRect.minX, y: pdfY, width: link.linkRect.width, height: link.linkRect.height)
-                
-                let linkAnnotation = PDFAnnotation(bounds: annotationRect, forType: .link, withProperties: nil)
-                let destination = PDFDestination(page: destPage, at: CGPoint(x: 0, y: destPage.bounds(for: .mediaBox).height))
-                linkAnnotation.action = PDFActionGoTo(destination: destination)
-                
-                sourcePage.addAnnotation(linkAnnotation)
+                pdfDocument.write(to: outputURL)
             }
-            pdfDocument.write(to: outputURL)
         }
         
         Logger.shared.log("Generated AI Planner PDF at \(outputURL.path)", category: "PlannerPDF", type: .success)

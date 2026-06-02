@@ -560,7 +560,9 @@ class PhysicalFileSystemRouter {
                 
                 return firstSpreadImage
             } catch {
-                Logger.shared.log("Failed to extract archive: \(error.localizedDescription)", category: "Archive", ty        // ── CBR / RAR Archives ─────────────────────────────────────────────────
+                Logger.shared.log("Failed to extract archive: \(error.localizedDescription)", category: "Archive", type: .error)
+            }
+        }
         if ext == "cbr" || ext == "rar" {
             let accessing = url.startAccessingSecurityScopedResource()
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }

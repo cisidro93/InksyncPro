@@ -44,7 +44,7 @@ struct PDFImporter: Sendable {
     
     /// Extract single page thumbnail for preview
     func extractPageThumbnail(url: URL, pageIndex: Int, maxSize: CGSize = CGSize(width: 400, height: 600)) async throws -> UIImage? {
-        return try ConcurrencyLocks.pdfLock.withLock {
+        return ConcurrencyLocks.pdfLock.withLock {
             guard let pdf = PDFDocument(url: url),
                   pageIndex < pdf.pageCount,
                   let page = pdf.page(at: pageIndex) else {

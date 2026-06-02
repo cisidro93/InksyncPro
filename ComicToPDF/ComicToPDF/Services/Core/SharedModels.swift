@@ -203,7 +203,9 @@ struct ConvertedPDF: Identifiable, Codable, Hashable, Sendable {
     }
     
     func toPDFDocument() -> PDFDocument {
-        return PDFDocument(url: url) ?? PDFDocument()
+        return ConcurrencyLocks.pdfLock.withLock {
+            PDFDocument(url: url) ?? PDFDocument()
+        }
     }
     
     // âœ… NEW: Explicit Equatable & Hashable for Core Rendering Performance

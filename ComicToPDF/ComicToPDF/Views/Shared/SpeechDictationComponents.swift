@@ -86,6 +86,14 @@ public struct SpeechDictationBar: View {
                 .frame(width: 40, height: 24)
             
             // Language Dropdown Menu
+            let langCode: String = {
+                if #available(iOS 16.0, *) {
+                    return speechManager.selectedLocale.language.languageCode?.identifier ?? "EN"
+                } else {
+                    return speechManager.selectedLocale.languageCode ?? "EN"
+                }
+            }()
+            
             Menu {
                 ForEach(displayLocales, id: \.identifier) { locale in
                     Button {
@@ -117,7 +125,7 @@ public struct SpeechDictationBar: View {
                     }
                 }
             } label: {
-                Text((speechManager.selectedLocale.languageCode ?? "EN").uppercased())
+                Text(langCode.uppercased())
                     .font(.system(size: 11, weight: .bold, design: .rounded))
                     .foregroundColor(.secondary)
                     .padding(.horizontal, 8)
