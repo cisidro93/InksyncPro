@@ -7,8 +7,8 @@ import UIKit
 // MARK: - Swift 6 Sendable conformances for ObjC MC types
 // MCPeerID is immutable after creation; MCNearbyServiceBrowser is an ObjC object
 // safe to pass across concurrency domains when used with the care shown below.
-extension MCPeerID: @retroactive Sendable {}
-extension MCNearbyServiceBrowser: @retroactive Sendable {}
+extension MCPeerID: @unchecked Sendable {}
+extension MCNearbyServiceBrowser: @unchecked Sendable {}
 
 // MARK: - Data Packets
 
