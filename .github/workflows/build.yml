@@ -9,6 +9,8 @@ on:
 jobs:
   build:
     runs-on: macos-latest
+    permissions:
+      contents: write
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       # Redirect module cache to /tmp so it is NEVER cached between runs.
@@ -63,7 +65,28 @@ jobs:
                    build \
                    CODE_SIGN_IDENTITY="" \
                    CODE_SIGNING_REQUIRED=NO \
-                   CODE_SIGNING_ALLOWED=NO
+                   CODE_SIGNING_ALLOWED=NO > build.log 2>&1
+
+    - name: Post build errors to commit
+      if: failure()
+      run: |
+        cd ComicToPDF
+        echo "=== XCODEBUILD ERROR LOG ==="
+        tail -n 150 build.log
+        
+        # Post error diagnostics as a commit comment
+        ERRORS=$(tail -n 150 build.log)
+        jq -n --arg body "### Build Failure Diagnostics
+
+\`\`\`
+$ERRORS
+\`\`\`" '{"body": $body}' > comment.json
+
+        curl -s -X POST \
+          -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          -H "Accept: application/vnd.github.v3+json" \
+          -d @comment.json \
+          "https://api.github.com/repos/${{ github.repository }}/commits/${{ github.sha }}/comments"
 
     - name: Package IPA
       run: |
