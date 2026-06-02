@@ -9,6 +9,13 @@ struct ReflowTextView: UIViewRepresentable {
     var onPrevPage: () -> Void
     var onNextPage: () -> Void
     
+    init(text: String, onCenterTap: @escaping () -> Void, onPrevPage: @escaping () -> Void, onNextPage: @escaping () -> Void) {
+        self.text = text
+        self.onCenterTap = onCenterTap
+        self.onPrevPage = onPrevPage
+        self.onNextPage = onNextPage
+    }
+    
     func makeUIView(context: Context) -> UITextView {
         let textView = UITextView()
         textView.isEditable = false

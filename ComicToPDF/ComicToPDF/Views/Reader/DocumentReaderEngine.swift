@@ -29,7 +29,6 @@ struct DocumentReaderEngine: View {
             if isReflowMode {
                 ReflowTextView(
                     text: reflowText,
-                    prefs: prefs,
                     onCenterTap: {
                         withAnimation(.easeInOut(duration: 0.2)) {
                             chromeVisible.toggle()
@@ -145,7 +144,10 @@ struct DocumentReaderEngine: View {
             accessedURL?.stopAccessingSecurityScopedResource()
         }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
-            Logger.shared.log("DocumentReaderEngine: Memory warning received.", category: "Memory", type: .warning)
+            Logger.shared.log("DocumentReaderEngine: Memory warning received. Purging PDF cache.", category: "Memory", type: .warning)
+            Task {
+                await PDFRenderActor.shared.clear()
+            }
         }
         .sheet(isPresented: $showingSettings) {
             EBookSettingsPanel(bookID: pdf.id.uuidString)
