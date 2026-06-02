@@ -6,6 +6,8 @@ enum ReadingFilterPreset: String, CaseIterable, Codable {
     case eink = "E-Ink Clarity"
     case vibrant = "Vibrant Webtoon"
     case dark = "Manga Dark Mode"
+    case amber = "Amber Mode"
+    case sepia = "Sepia Theme"
     
     var icon: String {
         switch self {
@@ -14,6 +16,8 @@ enum ReadingFilterPreset: String, CaseIterable, Codable {
         case .eink: return "newspaper.fill"
         case .vibrant: return "paintpalette.fill"
         case .dark: return "moon.stars.fill"
+        case .amber: return "sun.max.fill"
+        case .sepia: return "eye.fill"
         }
     }
 }

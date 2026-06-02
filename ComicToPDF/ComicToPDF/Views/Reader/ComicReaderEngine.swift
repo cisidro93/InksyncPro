@@ -26,6 +26,12 @@ extension View {
             self
                 .colorInvert()
                 .hueRotation(.degrees(180)) // Invert colors preserving hue
+        case .amber:
+            self
+                .colorMultiply(Color(red: 1.0, green: 0.86, blue: 0.65))
+        case .sepia:
+            self
+                .colorMultiply(Color(red: 0.95, green: 0.89, blue: 0.78))
         }
     }
 }

@@ -19,7 +19,7 @@ struct ReaderSettingsSheet: View {
     @Binding var isAutoCropEnabled: Bool
 
     // Color Filter
-    @Binding var colorFilter: ReaderColorFilter
+    @Binding var colorFilter: ReadingFilter
 
     // Ambient
     @ObservedObject var ambientBrightness: AmbientBrightnessManager
@@ -175,7 +175,7 @@ struct ReaderSettingsSheet: View {
     private var colorFilterSection: some View {
         SettingsSection(title: "Color Filter", icon: "paintpalette") {
             HStack(spacing: 10) {
-                ForEach(ReaderColorFilter.allCases, id: \.self) { filter in
+                ForEach(ReadingFilter.allCases, id: \.self) { filter in
                     ColorFilterCard(filter: filter, isSelected: colorFilter == filter) {
                         withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
                             colorFilter = filter
@@ -400,7 +400,7 @@ private struct PageTurnStyleCard: View {
 }
 
 private struct ColorFilterCard: View {
-    let filter: ReaderColorFilter
+    let filter: ReadingFilter
     let isSelected: Bool
     let action: () -> Void
 
@@ -408,8 +408,8 @@ private struct ColorFilterCard: View {
         switch filter {
         case .none:      return Color.white.opacity(0.12)
         case .sepia:     return Color(red: 0.44, green: 0.26, blue: 0.08).opacity(0.3)
-        case .grayscale: return Color.gray.opacity(0.3)
-        case .warm:      return Color(red: 1.0, green: 0.75, blue: 0.4).opacity(0.35)
+        case .midnight:  return Color(red: 0.35, green: 0.25, blue: 0.6).opacity(0.35)
+        case .amber:     return Color(red: 1.0, green: 0.75, blue: 0.4).opacity(0.35)
         }
     }
 

@@ -2,6 +2,7 @@ import Foundation
 import UIKit
 import CoreGraphics
 import PDFKit
+import ZIPFoundation
 
 /// Background prefetch actor that manages predictive pre-rendering and caching of book/comic pages,
 /// ensuring zero-latency page transitions and adaptive memory usage.
@@ -36,7 +37,7 @@ public actor PagePrefetchCoordinator {
     /// Requests a page image. If cached, returns instantly. Otherwise, renders synchronously.
     /// Also triggers predictive prefetching for adjacent pages.
     public func getPage(at index: Int, targetSize: CGSize) async -> CGImage? {
-        guard let docType = self.docType else { return nil }
+        guard self.docType != nil else { return nil }
         
         // Update direction
         if index != lastRequestedIndex {
@@ -125,15 +126,15 @@ public actor PagePrefetchCoordinator {
     private func renderPage(at index: Int, targetSize: CGSize) async -> CGImage? {
         guard let docType = self.docType, index >= 0 else { return nil }
         
+        // Capture screen scale factor from main actor safely
+        let scale = await MainActor.run { UIScreen.main.scale }
+        
         switch docType {
         case .pdf(let url):
             // Load and render via the thread-safe PDFRenderActor
             let pageCount = await PDFRenderActor.shared.loadDocument(at: url)
             guard index < pageCount else { return nil }
             
-            // Scale is calculated based on targetSize vs default page bounds
-            // Using standard screen scale factor
-            let scale = UIScreen.main.scale
             if let uiImage = await PDFRenderActor.shared.renderPage(at: index, scale: scale) {
                 return uiImage.cgImage
             }
@@ -146,7 +147,7 @@ public actor PagePrefetchCoordinator {
                 var cgImage: CGImage? = nil
                 autoreleasepool {
                     if let source = CGImageSourceCreateWithURL(url as CFURL, nil) {
-                        let maxDim = max(targetSize.width, targetSize.height) * UIScreen.main.scale
+                        let maxDim = max(targetSize.width, targetSize.height) * scale
                         let options: [CFString: Any] = [
                             kCGImageSourceCreateThumbnailFromImageAlways: true,
                             kCGImageSourceCreateThumbnailWithTransform: true,
@@ -175,7 +176,7 @@ public actor PagePrefetchCoordinator {
                         }
                         
                         if let source = CGImageSourceCreateWithData(data as CFData, nil) {
-                            let maxDim = max(targetSize.width, targetSize.height) * UIScreen.main.scale
+                            let maxDim = max(targetSize.width, targetSize.height) * scale
                             let options: [CFString: Any] = [
                                 kCGImageSourceCreateThumbnailFromImageAlways: true,
                                 kCGImageSourceCreateThumbnailWithTransform: true,

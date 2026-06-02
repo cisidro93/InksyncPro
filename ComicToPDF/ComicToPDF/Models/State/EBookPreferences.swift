@@ -53,6 +53,13 @@ class EBookPreferences: ObservableObject {
     // Progress display mode (cycles on tap)
     @AppStorage("ebook_progressMode")   var progressMode: Int = 0  // 0=page, 1=chapter, 2=timeLeft
 
+    // MARK: - Reading Color Filters (Midnight, Amber, Sepia)
+    @AppStorage("ebook_readingFilter") var readingFilterRaw: String = ReadingFilter.none.rawValue
+    var readingFilter: ReadingFilter {
+        get { ReadingFilter(rawValue: readingFilterRaw) ?? .none }
+        set { readingFilterRaw = newValue.rawValue }
+    }
+
     // MARK: - Image Filters (legacy, kept for compatibility)
     @AppStorage("ebook_isSmartCropEnabled") var isSmartCropEnabled: Bool = false
     @AppStorage("ebook_autoContrastLevel")  var autoContrastLevel: Double = 1.0

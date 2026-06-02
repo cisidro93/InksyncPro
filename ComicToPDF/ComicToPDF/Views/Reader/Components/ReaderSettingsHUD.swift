@@ -315,6 +315,8 @@ extension ReadingFilterPreset {
         case .eink:     return Color(white: 0.35)
         case .vibrant:  return Color(red: 0.35, green: 0.55, blue: 1.0)
         case .dark:     return Color(red: 0.35, green: 0.25, blue: 0.6)
+        case .amber:    return Color(red: 1.0, green: 0.75, blue: 0.0)
+        case .sepia:    return Color(red: 0.70, green: 0.55, blue: 0.40)
         }
     }
 }

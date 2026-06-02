@@ -6,30 +6,7 @@ import ZIPFoundation
 import PencilKit
 import SwiftData
 
-// MARK: - Reader Color Filter
-enum ReaderColorFilter: String, CaseIterable, Codable {
-    case none     = "none"
-    case sepia    = "sepia"
-    case grayscale = "grayscale"
-    case warm     = "warm"   // reduce blue light
-    
-    var label: String {
-        switch self {
-        case .none:      return "Standard"
-        case .sepia:     return "Sepia"
-        case .grayscale: return "Grayscale"
-        case .warm:      return "Night Warm"
-        }
-    }
-    var icon: String {
-        switch self {
-        case .none:      return "photo"
-        case .sepia:     return "cup.and.saucer.fill"
-        case .grayscale: return "moon.circle"
-        case .warm:      return "flame.fill"
-        }
-    }
-}
+// ReaderColorFilter has been replaced by the unified ReadingFilter
 
 struct ReaderView: View {
     @State var fileURL: URL
@@ -61,8 +38,7 @@ struct ReaderView: View {
     @State private var deviceOrientation: UIDeviceOrientation = UIDevice.current.orientation
     @State private var rotationDebounceTask: Task<Void, Never>? = nil
     
-    // Color Filter
-    @State private var colorFilter: ReaderColorFilter = .none
+    // Color Filter is unified under prefs.readingFilter
 
     // Settings sheet
     @State private var showReaderSettings = false
@@ -276,7 +252,7 @@ struct ReaderView: View {
                 }
             }
             .onChange(of: isMangaMode) { savePerBookPreferences() }
-            .onChange(of: colorFilter) { savePerBookPreferences() }
+            .onChange(of: prefs.readingFilterRaw) { _, _ in savePerBookPreferences() }
             .onChange(of: sleepTimer.didFire) { _, fired in
                 if fired { if let onExit = onExit { onExit() } else { dismiss() } }
             }
@@ -363,7 +339,7 @@ struct ReaderView: View {
                     autoContrastLevel: $autoContrastLevel,
                     smartSharpen: $smartSharpen,
                     isAutoCropEnabled: $isAutoCropEnabled,
-                    colorFilter: $colorFilter,
+                    colorFilter: $prefs.readingFilter,
                     ambientBrightness: ambientBrightness,
                     brightnessLevel: $brightnessLevel,
                     warmthLevel: $warmthLevel,
@@ -470,91 +446,93 @@ struct ReaderView: View {
                     }
                 } else {
                     // ✅ READER CONTENT
-                    if isVerticalScroll {
-                        // ✅ WEBTOON MODE: UIScrollView-backed with auto-scroll + position memory
-                        ZStack {
-                            WebtoonScrollView(
-                                pages: pages,
-                                currentPageIndex: $currentPageIndex,
-                                pdfID: pdf?.id,
-                                isAutoScrolling: isWebtoonAutoScrolling,
-                                scrollSpeed: webtoonScrollSpeed,
-                                onCenterTap: {
-                                    withAnimation(.easeInOut(duration: 0.2)) { isToolbarVisible.toggle() }
-                                },
-                                onEndReached: {
-                                    if let nextVol = getNextVolume() {
-                                        self.nextVolumeToRead = nextVol
-                                        withAnimation(.spring()) { self.showBingePrompt = true }
-                                    }
-                                }
-                            )
-                            WebtoonControlBar(isAutoScrolling: $isWebtoonAutoScrolling, scrollSpeed: $webtoonScrollSpeed)
-                        }
-                    } else {
-                        // ✅ ZERO-LATENCY METAL PPL READER
-                        if fileURL.pathExtension.lowercased() != "pdf" {
-                            if !pages.isEmpty {
-                                let effectiveDoublePage = isDoublePageMode || (autoLandscapeDualPage && geo.size.width > geo.size.height)
-                                PPLReaderView(pages: pages, currentPageIndex: $currentPageIndex, pdfID: pdf?.id, isMangaMode: isMangaMode, isDoublePageOverride: effectiveDoublePage, isDrawingMode: isDrawingMode, startWithGuidedReading: initialReadingMode == "panelNavigation") {
-                                    withAnimation(.easeInOut(duration: 0.2)) {
-                                        isToolbarVisible.toggle()
-                                    }
-                                }
-                                .ignoresSafeArea()
-                            }
-                        } else {
-                            PDFKitView(
-                                url: fileURL,
-                                currentPageIndex: $currentPageIndex,
-                                totalPages: $pages,
-                                isVerticalScroll: isVerticalScroll,
-                                isMangaMode: isMangaMode,
-                                isDoublePageMode: isDoublePageMode || (autoLandscapeDualPage && geo.size.width > geo.size.height),
-                                loadedDocument: $loadedPDFDocument,
-                                onSingleTap: {
-                                    withAnimation(.easeInOut(duration: 0.2)) { isToolbarVisible.toggle() }
-                                },
-                                onViewCreated: { ref in pdfViewRef = ref },
-                                onHighlightRequested: { selectedText in
-                                    guard let pdfID = pdf?.id else { return }
-                                    let ann = Annotation(
-                                        pdfID: pdfID,
-                                        pageIndex: currentPageIndex,
-                                        chapterTitle: "Page \(currentPageIndex + 1)",
-                                        kind: .highlight,
-                                        createdAt: Date(),
-                                        modifiedAt: Date(),
-                                        colorHex: "#ffd700",
-                                        selectedText: selectedText
-                                    )
-                                    AnnotationStore.shared.add(ann)
-                                    StudyNotesStore.shared.appendHighlight(selectedText, chapter: "Page \(currentPageIndex + 1)")
-                                }
-                            )
-                            .colorMultiply(.white)
-                            .colorInvertIfDark(theme: EBookPreferences.shared.activeTheme)
-                            
-                            // ✅ PHASE 30: PencilKit Overlay (GoodNotes Parity)
-                            if isDrawingMode {
-                                CanvasInkBearingView(
-                                    canvasView: $canvasView,
-                                    isDrawingMode: isDrawingMode,
-                                    onDrawingSaved: { drawing in
-                                        // Item 8 — delegated to helper to keep comicReaderContent type-checkable
-                                        saveInkAnnotation(drawing)
+                    Group {
+                        if isVerticalScroll {
+                            // ✅ WEBTOON MODE: UIScrollView-backed with auto-scroll + position memory
+                            ZStack {
+                                WebtoonScrollView(
+                                    pages: pages,
+                                    currentPageIndex: $currentPageIndex,
+                                    pdfID: pdf?.id,
+                                    isAutoScrolling: isWebtoonAutoScrolling,
+                                    scrollSpeed: webtoonScrollSpeed,
+                                    onCenterTap: {
+                                        withAnimation(.easeInOut(duration: 0.2)) { isToolbarVisible.toggle() }
+                                    },
+                                    onEndReached: {
+                                        if let nextVol = getNextVolume() {
+                                            self.nextVolumeToRead = nextVol
+                                            withAnimation(.spring()) { self.showBingePrompt = true }
+                                        }
                                     }
                                 )
-                                // Allows native PDF panning with 2 fingers while drawing with Pencil/1 finger
-                                .allowsHitTesting(true)
+                                WebtoonControlBar(isAutoScrolling: $isWebtoonAutoScrolling, scrollSpeed: $webtoonScrollSpeed)
+                            }
+                        } else {
+                            // ✅ ZERO-LATENCY METAL PPL READER
+                            if fileURL.pathExtension.lowercased() != "pdf" {
+                                if !pages.isEmpty {
+                                    let effectiveDoublePage = isDoublePageMode || (autoLandscapeDualPage && geo.size.width > geo.size.height)
+                                    PPLReaderView(pages: pages, currentPageIndex: $currentPageIndex, pdfID: pdf?.id, isMangaMode: isMangaMode, isDoublePageOverride: effectiveDoublePage, isDrawingMode: isDrawingMode, startWithGuidedReading: initialReadingMode == "panelNavigation") {
+                                        withAnimation(.easeInOut(duration: 0.2)) {
+                                            isToolbarVisible.toggle()
+                                        }
+                                    }
+                                    .ignoresSafeArea()
+                                }
+                            } else {
+                                PDFKitView(
+                                    url: fileURL,
+                                    currentPageIndex: $currentPageIndex,
+                                    totalPages: $pages,
+                                    isVerticalScroll: isVerticalScroll,
+                                    isMangaMode: isMangaMode,
+                                    isDoublePageMode: isDoublePageMode || (autoLandscapeDualPage && geo.size.width > geo.size.height),
+                                    loadedDocument: $loadedPDFDocument,
+                                    onSingleTap: {
+                                        withAnimation(.easeInOut(duration: 0.2)) { isToolbarVisible.toggle() }
+                                    },
+                                    onViewCreated: { ref in pdfViewRef = ref },
+                                    onHighlightRequested: { selectedText in
+                                        guard let pdfID = pdf?.id else { return }
+                                        let ann = Annotation(
+                                            pdfID: pdfID,
+                                            pageIndex: currentPageIndex,
+                                            chapterTitle: "Page \(currentPageIndex + 1)",
+                                            kind: .highlight,
+                                            createdAt: Date(),
+                                            modifiedAt: Date(),
+                                            colorHex: "#ffd700",
+                                            selectedText: selectedText
+                                        )
+                                        AnnotationStore.shared.add(ann)
+                                        StudyNotesStore.shared.appendHighlight(selectedText, chapter: "Page \(currentPageIndex + 1)")
+                                    }
+                                )
+                                .colorMultiply(.white)
+                                .colorInvertIfDark(theme: EBookPreferences.shared.activeTheme)
+                                
+                                // ✅ PHASE 30: PencilKit Overlay (GoodNotes Parity)
+                                if isDrawingMode {
+                                    CanvasInkBearingView(
+                                        canvasView: $canvasView,
+                                        isDrawingMode: isDrawingMode,
+                                        onDrawingSaved: { drawing in
+                                            // Item 8 — delegated to helper to keep comicReaderContent type-checkable
+                                            saveInkAnnotation(drawing)
+                                        }
+                                    )
+                                    // Allows native PDF panning with 2 fingers while drawing with Pencil/1 finger
+                                    .allowsHitTesting(true)
+                                }
                             }
                         }
                     }
+                    .readingFilter(prefs.readingFilter)
                 }
                 
                 // Apply overlays in a Group so modifiers chain cleanly
                 Group {
-                    colorFilterOverlay
                     // Ambient warmth overlay (time-of-day) — only if user hasn't manually adjusted
                     if !userHasManuallyAdjustedWarmth && ambientBrightness.recommendedWarmth > 0 {
                         Rectangle()
@@ -1215,32 +1193,7 @@ struct ReaderView: View {
         }
     }
 
-    // MARK: - Color Filter Overlay
-    @ViewBuilder
-    private var colorFilterOverlay: some View {
-        if colorFilter != .none {
-            Group {
-                switch colorFilter {
-                case .sepia:
-                    Color(red: 0.44, green: 0.26, blue: 0.08)
-                        .blendMode(.multiply)
-                        .opacity(0.28)
-                case .grayscale:
-                    Color.white
-                        .opacity(0)
-                        .overlay(Color.black.opacity(0)) // handled via .saturation modifier below
-                case .warm:
-                    Color(red: 1.0, green: 0.75, blue: 0.4)
-                        .blendMode(.multiply)
-                        .opacity(0.15)
-                case .none:
-                    EmptyView()
-                }
-            }
-            .ignoresSafeArea()
-            .allowsHitTesting(false)
-        }
-    }
+    // colorFilterOverlay has been replaced by the unified GPU readingFilter modifier
     
     // MARK: - Per-Book Preference Persistence
     private func restorePerBookPreferences() {
@@ -1258,8 +1211,8 @@ struct ReaderView: View {
                 isMangaMode = (p.contentType == .manga)
             }
             if let savedFilter = saved.colorFilter,
-               let filter = ReaderColorFilter(rawValue: savedFilter) {
-                colorFilter = filter
+               let filter = ReadingFilter(rawValue: savedFilter) {
+                prefs.readingFilter = filter
             }
         } else {
             Logger.shared.log("restorePerBookPreferences: no saved progress for '\(fileURL.lastPathComponent)'", category: "ReaderView", type: .info)
@@ -1273,7 +1226,7 @@ struct ReaderView: View {
             ?? ReadingProgress(pdfID: p.id, lastOpenedAt: Date(), currentPageIndex: currentPageIndex,
                                totalPagesRead: 1, completionFraction: 0, readingSessionDates: [])
         progress.prefersMangaMode = isMangaMode
-        progress.colorFilter = colorFilter.rawValue
+        progress.colorFilter = prefs.readingFilter.rawValue
         ReaderProgressTracker.shared.update(progress)
     }
 

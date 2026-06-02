@@ -2,6 +2,7 @@ import Foundation
 import UIKit
 import MessageUI
 import SwiftUI
+import PDFKit
 
 @MainActor
 class KindlePersonalDocumentService: NSObject, ObservableObject, MFMailComposeViewControllerDelegate {

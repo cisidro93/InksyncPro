@@ -1,6 +1,7 @@
 import SwiftUI
 import BackgroundTasks
 import SwiftData
+import CoreSpotlight
 
 class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication, supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask {
@@ -106,6 +107,60 @@ struct InksyncProApp: App {
                             object: nil,
                             userInfo: ["pdfID": pdfID, "pageIndex": pageIndex]
                         )
+                    }
+                }
+                // ✅ Spotlight integration deep-linking handlers
+                .onContinueUserActivity(CSSearchableItemActionType) { userActivity in
+                    guard let uniqueID = userActivity.userInfo?[CSSearchableItemActivityIdentifier] as? String else { return }
+                    if uniqueID.hasPrefix("book-") {
+                        let parts = uniqueID.components(separatedBy: "-page-")
+                        let pdfIDString = parts[0].replacingOccurrences(of: "book-", with: "")
+                        guard let pdfID = UUID(uuidString: pdfIDString) else { return }
+                        let pageIndex = parts.count > 1 ? (Int(parts[1]) ?? 0) : 0
+                        NotificationCenter.default.post(
+                            name: .handoffRequested,
+                            object: nil,
+                            userInfo: ["pdfID": pdfID, "pageIndex": pageIndex]
+                        )
+                    } else if uniqueID.hasPrefix("ann-") {
+                        let annIDString = uniqueID.replacingOccurrences(of: "ann-", with: "")
+                        guard let annotationID = UUID(uuidString: annIDString) else { return }
+                        Task { @MainActor in
+                            let annotations = AnnotationStore.shared.allAnnotations
+                            if let target = annotations.first(where: { $0.id == annotationID }) {
+                                NotificationCenter.default.post(
+                                    name: .handoffRequested,
+                                    object: nil,
+                                    userInfo: ["pdfID": target.pdfID, "pageIndex": target.pageIndex]
+                                )
+                            }
+                        }
+                    }
+                }
+                .onContinueUserActivity(SpotlightIndexer.openBookActivityType) { userActivity in
+                    if let pdfIDString = userActivity.userInfo?["pdfID"] as? String,
+                       let pdfID = UUID(uuidString: pdfIDString) {
+                        let pageIndex = userActivity.userInfo?["pageIndex"] as? Int ?? 0
+                        NotificationCenter.default.post(
+                            name: .handoffRequested,
+                            object: nil,
+                            userInfo: ["pdfID": pdfID, "pageIndex": pageIndex]
+                        )
+                    }
+                }
+                .onContinueUserActivity(SpotlightIndexer.openAnnotationActivityType) { userActivity in
+                    if let annotationIDString = userActivity.userInfo?["annotationID"] as? String,
+                       let annotationID = UUID(uuidString: annotationIDString) {
+                        Task { @MainActor in
+                            let annotations = AnnotationStore.shared.allAnnotations
+                            if let target = annotations.first(where: { $0.id == annotationID }) {
+                                NotificationCenter.default.post(
+                                    name: .handoffRequested,
+                                    object: nil,
+                                    userInfo: ["pdfID": target.pdfID, "pageIndex": target.pageIndex]
+                                )
+                            }
+                        }
                     }
                 }
         }

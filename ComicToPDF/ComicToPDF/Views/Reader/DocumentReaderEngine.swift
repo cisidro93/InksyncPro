@@ -26,37 +26,40 @@ struct DocumentReaderEngine: View {
         ZStack {
             prefs.activeTheme.background.edgesIgnoringSafeArea(.all)
             
-            if isReflowMode {
-                ReflowTextView(
-                    text: reflowText,
-                    onCenterTap: {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            chromeVisible.toggle()
+            Group {
+                if isReflowMode {
+                    ReflowTextView(
+                        text: reflowText,
+                        onCenterTap: {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                chromeVisible.toggle()
+                            }
+                        },
+                        onPrevPage: {
+                            if currentPageIndex > 0 {
+                                currentPageIndex -= 1
+                                HapticEngine.light()
+                            }
+                        },
+                        onNextPage: {
+                            if currentPageIndex < totalPages - 1 {
+                                currentPageIndex += 1
+                                HapticEngine.light()
+                            }
                         }
-                    },
-                    onPrevPage: {
-                        if currentPageIndex > 0 {
-                            currentPageIndex -= 1
-                            HapticEngine.light()
-                        }
-                    },
-                    onNextPage: {
-                        if currentPageIndex < totalPages - 1 {
-                            currentPageIndex += 1
-                            HapticEngine.light()
-                        }
-                    }
-                )
-            } else if let doc = pdfDocument {
-                PDFKitRepresentedView(document: doc,
-                                      pdf: pdf,
-                                      currentPageIndex: $currentPageIndex,
-                                      chromeVisible: $chromeVisible,
-                                      isPencilMode: $isPencilMode)
-                .colorInvertIfDark(theme: prefs.activeTheme)
-            } else {
-                ProgressView("Loading Document...")
+                    )
+                } else if let doc = pdfDocument {
+                    PDFKitRepresentedView(document: doc,
+                                          pdf: pdf,
+                                          currentPageIndex: $currentPageIndex,
+                                          chromeVisible: $chromeVisible,
+                                          isPencilMode: $isPencilMode)
+                    .colorInvertIfDark(theme: prefs.activeTheme)
+                } else {
+                    ProgressView("Loading Document...")
+                }
             }
+            .readingFilter(prefs.readingFilter)
             
             ReaderChrome(
                 title: pdf.name,

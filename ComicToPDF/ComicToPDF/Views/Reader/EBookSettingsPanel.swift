@@ -217,6 +217,41 @@ struct EBookSettingsPanel: View {
                 }
             }
 
+            // Eye Comfort Filters
+            ReaderSettingsSection(title: "Eye Comfort Filters", icon: "eye.fill") {
+                HStack(spacing: 10) {
+                    ForEach(ReadingFilter.allCases) { filter in
+                        Button {
+                            withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
+                                prefs.readingFilter = filter
+                            }
+                            HapticEngine.light()
+                        } label: {
+                            VStack(spacing: 6) {
+                                Image(systemName: filter == .none ? "eye.slash" : (filter == .midnight ? "moon.stars" : (filter == .amber ? "sun.max" : "cup.and.saucer")))
+                                    .font(.system(size: 16, weight: .medium))
+                                Text(filter.displayName)
+                                    .font(.system(size: 11, weight: .medium))
+                            }
+                            .foregroundStyle(prefs.readingFilter == filter ? Color.orange : Color.inkTextSecondary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .background(
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .fill(prefs.readingFilter == filter ? Color.orange.opacity(0.12) : Color.inkSurfaceRaised)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .stroke(prefs.readingFilter == filter ? Color.orange.opacity(0.5) : Color.clear, lineWidth: 1.5)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+            }
+
             // Per-book memory
             if let bookID {
                 ReaderSettingsSection(title: "This Book", icon: "book.closed") {

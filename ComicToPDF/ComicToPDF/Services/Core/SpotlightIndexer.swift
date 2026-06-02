@@ -2,6 +2,8 @@ import Foundation
 @preconcurrency import CoreSpotlight
 import MobileCoreServices
 import UIKit
+import PDFKit
+import Vision
 
 /// Indexes InksyncPro library items and annotations into iOS Spotlight so users
 /// can find books and highlights without opening the app.
@@ -48,12 +50,18 @@ final class SpotlightIndexer {
     /// Index (or re-index) a single book — call after metadata edit.
     func indexBook(_ pdf: ConvertedPDF) {
         let item = makeBookItem(pdf)
-        self.index.indexSearchableItems([item], completionHandler: nil)
+        self.index.indexSearchableItems([item]) { error in
+            if let error = error {
+                Logger.shared.log("Spotlight: failed to index book item — \(error)", category: "Spotlight", type: .error)
+            }
+        }
+        indexBookPages(pdf)
     }
 
     /// Remove a single book from the index — call on delete.
     func deindexBook(_ pdfID: UUID) {
         self.index.deleteSearchableItems(withIdentifiers: ["book-\(pdfID.uuidString)"], completionHandler: nil)
+        self.index.deleteSearchableItems(withDomainIdentifiers: ["com.inksyncpro.pages-\(pdfID.uuidString)"], completionHandler: nil)
     }
 
     // MARK: - Annotation Indexing
@@ -82,17 +90,33 @@ final class SpotlightIndexer {
     private func makeBookItem(_ pdf: ConvertedPDF) -> CSSearchableItem {
         let attrs = CSSearchableItemAttributeSet(contentType: .content)
         attrs.title = pdf.name
-        attrs.contentDescription = [
-            pdf.metadata.series,
-            pdf.metadata.publisher,
-            pdf.metadata.issueNumber.map { "Issue #\($0)" }
-        ].compactMap { $0 }.joined(separator: " · ")
-        attrs.keywords = [
+        
+        // Use summary if available, otherwise fallback to series, publisher, etc.
+        if let summary = pdf.metadata.summary, !summary.isEmpty {
+            attrs.contentDescription = summary
+        } else {
+            attrs.contentDescription = [
+                pdf.metadata.series,
+                pdf.metadata.publisher,
+                pdf.metadata.issueNumber.map { "Issue #\($0)" }
+            ].compactMap { $0 }.joined(separator: " · ")
+        }
+        
+        attrs.authorNames = [pdf.metadata.author, pdf.metadata.writer].compactMap { $0 }
+        attrs.publishers = [pdf.metadata.publisher].compactMap { $0 }
+        attrs.genre = pdf.contentType.rawValue
+        
+        var keywords = [
             pdf.contentType.rawValue,
             pdf.metadata.series,
             pdf.metadata.publisher,
+            pdf.metadata.volume.map { "Volume \($0)" },
+            pdf.metadata.penciller,
             pdf.metadata.isManga == true ? "manga" : nil
         ].compactMap { $0 }
+        keywords.append(contentsOf: pdf.metadata.tags)
+        attrs.keywords = keywords
+        
         attrs.identifier = pdf.id.uuidString
         // Thumbnail from cover file if available
         if let data = pdf.coverImageData,
@@ -153,5 +177,108 @@ final class SpotlightIndexer {
             domainIdentifier: "com.inksyncpro.annotations",
             attributeSet: attrs
         )
+    }
+
+    /// Indexes pages of a PDF/Book (runs asynchronously on a background task)
+    func indexBookPages(_ pdf: ConvertedPDF) {
+        let pdfID = pdf.id
+        let url = pdf.url
+        let pdfName = pdf.name
+        let series = pdf.metadata.series
+        
+        Task.detached(priority: .background) {
+            // Check if file is a local PDF and exists
+            guard url.isFileURL, FileManager.default.fileExists(atPath: url.path) else { return }
+            
+            // Lock and load via PDFRenderActor or directly using CGPDFDocument/PDFDocument
+            // Since PDFDocument is thread-safe for reading text strings, we can load it here.
+            guard let doc = PDFDocument(url: url) else { return }
+            
+            var items: [CSSearchableItem] = []
+            
+            // Limit full Vision OCR to first 10 pages for image/scanned documents to avoid battery drain,
+            // but native text can be indexed for all pages.
+            let maxPages = doc.pageCount
+            
+            for pageIndex in 0..<maxPages {
+                guard let page = doc.page(at: pageIndex) else { continue }
+                var pageText = page.string ?? ""
+                
+                // Scanned PDF/Comic fallback to Vision OCR
+                if pageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    if pageIndex < 10 {
+                        // Render page & run OCR
+                        pageText = await self.runVisionOCR(on: page)
+                    }
+                }
+                
+                let trimmed = pageText.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { continue }
+                
+                let attrs = CSSearchableItemAttributeSet(contentType: .text)
+                attrs.title = "\(pdfName) — Page \(pageIndex + 1)"
+                attrs.contentDescription = String(trimmed.prefix(200))
+                attrs.textContent = trimmed
+                attrs.keywords = [pdfName, "page \(pageIndex + 1)", series].compactMap { $0 }
+                attrs.relatedUniqueIdentifier = pdfID.uuidString
+                
+                // Associate with NSUserActivity for deep linking to this page
+                let activity = NSUserActivity(activityType: SpotlightIndexer.openBookActivityType)
+                activity.userInfo = ["pdfID": pdfID.uuidString, "pageIndex": pageIndex]
+                attrs.relatedUniqueIdentifier = pdfID.uuidString
+                
+                let item = CSSearchableItem(
+                    uniqueIdentifier: "book-\(pdfID.uuidString)-page-\(pageIndex)",
+                    domainIdentifier: "com.inksyncpro.pages-\(pdfID.uuidString)",
+                    attributeSet: attrs
+                )
+                items.append(item)
+            }
+            
+            if !items.isEmpty {
+                do {
+                    try await CSSearchableIndex.default().indexSearchableItems(items)
+                    Logger.shared.log("Spotlight: Indexed \(items.count) pages for \(pdfName)", category: "Spotlight", type: .success)
+                } catch {
+                    Logger.shared.log("Spotlight: failed to index pages — \(error)", category: "Spotlight", type: .error)
+                }
+            }
+        }
+    }
+    
+    /// Helper to render a PDF page and perform fast text recognition
+    private func runVisionOCR(on page: PDFPage) async -> String {
+        let bounds = page.bounds(for: .mediaBox)
+        guard bounds.width > 0 && bounds.height > 0 else { return "" }
+        
+        let size = CGSize(width: bounds.width, height: bounds.height)
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1.0
+        let renderer = UIGraphicsImageRenderer(size: size, format: format)
+        let image = renderer.image { ctx in
+            let cgCtx = ctx.cgContext
+            cgCtx.setFillColor(UIColor.white.cgColor)
+            cgCtx.fill(CGRect(origin: .zero, size: size))
+            cgCtx.translateBy(x: 0, y: size.height)
+            cgCtx.scaleBy(x: 1.0, y: -1.0)
+            page.draw(with: .mediaBox, to: cgCtx)
+        }
+        
+        guard let cgImage = image.cgImage else { return "" }
+        
+        return await withCheckedContinuation { continuation in
+            let request = VNRecognizeTextRequest { request, error in
+                guard error == nil,
+                      let observations = request.results as? [VNRecognizedTextObservation] else {
+                    continuation.resume(returning: "")
+                    return
+                }
+                let lines = observations.compactMap { $0.topCandidates(1).first?.string }
+                continuation.resume(returning: lines.joined(separator: " "))
+            }
+            request.recognitionLevel = .fast
+            let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+            try? handler.perform([request])
+        }
     }
 }
