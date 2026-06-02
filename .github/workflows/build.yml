@@ -75,12 +75,13 @@ jobs:
         tail -n 150 build.log
         
         # Post error diagnostics as a commit comment
-        ERRORS=$(tail -n 150 build.log)
-        jq -n --arg body "### Build Failure Diagnostics
-
-\`\`\`
-$ERRORS
-\`\`\`" '{"body": $body}' > comment.json
+        echo "### Build Failure Diagnostics" > raw_comment.txt
+        echo "" >> raw_comment.txt
+        echo '```' >> raw_comment.txt
+        tail -n 150 build.log >> raw_comment.txt
+        echo '```' >> raw_comment.txt
+        
+        jq -n --arg body "$(cat raw_comment.txt)" '{"body": $body}' > comment.json
 
         curl -s -X POST \
           -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
