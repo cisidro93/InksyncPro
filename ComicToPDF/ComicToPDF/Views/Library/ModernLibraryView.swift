@@ -40,7 +40,7 @@ struct ModernLibraryView: View {
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding: Bool = false
     @AppStorage("libraryHeaderPinMode") private var headerPinModeRaw: String = HeaderPinMode.auto.rawValue
     @State private var scrollToTopTrigger = false
-    @State private var scrollOffset: CGFloat = 0
+    @State private var isScrolledPastHeader: Bool = false
     /// Detected via UIDevice orientation notification — landscape forces the header
     /// into compact mode regardless of pin/scroll state.
     @State private var isLandscape: Bool = false
@@ -53,7 +53,7 @@ struct ModernLibraryView: View {
         // iPhone landscape uses vSizeClass == .compact; iPad landscape is detected via isLandscape
         if vSizeClass == .compact || isLandscape { return true }
         switch HeaderPinMode(rawValue: headerPinModeRaw) ?? .auto {
-        case .auto:            return scrollOffset > 44
+        case .auto:            return isScrolledPastHeader
         case .pinnedExpanded:  return false
         case .pinnedCollapsed: return true
         }
@@ -692,7 +692,7 @@ struct ModernLibraryView: View {
                             sortOption: sortOption
                         )
                     },
-                    scrollOffset: $scrollOffset
+                    isScrolledPastHeader: $isScrolledPastHeader
                 )
             } else {
                 LibraryGridView(
@@ -715,7 +715,7 @@ struct ModernLibraryView: View {
                             sortOption: sortOption
                         )
                     },
-                    scrollOffset: $scrollOffset
+                    isScrolledPastHeader: $isScrolledPastHeader
                 )
             }
         }

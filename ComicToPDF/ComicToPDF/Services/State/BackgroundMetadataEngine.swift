@@ -37,7 +37,8 @@ class BackgroundMetadataEngine: ObservableObject {
         UIApplication.shared.isIdleTimerDisabled = true
         
         // Request background execution time (usually 30 seconds max)
-        bgTask = UIApplication.shared.beginBackgroundTask(withName: "BackgroundMetadataEngine") {
+        bgTask = UIApplication.shared.beginBackgroundTask(withName: "BackgroundMetadataEngine") { [weak self, weak manager] in
+            guard let self = self, let manager = manager else { return }
             // This closure runs on a background thread. Mutating a @MainActor class directly will crash the app instantly with no log.
             Task { @MainActor in
                 Logger.shared.log("Background Task Expired by iOS.", category: "Metadata", type: .warning)

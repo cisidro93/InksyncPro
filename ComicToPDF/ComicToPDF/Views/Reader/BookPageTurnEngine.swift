@@ -271,22 +271,51 @@ struct TwoUpBookPager: View {
 
     @State private var spreadIdx: Int = 0
 
-    private var totalSpreads: Int {
-        max(1, Int(ceil(Double(cache.pageCount) / 2.0)))
+    private var spreads: [[Int]] {
+        var currentSpread: [Int] = []
+        var allSpreads: [[Int]] = []
+        for i in 0..<cache.pageCount {
+            if isLandscapePage(i) {
+                if !currentSpread.isEmpty {
+                    allSpreads.append(currentSpread)
+                    currentSpread = []
+                }
+                allSpreads.append([i])
+            } else {
+                currentSpread.append(i)
+                if currentSpread.count == 2 {
+                    allSpreads.append(currentSpread)
+                    currentSpread = []
+                }
+            }
+        }
+        if !currentSpread.isEmpty {
+            allSpreads.append(currentSpread)
+        }
+        return allSpreads.isEmpty ? [[0]] : allSpreads
     }
 
-    private func leftPage(for sIdx: Int) -> Int { sIdx * 2 }
+    private var totalSpreads: Int {
+        spreads.count
+    }
 
     private func isLandscapePage(_ absIdx: Int) -> Bool {
-        guard let img = cache.getImage(at: absIdx) else { return false }
-        return (img.size.width / max(1, img.size.height)) > 1.15
+        guard let size = cache.peekImageSize(at: absIdx) else { return false }
+        return (size.width / max(1, size.height)) > 1.15
+    }
+    
+    private func updateSpreadIdx(from targetPageIndex: Int) {
+        let currentSpreads = spreads
+        if let idx = currentSpreads.firstIndex(where: { $0.contains(targetPageIndex) }) {
+            if spreadIdx != idx { spreadIdx = idx }
+        }
     }
 
     var body: some View {
         BookFlipGesture(
             currentIndex: $spreadIdx,
             content: { sIdx in
-                AnyView(spreadView(leftPage: leftPage(for: sIdx)))
+                AnyView(spreadView(sIdx: sIdx))
             },
             isMangaRTL: isMangaRTL,
             onChromeTap: onChromeTap,
@@ -295,44 +324,53 @@ struct TwoUpBookPager: View {
             onFlipForward:  { spreadIdx += 1 },
             onFlipBack:     { spreadIdx -= 1 }
         )
-        .onAppear { spreadIdx = currentIndex / 2 }
+        .onAppear { updateSpreadIdx(from: currentIndex) }
         .onChange(of: spreadIdx) { _, newVal in
-            let page = leftPage(for: newVal)
-            if currentIndex != page { currentIndex = page }
+            let currentSpreads = spreads
+            if newVal < currentSpreads.count {
+                let page = currentSpreads[newVal].first ?? 0
+                if currentIndex != page { currentIndex = page }
+            }
         }
         .onChange(of: currentIndex) { _, newVal in
-            let target = newVal / 2
-            if spreadIdx != target { spreadIdx = target }
+            updateSpreadIdx(from: newVal)
+        }
+        .onChange(of: cache.cacheUpdatedTick) { _, _ in
+            // Re-align spreadIdx if image load changed the spread map
+            updateSpreadIdx(from: currentIndex)
         }
     }
 
     @ViewBuilder
-    private func spreadView(leftPage leftIdx: Int) -> some View {
+    private func spreadView(sIdx: Int) -> some View {
+        let currentSpreads = spreads
+        let pages = sIdx < currentSpreads.count ? currentSpreads[sIdx] : [0]
+        
         GeometryReader { geo in
-            if isLandscapePage(leftIdx) {
+            if pages.count == 1 && isLandscapePage(pages[0]) {
                 // Native landscape — fills the full frame solo
-                pageSlot(leftIdx)
+                pageSlot(pages[0])
                     .frame(width: geo.size.width, height: geo.size.height)
             } else if isMangaRTL {
                 // Manga RTL: higher page number (right panel) on left of screen
                 HStack(spacing: 0) {
-                    if leftIdx + 1 < cache.pageCount {
-                        pageSlot(leftIdx + 1)
+                    if pages.count == 2 {
+                        pageSlot(pages[1])
                             .frame(width: geo.size.width / 2, height: geo.size.height)
                     } else {
                         Color.black
                             .frame(width: geo.size.width / 2, height: geo.size.height)
                     }
-                    pageSlot(leftIdx)
+                    pageSlot(pages[0])
                         .frame(width: geo.size.width / 2, height: geo.size.height)
                 }
             } else {
                 // Standard LTR two-page spread
                 HStack(spacing: 0) {
-                    pageSlot(leftIdx)
+                    pageSlot(pages[0])
                         .frame(width: geo.size.width / 2, height: geo.size.height)
-                    if leftIdx + 1 < cache.pageCount {
-                        pageSlot(leftIdx + 1)
+                    if pages.count == 2 {
+                        pageSlot(pages[1])
                             .frame(width: geo.size.width / 2, height: geo.size.height)
                     } else {
                         Color.black
@@ -341,7 +379,7 @@ struct TwoUpBookPager: View {
                 }
             }
         }
-        .id("spread_\(leftIdx)")
+        .id("spread_\(pages.first ?? 0)")
         // Observe cache ticks WITHOUT rebuilding the full spread view:
         // opacity stays 1 always; this merely gives SwiftUI a value to watch
         // so that individual pageSlot views redraw in place.

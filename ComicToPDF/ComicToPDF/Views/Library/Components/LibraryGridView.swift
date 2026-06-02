@@ -24,9 +24,7 @@ struct LibraryGridView: View {
     /// can force-rebuild the cache from live in-memory data without waiting
     /// for the SwiftData @Query async refresh cycle.
     let onDropApplied: () -> Void
-    /// Direct binding to parent's scrollOffset — more stable than a closure because
-    /// SwiftUI's identity diffing won't see a "new" binding and reset scroll state.
-    @Binding var scrollOffset: CGFloat
+    @Binding var isScrolledPastHeader: Bool
 
     // Rename series alert state
     @State private var renamingGroup: SeriesGroup? = nil
@@ -111,7 +109,10 @@ struct LibraryGridView: View {
                     }
                     .coordinateSpace(name: "libraryScroll")
                     .onPreferenceChange(LibraryScrollOffsetKey.self) { offset in
-                        scrollOffset = max(0, offset)
+                        let past = offset > 44
+                        if isScrolledPastHeader != past {
+                            isScrolledPastHeader = past
+                        }
                     }
                     .inkTabBarScrollDetect()
                     .background(Color.clear)

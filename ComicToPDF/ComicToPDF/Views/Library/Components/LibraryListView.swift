@@ -18,8 +18,7 @@ struct LibraryListView: View {
     let onImport: () -> Void
     let onFolderTap: (UUID?) -> Void
     let onDropApplied: () -> Void
-    /// Direct binding to parent's scrollOffset for reliable collapse tracking.
-    @Binding var scrollOffset: CGFloat
+    @Binding var isScrolledPastHeader: Bool
 
     // Drop target highlight
     @State private var dropTargetSeriesTitle: String? = nil   // highlights a series row
@@ -59,7 +58,10 @@ struct LibraryListView: View {
                 .background(Color.clear)
                 .coordinateSpace(name: "libraryListScroll")
                 .onPreferenceChange(LibraryScrollOffsetKey.self) { offset in
-                    scrollOffset = max(0, offset)
+                    let past = offset > 44
+                    if isScrolledPastHeader != past {
+                        isScrolledPastHeader = past
+                    }
                 }
                 .overlay(alignment: .trailing) {
                     // ✅ PHASE 10: Comic Zeal Feature Restored

@@ -286,6 +286,13 @@ final class ComicImageCache: ObservableObject, @unchecked Sendable {
         return nil // Always return heavily operations asynchronously. UI uses a ProgressView block.
     }
     
+    /// Peeks into the memory cache to retrieve the image size without mutating state or triggering background fetches.
+    /// This is safe to call during SwiftUI view evaluation.
+    func peekImageSize(at index: Int) -> CGSize? {
+        guard index >= 0 && index < pageCount else { return nil }
+        return cache.object(forKey: NSNumber(value: index))?.size
+    }
+    
     private func fetchLocalImageAsync(at index: Int) {
         fetchingQueue.insert(index)
         Task.detached(priority: .userInitiated) { [weak self] in

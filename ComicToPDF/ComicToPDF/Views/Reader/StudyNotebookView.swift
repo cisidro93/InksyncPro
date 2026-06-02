@@ -367,14 +367,8 @@ struct StudyNotebookView: View {
                     self.activeNoteAnnotation?.noteText = note
                     self.activeNoteAnnotation?.drawingData = drawingData
                     self.activeNoteAnnotation?.modifiedAt = Date()
-                    do {
-                        try self.modelContext.save()
-                        Logger.shared.log("Debounce save succeeded for '\(self.bookTitle)'", category: "Notebook", type: .success)
-                        if let annotation = self.activeNoteAnnotation {
-                            SpotlightIndexer.shared.indexAnnotation(annotation)
-                        }
-                    } catch {
-                        Logger.shared.log("Debounce save FAILED for '\(self.bookTitle)': \(error.localizedDescription)", category: "Notebook", type: .error)
+                    if let annotation = self.activeNoteAnnotation {
+                        SpotlightIndexer.shared.indexAnnotation(annotation)
                     }
                 }
                 
@@ -385,7 +379,6 @@ struct StudyNotebookView: View {
                                 if let active = self.activeNoteAnnotation, active.drawingOCRText != ocrText {
                                     active.drawingOCRText = ocrText
                                     active.modifiedAt = Date()
-                                    try? self.modelContext.save()
                                     Logger.shared.log("Handwriting OCR updated for '\(self.bookTitle)': \(ocrText.prefix(40))...", category: "OCR", type: .success)
                                     SpotlightIndexer.shared.indexAnnotation(active)
                                 }
