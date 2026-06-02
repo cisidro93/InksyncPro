@@ -16,8 +16,8 @@ final class SpotlightIndexer {
     static let shared = SpotlightIndexer()
 
     // Activity type used for deep-linking from Spotlight results
-    static let openBookActivityType = "com.inksyncpro.openBook"
-    static let openAnnotationActivityType = "com.inksyncpro.openAnnotation"
+    nonisolated static let openBookActivityType = "com.inksyncpro.openBook"
+    nonisolated static let openAnnotationActivityType = "com.inksyncpro.openAnnotation"
 
     private let index = CSSearchableIndex.default()
 
