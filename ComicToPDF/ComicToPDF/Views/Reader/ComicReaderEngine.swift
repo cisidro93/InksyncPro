@@ -86,6 +86,11 @@ final class ComicImageCache: ObservableObject, @unchecked Sendable {
     init(pdf: ConvertedPDF, prefetchLimit: Int = 2) {
         self.prefetchLimit = prefetchLimit
         let scheme = pdf.url.scheme?.lowercased() ?? ""
+        isStream = (scheme == "http" || scheme == "https")
+        
+        let ext = pdf.url.pathExtension.lowercased()
+        isPDF = (ext == "pdf")
+        let isCBRFile = (ext == "cbr" || ext == "rar")
         
         NotificationCenter.default.addObserver(
             forName: UIApplication.didReceiveMemoryWarningNotification,
@@ -95,12 +100,6 @@ final class ComicImageCache: ObservableObject, @unchecked Sendable {
             self?.cache.removeAllObjects()
             Logger.shared.log("ComicImageCache: Memory warning received. Cleared image cache.", category: "Memory", type: .warning)
         }
-        
-        isStream = (scheme == "http" || scheme == "https")
-        
-        let ext = pdf.url.pathExtension.lowercased()
-        isPDF = (ext == "pdf")
-        let isCBRFile = (ext == "cbr" || ext == "rar")
         
         if isStream {
             // Cloud stream placeholder — pageCount will be set via setupCloudSource

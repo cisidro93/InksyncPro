@@ -247,7 +247,7 @@ final class SpotlightIndexer {
     }
     
     /// Helper to render a PDF page and perform fast text recognition
-    private func runVisionOCR(on page: PDFPage) async -> String {
+    nonisolated private func runVisionOCR(on page: PDFPage) async -> String {
         let bounds = page.bounds(for: .mediaBox)
         guard bounds.width > 0 && bounds.height > 0 else { return "" }
         
