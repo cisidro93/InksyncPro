@@ -72,11 +72,17 @@ jobs:
       run: |
         cd ComicToPDF
         echo "=== XCODEBUILD ERROR LOG ==="
-        tail -n 150 build.log
+        grep -i -n -C 3 "error:" build.log | head -n 100
         
         # Post error diagnostics as a commit comment
         echo "### Build Failure Diagnostics" > raw_comment.txt
         echo "" >> raw_comment.txt
+        echo "#### Compilation Errors:" >> raw_comment.txt
+        echo '```' >> raw_comment.txt
+        grep -i -n -C 3 "error:" build.log | head -n 100 >> raw_comment.txt
+        echo '```' >> raw_comment.txt
+        echo "" >> raw_comment.txt
+        echo "#### Trailing Log Output:" >> raw_comment.txt
         echo '```' >> raw_comment.txt
         tail -n 150 build.log >> raw_comment.txt
         echo '```' >> raw_comment.txt
