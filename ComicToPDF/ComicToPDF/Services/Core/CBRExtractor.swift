@@ -66,34 +66,37 @@ struct CBRExtractor {
                         .appendingPathComponent("cbr_\(stem)_\(uniqueID)")
                     try fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
 
-                    // Open archive — Unrar.Archive disambiguates from ZIPFoundation.Archive
-                    let archive = try Unrar.Archive(fileURL: localSourceURL)
+                    let imageURLs = try ConcurrencyLocks.unrarLock.withLock { () -> [URL] in
+                        // Open archive — Unrar.Archive disambiguates from ZIPFoundation.Archive
+                        let archive = try Unrar.Archive(fileURL: localSourceURL)
 
-                    // List all entries
-                    let entries = try archive.entries()
-                    var imageURLs: [URL] = []
+                        // List all entries
+                        let entries = try archive.entries()
+                        var urls: [URL] = []
 
-                    for entry in entries {
-                        let flatName = (entry.fileName as NSString).lastPathComponent
+                        for entry in entries {
+                            let flatName = (entry.fileName as NSString).lastPathComponent
 
-                        // Skip directories and macOS metadata artefacts
-                        guard !entry.directory,
-                              !entry.fileName.contains("__MACOSX"),
-                              !flatName.hasPrefix("._"),
-                              flatName != ".DS_Store" else { continue }
+                            // Skip directories and macOS metadata artefacts
+                            guard !entry.directory,
+                                  !entry.fileName.contains("__MACOSX"),
+                                  !flatName.hasPrefix("._"),
+                                  flatName != ".DS_Store" else { continue }
 
-                        let ext = (flatName as NSString).pathExtension.lowercased()
-                        guard imageExtensions.contains(ext) else { continue }
+                            let ext = (flatName as NSString).pathExtension.lowercased()
+                            guard imageExtensions.contains(ext) else { continue }
 
-                        // Flatten the path — all images land directly in tempDir
-                        let destURL = tempDir.appendingPathComponent(flatName)
+                            // Flatten the path — all images land directly in tempDir
+                            let destURL = tempDir.appendingPathComponent(flatName)
 
-                        try autoreleasepool {
-                            // Extract entry to Data then persist atomically
-                            let data = try archive.extract(entry)
-                            try data.write(to: destURL, options: .atomic)
-                            imageURLs.append(destURL)
+                            try autoreleasepool {
+                                // Extract entry to Data then persist atomically
+                                let data = try archive.extract(entry)
+                                try data.write(to: destURL, options: .atomic)
+                                urls.append(destURL)
+                            }
                         }
+                        return urls
                     }
 
                     guard !imageURLs.isEmpty else {

@@ -428,23 +428,47 @@ class PhysicalFileSystemRouter {
             let accessing = url.startAccessingSecurityScopedResource()
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }
             
-            guard let document = PDFDocument(url: url) else { return nil }
-            
-            // Try up to the first 3 pages to find a portrait cover
-            for i in 0..<min(document.pageCount, 3) {
-                if let page = document.page(at: i) {
-                    let bounds = page.bounds(for: .mediaBox)
-                    // Skip if it's the first page and appears to be a 2-page spread
-                    if i == 0 && bounds.width > bounds.height && document.pageCount > 1 {
-                        continue
+            return ConcurrencyLocks.pdfLock.withLock {
+                guard let document = PDFDocument(url: url) else { return nil }
+                
+                let drawPage: (PDFPage) -> UIImage? = { page in
+                    let pageBounds = page.bounds(for: .mediaBox)
+                    guard pageBounds.width > 0 && pageBounds.height > 0 && !pageBounds.width.isNaN && !pageBounds.height.isNaN else { return nil }
+                    let size = CGSize(width: 300, height: 450)
+                    let scale = min(size.width / pageBounds.width, size.height / pageBounds.height)
+                    let scaledSize = CGSize(width: pageBounds.width * scale, height: pageBounds.height * scale)
+                    guard scaledSize.width > 0 && scaledSize.height > 0 && !scaledSize.width.isNaN && !scaledSize.height.isNaN else { return nil }
+                    
+                    let renderer = UIGraphicsImageRenderer(size: scaledSize)
+                    return renderer.image { context in
+                        UIColor.white.setFill()
+                        context.fill(CGRect(origin: .zero, size: scaledSize))
+                        
+                        context.cgContext.translateBy(x: 0, y: scaledSize.height)
+                        context.cgContext.scaleBy(x: scale, y: -scale)
+                        
+                        page.draw(with: .mediaBox, to: context.cgContext)
                     }
-                    return page.thumbnail(of: CGSize(width: 300, height: 450), for: .mediaBox)
                 }
+                
+                // Try up to the first 3 pages to find a portrait cover
+                for i in 0..<min(document.pageCount, 3) {
+                    if let page = document.page(at: i) {
+                        let bounds = page.bounds(for: .mediaBox)
+                        // Skip if it's the first page and appears to be a 2-page spread
+                        if i == 0 && bounds.width > bounds.height && document.pageCount > 1 {
+                            continue
+                        }
+                        return drawPage(page)
+                    }
+                }
+                
+                // Fallback to page 0 if no portrait pages were found
+                if let page = document.page(at: 0) {
+                    return drawPage(page)
+                }
+                return nil
             }
-            
-            // Fallback to page 0 if no portrait pages were found
-            guard let page = document.page(at: 0) else { return nil }
-            return page.thumbnail(of: CGSize(width: 300, height: 450), for: .mediaBox)
         }
 
         if ["cbz", "zip", "epub"].contains(ext) {
@@ -536,53 +560,52 @@ class PhysicalFileSystemRouter {
                 
                 return firstSpreadImage
             } catch {
-                Logger.shared.log("Failed to extract archive: \(error.localizedDescription)", category: "Archive", type: .error)
-            }
-        }
-
-        // ── CBR / RAR Archives ─────────────────────────────────────────────────
+                Logger.shared.log("Failed to extract archive: \(error.localizedDescription)", category: "Archive", ty        // ── CBR / RAR Archives ─────────────────────────────────────────────────
         if ext == "cbr" || ext == "rar" {
             let accessing = url.startAccessingSecurityScopedResource()
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }
             guard FileManager.default.fileExists(atPath: url.path) else { return nil }
 
-            do {
-                let archive = try Unrar.Archive(fileURL: url)
-                let entries = try archive.entries()
+            return ConcurrencyLocks.unrarLock.withLock {
+                do {
+                    let archive = try Unrar.Archive(fileURL: url)
+                    let entries = try archive.entries()
 
-                let imageExts: Set<String> = ["jpg", "jpeg", "png", "webp"]
-                let sorted = entries
-                    .filter { entry in
-                        guard !entry.directory,
-                              !entry.fileName.contains("__MACOSX"),
-                              !(entry.fileName as NSString).lastPathComponent.hasPrefix("._") && !(entry.fileName as NSString).lastPathComponent.hasSuffix(".DS_Store") else { return false }
-                        return imageExts.contains((entry.fileName as NSString).pathExtension.lowercased())
-                    }
-                    .sorted { $0.fileName.localizedStandardCompare($1.fileName) == .orderedAscending }
-
-                var firstSpread: UIImage? = nil
-                var attempts = 0
-                for entry in sorted.prefix(5) {
-                    let image = autoreleasepool { () -> UIImage? in
-                        do {
-                            let data = try archive.extract(entry)
-                            return UIImage(data: data)
-                        } catch {
-                            return nil
+                    let imageExts: Set<String> = ["jpg", "jpeg", "png", "webp"]
+                    let sorted = entries
+                        .filter { entry in
+                            guard !entry.directory,
+                                   !entry.fileName.contains("__MACOSX"),
+                                   !(entry.fileName as NSString).lastPathComponent.hasPrefix("._") && !(entry.fileName as NSString).lastPathComponent.hasSuffix(".DS_Store") else { return false }
+                            return imageExts.contains((entry.fileName as NSString).pathExtension.lowercased())
                         }
+                        .sorted { $0.fileName.localizedStandardCompare($1.fileName) == .orderedAscending }
+
+                    var firstSpread: UIImage? = nil
+                    var attempts = 0
+                    for entry in sorted.prefix(5) {
+                        let image = autoreleasepool { () -> UIImage? in
+                            do {
+                                let data = try archive.extract(entry)
+                                return UIImage(data: data)
+                            } catch {
+                                return nil
+                            }
+                        }
+                        guard let img = image else { continue }
+                        attempts += 1
+                        // Skip landscape (two-page spread) on first attempt — prefer portrait cover
+                        if attempts == 1 && img.size.width > img.size.height && sorted.count > 1 {
+                            firstSpread = img
+                            continue
+                        }
+                        return img
                     }
-                    guard let img = image else { continue }
-                    attempts += 1
-                    // Skip landscape (two-page spread) on first attempt — prefer portrait cover
-                    if attempts == 1 && img.size.width > img.size.height && sorted.count > 1 {
-                        firstSpread = img
-                        continue
-                    }
-                    return img
+                    return firstSpread  // fallback if every page is landscape
+                } catch {
+                    Logger.shared.log("PhysicalFileSystemRouter: CBR cover extraction failed for '\(url.lastPathComponent)': \(error.localizedDescription)", category: "Archive", type: .error)
+                    return nil
                 }
-                return firstSpread  // fallback if every page is landscape
-            } catch {
-                Logger.shared.log("PhysicalFileSystemRouter: CBR cover extraction failed for '\(url.lastPathComponent)': \(error.localizedDescription)", category: "Archive", type: .error)
             }
         }
 
@@ -595,30 +618,33 @@ class PhysicalFileSystemRouter {
             let accessing = url.startAccessingSecurityScopedResource()
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }
             
-            return PDFDocument(url: url)?.pageCount ?? 0
+            return ConcurrencyLocks.pdfLock.withLock {
+                return PDFDocument(url: url)?.pageCount ?? 0
+            }
         }
 
         if ["cbz", "zip", "epub"].contains(ext) {
             let accessing = url.startAccessingSecurityScopedResource()
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }
             
-            // ✅ Check file existence before proceeding to prevent errors
-            guard FileManager.default.fileExists(atPath: url.path) else {
-                return 0
-            }
+            guard FileManager.default.fileExists(atPath: url.path) else { return 0 }
             
-            guard let archive = try? Archive(url: url, accessMode: .read, pathEncoding: .utf8) else { return 0 }
-            
-            var count = 0
-            for entry in archive {
-                if entry.type == .directory { continue }
-                let entryExt = (entry.path as NSString).pathExtension.lowercased()
-                if ["jpg", "jpeg", "png", "webp"].contains(entryExt) {
-                    if entry.path.contains("__MACOSX") || entry.path.hasPrefix("._") || entry.path.hasSuffix(".DS_Store") { continue }
-                    count += 1
+            do {
+                let archive = try Archive(url: url, accessMode: .read)
+                var count = 0
+                for entry in archive {
+                    if entry.type == .directory { continue }
+                    let entryExt = (entry.path as NSString).pathExtension.lowercased()
+                    if ["jpg", "jpeg", "png", "webp"].contains(entryExt) {
+                        if entry.path.contains("__MACOSX") || entry.path.hasPrefix("._") || entry.path.hasSuffix(".DS_Store") { continue }
+                        count += 1
+                    }
                 }
+                return count
+            } catch {
+                Logger.shared.log("Failed to count pages in archive: \(error.localizedDescription)", category: "Archive", type: .error)
             }
-            return count
+            return 0
         }
 
         // ── CBR / RAR Archives ─────────────────────────────────────────────────
@@ -627,33 +653,55 @@ class PhysicalFileSystemRouter {
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }
             guard FileManager.default.fileExists(atPath: url.path) else { return 0 }
             let imageExts: Set<String> = ["jpg", "jpeg", "png", "webp"]
-            do {
-                let archive = try Unrar.Archive(fileURL: url)
-                let entries = try archive.entries()
-                return entries.filter { entry in
-                    guard !entry.directory,
-                          !entry.fileName.contains("__MACOSX"),
-                          !(entry.fileName as NSString).lastPathComponent.hasPrefix("._") && !(entry.fileName as NSString).lastPathComponent.hasSuffix(".DS_Store") else { return false }
-                    return imageExts.contains((entry.fileName as NSString).pathExtension.lowercased())
-                }.count
-            } catch {
-                Logger.shared.log("PhysicalFileSystemRouter: CBR page count failed for '\(url.lastPathComponent)': \(error.localizedDescription)", category: "Archive", type: .error)
+            return ConcurrencyLocks.unrarLock.withLock {
+                do {
+                    let archive = try Unrar.Archive(fileURL: url)
+                    let entries = try archive.entries()
+                    return entries.filter { entry in
+                        guard !entry.directory,
+                              !entry.fileName.contains("__MACOSX"),
+                              !(entry.fileName as NSString).lastPathComponent.hasPrefix("._") && !(entry.fileName as NSString).lastPathComponent.hasSuffix(".DS_Store") else { return false }
+                        return imageExts.contains((entry.fileName as NSString).pathExtension.lowercased())
+                    }.count
+                } catch {
+                    Logger.shared.log("PhysicalFileSystemRouter: CBR page count failed for '\(url.lastPathComponent)': \(error.localizedDescription)", category: "Archive", type: .error)
+                    return 0
+                }
             }
         }
 
         return 0
     }
-
+    
     nonisolated static func extractPageImage(from url: URL, pageIndex: Int) -> UIImage? {
         let ext = url.pathExtension.lowercased()
         if ext == "pdf" {
             let accessing = url.startAccessingSecurityScopedResource()
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }
             
-            guard let document = PDFDocument(url: url) else { return nil }
-            guard pageIndex >= 0 && pageIndex < document.pageCount else { return nil }
-            guard let page = document.page(at: pageIndex) else { return nil }
-            return page.thumbnail(of: CGSize(width: 400, height: 560), for: .mediaBox)
+            return ConcurrencyLocks.pdfLock.withLock {
+                guard let document = PDFDocument(url: url) else { return nil }
+                guard pageIndex >= 0 && pageIndex < document.pageCount else { return nil }
+                guard let page = document.page(at: pageIndex) else { return nil }
+                
+                let pageBounds = page.bounds(for: .mediaBox)
+                guard pageBounds.width > 0 && pageBounds.height > 0 && !pageBounds.width.isNaN && !pageBounds.height.isNaN else { return nil }
+                let size = CGSize(width: 400, height: 560)
+                let scale = min(size.width / pageBounds.width, size.height / pageBounds.height)
+                let scaledSize = CGSize(width: pageBounds.width * scale, height: pageBounds.height * scale)
+                guard scaledSize.width > 0 && scaledSize.height > 0 && !scaledSize.width.isNaN && !scaledSize.height.isNaN else { return nil }
+                
+                let renderer = UIGraphicsImageRenderer(size: scaledSize)
+                return renderer.image { context in
+                    UIColor.white.setFill()
+                    context.fill(CGRect(origin: .zero, size: scaledSize))
+                    
+                    context.cgContext.translateBy(x: 0, y: scaledSize.height)
+                    context.cgContext.scaleBy(x: scale, y: -scale)
+                    
+                    page.draw(with: .mediaBox, to: context.cgContext)
+                }
+            }
         }
 
         if ["cbz", "zip", "epub"].contains(ext) {
@@ -702,35 +750,37 @@ class PhysicalFileSystemRouter {
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }
             guard FileManager.default.fileExists(atPath: url.path) else { return nil }
 
-            do {
-                let archive = try Unrar.Archive(fileURL: url)
-                let entries = try archive.entries()
+            return ConcurrencyLocks.unrarLock.withLock {
+                do {
+                    let archive = try Unrar.Archive(fileURL: url)
+                    let entries = try archive.entries()
 
-                let imageExts: Set<String> = ["jpg", "jpeg", "png", "webp"]
-                let sorted = entries
-                    .filter { entry in
-                        guard !entry.directory,
-                              !entry.fileName.contains("__MACOSX"),
-                              !(entry.fileName as NSString).lastPathComponent.hasPrefix("._") && !(entry.fileName as NSString).lastPathComponent.hasSuffix(".DS_Store") else { return false }
-                        return imageExts.contains((entry.fileName as NSString).pathExtension.lowercased())
-                    }
-                    .sorted { $0.fileName.localizedStandardCompare($1.fileName) == .orderedAscending }
+                    let imageExts: Set<String> = ["jpg", "jpeg", "png", "webp"]
+                    let sorted = entries
+                        .filter { entry in
+                            guard !entry.directory,
+                                   !entry.fileName.contains("__MACOSX"),
+                                   !(entry.fileName as NSString).lastPathComponent.hasPrefix("._") && !(entry.fileName as NSString).lastPathComponent.hasSuffix(".DS_Store") else { return false }
+                            return imageExts.contains((entry.fileName as NSString).pathExtension.lowercased())
+                        }
+                        .sorted { $0.fileName.localizedStandardCompare($1.fileName) == .orderedAscending }
 
-                guard pageIndex >= 0 && pageIndex < sorted.count else { return nil }
-                let targetEntry = sorted[pageIndex]
-                return autoreleasepool {
-                    do {
-                        let data = try archive.extract(targetEntry)
-                        return UIImage(data: data)
-                    } catch {
-                        return nil
+                    guard pageIndex >= 0 && pageIndex < sorted.count else { return nil }
+                    let targetEntry = sorted[pageIndex]
+                    return autoreleasepool {
+                        do {
+                            let data = try archive.extract(targetEntry)
+                            return UIImage(data: data)
+                        } catch {
+                            return nil
+                        }
                     }
+                } catch {
+                    Logger.shared.log("PhysicalFileSystemRouter: CBR page image extraction failed for index \(pageIndex): \(error.localizedDescription)", category: "Archive", type: .error)
+                    return nil
                 }
-            } catch {
-                Logger.shared.log("PhysicalFileSystemRouter: CBR page image extraction failed for index \(pageIndex): \(error.localizedDescription)", category: "Archive", type: .error)
             }
         }
-
         return nil
     }
 

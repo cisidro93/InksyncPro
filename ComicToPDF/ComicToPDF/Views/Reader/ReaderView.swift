@@ -612,10 +612,28 @@ struct ReaderView: View {
             let docURL = fileURL
             Task { @MainActor in
                 let img = await Task.detached(priority: .userInitiated) { () -> UIImage? in
-                    guard let doc = PDFDocument(url: docURL),
-                          let page = doc.page(at: pageIdx) else { return nil }
-                    let size = CGSize(width: 1024, height: 1408)
-                    return page.thumbnail(of: size, for: .mediaBox)
+                    return ConcurrencyLocks.pdfLock.withLock {
+                        guard let doc = PDFDocument(url: docURL),
+                              let page = doc.page(at: pageIdx) else { return nil }
+                        
+                        let pageBounds = page.bounds(for: .mediaBox)
+                        guard pageBounds.width > 0 && pageBounds.height > 0 && !pageBounds.width.isNaN && !pageBounds.height.isNaN else { return nil }
+                        let size = CGSize(width: 1024, height: 1408)
+                        let scale = min(size.width / pageBounds.width, size.height / pageBounds.height)
+                        let scaledSize = CGSize(width: pageBounds.width * scale, height: pageBounds.height * scale)
+                        guard scaledSize.width > 0 && scaledSize.height > 0 && !scaledSize.width.isNaN && !scaledSize.height.isNaN else { return nil }
+                        
+                        let renderer = UIGraphicsImageRenderer(size: scaledSize)
+                        return renderer.image { context in
+                            UIColor.white.setFill()
+                            context.fill(CGRect(origin: .zero, size: scaledSize))
+                            
+                            context.cgContext.translateBy(x: 0, y: scaledSize.height)
+                            context.cgContext.scaleBy(x: scale, y: -scale)
+                            
+                            page.draw(with: .mediaBox, to: context.cgContext)
+                        }
+                    }
                 }.value
                 if let img {
                     self.shareImage = img

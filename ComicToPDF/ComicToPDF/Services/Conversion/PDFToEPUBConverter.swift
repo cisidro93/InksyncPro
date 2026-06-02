@@ -80,8 +80,11 @@ final class PDFToEPUBConverter: Sendable {
     ) async throws -> (URL, Int) {
         
         // Load PDF
-        guard let pdfDocument = PDFDocument(url: pdfURL) else {
-            throw ConversionError.pdfLoadFailed
+        let pdfDocument = try ConcurrencyLocks.pdfLock.withLock {
+            guard let doc = PDFDocument(url: pdfURL) else {
+                throw ConversionError.pdfLoadFailed
+            }
+            return doc
         }
         
         let pageCount = pdfDocument.pageCount
@@ -159,74 +162,78 @@ final class PDFToEPUBConverter: Sendable {
             ))
             
             try autoreleasepool {
-                guard let page = pdfDocument.page(at: pageIndex) else {
-                    throw ConversionError.pageRenderFailed(pageIndex + 1)
+                let rawCGImage = try ConcurrencyLocks.pdfLock.withLock { () -> CGImage? in
+                    guard let page = pdfDocument.page(at: pageIndex) else {
+                        throw ConversionError.pageRenderFailed(pageIndex + 1)
+                    }
+                    
+                    // Render page to image
+                    let pageRect = page.bounds(for: .mediaBox)
+                    
+                    // Safety check for invalid dimensions
+                    guard pageRect.width > 0, pageRect.height > 0 else {
+                        print("Skipping page \(pageIndex + 1) due to invalid dimensions: \(pageRect)")
+                        return nil // Skip this page instead of crashing
+                    }
+                    
+                    let scale = min(
+                        options.maxImageWidth / pageRect.width,
+                        options.maxImageHeight / pageRect.height,
+                        2.0 // Max 2x scale
+                    )
+                    
+                    let scaledSize = CGSize(
+                        width: checkFinite(pageRect.width * scale).rounded(),
+                        height: checkFinite(pageRect.height * scale).rounded()
+                    )
+                    
+                    // Double check scaled size logic to prevent invalid image context
+                    guard scaledSize.width > 1, scaledSize.height > 1 else { return nil }
+                    
+                    // FIX: Use Low-Level CGBitmapContext to avoid UIGraphicsImageRenderer stripping artifacts
+                    let width = Int(scaledSize.width)
+                    let height = Int(scaledSize.height)
+                    let bitsPerComponent = 8
+                    let bytesPerRow = 0 // Auto
+                    let colorSpace = CGColorSpaceCreateDeviceRGB()
+                    let bitmapInfo = CGImageAlphaInfo.noneSkipLast.rawValue // Opaque RGB
+                    
+                    guard let context = CGContext(data: nil,
+                                                width: width,
+                                                height: height,
+                                                bitsPerComponent: bitsPerComponent,
+                                                bytesPerRow: bytesPerRow,
+                                                space: colorSpace,
+                                                bitmapInfo: bitmapInfo) else {
+                        throw ConversionError.pageRenderFailed(pageIndex + 1)
+                    }
+                    
+                    // Draw White Background
+                    context.setFillColor(UIColor.white.cgColor)
+                    context.fill(CGRect(origin: .zero, size: scaledSize))
+                    
+                    // Draw PDF Page
+                    // Flip coords for CoreGraphics
+                    context.translateBy(x: 0, y: scaledSize.height)
+                    context.scaleBy(x: scale, y: -scale)
+                    
+                    page.draw(with: .mediaBox, to: context)
+                    
+                    // Create Image from Context
+                    guard let raw = context.makeImage() else {
+                         throw ConversionError.pageRenderFailed(pageIndex + 1)
+                    }
+                    return raw
                 }
                 
-                // Render page to image
-                let pageRect = page.bounds(for: .mediaBox)
+                guard let cgImageToSave = rawCGImage else { return }
                 
-                // Safety check for invalid dimensions
-                guard pageRect.width > 0, pageRect.height > 0 else {
-                    print("Skipping page \(pageIndex + 1) due to invalid dimensions: \(pageRect)")
-                    return // Skip this page instead of crashing
+                var finalCGImage = cgImageToSave
+                if let settings = options.settings, let processed = ImageProcessor.process(image: UIImage(cgImage: cgImageToSave), settings: settings), let processedCG = processed.cgImage {
+                    finalCGImage = processedCG
                 }
                 
-                let scale = min(
-                    options.maxImageWidth / pageRect.width,
-                    options.maxImageHeight / pageRect.height,
-                    2.0 // Max 2x scale
-                )
-                
-                let scaledSize = CGSize(
-                    width: checkFinite(pageRect.width * scale).rounded(),
-                    height: checkFinite(pageRect.height * scale).rounded()
-                )
-                
-                // Double check scaled size logic to prevent invalid image context
-                guard scaledSize.width > 1, scaledSize.height > 1 else { return }
-                
-                // FIX: Use Low-Level CGBitmapContext to avoid UIGraphicsImageRenderer stripping artifacts
-                let width = Int(scaledSize.width)
-                let height = Int(scaledSize.height)
-                let bitsPerComponent = 8
-                let bytesPerRow = 0 // Auto
-                let colorSpace = CGColorSpaceCreateDeviceRGB()
-                let bitmapInfo = CGImageAlphaInfo.noneSkipLast.rawValue // Opaque RGB
-                
-                guard let context = CGContext(data: nil,
-                                            width: width,
-                                            height: height,
-                                            bitsPerComponent: bitsPerComponent,
-                                            bytesPerRow: bytesPerRow,
-                                            space: colorSpace,
-                                            bitmapInfo: bitmapInfo) else {
-                    throw ConversionError.pageRenderFailed(pageIndex + 1)
-                }
-                
-                // Draw White Background
-                context.setFillColor(UIColor.white.cgColor)
-                context.fill(CGRect(origin: .zero, size: scaledSize))
-                
-                // Draw PDF Page
-                // Flip coords for CoreGraphics
-                context.translateBy(x: 0, y: scaledSize.height)
-                context.scaleBy(x: scale, y: -scale)
-                
-                page.draw(with: .mediaBox, to: context)
-                
-                // Create Image from Context
-                guard let rawCGImage = context.makeImage() else {
-                     throw ConversionError.pageRenderFailed(pageIndex + 1)
-                }
-                
-                var cgImageToSave = rawCGImage
-                
-                if let settings = options.settings, let processed = ImageProcessor.process(image: UIImage(cgImage: rawCGImage), settings: settings), let processedCG = processed.cgImage {
-                    cgImageToSave = processedCG
-                }
-                
-                let finalImage = UIImage(cgImage: cgImageToSave)
+                let finalImage = UIImage(cgImage: finalCGImage)
                 let quality = options.settings?.compressionQuality.value ?? 0.8
                 let finalData = finalImage.jpegData(compressionQuality: quality) ?? Data()
                 

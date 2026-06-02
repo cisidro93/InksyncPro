@@ -148,7 +148,9 @@ struct ReaderSearchView: View {
 
         let searchQuery = query
         Task {
-            let found = document.findString(searchQuery, withOptions: [.caseInsensitive, .diacriticInsensitive])
+            let found = ConcurrencyLocks.pdfLock.withLock {
+                document.findString(searchQuery, withOptions: [.caseInsensitive, .diacriticInsensitive])
+            }
             self.results = found
             self.isSearching = false
             if !found.isEmpty { self.scrollToCurrentResult() }
@@ -159,8 +161,10 @@ struct ReaderSearchView: View {
         guard currentResultIndex < results.count else { return }
         let sel = results[currentResultIndex]
         // Reset all match colours, then highlight current
-        document.findString(query, withOptions: [.caseInsensitive]).forEach {
-            $0.color = .systemYellow.withAlphaComponent(0.4)
+        ConcurrencyLocks.pdfLock.withLock {
+            document.findString(query, withOptions: [.caseInsensitive]).forEach {
+                $0.color = .systemYellow.withAlphaComponent(0.4)
+            }
         }
         sel.color = .systemOrange
         pdfView.setCurrentSelection(sel, animate: true)
