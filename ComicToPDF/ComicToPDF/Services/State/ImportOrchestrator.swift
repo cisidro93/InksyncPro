@@ -172,7 +172,7 @@ actor ImportOrchestrator {
         }
     }
     
-    func importFilesAsSeries(urls: [URL], manager: ConversionManager, overrides: [URL: PDFMetadata] = [:]) async {
+    func importFilesAsSeries(urls: [URL], manager: ConversionManager, overrides: [URL: PDFMetadata] = [:]) async -> [ConvertedPDF] {
         await MainActor.run { manager.isConverting = true; manager.processingStatus = "Preparing Import..." }
         defer { Task { await MainActor.run { manager.isConverting = false; manager.processingStatus = "" } } }
         
@@ -390,7 +390,7 @@ actor ImportOrchestrator {
         }.value
         
         await MainActor.run { ImportMonitorManager.shared.completeImport() }
-        guard !importedPDFs.isEmpty else { return }
+        guard !importedPDFs.isEmpty else { return [] }
 
         // Fast-path SwiftData insert for ONLY the new records.
         // This bypasses the expensive full-library reconciliation that syncToSwiftData does.
@@ -412,7 +412,7 @@ actor ImportOrchestrator {
         }
         
         let finalClusters = clusters
-        await MainActor.run {
+        let finalImportedPDFs = await MainActor.run {
             var allImported: [ConvertedPDF] = []
             
             for (series, var clusterPDFs) in finalClusters {
@@ -441,7 +441,9 @@ actor ImportOrchestrator {
             }
             
             manager.saveLibrary()
+            return allImported
         }
+        return finalImportedPDFs
     }
     
     func finalizeSeriesImport(pdfs: [ConvertedPDF], seriesName: String, manager: ConversionManager) async {

@@ -167,17 +167,15 @@ extension ConversionManager {
             }
         }
 
-        // Track success/failure by comparing library before and after
-        let beforeCount = convertedPDFs.count
-        await ImportOrchestrator.shared.importFilesAsSeries(
+        // The orchestrator natively tracks and returns only the successfully imported PDFs
+        let importedPDFs = await ImportOrchestrator.shared.importFilesAsSeries(
             urls: urls, manager: self, overrides: overrides
         )
-        let afterCount = convertedPDFs.count
-        let successCount = max(0, afterCount - beforeCount)
-        let failedCount = urls.count - successCount
+        
+        let successCount = importedPDFs.count
 
         // Build failed URL list (files that didn't make it into the library)
-        let importedFilenames = Set(convertedPDFs.suffix(successCount).map { $0.url.lastPathComponent })
+        let importedFilenames = Set(importedPDFs.map { $0.url.lastPathComponent })
         let failedURLs = urls.filter { url in
             !importedFilenames.contains(url.lastPathComponent)
         }
@@ -185,7 +183,7 @@ extension ConversionManager {
         return ImportSummary(
             seriesName: seriesName ?? "Imported",
             successCount: successCount,
-            failedURLs: Array(failedURLs.prefix(failedCount))
+            failedURLs: failedURLs
         )
     }
 
