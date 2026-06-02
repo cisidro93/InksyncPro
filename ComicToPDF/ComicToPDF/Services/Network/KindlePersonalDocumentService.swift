@@ -12,9 +12,7 @@ class KindlePersonalDocumentService: NSObject, ObservableObject, MFMailComposeVi
     
     var fileURLToSend: URL?
     var kindleEmail: String?
-    
-    // UIViewController presenting reference would normally be injected.
-    // In SwiftUI, we create a representable for MailCompose.
+    var fileQueue: [URL] = []
     
     private override init() {
         super.init()
@@ -23,6 +21,7 @@ class KindlePersonalDocumentService: NSObject, ObservableObject, MFMailComposeVi
     func send(fileURL: URL, kindleEmail: String?) async throws {
         self.fileURLToSend = fileURL
         self.kindleEmail = kindleEmail
+        self.fileQueue = []
         
         // 1. Check if Kindle app is installed via scheme
         let kindleAppScheme = URL(string: "kindle://")!
@@ -34,14 +33,68 @@ class KindlePersonalDocumentService: NSObject, ObservableObject, MFMailComposeVi
             self.isPresentingShare = true
         } else if MFMailComposeViewController.canSendMail() {
             // Priority 2: Mail Compose Fallback
-            guard kindleEmail != nil && !kindleEmail!.isEmpty else {
+            guard let email = kindleEmail, !email.isEmpty else {
                 throw SendError.missingEmail
             }
+            
+            let ext = fileURL.pathExtension.lowercased()
+            let fileAttributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path)
+            let rawFileSize = fileAttributes?[.size] as? Int64 ?? 0
+            
+            // If it's a large PDF, split it into parts to stay under the 24MB attachment limit
+            if ext == "pdf" && rawFileSize > 24 * 1024 * 1024 {
+                let parts = Self.splitPDF(at: fileURL, maxSizeBytes: 24 * 1024 * 1024)
+                if parts.count > 1 {
+                    self.fileQueue = parts
+                    self.fileURLToSend = self.fileQueue.removeFirst()
+                    Logger.shared.log("KindlePersonalDocumentService: PDF size \(rawFileSize / 1024 / 1024)MB exceeds limit. Split into \(parts.count) parts.", category: "NetworkSync", type: .info)
+                }
+            }
+            
             self.isPresentingMail = true
         } else {
             // Priority 3: Manual Instructions
             throw SendError.noDeliveryMethod
         }
+    }
+    
+    static func splitPDF(at url: URL, maxSizeBytes: Int64 = 24 * 1024 * 1024) -> [URL] {
+        guard let doc = PDFDocument(url: url) else { return [url] }
+        let pageCount = doc.pageCount
+        guard pageCount > 1 else { return [url] }
+        
+        let fileAttributes = try? FileManager.default.attributesOfItem(atPath: url.path)
+        let rawFileSize = fileAttributes?[.size] as? Int64 ?? 0
+        guard rawFileSize > maxSizeBytes else { return [url] }
+        
+        // Calculate number of parts needed
+        let partsCount = max(2, Int(ceil(Double(rawFileSize) / Double(maxSizeBytes))))
+        let pagesPerPart = max(1, Int(ceil(Double(pageCount) / Double(partsCount))))
+        
+        var splitURLs: [URL] = []
+        let baseName = url.deletingPathExtension().lastPathComponent
+        let tempDir = FileManager.default.temporaryDirectory
+        
+        for partIdx in 0..<partsCount {
+            let startPage = partIdx * pagesPerPart
+            let endPage = min(startPage + pagesPerPart, pageCount)
+            guard startPage < endPage else { break }
+            
+            let partDoc = PDFDocument()
+            for pageIdx in startPage..<endPage {
+                if let page = doc.page(at: pageIdx) {
+                    partDoc.insert(page, at: partDoc.pageCount)
+                }
+            }
+            
+            let partURL = tempDir.appendingPathComponent("\(baseName)_Part\(partIdx + 1).pdf")
+            try? FileManager.default.removeItem(at: partURL)
+            if partDoc.write(to: partURL) {
+                splitURLs.append(partURL)
+            }
+        }
+        
+        return splitURLs.isEmpty ? [url] : splitURLs
     }
     
     enum SendError: LocalizedError {
@@ -76,6 +129,14 @@ struct MailComposeView: UIViewControllerRepresentable {
             let action = dismissAction
             Task { @MainActor in
                 action()
+                
+                // If there are more parts queued up, present the next part controller sequentially
+                let service = KindlePersonalDocumentService.shared
+                if !service.fileQueue.isEmpty {
+                    try? await Task.sleep(nanoseconds: 600_000_000) // allow transition animation
+                    service.fileURLToSend = service.fileQueue.removeFirst()
+                    service.isPresentingMail = true
+                }
             }
         }
     }
@@ -92,7 +153,7 @@ struct MailComposeView: UIViewControllerRepresentable {
         // Apple Mail and standard SMTP providers cap attachments at ~25MB.
         let fileAttributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path)
         let rawFileSize = fileAttributes?[.size] as? Int64 ?? 0
-        let isSafeSize = rawFileSize <= (25 * 1024 * 1024)
+        let isSafeSize = rawFileSize <= (24 * 1024 * 1024)
         
         if isSafeSize, let data = try? Data(contentsOf: fileURL) {
             let ext = fileURL.pathExtension.lowercased()

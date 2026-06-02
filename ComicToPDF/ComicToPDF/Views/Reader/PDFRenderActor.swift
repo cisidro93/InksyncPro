@@ -6,7 +6,22 @@ import PDFKit
 actor PDFRenderActor {
     static let shared = PDFRenderActor()
     
-    private init() {}
+    private init() {
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.didReceiveMemoryWarningNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            Task {
+                await PDFRenderActor.shared.handleMemoryWarning()
+            }
+        }
+    }
+    
+    private func handleMemoryWarning() {
+        Logger.shared.log("PDFRenderActor: Memory warning received. Purging cached PDFDocument.", category: "Memory", type: .warning)
+        self.clear()
+    }
     
     private var currentDocument: PDFDocument?
     private var currentURL: URL?

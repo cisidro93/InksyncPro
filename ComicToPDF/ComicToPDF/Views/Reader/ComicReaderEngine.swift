@@ -80,6 +80,16 @@ final class ComicImageCache: ObservableObject, @unchecked Sendable {
     init(pdf: ConvertedPDF, prefetchLimit: Int = 2) {
         self.prefetchLimit = prefetchLimit
         let scheme = pdf.url.scheme?.lowercased() ?? ""
+        
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.didReceiveMemoryWarningNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.cache.removeAllObjects()
+            Logger.shared.log("ComicImageCache: Memory warning received. Cleared image cache.", category: "Memory", type: .warning)
+        }
+        
         isStream = (scheme == "http" || scheme == "https")
         
         let ext = pdf.url.pathExtension.lowercased()

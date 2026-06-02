@@ -19,32 +19,42 @@ struct DocumentReaderEngine: View {
     // KOReader Parity
     @State private var isReflowMode = false
     @State private var reflowText: String = "Extracting text..."
+    @State private var showingSettings = false
+    @ObservedObject private var prefs = EBookPreferences.shared
     
     var body: some View {
         ZStack {
-            Color(UIColor.systemBackground).edgesIgnoringSafeArea(.all)
+            prefs.activeTheme.background.edgesIgnoringSafeArea(.all)
             
             if isReflowMode {
-                ScrollView {
-                    Text(reflowText)
-                        .font(.system(.body, design: .serif))
-                        .lineSpacing(8)
-                        .padding(24)
-                        .padding(.top, 40)
-                        .padding(.bottom, 80)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .foregroundColor(Color(UIColor.label))
-                }
-                .background(Color(UIColor.systemBackground))
-                .onTapGesture {
-                    chromeVisible.toggle()
-                }
+                ReflowTextView(
+                    text: reflowText,
+                    prefs: prefs,
+                    onCenterTap: {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            chromeVisible.toggle()
+                        }
+                    },
+                    onPrevPage: {
+                        if currentPageIndex > 0 {
+                            currentPageIndex -= 1
+                            HapticEngine.light()
+                        }
+                    },
+                    onNextPage: {
+                        if currentPageIndex < totalPages - 1 {
+                            currentPageIndex += 1
+                            HapticEngine.light()
+                        }
+                    }
+                )
             } else if let doc = pdfDocument {
                 PDFKitRepresentedView(document: doc,
                                       pdf: pdf,
                                       currentPageIndex: $currentPageIndex,
                                       chromeVisible: $chromeVisible,
                                       isPencilMode: $isPencilMode)
+                .colorInvertIfDark(theme: prefs.activeTheme)
             } else {
                 ProgressView("Loading Document...")
             }
@@ -66,7 +76,7 @@ struct DocumentReaderEngine: View {
                     let bookmark = Annotation(pdfID: pdf.id, pageIndex: currentPageIndex, kind: .bookmark, createdAt: Date(), modifiedAt: Date())
                     AnnotationStore.shared.add(bookmark)
                 },
-                onSettingsToggle: {},
+                onSettingsToggle: { showingSettings = true },
                 onAnnotationsToggle: { isPencilMode.toggle() },
                 currentProgress: Binding(
                     get: { Double(currentPageIndex) / Double(max(1, totalPages - 1)) },
@@ -81,7 +91,8 @@ struct DocumentReaderEngine: View {
                 onReflowToggle: {
                     isReflowMode.toggle()
                     if isReflowMode { updateReflowText() }
-                }
+                },
+                isSettingsActive: showingSettings
             )
             
             if isPencilMode && !isReflowMode {
@@ -132,6 +143,13 @@ struct DocumentReaderEngine: View {
         }
         .onDisappear {
             accessedURL?.stopAccessingSecurityScopedResource()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
+            Logger.shared.log("DocumentReaderEngine: Memory warning received.", category: "Memory", type: .warning)
+        }
+        .sheet(isPresented: $showingSettings) {
+            EBookSettingsPanel(bookID: pdf.id.uuidString)
+                .presentationDetents([.medium, .large])
         }
     }
     
