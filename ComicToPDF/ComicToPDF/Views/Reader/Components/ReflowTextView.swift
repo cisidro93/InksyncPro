@@ -96,6 +96,7 @@ struct ReflowTextView: UIViewRepresentable {
         Coordinator(self)
     }
     
+    @MainActor
     class Coordinator: NSObject {
         var parent: ReflowTextView
         
