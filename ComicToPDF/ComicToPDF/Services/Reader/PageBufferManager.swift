@@ -63,7 +63,7 @@ class PageBufferManager: ObservableObject {
     // MARK: - Internal
     private var pageURLs: [URL] = []
     private var archiveURL: URL?
-    private var zipEntries: [ZIPFoundation.Entry] = []
+    private var zipEntryPaths: [String] = []
     private var renderTask: Task<Void, Never>?
     /// Incremented every time setup() is called. Any decode that finishes after a new
     /// setup() has started is stale — it must not write to any @Published property.
@@ -87,7 +87,7 @@ class PageBufferManager: ObservableObject {
         generation &+= 1      // wrapping add — safe at Int.max
         pageURLs = pages
         archiveURL = nil
-        zipEntries = []
+        zipEntryPaths = []
         lockedRect = .full
         currentImage = nil
         nextImage = nil
@@ -129,13 +129,13 @@ class PageBufferManager: ObservableObject {
             }.sorted {
                 $0.path.localizedStandardCompare($1.path) == .orderedAscending
             }
-            self.zipEntries = entries
+            self.zipEntryPaths = entries.map { $0.path }
             self.pageURLs = entries.map { url.appendingPathComponent($0.path) }
             
             Logger.shared.log("PageBufferManager: Setup direct ZIP streaming with \(entries.count) pages", category: "Engine", type: .success)
         } catch {
             Logger.shared.log("PageBufferManager: Failed to parse ZIP archive: \(error.localizedDescription)", category: "Engine", type: .error)
-            self.zipEntries = []
+            self.zipEntryPaths = []
             self.pageURLs = []
         }
     }
@@ -441,7 +441,7 @@ class PageBufferManager: ObservableObject {
             url: url,
             index: index,
             archiveURL: self.archiveURL,
-            zipEntries: self.zipEntries,
+            zipEntryPaths: self.zipEntryPaths,
             maxPixelSize: maxPixelSize,
             isAutoCropEnabled: isAutoCrop
         )
@@ -451,15 +451,15 @@ class PageBufferManager: ObservableObject {
         url: URL,
         index: Int,
         archiveURL: URL?,
-        zipEntries: [ZIPFoundation.Entry],
+        zipEntryPaths: [String],
         maxPixelSize: CGFloat?,
         isAutoCropEnabled: Bool
     ) async -> CGImage? {
         // Inherits cancellation natively
         guard !Task.isCancelled else { return nil }
 
-        if let archiveURL = archiveURL, index < zipEntries.count {
-            let entryPath = zipEntries[index].path
+        if let archiveURL = archiveURL, index < zipEntryPaths.count {
+            let entryPath = zipEntryPaths[index]
             var cgImage: CGImage? = nil
             autoreleasepool {
                 do {

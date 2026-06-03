@@ -140,20 +140,14 @@ struct WebtoonScrollView: UIViewRepresentable {
             }
             
             // Fast aspect ratio metadata extraction
-            // Run sequentially in a single background task to prevent thread explosion (OOM)
+            // Run sequentially to prevent thread explosion (OOM)
             metadataTask?.cancel()
-            metadataTask = Task.detached(priority: .utility) { [weak self] in
+            metadataTask = Task { @MainActor [weak self] in
                 for (index, url) in pages.enumerated() {
                     guard !Task.isCancelled else { break }
-                    guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-                          let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any],
-                          let width = properties[kCGImagePropertyPixelWidth as String] as? CGFloat,
-                          let height = properties[kCGImagePropertyPixelHeight as String] as? CGFloat,
-                          width > 0 else { continue }
-                    
-                    let ratio = height / width
-                    await MainActor.run {
-                        guard let self = self, index < self.imageViews.count else { return }
+                    let ratio = await Self.fetchRatio(for: url)
+                    guard let self = self, index < self.imageViews.count else { return }
+                    if let ratio = ratio {
                         let iv = self.imageViews[index]
                         if let superview = iv.superview {
                             for constraint in superview.constraints where constraint.firstAttribute == .height && constraint.relation == .equal {
@@ -164,6 +158,17 @@ struct WebtoonScrollView: UIViewRepresentable {
                     }
                 }
             }
+        }
+
+        nonisolated private static func fetchRatio(for url: URL) async -> CGFloat? {
+            return await Task.detached(priority: .utility) {
+                guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+                      let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any],
+                      let width = properties[kCGImagePropertyPixelWidth as String] as? CGFloat,
+                      let height = properties[kCGImagePropertyPixelHeight as String] as? CGFloat,
+                      width > 0 else { return nil }
+                return height / width
+            }.value
         }
 
         private func loadImage(at index: Int, url: URL, into iv: UIImageView) {
