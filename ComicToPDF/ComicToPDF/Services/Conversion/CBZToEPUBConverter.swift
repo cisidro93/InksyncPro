@@ -147,20 +147,25 @@ struct CBZToEPUBConverter: Sendable {
                     globalImageIndex += 1
                 }
                 
-                // C. Process and Append
+                // C. Process and Append — skip images that fail to decode (avoids
+                // writing 0-byte entries that become corrupt blank pages in the EPUB).
                 if isSliced {
                     for slice in imagesToProcess {
-                        var finalData: Data
+                        let finalData: Data
                         if needsProcessing {
                             let processedImage = ImageProcessor.process(image: slice, settings: settings) ?? slice
                             finalData = processedImage.jpegData(compressionQuality: settings.compressionQuality.value) ?? Data()
                         } else {
                             finalData = slice.jpegData(compressionQuality: 1.0) ?? Data()
                         }
+                        guard !finalData.isEmpty else {
+                            Logger.shared.log("Skipping empty slice from \(srcURL.lastPathComponent)", category: "Converter", type: .warning)
+                            continue
+                        }
                         appendToBatch(finalData, globalImageIndex)
                     }
                 } else {
-                    var finalData: Data
+                    let finalData: Data
                     if needsProcessing {
                         if let processedImage = ImageProcessor.process(imageURL: srcURL, settings: settings) {
                             let quality = settings.compressionQuality.value
@@ -169,7 +174,11 @@ struct CBZToEPUBConverter: Sendable {
                             finalData = (try? Data(contentsOf: srcURL)) ?? Data()
                         }
                     } else {
-                         finalData = (try? Data(contentsOf: srcURL)) ?? Data()
+                        finalData = (try? Data(contentsOf: srcURL)) ?? Data()
+                    }
+                    guard !finalData.isEmpty else {
+                        Logger.shared.log("Skipping unreadable image \(srcURL.lastPathComponent)", category: "Converter", type: .warning)
+                        return
                     }
                     appendToBatch(finalData, globalImageIndex)
                 }

@@ -300,8 +300,8 @@ class PageBufferManager: ObservableObject {
                 // 1. Normal Mode: Decode full resolution immediately
                 async let curL  = renderPage(at: curPair.leftIndex, bounds: pageBounds)
                 async let curR  = renderPage(at: curPair.rightIndex, bounds: pageBounds)
-                let cL = await curL;  self.decodeProgress = 1/6
-                let cR = await curR;  self.decodeProgress = 2/6
+                let cL = await curL;  self.decodeProgress = 1.0/6.0
+                let cR = await curR;  self.decodeProgress = 2.0/6.0
 
                 if !Task.isCancelled, self.generation == gen {
                     self.currentSpread = SpreadPair(leftIndex: curPair.leftIndex, rightIndex: curPair.rightIndex, leftImage: cL, rightImage: cR)
@@ -320,15 +320,15 @@ class PageBufferManager: ObservableObject {
             let perfClass = ProcessInfo.processInfo.performanceClass
             if perfClass == .low {
                 // Low end: Load next spread sequentially, then prev spread sequentially to avoid memory spikes.
-                let nL = await renderPage(at: nextPair.leftIndex, bounds: pageBounds);  self.decodeProgress = 3/6
-                let nR = await renderPage(at: nextPair.rightIndex, bounds: pageBounds); self.decodeProgress = 4/6
+                let nL = await renderPage(at: nextPair.leftIndex, bounds: pageBounds);  self.decodeProgress = 3.0/6.0
+                let nR = await renderPage(at: nextPair.rightIndex, bounds: pageBounds); self.decodeProgress = 4.0/6.0
                 
                 guard !Task.isCancelled, self.generation == gen else { return }
                 self.nextSpread = SpreadPair(leftIndex: nextPair.leftIndex, rightIndex: nextPair.rightIndex, leftImage: nL, rightImage: nR)
                 self.nextImage = nL ?? nR
                 
-                let pL = await renderPage(at: prevPair.leftIndex, bounds: pageBounds);  self.decodeProgress = 5/6
-                let pR = await renderPage(at: prevPair.rightIndex, bounds: pageBounds); self.decodeProgress = 6/6
+                let pL = await renderPage(at: prevPair.leftIndex, bounds: pageBounds);  self.decodeProgress = 5.0/6.0
+                let pR = await renderPage(at: prevPair.rightIndex, bounds: pageBounds); self.decodeProgress = 1.0
                 
                 guard !Task.isCancelled, self.generation == gen else { return }
                 self.prevSpread = SpreadPair(leftIndex: prevPair.leftIndex, rightIndex: prevPair.rightIndex, leftImage: pL, rightImage: pR)
@@ -340,10 +340,10 @@ class PageBufferManager: ObservableObject {
                 async let nextL = renderPage(at: nextPair.leftIndex, bounds: pageBounds)
                 async let nextR = renderPage(at: nextPair.rightIndex, bounds: pageBounds)
                 
-                let pL = await prevL; self.decodeProgress = 3/6
-                let pR = await prevR; self.decodeProgress = 4/6
-                let nL = await nextL; self.decodeProgress = 5/6
-                let nR = await nextR; self.decodeProgress = 6/6
+                let pL = await prevL; self.decodeProgress = 3.0/6.0
+                let pR = await prevR; self.decodeProgress = 4.0/6.0
+                let nL = await nextL; self.decodeProgress = 5.0/6.0
+                let nR = await nextR; self.decodeProgress = 1.0
                 
                 guard !Task.isCancelled, self.generation == gen else { return }
                 

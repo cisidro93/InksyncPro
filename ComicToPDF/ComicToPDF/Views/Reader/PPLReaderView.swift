@@ -693,8 +693,9 @@ struct PPLReaderView: View {
                 refreshGuidedPanels()
                 if guidedPanels.isEmpty { isGuidedReadingActive = false; updatePPL(in: geo) }
                 else {
-                    guidedPanelIndex = guidedPanels.count - 1
-                    withAnimation(.easeInOut(duration: 0.25)) { bufferManager.lockedRect = guidedPanels[guidedPanelIndex] }
+                    let lastIdx = guidedPanels.count - 1
+                    guidedPanelIndex = lastIdx
+                    withAnimation(.easeInOut(duration: 0.25)) { bufferManager.lockedRect = guidedPanels[lastIdx] }
                 }
             }
         }
