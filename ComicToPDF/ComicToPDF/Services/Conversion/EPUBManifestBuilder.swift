@@ -37,17 +37,24 @@ public struct EPUBManifestBuilder {
         """
     }
 
-    public static let navContent = """
-    <?xml version="1.0" encoding="UTF-8"?>
-    <!DOCTYPE html>
-    <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="en" xml:lang="en">
-    <head><title>Navigation</title><meta charset="utf-8" /></head>
-    <body>
-        <nav epub:type="toc" id="toc"><h1>Table of Contents</h1><ol><li><a href="text/page_0001.xhtml">Start Reading</a></li></ol></nav>
-        <nav epub:type="landmarks"><h1>Landmarks</h1><ol><li><a epub:type="cover" href="text/page_0001.xhtml">Cover</a></li><li><a epub:type="bodymatter" href="text/page_0001.xhtml">Start</a></li></ol></nav>
-    </body>
-    </html>
-    """
+    /// Generates a nav.xhtml pointing to the correct first content page.
+    /// - Parameter firstPageHref: The href of the first spine item, e.g. "text/page_0001.xhtml"
+    ///   or "text/cover.xhtml" when a badged cover is prepended.
+    public static func buildNavContent(firstPageHref: String = "text/page_0001.xhtml") -> String {
+        return """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="en" xml:lang="en">
+        <head><title>Navigation</title><meta charset="utf-8" /></head>
+        <body>
+            <nav epub:type="toc" id="toc"><h1>Table of Contents</h1><ol><li><a href="\(firstPageHref)">Start Reading</a></li></ol></nav>
+            <nav epub:type="landmarks"><h1>Landmarks</h1><ol><li><a epub:type="cover" href="\(firstPageHref)">Cover</a></li><li><a epub:type="bodymatter" href="\(firstPageHref)">Start</a></li></ol></nav>
+        </body>
+        </html>
+        """
+    }
+
+    @available(*, deprecated, renamed: "buildNavContent(firstPageHref:)")
+    public static let navContent = buildNavContent()
 
     public static func buildNCXContent(bookUUID: String, baseFilename: String) -> String {
         return """
@@ -114,17 +121,14 @@ public struct EPUBManifestBuilder {
                 </div>
             """
         }.joined(separator: "\n")
-        
-        var trackingImg = ""
-        if let bookUUID = bookUUID,
-           let pageIndex = pageIndex,
-           let localIP = WiFiServer.getIPAddress() {
-            trackingImg = "\n        <img src=\"http://\(localIP):8080/page_sync?book_id=\(bookUUID)&amp;page=\(pageIndex + 1)\" width=\"1\" height=\"1\" style=\"display:none; position:absolute; visibility:hidden;\" alt=\"\"/>\n"
-        }
-        
+
+        // NOTE: The tracking pixel (http://LOCAL_IP:8080/page_sync?...) has been removed.
+        // Amazon's Send to Kindle scanner rejects EPUBs containing embedded remote HTTP
+        // requests, producing error E999. Reading-position sync is handled entirely
+        // in-app via the PPLReaderView page-turn callback chain.
+
         return """
         <?xml version="1.0" encoding="UTF-8"?>
-        <!DOCTYPE html>
         <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
         <head>
             <meta charset="UTF-8"/>
@@ -139,7 +143,7 @@ public struct EPUBManifestBuilder {
                 .page-image { max-width: 100vw; max-height: 100vh; height: 100%; width: 100%; object-fit: contain; object-position: center; }
             </style>
         </head>
-        <body>\(trackingImg)
+        <body>
             <div class="chunk-container">
             \(imageElements)
             </div>

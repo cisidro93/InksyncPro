@@ -230,25 +230,40 @@ struct CBZToEPUBConverter: Sendable {
             try? coverXHTML.write(to: textDir.appendingPathComponent("cover.xhtml"), atomically: true, encoding: .utf8)
         }
         
-        let bookUUID = await MainActor.run { () -> String in
+        // ── Pre-flight: fetch SwiftData metadata once on the MainActor before
+        //    entering the heavy image-processing loop. This avoids the crash that
+        //    occurs when MainActor.run is called mid-conversion while the owning
+        //    view may be deallocating.
+        let (bookUUID, metadataInfo): (String, (seriesID: String?, seriesName: String?, issueNum: Int?)) = await MainActor.run {
             let context = InksyncProApp.sharedModelContainer.mainContext
             let urlStr = sourceURL.absoluteString
             let nameStr = sourceURL.lastPathComponent
             let descriptor = FetchDescriptor<SDConvertedPDF>()
-            if let pdfs = try? context.fetch(descriptor) {
-                if let pdf = pdfs.first(where: { $0.url.absoluteString == urlStr || $0.name == nameStr }) {
-                    return pdf.id.uuidString
-                }
+            if let pdfs = try? context.fetch(descriptor),
+               let pdf = pdfs.first(where: { $0.url.absoluteString == urlStr || $0.name == nameStr }) {
+                let seriesID = pdf.metadata.universalSeriesID
+                let seriesName = pdf.metadata.series
+                let issueNum = Int(pdf.metadata.issueNumber ?? "")
+                return (pdf.id.uuidString, (seriesID, seriesName, issueNum))
             }
-            return UUID().uuidString
+            return (UUID().uuidString, (nil, nil, nil))
         }
+
         manifestItems.append("<item id=\"css\" href=\"css/comic.css\" media-type=\"text/css\"/>")
         manifestItems.append("<item id=\"ncx\" href=\"toc.ncx\" media-type=\"application/x-dtbncx+xml\"/>")
         manifestItems.append("<item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/>")
         
-        let navContent = EPUBManifestBuilder.navContent
-        try navContent.write(to: oebpsDir.appendingPathComponent("nav.xhtml"), atomically: true, encoding: String.Encoding.utf8)
-        
+        // Determine firstPageHref for nav.xhtml BEFORE writing it — if a badged
+        // cover is prepended the NAV must point to cover.xhtml, not page_0001.xhtml.
+        let firstPageHref: String
+        if let _ = coverData, totalBatches > 1 {
+            firstPageHref = "text/cover.xhtml"
+        } else {
+            firstPageHref = "text/page_0001.xhtml"
+        }
+        let navContent = EPUBManifestBuilder.buildNavContent(firstPageHref: firstPageHref)
+        try navContent.write(to: oebpsDir.appendingPathComponent("nav.xhtml"), atomically: true, encoding: .utf8)
+
         let ncxContent = EPUBManifestBuilder.buildNCXContent(bookUUID: bookUUID, baseFilename: baseFilename)
         try ncxContent.write(to: oebpsDir.appendingPathComponent("toc.ncx"), atomically: true, encoding: String.Encoding.utf8)
         
@@ -312,23 +327,8 @@ struct CBZToEPUBConverter: Sendable {
             currentChunkImages.removeAll()
         }
         
+        // embedCharacterGlossary uses the pre-fetched metadataInfo — no MainActor round-trip needed.
         if settings.embedCharacterGlossary {
-            let metadataInfo = await MainActor.run { () -> (seriesID: String?, seriesName: String?, issueNum: Int?) in
-                let context = InksyncProApp.sharedModelContainer.mainContext
-                let urlStr = sourceURL.absoluteString
-                let nameStr = sourceURL.lastPathComponent
-                let descriptor = FetchDescriptor<SDConvertedPDF>()
-                if let pdfs = try? context.fetch(descriptor) {
-                    if let pdf = pdfs.first(where: { $0.url.absoluteString == urlStr || $0.name == nameStr }) {
-                        let seriesID = pdf.metadata.universalSeriesID
-                        let seriesName = pdf.metadata.series
-                        let issueNum = Int(pdf.metadata.issueNumber ?? "")
-                        return (seriesID, seriesName, issueNum)
-                    }
-                }
-                return (nil, nil, nil)
-            }
-            
             let glossaryHTML = await MainActor.run {
                 CharacterGlossaryBuilder.shared.buildGlossaryHTML(
                     seriesIDString: metadataInfo.seriesID,
@@ -389,7 +389,9 @@ struct CBZToEPUBConverter: Sendable {
             try archive.addEntry(with: "mimetype", fileURL: mimetypePath, compressionMethod: .none)
             
             let containerPath = batchDir.appendingPathComponent("META-INF/container.xml")
-            try archive.addEntry(with: "META-INF/container.xml", fileURL: containerPath, compressionMethod: .deflate)
+            // EPUB spec §3.3: container.xml MUST be stored without compression
+            // so readers can locate the OPF without first needing a decompressor.
+            try archive.addEntry(with: "META-INF/container.xml", fileURL: containerPath, compressionMethod: .none)
             
             let oebpsDir = batchDir.appendingPathComponent("OEBPS")
             if let enumerator = fileManager.enumerator(at: oebpsDir, includingPropertiesForKeys: nil) {
