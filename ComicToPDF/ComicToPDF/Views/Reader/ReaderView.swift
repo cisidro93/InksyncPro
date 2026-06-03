@@ -907,6 +907,9 @@ struct ReaderView: View {
                     }
                 } catch {
                     Logger.shared.log("Direct ZIP streaming failed for \(activeFileURL.lastPathComponent): \(error.localizedDescription). Falling back to full extraction.", category: "ReaderView", type: .warning)
+                    // extractComic requires the caller to hold the security scope.
+                    let didAccess = activeFileURL.startAccessingSecurityScopedResource()
+                    defer { if didAccess { activeFileURL.stopAccessingSecurityScopedResource() } }
                     let result = try await ZipUtilities.extractComic(from: activeFileURL)
                     await MainActor.run {
                         self.unzippedDir = result.workingDir

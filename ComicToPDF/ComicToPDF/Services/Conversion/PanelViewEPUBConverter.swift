@@ -113,7 +113,10 @@ class PanelViewEPUBConverter {
 
         // ── Step 0: Extract archive ───────────────────────────────────────────
         progress(0.05)
+        // ZipUtilities.extractComic requires the caller to hold the security scope.
+        let didAccess = sourceURL.startAccessingSecurityScopedResource()
         let extraction = try await ZipUtilities.extractComic(from: sourceURL)
+        if didAccess { sourceURL.stopAccessingSecurityScopedResource() }
         let tempDir    = extraction.workingDir
         defer { try? fileManager.removeItem(at: tempDir) }
 

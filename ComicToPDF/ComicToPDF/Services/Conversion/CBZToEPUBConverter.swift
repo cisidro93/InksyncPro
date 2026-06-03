@@ -75,6 +75,9 @@ struct CBZToEPUBConverter: Sendable {
     // Stage 1 — Extract archive to temp directory, return sorted image URLs
     private func extractArchive(from sourceURL: URL) async throws -> (workingDir: URL, imageURLs: [URL]) {
         Logger.shared.log("Stage 1 Start: Extracting \(sourceURL.lastPathComponent)", category: "Converter")
+        // ZipUtilities.extractComic requires the caller to hold the security scope.
+        let didAccess = sourceURL.startAccessingSecurityScopedResource()
+        defer { if didAccess { sourceURL.stopAccessingSecurityScopedResource() } }
         let extractionResult = try await ZipUtilities.extractComic(from: sourceURL)
         guard !extractionResult.imageURLs.isEmpty else {
             throw NSError(domain: "Converter", code: 1, userInfo: [NSLocalizedDescriptionKey: "No images found"])

@@ -31,6 +31,8 @@ actor EditorSessionManager {
         }
 
         // ── Cold path: extract and cache ──────────────────────────────────────
+        // extractComic requires caller to hold security scope for the full duration.
+        let didAccess = url.startAccessingSecurityScopedResource()
         let task = Task.detached(priority: .userInitiated) {
             let result = try await ZipUtilities.extractComic(from: url)
             return (workingDir: result.workingDir, files: result.imageURLs)
@@ -39,10 +41,12 @@ actor EditorSessionManager {
 
         do {
             let result = try await task.value
+            if didAccess { url.stopAccessingSecurityScopedResource() }
             editorCache = (sourceURL: canonical, pdfID: UUID(), folder: result.workingDir, files: result.files)
             activeExtractionTask = nil
             return result
         } catch {
+            if didAccess { url.stopAccessingSecurityScopedResource() }
             activeExtractionTask = nil
             throw error
         }
@@ -72,18 +76,25 @@ actor EditorSessionManager {
             return ConversionManager.loadDownsampledImageStatic(at: result.files[index], maxDimension: 1920)
         }
 
-        // ── Cold extract ──────────────────────────────────────────────────────
+        // ── Cold extract ─────────────────────────────────────────────────
+        let didAccess = pdfURL.startAccessingSecurityScopedResource()
         let newTask = Task.detached(priority: .userInitiated) {
             let result = try await ZipUtilities.extractComic(from: pdfURL)
             return (workingDir: result.workingDir, files: result.imageURLs)
         }
         self.activeExtractionTask = newTask
-        let result = try await newTask.value
-        self.editorCache = (sourceURL: canonical, pdfID: pdfID, folder: result.workingDir, files: result.files)
-        self.activeExtractionTask = nil
-
-        guard index < result.files.count else { return nil }
-        return ConversionManager.loadDownsampledImageStatic(at: result.files[index], maxDimension: 1920)
+        do {
+            let result = try await newTask.value
+            if didAccess { pdfURL.stopAccessingSecurityScopedResource() }
+            self.editorCache = (sourceURL: canonical, pdfID: pdfID, folder: result.workingDir, files: result.files)
+            self.activeExtractionTask = nil
+            guard index < result.files.count else { return nil }
+            return ConversionManager.loadDownsampledImageStatic(at: result.files[index], maxDimension: 1920)
+        } catch {
+            if didAccess { pdfURL.stopAccessingSecurityScopedResource() }
+            self.activeExtractionTask = nil
+            throw error
+        }
     }
 
     func clearCache(for pdfID: UUID) {

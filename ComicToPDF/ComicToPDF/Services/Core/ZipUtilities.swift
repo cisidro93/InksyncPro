@@ -6,6 +6,13 @@ import Unrar
 
 struct ZipUtilities {
     
+    /// Extract all image files from a comic archive (CBZ/ZIP/PDF/CBR/CBT).
+    ///
+    /// **Security scope contract**: The CALLER is responsible for calling
+    /// `startAccessingSecurityScopedResource()` on `sourceURL` before invoking
+    /// this function, and `stopAccessingSecurityScopedResource()` after it returns.
+    /// This function does NOT open the scope itself to prevent double-open ref-count
+    /// bugs when callers already hold the scope.
     static func extractComic(from sourceURL: URL) async throws -> (workingDir: URL, imageURLs: [URL]) {
         let ext = sourceURL.pathExtension.lowercased()
 
@@ -24,11 +31,10 @@ struct ZipUtilities {
             DispatchQueue.global(qos: .userInitiated).async {
                 do {
                     let fileManager = FileManager.default
-                    
-                    // 1. Security & Setup
-                    let secure = sourceURL.startAccessingSecurityScopedResource()
-                    defer { if secure { sourceURL.stopAccessingSecurityScopedResource() } }
-                    
+
+                    // Security scope is managed by the CALLER — do not open it here.
+                    // See doc comment on extractComic for the ownership contract.
+
                     let filename = sourceURL.deletingPathExtension().lastPathComponent
                     let uniqueID = UUID().uuidString.prefix(8)
                     let tempDir = fileManager.temporaryDirectory.appendingPathComponent("extract_\(filename)_\(uniqueID)")
