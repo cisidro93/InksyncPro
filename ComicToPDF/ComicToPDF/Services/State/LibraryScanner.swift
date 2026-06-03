@@ -100,40 +100,43 @@ actor LibraryScanner {
         }
 
         if !pdfsToProcess.isEmpty {
+            // Materialise the work list as a plain value-type array before crossing into
+            // Task.detached isolation. The original code captured a mutable iterator and an
+            // Int counter by reference across actor boundaries — a data race in strict concurrency.
+            let workItems: [(id: UUID, url: URL)] = pdfsToProcess.map { ($0.id, $0.url) }
+            let perfClass = ProcessInfo.processInfo.performanceClass
+            let maxConcurrency = perfClass == .low ? 2 : 4
+
             Task.detached(priority: .background) {
                 await withTaskGroup(of: (UUID, Int)?.self) { group in
-                    var inFlight = 0
-                    var pending = pdfsToProcess.makeIterator()
-
-                    func enqueue() {
-                        guard let pdf = pending.next() else { return }
-                        group.addTask {
-                            // H3: Call extractCoverImageStatic directly — it is `nonisolated static`
-                            // and runs freely on the background thread pool. This eliminates the
-                            // background→main→background double actor-hop that generateCoverThumbnail
-                            // caused (it bounces to @MainActor then re-dispatches to Task.detached).
-                            let image = PhysicalFileSystemRouter.extractCoverImageStatic(from: pdf.url)
-                            if let image, let jpegData = image.jpegData(compressionQuality: 0.7) {
-                                // Single MainActor round-trip: write cover + warm NSCache
-                                await MainActor.run {
-                                    PhysicalFileSystemRouter.shared.saveCoverImage(jpegData, for: pdf, manager: manager)
-                                }
-                            }
-                            let count = PhysicalFileSystemRouter.getPageCountStatic(from: pdf.url)
-                            return count > 0 ? (pdf.id, count) : nil
-                        }
-                        inFlight += 1
-                    }
-
-                    // Dynamically set concurrency based on device capability
-                    let perfClass = ProcessInfo.processInfo.performanceClass
-                    let maxConcurrency = perfClass == .low ? 2 : 4
+                    var nextIndex = 0
 
                     // Seed initial slots
-                    for _ in 0..<min(maxConcurrency, pdfsToProcess.count) { enqueue() }
+                    func enqueueNext() {
+                        guard nextIndex < workItems.count else { return }
+                        let item = workItems[nextIndex]
+                        nextIndex += 1
+                        group.addTask {
+                            let image = PhysicalFileSystemRouter.extractCoverImageStatic(from: item.url)
+                            if let image, let jpegData = image.jpegData(compressionQuality: 0.7) {
+                                let capturedID = item.id
+                                await MainActor.run {
+                                    // Look up the full ConvertedPDF on MainActor — saveCoverImage
+                                    // requires the ConvertedPDF object, not just a UUID.
+                                    if let pdf = manager.convertedPDFs.first(where: { $0.id == capturedID }) {
+                                        PhysicalFileSystemRouter.shared.saveCoverImage(
+                                            jpegData, for: pdf, manager: manager)
+                                    }
+                                }
+                            }
+                            let count = PhysicalFileSystemRouter.getPageCountStatic(from: item.url)
+                            return count > 0 ? (item.id, count) : nil
+                        }
+                    }
+
+                    for _ in 0..<min(maxConcurrency, workItems.count) { enqueueNext() }
 
                     for await result in group {
-                        inFlight -= 1
                         if let (id, count) = result {
                             await MainActor.run {
                                 if let idx = manager.convertedPDFs.firstIndex(where: { $0.id == id }) {
@@ -141,11 +144,9 @@ actor LibraryScanner {
                                 }
                             }
                         }
-                        // Refill the slot immediately
-                        enqueue()
+                        enqueueNext()
                     }
                 }
-                // Single save after all backfill work is done
                 await MainActor.run { manager.saveLibrary() }
             }
         }

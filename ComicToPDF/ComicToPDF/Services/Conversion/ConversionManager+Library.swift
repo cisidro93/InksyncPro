@@ -86,21 +86,41 @@ extension ConversionManager {
 
             if ext == "epub" {
                 let captured = url
-                Task {
+                // Use Task.detached so EPUBImporter.extractImages (which calls
+                // FileManager.unzipItem — a blocking synchronous call) runs on the
+                // cooperative thread pool rather than the MainActor thread.
+                // Calling it inside a plain Task{} inherited the MainActor context
+                // and blocked the UI for the full unzip duration on large EPUBs.
+                Task.detached(priority: .userInitiated) {
                     let accessing = captured.startAccessingSecurityScopedResource()
                     defer { if accessing { captured.stopAccessingSecurityScopedResource() } }
+                    let cleanName = (captured.lastPathComponent as NSString).deletingPathExtension
+                    let cbzURL = documentsDir.appendingPathComponent(cleanName + ".cbz")
+                    let tempExtractDir = FileManager.default.temporaryDirectory
+                        .appendingPathComponent(UUID().uuidString)
+                    // Always clean up temp dir regardless of outcome
+                    defer { try? FileManager.default.removeItem(at: tempExtractDir) }
                     do {
-                        let cleanName = (captured.lastPathComponent as NSString).deletingPathExtension
-                        let cbzURL = documentsDir.appendingPathComponent(cleanName + ".cbz")
-                        let tempExtractDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-                        try FileManager.default.createDirectory(at: tempExtractDir, withIntermediateDirectories: true)
+                        try FileManager.default.createDirectory(
+                            at: tempExtractDir, withIntermediateDirectories: true)
                         _ = try EPUBImporter.extractImages(from: captured, to: tempExtractDir)
                         try await ZipUtilities.zipDirectory(tempExtractDir, to: cbzURL)
-                        try? FileManager.default.removeItem(at: tempExtractDir)
-                        await MainActor.run { self.appAlert = AppAlert(title: "Import Success", message: "Imported EPUB as Comic.") }
+                        // Trigger library scan so the new CBZ appears immediately
+                        await MainActor.run {
+                            manager.scanLibrary()
+                            manager.appAlert = AppAlert(
+                                title: "Import Success",
+                                message: "\(cleanName) added to library.")
+                        }
                     } catch {
-                        Logger.shared.log("EPUB Import Failed: \(error.localizedDescription)", category: "Import", type: .error)
-                        await MainActor.run { self.appAlert = AppAlert(title: "EPUB Import Failed", message: error.localizedDescription) }
+                        Logger.shared.log(
+                            "EPUB Import Failed: \(error.localizedDescription)",
+                            category: "Import", type: .error)
+                        await MainActor.run {
+                            manager.appAlert = AppAlert(
+                                title: "EPUB Import Failed",
+                                message: error.localizedDescription)
+                        }
                     }
                 }
                 continue
