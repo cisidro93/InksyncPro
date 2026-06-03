@@ -86,16 +86,18 @@ extension ConversionManager {
 
             if ext == "epub" {
                 let captured = url
+                let capturedDocsDir = documentsDir
                 // Use Task.detached so EPUBImporter.extractImages (which calls
                 // FileManager.unzipItem — a blocking synchronous call) runs on the
                 // cooperative thread pool rather than the MainActor thread.
-                // Calling it inside a plain Task{} inherited the MainActor context
-                // and blocked the UI for the full unzip duration on large EPUBs.
-                Task.detached(priority: .userInitiated) {
+                // Task.detached requires an explicit capture list — it does not
+                // implicitly capture self or surrounding locals.
+                Task.detached(priority: .userInitiated) { [weak self] in
+                    guard let self else { return }
                     let accessing = captured.startAccessingSecurityScopedResource()
                     defer { if accessing { captured.stopAccessingSecurityScopedResource() } }
                     let cleanName = (captured.lastPathComponent as NSString).deletingPathExtension
-                    let cbzURL = documentsDir.appendingPathComponent(cleanName + ".cbz")
+                    let cbzURL = capturedDocsDir.appendingPathComponent(cleanName + ".cbz")
                     let tempExtractDir = FileManager.default.temporaryDirectory
                         .appendingPathComponent(UUID().uuidString)
                     // Always clean up temp dir regardless of outcome
@@ -107,8 +109,8 @@ extension ConversionManager {
                         try await ZipUtilities.zipDirectory(tempExtractDir, to: cbzURL)
                         // Trigger library scan so the new CBZ appears immediately
                         await MainActor.run {
-                            manager.scanLibrary()
-                            manager.appAlert = AppAlert(
+                            self.scanLibrary()
+                            self.appAlert = AppAlert(
                                 title: "Import Success",
                                 message: "\(cleanName) added to library.")
                         }
@@ -117,7 +119,7 @@ extension ConversionManager {
                             "EPUB Import Failed: \(error.localizedDescription)",
                             category: "Import", type: .error)
                         await MainActor.run {
-                            manager.appAlert = AppAlert(
+                            self.appAlert = AppAlert(
                                 title: "EPUB Import Failed",
                                 message: error.localizedDescription)
                         }
@@ -165,7 +167,7 @@ extension ConversionManager {
     }
 
     func importFilesAsSeries(urls: [URL], overrides: [URL: PDFMetadata] = [:]) async {
-        await ImportOrchestrator.shared.importFilesAsSeries(urls: urls, manager: self, overrides: overrides)
+        _ = await ImportOrchestrator.shared.importFilesAsSeries(urls: urls, manager: self, overrides: overrides)
     }
 
     /// Series-aware import overload used by the Smart Import Pipeline.

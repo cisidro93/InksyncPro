@@ -58,7 +58,9 @@ final class CloudStreamCoordinator: ObservableObject {
 
         // ── Step 1: Resolve authenticated download URL ───────────────────────────
         let downloadURL: URL
-        var authHeader: String? = nil
+        // authHeader is set per-provider below and never mutated after assignment,
+        // so `let` is correct. Using `var` triggers a Swift immutability warning.
+        let authHeader: String? = nil
 
         if provider == "Dropbox" {
             downloadURL = try await DropboxProvider.shared.getDownloadURL(fileID: archiveRemoteID(pdf))
