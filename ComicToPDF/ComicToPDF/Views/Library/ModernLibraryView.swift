@@ -585,10 +585,12 @@ struct ModernLibraryView: View {
         for provider in providers {
             if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
                 provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { (data, error) in
+                    // NSItemProvider completion fires on an arbitrary background thread.
+                    // @MainActor hop is required before touching conversionManager.
                     if let urlData = data as? Data, let url = URL(dataRepresentation: urlData, relativeTo: nil) {
-                        Task { await conversionManager.processImportedFiles(urls: [url]) }
+                        Task { @MainActor in await conversionManager.processImportedFiles(urls: [url]) }
                     } else if let url = data as? URL {
-                        Task { await conversionManager.processImportedFiles(urls: [url]) }
+                        Task { @MainActor in await conversionManager.processImportedFiles(urls: [url]) }
                     }
                 }
             }

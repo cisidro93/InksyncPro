@@ -78,34 +78,48 @@ class SmartImportViewModel: ObservableObject {
             }
         }
 
-        // 5. Streaming panel scan — extract images one-by-one, stop after 15.
-        // Security scope is managed INTERNALLY by ZipUtilities.extractComic and its
-        // delegates (CBRExtractor, CBTExtractor). Do NOT wrap with an outer scope here:
-        // nested startAccessingSecurityScopedResource calls are ref-counted but the
-        // defer below firing before the async continuation resumes can drop the count
-        // to zero, causing libunrar to receive ERAR_EOPEN mid-extraction on CBR files.
+        // 5. Panel scan — MUST run off the MainActor.
+        // UIImage(contentsOfFile:) synchronously decodes the full uncompressed bitmap
+        // for each page (manga pages can be 30–100 MB each uncompressed). Loading 15
+        // of them on the main actor: (a) blocks the UI thread → iOS watchdog crash,
+        // (b) creates 450MB+ peak RAM on the main stack → OOM kill.
+        // Solution: run the entire scan in Task.detached; write only the final
+        // aggregated values back to @MainActor properties.
         do {
             let extraction = try await ZipUtilities.extractComic(from: sourceURL)
             let allImages = extraction.imageURLs
-            pageCount = allImages.count
-            firstPageURL = allImages.first  // cover preview — kept alive for UI
+
+            await MainActor.run {
+                pageCount = allImages.count
+                firstPageURL = allImages.first
+            }
 
             let sample = Array(allImages.prefix(15))
-            var confidences: [Double] = []
-            for url in sample {
-                if let img = UIImage(contentsOfFile: url.path) {
-                    let panels = await PanelExtractor.detectPanels(
-                        in: img, mode: .automatic, mangaMode: isManga
-                    )
-                    let conf = panels.isEmpty ? 0.5 : Double(panels.count) / 10.0
-                    confidences.append(min(conf, 1.0))
-                }
-            }
-            overallConfidence = confidences.isEmpty ? 0.8 : confidences.reduce(0, +) / Double(confidences.count)
+            let capturedIsManga = isManga
 
-            // Clean up extracted images except the first (used as live cover preview).
-            // For CBR: the CBRExtractor temp dir is self-managing; these are the extracted
-            // image file URLs and can be removed individually without removing the parent dir.
+            // Run image decode + panel detection entirely off the main thread
+            let averageConfidence: Double = await Task.detached(priority: .userInitiated) {
+                var confidences: [Double] = []
+                for url in sample {
+                    // Load the image synchronously — autoreleasepool frees the decoded
+                    // bitmap buffer once detection is complete for each page.
+                    // UIImage reference must survive outside autoreleasepool for the await.
+                    var img: UIImage?
+                    autoreleasepool { img = UIImage(contentsOfFile: url.path) }
+                    guard let image = img else { continue }
+                    // PanelExtractor.detectPanels is async but nonisolated — safe off main actor
+                    let panels = await PanelExtractor.detectPanels(
+                        in: image, mode: .automatic, mangaMode: capturedIsManga
+                    )
+                    let conf = panels.isEmpty ? 0.5 : min(Double(panels.count) / 10.0, 1.0)
+                    confidences.append(conf)
+                }
+                return confidences.isEmpty ? 0.8 : confidences.reduce(0, +) / Double(confidences.count)
+            }.value
+
+            await MainActor.run { overallConfidence = averageConfidence }
+
+            // Clean up all extracted pages except the first (used as live cover preview)
             let toDelete = allImages.dropFirst()
             for url in toDelete { try? FileManager.default.removeItem(at: url) }
         } catch {
