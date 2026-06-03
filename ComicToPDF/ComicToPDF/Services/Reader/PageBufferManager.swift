@@ -556,7 +556,6 @@ class PageBufferManager: ObservableObject {
         }
         return nil
     }
-    }
 
     nonisolated private static func downsample(cgImage: CGImage, toMaxPixelSize maxSize: Int) -> CGImage {
         let width = cgImage.width

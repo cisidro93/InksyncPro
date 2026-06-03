@@ -853,5 +853,11 @@ actor ThumbnailGenerationQueue {
         inFlight.remove(id)
         dequeue()
     }
+    
+    func generateThumbnail(for pdf: ConvertedPDF, in manager: ConversionManager) async -> UIImage? {
+        await PhysicalFileSystemRouter.shared.generateCoverThumbnail(for: pdf, manager: manager)
+        let key = pdf.id.uuidString as NSString
+        return await MainActor.run { manager.thumbnailCache.object(forKey: key) }
+    }
 }
 

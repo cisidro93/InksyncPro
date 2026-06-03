@@ -101,7 +101,7 @@ actor ImportOrchestrator {
                     // ComicInfoParser.parse separately, each re-opening the archive.
                     let isArchive = ["cbz", "zip"].contains(ext)
                     
-                    var xmlData: ComicInfoData?
+                    var xmlData: (displayName: String, parsedSeries: String?, parsedNumber: String?, parsedVolume: String?, parsedTitle: String?)?
                     var parsedInfo: ComicInfoParser.ComicInfo?
                     let pdfID = UUID()
                     
@@ -286,7 +286,7 @@ actor ImportOrchestrator {
                     let ext = destURL.pathExtension.lowercased()
                     let isArchive = ["cbz", "zip"].contains(ext)
                     
-                    var xmlData: ComicInfoData?
+                    var xmlData: (displayName: String, parsedSeries: String?, parsedNumber: String?, parsedVolume: String?, parsedTitle: String?)?
                     var parsedInfo: ComicInfoParser.ComicInfo?
                     let pdfID = UUID()
                     
