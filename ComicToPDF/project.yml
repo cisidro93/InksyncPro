@@ -70,6 +70,19 @@ targets:
         UIFileSharingEnabled: true
         LSSupportsOpeningDocumentsInPlace: true
         UIBackgroundModes: [audio]
+        UIAppFonts:
+          - AtkinsonHyperlegible-Regular.ttf
+          - AtkinsonHyperlegible-Bold.ttf
+          - AtkinsonHyperlegible-Italic.ttf
+          - AtkinsonHyperlegible-BoldItalic.ttf
+          - Literata-Regular.ttf
+          - Literata-Bold.ttf
+          - Literata-Italic.ttf
+          - Literata-BoldItalic.ttf
+          - OpenDyslexic-Regular.otf
+          - OpenDyslexic-Bold.otf
+          - OpenDyslexic-Italic.otf
+          - OpenDyslexic-BoldItalic.otf
         UTImportedTypeDeclarations:
           - UTTypeIdentifier: public.comma-separated-values-text
             UTTypeDescription: CSV File
