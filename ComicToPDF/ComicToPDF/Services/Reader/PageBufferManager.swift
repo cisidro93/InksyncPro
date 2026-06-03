@@ -62,6 +62,16 @@ final class CGImageBox {
 // Issue 7 — FIXED: buildSpreadPair returns nil early for clearly out-of-range
 //   lead indices so renderPage(at:nil) task slots are never allocated.
 // ============================================================================
+
+// File-private global — must live outside the @MainActor class so it is
+// nonisolated and accessible from nonisolated static functions (executeRender).
+// Swift 6: static stored properties on @MainActor types are @MainActor-isolated
+// and cannot be read from nonisolated contexts.
+private let _pageBufferArchiveQueue = DispatchQueue(
+    label: "com.inksyncpro.pagebuffer.archive",
+    qos: .userInitiated
+)
+
 @MainActor
 class PageBufferManager: ObservableObject {
     static let shared = PageBufferManager()
@@ -108,13 +118,6 @@ class PageBufferManager: ObservableObject {
         return c
     }()
 
-    /// Issue 2 fix: Serialises all ZIPFoundation reads on the same archive file.
-    /// ZIPFoundation's Archive is not documented as safe for concurrent access —
-    /// a serial queue ensures only one extract() call runs at a time.
-    private static let archiveQueue = DispatchQueue(
-        label: "com.inksyncpro.pagebuffer.archive",
-        qos: .userInitiated
-    )
 
     /// Generation counter — incremented on every setup() call.
     /// Any decode that finishes after a new setup() has started is stale.
@@ -537,7 +540,7 @@ class PageBufferManager: ObservableObject {
 
             // Issue 2 fix: serialise ZIP reads through the archive queue.
             let cgImage: CGImage? = await withCheckedContinuation { continuation in
-                archiveQueue.async {
+                _pageBufferArchiveQueue.async {
                     var result: CGImage? = nil
                     autoreleasepool {
                         do {
@@ -591,8 +594,8 @@ class PageBufferManager: ObservableObject {
                 category: "Engine", type: .warning
             )
             let base = isAutoCropEnabled ? autoCropMargins(from: cgImage) : cgImage
-            if let max = maxPixelSize, CGFloat(max(base.width, base.height)) > max {
-                return autoreleasepool { downsample(cgImage: base, toMaxPixelSize: Int(max)) }
+            if let maxPx = maxPixelSize, CGFloat(Swift.max(base.width, base.height)) > maxPx {
+                return autoreleasepool { downsample(cgImage: base, toMaxPixelSize: Int(maxPx)) }
             }
             return base
         }

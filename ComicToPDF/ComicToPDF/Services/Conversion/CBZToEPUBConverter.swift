@@ -26,15 +26,23 @@ struct CBZToEPUBConverter: Sendable {
         
         let originalImageURLs = extractResult.imageURLs
         
-        // Stage 2
-        let batches = try await processAndBatch(imageURLs: originalImageURLs, settings: settings, progress: progress)
+        // Fix 3: `batches` is now `var` so we can drain it entry-by-entry during
+        // packaging, releasing each batch's Data the moment it is no longer needed.
+        var batches = try await processAndBatch(imageURLs: originalImageURLs, settings: settings, progress: progress)
+        let totalBatches = batches.count
         
         // Stage 3 & 4
         var generatedFiles: [URL] = []
         var globalFirstBatchCoverData: Data? = nil
         
-        for (batchIndex, batch) in batches.enumerated() {
-            let partSuffix = batches.count > 1 ? " (pt \(batchIndex + 1))" : ""
+        for batchIndex in 0..<totalBatches {
+            // Fix 3: Pull the batch out of the array and clear the slot immediately.
+            // When `batch` falls out of scope at the end of this iteration, its
+            // Data buffers are ARC-released — only 1 batch is in RAM at a time.
+            let batch = batches[batchIndex]
+            batches[batchIndex] = []
+            
+            let partSuffix = totalBatches > 1 ? " (pt \(batchIndex + 1))" : ""
             let epubName = baseFilename + partSuffix
             
             if let coverOverride = coverOverrideData {
@@ -47,7 +55,7 @@ struct CBZToEPUBConverter: Sendable {
                 sourceURL: sourceURL,
                 batch: batch,
                 batchIndex: batchIndex,
-                totalBatches: batches.count,
+                totalBatches: totalBatches,
                 baseFilename: epubName,
                 settings: settings,
                 coverData: globalFirstBatchCoverData,
@@ -57,7 +65,7 @@ struct CBZToEPUBConverter: Sendable {
             let outputURL = try await packageEPUB(batchDir: batchDir, outputName: epubName)
             generatedFiles.append(outputURL)
             
-            progress(0.5 + (0.5 * Double(batchIndex + 1) / Double(batches.count)))
+            progress(0.5 + (0.5 * Double(batchIndex + 1) / Double(totalBatches)))
         }
         
         progress(1.0)
@@ -128,59 +136,77 @@ struct CBZToEPUBConverter: Sendable {
                 
                 let needsProcessing = needsCompression || needsEnhancement || settings.optimizeForDevice || settings.trimMargins || isUnsafeFormat
                 
-                let appendToBatch = { (data: Data, indexToUse: Int) in
+                // Fix 2/4: appendToBatch now accepts itemSourceURL explicitly.
+                // Slices always produce JPEG data; passing a synthetic .jpg URL
+                // ensures buildEPUBDirectory sets media-type="image/jpeg" correctly
+                // even when the original spread was a PNG. Without this, Kindle
+                // receives a JPEG payload labelled as image/png → E013.
+                let appendToBatch = { (data: Data, indexToUse: Int, itemSourceURL: URL) in
                     let itemSize = Int64(data.count)
-                    let overheadBuffer: Int64 = 500 * 1024 
+                    let overheadBuffer: Int64 = 500 * 1024
                     
                     let isNoLimit = limit == Int64.max
                     let exceedsLimit = (currentBatchSize + itemSize + overheadBuffer) > limit
                     
                     if !isNoLimit && exceedsLimit && !currentBatch.isEmpty {
-                        Logger.shared.log("ΓÜá∩╕Å Auto-Splitting at \(currentBatchSize) bytes (Image: \(indexToUse))", category: "Converter")
+                        Logger.shared.log("Auto-Splitting at \(currentBatchSize) bytes (Image: \(indexToUse))", category: "Converter")
                         batches.append(currentBatch)
                         currentBatch = []
                         currentBatchSize = 0
                     }
                     
-                    currentBatch.append((url: srcURL, index: indexToUse, data: data))
+                    currentBatch.append((url: itemSourceURL, index: indexToUse, data: data))
                     currentBatchSize += itemSize
                     globalImageIndex += 1
                 }
                 
-                // C. Process and Append — skip images that fail to decode (avoids
-                // writing 0-byte entries that become corrupt blank pages in the EPUB).
+                // Fix 1: Slices — each slice gets its own autoreleasepool so the
+                // UIImage pixel buffer and any CIImage/CIContext intermediates are
+                // drained before the next slice is decoded. Without this, all N slices
+                // (each ~30–80MB uncompressed) accumulate in RAM simultaneously.
+                //
+                // Fix 4: Pass a synthetic .jpg URL so buildEPUBDirectory correctly
+                // labels the media-type as image/jpeg regardless of source format.
+                let sliceSourceURL = URL(fileURLWithPath: "slice.jpg")
                 if isSliced {
                     for slice in imagesToProcess {
-                        let finalData: Data
-                        if needsProcessing {
-                            let processedImage = ImageProcessor.process(image: slice, settings: settings) ?? slice
-                            finalData = processedImage.jpegData(compressionQuality: settings.compressionQuality.value) ?? Data()
-                        } else {
-                            finalData = slice.jpegData(compressionQuality: 1.0) ?? Data()
-                        }
+                        var finalData = Data()
+                        autoreleasepool {
+                            if needsProcessing {
+                                let processedImage = ImageProcessor.process(image: slice, settings: settings) ?? slice
+                                finalData = processedImage.jpegData(compressionQuality: settings.compressionQuality.value) ?? Data()
+                            } else {
+                                finalData = slice.jpegData(compressionQuality: 1.0) ?? Data()
+                            }
+                        } // UIImage + CIImage pipeline freed here before next slice
                         guard !finalData.isEmpty else {
                             Logger.shared.log("Skipping empty slice from \(srcURL.lastPathComponent)", category: "Converter", type: .warning)
                             continue
                         }
-                        appendToBatch(finalData, globalImageIndex)
+                        appendToBatch(finalData, globalImageIndex, sliceSourceURL)
                     }
                 } else {
-                    let finalData: Data
-                    if needsProcessing {
-                        if let processedImage = ImageProcessor.process(imageURL: srcURL, settings: settings) {
-                            let quality = settings.compressionQuality.value
-                            finalData = processedImage.jpegData(compressionQuality: quality) ?? (try? Data(contentsOf: srcURL)) ?? Data()
+                    // Fix 2: For the non-sliced path, scope processedImage inside
+                    // its own block so it is released before finalData escapes.
+                    var finalData = Data()
+                    autoreleasepool {
+                        if needsProcessing {
+                            if let processedImage = ImageProcessor.process(imageURL: srcURL, settings: settings) {
+                                let quality = settings.compressionQuality.value
+                                finalData = processedImage.jpegData(compressionQuality: quality) ?? Data()
+                            }
+                            if finalData.isEmpty {
+                                finalData = (try? Data(contentsOf: srcURL)) ?? Data()
+                            }
                         } else {
                             finalData = (try? Data(contentsOf: srcURL)) ?? Data()
                         }
-                    } else {
-                        finalData = (try? Data(contentsOf: srcURL)) ?? Data()
-                    }
+                    } // processedImage UIImage freed here; only compressed Data escapes
                     guard !finalData.isEmpty else {
                         Logger.shared.log("Skipping unreadable image \(srcURL.lastPathComponent)", category: "Converter", type: .warning)
                         return
                     }
-                    appendToBatch(finalData, globalImageIndex)
+                    appendToBatch(finalData, globalImageIndex, srcURL)
                 }
                 
                 progress(0.1 + (0.4 * Double(originalIndex) / totalCount))
