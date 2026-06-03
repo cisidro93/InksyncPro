@@ -1,33 +1,6 @@
 import SwiftUI
 
-// MARK: - Thumbnail Concurrency Gate
-// Limits simultaneous disk-decode operations to prevent I/O saturation on large libraries.
-// 4 concurrent jobs gives full pipeline utilization without hammering the NAND on first scroll.
-private let thumbnailSemaphore = AsyncSemaphore(limit: 4)
 
-/// Lightweight cooperative semaphore for Swift concurrency.
-/// Parks waiting tasks instead of spinning — safe to use from any actor.
-actor AsyncSemaphore {
-    private let limit: Int
-    private var count = 0
-    private var waiters: [CheckedContinuation<Void, Never>] = []
-    
-    init(limit: Int) { self.limit = limit }
-    
-    func wait() async {
-        if count < limit { count += 1; return }
-        await withCheckedContinuation { waiters.append($0) }
-    }
-    
-    func signal() {
-        if let next = waiters.first {
-            waiters.removeFirst()
-            next.resume()
-        } else {
-            count = max(0, count - 1)
-        }
-    }
-}
 
 struct ModernGridFileCell: View {
     let pdf: ConvertedPDF
@@ -330,24 +303,11 @@ struct ModernGridFileCell: View {
             //    Load it into cache and display it.
             let coverURL = conversionManager.getCoverURL(for: pdf)
             if let url = coverURL, FileManager.default.fileExists(atPath: url.path) {
-                await thumbnailSemaphore.wait()
-                defer { Task { await thumbnailSemaphore.signal() } }
-                let safeURL = url
-                let generated = await Task.detached(priority: .userInitiated) { () -> UIImage? in
-                    let opts = [kCGImageSourceShouldCache: false] as CFDictionary
-                    guard let src = CGImageSourceCreateWithURL(safeURL as CFURL, opts) else { return nil }
-                    let down = [kCGImageSourceCreateThumbnailFromImageAlways: true,
-                                kCGImageSourceShouldCacheImmediately: true,
-                                kCGImageSourceCreateThumbnailWithTransform: true,
-                                kCGImageSourceThumbnailMaxPixelSize: 200] as CFDictionary
-                    guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, down) else { return nil }
-                    return UIImage(cgImage: cg)
-                }.value
-                if let image = generated {
-                    conversionManager.thumbnailCache.setObject(image, forKey: key)
-                    self.localCover = image
-                }
-                return
+            if let image = await ThumbnailGenerationQueue.shared.generateThumbnail(for: pdf, in: conversionManager) {
+                conversionManager.thumbnailCache.setObject(image, forKey: key)
+                self.localCover = image
+            }
+            return
             }
 
             // 3. Cloud file with no cover yet.
@@ -660,23 +620,7 @@ struct ModernGridSeriesCell: View {
             guard let coverURL = conversionManager.getCoverURL(for: pdf),
                   FileManager.default.fileExists(atPath: coverURL.path) else { return }
             
-            await thumbnailSemaphore.wait()
-            defer { Task { await thumbnailSemaphore.signal() } }
-            
-            let generated = await Task.detached(priority: .userInitiated) { () -> UIImage? in
-                let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
-                guard let source = CGImageSourceCreateWithURL(coverURL as CFURL, sourceOptions) else { return nil }
-                let downsampleOptions = [
-                    kCGImageSourceCreateThumbnailFromImageAlways: true,
-                    kCGImageSourceShouldCacheImmediately: true,
-                    kCGImageSourceCreateThumbnailWithTransform: true,
-                    kCGImageSourceThumbnailMaxPixelSize: 200
-                ] as CFDictionary
-                guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, downsampleOptions) else { return nil }
-                return UIImage(cgImage: cgImage)
-            }.value
-            
-            if let image = generated {
+            if let image = await ThumbnailGenerationQueue.shared.generateThumbnail(for: pdf, in: conversionManager) {
                 conversionManager.thumbnailCache.setObject(image, forKey: key)
                 self.localCover = image
             }

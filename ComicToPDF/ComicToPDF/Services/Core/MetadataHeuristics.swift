@@ -15,7 +15,17 @@ struct MetadataHeuristics {
         clean = clean.replacingOccurrences(of: "_", with: " ")
         
         // Remove parenthesis content roughly (e.g. publication years "(2023)")
-        if let range = clean.range(of: "\\(.*?\\)", options: .regularExpression) {
+        while let range = clean.range(of: "\\(.*?\\)", options: .regularExpression) {
+             clean.removeSubrange(range)
+        }
+        
+        // Remove bracket content roughly (e.g. groups "[Zone]")
+        while let range = clean.range(of: "\\[.*?\\]", options: .regularExpression) {
+             clean.removeSubrange(range)
+        }
+        
+        // Remove curly brace content roughly
+        while let range = clean.range(of: "\\{.*?\\}", options: .regularExpression) {
              clean.removeSubrange(range)
         }
         
@@ -28,12 +38,15 @@ struct MetadataHeuristics {
     /// - Parameter name: The original file name (e.g., "Batman_#12.cbz")
     /// - Returns: The extracted issue number as a String, if found.
     static func extractIssueNumber(from name: String) -> String? {
-        // Look for #123 or 123 at the end of parts
         let pattern = "#?(\\d+)"
-        if let regex = try? NSRegularExpression(pattern: pattern),
-           let match = regex.firstMatch(in: name, range: NSRange(name.startIndex..., in: name)) {
-            if let range = Range(match.range(at: 1), in: name) {
-                return String(name[range])
+        if let regex = try? NSRegularExpression(pattern: pattern) {
+            let nsString = name as NSString
+            let match = regex.firstMatch(in: name, range: NSRange(location: 0, length: nsString.length))
+            if let match = match {
+                let range = match.range(at: 1)
+                if range.location != NSNotFound {
+                    return nsString.substring(with: range)
+                }
             }
         }
         return nil

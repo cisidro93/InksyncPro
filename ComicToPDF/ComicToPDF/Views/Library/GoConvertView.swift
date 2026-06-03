@@ -841,23 +841,9 @@ struct CoverThumbnailView: View {
                 self.cover = cached
                 return
             }
-            if let coverURL = conversionManager.getCoverURL(for: pdf),
-               FileManager.default.fileExists(atPath: coverURL.path) {
-                let safeURL = coverURL
-                let generated = await Task.detached(priority: .userInitiated) { () -> UIImage? in
-                    let opts = [kCGImageSourceShouldCache: false] as CFDictionary
-                    guard let src = CGImageSourceCreateWithURL(safeURL as CFURL, opts) else { return nil }
-                    let down = [kCGImageSourceCreateThumbnailFromImageAlways: true,
-                                kCGImageSourceShouldCacheImmediately: true,
-                                kCGImageSourceCreateThumbnailWithTransform: true,
-                                kCGImageSourceThumbnailMaxPixelSize: 120] as CFDictionary
-                    guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, down) else { return nil }
-                    return UIImage(cgImage: cg)
-                }.value
-                if let image = generated {
-                    conversionManager.thumbnailCache.setObject(image, forKey: key)
-                    self.cover = image
-                }
+            if let img = await ThumbnailGenerationQueue.shared.generateThumbnail(for: pdf, in: conversionManager) {
+                conversionManager.thumbnailCache.setObject(img, forKey: key)
+                self.cover = img
             }
         }
     }

@@ -189,25 +189,9 @@ struct LibraryPDFRowWithCover: View {
             if let cached = conversionManager.thumbnailCache.object(forKey: key) {
                 self.localCover = cached; return
             }
-            guard let coverURL = conversionManager.getCoverURL(for: pdf),
-                  FileManager.default.fileExists(atPath: coverURL.path) else { return }
-            
-            let generated = await Task.detached(priority: .userInitiated) { () -> UIImage? in
-                let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
-                guard let source = CGImageSourceCreateWithURL(coverURL as CFURL, sourceOptions) else { return nil }
-                let downsampleOptions = [
-                    kCGImageSourceCreateThumbnailFromImageAlways: true,
-                    kCGImageSourceShouldCacheImmediately: true,
-                    kCGImageSourceCreateThumbnailWithTransform: true,
-                    kCGImageSourceThumbnailMaxPixelSize: 300
-                ] as CFDictionary
-                guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, downsampleOptions) else { return nil }
-                return UIImage(cgImage: cgImage)
-            }.value
-            
-            if let image = generated {
-                conversionManager.thumbnailCache.setObject(image, forKey: key)
-                self.localCover = image
+            if let generated = await ThumbnailGenerationQueue.shared.generateThumbnail(for: pdf, in: conversionManager) {
+                conversionManager.thumbnailCache.setObject(generated, forKey: key)
+                self.localCover = generated
             }
         }
     }
@@ -376,19 +360,7 @@ private struct RecentlyReadCell: View {
             if let cached = conversionManager.thumbnailCache.object(forKey: key) {
                 cover = cached; return
             }
-            guard let coverURL = conversionManager.getCoverURL(for: pdf),
-                  FileManager.default.fileExists(atPath: coverURL.path) else { return }
-            let img = await Task.detached(priority: .userInitiated) { () -> UIImage? in
-                let src = [kCGImageSourceShouldCache: false] as CFDictionary
-                guard let source = CGImageSourceCreateWithURL(coverURL as CFURL, src) else { return nil }
-                let opts = [kCGImageSourceCreateThumbnailFromImageAlways: true,
-                            kCGImageSourceShouldCacheImmediately: true,
-                            kCGImageSourceCreateThumbnailWithTransform: true,
-                            kCGImageSourceThumbnailMaxPixelSize: 300] as CFDictionary
-                guard let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, opts) else { return nil }
-                return UIImage(cgImage: cg)
-            }.value
-            if let img {
+            if let img = await ThumbnailGenerationQueue.shared.generateThumbnail(for: pdf, in: conversionManager) {
                 conversionManager.thumbnailCache.setObject(img, forKey: key)
                 cover = img
             }
@@ -519,19 +491,7 @@ private struct UpNextCell: View {
             if let cached = conversionManager.thumbnailCache.object(forKey: key) {
                 cover = cached; return
             }
-            guard let coverURL = conversionManager.getCoverURL(for: pdf),
-                  FileManager.default.fileExists(atPath: coverURL.path) else { return }
-            let img = await Task.detached(priority: .userInitiated) { () -> UIImage? in
-                let src = [kCGImageSourceShouldCache: false] as CFDictionary
-                guard let source = CGImageSourceCreateWithURL(coverURL as CFURL, src) else { return nil }
-                let opts = [kCGImageSourceCreateThumbnailFromImageAlways: true,
-                            kCGImageSourceShouldCacheImmediately: true,
-                            kCGImageSourceCreateThumbnailWithTransform: true,
-                            kCGImageSourceThumbnailMaxPixelSize: 360] as CFDictionary
-                guard let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, opts) else { return nil }
-                return UIImage(cgImage: cg)
-            }.value
-            if let img {
+            if let img = await ThumbnailGenerationQueue.shared.generateThumbnail(for: pdf, in: conversionManager) {
                 conversionManager.thumbnailCache.setObject(img, forKey: key)
                 cover = img
             }

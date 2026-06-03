@@ -75,7 +75,7 @@ class PhysicalFileSystemRouter {
                         kCGImageSourceCreateThumbnailFromImageAlways: true,
                         kCGImageSourceShouldCacheImmediately: true,
                         kCGImageSourceCreateThumbnailWithTransform: true,
-                        kCGImageSourceThumbnailMaxPixelSize: 200
+                        kCGImageSourceThumbnailMaxPixelSize: 500
                     ] as CFDictionary
                     
                     if let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, downsampleOpts) {
@@ -245,7 +245,7 @@ class PhysicalFileSystemRouter {
                         kCGImageSourceCreateThumbnailFromImageAlways: true,
                         kCGImageSourceShouldCacheImmediately: true,
                         kCGImageSourceCreateThumbnailWithTransform: true,
-                        kCGImageSourceThumbnailMaxPixelSize: 200
+                        kCGImageSourceThumbnailMaxPixelSize: 500
                     ] as CFDictionary
                     guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, downsampleOpts) else { return nil }
                     return UIImage(cgImage: cg)
@@ -312,7 +312,7 @@ class PhysicalFileSystemRouter {
                     kCGImageSourceCreateThumbnailFromImageAlways: true,
                     kCGImageSourceShouldCacheImmediately: true,
                     kCGImageSourceCreateThumbnailWithTransform: true,
-                    kCGImageSourceThumbnailMaxPixelSize: 200
+                    kCGImageSourceThumbnailMaxPixelSize: 500
                 ] as CFDictionary
                 
                 if let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, downsampleOptions) {
@@ -353,7 +353,7 @@ class PhysicalFileSystemRouter {
                         kCGImageSourceCreateThumbnailFromImageAlways: true,
                         kCGImageSourceShouldCacheImmediately: true,
                         kCGImageSourceCreateThumbnailWithTransform: true,
-                        kCGImageSourceThumbnailMaxPixelSize: 200
+                        kCGImageSourceThumbnailMaxPixelSize: 500
                     ] as CFDictionary
                     
                     if let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, downsampleOptions) {
@@ -371,11 +371,7 @@ class PhysicalFileSystemRouter {
                     manager.thumbnailReadySubject.send()
                 }
             } else {
-                await MainActor.run {
-                    _ = Task {
-                        await self.generateCoverThumbnail(for: pdf, manager: manager)
-                    }
-                }
+                await ThumbnailGenerationQueue.shared.enqueue(pdf, manager: manager)
             }
         }
         return nil
@@ -541,7 +537,21 @@ class PhysicalFileSystemRouter {
                         var data = Data()
                         do {
                             _ = try archive.extract(entry) { data.append($0) }
-                            return UIImage(data: data)
+                            
+                            let srcOpts = [kCGImageSourceShouldCache: false] as CFDictionary
+                            guard let source = CGImageSourceCreateWithData(data as CFData, srcOpts) else { return nil }
+                            
+                            let downsampleOpts = [
+                                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                                kCGImageSourceShouldCacheImmediately: true,
+                                kCGImageSourceCreateThumbnailWithTransform: true,
+                                kCGImageSourceThumbnailMaxPixelSize: 600
+                            ] as CFDictionary
+                            
+                            if let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, downsampleOpts) {
+                                return UIImage(cgImage: cg)
+                            }
+                            return nil
                         } catch {
                             Logger.shared.log("Failed to extract \(entry.path): \(error.localizedDescription)", category: "Archive", type: .error)
                             return nil
@@ -589,7 +599,21 @@ class PhysicalFileSystemRouter {
                         let image = autoreleasepool { () -> UIImage? in
                             do {
                                 let data = try archive.extract(entry)
-                                return UIImage(data: data)
+                                
+                                let srcOpts = [kCGImageSourceShouldCache: false] as CFDictionary
+                                guard let source = CGImageSourceCreateWithData(data as CFData, srcOpts) else { return nil }
+                                
+                                let downsampleOpts = [
+                                    kCGImageSourceCreateThumbnailFromImageAlways: true,
+                                    kCGImageSourceShouldCacheImmediately: true,
+                                    kCGImageSourceCreateThumbnailWithTransform: true,
+                                    kCGImageSourceThumbnailMaxPixelSize: 600
+                                ] as CFDictionary
+                                
+                                if let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, downsampleOpts) {
+                                    return UIImage(cgImage: cg)
+                                }
+                                return nil
                             } catch {
                                 return nil
                             }
@@ -788,5 +812,46 @@ class PhysicalFileSystemRouter {
 
     
     // ✅ NEW: Extract Smart Panels from ComicInfo.xml
+}
+
+/// A lightweight queue to strictly limit concurrent thumbnail generation.
+/// This prevents OOM (Out of Memory) crashes when the UI requests 30+ missing covers at once.
+actor ThumbnailGenerationQueue {
+    static let shared = ThumbnailGenerationQueue()
+    
+    // We cannot easily hold `ConversionManager` in an actor array without warnings, 
+    // but since it's an ObservableObject (reference type), it's safe to pass.
+    private var pending: [(ConvertedPDF, ConversionManager)] = []
+    private var inFlight: Set<UUID> = []
+    private var activeCount = 0
+    private let maxConcurrent = 2
+    
+    func enqueue(_ pdf: ConvertedPDF, manager: ConversionManager) {
+        // Prevent duplicate queuing for the same file
+        guard !inFlight.contains(pdf.id) else { return }
+        if pending.contains(where: { $0.0.id == pdf.id }) { return }
+        
+        pending.append((pdf, manager))
+        dequeue()
+    }
+    
+    private func dequeue() {
+        guard activeCount < maxConcurrent, !pending.isEmpty else { return }
+        let (pdf, manager) = pending.removeFirst()
+        
+        activeCount += 1
+        inFlight.insert(pdf.id)
+        
+        Task.detached(priority: .background) {
+            await PhysicalFileSystemRouter.shared.generateCoverThumbnail(for: pdf, manager: manager)
+            await ThumbnailGenerationQueue.shared.taskDidFinish(id: pdf.id)
+        }
+    }
+    
+    func taskDidFinish(id: UUID) {
+        activeCount -= 1
+        inFlight.remove(id)
+        dequeue()
+    }
 }
 

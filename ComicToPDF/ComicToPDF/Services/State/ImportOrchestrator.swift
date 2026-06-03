@@ -100,8 +100,22 @@ actor ImportOrchestrator {
                     // FIX: Single ZIP open — previously called fetchNonDestructiveMetadata AND
                     // ComicInfoParser.parse separately, each re-opening the archive.
                     let isArchive = ["cbz", "zip"].contains(ext)
-                    let xmlData = isArchive ? (try? LocalComicInfoService.shared.fetchNonDestructiveMetadata(from: destURL)) : nil
-                    let parsedInfo = isArchive ? ComicInfoParser.parse(from: destURL) : nil
+                    
+                    var xmlData: ComicInfoData?
+                    var parsedInfo: ComicInfoParser.ComicInfo?
+                    let pdfID = UUID()
+                    
+                    autoreleasepool {
+                        xmlData = isArchive ? (try? LocalComicInfoService.shared.fetchNonDestructiveMetadata(from: destURL)) : nil
+                        parsedInfo = isArchive ? ComicInfoParser.parse(from: destURL) : nil
+                        
+                        if let img = PhysicalFileSystemRouter.extractCoverImageStatic(from: destURL),
+                           let jpegData = img.jpegData(compressionQuality: 0.7) {
+                            let coversDir = PhysicalFileSystemRouter.getCoversDirectory()
+                            let coverURL = coversDir.appendingPathComponent("cover_\(pdfID.uuidString).jpg")
+                            try? jpegData.write(to: coverURL)
+                        }
+                    }
 
                     if let xmlData = xmlData {
                         smartDisplayName = xmlData.displayName
@@ -132,14 +146,6 @@ actor ImportOrchestrator {
                     } else if xmlData == nil {
                         smartMetadata.title = smartDisplayName
                         smartMetadata.series = seriesName
-                    }
-
-                    let pdfID = UUID()
-                    if let img = PhysicalFileSystemRouter.extractCoverImageStatic(from: destURL),
-                       let jpegData = img.jpegData(compressionQuality: 0.7) {
-                        let coversDir = PhysicalFileSystemRouter.getCoversDirectory()
-                        let coverURL = coversDir.appendingPathComponent("cover_\(pdfID.uuidString).jpg")
-                        try? jpegData.write(to: coverURL)
                     }
 
                     var pdf = ConvertedPDF(
@@ -280,8 +286,21 @@ actor ImportOrchestrator {
                     let ext = destURL.pathExtension.lowercased()
                     let isArchive = ["cbz", "zip"].contains(ext)
                     
-                    let xmlData  = isArchive ? (try? LocalComicInfoService.shared.fetchNonDestructiveMetadata(from: destURL)) : nil
-                    let parsedInfo = isArchive ? ComicInfoParser.parse(from: destURL) : nil
+                    var xmlData: ComicInfoData?
+                    var parsedInfo: ComicInfoParser.ComicInfo?
+                    let pdfID = UUID()
+                    
+                    autoreleasepool {
+                        xmlData = isArchive ? (try? LocalComicInfoService.shared.fetchNonDestructiveMetadata(from: destURL)) : nil
+                        parsedInfo = isArchive ? ComicInfoParser.parse(from: destURL) : nil
+                        
+                        if let img = PhysicalFileSystemRouter.extractCoverImageStatic(from: destURL),
+                           let jpegData = img.jpegData(compressionQuality: 0.7) {
+                            let coversDir = PhysicalFileSystemRouter.getCoversDirectory()
+                            let coverURL = coversDir.appendingPathComponent("cover_\(pdfID.uuidString).jpg")
+                            try? jpegData.write(to: coverURL)
+                        }
+                    }
 
                     if let xmlData = xmlData {
                         smartDisplayName = xmlData.displayName
@@ -316,14 +335,6 @@ actor ImportOrchestrator {
                                 if !smartMetadata.tags.contains(tag) { smartMetadata.tags.append(tag) }
                             }
                         }
-                    }
-
-                    let pdfID = UUID()
-                    if let img = PhysicalFileSystemRouter.extractCoverImageStatic(from: destURL),
-                       let jpegData = img.jpegData(compressionQuality: 0.7) {
-                        let coversDir = PhysicalFileSystemRouter.getCoversDirectory()
-                        let coverURL = coversDir.appendingPathComponent("cover_\(pdfID.uuidString).jpg")
-                        try? jpegData.write(to: coverURL)
                     }
 
                     var pdf = ConvertedPDF(

@@ -144,17 +144,10 @@ private struct ContinueReadingCard: View {
             if let cached = conversionManager.thumbnailCache.object(forKey: key) { cover = cached; return }
             guard let url = conversionManager.getCoverURL(for: pdf),
                   FileManager.default.fileExists(atPath: url.path) else { return }
-            let img = await Task.detached(priority: .userInitiated) { () -> UIImage? in
-                let opts = [kCGImageSourceShouldCache: false] as CFDictionary
-                guard let src = CGImageSourceCreateWithURL(url as CFURL, opts) else { return nil }
-                let down = [kCGImageSourceCreateThumbnailFromImageAlways: true,
-                            kCGImageSourceShouldCacheImmediately: true,
-                            kCGImageSourceCreateThumbnailWithTransform: true,
-                            kCGImageSourceThumbnailMaxPixelSize: 400] as CFDictionary
-                guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, down) else { return nil }
-                return UIImage(cgImage: cg)
-            }.value
-            if let img { conversionManager.thumbnailCache.setObject(img, forKey: key); cover = img }
+            if let img = await ThumbnailGenerationQueue.shared.generateThumbnail(for: pdf, in: conversionManager) {
+                conversionManager.thumbnailCache.setObject(img, forKey: key)
+                cover = img
+            }
         }
     }
 }

@@ -103,6 +103,7 @@ struct WebtoonScrollView: UIViewRepresentable {
         private var displayLink: CADisplayLink?
         private var imageViews: [UIImageView] = []
         private var loadTasks: [Int: Task<Void, Never>] = [:]
+        private var metadataTask: Task<Void, Never>?
         private var hasReportedEnd = false
 
         init(_ parent: WebtoonScrollView) { self.parentView = parent }
@@ -134,16 +135,26 @@ struct WebtoonScrollView: UIViewRepresentable {
                 stack.addArrangedSubview(ph)
                 imageViews.append(iv)
 
-                // 1. Fast aspect ratio metadata extraction (prevents layout jitter during scroll)
-                Task.detached(priority: .userInitiated) {
+                // Async image decode — top 5 pages eagerly, rest lazily
+                if index < 5 { loadImage(at: index, url: url, into: iv) }
+            }
+            
+            // Fast aspect ratio metadata extraction
+            // Run sequentially in a single background task to prevent thread explosion (OOM)
+            metadataTask?.cancel()
+            metadataTask = Task.detached(priority: .utility) { [weak self] in
+                for (index, url) in pages.enumerated() {
+                    guard !Task.isCancelled else { break }
                     guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
                           let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any],
                           let width = properties[kCGImagePropertyPixelWidth as String] as? CGFloat,
                           let height = properties[kCGImagePropertyPixelHeight as String] as? CGFloat,
-                          width > 0 else { return }
+                          width > 0 else { continue }
                     
                     let ratio = height / width
                     await MainActor.run {
+                        guard let self = self, index < self.imageViews.count else { return }
+                        let iv = self.imageViews[index]
                         if let superview = iv.superview {
                             for constraint in superview.constraints where constraint.firstAttribute == .height && constraint.relation == .equal {
                                 constraint.isActive = false
@@ -152,9 +163,6 @@ struct WebtoonScrollView: UIViewRepresentable {
                         }
                     }
                 }
-
-                // 2. Async image decode — top 5 pages eagerly, rest lazily
-                if index < 5 { loadImage(at: index, url: url, into: iv) }
             }
         }
 
@@ -188,6 +196,8 @@ struct WebtoonScrollView: UIViewRepresentable {
         func invalidate() {
             displayLink?.invalidate()
             displayLink = nil
+            metadataTask?.cancel()
+            metadataTask = nil
             for task in loadTasks.values { task.cancel() }
             loadTasks.removeAll()
         }

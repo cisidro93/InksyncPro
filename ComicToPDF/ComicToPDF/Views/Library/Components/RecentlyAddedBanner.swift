@@ -130,17 +130,7 @@ private struct RecentAddedCompactCard: View {
         if conversionManager.thumbnailCache.object(forKey: key) != nil { return }
         guard let url = conversionManager.getCoverURL(for: pdf),
               FileManager.default.fileExists(atPath: url.path) else { return }
-        let img = await Task.detached(priority: .utility) { () -> UIImage? in
-            let opts = [kCGImageSourceShouldCache: false] as CFDictionary
-            guard let src = CGImageSourceCreateWithURL(url as CFURL, opts) else { return nil }
-            let down = [kCGImageSourceCreateThumbnailFromImageAlways: true,
-                        kCGImageSourceShouldCacheImmediately: true,
-                        kCGImageSourceCreateThumbnailWithTransform: true,
-                        kCGImageSourceThumbnailMaxPixelSize: 300] as CFDictionary
-            guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, down) else { return nil }
-            return UIImage(cgImage: cg)
-        }.value
-        if let img {
+        if let img = await ThumbnailGenerationQueue.shared.generateThumbnail(for: pdf, in: conversionManager) {
             conversionManager.thumbnailCache.setObject(img, forKey: key)
             cover = img
         }

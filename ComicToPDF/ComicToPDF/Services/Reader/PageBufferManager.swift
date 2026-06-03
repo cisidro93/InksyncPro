@@ -436,111 +436,126 @@ class PageBufferManager: ObservableObject {
             }
         }()
 
-        if let archiveURL = self.archiveURL, index < zipEntries.count {
+        let isAutoCrop = self.isAutoCropEnabled
+        return await Self.executeRender(
+            url: url,
+            index: index,
+            archiveURL: self.archiveURL,
+            zipEntries: self.zipEntries,
+            maxPixelSize: maxPixelSize,
+            isAutoCropEnabled: isAutoCrop
+        )
+    }
+
+    nonisolated private static func executeRender(
+        url: URL,
+        index: Int,
+        archiveURL: URL?,
+        zipEntries: [ZIPFoundation.Entry],
+        maxPixelSize: CGFloat?,
+        isAutoCropEnabled: Bool
+    ) async -> CGImage? {
+        // Inherits cancellation natively
+        guard !Task.isCancelled else { return nil }
+
+        if let archiveURL = archiveURL, index < zipEntries.count {
             let entryPath = zipEntries[index].path
-            return await Task.detached(priority: .userInitiated) {
-                var cgImage: CGImage? = nil
-                autoreleasepool {
-                    do {
-                        let archive = try Archive(url: archiveURL, accessMode: .read)
-                        guard let entry = archive[entryPath] else { return }
-                        var data = Data()
-                        _ = try archive.extract(entry) { chunk in
-                            data.append(chunk)
+            var cgImage: CGImage? = nil
+            autoreleasepool {
+                do {
+                    let archive = try Archive(url: archiveURL, accessMode: .read)
+                    guard let entry = archive[entryPath] else { return }
+                    var data = Data()
+                    _ = try archive.extract(entry) { chunk in
+                        data.append(chunk)
+                    }
+                    
+                    guard !Task.isCancelled else { return }
+                    
+                    if let source = CGImageSourceCreateWithData(data as CFData, nil) {
+                        let options: [CFString: Any]
+                        if let maxSize = maxPixelSize {
+                            options = [
+                                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                                kCGImageSourceCreateThumbnailWithTransform: true,
+                                kCGImageSourceThumbnailMaxPixelSize: Int(maxSize),
+                                kCGImageSourceShouldCacheImmediately: true
+                            ]
+                        } else {
+                            options = [kCGImageSourceShouldCacheImmediately: true]
                         }
-                        
-                        if let source = CGImageSourceCreateWithData(data as CFData, nil) {
-                            let options: [CFString: Any]
-                            if let maxSize = maxPixelSize {
-                                options = [
-                                    kCGImageSourceCreateThumbnailFromImageAlways: true,
-                                    kCGImageSourceCreateThumbnailWithTransform: true,
-                                    kCGImageSourceThumbnailMaxPixelSize: Int(maxSize),
-                                    kCGImageSourceShouldCacheImmediately: true
-                                ]
-                            } else {
-                                options = [
-                                    kCGImageSourceShouldCacheImmediately: true
-                                ]
-                            }
-                            
-                            cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
-                        }
-                    } catch {
+                        cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+                    }
+                } catch {
+                    Task { @MainActor in
                         Logger.shared.log("Direct ZIP decompression failed for entry \(entryPath): \(error.localizedDescription)", category: "Engine", type: .error)
                     }
                 }
-                
-                guard let image = cgImage else { return nil }
-                let cropEnabled = await MainActor.run { self.isAutoCropEnabled }
-                return cropEnabled ? Self.autoCropMargins(from: image) : image
-            }.value
+            }
+            
+            guard let image = cgImage, !Task.isCancelled else { return nil }
+            return isAutoCropEnabled ? Self.autoCropMargins(from: image) : image
         }
 
-        return await Task.detached(priority: .userInitiated) {
-            // Strategy 1: CGImageSource (fastest, best memory usage)
-            var cgImage: CGImage? = nil
-            autoreleasepool {
-                if let source = CGImageSourceCreateWithURL(url as CFURL, nil) {
-                    let options: [CFString: Any]
-                    if let maxSize = maxPixelSize {
-                        options = [
-                            kCGImageSourceCreateThumbnailFromImageAlways: true,
-                            kCGImageSourceCreateThumbnailWithTransform: true,
-                            kCGImageSourceThumbnailMaxPixelSize: Int(maxSize),
-                            kCGImageSourceShouldCacheImmediately: true
-                        ]
-                    } else {
-                        options = [
-                            kCGImageSourceShouldCacheImmediately: true
-                        ]
-                    }
-                    cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
-                }
-            }
+        guard !Task.isCancelled else { return nil }
 
-            if let image = cgImage {
-                let cropEnabled = await MainActor.run { self.isAutoCropEnabled }
-                return cropEnabled ? Self.autoCropMargins(from: image) : image
-            }
-
-            // Strategy 2: UIImage fallback (different OS codec path — handles some edge cases
-            // where CGImageSource returns nil for valid JPEGs on certain iOS versions)
-            var fallbackImage: CGImage? = nil
-            autoreleasepool {
-                if let uiImage = UIImage(contentsOfFile: url.path), let cgImage = uiImage.cgImage {
-                    fallbackImage = cgImage
+        // Strategy 1: CGImageSource (fastest, best memory usage)
+        var cgImage: CGImage? = nil
+        autoreleasepool {
+            if let source = CGImageSourceCreateWithURL(url as CFURL, nil) {
+                let options: [CFString: Any]
+                if let maxSize = maxPixelSize {
+                    options = [
+                        kCGImageSourceCreateThumbnailFromImageAlways: true,
+                        kCGImageSourceCreateThumbnailWithTransform: true,
+                        kCGImageSourceThumbnailMaxPixelSize: Int(maxSize),
+                        kCGImageSourceShouldCacheImmediately: true
+                    ]
+                } else {
+                    options = [kCGImageSourceShouldCacheImmediately: true]
                 }
+                cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
             }
+        }
 
-            if let cgImage = fallbackImage {
-                await MainActor.run {
-                    Logger.shared.log(
-                        "PageBufferManager: CGImageSource failed but UIImage succeeded for page \(index) — \(url.lastPathComponent)",
-                        category: "Engine", type: .warning
-                    )
-                }
-                let cropEnabled = await MainActor.run { self.isAutoCropEnabled }
-                let finalImage = cropEnabled ? Self.autoCropMargins(from: cgImage) : cgImage
-                
-                if let maxSize = maxPixelSize, CGFloat(max(finalImage.width, finalImage.height)) > maxSize {
-                    return autoreleasepool {
-                        Self.downsample(cgImage: finalImage, toMaxPixelSize: Int(maxSize))
-                    }
-                }
-                return finalImage
+        if let image = cgImage, !Task.isCancelled {
+            return isAutoCropEnabled ? Self.autoCropMargins(from: image) : image
+        }
+
+        // Strategy 2: UIImage fallback
+        var fallbackImage: CGImage? = nil
+        autoreleasepool {
+            if let uiImage = UIImage(contentsOfFile: url.path), let cgImage = uiImage.cgImage {
+                fallbackImage = cgImage
             }
+        }
 
-            // Both strategies failed — log diagnostic info
-            let exists = FileManager.default.fileExists(atPath: url.path)
-            await MainActor.run {
+        if let cgImage = fallbackImage, !Task.isCancelled {
+            Task { @MainActor in
                 Logger.shared.log(
-                    "PageBufferManager: DECODE FAILED page \(index) | exists=\(exists) | path=\(url.path)",
-                    category: "Engine", type: .error
+                    "PageBufferManager: CGImageSource failed but UIImage succeeded for page \(index) — \(url.lastPathComponent)",
+                    category: "Engine", type: .warning
                 )
             }
-            return nil
-        }.value
+            let finalImage = isAutoCropEnabled ? Self.autoCropMargins(from: cgImage) : cgImage
+            if let maxSize = maxPixelSize, CGFloat(max(finalImage.width, finalImage.height)) > maxSize {
+                return autoreleasepool {
+                    Self.downsample(cgImage: finalImage, toMaxPixelSize: Int(maxSize))
+                }
+            }
+            return finalImage
+        }
+
+        // Both strategies failed — log diagnostic info
+        let exists = FileManager.default.fileExists(atPath: url.path)
+        Task { @MainActor in
+            Logger.shared.log(
+                "PageBufferManager: DECODE FAILED page \(index) | exists=\(exists) | path=\(url.path)",
+                category: "Engine", type: .error
+            )
+        }
+        return nil
+    }
     }
 
     nonisolated private static func downsample(cgImage: CGImage, toMaxPixelSize maxSize: Int) -> CGImage {
