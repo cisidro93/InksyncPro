@@ -56,7 +56,7 @@ public struct EPUBManifestBuilder {
     @available(*, deprecated, renamed: "buildNavContent(firstPageHref:)")
     public static let navContent = buildNavContent()
 
-    public static func buildNCXContent(bookUUID: String, baseFilename: String) -> String {
+    public static func buildNCXContent(bookUUID: String, baseFilename: String, firstPageHref: String = "text/page_0001.xhtml") -> String {
         return """
         <?xml version="1.0" encoding="UTF-8"?>
         <ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
@@ -65,7 +65,7 @@ public struct EPUBManifestBuilder {
             <navMap>
                 <navPoint id="navPoint-1" playOrder="1">
                     <navLabel><text>Start</text></navLabel>
-                    <content src="text/page_0001.xhtml"/>
+                    <content src="\(firstPageHref)"/>
                 </navPoint>
             </navMap>
         </ncx>
@@ -79,24 +79,31 @@ public struct EPUBManifestBuilder {
         hasCoverData: Bool,
         manifestItems: [String],
         spineItems: [String],
-        isManga: Bool
+        isManga: Bool,
+        firstPageHref: String = "text/page_0001.xhtml"
     ) -> String {
         let modified = ISO8601DateFormatter().string(from: Date())
         let coverMeta = (batchIndex > 0 && hasCoverData) ? "cover_reused_img" : "img_1"
         let direction = isManga ? "rtl" : "ltr"
-        
+        // Kindle Scribe Colorsoft native B&W resolution: 1980x2640 (300ppi, portrait).
+        // The original-resolution meta is required by Amazon's KF8 fixed-layout spec so
+        // Kindle can pre-scale images to native pixels rather than stretching from an
+        // unknown source size. Without it renders are blurry on high-DPI screens.
+        let originalResolution = "1980x2640"
+
         return """
         <?xml version="1.0" encoding="UTF-8"?>
         <package xmlns="http://www.idpf.org/2007/opf" xmlns:epub="http://www.idpf.org/2007/ops" unique-identifier="BookID" version="3.0" prefix="rendition: http://www.idpf.org/vocab/rendition/# dcterms: http://purl.org/dc/terms/">
             <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
                 <dc:identifier id="BookID">urn:uuid:\(bookUUID)</dc:identifier>
                 <dc:title>\(baseFilename.xmlEscaped())</dc:title>
-                <dc:language>en</dc:language>
+                <dc:language>\(isManga ? "ja" : "en")</dc:language>
                 <meta property="dcterms:modified">\(modified)</meta>
                 <meta property="rendition:layout">pre-paginated</meta>
                 <meta property="rendition:orientation">auto</meta>
                 <meta property="rendition:spread">auto</meta>
                 <meta name="fixed-layout" content="true"/>
+                <meta name="original-resolution" content="\(originalResolution)"/>
                 <meta name="cover" content="\(coverMeta)"/>
             </metadata>
             <manifest>
@@ -106,8 +113,8 @@ public struct EPUBManifestBuilder {
                 \(spineItems.joined(separator: "\n        "))
             </spine>
             <guide>
-                <reference type="cover" title="Cover" href="text/page_0001.xhtml"/>
-                <reference type="text" title="Text" href="text/page_0001.xhtml"/>
+                <reference type="cover" title="Cover" href="\(firstPageHref)"/>
+                <reference type="text" title="Text" href="\(firstPageHref)"/>
             </guide>
         </package>
         """
@@ -132,15 +139,27 @@ public struct EPUBManifestBuilder {
         <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
         <head>
             <meta charset="UTF-8"/>
-            <meta name="viewport" content="width=100vw, height=100vh"/>
+            <!-- Kindle KF8 fixed-layout: viewport MUST use integer pixel values matching
+                 the original-resolution OPF meta. 1980x2640 = Kindle Scribe Colorsoft native B&W.
+                 "100vw / 100vh" is valid CSS but not a valid viewport content string and
+                 causes Kindle to ignore the declaration entirely. -->
+            <meta name="viewport" content="width=1980, height=2640"/>
             <title>\(title)</title>
             <style>
-                @page { margin: 0; padding: 0; }
+                /* @page size MUST match original-resolution to prevent the Kindle 5.19.x
+                   'death margin' layout regression — without an explicit size the firmware
+                   allocates its own page box and adds unwanted whitespace. */
+                @page { margin: 0; padding: 0; size: 1980px 2640px; }
+                /* amzn-kf8: classic Kindle format (sideloaded AZW3/MOBI) */
                 @media amzn-kf8 { body { margin: 0 !important; padding: 0 !important; } }
-                html, body { margin: 0; padding: 0; background-color: #000000; overflow: hidden; height: 100vh; width: 100vw; }
-                .chunk-container { display: flex; justify-content: center; align-items: center; width: 100vw; height: 100vh; margin: 0; padding: 0; }
-                .page { display: flex; justify-content: center; align-items: center; width: 100vw; height: 100vh; margin: 0; padding: 0; }
-                .page-image { max-width: 100vw; max-height: 100vh; height: 100%; width: 100%; object-fit: contain; object-position: center; }
+                /* amzn-kfx: Send to Kindle conversion target since 2022 */
+                @media amzn-kfx { body { margin: 0 !important; padding: 0 !important; } }
+                /* position:fixed pins body to viewport origin, suppressing sub-pixel
+                   margin artifacts on the Scribe Colorsoft IGZO display driver. */
+                html, body { margin: 0; padding: 0; background-color: #000000; overflow: hidden; position: fixed; top: 0; left: 0; width: 100%; height: 100%; }
+                .chunk-container { display: block; width: 100%; height: 100%; margin: 0; padding: 0; }
+                .page { display: block; width: 100%; height: 100%; margin: 0; padding: 0; }
+                .page-image { display: block; width: 100%; height: 100%; object-fit: contain; object-position: center; }
             </style>
         </head>
         <body>

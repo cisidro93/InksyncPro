@@ -273,7 +273,11 @@ struct CBZToEPUBConverter: Sendable {
         let navContent = EPUBManifestBuilder.buildNavContent(firstPageHref: firstPageHref)
         try navContent.write(to: oebpsDir.appendingPathComponent("nav.xhtml"), atomically: true, encoding: .utf8)
 
-        let ncxContent = EPUBManifestBuilder.buildNCXContent(bookUUID: bookUUID, baseFilename: baseFilename)
+        let ncxContent = EPUBManifestBuilder.buildNCXContent(
+            bookUUID: bookUUID,
+            baseFilename: baseFilename,
+            firstPageHref: firstPageHref
+        )
         try ncxContent.write(to: oebpsDir.appendingPathComponent("toc.ncx"), atomically: true, encoding: String.Encoding.utf8)
         
         var currentChunkImages: [String] = []
@@ -363,7 +367,8 @@ struct CBZToEPUBConverter: Sendable {
             hasCoverData: coverData != nil,
             manifestItems: manifestItems,
             spineItems: spineItems,
-            isManga: settings.mangaMode
+            isManga: settings.mangaMode,
+            firstPageHref: firstPageHref
         )
         try opfContent.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8)
 
