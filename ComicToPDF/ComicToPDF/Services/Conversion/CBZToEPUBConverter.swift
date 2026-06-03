@@ -376,10 +376,17 @@ struct CBZToEPUBConverter: Sendable {
         return batchDir
     }
 
-    // Stage 4 — Zip EPUB...
+    // Stage 4 — Zip EPUB directory into a final .epub file.
+    // ZIPFoundation performs synchronous disk I/O: move it off the Swift cooperative
+    // thread pool via DispatchQueue.global so we don't starve other async tasks.
     private func packageEPUB(batchDir: URL, outputName: String) async throws -> URL {
         Logger.shared.log("Stage 4 Start: Packaging EPUB \(outputName)", category: "Converter")
         let fileManager = FileManager.default
+        // batchDir holds the full unzipped EPUB tree — must always be cleaned up.
+        // The defer fires after the returned URL is captured by the caller, which is safe
+        // because the EPUB is written to Documents/ not inside batchDir.
+        defer { try? fileManager.removeItem(at: batchDir) }
+
         let safeName = outputName.map { char -> String in
             if char.isLetter || char.isNumber || char == "-" { return String(char) }
             else if char == "_" || char.isWhitespace { return " " }
@@ -391,41 +398,51 @@ struct CBZToEPUBConverter: Sendable {
             throw NSError(domain: "Converter", code: 3, userInfo: [NSLocalizedDescriptionKey: "Documents directory not found"])
         }
         let outputURL = docDir.appendingPathComponent(outputFilename)
-        if fileManager.fileExists(atPath: outputURL.path) { try fileManager.removeItem(at: outputURL) }
-        
-        do {
-            guard let archive = try? Archive(url: outputURL, accessMode: .create, pathEncoding: .utf8) else {
-                throw NSError(domain: "Converter", code: 2, userInfo: [NSLocalizedDescriptionKey: "Could not create EPUB archive"])
-            }
-            
-            let mimetypePath = batchDir.appendingPathComponent("mimetype")
-            try "application/epub+zip".write(to: mimetypePath, atomically: true, encoding: .ascii)
-            try archive.addEntry(with: "mimetype", fileURL: mimetypePath, compressionMethod: .none)
-            
-            let containerPath = batchDir.appendingPathComponent("META-INF/container.xml")
-            // EPUB spec §3.3: container.xml MUST be stored without compression
-            // so readers can locate the OPF without first needing a decompressor.
-            try archive.addEntry(with: "META-INF/container.xml", fileURL: containerPath, compressionMethod: .none)
-            
-            let oebpsDir = batchDir.appendingPathComponent("OEBPS")
-            if let enumerator = fileManager.enumerator(at: oebpsDir, includingPropertiesForKeys: nil) {
-                while let fileURL = enumerator.nextObject() as? URL {
-                    let resourceValues = try fileURL.resourceValues(forKeys: [.isDirectoryKey])
-                    if resourceValues.isDirectory == true { continue }
-                    
-                    if let relativePath = fileURL.path.components(separatedBy: "\(batchDir.path)/").last {
-                        try archive.addEntry(with: relativePath, fileURL: fileURL, compressionMethod: .deflate)
+
+        // Capture values so they are Sendable across the continuation boundary.
+        let capturedBatchDir = batchDir
+        let capturedOutputURL = outputURL
+
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            DispatchQueue.global(qos: .userInitiated).async {
+                do {
+                    if fileManager.fileExists(atPath: capturedOutputURL.path) {
+                        try fileManager.removeItem(at: capturedOutputURL)
                     }
+
+                    guard let archive = try? Archive(url: capturedOutputURL, accessMode: .create, pathEncoding: .utf8) else {
+                        throw NSError(domain: "Converter", code: 2, userInfo: [NSLocalizedDescriptionKey: "Could not create EPUB archive"])
+                    }
+
+                    let mimetypePath = capturedBatchDir.appendingPathComponent("mimetype")
+                    try "application/epub+zip".write(to: mimetypePath, atomically: true, encoding: .ascii)
+                    // mimetype MUST be the first entry and stored uncompressed per EPUB spec §3.3
+                    try archive.addEntry(with: "mimetype", fileURL: mimetypePath, compressionMethod: .none)
+
+                    let containerPath = capturedBatchDir.appendingPathComponent("META-INF/container.xml")
+                    try archive.addEntry(with: "META-INF/container.xml", fileURL: containerPath, compressionMethod: .none)
+
+                    let oebpsDir = capturedBatchDir.appendingPathComponent("OEBPS")
+                    if let enumerator = fileManager.enumerator(at: oebpsDir, includingPropertiesForKeys: nil) {
+                        while let fileURL = enumerator.nextObject() as? URL {
+                            let resourceValues = try fileURL.resourceValues(forKeys: [.isDirectoryKey])
+                            if resourceValues.isDirectory == true { continue }
+                            if let relativePath = fileURL.path.components(separatedBy: "\(capturedBatchDir.path)/").last {
+                                try archive.addEntry(with: relativePath, fileURL: fileURL, compressionMethod: .deflate)
+                            }
+                        }
+                    }
+                    continuation.resume()
+                } catch {
+                    continuation.resume(throwing: error)
                 }
             }
-        } catch {
-            throw error
         }
-        
-        Logger.shared.log("About to analyze EPUB structure for: \(outputURL.lastPathComponent)", category: "Debug")
-        Logger.shared.logEPUBStructure(at: outputURL)
-        Logger.shared.log("Stage 4 End: EPUB Packaged at \(outputURL.lastPathComponent)", category: "Converter")
-        return outputURL
+
+        Logger.shared.log("About to analyze EPUB structure for: \(capturedOutputURL.lastPathComponent)", category: "Debug")
+        Logger.shared.logEPUBStructure(at: capturedOutputURL)
+        Logger.shared.log("Stage 4 End: EPUB Packaged at \(capturedOutputURL.lastPathComponent)", category: "Converter")
+        return capturedOutputURL
     }
 
     static func generateChunkXHTML(chunkIndex: Int, images: [String], title: String, width: Int? = nil, height: Int? = nil, bookUUID: String? = nil, pageIndex: Int? = nil) -> String {

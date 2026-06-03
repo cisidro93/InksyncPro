@@ -86,8 +86,19 @@ class SmartImportViewModel: ObservableObject {
         // Solution: run the entire scan in Task.detached; write only the final
         // aggregated values back to @MainActor properties.
         do {
+            // Security scope MUST be opened here before calling into ZipUtilities.
+            // Document-picker URLs are security-scoped: without opening the scope,
+            // ZIPFoundation receives EACCES and CBRExtractor/libunrar receives
+            // ERAR_EOPEN, both of which crash or silently fail on a single-file import.
+            let secured = sourceURL.startAccessingSecurityScopedResource()
+            // Hold scope open for the full duration of the extraction call.
+            // Do NOT defer-close it before the continuation resumes — that would
+            // drop the ref-count to zero mid-read and produce ERAR_EOPEN on CBR.
             let extraction = try await ZipUtilities.extractComic(from: sourceURL)
+            if secured { sourceURL.stopAccessingSecurityScopedResource() }
+
             let allImages = extraction.imageURLs
+            let workingDir = extraction.workingDir
 
             await MainActor.run {
                 pageCount = allImages.count
@@ -119,9 +130,18 @@ class SmartImportViewModel: ObservableObject {
 
             await MainActor.run { overallConfidence = averageConfidence }
 
-            // Clean up all extracted pages except the first (used as live cover preview)
-            let toDelete = allImages.dropFirst()
-            for url in toDelete { try? FileManager.default.removeItem(at: url) }
+            // Keep only the cover image for live preview; clean up the rest.
+            // workingDir must be removed entirely — deleting individual files leaves
+            // the directory and its subdirectories on disk permanently (storage leak).
+            if let coverURL = allImages.first {
+                // Move cover to an independent temp file so it survives workingDir deletion.
+                let coverCopy = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("cover_preview_\(UUID().uuidString).\(coverURL.pathExtension)")
+                try? FileManager.default.copyItem(at: coverURL, to: coverCopy)
+                await MainActor.run { firstPageURL = coverCopy }
+            }
+            // Now safe to nuke the entire extraction directory.
+            try? FileManager.default.removeItem(at: workingDir)
         } catch {
             self.extractionError = "Could not validate comic archive. The volume may be corrupted or encrypted: \(error.localizedDescription)"
         }

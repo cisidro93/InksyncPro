@@ -15,24 +15,22 @@ public struct EPUBManifestBuilder {
 
     public static let cssContent = """
     @page { margin: 0; padding: 0; }
-    body { margin: 0; padding: 0; background-color: #000000; }
-    .content-container { display: flex; justify-content: center; align-items: center; width: 100vw; height: 100vh; margin: 0; padding: 0; }
-    .page { position: absolute; width: 100%; height: 100%; margin: 0; padding: 0; }
-    img.comic-page { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
-    a.app-amzn-magnify { display: block; position: absolute; z-index: 10; text-decoration: none; background: transparent; }
-    .panel-source { position: absolute; width: 100%; height: 100%; background: transparent; }
-    .panel-target { position: absolute; z-index: 5; pointer-events: none; background: transparent; }
+    html, body { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #000000; }
+    .chunk-container { width: 100%; height: 100%; margin: 0; padding: 0; }
+    .page { width: 100%; height: 100%; margin: 0; padding: 0; }
+    img.comic-page { display: block; width: 100%; height: 100%; }
+    a.app-amzn-magnify { display: block; text-decoration: none; background: transparent; }
     """
 
     public static func buildCoverXHTML(coverFilename: String) -> String {
         return """
         <?xml version="1.0" encoding="UTF-8"?>
-        <html xmlns="http://www.w3.org/1999/xhtml">
+        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
         <head><title>Cover</title><style type="text/css">
-        body { margin: 0; padding: 0; text-align: center; background-color: #000; }
-        img { max-width: 100%; max-height: 100%; height: auto; }
+        html, body { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #000000; }
+        img { display: block; width: 100%; height: 100%; }
         </style></head>
-        <body><img src="../images/\(coverFilename)" alt="Cover"/></body>
+        <body epub:type="cover"><img src="../images/\(coverFilename)" alt="Cover"/></body>
         </html>
         """
     }
@@ -134,32 +132,27 @@ public struct EPUBManifestBuilder {
         // requests, producing error E999. Reading-position sync is handled entirely
         // in-app via the PPLReaderView page-turn callback chain.
 
+        // CSS rules use only the Kindle-approved fixed-layout subset:
+        // • NO position:fixed (rejected by KF8/KFX as incompatible element → E013)
+        // • NO overflow:hidden on body (not in Kindle CSS subset)
+        // • NO @media amzn-kf8/@media amzn-kfx (proprietary at-rules rejected by Send
+        //   to Kindle cloud converter's XML validator → E013)
+        // • NO @page { size: } (CSS Paged Media L3, rejected by Amazon's cloud validator)
+        // • NO object-fit/object-position (not in Kindle CSS subset → E013)
+        // Page sizing is controlled entirely by the viewport meta + rendition:layout OPF meta.
         return """
         <?xml version="1.0" encoding="UTF-8"?>
         <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
         <head>
             <meta charset="UTF-8"/>
-            <!-- Kindle KF8 fixed-layout: viewport MUST use integer pixel values matching
-                 the original-resolution OPF meta. 1980x2640 = Kindle Scribe Colorsoft native B&W.
-                 "100vw / 100vh" is valid CSS but not a valid viewport content string and
-                 causes Kindle to ignore the declaration entirely. -->
             <meta name="viewport" content="width=1980, height=2640"/>
             <title>\(title)</title>
-            <style>
-                /* @page size MUST match original-resolution to prevent the Kindle 5.19.x
-                   'death margin' layout regression — without an explicit size the firmware
-                   allocates its own page box and adds unwanted whitespace. */
-                @page { margin: 0; padding: 0; size: 1980px 2640px; }
-                /* amzn-kf8: classic Kindle format (sideloaded AZW3/MOBI) */
-                @media amzn-kf8 { body { margin: 0 !important; padding: 0 !important; } }
-                /* amzn-kfx: Send to Kindle conversion target since 2022 */
-                @media amzn-kfx { body { margin: 0 !important; padding: 0 !important; } }
-                /* position:fixed pins body to viewport origin, suppressing sub-pixel
-                   margin artifacts on the Scribe Colorsoft IGZO display driver. */
-                html, body { margin: 0; padding: 0; background-color: #000000; overflow: hidden; position: fixed; top: 0; left: 0; width: 100%; height: 100%; }
-                .chunk-container { display: block; width: 100%; height: 100%; margin: 0; padding: 0; }
-                .page { display: block; width: 100%; height: 100%; margin: 0; padding: 0; }
-                .page-image { display: block; width: 100%; height: 100%; object-fit: contain; object-position: center; }
+            <style type="text/css">
+                @page { margin: 0; padding: 0; }
+                html, body { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #000000; }
+                .chunk-container { width: 100%; height: 100%; margin: 0; padding: 0; }
+                .page { width: 100%; height: 100%; margin: 0; padding: 0; }
+                .page-image { display: block; width: 100%; height: 100%; }
             </style>
         </head>
         <body>

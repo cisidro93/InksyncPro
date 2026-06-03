@@ -303,15 +303,15 @@ final class MetadataInjector: Sendable {
                     if entry.path == opfPath { continue }
                     if xhtmlUpdates.keys.contains(entry.path) { continue }
                     
-                    let tempExtract = tempDir.appendingPathComponent("transfer.tmp")
+                    // Each entry needs its own uniquely-named temp file.
+                    // Reusing "transfer.tmp" means entry N's file gets overwritten by
+                    // entry N+1 before ZIPFoundation's addEntry closure finishes reading it,
+                    // corrupting the output and potentially crashing with a CRC mismatch.
+                    let tempExtract = tempDir.appendingPathComponent(UUID().uuidString + ".tmp")
                     _ = try oldArchive.extract(entry, to: tempExtract)
-                    
-                    try newArchive.addEntry(with: entry.path, type: .file, uncompressedSize: Int64(entry.uncompressedSize), modificationDate: entry.fileAttributes[.modificationDate] as? Date ?? Date(), permissions: entry.fileAttributes[.posixPermissions] as? UInt16 ?? 0o644, compressionMethod: .deflate, bufferSize: 8192, progress: nil) { pos, size in
-                        let handle = try? FileHandle(forReadingFrom: tempExtract)
-                        try? handle?.seek(toOffset: UInt64(pos))
-                        return handle?.readData(ofLength: size) ?? Data()
-                    }
-                    try? fileManager.removeItem(at: tempExtract)
+                    defer { try? fileManager.removeItem(at: tempExtract) }
+
+                    try newArchive.addEntry(with: entry.path, fileURL: tempExtract, compressionMethod: .deflate)
                 }
             }
             
