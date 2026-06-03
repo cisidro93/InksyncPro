@@ -44,7 +44,7 @@ class ReaderProgressTracker: ObservableObject {
     private let queue = DispatchQueue(label: "com.inksync.ProgressTracker", qos: .userInitiated)
 // Removed fileManager properties to avoid actor isolation issues
     private nonisolated func getProgressDir() -> URL {
-        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
         let dir = docs.appendingPathComponent("progress")
         if !FileManager.default.fileExists(atPath: dir.path) {
             try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -268,7 +268,7 @@ class ReaderProgressTracker: ObservableObject {
                   let remote = try? JSONDecoder().decode(ReadingProgress.self, from: data) else { continue }
             let local = progressMap[remote.pdfID]
             // Accept remote if we have no local copy OR remote was opened more recently
-            if local == nil || remote.lastOpenedAt > (local!.lastOpenedAt) {
+            if local == nil || remote.lastOpenedAt > (local?.lastOpenedAt ?? .distantPast) {
                 progressMap[remote.pdfID] = remote
                 save(pdfID: remote.pdfID)
                 changed = true

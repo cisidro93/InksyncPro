@@ -10,9 +10,9 @@ actor LibraryScanner {
 
     func scanLibrary(addedByMode: AppUIMode? = nil, manager: ConversionManager) async {
         let fileManager = FileManager.default
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
         let inboxDir  = appSupport.appendingPathComponent("InksyncVault/Inbox", isDirectory: true)
-        let docDir    = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let docDir    = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
 
         var newPDFs: [ConvertedPDF] = []
         let keys: [URLResourceKey] = [.nameKey, .isDirectoryKey, .fileSizeKey]

@@ -73,7 +73,7 @@ class GoogleDriveProvider: NSObject, CloudStorageProvider, ObservableObject {
         let verifier  = generateCodeVerifier()
         let challenge = codeChallenge(for: verifier)
 
-        var comps = URLComponents(string: "https://accounts.google.com/o/oauth2/v2/auth")!
+        guard var comps = URLComponents(string: "https://accounts.google.com/o/oauth2/v2/auth") else { throw URLError(.badURL) }
         comps.queryItems = [
             URLQueryItem(name: "client_id",             value: clientID),
             URLQueryItem(name: "redirect_uri",          value: redirectURI),
@@ -141,7 +141,8 @@ class GoogleDriveProvider: NSObject, CloudStorageProvider, ObservableObject {
     }
 
     private func exchangeCode(_ code: String, verifier: String) async throws {
-        var request = URLRequest(url: URL(string: "https://oauth2.googleapis.com/token")!)
+        guard let url = URL(string: "https://oauth2.googleapis.com/token") else { throw URLError(.badURL) }
+        var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
 
@@ -171,7 +172,8 @@ class GoogleDriveProvider: NSObject, CloudStorageProvider, ObservableObject {
             throw NSError(domain: "GoogleDrive", code: 401, userInfo: [NSLocalizedDescriptionKey: "No refresh token — please reconnect your Google Drive account"])
         }
 
-        var request = URLRequest(url: URL(string: "https://oauth2.googleapis.com/token")!)
+        guard let url = URL(string: "https://oauth2.googleapis.com/token") else { throw URLError(.badURL) }
+        var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
 
@@ -204,7 +206,7 @@ class GoogleDriveProvider: NSObject, CloudStorageProvider, ObservableObject {
         }
 
         let parent = folderID ?? "root"
-        var comps = URLComponents(string: "https://www.googleapis.com/drive/v3/files")!
+        guard var comps = URLComponents(string: "https://www.googleapis.com/drive/v3/files") else { throw URLError(.badURL) }
         comps.queryItems = [
             URLQueryItem(name: "q",         value: "'\(parent)' in parents and trashed = false"),
             URLQueryItem(name: "fields",    value: "files(id,name,mimeType,size,modifiedTime)"),
@@ -241,7 +243,7 @@ class GoogleDriveProvider: NSObject, CloudStorageProvider, ObservableObject {
 
     func getDownloadURL(fileID: String) async throws -> URL {
         try await refreshAccessTokenIfNeeded()
-        var comps = URLComponents(string: "https://www.googleapis.com/drive/v3/files/\(fileID)")!
+        guard var comps = URLComponents(string: "https://www.googleapis.com/drive/v3/files/\(fileID)") else { throw URLError(.badURL) }
         comps.queryItems = [URLQueryItem(name: "alt", value: "media")]
         guard let url = comps.url else { throw URLError(.badURL) }
         return url

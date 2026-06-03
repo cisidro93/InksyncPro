@@ -30,7 +30,7 @@ class ConversionJobQueue: ObservableObject {
     private let queueURL: URL
     
     private init() {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
         queueURL = appSupport.appendingPathComponent("conversion_jobs.json")
         loadJobs()
     }

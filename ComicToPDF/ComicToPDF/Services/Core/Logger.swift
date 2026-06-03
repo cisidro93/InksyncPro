@@ -88,7 +88,7 @@ class Logger: ObservableObject, @unchecked Sendable {
     }
     
     nonisolated var logFileURL: URL {
-        let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
         return docDir.appendingPathComponent(logFileName)
     }
     

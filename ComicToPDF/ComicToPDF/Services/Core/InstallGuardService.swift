@@ -24,7 +24,7 @@ final class InstallGuardService: @unchecked Sendable {
         let isCompleted = userDefaults.bool(forKey: "hasCompletedOnboarding")
         let isNotFreshInstall = userDefaults.bool(forKey: "isNotFreshInstall_v3")
         
-        let supportDir = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let supportDir = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
         let sentinelURL = supportDir.appendingPathComponent(".inksync_install_sentinel_v1", isDirectory: false)
         let sentinelExists = fileManager.fileExists(atPath: sentinelURL.path)
         

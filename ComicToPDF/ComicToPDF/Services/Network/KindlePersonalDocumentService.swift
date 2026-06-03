@@ -25,7 +25,7 @@ class KindlePersonalDocumentService: NSObject, ObservableObject, MFMailComposeVi
         self.fileQueue = []
         
         // 1. Check if Kindle app is installed via scheme
-        let kindleAppScheme = URL(string: "kindle://")!
+        let kindleAppScheme = URL(string: "kindle://") ?? URL(fileURLWithPath: "/")
         let canOpenKindle = UIApplication.shared.canOpenURL(kindleAppScheme)
         
         if canOpenKindle {

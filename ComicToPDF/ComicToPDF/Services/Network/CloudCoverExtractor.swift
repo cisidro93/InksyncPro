@@ -232,7 +232,7 @@ private func withTimeout<T: Sendable>(seconds: TimeInterval, operation: @escapin
             try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
             throw URLError(.timedOut)
         }
-        let result = try await group.next()!
+        guard let result = try await group.next() else { throw URLError(.unknown) }
         group.cancelAll()
         return result
     }

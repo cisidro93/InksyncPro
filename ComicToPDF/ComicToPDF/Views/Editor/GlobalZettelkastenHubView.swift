@@ -64,8 +64,8 @@ struct GlobalZettelkastenHubView: View {
         var filtered = allAnnotations
         switch filterMode {
         case .all:            break
-        case .annotated:      filtered = filtered.filter { $0.noteText != nil && !($0.noteText!.isEmpty) }
-        case .highlightsOnly: filtered = filtered.filter { $0.noteText == nil || $0.noteText!.isEmpty }
+        case .annotated:      filtered = filtered.filter { $0.noteText?.isEmpty == false }
+        case .highlightsOnly: filtered = filtered.filter { $0.noteText?.isEmpty ?? true }
         }
         if !searchText.isEmpty {
             filtered = filtered.filter { ann in

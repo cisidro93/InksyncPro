@@ -697,7 +697,7 @@ struct LibraryGridView: View {
         Button { onAction(.rename, pdf) } label: { Label("Rename", systemImage: "pencil") }
         Button { onAction(.addToSeries, pdf) } label: { Label("Add to Series...", systemImage: "books.vertical") }
 
-        if (pdf.metadata.series != nil && !pdf.metadata.series!.isEmpty) || pdf.collectionId != nil {
+        if (pdf.metadata.series?.isEmpty == false) || pdf.collectionId != nil {
             Button { conversionManager.setExplicitSeriesCover(for: pdf) } label: { Label("Set as Series Cover", systemImage: "photo.on.rectangle") }
         }
 

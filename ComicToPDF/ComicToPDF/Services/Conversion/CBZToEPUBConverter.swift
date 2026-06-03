@@ -269,7 +269,7 @@ struct CBZToEPUBConverter: Sendable {
         for (localIndex, item) in batch.enumerated() {
             // ✅ IF COVER OVERRIDE IS ACTIVE, REPLACE THE FIRST IMAGE OF THE FIRST BATCH ENTIRELY
             let isFirstImageOfBook = (localIndex == 0 && batchIndex == 0)
-            let dataToWrite = (isFirstImageOfBook && isCoverOverrideActive && coverData != nil) ? coverData! : item.data
+            let dataToWrite = (isFirstImageOfBook && isCoverOverrideActive) ? (coverData ?? item.data) : item.data
             
             let trueExt = (item.sourceURL.pathExtension.lowercased() == "png") ? "png" : "jpg"
             let safeExt = (trueExt == "jpg") ? "jpeg" : trueExt
@@ -373,7 +373,10 @@ struct CBZToEPUBConverter: Sendable {
         }.joined()
         
         let outputFilename = (safeName.isEmpty ? "comic" : safeName) + ".epub"
-        let outputURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!.appendingPathComponent(outputFilename)
+        guard let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
+            throw NSError(domain: "Converter", code: 3, userInfo: [NSLocalizedDescriptionKey: "Documents directory not found"])
+        }
+        let outputURL = docDir.appendingPathComponent(outputFilename)
         if fileManager.fileExists(atPath: outputURL.path) { try fileManager.removeItem(at: outputURL) }
         
         do {
@@ -389,22 +392,23 @@ struct CBZToEPUBConverter: Sendable {
             try archive.addEntry(with: "META-INF/container.xml", fileURL: containerPath, compressionMethod: .deflate)
             
             let oebpsDir = batchDir.appendingPathComponent("OEBPS")
-            let enumerator = fileManager.enumerator(at: oebpsDir, includingPropertiesForKeys: nil)!
-            while let fileURL = enumerator.nextObject() as? URL {
-                let resourceValues = try fileURL.resourceValues(forKeys: [.isDirectoryKey])
-                if resourceValues.isDirectory == true { continue }
-                
-                if let relativePath = fileURL.path.components(separatedBy: "\\(batchDir.path)/").last {
-                    try archive.addEntry(with: relativePath, fileURL: fileURL, compressionMethod: .deflate)
+            if let enumerator = fileManager.enumerator(at: oebpsDir, includingPropertiesForKeys: nil) {
+                while let fileURL = enumerator.nextObject() as? URL {
+                    let resourceValues = try fileURL.resourceValues(forKeys: [.isDirectoryKey])
+                    if resourceValues.isDirectory == true { continue }
+                    
+                    if let relativePath = fileURL.path.components(separatedBy: "\(batchDir.path)/").last {
+                        try archive.addEntry(with: relativePath, fileURL: fileURL, compressionMethod: .deflate)
+                    }
                 }
             }
         } catch {
             throw error
         }
         
-        Logger.shared.log("About to analyze EPUB structure for: \\(outputURL.lastPathComponent)", category: "Debug")
+        Logger.shared.log("About to analyze EPUB structure for: \(outputURL.lastPathComponent)", category: "Debug")
         Logger.shared.logEPUBStructure(at: outputURL)
-        Logger.shared.log("Stage 4 End: EPUB Packaged at \\(outputURL.lastPathComponent)", category: "Converter")
+        Logger.shared.log("Stage 4 End: EPUB Packaged at \(outputURL.lastPathComponent)", category: "Converter")
         return outputURL
     }
 
@@ -421,7 +425,7 @@ struct CBZToEPUBConverter: Sendable {
         metadata: PDFMetadata,
         progress: @escaping @Sendable (Double) -> Void
     ) async throws -> URL {
-        Logger.shared.log("Stage 1 Start: Extracting \\(sourceURL.lastPathComponent) for KFX", category: "Converter")
+        Logger.shared.log("Stage 1 Start: Extracting \(sourceURL.lastPathComponent) for KFX", category: "Converter")
         progress(0.1)
         
         let fileManager = FileManager.default
@@ -432,10 +436,10 @@ struct CBZToEPUBConverter: Sendable {
         guard !extractionResult.imageURLs.isEmpty else {
             throw NSError(domain: "Converter", code: 1, userInfo: [NSLocalizedDescriptionKey: "No images found"])
         }
-        Logger.shared.log("Stage 1 End: Extracted \\(extractionResult.imageURLs.count) images", category: "Converter")
+        Logger.shared.log("Stage 1 End: Extracted \(extractionResult.imageURLs.count) images", category: "Converter")
         
         Logger.shared.log("Stage 2 Start: Processing Images for KFX", category: "Converter")
-        let packageDir = tempDir.appendingPathComponent("KFX_Package_\\(UUID().uuidString)")
+        let packageDir = tempDir.appendingPathComponent("KFX_Package_\(UUID().uuidString)")
         let imagesDir = packageDir.appendingPathComponent("images")
         
         try fileManager.createDirectory(at: imagesDir, withIntermediateDirectories: true)
@@ -472,7 +476,7 @@ struct CBZToEPUBConverter: Sendable {
                 progress(0.1 + (0.7 * Double(originalIndex) / totalCount))
             }
         }
-        Logger.shared.log("Stage 2 End: Processed \\(globalImageIndex) images", category: "Converter")
+        Logger.shared.log("Stage 2 End: Processed \(globalImageIndex) images", category: "Converter")
         
         Logger.shared.log("Stage 3 Start: Building scripts and metadata", category: "Converter")
         
@@ -538,7 +542,10 @@ struct CBZToEPUBConverter: Sendable {
         }.joined()
         
         let outputFilename = (safeName.isEmpty ? "comic" : safeName) + ".inksync"
-        let outputURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!.appendingPathComponent(outputFilename)
+        guard let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
+            throw NSError(domain: "Converter", code: 3, userInfo: [NSLocalizedDescriptionKey: "Documents directory not found"])
+        }
+        let outputURL = docDir.appendingPathComponent(outputFilename)
         if fileManager.fileExists(atPath: outputURL.path) { try fileManager.removeItem(at: outputURL) }
         
         do {
@@ -550,22 +557,23 @@ struct CBZToEPUBConverter: Sendable {
             try "application/epub+zip".write(to: mimetypePath, atomically: true, encoding: .ascii)
             try archive.addEntry(with: "mimetype", fileURL: mimetypePath, compressionMethod: .none)
             
-            let enumerator = fileManager.enumerator(at: packageDir, includingPropertiesForKeys: nil)!
-            while let fileURL = enumerator.nextObject() as? URL {
-                let resourceValues = try fileURL.resourceValues(forKeys: [.isDirectoryKey])
-                if resourceValues.isDirectory == true { continue }
-                
-                if fileURL.lastPathComponent == "mimetype" { continue }
-                
-                if let relativePath = fileURL.path.components(separatedBy: "\\(packageDir.path)/").last {
-                    try archive.addEntry(with: relativePath, fileURL: fileURL, compressionMethod: .deflate)
+            if let enumerator = fileManager.enumerator(at: packageDir, includingPropertiesForKeys: nil) {
+                while let fileURL = enumerator.nextObject() as? URL {
+                    let resourceValues = try fileURL.resourceValues(forKeys: [.isDirectoryKey])
+                    if resourceValues.isDirectory == true { continue }
+                    
+                    if fileURL.lastPathComponent == "mimetype" { continue }
+                    
+                    if let relativePath = fileURL.path.components(separatedBy: "\(packageDir.path)/").last {
+                        try archive.addEntry(with: relativePath, fileURL: fileURL, compressionMethod: .deflate)
+                    }
                 }
             }
         } catch {
             throw error
         }
         
-        Logger.shared.log("Stage 4 End: Created \\(outputFilename)", category: "Converter")
+        Logger.shared.log("Stage 4 End: Created \(outputFilename)", category: "Converter")
         progress(1.0)
         return outputURL
     }

@@ -51,7 +51,7 @@ actor ImportOrchestrator {
             }
             
             let fileManager = FileManager.default
-            let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+            let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
             var newlyImported: [ConvertedPDF] = []
             
             await MainActor.run { manager.processingStatus = "Scanning \(folderURL.lastPathComponent)..." }
@@ -199,7 +199,7 @@ actor ImportOrchestrator {
         
         let importedPDFs: [ConvertedPDF] = await Task.detached(priority: .userInitiated) { () -> [ConvertedPDF] in
             let fileManager = FileManager.default
-            let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+            let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
             var newPDFs: [ConvertedPDF] = []
             var unstoredPDFs: [ConvertedPDF] = []
 
@@ -517,7 +517,7 @@ actor ImportOrchestrator {
         
         let newPDFs: [ConvertedPDF] = await Task.detached(priority: .userInitiated) { () -> [ConvertedPDF] in
             let fileManager = FileManager.default
-            let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+            let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
             var newlyImported: [ConvertedPDF] = []
             var staleBookmarkIndices: [Int] = []
             
@@ -793,7 +793,7 @@ actor ImportOrchestrator {
                     }
                     
                     let cbzName = fileName + ".cbz"
-                    let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+                    let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
                     let cbzURL = docDir.appendingPathComponent(cbzName)
                     
                     if FileManager.default.fileExists(atPath: cbzURL.path) {
@@ -808,7 +808,7 @@ actor ImportOrchestrator {
             let mangaMode = await AppSettingsManager.shared.conversionSettings.mangaMode
             let contentType = detectContentType(from: url, mangaMode: mangaMode)
             
-            let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+            let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
             let cbzName = fileName + ".cbz"
             let cbzURL = docDir.appendingPathComponent(cbzName)
             let attributes = try FileManager.default.attributesOfItem(atPath: cbzURL.path)

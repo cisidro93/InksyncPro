@@ -106,8 +106,8 @@ import SwiftUI
                 if groups[key] == nil {
                     groups[key] = SeriesGroup(id: seriesName, title: seriesName, coverIssueID: pdf.id, count: 0, issues: [])
                 }
-                groups[key]!.issues.append(pdf)
-                groups[key]!.count += 1
+                groups[key]?.issues.append(pdf)
+                groups[key]?.count += 1
             } else {
                 let key = "single_\(pdf.id)"
                 if order[key] == nil { order[key] = i }
@@ -117,13 +117,13 @@ import SwiftUI
 
         // Sort issues inside each series numerically
         for key in groups.keys {
-            groups[key]!.issues.sort {
+            groups[key]?.issues.sort {
                 let a = Double($0.metadata.issueNumber ?? "") ?? Double.infinity
                 let b = Double($1.metadata.issueNumber ?? "") ?? Double.infinity
                 if a != b { return a < b }
                 return $0.name.localizedStandardCompare($1.name) == .orderedAscending
             }
-            if let first = groups[key]!.issues.first { groups[key]!.coverIssueID = first.id }
+            if let first = groups[key]?.issues.first { groups[key]?.coverIssueID = first.id }
         }
 
         var items: [(Int, LibraryListItem)] = []

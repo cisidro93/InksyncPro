@@ -266,7 +266,11 @@ struct GenericFileDocument: FileDocument {
     }
     
     static var readableContentTypes: [UTType] {
-        return [.pdf, .epub, .zip, UTType(filenameExtension: "cbz")!].compactMap { $0 }
+        var types: [UTType] = [.pdf, .epub, .zip]
+        if let cbz = UTType(filenameExtension: "cbz") {
+            types.append(cbz)
+        }
+        return types
     }
     
     init(configuration: ReadConfiguration) throws {

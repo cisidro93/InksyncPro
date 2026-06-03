@@ -57,7 +57,7 @@ class AppSettingsManager: ObservableObject {
     private let settingsURL: URL
     
     private init() {
-        let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
         settingsURL = docDir.appendingPathComponent("inksync_app_settings.json")
         
         self.conversionSettings = ConversionSettings()

@@ -291,7 +291,8 @@ class ArchiveMutatorService {
     // MARK: - Extract Cover Variant
     func extractCoverVariant(from pdf: ConvertedPDF, pageIndex: Int, manager: ConversionManager) async throws {
         let fileManager = FileManager.default
-        let coversDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!.appendingPathComponent("Covers")
+        let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? URL(fileURLWithPath: NSTemporaryDirectory())
+        let coversDir = docDir.appendingPathComponent("Covers")
         try? fileManager.createDirectory(at: coversDir, withIntermediateDirectories: true)
         
         guard let archive = try? Archive(url: pdf.url, accessMode: .read, pathEncoding: .utf8) else {
@@ -337,7 +338,8 @@ class ArchiveMutatorService {
     func extractPages(from pdf: ConvertedPDF, pageIndices: [Int], asImages: Bool, manager: ConversionManager) async throws -> URL {
         let fileManager = FileManager.default
         let newName = "\(pdf.name.replacingOccurrences(of: ".cbz", with: "").replacingOccurrences(of: ".pdf", with: ""))_Split"
-        let outputURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!.appendingPathComponent("\(newName).cbz")
+        let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? URL(fileURLWithPath: NSTemporaryDirectory())
+        let outputURL = docDir.appendingPathComponent("\(newName).cbz")
         
         let combinedManifest = await manager.getCombinedManifest(for: pdf)
         var newFileOverrides: [Int: [PanelExtractor.Panel]] = [:]

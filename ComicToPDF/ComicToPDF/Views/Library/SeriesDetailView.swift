@@ -127,7 +127,7 @@ struct SeriesDetailView: View {
     
     /// True if any issues have volume metadata worth grouping by
     var hasVolumeData: Bool {
-        localIssues.contains { $0.metadata.volume != nil && !($0.metadata.volume!.isEmpty) }
+        localIssues.contains { $0.metadata.volume?.isEmpty == false }
     }
     
     /// Detected missing issues in the series
@@ -1097,7 +1097,7 @@ struct SeriesDetailView: View {
             pdfToAssignSeries = pdf
         } label: { Label("Add to Series...", systemImage: "books.vertical") }
         
-        if (pdf.metadata.series != nil && !pdf.metadata.series!.isEmpty) || pdf.collectionId != nil {
+        if (pdf.metadata.series?.isEmpty == false) || pdf.collectionId != nil {
             Button {
                 conversionManager.setExplicitSeriesCover(for: pdf)
             } label: { Label("Set as Series Cover", systemImage: "photo.on.rectangle") }

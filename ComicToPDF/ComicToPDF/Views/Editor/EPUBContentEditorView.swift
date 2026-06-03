@@ -127,7 +127,7 @@ class EPUBContentEditorViewModel: ObservableObject {
                                 }
                             }
                             
-                            let newOPFData = modifiedOPF.data(using: .utf8)!
+                            guard let newOPFData = modifiedOPF.data(using: .utf8) else { return }
                             
                             try destArchive.addEntry(with: entry.path, type: .file, uncompressedSize: Int64(newOPFData.count), modificationDate: Date(), permissions: entry.fileAttributes[.posixPermissions] as? UInt16 ?? 0o644, compressionMethod: .deflate, bufferSize: 8192, progress: nil) { position, size in
                                 let start = Int(position)

@@ -253,7 +253,7 @@ struct PlannerEditorView: View {
         // Background thread generation to prevent main-thread UI lock (Competitor review fix)
         Task.detached {
             do {
-                let docsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+                let docsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
                 let outputURL = docsDir.appendingPathComponent("\(titleSafe).pdf")
                 
                 try PlannerPDFGenerator.generate(from: projectToExport, to: outputURL) { progress in

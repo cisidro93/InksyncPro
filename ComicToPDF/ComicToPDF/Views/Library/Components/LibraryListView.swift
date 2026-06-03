@@ -215,7 +215,7 @@ struct LibraryListView: View {
         } label: { Label("Add to Series...", systemImage: "books.vertical") }
         
         // Show Cover Select only if the PDF is part of a series or collection
-        if (pdf.metadata.series != nil && !pdf.metadata.series!.isEmpty) || pdf.collectionId != nil {
+        if (pdf.metadata.series?.isEmpty == false) || pdf.collectionId != nil {
             Button {
                 conversionManager.setExplicitSeriesCover(for: pdf)
             } label: { Label("Set as Series Cover", systemImage: "photo.on.rectangle") }

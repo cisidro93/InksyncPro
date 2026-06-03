@@ -138,10 +138,10 @@ class MigrationService {
         let allAnnotations = (try? context.fetch(fetchDescriptor)) ?? []
         
         let targets = allAnnotations.filter { 
-            ($0.tags == nil || $0.tags!.isEmpty) && 
+            ($0.tags?.isEmpty ?? true) && 
             $0.kindRaw == "highlight" && 
             $0.selectedText != nil && 
-            !$0.selectedText!.isEmpty 
+            $0.selectedText?.isEmpty == false 
         }.map { ($0.id, $0.selectedText!) }
         
         guard !targets.isEmpty else {

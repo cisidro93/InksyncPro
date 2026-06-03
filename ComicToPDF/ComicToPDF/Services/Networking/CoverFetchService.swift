@@ -194,7 +194,7 @@ final class CoverFetchService: Sendable {
     // MARK: - Advanced AI Hunter (OpenAI Direct Payload)
     
     private func fetchAICovers(query: String, isComic: Bool, apiKey: String, limit: Int) async -> [FetchedCover] {
-        let endpoint = URL(string: "https://api.openai.com/v1/chat/completions")!
+        let endpoint = URL(string: "https://api.openai.com/v1/chat/completions") ?? URL(fileURLWithPath: "/")
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
         request.addValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")

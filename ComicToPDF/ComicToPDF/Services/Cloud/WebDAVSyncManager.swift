@@ -121,7 +121,7 @@ final class WebDAVSyncManager: NSObject, ObservableObject, URLSessionTaskDelegat
             if let httpResponse = response as? HTTPURLResponse {
                 if (200...299).contains(httpResponse.statusCode) {
                     self.syncProgress = 1.0
-                    self.lastSyncStatus = fileURL != nil ? "Successfully uploaded \(fileURL!.lastPathComponent)" : "Upload Complete"
+                    self.lastSyncStatus = fileURL != nil ? "Successfully uploaded \(fileURL?.lastPathComponent ?? "file")" : "Upload Complete"
                     self.taskContinuations[taskID]?.resume(returning: ())
                 } else {
                     self.lastSyncStatus = "Server Error: \(httpResponse.statusCode)"

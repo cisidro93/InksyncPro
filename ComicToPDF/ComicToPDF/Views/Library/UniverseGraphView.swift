@@ -142,10 +142,10 @@ final class UniverseGraphEngine: NSObject, ObservableObject {
                     nodeType: .series
                 )
             }
-            // Series node tracks aggregate completion
-            var seriesNode = newNodes[seriesID]!
-            seriesNode.completionFraction = max(seriesNode.completionFraction, fraction)
-            newNodes[seriesID] = seriesNode
+            if var seriesNode = newNodes[seriesID] {
+                seriesNode.completionFraction = max(seriesNode.completionFraction, fraction)
+                newNodes[seriesID] = seriesNode
+            }
 
             // Link series → publisher (or author if available)
             if let aID = authorID {
@@ -264,7 +264,7 @@ final class UniverseGraphEngine: NSObject, ObservableObject {
             let dy = center.y - nodes[i].position.y
             forces[nodes[i].id]?.dx += dx * centerGravity
             forces[nodes[i].id]?.dy += dy * centerGravity
-            let f = forces[nodes[i].id]!
+            guard let f = forces[nodes[i].id] else { continue }
             let mass = Double(nodes[i].connectionCount) * 0.5 + 1.0
             nodes[i].velocity.dx = (nodes[i].velocity.dx + f.dx/mass) * damping
             nodes[i].velocity.dy = (nodes[i].velocity.dy + f.dy/mass) * damping

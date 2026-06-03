@@ -11,7 +11,7 @@ extension ConversionManager {
         let pdfPairs = sourceFiles  // pass full objects — avoids fragile URL equality match for cloud files
         let startCover = sourceFiles.first?.coverImageData
         let settings = AppSettingsManager.shared.conversionSettings
-        let saveDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let saveDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
         let taskId = task.id
         
         Task {
@@ -169,7 +169,7 @@ extension ConversionManager {
     // MARK: - Merge & Convert
     func mergePDFs(_ pdfs: [ConvertedPDF], outputName: String, mangaMode: Bool) async {
         isConverting = true; processingStatus = "Merging..."; statusMessage = "Starting merge..."
-        let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
         let safeName = outputName.isEmpty ? "Merged Collection" : outputName; let outputURL = docDir.appendingPathComponent("\(safeName).epub")
         let merger = EPUBMerger()
         

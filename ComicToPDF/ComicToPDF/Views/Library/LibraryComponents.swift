@@ -380,7 +380,7 @@ struct UpNextBingeShelf: View {
         var nextToRead: [String: ConvertedPDF] = [:] // SeriesName : PDF
         
         // Group by series
-        let seriesGroups = Dictionary(grouping: allPDFs.filter { $0.metadata.series != nil && !$0.metadata.series!.isEmpty }, by: { $0.metadata.series! })
+        let seriesGroups = Dictionary(grouping: allPDFs.filter { $0.metadata.series?.isEmpty == false }, by: { $0.metadata.series ?? "" })
         
         for (seriesName, issues) in seriesGroups {
             // Sort issues by number

@@ -9,7 +9,7 @@ final class StudyNotesStore: ObservableObject, Sendable {
     private var currentBookID: String?
     
     private func getNotesURL(for bookID: String) -> URL {
-        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
         let studyDir = docs.appendingPathComponent("StudyNotes", isDirectory: true)
         if !FileManager.default.fileExists(atPath: studyDir.path) {
             try? FileManager.default.createDirectory(at: studyDir, withIntermediateDirectories: true)

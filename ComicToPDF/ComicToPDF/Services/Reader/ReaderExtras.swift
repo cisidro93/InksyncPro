@@ -38,7 +38,7 @@ struct CBZTableOfContents {
                 folderOrder.append(folder)
                 folderMap[folder] = []
             }
-            folderMap[folder]!.append(idx)
+            folderMap[folder, default: []].append(idx)
         }
 
         // If everything lives in one flat folder, fake single-chapter TOC

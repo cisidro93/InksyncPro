@@ -568,7 +568,7 @@ final class WiFiServer: ObservableObject, Sendable {
         // Write incoming files to the InksyncVault Inbox directory so the library
         // scanner picks them up automatically. The old Documents/ destination was
         // invisible to the import pipeline — files arrived but never appeared in the app.
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        guard let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { return false }
         let inbox = appSupport.appendingPathComponent("InksyncVault/Inbox", isDirectory: true)
         try? FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
 
@@ -666,7 +666,7 @@ final class WiFiServer: ObservableObject, Sendable {
     // MARK: - Handlers
     
     private func handleGetRequest(cleanPath: String, queryItems: [URLQueryItem], connection: NWConnection) {
-        let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        guard let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
         
         if cleanPath == "/" {
             let html = generateHTML()
@@ -734,7 +734,7 @@ final class WiFiServer: ObservableObject, Sendable {
             // e.g. /my%20comic.epub -> my comic.epub
             let fileName = cleanPath.hasPrefix("/") ? String(cleanPath.dropFirst()) : cleanPath
             
-            let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            guard let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { sendResponse(connection, 500, "Internal Server Error"); return }
             let inboxDir = appSupport.appendingPathComponent("InksyncVault/Inbox", isDirectory: true)
             
             let docFileURL = docDir.appendingPathComponent(fileName).standardizedFileURL
@@ -847,7 +847,7 @@ final class WiFiServer: ObservableObject, Sendable {
             + "Content-Length: \(bodyData.count)\r\n"
             + "Connection: close\r\n"
             + "\r\n"
-        var response = header.data(using: .utf8)!
+        guard var response = header.data(using: .utf8) else { return }
         response.append(bodyData)
         connection.send(content: response, completion: .contentProcessed({ _ in connection.cancel() }))
     }
@@ -881,8 +881,8 @@ final class WiFiServer: ObservableObject, Sendable {
     // MARK: - HTML Generator
     
     private func generateHTML() -> String {
-        let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!.resolvingSymlinksInPath()
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!.resolvingSymlinksInPath()
+        let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.resolvingSymlinksInPath() ?? URL(fileURLWithPath: NSTemporaryDirectory())
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?.resolvingSymlinksInPath() ?? URL(fileURLWithPath: NSTemporaryDirectory())
         let inboxDir = appSupport.appendingPathComponent("InksyncVault/Inbox", isDirectory: true)
         
         // Relies on FileManager enumerator for recursive scan

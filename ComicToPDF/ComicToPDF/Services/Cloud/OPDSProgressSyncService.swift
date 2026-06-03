@@ -110,7 +110,7 @@ import Foundation
         guard let chapterId = entry.kavitaChapterId,
               let base = server.baseURL else { return nil }
 
-        var comps = URLComponents(url: base.appendingPathComponent("api/Reader/get-progress"), resolvingAgainstBaseURL: false)!
+        guard var comps = URLComponents(url: base.appendingPathComponent("api/Reader/get-progress"), resolvingAgainstBaseURL: false) else { return nil }
         comps.queryItems = [URLQueryItem(name: "chapterId", value: "\(chapterId)")]
         guard let url = comps.url else { return nil }
 

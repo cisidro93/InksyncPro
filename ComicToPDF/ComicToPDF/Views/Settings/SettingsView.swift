@@ -630,7 +630,7 @@ struct SettingsView: View {
                 .disabled(isVerifying)
             }
             
-            Link("Get Free API Key", destination: URL(string: "https://comicvine.gamespot.com/api/")!)
+            Link("Get Free API Key", destination: URL(string: "https://comicvine.gamespot.com/api/") ?? URL(fileURLWithPath: "/"))
                 .font(.caption).foregroundColor(.blue)
 
             NavigationLink(destination: CloudConnectionSettingsView()) {
@@ -779,7 +779,7 @@ struct SettingsView: View {
     @ViewBuilder
     private var legalSection: some View {
         Section {
-            Link(destination: URL(string: "https://inksyncpro.app/privacy.html")!) {
+            Link(destination: URL(string: "https://inksyncpro.app/privacy.html") ?? URL(fileURLWithPath: "/")) {
                 HStack {
                     settingsIcon("hand.raised.fill", color: .blue)
                     Text("Privacy Policy")

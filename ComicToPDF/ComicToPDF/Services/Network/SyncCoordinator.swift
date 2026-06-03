@@ -136,7 +136,7 @@ class SyncCoordinator: ObservableObject {
         self.syncStatus = "Authenticating with \(peerIP)..."
         defer { self.isSyncing = false }
         
-        let loginURL = URL(string: "http://\(peerIP):8080/login")!
+        guard let loginURL = URL(string: "http://\(peerIP):8080/login") else { return }
         var loginReq = URLRequest(url: loginURL)
         loginReq.httpMethod = "POST"
         loginReq.httpBody = "pin=\(pin)".data(using: .utf8)
@@ -206,7 +206,7 @@ class SyncCoordinator: ObservableObject {
     
     /// Silent background daemon to fetch the raw physical CBZ files for newly synced placeholder items.
     nonisolated private func downloadMissingPayloads(_ filenames: [String], from peerIP: String, cookie: String?) async {
-        let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
         let config = URLSessionConfiguration.default
         let session = URLSession(configuration: config)
         

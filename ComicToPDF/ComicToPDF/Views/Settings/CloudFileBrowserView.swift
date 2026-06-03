@@ -396,7 +396,7 @@ struct CloudFileBrowserView: View {
         var newCloudPDFs: [ConvertedPDF] = []
         await MainActor.run {
             for file in deduped {
-                let dummyURL = URL(string: "cloud://\(provider.providerID)/\(file.id)")!
+                let dummyURL = URL(string: "cloud://\(provider.providerID)/\(file.id)") ?? URL(fileURLWithPath: "/")
                 var cloudPDF = ConvertedPDF(
                     name: file.name,
                     url: dummyURL,

@@ -29,7 +29,7 @@ extension ConversionManager {
     }
     
     func processImportedFiles(urls: [URL]) async {
-        let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
         var skippedFiles: [String] = []
         var filesToProcess: [URL] = []
 
@@ -214,7 +214,7 @@ extension ConversionManager {
         guard !cleanName.isEmpty, cleanName != pdf.name else { return }
 
         let fileManager = FileManager.default
-        let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
 
         // Always preserve the original file extension. If the user typed a name
         // without extension (common UI pattern) we re-attach it; if they included

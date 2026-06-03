@@ -128,7 +128,7 @@ class CloudDownloadManager: NSObject, ObservableObject, URLSessionDownloadDelega
 
     // MARK: - Vault URL (thread-safe, eager directory creation)
     private var vaultURL: URL {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
         let vaultURL = appSupport.appendingPathComponent("InksyncVault", isDirectory: true)
         if !FileManager.default.fileExists(atPath: vaultURL.path) {
             try? FileManager.default.createDirectory(at: vaultURL, withIntermediateDirectories: true, attributes: nil)

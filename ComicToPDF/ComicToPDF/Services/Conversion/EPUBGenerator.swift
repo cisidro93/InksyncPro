@@ -332,7 +332,9 @@ class EPUBGenerator {
         
         // 2. Add remaining files (META-INF, OEBPS)
         let resourceKeys: [URLResourceKey] = [.isDirectoryKey, .fileSizeKey]
-        let enumerator = FileManager.default.enumerator(at: tempDirectory, includingPropertiesForKeys: resourceKeys)!
+        guard let enumerator = FileManager.default.enumerator(at: tempDirectory, includingPropertiesForKeys: resourceKeys) else {
+            throw NSError(domain: "EPUBGenerator", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to enumerate files"])
+        }
         
         for case let fileURL as URL in enumerator {
             let resourceValues = try fileURL.resourceValues(forKeys: Set(resourceKeys))

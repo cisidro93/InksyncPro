@@ -443,7 +443,7 @@ final class LinkedLibraryScanner: ObservableObject {
         progress: @escaping (Double, String) -> Void
     ) async throws {
         guard let manager = conversionManager else { return }
-        let vault = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let vault = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
             .appendingPathComponent("InksyncVault", isDirectory: true)
         try? FileManager.default.createDirectory(at: vault, withIntermediateDirectories: true)
 

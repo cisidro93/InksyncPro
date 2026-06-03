@@ -369,7 +369,7 @@ final class ZettelkastenGraphEngine: NSObject, ObservableObject {
             forces[nodes[i].id]?.dx += dx * centerGravity
             forces[nodes[i].id]?.dy += dy * centerGravity
 
-            let f = forces[nodes[i].id]!
+            guard let f = forces[nodes[i].id] else { continue }
             let mass = Double(nodes[i].connectionCount) * 0.6 + 1.0
             nodes[i].velocity.dx = (nodes[i].velocity.dx + f.dx / mass) * damping
             nodes[i].velocity.dy = (nodes[i].velocity.dy + f.dy / mass) * damping
@@ -1191,7 +1191,7 @@ struct ZettelkastenGraphView: View {
     private func createManualNode(title: String, at canvasPos: CGPoint?) {
         guard !title.trimmingCharacters(in: .whitespaces).isEmpty else { return }
 
-        let sentinelPDFID: UUID = pdfs.first?.id ?? UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+        let sentinelPDFID: UUID = pdfs.first?.id ?? UUID()
 
         // Build the lightweight DTO then promote it to SwiftData model
         var dto = Annotation(

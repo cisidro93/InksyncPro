@@ -83,8 +83,8 @@ final class AmbientBrightnessManager: ObservableObject {
     var nightWindowDescription: String {
         let fmt = DateFormatter()
         fmt.dateFormat = "h:mm a"
-        let start = Calendar.current.date(bySettingHour: Int(nightStartHour), minute: 0, second: 0, of: Date())!
-        let end   = Calendar.current.date(bySettingHour: Int(nightEndHour),   minute: 0, second: 0, of: Date())!
+        let start = Calendar.current.date(bySettingHour: Int(nightStartHour), minute: 0, second: 0, of: Date()) ?? Date()
+        let end   = Calendar.current.date(bySettingHour: Int(nightEndHour),   minute: 0, second: 0, of: Date()) ?? Date()
         return "\(fmt.string(from: start)) – \(fmt.string(from: end))"
     }
 }

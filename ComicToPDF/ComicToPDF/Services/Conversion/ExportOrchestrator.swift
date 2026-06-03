@@ -155,7 +155,7 @@ class ExportOrchestrator {
     // MARK: - Local Sideload Export
     func exportForLocalSideload(_ pdf: ConvertedPDF, manager: ConversionManager) async -> URL? {
         let fileManager = FileManager.default
-        let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
         let exportDir = docDir.appendingPathComponent("KindleExports")
 
         try? fileManager.createDirectory(at: exportDir, withIntermediateDirectories: true, attributes: nil)

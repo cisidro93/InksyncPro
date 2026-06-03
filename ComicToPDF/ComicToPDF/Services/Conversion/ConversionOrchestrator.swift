@@ -56,7 +56,8 @@ final class ConversionOrchestrator: Sendable {
         do {
             if jobSettings.outputFormat == .pdf {
                 let pName = pdf.name.replacingOccurrences(of: ".cbz", with: "").replacingOccurrences(of: ".zip", with: "") + "_Converted.pdf"
-                let outputURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!.appendingPathComponent(pName)
+                let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? URL(fileURLWithPath: NSTemporaryDirectory())
+                let outputURL = docDir.appendingPathComponent(pName)
                 let imageURLs = try await manager.extractImageURLs(from: pdf.url)
                 try PDFGenerator.generate(from: imageURLs, to: outputURL, mangaMode: jobSettings.mangaMode, chapters: pdf.chapters, settings: jobSettings, coverOverrideData: coverOverrideData) { progress in
                     Task { @MainActor in manager.conversionProgress = progress; manager.processingStatus = "Converting \(Int(progress * 100))%" }
@@ -66,7 +67,8 @@ final class ConversionOrchestrator: Sendable {
             } else if jobSettings.outputFormat == .cbz {
                 let fileManager = FileManager.default
                 let pName = pdf.name.replacingOccurrences(of: ".cbz", with: "").replacingOccurrences(of: ".pdf", with: "").replacingOccurrences(of: ".zip", with: "") + "_Converted.cbz"
-                let outputURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!.appendingPathComponent(pName)
+                let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? URL(fileURLWithPath: NSTemporaryDirectory())
+                let outputURL = docDir.appendingPathComponent(pName)
                 
                 await MainActor.run { manager.processingStatus = "Extracting Images..." }
                 let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -190,7 +192,8 @@ final class ConversionOrchestrator: Sendable {
             do {
                 if jobSettings.outputFormat == .pdf {
                     let pName = pdf.name.replacingOccurrences(of: ".cbz", with: "").replacingOccurrences(of: ".zip", with: "") + "_Converted.pdf"
-                    let outputURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!.appendingPathComponent(pName)
+                    let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? URL(fileURLWithPath: NSTemporaryDirectory())
+                    let outputURL = docDir.appendingPathComponent(pName)
                     let imageURLs = try await manager.extractImageURLs(from: pdf.url)
                     try PDFGenerator.generate(from: imageURLs, to: outputURL, mangaMode: jobSettings.mangaMode, chapters: pdf.chapters, settings: jobSettings, coverOverrideData: coverOverrideData) { p in
                         Task { @MainActor in manager.conversionProgress = p; manager.processingStatus = "Converting \(currentNum) of \(total) (\(Int(p * 100))%)" }
@@ -199,7 +202,8 @@ final class ConversionOrchestrator: Sendable {
                 } else if jobSettings.outputFormat == .cbz {
                     let fileManager = FileManager.default
                     let pName = pdf.name.replacingOccurrences(of: ".cbz", with: "").replacingOccurrences(of: ".pdf", with: "").replacingOccurrences(of: ".zip", with: "") + "_Converted.cbz"
-                    let outputURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!.appendingPathComponent(pName)
+                    let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? URL(fileURLWithPath: NSTemporaryDirectory())
+                    let outputURL = docDir.appendingPathComponent(pName)
                     let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
                     try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
                     
@@ -276,7 +280,7 @@ final class ConversionOrchestrator: Sendable {
         var newMergedPDFs: [ConvertedPDF] = []
         
         let fileManager = FileManager.default
-        let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
         var jobSettings = await MainActor.run { AppSettingsManager.shared.conversionSettings }
         jobSettings.mangaMode = mangaMode
         

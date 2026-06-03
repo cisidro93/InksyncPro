@@ -79,7 +79,9 @@ struct PDFGenerator: Sendable {
                     
                     // Add Internal Anchor for Hyperlinking
                     let displayPageNum = index + 1
-                    context.setURL(URL(string: "page://\(displayPageNum)")!, for: pageRect)
+                    if let url = URL(string: "page://\(displayPageNum)") {
+                        context.setURL(url, for: pageRect)
+                    }
                     
                     // Aspect Fit Calculation
                     let imgSize = optimizedImage.size

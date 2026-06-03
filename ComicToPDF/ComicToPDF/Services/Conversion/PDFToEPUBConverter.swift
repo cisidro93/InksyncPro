@@ -581,7 +581,9 @@ final class PDFToEPUBConverter: Sendable {
         
         // 2. Add remaining files
         let resourceKeys: [URLResourceKey] = [.isDirectoryKey, .fileSizeKey]
-        let enumerator = FileManager.default.enumerator(at: tempDir, includingPropertiesForKeys: resourceKeys)!
+        guard let enumerator = FileManager.default.enumerator(at: tempDir, includingPropertiesForKeys: resourceKeys) else {
+            throw ConversionError.fileWriteFailed
+        }
         
         for case let fileURL as URL in enumerator {
             let resourceValues = try fileURL.resourceValues(forKeys: Set(resourceKeys))
