@@ -407,7 +407,7 @@ struct LibraryHeaderView: View {
                 }
 
                 // Cloud — live status tint (Infuse/Plex pattern)
-                let cloudConnected = DropboxProvider.shared.isConnected || GoogleDriveProvider.shared.isConnected
+                let cloudConnected = DropboxProvider.shared.isConnected
                 Button(action: { onSheetTrigger(.cloudBrowser) }) {
                     HStack(spacing: 7) {
                         Image(systemName: cloudConnected ? "checkmark.icloud.fill" : "icloud.and.arrow.down")

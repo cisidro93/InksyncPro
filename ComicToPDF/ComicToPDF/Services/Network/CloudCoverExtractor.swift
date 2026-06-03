@@ -78,11 +78,6 @@ actor CloudCoverExtractor {
                     try await DropboxProvider.shared.getDownloadURL(fileID: remoteID)
                 }
                 authHeader = nil
-            } else if provider == "Google Drive" || provider == "GoogleDrive" {
-                downloadURL = try await withTimeout(seconds: 15) {
-                    try await GoogleDriveProvider.shared.getDownloadURL(fileID: remoteID)
-                }
-                authHeader = try await GoogleDriveProvider.shared.currentAuthHeader()
             } else {
                 return
             }
@@ -212,7 +207,7 @@ actor CloudCoverExtractor {
 
     private func shouldExtract(_ pdf: ConvertedPDF) -> Bool {
         guard !inFlight.contains(pdf.id) else { return false }
-        guard case .cloud(let provider, _) = pdf.sourceMode, ["Dropbox", "GoogleDrive", "Google Drive"].contains(provider) else { return false }
+        guard case .cloud(let provider, _) = pdf.sourceMode, provider == "Dropbox" else { return false }
 
         let ext = (pdf.name as NSString).pathExtension.lowercased()
         guard ["cbz", "zip", "cbr"].contains(ext) else { return false }

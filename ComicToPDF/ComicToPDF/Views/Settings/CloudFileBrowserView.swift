@@ -471,7 +471,6 @@ struct CloudBrowserProvider {
     var iconAssetName: String {
         switch providerID {
         case "dropbox":     return "dropbox_icon"
-        case "googledrive": return "google_drive_icon"
         default:            return "icloud"
         }
     }
@@ -489,19 +488,7 @@ struct CloudBrowserProvider {
         )
     }
 
-    static var googleDrive: CloudBrowserProvider {
-        CloudBrowserProvider(
-            name: "Google Drive",
-            providerID: "googledrive",
-            listDirectory: { @Sendable folderID in
-                try await GoogleDriveProvider.shared.listDirectory(folderID: folderID)
-            },
-            listAllFiles: { @Sendable _, _ in
-                // Google Drive recursive enumeration — implement when GDrive folder-add is needed
-                []
-            }
-        )
-    }
+
 }
 
 // MARK: - String extension
@@ -521,48 +508,14 @@ private extension String {
 
 struct CloudBrowserPickerView: View {
     @ObservedObject private var dropbox = DropboxProvider.shared
-    @ObservedObject private var gdrive  = GoogleDriveProvider.shared
     @EnvironmentObject var conversionManager: ConversionManager
     @Environment(\.dismiss) private var dismiss
 
-    // If only one is connected, jump straight in
-    private var autoProvider: CloudBrowserProvider? {
-        if dropbox.isConnected && !gdrive.isConnected { return .dropbox }
-        if gdrive.isConnected && !dropbox.isConnected { return .googleDrive }
-        return nil
-    }
-
     var body: some View {
-        if let solo = autoProvider {
+        if dropbox.isConnected {
             // Single provider — present browser immediately
-            CloudFileBrowserView(provider: solo)
+            CloudFileBrowserView(provider: .dropbox)
                 .environmentObject(conversionManager)
-        } else if dropbox.isConnected && gdrive.isConnected {
-            // Both connected — let user pick
-            NavigationStack {
-                List {
-                    pickerRow(
-                        name: "Dropbox",
-                        subtitle: "Browse your Dropbox comics",
-                        provider: .dropbox
-                    )
-                    pickerRow(
-                        name: "Google Drive",
-                        subtitle: "Browse your Google Drive comics",
-                        provider: .googleDrive
-                    )
-                }
-                .scrollContentBackground(.hidden)
-                .background(Color.clear)
-                .listRowBackground(Color.inkSurface.opacity(0.4))
-                .navigationTitle("Select Cloud Account")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .navigationBarLeading) {
-                        Button("Close") { dismiss() }
-                    }
-                }
-            }
         } else {
             // Nothing connected — onboarding prompt
             NavigationStack {
@@ -606,27 +559,5 @@ struct CloudBrowserPickerView: View {
         }
     }
 
-    @ViewBuilder
-    private func pickerRow(name: String, subtitle: String, provider: CloudBrowserProvider) -> some View {
-        NavigationLink {
-            CloudFileBrowserView(provider: provider)
-                .environmentObject(conversionManager)
-        } label: {
-            HStack(spacing: 14) {
-                // Official brand icon — renderingMode(.original) preserves brand colours
-                Image(provider.iconAssetName)
-                    .renderingMode(.original)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 38, height: 38)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(name).fontWeight(.semibold)
-                    Text(subtitle).font(.caption).foregroundColor(.secondary)
-                }
-            }
-            .padding(.vertical, 4)
-        }
-    }
-}
+
 

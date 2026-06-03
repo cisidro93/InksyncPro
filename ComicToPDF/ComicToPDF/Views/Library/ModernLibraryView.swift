@@ -323,11 +323,24 @@ struct ModernLibraryView: View {
     @ViewBuilder
     private var rootShell: some View {
         if hSizeClass == .regular {
-            NavigationSplitView(columnVisibility: .constant(.doubleColumn)) {
-                iPadSidebar
-                    .navigationTitle("Library")
-                    .navigationBarTitleDisplayMode(.inline)
-            } detail: {
+            // ── iPad: Full-bleed layout with a compact 68pt icon rail ──────────
+            // We deliberately avoid NavigationSplitView here. NSV forces a minimum
+            // column width of ~280pt for its sidebar — nearly 1/4 of a 12.9" screen.
+            // Instead we use a plain HStack with a custom rail that is exactly 68pt.
+            // This gives the grid ~94% of the screen width on a 12.9" iPad Pro.
+            HStack(spacing: 0) {
+                // Icon rail (68pt fixed)
+                iPadIconRail
+                    .frame(width: 68)
+                    .ignoresSafeArea(edges: .vertical)
+
+                // Thin separator
+                Rectangle()
+                    .fill(Color.inkBorderSubtle)
+                    .frame(width: 0.5)
+                    .ignoresSafeArea(edges: .vertical)
+
+                // Full-width detail content
                 ZStack(alignment: .top) {
                     Color.clear.ignoresSafeArea()
                     libraryContent
@@ -348,7 +361,7 @@ struct ModernLibraryView: View {
                         .sheet(item: $router.activeSheet) { item in destinationSheet(for: item) }
                 }
             }
-            .navigationSplitViewStyle(.balanced)
+            .ignoresSafeArea(edges: .bottom)
         } else {
             ZStack(alignment: .top) {
                 Color.clear.ignoresSafeArea()
@@ -1172,160 +1185,248 @@ struct ModernLibraryView: View {
         }
     }
 
-    // MARK: - iPad Sidebar (series + collection picker)
+    // MARK: - iPad Compact Icon Rail
+    // 68pt wide, full-height sidebar. Each item is a 52×52pt touch target with a
+    // large SF Symbol and a micro-label. An animated orange accent bar slides to
+    // the selected item. The rail is divided into three sections separated by fine
+    // hairlines: Browse (top), Format shelves (middle), Collections (bottom).
     @ViewBuilder
-    private var iPadSidebar: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                // Browse Section
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Browse")
-                        .font(.system(size: 11, weight: .bold))
-                        .tracking(1.0)
-                        .foregroundColor(.inkTextTertiary)
-                        .padding(.horizontal, 12)
-                        .padding(.bottom, 4)
-                    
-                    librarySidebarRow(tag: "all", label: "All Books", icon: "books.vertical.fill")
-                    librarySidebarRow(tag: "continue", label: "Continue Reading", icon: "book.open.fill")
-                    librarySidebarRow(tag: "recent", label: "Recently Added", icon: "clock.fill")
-                    librarySidebarRow(tag: "favorites", label: "Favorites", icon: "heart.fill")
-                }
-                
-                // Collections Accordion Section
-                if !conversionManager.collections.isEmpty {
-                    VStack(alignment: .leading, spacing: 0) {
+    private var iPadIconRail: some View {
+        ZStack {
+            // Rail background — deep surface with subtle material
+            Color.inkBackground
+                .overlay(Color.inkSurface.opacity(0.55))
+
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: 0) {
+                    // ── App identity mark ─────────────────────────────────────
+                    VStack(spacing: 2) {
+                        Image(systemName: "books.vertical.fill")
+                            .font(.system(size: 22, weight: .bold))
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [Color.inkAmber, Color.inkViolet],
+                                    startPoint: .topLeading, endPoint: .bottomTrailing
+                                )
+                            )
+                        Text("INK")
+                            .font(.system(size: 8, weight: .black, design: .rounded))
+                            .foregroundStyle(Color.inkTextTertiary)
+                            .tracking(2)
+                    }
+                    .frame(width: 68, height: 56)
+                    .padding(.top, 8)
+
+                    railDivider
+
+                    // ── Browse Section ────────────────────────────────────────
+                    Group {
+                        railItem(tag: "all",      icon: "square.grid.2x2.fill",   label: "All")
+                        railItem(tag: "continue", icon: "book.open.fill",          label: "Reading")
+                        railItem(tag: "recent",   icon: "clock.fill",              label: "Recent")
+                        railItem(tag: "favorites",icon: "heart.fill",              label: "Favorites")
+                    }
+                    .padding(.vertical, 4)
+
+                    railDivider
+
+                    // ── Format Shelves ────────────────────────────────────────
+                    Group {
+                        railItem(tag: "comics",   icon: "books.vertical.fill",     label: "Comics",  accent: Color(red: 0.25, green: 0.55, blue: 1.0))
+                        railItem(tag: "manga",    icon: "text.book.closed.fill",   label: "Manga",   accent: Color(red: 1.0, green: 0.35, blue: 0.25))
+                        railItem(tag: "books",    icon: "book.fill",               label: "Books",   accent: Color(red: 0.15, green: 0.75, blue: 0.65))
+                    }
+                    .padding(.vertical, 4)
+
+                    // ── Collections ───────────────────────────────────────────
+                    if !conversionManager.collections.isEmpty {
+                        railDivider
+
+                        VStack(spacing: 2) {
+                            ForEach(conversionManager.collections.prefix(8)) { col in
+                                let tag = col.id.uuidString
+                                let isSelected = iPadSidebarSelection == tag
+                                let count = conversionManager.visiblePDFs.filter { $0.collectionId == col.id }.count
+                                Button {
+                                    withAnimation(.spring(response: 0.25, dampingFraction: 0.82)) {
+                                        iPadSidebarSelection = tag
+                                    }
+                                } label: {
+                                    ZStack {
+                                        // Selected accent bar
+                                        if isSelected {
+                                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                                .fill(colorFor(col.color).opacity(0.18))
+                                                .padding(.horizontal, 6)
+                                        }
+
+                                        VStack(spacing: 3) {
+                                            ZStack {
+                                                Circle()
+                                                    .fill(colorFor(col.color).opacity(isSelected ? 0.3 : 0.12))
+                                                    .frame(width: 36, height: 36)
+                                                Image(systemName: "folder.fill")
+                                                    .font(.system(size: 16, weight: .semibold))
+                                                    .foregroundStyle(colorFor(col.color))
+                                            }
+                                            Text(col.name)
+                                                .font(.system(size: 8, weight: isSelected ? .bold : .medium))
+                                                .foregroundStyle(isSelected ? Color.inkTextPrimary : Color.inkTextSecondary)
+                                                .lineLimit(1)
+                                                .frame(width: 58)
+
+                                            if count > 0 {
+                                                Text("\(count)")
+                                                    .font(.system(size: 8, weight: .bold, design: .rounded))
+                                                    .foregroundStyle(Color.inkTextTertiary)
+                                            }
+                                        }
+                                        .padding(.vertical, 4)
+
+                                        // Left active bar
+                                        if isSelected {
+                                            HStack {
+                                                RoundedRectangle(cornerRadius: 2)
+                                                    .fill(colorFor(col.color))
+                                                    .frame(width: 3, height: 28)
+                                                    .padding(.leading, 2)
+                                                Spacer()
+                                            }
+                                        }
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                                .frame(width: 68, height: 60)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+
+                    Spacer(minLength: 0)
+
+                    // ── Footer Actions ────────────────────────────────────────
+                    railDivider
+
+                    VStack(spacing: 0) {
+                        // Import
                         Button {
-                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                                isCollectionsExpanded.toggle()
-                            }
+                            NotificationCenter.default.post(name: NSNotification.Name("ShowImportQueue"), object: nil)
                         } label: {
-                            HStack {
-                                Text("Collections")
-                                    .font(.system(size: 11, weight: .bold))
-                                    .tracking(1.0)
-                                    .foregroundColor(.inkTextTertiary)
-                                
-                                Spacer()
-                                
-                                Image(systemName: "chevron.right")
-                                    .font(.system(size: 10, weight: .bold))
-                                    .foregroundColor(.inkTextTertiary)
-                                    .rotationEffect(.degrees(isCollectionsExpanded ? 90 : 0))
+                            VStack(spacing: 3) {
+                                Image(systemName: "plus.circle.fill")
+                                    .font(.system(size: 22))
+                                    .foregroundStyle(Color.inkAmber)
+                                Text("Import")
+                                    .font(.system(size: 8, weight: .semibold))
+                                    .foregroundStyle(Color.inkTextSecondary)
                             }
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                        
-                        if isCollectionsExpanded {
-                            VStack(alignment: .leading, spacing: 6) {
-                                ForEach(conversionManager.collections) { collection in
-                                    let bookCount = conversionManager.visiblePDFs.filter { $0.collectionId == collection.id }.count
-                                    librarySidebarRow(
-                                        tag: collection.id.uuidString,
-                                        label: collection.name,
-                                        icon: "folder.fill",
-                                        count: bookCount,
-                                        color: colorFor(collection.color)
-                                    )
-                                }
+                        .frame(width: 68, height: 52)
+
+                        // Stats
+                        Button {
+                            AppRouter.shared.presentSheet(.stats)
+                        } label: {
+                            VStack(spacing: 3) {
+                                Image(systemName: "chart.bar.fill")
+                                    .font(.system(size: 18))
+                                    .foregroundStyle(Color.inkViolet)
+                                Text("Stats")
+                                    .font(.system(size: 8, weight: .semibold))
+                                    .foregroundStyle(Color.inkTextSecondary)
                             }
-                            .padding(.top, 4)
-                            .transition(.move(edge: .top).combined(with: .opacity))
                         }
+                        .buttonStyle(.plain)
+                        .frame(width: 68, height: 52)
                     }
+                    .padding(.bottom, 16)
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.top, 24)
         }
-        .background(Color.inkBackground)
         .onChange(of: iPadSidebarSelection) { _, selection in
             guard let sel = selection else { return }
-            // Reset first so each case starts from a clean state
+            // Reset all filters to a clean slate first
             viewModel.currentFolderID = nil
             viewModel.contentShelf = .all
             viewModel.filterState = .all
+
             switch sel {
             case "continue":
-                viewModel.filterState = .reading   // currently in-progress books
+                viewModel.filterState = .reading
             case "recent":
-                sortOption = .dateAdded            // re-sort by newest first
+                sortOption = .dateAdded
             case "favorites":
-                sortOption = .favorites            // favorites bubble to top
+                sortOption = .favorites
+            case "comics":
+                viewModel.contentShelf = .comics
+            case "manga":
+                viewModel.contentShelf = .manga
+            case "books":
+                viewModel.contentShelf = .books
             default:
                 if let uuid = UUID(uuidString: sel) {
                     viewModel.currentFolderID = uuid
                 }
-                // "all" just resets to defaults (already done above)
+                // "all" resets to defaults (already done above)
             }
         }
     }
 
-    // MARK: - iPad Sidebar Helper Row
+    // MARK: - Rail Helpers
+
+    private var railDivider: some View {
+        Rectangle()
+            .fill(Color.inkBorderSubtle)
+            .frame(width: 40, height: 0.5)
+            .padding(.vertical, 4)
+    }
+
     @ViewBuilder
-    private func librarySidebarRow(tag: String, label: String, icon: String, count: Int? = nil, color: Color? = nil) -> some View {
+    private func railItem(tag: String, icon: String, label: String, accent: Color = Color.inkAmber) -> some View {
         let isSelected = iPadSidebarSelection == tag
         Button {
-            withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+            withAnimation(.spring(response: 0.25, dampingFraction: 0.82)) {
                 iPadSidebarSelection = tag
             }
         } label: {
-            HStack(spacing: 12) {
-                if let color = color {
-                    Circle()
-                        .fill(color)
-                        .frame(width: 8, height: 8)
-                        .padding(.horizontal, 4)
-                } else {
+            ZStack {
+                // Selection pill background
+                if isSelected {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(accent.opacity(0.15))
+                        .padding(.horizontal, 6)
+                        .matchedGeometryEffect(id: "railSelection", in: railNS)
+                }
+
+                VStack(spacing: 4) {
                     Image(systemName: icon)
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundColor(isSelected ? .orange : .inkTextSecondary)
-                        .frame(width: 22)
+                        .font(.system(size: 20, weight: isSelected ? .bold : .medium))
+                        .foregroundStyle(isSelected ? accent : Color.inkTextSecondary)
+                        .scaleEffect(isSelected ? 1.08 : 1.0)
+                        .animation(.spring(response: 0.2, dampingFraction: 0.7), value: isSelected)
+
+                    Text(label)
+                        .font(.system(size: 9, weight: isSelected ? .bold : .medium))
+                        .foregroundStyle(isSelected ? Color.inkTextPrimary : Color.inkTextSecondary)
                 }
-                
-                Text(label)
-                    .font(.system(size: 14, weight: isSelected ? .semibold : .medium))
-                    .foregroundColor(isSelected ? .inkTextPrimary : .inkTextSecondary)
-                
-                Spacer()
-                
-                if let count = count {
-                    Text("\(count)")
-                        .font(.system(size: 12, weight: .semibold, design: .rounded))
-                        .foregroundColor(isSelected ? .inkTextPrimary : .inkTextSecondary)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 2)
-                        .background(Color.inkSurfaceRaised.opacity(0.4), in: Capsule())
-                }
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .background(
-                ZStack {
-                    if isSelected {
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .fill(Color.inkSurface)
-                        
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .strokeBorder(Color.inkBorderVisible, lineWidth: 1)
-                        
-                        // Left accent bar
-                        HStack {
-                            Rectangle()
-                                .fill(Color.orange)
-                                .frame(width: 3, height: 16)
-                                .cornerRadius(1.5)
-                                .padding(.leading, 1)
-                            Spacer()
-                        }
+                .padding(.vertical, 6)
+
+                // Left accent bar for selected state
+                if isSelected {
+                    HStack {
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(accent)
+                            .frame(width: 3, height: 22)
+                            .padding(.leading, 2)
+                        Spacer()
                     }
                 }
-            )
+            }
         }
         .buttonStyle(.plain)
+        .frame(width: 68, height: 56)
     }
-}
+
+    @Namespace private var railNS
 

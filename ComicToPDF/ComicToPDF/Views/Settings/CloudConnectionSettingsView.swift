@@ -18,31 +18,17 @@ struct DropboxIcon: View {
     }
 }
 
-/// Google Drive brand icon — sourced from google_drive_icon.imageset in Assets.xcassets.
-struct GoogleDriveIcon: View {
-    let size: CGFloat
-    var body: some View {
-        Image("google_drive_icon")
-            .renderingMode(.original)
-            .resizable()
-            .scaledToFit()
-            .frame(width: size, height: size)
-            .clipShape(RoundedRectangle(cornerRadius: size * 0.22))
-    }
-}
+
 
 // MARK: - CloudConnectionSettingsView
 
 struct CloudConnectionSettingsView: View {
     @ObservedObject private var dropbox = DropboxProvider.shared
-    @ObservedObject private var gdrive  = GoogleDriveProvider.shared
     @ObservedObject private var downloads = CloudDownloadManager.shared
 
     @State private var isConnectingDropbox = false
-    @State private var isConnectingGoogle  = false
     @State private var errorMessage: String?
     @State private var showDropboxBrowser  = false
-    @State private var showGDriveBrowser   = false
 
     var body: some View {
         Form {
@@ -88,24 +74,6 @@ struct CloudConnectionSettingsView: View {
                     ) { showDropboxBrowser = true }
                 }
 
-                // Google Drive Row
-                providerRow(
-                    name: "Google Drive",
-                    brandIcon: AnyView(GoogleDriveIcon(size: 36)),
-                    accentColor: Color(red: 0.26, green: 0.52, blue: 0.96),
-                    isConnected: gdrive.isConnected,
-                    isConnecting: isConnectingGoogle,
-                    onConnect: connectGoogle,
-                    onDisconnect: { gdrive.signOut() }
-                )
-
-                // Browse Google Drive (shown only when connected)
-                if gdrive.isConnected {
-                    browseRow(
-                        title: "Browse Google Drive",
-                        subtitle: "Stream comics directly to your Library",
-                        color: Color(red: 0.13, green: 0.65, blue: 0.27)
-                    ) { showGDriveBrowser = true }
                 }
             }
 
@@ -157,10 +125,6 @@ struct CloudConnectionSettingsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showDropboxBrowser) {
             CloudFileBrowserView(provider: .dropbox)
-                .environmentObject(LinkedLibraryScanner.shared.conversionManager ?? ConversionManager())
-        }
-        .sheet(isPresented: $showGDriveBrowser) {
-            CloudFileBrowserView(provider: .googleDrive)
                 .environmentObject(LinkedLibraryScanner.shared.conversionManager ?? ConversionManager())
         }
     }
@@ -271,21 +235,5 @@ struct CloudConnectionSettingsView: View {
             await MainActor.run { isConnectingDropbox = false }
         }
     }
-
-    private func connectGoogle() {
-        isConnectingGoogle = true
-        errorMessage = nil
-        Task {
-            do {
-                try await gdrive.authenticate()
-                Logger.shared.log("Google Drive: OAuth authentication successful", category: "Cloud", type: .success)
-            } catch {
-                await MainActor.run {
-                    errorMessage = "Google Drive: \(error.localizedDescription)"
-                }
-                Logger.shared.log("Google Drive: OAuth failed — \(error.localizedDescription)", category: "Cloud", type: .error)
-            }
-            await MainActor.run { isConnectingGoogle = false }
-        }
     }
 }

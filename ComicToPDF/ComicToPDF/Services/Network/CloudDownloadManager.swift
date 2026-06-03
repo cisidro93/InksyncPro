@@ -3,7 +3,7 @@ import Combine
 import os
 
 /// Manages background downloading of cloud files directly into the local InksyncVault.
-/// Supports both Dropbox (unauthenticated temporary links) and Google Drive (Bearer token required).
+/// Supports Dropbox (unauthenticated temporary links).
 @MainActor
 class CloudDownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
     static let shared = CloudDownloadManager()
@@ -46,7 +46,7 @@ class CloudDownloadManager: NSObject, ObservableObject, URLSessionDownloadDelega
 
     // MARK: - Download-to-Vault (Permanent Storage)
 
-    /// Downloads a Dropbox/GDrive file permanently into InksyncVault, then optionally
+    /// Downloads a Dropbox file permanently into InksyncVault, then optionally
     /// triggers conversion. This replaces the old URLSessionDownloadDelegate approach
     /// which had three compounding bugs:
     ///   1. `targetFileName` used `pdf.url.pathExtension` which is always "" for cloud files.
@@ -236,11 +236,6 @@ class CloudDownloadManager: NSObject, ObservableObject, URLSessionDownloadDelega
             downloadURL = try await DropboxProvider.shared.getDownloadURL(fileID: remoteID)
             request = URLRequest(url: downloadURL)
             // Dropbox temporary links are pre-authenticated — no Authorization header needed
-        } else if provider == "Google Drive" || provider == "GoogleDrive" {
-            downloadURL = try await GoogleDriveProvider.shared.getDownloadURL(fileID: remoteID)
-            request = URLRequest(url: downloadURL)
-            let authHeader = try await GoogleDriveProvider.shared.currentAuthHeader()
-            request.setValue(authHeader, forHTTPHeaderField: "Authorization")
         } else {
             throw CloudStreamError.unknownProvider(provider)
         }

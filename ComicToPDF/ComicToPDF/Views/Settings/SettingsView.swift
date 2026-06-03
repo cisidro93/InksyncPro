@@ -648,9 +648,6 @@ struct SettingsView: View {
                         if DropboxProvider.shared.isConnected {
                             Image(systemName: "checkmark.circle.fill").foregroundColor(.green).font(.caption)
                         }
-                        if GoogleDriveProvider.shared.isConnected {
-                            Image(systemName: "checkmark.circle.fill").foregroundColor(.green).font(.caption)
-                        }
                     }
                 }
             }

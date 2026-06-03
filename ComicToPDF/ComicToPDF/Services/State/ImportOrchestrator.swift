@@ -108,13 +108,10 @@ actor ImportOrchestrator {
                     autoreleasepool {
                         xmlData = isArchive ? (try? LocalComicInfoService.shared.fetchNonDestructiveMetadata(from: destURL)) : nil
                         parsedInfo = isArchive ? ComicInfoParser.parse(from: destURL) : nil
-                        
-                        if let img = PhysicalFileSystemRouter.extractCoverImageStatic(from: destURL),
-                           let jpegData = img.jpegData(compressionQuality: 0.7) {
-                            let coversDir = PhysicalFileSystemRouter.getCoversDirectory()
-                            let coverURL = coversDir.appendingPathComponent("cover_\(pdfID.uuidString).jpg")
-                            try? jpegData.write(to: coverURL)
-                        }
+                        // Cover extraction intentionally deferred: extracting covers inline for
+                        // every file in a large batch causes unbounded memory growth (OOM crash).
+                        // backfillMissingThumbnails() handles cover generation post-import with
+                        // a rate-limited batch of 5 + Task.yield() to prevent bus saturation.
                     }
 
                     if let xmlData = xmlData {
@@ -293,13 +290,10 @@ actor ImportOrchestrator {
                     autoreleasepool {
                         xmlData = isArchive ? (try? LocalComicInfoService.shared.fetchNonDestructiveMetadata(from: destURL)) : nil
                         parsedInfo = isArchive ? ComicInfoParser.parse(from: destURL) : nil
-                        
-                        if let img = PhysicalFileSystemRouter.extractCoverImageStatic(from: destURL),
-                           let jpegData = img.jpegData(compressionQuality: 0.7) {
-                            let coversDir = PhysicalFileSystemRouter.getCoversDirectory()
-                            let coverURL = coversDir.appendingPathComponent("cover_\(pdfID.uuidString).jpg")
-                            try? jpegData.write(to: coverURL)
-                        }
+                        // Cover extraction intentionally deferred: extracting covers inline for
+                        // every file in a large batch causes unbounded memory growth (OOM crash).
+                        // backfillMissingThumbnails() handles cover generation post-import with
+                        // a rate-limited batch of 5 + Task.yield() to prevent bus saturation.
                     }
 
                     if let xmlData = xmlData {
@@ -619,12 +613,10 @@ actor ImportOrchestrator {
                             let cType = MetadataHeuristics.detectAsymmetricContentType(url: destURL)
                             
                             let pdfID = UUID()
-                            if let img = PhysicalFileSystemRouter.extractCoverImageStatic(from: destURL),
-                               let jpegData = img.jpegData(compressionQuality: 0.7) {
-                                let coversDir = PhysicalFileSystemRouter.getCoversDirectory()
-                                let coverURL = coversDir.appendingPathComponent("cover_\(pdfID.uuidString).jpg")
-                                try? jpegData.write(to: coverURL)
-                            }
+                            // Cover extraction intentionally deferred: extracting covers inline for
+                            // every file in a large batch causes unbounded memory growth (OOM crash).
+                            // backfillMissingThumbnails() handles cover generation post-import with
+                            // a rate-limited batch of 5 + Task.yield() to prevent bus saturation.
 
                             var pdf = ConvertedPDF(
                                 id: pdfID,

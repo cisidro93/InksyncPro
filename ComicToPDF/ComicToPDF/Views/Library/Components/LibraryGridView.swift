@@ -81,15 +81,15 @@ struct LibraryGridView: View {
                             // Recently Added banner removed to declutter workspace
 
                             // ── Main grid ─────────────────────────────────
-                            let hPad: CGFloat = hSizeClass == .regular ? 20 : 16
-                            let colSpacing: CGFloat = hSizeClass == .regular ? 20 : 14
+                            let hPad: CGFloat = hSizeClass == .regular ? 20 : 12
+                            let colSpacing: CGFloat = hSizeClass == .regular ? 20 : 10
                             // Fixed 3-column on iPad, 2-column on iPhone — guarantees every
                             // thumbnail gets an identical column width (uniform sizes, no overlap).
                             let colCount = hSizeClass == .regular ? 3 : 2
                             let columns = Array(repeating: GridItem(.flexible(), spacing: colSpacing), count: colCount)
                             LazyVGrid(
                                 columns: columns,
-                                spacing: hSizeClass == .regular ? 24 : 18
+                                spacing: hSizeClass == .regular ? 24 : 14
                             ) {
                                 ForEach(items) { item in
                                     switch item {

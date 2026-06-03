@@ -75,7 +75,7 @@ class PhysicalFileSystemRouter {
                         kCGImageSourceCreateThumbnailFromImageAlways: true,
                         kCGImageSourceShouldCacheImmediately: true,
                         kCGImageSourceCreateThumbnailWithTransform: true,
-                        kCGImageSourceThumbnailMaxPixelSize: 500
+                        kCGImageSourceThumbnailMaxPixelSize: 300   // grid cells never exceed ~200pt
                     ] as CFDictionary
                     
                     if let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, downsampleOpts) {
@@ -245,7 +245,7 @@ class PhysicalFileSystemRouter {
                         kCGImageSourceCreateThumbnailFromImageAlways: true,
                         kCGImageSourceShouldCacheImmediately: true,
                         kCGImageSourceCreateThumbnailWithTransform: true,
-                        kCGImageSourceThumbnailMaxPixelSize: 500
+                        kCGImageSourceThumbnailMaxPixelSize: 300   // grid cells never exceed ~200pt
                     ] as CFDictionary
                     guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, downsampleOpts) else { return nil }
                     return UIImage(cgImage: cg)

@@ -91,7 +91,15 @@ struct PPLReaderView: View {
                 }
                 advanceBuffer(to: newIndex, geo: geo, dual: showingDual)
             }
-            .onChange(of: geo.size)         { _, size   in resetOnResize(to: size, dual: effectiveDoublePage && size.width > size.height) }
+            // onChange(of: geo.size) fires many times during the rotation animation with
+            // intermediate sizes. We debounce by ignoring any size where either dimension
+            // is zero, and we only commit a full buffer reset once the final stable size
+            // has settled (detected by the guard in resetOnResize).
+            .onChange(of: geo.size)         { _, size   in
+                // Ignore intermediate near-zero sizes emitted during rotation animation
+                guard size.width > 0, size.height > 0 else { return }
+                resetOnResize(to: size, dual: effectiveDoublePage && size.width > size.height)
+            }
             .onChange(of: isDoublePageStored) { _, _ in setupBuffer(geo: geo, dual: effectiveDoublePage && geo.size.width > geo.size.height) }
             .onChange(of: isAutoCropEnabled) { _, _ in setupBuffer(geo: geo, dual: showingDual) }
         }
@@ -599,6 +607,23 @@ struct PPLReaderView: View {
         }
         bufferManager.isPPLEnabled = false
         bufferManager.updateViewport(rect: .full)
+
+        // ✅ Rotation crash fix: eagerly clear spread state BEFORE issuing the
+        // new render. Without this, the old dual-page CGImages remain alive in
+        // currentSpread while the new render sets currentImage = nil (isLoading=true).
+        // SwiftUI then picks the singlePageView branch and passes currentImage=nil
+        // to MetalCanvasView — crashing the GPU texture upload path.
+        // Clearing spreads here makes the body show the loading indicator instead.
+        if !dual {
+            bufferManager.currentSpread = nil
+            bufferManager.nextSpread = nil
+            bufferManager.prevSpread = nil
+        } else {
+            bufferManager.currentImage = nil
+            bufferManager.nextImage = nil
+            bufferManager.prevImage = nil
+        }
+
         if dual {
             let lead = PageBufferManager.canonicalLeadIndex(for: currentPageIndex, isMangaMode: isMangaMode)
             bufferManager.renderDual(leadIndex: lead, pages: pages, isMangaMode: isMangaMode, bounds: size)

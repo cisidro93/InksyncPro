@@ -144,7 +144,7 @@
     </array>
 
     <!-- OAUTH CALLBACK URL SCHEMES -->
-    <!-- Registers inksyncpro:// so iOS routes Dropbox & Google OAuth callbacks back into this app -->
+    <!-- Registers inksyncpro:// so iOS routes Dropbox OAuth callbacks back into this app -->
     <key>CFBundleURLTypes</key>
     <array>
         <dict>
@@ -156,5 +156,10 @@
             </array>
         </dict>
     </array>
+    
+    <!-- EXPORT COMPLIANCE -->
+    <!-- Prevents automated App Store Connect warning since we only use standard HTTPS/system encryption -->
+    <key>ITSAppUsesNonExemptEncryption</key>
+    <false/>
 </dict>
 </plist>
