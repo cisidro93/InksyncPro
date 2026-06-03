@@ -153,14 +153,28 @@ class PageBufferManager: ObservableObject {
 
     // MARK: - Setup (Direct ZIP Streaming)
     // Issue 1 fix: ZIP header scanning moved off @MainActor.
+    //
+    // IMPORTANT — render is called INSIDE this function after the async scan writes
+    // pageURLs. The caller must NOT call render() separately, because immediately
+    // after setupDirectArchive() returns, pageURLs is still empty (the Task.detached
+    // scan hasn't finished). Calling render() on empty pageURLs produces a nil
+    // currentImage, which crashes MetalCanvasView's GPU texture upload in single-page
+    // mode (dual-page mode guards with `if let left/right` so it degrades to black
+    // rather than crashing — that's why dual worked but single crashed).
 
-    func setupDirectArchive(url: URL) {
+    func setupDirectArchive(
+        url: URL,
+        initialPageIndex: Int,
+        bounds: CGSize,
+        dual: Bool = false,
+        isMangaMode: Bool = false
+    ) {
         renderTask?.cancel()
         renderTask = nil
         generation &+= 1
         archiveURL = url
         lockedRect = .full
-        imageCache.removeAllObjects()       // Issue 4: evict immediately
+        imageCache.removeAllObjects()
         currentImage = nil
         nextImage = nil
         prevImage = nil
@@ -172,9 +186,6 @@ class PageBufferManager: ObservableObject {
 
         let capturedGen = generation
 
-        // Issue 1: Archive(url:) scans the ZIP central directory synchronously.
-        // On a 500MB CBZ this can block for >250ms — a watchdog kill on @MainActor.
-        // Solution: run off-actor, update @Published state via MainActor.run.
         Task.detached(priority: .userInitiated) { [weak self] in
             guard let self else { return }
 
@@ -197,8 +208,6 @@ class PageBufferManager: ObservableObject {
                     .sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
 
                 paths = entries.map { $0.path }
-                // Synthetic URLs are only used for extension extraction in renderPage —
-                // actual data is always extracted via zipEntryPaths + archiveURL.
                 syntheticURLs = entries.map { url.appendingPathComponent($0.path) }
 
                 Logger.shared.log(
@@ -216,6 +225,21 @@ class PageBufferManager: ObservableObject {
                 guard let self, self.generation == capturedGen else { return }
                 self.zipEntryPaths = paths
                 self.pageURLs = syntheticURLs
+
+                // Fire the initial render NOW — pageURLs is populated so
+                // renderPage will decode real images instead of returning nil.
+                if dual {
+                    let lead = PageBufferManager.canonicalLeadIndex(
+                        for: initialPageIndex, isMangaMode: isMangaMode)
+                    self.renderDual(
+                        leadIndex: lead,
+                        pages: syntheticURLs,
+                        isMangaMode: isMangaMode,
+                        bounds: bounds
+                    )
+                } else {
+                    self.render(pageIndex: initialPageIndex, bounds: bounds)
+                }
             }
         }
     }

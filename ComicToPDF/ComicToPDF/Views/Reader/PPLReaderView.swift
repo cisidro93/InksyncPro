@@ -554,20 +554,35 @@ struct PPLReaderView: View {
     // MARK: - Buffer Setup
 
     private func setupBuffer(geo: GeometryProxy, dual: Bool) {
+        let isLandscape = geo.size.width > geo.size.height
+        let showingDual = dual && isLandscape
+
         if let firstPage = pages.first,
            let archiveURL = PageBufferManager.findArchiveURL(in: firstPage) {
-            bufferManager.setupDirectArchive(url: archiveURL)
+            // setupDirectArchive is async — it fires the initial render() itself
+            // after pageURLs is populated. Do NOT call render() here separately;
+            // doing so would race with the empty pageURLs and produce a nil
+            // currentImage crash in MetalCanvasView (single-page mode only).
+            bufferManager.setupDirectArchive(
+                url: archiveURL,
+                initialPageIndex: currentPageIndex,
+                bounds: geo.size,
+                dual: showingDual,
+                isMangaMode: isMangaMode
+            )
         } else {
             bufferManager.setup(pages: pages)
+            if showingDual {
+                let lead = PageBufferManager.canonicalLeadIndex(
+                    for: currentPageIndex, isMangaMode: isMangaMode)
+                bufferManager.renderDual(
+                    leadIndex: lead, pages: pages,
+                    isMangaMode: isMangaMode, bounds: geo.size)
+            } else {
+                bufferManager.render(pageIndex: currentPageIndex, bounds: geo.size)
+            }
         }
-        
-        if dual {
-            let lead = PageBufferManager.canonicalLeadIndex(for: currentPageIndex, isMangaMode: isMangaMode)
-            bufferManager.renderDual(leadIndex: lead, pages: pages, isMangaMode: isMangaMode, bounds: geo.size)
-        } else {
-            bufferManager.render(pageIndex: currentPageIndex, bounds: geo.size)
-        }
-        
+
         if startWithGuidedReading && !hasInitializedGuidedReading {
             hasInitializedGuidedReading = true
             refreshGuidedPanels()
