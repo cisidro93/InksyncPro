@@ -74,7 +74,6 @@ struct CloudConnectionSettingsView: View {
                     ) { showDropboxBrowser = true }
                 }
 
-                }
             }
 
             // MARK: - Active Downloads
