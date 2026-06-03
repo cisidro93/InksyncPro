@@ -558,6 +558,4 @@ struct CloudBrowserPickerView: View {
             }
         }
     }
-
-
-
+}

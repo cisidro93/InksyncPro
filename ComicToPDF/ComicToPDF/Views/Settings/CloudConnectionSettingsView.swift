@@ -232,8 +232,6 @@ struct CloudConnectionSettingsView: View {
                 }
                 Logger.shared.log("Dropbox: OAuth failed — \(error.localizedDescription)", category: "Cloud", type: .error)
             }
-            await MainActor.run { isConnectingDropbox = false }
         }
-    }
     }
 }

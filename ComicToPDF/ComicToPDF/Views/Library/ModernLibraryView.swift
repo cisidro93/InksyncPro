@@ -1429,4 +1429,4 @@ struct ModernLibraryView: View {
     }
 
     @Namespace private var railNS
-
+}
