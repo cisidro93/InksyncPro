@@ -18,7 +18,11 @@ struct WiFiCertificateManager {
         var result: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
         guard status == errSecSuccess, let identity = result else { return nil }
-        return identity as? SecIdentity
+        let typeID = CFGetTypeID(identity)
+        if typeID == SecIdentityGetTypeID() {
+            return (identity as! SecIdentity)
+        }
+        return nil
     }
 
     // Generates a new P-256 key pair and stores the private key in Keychain.

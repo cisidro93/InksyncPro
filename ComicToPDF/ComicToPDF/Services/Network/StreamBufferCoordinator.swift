@@ -38,10 +38,10 @@ public actor StreamBufferCoordinator {
         let downloadTask = Task<Data, Error> {
             do {
                 let data = try await fetchWithRetry(url: url, index: index)
-                await self.cacheData(index, data: data)
+                self.cacheData(index, data: data)
                 return data
             } catch {
-                await self.clearActiveDownload(index)
+                self.clearActiveDownload(index)
                 throw error
             }
         }
@@ -59,7 +59,7 @@ public actor StreamBufferCoordinator {
             
             let prefetchTask = Task<Data, Error> {
                 let data = try await fetchWithRetry(url: url, index: index)
-                await self.cacheData(index, data: data)
+                self.cacheData(index, data: data)
                 return data
             }
             activeDownloads[index] = prefetchTask
