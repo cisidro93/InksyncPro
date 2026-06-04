@@ -1181,12 +1181,4 @@ struct ModernLibraryView: View {
             .foregroundColor(Theme.text)
         }
     }
-                }
-            }
-        }
-        .buttonStyle(.plain)
-        .frame(width: 68, height: 56)
-    }
-
-    @Namespace private var railNS
 }
