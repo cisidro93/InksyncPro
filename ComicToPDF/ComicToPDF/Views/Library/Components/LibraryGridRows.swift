@@ -268,7 +268,8 @@ struct ModernGridFileCell: View {
                     .foregroundColor(Theme.text)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
-                    .frame(minHeight: 32, maxHeight: 38, alignment: .topLeading)
+                    .frame(height: 38, alignment: .topLeading)
+
 
                 if pdf.contentType == .comic {
                     let isManga = pdf.metadata.isManga ?? false
@@ -577,7 +578,7 @@ struct ModernGridSeriesCell: View {
                     }
                 }
                 .fixedSize(horizontal: false, vertical: true)
-                .frame(minHeight: 32, maxHeight: 38, alignment: .topLeading)
+                .frame(height: 38, alignment: .topLeading)
 
                 // Publisher / type metadata line
                 HStack(spacing: 5) {

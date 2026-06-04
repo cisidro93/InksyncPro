@@ -45,6 +45,7 @@ struct ModernLibraryView: View {
     /// into compact mode regardless of pin/scroll state.
     @State private var isLandscape: Bool = false
     @Environment(\.verticalSizeClass) private var vSizeClass
+    @State private var isSearchActive: Bool = false
 
 
     /// Derived header collapse state.
@@ -322,69 +323,96 @@ struct ModernLibraryView: View {
     // MARK: - Root Shell (split out to avoid type-checker timeout)
     @ViewBuilder
     private var rootShell: some View {
-        if hSizeClass == .regular {
-            // ── iPad: Full-bleed layout with a compact 68pt icon rail ──────────
-            // We deliberately avoid NavigationSplitView here. NSV forces a minimum
-            // column width of ~280pt for its sidebar — nearly 1/4 of a 12.9" screen.
-            // Instead we use a plain HStack with a custom rail that is exactly 68pt.
-            // This gives the grid ~94% of the screen width on a 12.9" iPad Pro.
-            HStack(spacing: 0) {
-                // Icon rail (68pt fixed)
-                // Trailing gradient fade blends rail into content — replaces hard border
-                iPadIconRail
-                    .frame(width: 68)
-                    .ignoresSafeArea(edges: .vertical)
-                    .overlay(alignment: .trailing) {
-                        LinearGradient(
-                            colors: [Color.inkBorderSubtle.opacity(0.55), Color.clear],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                        .frame(width: 10)
-                        .ignoresSafeArea(edges: .vertical)
-                    }
-
-                // Full-width detail content
-                ZStack(alignment: .top) {
-                    Color.clear.ignoresSafeArea()
-                    libraryContent
-                        .safeAreaInset(edge: .bottom) {
-                            if isBatchMode { batchBottomToolbar.transition(.move(edge: .bottom)) }
-                        }
-                        .overlay(alignment: .top) { storageTransferBanner }
-                        .fullScreenCover(item: $router.activeFullScreen) { dest in
-                            switch dest {
-                            case .read(let pdf, _):
-                                UnifiedReaderView(pdf: pdf, allBooks: conversionManager.convertedPDFs)
-                            case .advancedWorkspace(let pdf):
-                                AdvancedWorkspaceView(pdf: pdf).environmentObject(conversionManager)
-                            case .smartCollection(let rule):
-                                SmartCollectionDetailView(rule: rule).environmentObject(conversionManager)
-                            }
-                        }
-                        .sheet(item: $router.activeSheet) { item in destinationSheet(for: item) }
+        ZStack(alignment: .top) {
+            Color.clear.ignoresSafeArea()
+            
+            // Edge-to-edge content
+            libraryContent
+                .safeAreaInset(edge: .bottom) {
+                    if isBatchMode { batchBottomToolbar.transition(.move(edge: .bottom)) }
                 }
+                .overlay(alignment: .top) { storageTransferBanner }
+                .fullScreenCover(item: $router.activeFullScreen) { dest in
+                    switch dest {
+                    case .read(let pdf, _):
+                        UnifiedReaderView(pdf: pdf, allBooks: conversionManager.convertedPDFs)
+                    case .advancedWorkspace(let pdf):
+                        AdvancedWorkspaceView(pdf: pdf).environmentObject(conversionManager)
+                    case .smartCollection(let rule):
+                        SmartCollectionDetailView(rule: rule).environmentObject(conversionManager)
+                    }
+                }
+                .sheet(item: $router.activeSheet) { item in destinationSheet(for: item) }
+
+            // Branding Overlay
+            VStack {
+                HStack(spacing: 8) {
+                    Image(systemName: "square.fill.on.square.fill")
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundStyle(Color.inkBlue)
+                    Text("InkSync Pro")
+                        .font(.system(size: 18, weight: .bold, design: .rounded))
+                        .foregroundStyle(Color.inkTextPrimary)
+                    Spacer()
+                }
+                .padding(.horizontal, 24)
+                .padding(.top, 16)
+                Spacer()
             }
             .ignoresSafeArea(edges: .bottom)
-        } else {
-            ZStack(alignment: .top) {
-                Color.clear.ignoresSafeArea()
-                libraryContent
-                    .safeAreaInset(edge: .bottom) {
-                        if isBatchMode { batchBottomToolbar.transition(.move(edge: .bottom)) }
-                    }
-                    .overlay(alignment: .top) { storageTransferBanner }
-                    .fullScreenCover(item: $router.activeFullScreen) { dest in
-                        switch dest {
-                        case .read(let pdf, _):
-                            UnifiedReaderView(pdf: pdf, allBooks: conversionManager.convertedPDFs)
-                        case .advancedWorkspace(let pdf):
-                            AdvancedWorkspaceView(pdf: pdf).environmentObject(conversionManager)
-                        case .smartCollection(let rule):
-                            SmartCollectionDetailView(rule: rule).environmentObject(conversionManager)
+            
+            // Omni-Dock Overlay
+            OmniDockView(
+                contentShelf: $viewModel.contentShelf,
+                filterState: $viewModel.filterState,
+                sortOption: Binding(get: { sortOption }, set: { sortOption = $0; _ = viewModel.sortPDFs(cachedVisiblePDFs, sortOption: $0) }),
+                isBatchMode: $isBatchMode,
+                viewStyle: Binding(get: { viewStyle }, set: { viewStyle = $0 }),
+                currentFolderID: $viewModel.currentFolderID,
+                collections: cachedCollections,
+                onWorkArea: { AppRouter.shared.presentSheet(.inbox) },
+                onImport: { NotificationCenter.default.post(name: NSNotification.Name("ShowImportQueue"), object: nil) },
+                onSettings: { NotificationCenter.default.post(name: NSNotification.Name("ShowSettingsTab"), object: nil) },
+                onVaultToggle: handleVaultToggle,
+                onSearch: { withAnimation(.spring) { isSearchActive.toggle() } }
+            )
+            .ignoresSafeArea(edges: .bottom)
+            
+            // Search Overlay
+            if isSearchActive {
+                VStack {
+                    HStack {
+                        Image(systemName: "magnifyingglass").foregroundColor(.gray)
+                        TextField("Search library...", text: $viewModel.searchText)
+                            .textFieldStyle(.plain)
+                            .foregroundColor(.white)
+                        if !viewModel.searchText.isEmpty {
+                            Button(action: { viewModel.searchText = "" }) {
+                                Image(systemName: "xmark.circle.fill").foregroundColor(.gray)
+                            }
                         }
+                        Button("Cancel") {
+                            withAnimation(.spring) {
+                                viewModel.searchText = ""
+                                isSearchActive = false
+                            }
+                        }
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.inkBlue)
+                        .padding(.leading, 8)
                     }
-                    .sheet(item: $router.activeSheet) { item in destinationSheet(for: item) }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .overlay(Capsule().strokeBorder(Color.white.opacity(0.15)))
+                    .padding(.horizontal, 24)
+                    .padding(.top, 16)
+                    .shadow(color: .black.opacity(0.2), radius: 10, y: 5)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    
+                    Spacer()
+                }
+                .zIndex(100)
             }
         }
     }
@@ -604,47 +632,10 @@ struct ModernLibraryView: View {
     @ViewBuilder
     private var libraryContent: some View {
         VStack(spacing: 0) {
-            // MARK: - Dedicated Header Component
-            LibraryHeaderView(
-                searchText: $viewModel.searchText,
-                sortOption: Binding(get: { sortOption }, set: { sortOption = $0; _ = viewModel.sortPDFs(cachedVisiblePDFs, sortOption: $0) }),
-                filterState: $viewModel.filterState,
-                contentShelf: $viewModel.contentShelf,
-                viewStyle: $viewStyle,
-                tapAction: $tapAction,
-                onSheetTrigger: { (dest: LibrarySheetDestination) in AppRouter.shared.presentSheet(dest) },
-                isBatchMode: $isBatchMode,
-                multiSelection: $multiSelection,
-                batchMergeItems: $batchMergeItems,
-                showingBatchMergeReorder: $showingBatchMergeReorder,
-                onVaultToggle: handleVaultToggle,
-                onSelectAll: handleSelectAll,
-                isCollapsed: isHeaderCollapsed,
-                pinMode: headerPinMode,
-                onPinToggle: {
-                    let next: HeaderPinMode
-                    switch headerPinMode {
-                    case .auto:            next = .pinnedExpanded
-                    case .pinnedExpanded:  next = .pinnedCollapsed
-                    case .pinnedCollapsed: next = .auto
-                    }
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
-                        headerPinModeRaw = next.rawValue
-                    }
-                    HapticEngine.selection()
-                },
-                onCollapseToggle: {
-                    // Drag/tap on the collapse bar: toggle between expanded/collapsed pin states.
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
-                        if isHeaderCollapsed {
-                            headerPinModeRaw = HeaderPinMode.pinnedExpanded.rawValue
-                        } else {
-                            headerPinModeRaw = HeaderPinMode.pinnedCollapsed.rawValue
-                        }
-                    }
-                    HapticEngine.selection()
-                }
-            )
+            // MARK: - Legacy Header Removed
+            // The Omni-Dock now handles all navigation and filtering.
+            Spacer().frame(height: 60) // Top padding to prevent overlap with the status bar and branding
+
 
             if MetadataMatchService.shared.activeClusters.contains(where: {
                 if case .matched = $0.status { return false }
@@ -1190,243 +1181,6 @@ struct ModernLibraryView: View {
             .foregroundColor(Theme.text)
         }
     }
-
-    // MARK: - iPad Compact Icon Rail
-    // 68pt wide, full-height sidebar. Each item is a 52×52pt touch target with a
-    // large SF Symbol and a micro-label. An animated orange accent bar slides to
-    // the selected item. The rail is divided into three sections separated by fine
-    // hairlines: Browse (top), Format shelves (middle), Collections (bottom).
-    @ViewBuilder
-    private var iPadIconRail: some View {
-        ZStack {
-            // Rail background — deep surface with subtle material
-            Color.inkBackground
-                .overlay(Color.inkSurface.opacity(0.55))
-
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(spacing: 0) {
-                    // ── App identity mark ─────────────────────────────────────
-                    VStack(spacing: 2) {
-                        Image(systemName: "books.vertical.fill")
-                            .font(.system(size: 22, weight: .bold))
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: [Color.inkAmber, Color.inkViolet],
-                                    startPoint: .topLeading, endPoint: .bottomTrailing
-                                )
-                            )
-                        Text("INK")
-                            .font(.system(size: 8, weight: .black, design: .rounded))
-                            .foregroundStyle(Color.inkTextTertiary)
-                            .tracking(2)
-                    }
-                    .frame(width: 68, height: 56)
-                    .padding(.top, 8)
-
-                    railDivider
-
-                    // ── Browse Section ────────────────────────────────────────
-                    Group {
-                        railItem(tag: "all",      icon: "square.grid.2x2.fill",   label: "All")
-                        railItem(tag: "continue", icon: "book.open.fill",          label: "Reading")
-                        railItem(tag: "recent",   icon: "clock.fill",              label: "Recent")
-                        railItem(tag: "favorites",icon: "heart.fill",              label: "Favorites")
-                    }
-                    .padding(.vertical, 4)
-
-                    railDivider
-
-                    // ── Format Shelves ────────────────────────────────────────
-                    Group {
-                        railItem(tag: "comics",   icon: "books.vertical.fill",     label: "Comics",  accent: Color(red: 0.25, green: 0.55, blue: 1.0))
-                        railItem(tag: "manga",    icon: "text.book.closed.fill",   label: "Manga",   accent: Color(red: 1.0, green: 0.35, blue: 0.25))
-                        railItem(tag: "books",    icon: "book.fill",               label: "Books",   accent: Color(red: 0.15, green: 0.75, blue: 0.65))
-                    }
-                    .padding(.vertical, 4)
-
-                    // ── Collections ───────────────────────────────────────────
-                    if !conversionManager.collections.isEmpty {
-                        railDivider
-
-                        VStack(spacing: 2) {
-                            ForEach(conversionManager.collections.prefix(8)) { col in
-                                let tag = col.id.uuidString
-                                let isSelected = iPadSidebarSelection == tag
-                                let count = conversionManager.visiblePDFs.filter { $0.collectionId == col.id }.count
-                                Button {
-                                    withAnimation(.spring(response: 0.25, dampingFraction: 0.82)) {
-                                        iPadSidebarSelection = tag
-                                    }
-                                } label: {
-                                    ZStack {
-                                        // Selected accent bar
-                                        if isSelected {
-                                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                                .fill(colorFor(col.color).opacity(0.18))
-                                                .padding(.horizontal, 6)
-                                        }
-
-                                        VStack(spacing: 3) {
-                                            ZStack {
-                                                Circle()
-                                                    .fill(colorFor(col.color).opacity(isSelected ? 0.3 : 0.12))
-                                                    .frame(width: 36, height: 36)
-                                                Image(systemName: "folder.fill")
-                                                    .font(.system(size: 16, weight: .semibold))
-                                                    .foregroundStyle(colorFor(col.color))
-                                            }
-                                            Text(col.name)
-                                                .font(.system(size: 8, weight: isSelected ? .bold : .medium))
-                                                .foregroundStyle(isSelected ? Color.inkTextPrimary : Color.inkTextSecondary)
-                                                .lineLimit(1)
-                                                .frame(width: 58)
-
-                                            if count > 0 {
-                                                Text("\(count)")
-                                                    .font(.system(size: 8, weight: .bold, design: .rounded))
-                                                    .foregroundStyle(Color.inkTextTertiary)
-                                            }
-                                        }
-                                        .padding(.vertical, 4)
-
-                                        // Left active bar
-                                        if isSelected {
-                                            HStack {
-                                                RoundedRectangle(cornerRadius: 2)
-                                                    .fill(colorFor(col.color))
-                                                    .frame(width: 3, height: 28)
-                                                    .padding(.leading, 2)
-                                                Spacer()
-                                            }
-                                        }
-                                    }
-                                }
-                                .buttonStyle(.plain)
-                                .frame(width: 68, height: 60)
-                            }
-                        }
-                        .padding(.vertical, 4)
-                    }
-
-                    Spacer(minLength: 0)
-
-                    // ── Footer Actions ────────────────────────────────────────
-                    railDivider
-
-                    VStack(spacing: 0) {
-                        // Import
-                        Button {
-                            NotificationCenter.default.post(name: NSNotification.Name("ShowImportQueue"), object: nil)
-                        } label: {
-                            VStack(spacing: 3) {
-                                Image(systemName: "plus.circle.fill")
-                                    .font(.system(size: 22))
-                                    .foregroundStyle(Color.inkAmber)
-                                Text("Import")
-                                    .font(.system(size: 8, weight: .semibold))
-                                    .foregroundStyle(Color.inkTextSecondary)
-                            }
-                        }
-                        .buttonStyle(.plain)
-                        .frame(width: 68, height: 52)
-
-                        // Stats
-                        Button {
-                            AppRouter.shared.presentSheet(.stats)
-                        } label: {
-                            VStack(spacing: 3) {
-                                Image(systemName: "chart.bar.fill")
-                                    .font(.system(size: 18))
-                                    .foregroundStyle(Color.inkViolet)
-                                Text("Stats")
-                                    .font(.system(size: 8, weight: .semibold))
-                                    .foregroundStyle(Color.inkTextSecondary)
-                            }
-                        }
-                        .buttonStyle(.plain)
-                        .frame(width: 68, height: 52)
-                    }
-                    .padding(.bottom, 16)
-                }
-            }
-        }
-        .onChange(of: iPadSidebarSelection) { _, selection in
-            guard let sel = selection else { return }
-            // Reset all filters to a clean slate first
-            viewModel.currentFolderID = nil
-            viewModel.contentShelf = .all
-            viewModel.filterState = .all
-
-            switch sel {
-            case "continue":
-                viewModel.filterState = .reading
-            case "recent":
-                sortOption = .dateAdded
-            case "favorites":
-                sortOption = .favorites
-            case "comics":
-                viewModel.contentShelf = .comics
-            case "manga":
-                viewModel.contentShelf = .manga
-            case "books":
-                viewModel.contentShelf = .books
-            default:
-                if let uuid = UUID(uuidString: sel) {
-                    viewModel.currentFolderID = uuid
-                }
-                // "all" resets to defaults (already done above)
-            }
-        }
-    }
-
-    // MARK: - Rail Helpers
-
-    private var railDivider: some View {
-        Rectangle()
-            .fill(Color.inkBorderSubtle)
-            .frame(width: 40, height: 0.5)
-            .padding(.vertical, 4)
-    }
-
-    @ViewBuilder
-    private func railItem(tag: String, icon: String, label: String, accent: Color = Color.inkAmber) -> some View {
-        let isSelected = iPadSidebarSelection == tag
-        Button {
-            withAnimation(.spring(response: 0.25, dampingFraction: 0.82)) {
-                iPadSidebarSelection = tag
-            }
-        } label: {
-            ZStack {
-                // Selection pill background
-                if isSelected {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(accent.opacity(0.15))
-                        .padding(.horizontal, 6)
-                        .matchedGeometryEffect(id: "railSelection", in: railNS)
-                }
-
-                VStack(spacing: 4) {
-                    Image(systemName: icon)
-                        .font(.system(size: 20, weight: isSelected ? .bold : .medium))
-                        .foregroundStyle(isSelected ? accent : Color.inkTextSecondary)
-                        .scaleEffect(isSelected ? 1.08 : 1.0)
-                        .animation(.spring(response: 0.2, dampingFraction: 0.7), value: isSelected)
-
-                    Text(label)
-                        .font(.system(size: 9, weight: isSelected ? .bold : .medium))
-                        .foregroundStyle(isSelected ? Color.inkTextPrimary : Color.inkTextSecondary)
-                }
-                .padding(.vertical, 6)
-
-                // Left accent bar for selected state
-                if isSelected {
-                    HStack {
-                        RoundedRectangle(cornerRadius: 2)
-                            .fill(accent)
-                            .frame(width: 3, height: 22)
-                            .padding(.leading, 2)
-                        Spacer()
-                    }
                 }
             }
         }
