@@ -330,15 +330,19 @@ struct ModernLibraryView: View {
             // This gives the grid ~94% of the screen width on a 12.9" iPad Pro.
             HStack(spacing: 0) {
                 // Icon rail (68pt fixed)
+                // Trailing gradient fade blends rail into content — replaces hard border
                 iPadIconRail
                     .frame(width: 68)
                     .ignoresSafeArea(edges: .vertical)
-
-                // Thin separator
-                Rectangle()
-                    .fill(Color.inkBorderSubtle)
-                    .frame(width: 0.5)
-                    .ignoresSafeArea(edges: .vertical)
+                    .overlay(alignment: .trailing) {
+                        LinearGradient(
+                            colors: [Color.inkBorderSubtle.opacity(0.55), Color.clear],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                        .frame(width: 10)
+                        .ignoresSafeArea(edges: .vertical)
+                    }
 
                 // Full-width detail content
                 ZStack(alignment: .top) {

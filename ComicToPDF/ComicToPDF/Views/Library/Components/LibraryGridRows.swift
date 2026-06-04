@@ -7,6 +7,7 @@ struct ModernGridFileCell: View {
     let isSelected: Bool
     let isBatch: Bool
     @EnvironmentObject var conversionManager: ConversionManager
+    @Environment(\.horizontalSizeClass) private var hSizeClass
 
     @State private var localCover: UIImage? = nil
     @State private var shimmerPhase: CGFloat = -1
@@ -251,19 +252,19 @@ struct ModernGridFileCell: View {
             .clipped()
             .frame(maxWidth: .infinity)
             .aspectRatio(0.63, contentMode: .fit)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: hSizeClass == .regular ? 14 : 12, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: hSizeClass == .regular ? 14 : 12, style: .continuous)
                     .stroke(Color.white.opacity(isSelected && !isBatch ? 0.7 : 0.08), lineWidth: isSelected && !isBatch ? 2 : 0.5)
             )
             // Dual shadow: crisp near + soft ambient (Apple Books technique)
             .shadow(color: .black.opacity(0.28), radius: 4, y: 3)
-            .shadow(color: .black.opacity(0.12), radius: 14, y: 10)
+            .shadow(color: .black.opacity(0.12), radius: hSizeClass == .regular ? 18 : 14, y: hSizeClass == .regular ? 12 : 10)
 
             // ── Text + type badge ────────────────────────────────────────────
             VStack(alignment: .leading, spacing: 3) {
                 Text(pdf.name)
-                    .font(.system(size: 13, weight: .bold))
+                    .font(.system(size: hSizeClass == .regular ? 14 : 13, weight: .bold))
                     .foregroundColor(Theme.text)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)

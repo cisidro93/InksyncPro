@@ -203,112 +203,142 @@ struct LibraryHeaderView: View {
                 .padding(.top, 16)
                 }
             } else {
-                // ✔️ iPad layout: original single-row design
-                HStack(spacing: 12) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack(spacing: 6) {
-                             Image(systemName: "books.vertical.fill")
-                                 .font(.system(size: 24, weight: .bold))
-                                 .foregroundStyle(Theme.orange.gradient)
-                             Text("Library")
-                                 .font(.system(size: 28, weight: .bold))
-                                 .foregroundColor(Theme.text)
-                                 .fixedSize(horizontal: true, vertical: false)
-                        }
-                        HStack(spacing: 6) {
-                            let fileCount = conversionManager.convertedPDFs.count
-                            let seriesCount = conversionManager.collections.count
-                            Text("\(fileCount) FILES • \(seriesCount) SERIES")
-                                .font(.system(size: 10, weight: .bold, design: .rounded))
-                                .foregroundColor(Theme.textSecondary)
-                                .tracking(1.2)
-                                .opacity(0.8)
+                // ✔️ iPad layout: Premium two-row header
+                //   Row 1: Title + subtitle (left)  |  sort/filter/layout icons (right)
+                //   Row 2: Full-width search bar spanning the entire content column
+                VStack(alignment: .leading, spacing: 10) {
 
-                            let streak = ReaderProgressTracker.shared.readingStreak()
-                            if streak >= 2 {
-                                HStack(spacing: 3) {
-                                    Image(systemName: "flame.fill")
-                                        .font(.system(size: 9, weight: .bold))
-                                        .foregroundStyle(Theme.orange)
-                                    Text("\(streak)d")
-                                        .font(.system(size: 9, weight: .bold, design: .rounded))
-                                        .foregroundStyle(Theme.orange)
+                    // ── Row 1 ─────────────────────────────────────────────────
+                    HStack(alignment: .center, spacing: 12) {
+
+                        // Title + subtitle stack
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "books.vertical.fill")
+                                    .font(.system(size: 26, weight: .bold))
+                                    .foregroundStyle(
+                                        LinearGradient(
+                                            colors: [Theme.orange, Color(red: 0.85, green: 0.35, blue: 0.0)],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        )
+                                    )
+                                Text("Library")
+                                    .font(.system(size: 30, weight: .bold))
+                                    .foregroundColor(Theme.text)
+                                    .fixedSize(horizontal: true, vertical: false)
+                            }
+
+                            // Subtitle: file count + series + streak badge
+                            HStack(spacing: 8) {
+                                let fileCount = conversionManager.convertedPDFs.count
+                                let seriesCount = conversionManager.collections.count
+                                Text("\(fileCount) FILES • \(seriesCount) SERIES")
+                                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                                    .foregroundColor(Theme.textSecondary)
+                                    .tracking(1.3)
+
+                                let streak = ReaderProgressTracker.shared.readingStreak()
+                                if streak >= 2 {
+                                    HStack(spacing: 3) {
+                                        Image(systemName: "flame.fill")
+                                            .font(.system(size: 10, weight: .bold))
+                                            .foregroundStyle(Theme.orange)
+                                        Text("\(streak)d streak")
+                                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                                            .foregroundStyle(Theme.orange)
+                                    }
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(Theme.orange.opacity(0.12), in: Capsule())
+                                    .overlay(Capsule().stroke(Theme.orange.opacity(0.25), lineWidth: 0.5))
+                                    .transition(.scale.combined(with: .opacity))
                                 }
-                                .padding(.horizontal, 7)
-                                .padding(.vertical, 3)
-                                .background(Theme.orange.opacity(0.15), in: Capsule())
-                                .overlay(Capsule().stroke(Theme.orange.opacity(0.3), lineWidth: 0.5))
                             }
                         }
+
+                        Spacer()
+
+                        // Action icon cluster — sort / filter / layout toggle / activity
+                        HStack(spacing: 8) {
+                            Menu {
+                                Picker("Sort By", selection: $sortOption) {
+                                    ForEach(ModernLibraryView.SortOption.allCases) { option in
+                                        Text(option.rawValue).tag(option)
+                                    }
+                                }
+                            } label: {
+                                iPadHeaderIconButton(
+                                    icon: "arrow.up.arrow.down",
+                                    active: false
+                                )
+                            }
+
+                            Menu {
+                                Picker("Filter By", selection: $filterState) {
+                                    ForEach(LibraryFilterState.allCases) { state in
+                                        Text(state.rawValue).tag(state)
+                                    }
+                                }
+                            } label: {
+                                iPadHeaderIconButton(
+                                    icon: filterState == .all
+                                        ? "line.3.horizontal.decrease.circle"
+                                        : "line.3.horizontal.decrease.circle.fill",
+                                    active: filterState != .all,
+                                    tint: filterState != .all ? Theme.orange : Theme.text
+                                )
+                            }
+
+                            Button {
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
+                                    viewStyle = viewStyle == .grid ? .list : .grid
+                                }
+                            } label: {
+                                iPadHeaderIconButton(
+                                    icon: viewStyle == .grid ? "list.bullet" : "square.grid.2x2",
+                                    active: false
+                                )
+                            }
+
+                            ActivityTrackerButton()
+                        }
                     }
-                    Spacer()
+                    .padding(.horizontal, 20)
+                    .padding(.top, 18)
+
+                    // ── Row 2: Full-width search bar ──────────────────────────
                     HStack(spacing: 10) {
                         Image(systemName: "magnifyingglass")
-                            .font(.system(size: 18, weight: .semibold))
+                            .font(.system(size: 16, weight: .semibold))
                             .foregroundColor(Theme.textSecondary)
-                        TextField("Search Collection...", text: $searchText)
-                            .font(.system(size: 17))
+
+                        TextField("Search collection…", text: $searchText)
+                            .font(.system(size: 16))
                             .foregroundColor(Theme.text)
                             .tint(Theme.orange)
+
                         if !searchText.isEmpty {
                             Button(action: { searchText = "" }) {
                                 Image(systemName: "xmark.circle.fill")
                                     .foregroundColor(Theme.textSecondary)
+                                    .transition(.opacity.combined(with: .scale))
                             }
                         }
                     }
                     .padding(.vertical, 12)
                     .padding(.horizontal, 16)
                     .background(.ultraThinMaterial)
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .stroke(Theme.text.opacity(0.1), lineWidth: 1)
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .stroke(Theme.text.opacity(0.08), lineWidth: 1)
                     )
-                    .frame(maxWidth: 400)
-                    Menu {
-                        Picker("Sort By", selection: $sortOption) {
-                            ForEach(ModernLibraryView.SortOption.allCases) { option in Text(option.rawValue).tag(option) }
-                        }
-                    } label: {
-                        Image(systemName: "arrow.up.arrow.down")
-                            .font(.system(size: 18, weight: .semibold))
-                            .foregroundColor(Theme.text)
-                            .frame(width: 44, height: 44)
-                            .background(.ultraThinMaterial)
-                            .clipShape(Circle())
-                            .overlay(Circle().stroke(Theme.text.opacity(0.1), lineWidth: 1))
-                    }
-                    Menu {
-                        Picker("Filter By", selection: $filterState) {
-                            ForEach(LibraryFilterState.allCases) { state in Text(state.rawValue).tag(state) }
-                        }
-                    } label: {
-                        Image(systemName: filterState == .all ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
-                            .font(.system(size: 18, weight: .semibold))
-                            .foregroundColor(filterState == .all ? Theme.text : Theme.orange)
-                            .frame(width: 44, height: 44)
-                            .background(.ultraThinMaterial)
-                            .clipShape(Circle())
-                            .overlay(Circle().stroke(Theme.text.opacity(0.1), lineWidth: 1))
-                    }
-                    Button {
-                        withAnimation {
-                            viewStyle = viewStyle == .grid ? .list : .grid
-                        }
-                    } label: {
-                        Image(systemName: viewStyle == .grid ? "list.bullet" : "square.grid.2x2")
-                            .font(.system(size: 18, weight: .semibold))
-                            .foregroundColor(Theme.text)
-                            .frame(width: 44, height: 44)
-                            .background(.ultraThinMaterial)
-                            .clipShape(Circle())
-                            .overlay(Circle().stroke(Theme.text.opacity(0.1), lineWidth: 1))
-                    }
-                    ActivityTrackerButton()
+                    .shadow(color: .black.opacity(0.06), radius: 6, y: 3)
+                    .padding(.horizontal, 20)
+                    .animation(.spring(response: 0.25, dampingFraction: 0.8), value: searchText.isEmpty)
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, 20)
+                .padding(.bottom, 6)
             } // end hSizeClass branches
             
             // ── Smart Collections Strip ──────────────────────────────────
@@ -700,6 +730,30 @@ struct LibraryHeaderView: View {
         case .cloudLibrary:
             return pdfs.filter { if case .cloud = $0.sourceMode { return true }; return false }.count
         }
+    }
+
+    // MARK: - iPad Header Icon Button Helper
+    /// Consistent 44pt frosted-glass icon button used in the iPad two-row header.
+    /// `active` = true highlights with the `tint` color (used for the filter button when a filter is set).
+    @ViewBuilder
+    private func iPadHeaderIconButton(icon: String, active: Bool, tint: Color = Theme.text) -> some View {
+        Image(systemName: icon)
+            .font(.system(size: 18, weight: .semibold))
+            .foregroundColor(active ? tint : Theme.text)
+            .frame(width: 44, height: 44)
+            .background(
+                active
+                    ? AnyShapeStyle(tint.opacity(0.12))
+                    : AnyShapeStyle(Material.ultraThin)
+            )
+            .clipShape(Circle())
+            .overlay(
+                Circle().stroke(
+                    active ? tint.opacity(0.3) : Theme.text.opacity(0.08),
+                    lineWidth: 1
+                )
+            )
+            .animation(.spring(response: 0.25, dampingFraction: 0.8), value: active)
     }
 }
 

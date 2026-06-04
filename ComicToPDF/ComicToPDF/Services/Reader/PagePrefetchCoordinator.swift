@@ -107,8 +107,8 @@ public actor PagePrefetchCoordinator {
                 if idx >= entries.count { return false }
             case .files(let urls):
                 if idx >= urls.count { return false }
-            case .pdf(let url):
-                // For PDF, we can render via PDFRenderActor
+            case .pdf:
+                // PDF page count is validated at render time via PDFRenderActor; always allow here.
                 break
             case .none:
                 return false

@@ -6,6 +6,20 @@ import Combine
 import ImageIO
 import ZIPFoundation
 
+// MARK: - CancellationFlag
+// Thread-safe class-boxed cancellation flag.
+// Using a final class (reference type) means both DispatchQueue.async blocks and
+// @Sendable onCancel closures can safely capture and mutate state — Swift 6 strict
+// concurrency allows class references to cross isolation boundaries because only
+// one caller holds the reference at a time, enforced by the internal NSLock.
+private final class CancellationFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _cancelled = false
+
+    var isCancelled: Bool { lock.withLock { _cancelled } }
+
+    func cancel() { lock.withLock { _cancelled = true } }
+}
 
 // ============================================================================
 // SpreadPair
@@ -568,22 +582,23 @@ class PageBufferManager: ObservableObject {
             // because GCD blocks have no Swift Task context. Use withTaskCancellationHandler
             // to atomically signal an NSLock-protected flag when the Task is cancelled, then
             // read that flag inside the GCD block instead.
-            let isCancelledBox = NSLock()
-            var _cancelled = false
-            func isCancelledFlag() -> Bool { isCancelledBox.withLock { _cancelled } }
+            // Swift 6 fix: replace NSLock + var + nested-func with a class-boxed flag.
+            // Class references are always Sendable by capture, so both the DispatchQueue.async
+            // block and the @Sendable onCancel closure can safely call methods on it.
+            let cancelFlag = CancellationFlag()
 
             let cgImage: CGImage? = await withTaskCancellationHandler {
                 await withCheckedContinuation { continuation in
                     _pageBufferArchiveQueue.async {
                         var result: CGImage? = nil
                         autoreleasepool {
-                            guard !isCancelledFlag() else { return }
+                            guard !cancelFlag.isCancelled else { return }
                             do {
                                 let archive = try Archive(url: archiveURL, accessMode: .read)
                                 guard let entry = archive[entryPath] else { return }
                                 var data = Data()
                                 _ = try archive.extract(entry) { data.append($0) }
-                                guard !isCancelledFlag() else { return }
+                                guard !cancelFlag.isCancelled else { return }
 
                                 if let source = CGImageSourceCreateWithData(data as CFData, nil) {
                                     result = Self.decodeFromSource(source, maxPixelSize: maxPixelSize)
@@ -599,7 +614,7 @@ class PageBufferManager: ObservableObject {
                     }
                 }
             } onCancel: {
-                isCancelledBox.withLock { _cancelled = true }
+                cancelFlag.cancel()
             }
 
             guard let image = cgImage, !Task.isCancelled else { return nil }

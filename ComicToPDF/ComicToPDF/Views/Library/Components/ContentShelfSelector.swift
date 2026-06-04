@@ -24,11 +24,13 @@ struct ContentShelfSelector: View {
                         count: counts[shelf] ?? 0,
                         isSelected: selected == shelf
                     ) {
-                        selected = shelf
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
+                            selected = shelf
+                        }
                     }
                 }
             }
-            .padding(.horizontal, hSizeClass == .regular ? 20 : 16)
+            .padding(.horizontal, hSizeClass == .regular ? 24 : 16)
             .padding(.vertical, 4)
         }
     }
