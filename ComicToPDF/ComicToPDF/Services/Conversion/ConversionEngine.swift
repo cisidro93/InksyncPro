@@ -191,12 +191,16 @@ actor ConversionEngine {
             // or high if we want quality. Let's use 150-200 for now or stick to default.
             // Using 300 might be slow on main thread, but here we are in a detached actor task.
             // Using autoreleasepool to manage memory
-            try autoreleasepool {
-                let image = try importer.extractPage(url: url, pageIndex: i, dpi: 200) 
-                let pageURL = tempDir.appendingPathComponent(String(format: "%03d.jpg", i))
-                if let data = image.jpegData(compressionQuality: 0.75) {
-                    try data.write(to: pageURL)
-                }
+            // UIImage.jpegData() is not thread-safe when the UIImage was rendered
+            // via PDFKit on a background thread. Hop to MainActor for the encode only,
+            // then write the raw Data bytes back on the background thread.
+            let pageURL = tempDir.appendingPathComponent(String(format: "%03d.jpg", i))
+            let image = try autoreleasepool { try importer.extractPage(url: url, pageIndex: i, dpi: 200) }
+            let jpegData: Data? = await MainActor.run {
+                autoreleasepool { image.jpegData(compressionQuality: 0.75) }
+            }
+            if let data = jpegData {
+                try data.write(to: pageURL)
             }
         }
         

@@ -96,13 +96,23 @@ final class InstallGuardService: @unchecked Sendable {
     private func writeSentinel(at url: URL) {
         let timestamp = ISO8601DateFormatter().string(from: Date())
         do {
+            // Ensure the parent directory exists — on fresh Signulous-signed installs
+            // iOS does NOT pre-create applicationSupportDirectory, so the write fails
+            // silently and leaves the sentinel permanently absent. Every subsequent
+            // crash would then trigger performNuke and wipe library.json.
+            let parentDir = url.deletingLastPathComponent()
+            if !fileManager.fileExists(atPath: parentDir.path) {
+                try fileManager.createDirectory(at: parentDir, withIntermediateDirectories: true)
+            }
             try timestamp.write(to: url, atomically: true, encoding: .utf8)
             var mutableSentinelURL = url
             var resourceValues = URLResourceValues()
             resourceValues.isExcludedFromBackup = true
             try mutableSentinelURL.setResourceValues(resourceValues)
+            Logger.shared.log("InstallGuard: Sentinel written successfully.", category: "Migration")
         } catch {
-            Logger.shared.log("InstallGuard: Failed to write sentinel or set resource values: \\(error.localizedDescription)", category: "Migration", type: .error)
+            // Fixed: was \\( which printed literal \(error.localizedDescription) instead of the value
+            Logger.shared.log("InstallGuard: Failed to write sentinel or set resource values: \(error.localizedDescription)", category: "Migration", type: .error)
         }
     }
 }
