@@ -311,7 +311,6 @@ struct ModernLibraryView: View {
                     }
                 }
             }
-            }
             .onDrop(of: [UTType.fileURL.identifier], isTargeted: nil) { providers in
                 loadFiles(from: providers)
                 return true
