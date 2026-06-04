@@ -189,10 +189,7 @@ struct LibraryPDFRowWithCover: View {
             if let cached = conversionManager.thumbnailCache.object(forKey: key) {
                 self.localCover = cached; return
             }
-            if let generated = await ThumbnailGenerationQueue.shared.generateThumbnail(for: pdf, in: conversionManager) {
-                conversionManager.thumbnailCache.setObject(generated, forKey: key)
-                self.localCover = generated
-            }
+            await ThumbnailGenerationQueue.shared.enqueue(pdf, manager: conversionManager)
         }
     }
 }
@@ -360,10 +357,7 @@ private struct RecentlyReadCell: View {
             if let cached = conversionManager.thumbnailCache.object(forKey: key) {
                 cover = cached; return
             }
-            if let img = await ThumbnailGenerationQueue.shared.generateThumbnail(for: pdf, in: conversionManager) {
-                conversionManager.thumbnailCache.setObject(img, forKey: key)
-                cover = img
-            }
+            await ThumbnailGenerationQueue.shared.enqueue(pdf, manager: conversionManager)
         }
     }
 }
@@ -491,10 +485,7 @@ private struct UpNextCell: View {
             if let cached = conversionManager.thumbnailCache.object(forKey: key) {
                 cover = cached; return
             }
-            if let img = await ThumbnailGenerationQueue.shared.generateThumbnail(for: pdf, in: conversionManager) {
-                conversionManager.thumbnailCache.setObject(img, forKey: key)
-                cover = img
-            }
+            await ThumbnailGenerationQueue.shared.enqueue(pdf, manager: conversionManager)
         }
     }
 }

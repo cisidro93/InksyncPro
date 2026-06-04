@@ -325,10 +325,7 @@ struct ModernGridFileCell: View {
 
             // 3. No cover on disk yet — route to the capped generation queue.
             //    This path fires only on first import or after a cache wipe.
-            if let image = await ThumbnailGenerationQueue.shared.generateThumbnail(for: pdf, in: conversionManager) {
-                conversionManager.thumbnailCache.setObject(image, forKey: key)
-                self.localCover = image
-            }
+            await ThumbnailGenerationQueue.shared.enqueue(pdf, manager: conversionManager)
 
             // 4. Cloud file with no cover yet.
             //    CloudCoverExtractor is running in the background (fired from
@@ -639,10 +636,7 @@ struct ModernGridSeriesCell: View {
             guard let coverURL = conversionManager.getCoverURL(for: pdf),
                   FileManager.default.fileExists(atPath: coverURL.path) else { return }
             
-            if let image = await ThumbnailGenerationQueue.shared.generateThumbnail(for: pdf, in: conversionManager) {
-                conversionManager.thumbnailCache.setObject(image, forKey: key)
-                self.localCover = image
-            }
+            await ThumbnailGenerationQueue.shared.enqueue(pdf, manager: conversionManager)
         }
     }
 }

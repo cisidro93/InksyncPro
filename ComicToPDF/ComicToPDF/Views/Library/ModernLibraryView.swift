@@ -691,7 +691,11 @@ struct ModernLibraryView: View {
                     tapAction: $tapAction,
                     selectedPDF: $selectedPDF,
                     onAction: { (action: LibraryRowAction, pdf: ConvertedPDF) in viewModel.handleDetailAction(action: action, for: pdf, conversionManager: conversionManager) },
-                    onImport: onFolderImport ?? { AppRouter.shared.presentSheet(.importQueue) },
+                    onImport: onFolderImport ?? { 
+                        ImportCoordinator.present(type: .unified) { urls in
+                            Task { await conversionManager.processImportedFiles(urls: urls) }
+                        }
+                    },
                     onFolderTap: { uuid in viewModel.currentFolderID = uuid },
                     onDropApplied: {
                         let livePDFs = settingsManager.isVaultUnlocked
@@ -714,7 +718,11 @@ struct ModernLibraryView: View {
                     tapAction: $tapAction,
                     selectedPDF: $selectedPDF,
                     onAction: { (action: LibraryRowAction, pdf: ConvertedPDF) in viewModel.handleDetailAction(action: action, for: pdf, conversionManager: conversionManager) },
-                    onImport: onFolderImport ?? { AppRouter.shared.presentSheet(.importQueue) },
+                    onImport: onFolderImport ?? { 
+                        ImportCoordinator.present(type: .unified) { urls in
+                            Task { await conversionManager.processImportedFiles(urls: urls) }
+                        }
+                    },
                     onFolderTap: { uuid in viewModel.currentFolderID = uuid },
                     onDropApplied: {
                         let livePDFs = settingsManager.isVaultUnlocked

@@ -130,9 +130,6 @@ private struct RecentAddedCompactCard: View {
         if conversionManager.thumbnailCache.object(forKey: key) != nil { return }
         guard let url = conversionManager.getCoverURL(for: pdf),
               FileManager.default.fileExists(atPath: url.path) else { return }
-        if let img = await ThumbnailGenerationQueue.shared.generateThumbnail(for: pdf, in: conversionManager) {
-            conversionManager.thumbnailCache.setObject(img, forKey: key)
-            cover = img
-        }
+        await ThumbnailGenerationQueue.shared.enqueue(pdf, manager: conversionManager)
     }
 }

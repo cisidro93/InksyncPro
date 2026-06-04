@@ -841,10 +841,7 @@ struct CoverThumbnailView: View {
                 self.cover = cached
                 return
             }
-            if let img = await ThumbnailGenerationQueue.shared.generateThumbnail(for: pdf, in: conversionManager) {
-                conversionManager.thumbnailCache.setObject(img, forKey: key)
-                self.cover = img
-            }
+            await ThumbnailGenerationQueue.shared.enqueue(pdf, manager: conversionManager)
         }
     }
 }

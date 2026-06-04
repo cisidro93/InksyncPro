@@ -398,8 +398,11 @@ struct LibraryHeaderView: View {
             // Always visible — the 3 actions 95% of users actually need.
             let isLibraryEmpty = conversionManager.convertedPDFs.isEmpty
             HStack(spacing: 10) {
-                // Import — gradient fill, subtle pulse when library is empty
-                Button(action: { onSheetTrigger(.importQueue) }) {
+                Button(action: { 
+                    ImportCoordinator.present(type: .unified) { urls in
+                        Task { await conversionManager.processImportedFiles(urls: urls) }
+                    }
+                }) {
                     HStack(spacing: 7) {
                         Image(systemName: "plus.circle.fill")
                             .font(.system(size: 14, weight: .bold))
