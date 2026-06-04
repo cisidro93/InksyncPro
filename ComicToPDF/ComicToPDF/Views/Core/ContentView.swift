@@ -59,10 +59,7 @@ struct ContentView: View {
                     batchMergeItems: $batchMergeItems,
                     useNavigationStack: true,
                     onFolderImport: {
-                        ImportCoordinator.present(type: .files) { urls in
-                            guard !urls.isEmpty else { return }
-                            _ = ImportQueueManager.shared.stageWithDuplicateCheck(urls)
-                        }
+                        AppRouter.shared.presentSheet(.importQueue)
                     }
                 )
                 .toolbar(.hidden, for: .navigationBar)

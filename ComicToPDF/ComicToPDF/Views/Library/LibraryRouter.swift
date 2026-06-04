@@ -7,6 +7,7 @@ enum LibrarySheetDestination: Identifiable {
     case cloudBrowser          // NEW: premium direct-API cloud browser
     case cloudSync(ConvertedPDF)
     case export(ConvertedPDF)
+    case importQueue
     case directShare(ConvertedPDF)
     case details(ConvertedPDF)
     case searchMetadata(ConvertedPDF)
@@ -28,6 +29,7 @@ enum LibrarySheetDestination: Identifiable {
         case .cloudBrowser: return "cloudBrowser"
         case .cloudSync(let p): return "cloudSync_\(p.id)"
         case .export(let p): return "export_\(p.id)"
+        case .importQueue: return "importQueue"
         case .directShare(let p): return "directShare_\(p.id)"
         case .details(let p): return "details_\(p.id)"
         case .searchMetadata(let p): return "searchMeta_\(p.id)"

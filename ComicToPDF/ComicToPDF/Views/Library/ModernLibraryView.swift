@@ -477,6 +477,10 @@ struct ModernLibraryView: View {
                     }
             }
             
+        case .importQueue:
+            ImportQueueView()
+                .environmentObject(conversionManager)
+
         case .metadataInbox:
             NavigationStack {
                 MetadataInboxView()
