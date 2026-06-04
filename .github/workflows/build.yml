@@ -116,10 +116,11 @@ jobs:
         cd ComicToPDF
         mkdir Payload
         cp -r build/Build/Products/Release-iphoneos/InksyncPro.app Payload/
-        zip -r InksyncPro_Unsigned.ipa Payload
+        # Name the IPA with the SHA so Signulous sees a unique file each upload
+        zip -r InksyncPro_Unsigned_${{ env.SHORT_SHA }}.ipa Payload
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
         name: InksyncPro_Unsigned_${{ env.SHORT_SHA }}
-        path: ComicToPDF/InksyncPro_Unsigned.ipa
+        path: ComicToPDF/InksyncPro_Unsigned_${{ env.SHORT_SHA }}.ipa
