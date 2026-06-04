@@ -311,7 +311,7 @@ struct ModernLibraryView: View {
                     }
                 }
             }
-            .onDrop(of: [UTType.fileURL.identifier], isTargeted: nil) { providers in
+            .onDrop(of: [.fileURL], isTargeted: nil) { providers in
                 loadFiles(from: providers)
                 return true
             }
@@ -691,7 +691,7 @@ struct ModernLibraryView: View {
                     tapAction: $tapAction,
                     selectedPDF: $selectedPDF,
                     onAction: { (action: LibraryRowAction, pdf: ConvertedPDF) in viewModel.handleDetailAction(action: action, for: pdf, conversionManager: conversionManager) },
-                    onImport: { NotificationCenter.default.post(name: NSNotification.Name("ShowImportQueue"), object: nil) },
+                    onImport: onFolderImport ?? { AppRouter.shared.presentSheet(.importQueue) },
                     onFolderTap: { uuid in viewModel.currentFolderID = uuid },
                     onDropApplied: {
                         let livePDFs = settingsManager.isVaultUnlocked
@@ -714,7 +714,7 @@ struct ModernLibraryView: View {
                     tapAction: $tapAction,
                     selectedPDF: $selectedPDF,
                     onAction: { (action: LibraryRowAction, pdf: ConvertedPDF) in viewModel.handleDetailAction(action: action, for: pdf, conversionManager: conversionManager) },
-                    onImport: { NotificationCenter.default.post(name: NSNotification.Name("ShowImportQueue"), object: nil) },
+                    onImport: onFolderImport ?? { AppRouter.shared.presentSheet(.importQueue) },
                     onFolderTap: { uuid in viewModel.currentFolderID = uuid },
                     onDropApplied: {
                         let livePDFs = settingsManager.isVaultUnlocked

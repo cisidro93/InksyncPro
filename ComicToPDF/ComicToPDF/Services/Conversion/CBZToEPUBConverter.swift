@@ -435,8 +435,8 @@ struct CBZToEPUBConverter: Sendable {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             DispatchQueue.global(qos: .userInitiated).async {
                 do {
-                    if fileManager.fileExists(atPath: capturedOutputURL.path) {
-                        try fileManager.removeItem(at: capturedOutputURL)
+                    if FileManager.default.fileExists(atPath: capturedOutputURL.path) {
+                        try FileManager.default.removeItem(at: capturedOutputURL)
                     }
 
                     guard let archive = try? Archive(url: capturedOutputURL, accessMode: .create, pathEncoding: .utf8) else {
@@ -452,7 +452,7 @@ struct CBZToEPUBConverter: Sendable {
                     try archive.addEntry(with: "META-INF/container.xml", fileURL: containerPath, compressionMethod: .none)
 
                     let oebpsDir = capturedBatchDir.appendingPathComponent("OEBPS")
-                    if let enumerator = fileManager.enumerator(at: oebpsDir, includingPropertiesForKeys: nil) {
+                    if let enumerator = FileManager.default.enumerator(at: oebpsDir, includingPropertiesForKeys: nil) {
                         while let fileURL = enumerator.nextObject() as? URL {
                             let resourceValues = try fileURL.resourceValues(forKeys: [.isDirectoryKey])
                             if resourceValues.isDirectory == true { continue }

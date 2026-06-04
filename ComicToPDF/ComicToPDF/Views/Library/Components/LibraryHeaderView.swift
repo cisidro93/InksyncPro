@@ -29,7 +29,6 @@ struct LibraryHeaderView: View {
 
     @Environment(\.horizontalSizeClass) private var hSizeClass
     @Environment(\.verticalSizeClass) private var vSizeClass
-    @State private var showImportQueue = false
     @State private var dragAccumulated: CGFloat = 0
     @State private var showPillCustomize = false
     @State private var importPulse: Bool = false
@@ -400,7 +399,7 @@ struct LibraryHeaderView: View {
             let isLibraryEmpty = conversionManager.convertedPDFs.isEmpty
             HStack(spacing: 10) {
                 // Import — gradient fill, subtle pulse when library is empty
-                Button(action: { showImportQueue = true }) {
+                Button(action: { onSheetTrigger(.importQueue) }) {
                     HStack(spacing: 7) {
                         Image(systemName: "plus.circle.fill")
                             .font(.system(size: 14, weight: .bold))
@@ -420,9 +419,6 @@ struct LibraryHeaderView: View {
                     )
                     .shadow(color: Theme.orange.opacity(importPulse ? 0.55 : 0.30), radius: importPulse ? 10 : 6, y: 3)
                     .scaleEffect(importPulse ? 1.03 : 1.0)
-                }
-                .sheet(isPresented: $showImportQueue) {
-                    ImportQueueView().environmentObject(conversionManager)
                 }
                 .onAppear {
                     guard isLibraryEmpty else { return }
@@ -701,9 +697,7 @@ struct LibraryHeaderView: View {
             Rectangle().frame(height: 1).foregroundColor(Theme.text.opacity(0.05)),
             alignment: .bottom
         )
-        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ShowImportQueue"))) { _ in
-            showImportQueue = true
-        }
+        // (Legacy ShowImportQueue observer removed; using AppRouter)
     }
     // MARK: - Smart Collection Count
     /// Fast single-pass count for pill badges — no async, no full filter rebuild.
