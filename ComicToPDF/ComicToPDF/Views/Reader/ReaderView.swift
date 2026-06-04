@@ -472,8 +472,20 @@ struct ReaderView: View {
                             // ✅ ZERO-LATENCY METAL PPL READER
                             if fileURL.pathExtension.lowercased() != "pdf" {
                                 if !pages.isEmpty {
-                                    let effectiveDoublePage = isDoublePageMode || (autoLandscapeDualPage && geo.size.width > geo.size.height)
-                                    PPLReaderView(pages: pages, currentPageIndex: $currentPageIndex, pdfID: pdf?.id, isMangaMode: isMangaMode, isDoublePageOverride: effectiveDoublePage, isDrawingMode: isDrawingMode, startWithGuidedReading: initialReadingMode == "panelNavigation") {
+                                    // ⚠️  Do NOT pass isDoublePageOverride here.
+                                    // PPLReaderView already reads @AppStorage("isDoublePageMode")
+                                    // internally. Passing it as a prop AND having the internal
+                                    // observer both fire setupBuffer on toggle creates a race:
+                                    // two concurrent setupDirectArchive() calls clear and repopulate
+                                    // currentImage at the same time → MetalCanvasView GPU crash.
+                                    PPLReaderView(
+                                        pages: pages,
+                                        currentPageIndex: $currentPageIndex,
+                                        pdfID: pdf?.id,
+                                        isMangaMode: isMangaMode,
+                                        isDrawingMode: isDrawingMode,
+                                        startWithGuidedReading: initialReadingMode == "panelNavigation"
+                                    ) {
                                         withAnimation(.easeInOut(duration: 0.2)) {
                                             isToolbarVisible.toggle()
                                         }

@@ -17,7 +17,6 @@ struct PPLReaderView: View {
     @Binding var currentPageIndex: Int
     var pdfID: UUID?
     var isMangaMode: Bool
-    var isDoublePageOverride: Bool = false
     var isDrawingMode: Bool = false // ✅ Added for GoodNotes Parity
     var startWithGuidedReading: Bool = false
     var onCenterTap: () -> Void
@@ -56,7 +55,12 @@ struct PPLReaderView: View {
     @State private var guidedPanels: [NormalizedRect] = []
     @State private var hasInitializedGuidedReading = false
 
-    private var effectiveDoublePage: Bool { isDoublePageOverride || isDoublePageStored }
+    // effectiveDoublePage: single source of truth — reads the two AppStorage keys directly.
+    // Previously there was an isDoublePageOverride prop passed from ReaderView, which caused
+    // a double-trigger race when the setting changed (both the parent prop update AND the
+    // internal onChange(of: isDoublePageStored) fired setupBuffer simultaneously).
+    private var effectiveDoublePage: Bool { isDoublePageStored || autoLandscapeDualPage }
+
 
     // MARK: - Body
 
