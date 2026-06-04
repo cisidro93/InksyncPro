@@ -68,7 +68,14 @@ struct PPLReaderView: View {
             ZStack {
                 Color.black.ignoresSafeArea()
 
-                if bufferManager.isLoading && bufferManager.currentImage == nil {
+                // Show loading indicator whenever there's no image to display.
+                // CRITICAL: checking isLoading alone is NOT enough — setupDirectArchive
+                // clears currentImage synchronously before the async ZIP scan sets isLoading.
+                // During dual→single mode switches this gap causes singlePageView to render
+                // with currentImage=nil → MetalCanvasView GPU texture crash.
+                // Guard on currentImage == nil directly so the loading indicator covers
+                // the full async gap regardless of isLoading state.
+                if bufferManager.currentImage == nil {
                     loadingIndicator
                 } else {
                     pageContent(geo: geo, showingDual: showingDual)
