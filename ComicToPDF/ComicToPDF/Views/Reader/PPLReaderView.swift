@@ -35,7 +35,7 @@ struct PPLReaderView: View {
     @State private var isCommittingSwipe = false
 
     // ── Settings ──────────────────────────────────────────────────────────────
-    @AppStorage("isDoublePageMode")       private var isDoublePageStored  = false
+    @AppStorage("autoLandscapeDualPage")  private var autoLandscapeDualPage = true
     @AppStorage("autoSplitPortraitSpreads") private var autoSplitPortraitSpreads = true
     @AppStorage("tapZoneStyle")           private var tapZoneStyleRaw     = TapZoneStyle.classic.rawValue
     @AppStorage("pageTurnStyle")          private var pageTurnStyleRaw    = PageTurnStyle.slide.rawValue

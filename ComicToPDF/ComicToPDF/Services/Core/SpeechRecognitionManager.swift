@@ -235,7 +235,7 @@ public final class SpeechRecognitionManager: ObservableObject {
             isRecording = false
         }
         
-        let finalOutput = transcribedText
+        // (Unused variable removed)
         
         // Restore standard audio category
         do {
