@@ -89,17 +89,29 @@ struct ReaderSettingsSheet: View {
     // MARK: - Layout
     private var layoutSection: some View {
         SettingsSection(title: "Layout", icon: "rectangle.split.2x1") {
-            SettingsToggleRow(
-                label: "Dual Page (Manual)",
-                icon: "rectangle.split.2x1.fill",
-                isOn: $isDoublePageMode
-            )
-            Divider().padding(.leading, 44)
-            SettingsToggleRow(
-                label: "Auto Dual Page in Landscape",
-                icon: "iphone.landscape",
-                isOn: $autoLandscapeDualPage
-            )
+            // Smart orientation-aware dual-page mode.
+            // When ON (default): landscape → dual page, portrait → single page automatically.
+            // When OFF: always single page regardless of orientation.
+            HStack(spacing: 12) {
+                Image(systemName: autoLandscapeDualPage ? "rectangle.split.2x1.fill" : "rectangle")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(autoLandscapeDualPage ? Color.orange : Color.inkTextSecondary)
+                    .frame(width: 28)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Smart Dual-Page")
+                        .font(.system(size: 15))
+                        .foregroundStyle(Color.inkTextPrimary)
+                    Text("Landscape → dual  ·  Portrait → single")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.inkTextSecondary)
+                }
+                Spacer()
+                Toggle("", isOn: $autoLandscapeDualPage)
+                    .labelsHidden()
+                    .tint(Color.orange)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
             Divider().padding(.leading, 44)
             SettingsToggleRow(
                 label: "Zoom Lock (Preserve Zoom)",
@@ -108,6 +120,7 @@ struct ReaderSettingsSheet: View {
             )
         }
     }
+
 
     // MARK: - Page Turn Style
     @AppStorage("pageTurnStyle") private var pageTurnStyleRaw = PageTurnStyle.slide.rawValue

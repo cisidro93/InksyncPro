@@ -55,11 +55,13 @@ struct PPLReaderView: View {
     @State private var guidedPanels: [NormalizedRect] = []
     @State private var hasInitializedGuidedReading = false
 
-    // effectiveDoublePage: single source of truth — reads the two AppStorage keys directly.
-    // Previously there was an isDoublePageOverride prop passed from ReaderView, which caused
-    // a double-trigger race when the setting changed (both the parent prop update AND the
-    // internal onChange(of: isDoublePageStored) fired setupBuffer simultaneously).
-    private var effectiveDoublePage: Bool { isDoublePageStored || autoLandscapeDualPage }
+    // effectiveDoublePage: orientation-intelligence implementation.
+    // Single source of truth is autoLandscapeDualPage — the reader automatically
+    // uses dual-page in landscape and single-page in portrait.
+    // isDoublePageStored (the old manual toggle) is intentionally excluded:
+    // it caused a double-trigger race condition and also broke the intelligent
+    // orientation-based behavior the user expects.
+    private var effectiveDoublePage: Bool { autoLandscapeDualPage }
 
 
     // MARK: - Body
@@ -111,7 +113,11 @@ struct PPLReaderView: View {
                 guard size.width > 0, size.height > 0 else { return }
                 resetOnResize(to: size, dual: effectiveDoublePage && size.width > size.height)
             }
-            .onChange(of: isDoublePageStored) { _, _ in setupBuffer(geo: geo, dual: effectiveDoublePage && geo.size.width > geo.size.height) }
+            // When the user toggles "Auto Dual Page in Landscape" in settings,
+            // reload the buffer immediately with the correct mode.
+            .onChange(of: autoLandscapeDualPage) { _, _ in
+                setupBuffer(geo: geo, dual: effectiveDoublePage && geo.size.width > geo.size.height)
+            }
             .onChange(of: isAutoCropEnabled) { _, _ in setupBuffer(geo: geo, dual: showingDual) }
         }
     }
