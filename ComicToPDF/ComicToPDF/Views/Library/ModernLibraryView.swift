@@ -369,7 +369,7 @@ struct ModernLibraryView: View {
                 currentFolderID: $viewModel.currentFolderID,
                 collections: cachedCollections,
                 onWorkArea: { AppRouter.shared.presentSheet(.inbox) },
-                onImport: onFolderImport,
+                onImport: onFolderImport ?? {},
                 onSettings: { NotificationCenter.default.post(name: NSNotification.Name("ShowSettingsInspector"), object: nil) },
                 onVaultToggle: handleVaultToggle,
                 onSearch: { withAnimation(.spring) { isSearchActive.toggle() } }
