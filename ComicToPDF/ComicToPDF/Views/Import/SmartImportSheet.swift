@@ -36,27 +36,43 @@ class SmartImportViewModel: ObservableObject {
     }
 
     func analyse(savedDevices: [SDRegisteredDevice], primaryDeviceID: UUID?, context: ModelContext) async {
-        // 1. Display name from LocalComicInfoService
-        if let xml = try? LocalComicInfoService.shared.fetchNonDestructiveMetadata(from: sourceURL) {
-            title = xml.displayName
+        // Steps 1 + 2: Parse metadata — MUST run off the MainActor.
+        // LocalComicInfoService.fetchNonDestructiveMetadata and ComicInfoParser.parse
+        // both open the ZIP archive synchronously (Archive init + extract). On large
+        // archives this blocks for 200ms–2s and can trigger the iOS watchdog kill.
+        // Run on a detached task and post only plain value types back.
+        let metaTuple: (displayName: String?, series: String?, number: String?, manga: Bool)?
+        metaTuple = await Task.detached(priority: .userInitiated) { [sourceURL = self.sourceURL] in
+            if let parsed = ComicInfoParser.parse(from: sourceURL) {
+                // ComicInfoParser read succeeded — use it as ground truth.
+                return (displayName: nil, series: parsed.series, number: parsed.number, manga: parsed.manga)
+            }
+            // Fallback: try LocalComicInfoService for display name only.
+            let displayName = try? LocalComicInfoService.shared.fetchNonDestructiveMetadata(from: sourceURL).displayName
+            return (displayName: displayName, series: nil, number: nil, manga: false)
+        }.value
+
+        // 1. Display name
+        if let meta = metaTuple, let name = meta.displayName {
+            title = name
         } else {
             title = (sourceURL.lastPathComponent as NSString).deletingPathExtension
         }
 
-        // 2. Full metadata from ComicInfoParser
-        if let parsed = ComicInfoParser.parse(from: sourceURL) {
-            seriesName = parsed.series ?? SeriesNameDetector.detect(from: sourceURL.lastPathComponent).seriesName
-            volumeNumber = parsed.number ?? ""
-            isManga = parsed.manga
-            detectedIsManga = parsed.manga
-            if !seriesName.isEmpty { title = parsed.title ?? title }
+        // 2. Full metadata
+        if let meta = metaTuple, let series = meta.series {
+            seriesName = series
+            volumeNumber = meta.number ?? ""
+            isManga = meta.manga
+            detectedIsManga = meta.manga
+            // title already set to displayName fallback; ComicInfoParser has no separate title here
         } else {
             let detected = SeriesNameDetector.detect(from: sourceURL.lastPathComponent)
             seriesName = detected.seriesName
             volumeNumber = detected.issueNumber.map(String.init) ?? ""
         }
 
-        // 3. Series memory (SwiftData fetch)
+        // 3. Series memory (SwiftData fetch — must stay on MainActor, context is not Sendable)
         if !seriesName.isEmpty {
             let normalized = seriesName.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
             let fetch = FetchDescriptor<SDSeriesMemory>(predicate: #Predicate { $0.seriesNameNormalized == normalized })
@@ -101,7 +117,9 @@ class SmartImportViewModel: ObservableObject {
 
             await MainActor.run {
                 pageCount = allImages.count
-                firstPageURL = allImages.first
+                // Bug 4 fix: do NOT set firstPageURL here — allImages are inside workingDir
+                // which will be deleted on line below. Only set firstPageURL to the
+                // durable tmp copy created after the panel scan completes.
             }
 
             let sample = Array(allImages.prefix(15))
@@ -149,6 +167,8 @@ class SmartImportViewModel: ObservableObject {
             await MainActor.run { overallConfidence = averageConfidence }
 
             // Keep only the cover image for live preview; clean up the rest.
+            // Bug 4 fix: firstPageURL is set ONLY to this durable tmp copy, never to a
+            // path inside workingDir (which is deleted immediately after).
             if let coverURL = allImages.first {
                 let coverCopy = FileManager.default.temporaryDirectory
                     .appendingPathComponent("cover_preview_\(UUID().uuidString).\(coverURL.pathExtension)")
@@ -279,11 +299,25 @@ struct ImportFormView: View {
     @Binding var showingConvertSettings: Bool
     let onConfirm: () -> Void
 
+    // Bug 2 fix: load the cover image asynchronously so the SwiftUI body never
+    // calls UIImage(contentsOfFile:) synchronously on the main thread. The .task
+    // modifier runs on the cooperative thread pool and posts back to MainActor.
+    @State private var coverImage: UIImage? = nil
+
     var body: some View {
-        if hSizeClass == .regular {
-            iPadImportForm
-        } else {
-            iPhoneImportForm
+        Group {
+            if hSizeClass == .regular {
+                iPadImportForm
+            } else {
+                iPhoneImportForm
+            }
+        }
+        .task(id: vm.firstPageURL) {
+            guard let url = vm.firstPageURL else { coverImage = nil; return }
+            let loaded = await Task.detached(priority: .userInitiated) {
+                UIImage(contentsOfFile: url.path)
+            }.value
+            coverImage = loaded
         }
     }
 
@@ -294,8 +328,7 @@ struct ImportFormView: View {
                 VStack(spacing: 8) {
                 // Cover preview — show actual first page if available
                 Group {
-                    if let coverURL = vm.firstPageURL,
-                       let img = UIImage(contentsOfFile: coverURL.path) {
+                    if let img = coverImage {
                         Image(uiImage: img)
                             .resizable()
                             .scaledToFill()
@@ -395,8 +428,7 @@ struct ImportFormView: View {
                 // Cover (larger on iPad)
                 // Cover preview — larger on iPad
                 Group {
-                    if let coverURL = vm.firstPageURL,
-                       let img = UIImage(contentsOfFile: coverURL.path) {
+                    if let img = coverImage {
                         Image(uiImage: img)
                             .resizable()
                             .scaledToFill()

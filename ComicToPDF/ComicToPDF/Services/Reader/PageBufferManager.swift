@@ -563,29 +563,43 @@ class PageBufferManager: ObservableObject {
             let entryPath = zipEntryPaths[index]
 
             // Issue 2 fix: serialise ZIP reads through the archive queue.
-            let cgImage: CGImage? = await withCheckedContinuation { continuation in
-                _pageBufferArchiveQueue.async {
-                    var result: CGImage? = nil
-                    autoreleasepool {
-                        do {
-                            let archive = try Archive(url: archiveURL, accessMode: .read)
-                            guard let entry = archive[entryPath] else { return }
-                            var data = Data()
-                            _ = try archive.extract(entry) { data.append($0) }
-                            guard !Task.isCancelled else { return }
+            //
+            // Bug 3 fix: Task.isCancelled is always false inside a DispatchQueue.async block
+            // because GCD blocks have no Swift Task context. Use withTaskCancellationHandler
+            // to atomically signal an NSLock-protected flag when the Task is cancelled, then
+            // read that flag inside the GCD block instead.
+            let isCancelledBox = NSLock()
+            var _cancelled = false
+            func isCancelledFlag() -> Bool { isCancelledBox.withLock { _cancelled } }
 
-                            if let source = CGImageSourceCreateWithData(data as CFData, nil) {
-                                result = Self.decodeFromSource(source, maxPixelSize: maxPixelSize)
+            let cgImage: CGImage? = await withTaskCancellationHandler {
+                await withCheckedContinuation { continuation in
+                    _pageBufferArchiveQueue.async {
+                        var result: CGImage? = nil
+                        autoreleasepool {
+                            guard !isCancelledFlag() else { return }
+                            do {
+                                let archive = try Archive(url: archiveURL, accessMode: .read)
+                                guard let entry = archive[entryPath] else { return }
+                                var data = Data()
+                                _ = try archive.extract(entry) { data.append($0) }
+                                guard !isCancelledFlag() else { return }
+
+                                if let source = CGImageSourceCreateWithData(data as CFData, nil) {
+                                    result = Self.decodeFromSource(source, maxPixelSize: maxPixelSize)
+                                }
+                            } catch {
+                                Logger.shared.log(
+                                    "ZIP decode failed for \(entryPath): \(error.localizedDescription)",
+                                    category: "Engine", type: .error
+                                )
                             }
-                        } catch {
-                            Logger.shared.log(
-                                "ZIP decode failed for \(entryPath): \(error.localizedDescription)",
-                                category: "Engine", type: .error
-                            )
                         }
+                        continuation.resume(returning: result)
                     }
-                    continuation.resume(returning: result)
                 }
+            } onCancel: {
+                isCancelledBox.withLock { _cancelled = true }
             }
 
             guard let image = cgImage, !Task.isCancelled else { return nil }
