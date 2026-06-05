@@ -12,17 +12,18 @@ class PhysicalFileSystemRouter {
     private init() {}
     
     // MARK: - Core File IO Storage
-    nonisolated static func getCoversDirectory() -> URL {
+    static let coversDirectory: URL = {
         let fileManager = FileManager.default
-        guard let appSupportDir = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
-            return fileManager.temporaryDirectory
+        let appSupportDir = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? fileManager.temporaryDirectory
+        let dir = appSupportDir.appendingPathComponent("Covers", isDirectory: true)
+        if !fileManager.fileExists(atPath: dir.path) {
+            try? fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
         }
-        let coversDir = appSupportDir.appendingPathComponent("Covers", isDirectory: true)
-        
-        if !fileManager.fileExists(atPath: coversDir.path) {
-            try? fileManager.createDirectory(at: coversDir, withIntermediateDirectories: true)
-        }
-        return coversDir
+        return dir
+    }()
+
+    nonisolated static func getCoversDirectory() -> URL {
+        return coversDirectory
     }
     
     func getCoverURL(for pdf: ConvertedPDF) -> URL? {

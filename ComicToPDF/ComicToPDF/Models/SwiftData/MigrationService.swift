@@ -251,35 +251,32 @@ class MigrationService {
     func batchInsertToSwiftData(newPDFs: [ConvertedPDF]) {
         guard !newPDFs.isEmpty else { return }
         let container = InksyncProApp.sharedModelContainer
-        Task.detached(priority: .background) {
-            do {
-                let context = ModelContext(container)
-                // Only fetch IDs to avoid a full object hydration of 1400+ rows
-                var idDesc = FetchDescriptor<SDConvertedPDF>()
-                idDesc.propertiesToFetch = [\SDConvertedPDF.id]
-                let existingIDs = Set((try? context.fetch(idDesc))?.map { $0.id } ?? [])
+        do {
+            let context = container.mainContext
+            // Fetch IDs to avoid duplicate inserts
+            let idDesc = FetchDescriptor<SDConvertedPDF>()
+            let existingIDs = Set((try? context.fetch(idDesc))?.map { $0.id } ?? [])
 
-                var insertCount = 0
-                for pdf in newPDFs where !existingIDs.contains(pdf.id) {
-                    let doc = SDConvertedPDF(
-                        id: pdf.id, name: pdf.name, url: pdf.url,
-                        pageCount: pdf.pageCount, fileSize: pdf.fileSize,
-                        metadata: pdf.metadata, collectionId: pdf.collectionId,
-                        isFavorite: pdf.isFavorite, isPrivate: pdf.isPrivate,
-                        coverImageData: nil, // cover written separately by PhysicalFileSystemRouter
-                        contentType: pdf.contentType, chapters: pdf.chapters,
-                        addedByMode: pdf.addedByMode, sourceMode: pdf.sourceMode
-                    )
-                    context.insert(doc)
-                    insertCount += 1
-                }
-                if insertCount > 0 {
-                    try context.save()
-                    Logger.shared.log("batchInsertToSwiftData: committed \(insertCount) new record(s)", category: "Migration")
-                }
-            } catch {
-                Logger.shared.log("batchInsertToSwiftData failed: \(error.localizedDescription)", category: "Migration", type: .error)
+            var insertCount = 0
+            for pdf in newPDFs where !existingIDs.contains(pdf.id) {
+                let doc = SDConvertedPDF(
+                    id: pdf.id, name: pdf.name, url: pdf.url,
+                    pageCount: pdf.pageCount, fileSize: pdf.fileSize,
+                    metadata: pdf.metadata, collectionId: pdf.collectionId,
+                    isFavorite: pdf.isFavorite, isPrivate: pdf.isPrivate,
+                    coverImageData: nil, // cover written separately by PhysicalFileSystemRouter
+                    contentType: pdf.contentType, chapters: pdf.chapters,
+                    addedByMode: pdf.addedByMode, sourceMode: pdf.sourceMode
+                )
+                context.insert(doc)
+                insertCount += 1
             }
+            if insertCount > 0 {
+                try context.save()
+                Logger.shared.log("batchInsertToSwiftData: committed \(insertCount) new record(s)", category: "Migration")
+            }
+        } catch {
+            Logger.shared.log("batchInsertToSwiftData failed: \(error.localizedDescription)", category: "Migration", type: .error)
         }
     }
     
