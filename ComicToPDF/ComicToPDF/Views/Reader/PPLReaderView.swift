@@ -220,10 +220,12 @@ struct PPLReaderView: View {
             MetalCanvasView(image: leftImg ?? rightImg,
                             lockedRect: bufferManager.lockedRect,
                             isPPLEnabled: bufferManager.isPPLEnabled)
+                .id("dual-solo-\(spread?.leadIndex ?? 0)")
         } else {
             HStack(spacing: 0) {
                 if let left = leftImg {
                     MetalCanvasView(image: left, lockedRect: .full, isPPLEnabled: false)
+                        .id("dual-left-\(spread?.leadIndex ?? 0)")
                 } else {
                     Color.black
                 }
@@ -237,6 +239,7 @@ struct PPLReaderView: View {
 
                 if let right = rightImg {
                     MetalCanvasView(image: right, lockedRect: .full, isPPLEnabled: false)
+                        .id("dual-right-\(spread?.leadIndex ?? 0)")
                 } else {
                     Color.black
                 }
@@ -260,10 +263,12 @@ struct PPLReaderView: View {
                 ? (splitHalf == 0 ? rightHalf : leftHalf)
                 : (splitHalf == 0 ? leftHalf  : rightHalf)
             MetalCanvasView(image: img, lockedRect: rect, isPPLEnabled: true)
+                .id("single-split-\(currentPageIndex)")
         } else {
             MetalCanvasView(image: bufferManager.currentImage,
                             lockedRect: bufferManager.lockedRect,
                             isPPLEnabled: bufferManager.isPPLEnabled)
+                .id("single-full-\(currentPageIndex)")
         }
     }
 
@@ -277,6 +282,7 @@ struct PPLReaderView: View {
         } else {
             let img = isNext ? bufferManager.nextImage : bufferManager.prevImage
             MetalCanvasView(image: img, lockedRect: .full, isPPLEnabled: false)
+                .id("adj-\(isNext ? 1 : 0)-\(currentPageIndex)")
         }
     }
 

@@ -205,11 +205,18 @@ struct MetalCanvasView: UIViewRepresentable {
             // Blit frontTexture to MTKView drawable texture
             if let sourceTexture = frontTexture {
                 if let blitEncoder = commandBuffer.makeBlitCommandEncoder() {
+                    let copyWidth = min(sourceTexture.width, drawable.texture.width)
+                    let copyHeight = min(sourceTexture.height, drawable.texture.height)
+                    guard copyWidth > 0, copyHeight > 0 else {
+                        blitEncoder.endEncoding()
+                        return
+                    }
+                    
                     blitEncoder.copy(from: sourceTexture,
                                      sourceSlice: 0,
                                      sourceLevel: 0,
                                      sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
-                                     sourceSize: MTLSize(width: sourceTexture.width, height: sourceTexture.height, depth: 1),
+                                     sourceSize: MTLSize(width: copyWidth, height: copyHeight, depth: 1),
                                      to: drawable.texture,
                                      destinationSlice: 0,
                                      destinationLevel: 0,
