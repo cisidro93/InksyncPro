@@ -83,9 +83,9 @@ struct LibraryGridView: View {
                             // ── Main grid ─────────────────────────────────
                             let hPad: CGFloat = hSizeClass == .regular ? 24 : 12
                             let colSpacing: CGFloat = hSizeClass == .regular ? 20 : 10
-                            // Fixed 3-column on iPad, 2-column on iPhone — guarantees every
-                            // thumbnail gets an identical column width (uniform sizes, no overlap).
-                            let colCount = hSizeClass == .regular ? 3 : 2
+                            // Increased column count (5 on iPad, 3 on iPhone) to make thumbnails
+                            // smaller and fit more series on screen simultaneously.
+                            let colCount = hSizeClass == .regular ? 5 : 3
                             let columns = Array(repeating: GridItem(.flexible(), spacing: colSpacing), count: colCount)
                             LazyVGrid(
                                 columns: columns,
