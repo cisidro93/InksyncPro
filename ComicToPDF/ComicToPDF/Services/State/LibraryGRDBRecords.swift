@@ -7,7 +7,7 @@ import Foundation
 
 // MARK: - LibraryFileRecord
 
-struct LibraryFileRecord: Codable {
+struct LibraryFileRecord: Codable, Equatable {
     static let databaseTableName = "library_files"
 
     var id: String
@@ -155,7 +155,7 @@ struct LibraryFileRecord: Codable {
 
 // MARK: - ReadingProgressRecord
 
-struct ReadingProgressRecord: Codable {
+struct ReadingProgressRecord: Codable, Equatable {
     static let databaseTableName = "reading_progress"
 
     var fileID: String
@@ -192,7 +192,7 @@ struct ReadingProgressRecord: Codable {
 
 // MARK: - AnnotationRecord
 
-struct AnnotationRecord: Codable {
+struct AnnotationRecord: Codable, Equatable {
     static let databaseTableName = "annotations"
 
     var id: String
@@ -258,7 +258,7 @@ struct AnnotationRecord: Codable {
 
 // MARK: - ZettelRecord
 
-struct ZettelRecord: Codable {
+struct ZettelRecord: Codable, Equatable {
     static let databaseTableName = "zettel_notes"
 
     var id: String

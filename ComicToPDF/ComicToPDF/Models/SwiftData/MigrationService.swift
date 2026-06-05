@@ -208,16 +208,16 @@ class MigrationService {
                 // 2. Sync PDFs
                 for pdf in pdfs {
                     if let existing = pdfDict[pdf.id] {
-                        existing.name = pdf.name
-                        existing.pageCount = pdf.pageCount
-                        existing.fileSize = pdf.fileSize
-                        existing.metadata = pdf.metadata
-                        existing.collectionId = pdf.collectionId
-                        existing.isFavorite = pdf.isFavorite
-                        existing.isPrivate = pdf.isPrivate
-                        existing.contentType = pdf.contentType
-                        existing.addedByMode = pdf.addedByMode
-                        if let encoded = try? JSONEncoder().encode(pdf.sourceMode) {
+                        if existing.name != pdf.name { existing.name = pdf.name }
+                        if existing.pageCount != pdf.pageCount { existing.pageCount = pdf.pageCount }
+                        if existing.fileSize != pdf.fileSize { existing.fileSize = pdf.fileSize }
+                        if existing.metadata != pdf.metadata { existing.metadata = pdf.metadata }
+                        if existing.collectionId != pdf.collectionId { existing.collectionId = pdf.collectionId }
+                        if existing.isFavorite != pdf.isFavorite { existing.isFavorite = pdf.isFavorite }
+                        if existing.isPrivate != pdf.isPrivate { existing.isPrivate = pdf.isPrivate }
+                        if existing.contentType != pdf.contentType { existing.contentType = pdf.contentType }
+                        if existing.addedByMode != pdf.addedByMode { existing.addedByMode = pdf.addedByMode }
+                        if let encoded = try? JSONEncoder().encode(pdf.sourceMode), existing.sourceModeData != encoded {
                             existing.sourceModeData = encoded
                         }
                     } else {

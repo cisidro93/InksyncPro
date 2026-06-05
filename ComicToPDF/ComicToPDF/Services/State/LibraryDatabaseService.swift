@@ -99,9 +99,28 @@ actor LibraryDatabaseService {
                 for req in requests {
                     switch req {
                     case .saveFiles(let pdfs):
+                        let existingRows = try handle.fetchAll("SELECT * FROM library_files")
+                        var existingRecords: [String: LibraryFileRecord] = [:]
+                        for row in existingRows {
+                            if let r = LibraryFileRecord(row: row) { existingRecords[r.id] = r }
+                        }
+                        
+                        let newIds = Set(pdfs.map { $0.id.uuidString })
                         for pdf in pdfs {
-                            let rec = LibraryFileRecord.from(pdf)
+                            var rec = LibraryFileRecord.from(pdf)
+                            if let existing = existingRecords[rec.id] {
+                                // Ignore modifiedAt difference
+                                var tempRec = rec
+                                tempRec.modifiedAt = existing.modifiedAt
+                                if tempRec == existing { continue }
+                            }
                             try rec.upsert(handle)
+                        }
+                        
+                        for existingId in existingRecords.keys {
+                            if !newIds.contains(existingId) {
+                                try handle.execute("DELETE FROM library_files WHERE id = ?", arguments: [existingId])
+                            }
                         }
                     case .saveProgress(let progress, let fileID):
                         let rec = ReadingProgressRecord.from(fileID: fileID, progress: progress)
