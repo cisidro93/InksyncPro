@@ -95,17 +95,23 @@ class PhysicalFileSystemRouter {
         guard let coverURL = getCoverURL(for: pdf) else { return }
         try? data.write(to: coverURL)
         
+        let key = pdf.id.uuidString as NSString
+        var thumbnailCost: Int? = nil
+        var finalThumbnail: UIImage? = nil
+        
         autoreleasepool {
             if let image = UIImage(data: data) {
                 let thumbnail = image.preparingThumbnail(of: CGSize(width: 160, height: 240)) ?? image
-                let key = pdf.id.uuidString as NSString
+                finalThumbnail = thumbnail
                 // Pixel byte count approximation — accurate enough for NSCache pressure, zero CPU overhead.
-                let cost = Int(thumbnail.size.width * thumbnail.size.height * thumbnail.scale * thumbnail.scale * 4)
-                manager.thumbnailCache.setObject(thumbnail, forKey: key, cost: cost)
+                thumbnailCost = Int(thumbnail.size.width * thumbnail.size.height * thumbnail.scale * thumbnail.scale * 4)
             }
         }
         
         Task { @MainActor in
+            if let thumb = finalThumbnail, let cost = thumbnailCost {
+                manager.thumbnailCache.setObject(thumb, forKey: key, cost: cost)
+            }
             if let index = manager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
                 manager.convertedPDFs[index].coverImageData = nil
                 // Route through the debounced subject so rapid backfill saves coalesce
@@ -236,8 +242,12 @@ class PhysicalFileSystemRouter {
             var warmedAny = false
             for pdf in allPDFs {
                 let key = pdf.id.uuidString as NSString
-                guard manager.thumbnailCache.object(forKey: key) == nil,
-                      let coverURL = getCoverURL(for: pdf),
+                
+                // ✅ FIX: Safely check the cache on the MainActor
+                let isCached = await MainActor.run { manager.thumbnailCache.object(forKey: key) != nil }
+                guard !isCached else { continue }
+                
+                guard let coverURL = getCoverURL(for: pdf),
                       FileManager.default.fileExists(atPath: coverURL.path) else { continue }
 
                 let image = await Task.detached(priority: .userInitiated) { () -> UIImage? in
