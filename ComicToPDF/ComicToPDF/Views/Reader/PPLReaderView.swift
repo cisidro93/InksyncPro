@@ -364,7 +364,7 @@ struct PPLReaderView: View {
             }
             Task { @MainActor in
                 try? await Task.sleep(nanoseconds: pageTurnStyle == .flip3D ? 200_000_000 : 160_000_000)
-                nextPage(geo: geo.size, targetDual: targetDual)
+                nextPage(geo: geo.size, targetDual: showingDual)
                 swipeDragX = pageTurnStyle == .flip3D ? 0 : w * 0.15
                 withAnimation(.spring(response: 0.22, dampingFraction: 0.9)) { swipeDragX = 0 }
                 isCommittingSwipe = false
@@ -376,7 +376,7 @@ struct PPLReaderView: View {
             }
             Task { @MainActor in
                 try? await Task.sleep(nanoseconds: 160_000_000)
-                prevPage(geo: geo.size, targetDual: targetDual)
+                prevPage(geo: geo.size, targetDual: showingDual)
                 swipeDragX = -w * 0.15
                 withAnimation(.spring(response: 0.22, dampingFraction: 0.9)) { swipeDragX = 0 }
                 isCommittingSwipe = false
@@ -703,7 +703,7 @@ struct PPLReaderView: View {
             withAnimation(.easeInOut(duration: 0.25)) { bufferManager.lockedRect = guidedPanels[guidedPanelIndex] }
         } else {
             let isLandscape = geo.width > geo.height
-            nextPage(geo: geo, showingDual: effectiveDoublePage && isLandscape)
+            nextPage(geo: geo, targetDual: effectiveDoublePage && isLandscape)
             if isGuidedReadingActive {
                 refreshGuidedPanels(); guidedPanelIndex = 0
                 if guidedPanels.isEmpty { isGuidedReadingActive = false; updatePPL(in: geo) }
@@ -718,7 +718,7 @@ struct PPLReaderView: View {
             withAnimation(.easeInOut(duration: 0.25)) { bufferManager.lockedRect = guidedPanels[guidedPanelIndex] }
         } else {
             let isLandscape = geo.width > geo.height
-            prevPage(geo: geo, showingDual: effectiveDoublePage && isLandscape)
+            prevPage(geo: geo, targetDual: effectiveDoublePage && isLandscape)
             if isGuidedReadingActive {
                 refreshGuidedPanels()
                 if guidedPanels.isEmpty { isGuidedReadingActive = false; updatePPL(in: geo) }
