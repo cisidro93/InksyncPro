@@ -1129,14 +1129,14 @@ struct SeriesDetailView: View {
               let issue = series.issues.first(where: { $0.id == coverIssueID }) else { return }
         
         let key = issue.id.uuidString as NSString
-        if let cached = await MainActor.run({ conversionManager.thumbnailCache.object(forKey: key) }) {
+        if let cached = await MainActor.run(body: { conversionManager.thumbnailCache.object(forKey: key) }) {
             await MainActor.run { headerCover = cached }
             return
         }
         
         await ThumbnailGenerationQueue.shared.enqueue(issue, manager: conversionManager)
         
-        if let cached = await MainActor.run({ conversionManager.thumbnailCache.object(forKey: key) }) {
+        if let cached = await MainActor.run(body: { conversionManager.thumbnailCache.object(forKey: key) }) {
             await MainActor.run { headerCover = cached }
         }
     }

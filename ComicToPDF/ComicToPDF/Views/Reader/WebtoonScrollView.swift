@@ -135,8 +135,9 @@ struct WebtoonScrollView: UIViewRepresentable {
                 stack.addArrangedSubview(ph)
                 imageViews.append(iv)
 
-                // Async image decode — top 5 pages eagerly, rest lazily
-                if index < 5 { loadImage(at: index, url: url, into: iv) }
+                // Async image decode — top 2 pages eagerly, rest lazily
+                // Eagerly loading 5 huge webtoon strips concurrently causes OOM crashes.
+                if index < 2 { loadImage(at: index, url: url, into: iv) }
             }
             
             // Fast aspect ratio metadata extraction
@@ -228,17 +229,17 @@ struct WebtoonScrollView: UIViewRepresentable {
                     if idx != parentView.currentPageIndex {
                         DispatchQueue.main.async { self.parentView.currentPageIndex = idx }
                     }
-                    // Lazy-load neighbours
-                    for offset in [-2, -1, 0, 1, 2] {
+                    // Lazy-load neighbours (smaller window to save memory)
+                    for offset in [-1, 0, 1] {
                         let ni = idx + offset
                         if ni >= 0 && ni < parentView.pages.count && loadTasks[ni] == nil {
                             loadImage(at: ni, url: parentView.pages[ni], into: imageViews[ni])
                         }
                     }
                     
-                    // Sliding Window Eviction: Unload images outside [-4, +4] radius to prevent OOM memory leak
+                    // Sliding Window Eviction: Unload images outside [-2, +2] radius to prevent OOM memory leak
                     for key in loadTasks.keys {
-                        if abs(key - idx) > 4 {
+                        if abs(key - idx) > 2 {
                             unloadImage(at: key)
                         }
                     }

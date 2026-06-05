@@ -15,11 +15,11 @@ actor ReaderImageFilterEngine {
     private let cacheLimit: Int = {
         switch ProcessInfo.processInfo.performanceClass {
         case .low:
-            return 4  // 4 pages max for low-end (2GB/3GB RAM) devices to prevent memory exhaustion
+            return 2  // Reduced from 4
         case .medium:
-            return 12 // 12 pages for standard devices (4GB/6GB RAM)
+            return 4  // Reduced from 12
         case .high:
-            return 24 // 24 pages for high-end (6GB+ RAM) devices
+            return 8  // Reduced from 24
         }
     }()
     
@@ -84,6 +84,11 @@ actor ReaderImageFilterEngine {
     }
     
     private func addToCache(url: URL, image: UIImage) {
+        // Webtoon OOM Fix: Do not cache exceptionally tall webtoon strips.
+        // WebtoonScrollView already manages its own sliding window of active images.
+        // Caching 10,000px tall images here duplicates memory and causes Jetsam crashes.
+        if image.size.height > 4000 { return }
+        
         if cache.count >= cacheLimit, let lru = lruOrder.first {
             cache.removeValue(forKey: lru)
             lruOrder.removeFirst()
