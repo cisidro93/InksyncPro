@@ -84,8 +84,10 @@ actor ImportOrchestrator {
                 
                 do {
                     await MainActor.run { manager.processingStatus = "Importing \(fileName)..." }
-                    if fileManager.fileExists(atPath: destURL.path) { try fileManager.removeItem(at: destURL) }
-                    try fileManager.copyItem(at: fileURL, to: destURL)
+                    try autoreleasepool {
+                        if fileManager.fileExists(atPath: destURL.path) { try fileManager.removeItem(at: destURL) }
+                        try fileManager.copyItem(at: fileURL, to: destURL)
+                    }
                     
                     // FIX: read size from enumerator's pre-fetched resourceValues — saves one attributesOfItem syscall per file
                     let size = resourceValues.fileSize.map(Int64.init) ?? 0
@@ -172,6 +174,7 @@ actor ImportOrchestrator {
                 manager.convertedPDFs.append(pdf)
             }
             manager.saveLibrary()
+            manager.backfillMissingThumbnails()
         }
     }
     
@@ -252,16 +255,19 @@ actor ImportOrchestrator {
                 }
 
                 do {
-                    if fileManager.fileExists(atPath: destURL.path) { try fileManager.removeItem(at: destURL) }
-
-                    // Aggressive APFS Inode Optimization (Move instead of Copy for Staged Items)
-                    if url.path.contains("InksyncStaging_") {
-                        try fileManager.moveItem(at: url, to: destURL)
-                    } else {
-                        try fileManager.copyItem(at: url, to: destURL)
+                    try autoreleasepool {
+                        if fileManager.fileExists(atPath: destURL.path) { try fileManager.removeItem(at: destURL) }
+                        
+                        // Aggressive APFS Inode Optimization (Move instead of Copy for Staged Items)
+                        if url.path.contains("InksyncStaging_") {
+                            try fileManager.moveItem(at: url, to: destURL)
+                        } else {
+                            try fileManager.copyItem(at: url, to: destURL)
+                        }
                     }
+                    
                     // Re-use incomingSize if known, otherwise fallback to destURL attribute
-                    let size = incomingSize > 0 ? incomingSize : ((try? fileManager.attributesOfItem(atPath: destURL.path)[.size] as? Int64) ?? 0)
+                    let size = incomingSize > 0 ? incomingSize : autoreleasepool { ((try? fileManager.attributesOfItem(atPath: destURL.path)[.size] as? Int64) ?? 0) }
 
                     let cType = MetadataHeuristics.detectAsymmetricContentType(url: destURL)
 
@@ -446,6 +452,7 @@ actor ImportOrchestrator {
             }
             
             manager.saveLibrary()
+            manager.backfillMissingThumbnails()
             return allImported
         }
         return finalImportedPDFs
@@ -560,8 +567,10 @@ actor ImportOrchestrator {
                     if existingPaths.contains(fileName) || syncedFileNames.contains(fileName) { continue }
                         do {
                             await MainActor.run { manager.processingStatus = "Syncing \(fileName)..." }
-                            if fileManager.fileExists(atPath: destURL.path) { try fileManager.removeItem(at: destURL) }
-                            try fileManager.copyItem(at: fileURL, to: destURL)
+                            try autoreleasepool {
+                                if fileManager.fileExists(atPath: destURL.path) { try fileManager.removeItem(at: destURL) }
+                                try fileManager.copyItem(at: fileURL, to: destURL)
+                            }
 
                             // FIX: read size from enumerator resource values — saves one attributesOfItem syscall per file
                             let size = resourceValues.fileSize.map(Int64.init) ?? 0
@@ -673,6 +682,7 @@ actor ImportOrchestrator {
                 manager.convertedPDFs.append(newPdf)
             }
             manager.saveLibrary()
+            manager.backfillMissingThumbnails()
         }
 
     }
@@ -823,6 +833,7 @@ actor ImportOrchestrator {
             await MainActor.run {
                 manager.convertedPDFs.append(finalPDF)
                 manager.saveLibrary()
+                manager.backfillMissingThumbnails()
                 manager.processingStatus = ""
             }
             

@@ -180,9 +180,7 @@ struct ContentView: View {
                                 try? FileManager.default.copyItem(at: safeURL, to: dest)
                             }
                             
-                            await MainActor.run {
-                                _ = ImportQueueManager.shared.stageWithDuplicateCheck([url])
-                            }
+                            _ = await ImportQueueManager.shared.stageWithDuplicateCheck([url])
                         }
                     }
                 }

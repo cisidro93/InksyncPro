@@ -46,59 +46,58 @@ class ImportQueueManager: ObservableObject {
     /// Stages new files after dedup check. Returns what was skipped.
     /// Dedup order: (1) intra-batch dedup, (2) filename fast check,
     /// (3) chapter-key fast check, (4) SHA-256 hash check vs library.
-    func stageWithDuplicateCheck(_ incomingURLs: [URL]) -> StageResult {
-        // 1. Intra-batch dedup — remove duplicates within the incoming array itself
-        var seenPaths = Set<String>()
-        let dedupedIncoming = incomingURLs.filter { seenPaths.insert($0.path).inserted }
-
-        // @MainActor guarantees safe direct read — no .sync needed
-        let currentQueueSnapshot = stagedURLs
+    func stageWithDuplicateCheck(_ incomingURLs: [URL]) async -> StageResult {
+        let currentSnapshot = stagedURLs
 
         // 2. Fast pre-filters (no file I/O)
-        let existingFilenames = Set(currentQueueSnapshot.map { $0.lastPathComponent })
-        let existingChapterKeys: Set<String> = Set(currentQueueSnapshot.compactMap { url -> String? in
+        let existingFilenames = Set(currentSnapshot.map { $0.lastPathComponent })
+        let existingChapterKeys: Set<String> = Set(currentSnapshot.compactMap { url -> String? in
             let series = url.deletingLastPathComponent().lastPathComponent
             guard let ch = SeriesNameParser.chapterKey(from: url.lastPathComponent) else { return nil }
             return "\(series):\(ch)"
         })
 
-        // 3. Hash-based library dedup is handled downstream in ImportOrchestrator.
-        //    The queue manager focuses on fast intra-queue dedup only.
-        //    Full SHA-256 dedup against the library happens at import time.
+        // Move the heavy loop off the main thread
+        let result = await Task.detached(priority: .userInitiated) { [weak self] () -> (toStage: [URL], dupes: [URL]) in
+            var seenPaths = Set<String>()
+            let dedupedIncoming = incomingURLs.filter { seenPaths.insert($0.path).inserted }
 
-        var toStage: [URL] = []
-        var dupes: [URL] = []
-        let total = dedupedIncoming.count
+            var toStage: [URL] = []
+            var dupes: [URL] = []
+            let total = dedupedIncoming.count
 
-        for (index, url) in dedupedIncoming.enumerated() {
-            // Safe direct mutation — we are @MainActor
-            stagingProgress = (current: index + 1, total: total)
+            for (index, url) in dedupedIncoming.enumerated() {
+                if index % 50 == 0 || index == total - 1 {
+                    await MainActor.run {
+                        self?.stagingProgress = (current: index + 1, total: total)
+                    }
+                }
 
-            let filename = url.lastPathComponent
-            let seriesFolder = url.deletingLastPathComponent().lastPathComponent
+                let filename = url.lastPathComponent
+                let seriesFolder = url.deletingLastPathComponent().lastPathComponent
 
-            // Fast filename check
-            if existingFilenames.contains(filename) {
-                dupes.append(url); continue
+                if existingFilenames.contains(filename) {
+                    dupes.append(url); continue
+                }
+
+                if let ch = SeriesNameParser.chapterKey(from: filename),
+                   existingChapterKeys.contains("\(seriesFolder):\(ch)") {
+                    dupes.append(url); continue
+                }
+
+                toStage.append(url)
             }
+            return (toStage, dupes)
+        }.value
 
-            // Fast chapter-key check
-            if let ch = SeriesNameParser.chapterKey(from: filename),
-               existingChapterKeys.contains("\(seriesFolder):\(ch)") {
-                dupes.append(url); continue
-            }
-
-            toStage.append(url)
-        }
-
-        stagedURLs.append(contentsOf: toStage)
+        stagedURLs.append(contentsOf: result.toStage)
         stagingProgress = nil
-        schedulePersist()   // debounced — won't write on every file during batch imports
+        schedulePersist()
 
         return StageResult(
-            staged: toStage.count,
-            skippedDuplicates: dupes.count,
-            duplicateURLs: dupes
+            staged: result.toStage.count,
+            skippedDuplicates: result.dupes.count,
+            duplicateURLs: result.dupes
         )
     }
 

@@ -69,7 +69,8 @@ struct PPLReaderView: View {
     var body: some View {
         GeometryReader { geo in
             let isLandscape  = geo.size.width > geo.size.height
-            let showingDual  = effectiveDoublePage && isLandscape
+            let targetDual   = effectiveDoublePage && isLandscape
+            let currentDual  = bufferManager.currentSpread != nil
 
             ZStack {
                 Color.black.ignoresSafeArea()
@@ -84,11 +85,11 @@ struct PPLReaderView: View {
                 if bufferManager.currentImage == nil {
                     loadingIndicator
                 } else {
-                    pageContent(geo: geo, showingDual: showingDual)
+                    pageContent(geo: geo, currentDual: currentDual)
                         .contextMenu { contextMenuItems() }
                 }
             }
-            .onAppear       { setupBuffer(geo: geo, dual: showingDual) }
+            .onAppear       { setupBuffer(geo: geo, dual: targetDual) }
             .onChange(of: currentPageIndex) { _, newIndex in
                 if !isZoomLockEnabled {
                     withAnimation(.easeOut(duration: 0.15)) {
@@ -102,7 +103,7 @@ struct PPLReaderView: View {
                 } else if scale > 1.0 {
                     updatePPL(in: geo.size)
                 }
-                advanceBuffer(to: newIndex, geo: geo, dual: showingDual)
+                advanceBuffer(to: newIndex, geo: geo, dual: targetDual)
             }
             // onChange(of: geo.size) fires many times during the rotation animation with
             // intermediate sizes. We debounce by ignoring any size where either dimension
@@ -118,26 +119,26 @@ struct PPLReaderView: View {
             .onChange(of: autoLandscapeDualPage) { _, _ in
                 setupBuffer(geo: geo, dual: effectiveDoublePage && geo.size.width > geo.size.height)
             }
-            .onChange(of: isAutoCropEnabled) { _, _ in setupBuffer(geo: geo, dual: showingDual) }
+            .onChange(of: isAutoCropEnabled) { _, _ in setupBuffer(geo: geo, dual: targetDual) }
         }
     }
 
     // MARK: - Page Content with Live Peel
 
     @ViewBuilder
-    private func pageContent(geo: GeometryProxy, showingDual: Bool) -> some View {
+    private func pageContent(geo: GeometryProxy, currentDual: Bool) -> some View {
         let w = geo.size.width
 
         ZStack(alignment: .center) {
             // ── Back layer: adjacent spread peeking ──────────────────────────
             if pageTurnStyle != .instant {
                 if swipeDragX > 8 {
-                    adjacentSpread(isNext: false, showingDual: showingDual, geo: geo)
+                    adjacentSpread(isNext: false, currentDual: currentDual, geo: geo)
                         .offset(x: swipeDragX - w)
                         .allowsHitTesting(false)
                 }
                 if swipeDragX < -8 {
-                    adjacentSpread(isNext: true, showingDual: showingDual, geo: geo)
+                    adjacentSpread(isNext: true, currentDual: currentDual, geo: geo)
                         .offset(x: swipeDragX + w)
                         .allowsHitTesting(false)
                 }
@@ -145,7 +146,7 @@ struct PPLReaderView: View {
 
             // ── Front layer: current spread, sliding with finger ──────────────
             ZStack {
-                currentContent(geo: geo, showingDual: showingDual)
+                currentContent(geo: geo, currentDual: currentDual)
                 
                 // ✅ Phase 4: In-Line Handwriting
                 PageCanvasOverlay(pdfID: pdfID, pageIndex: currentPageIndex, isMarkupEnabled: isDrawingMode)
@@ -196,8 +197,8 @@ struct PPLReaderView: View {
     // MARK: - Current Content
 
     @ViewBuilder
-    private func currentContent(geo: GeometryProxy, showingDual: Bool) -> some View {
-        if showingDual {
+    private func currentContent(geo: GeometryProxy, currentDual: Bool) -> some View {
+        if currentDual {
             dualSpreadView(geo: geo, spread: bufferManager.currentSpread)
         } else {
             singlePageView(geo: geo)
@@ -269,8 +270,8 @@ struct PPLReaderView: View {
     // MARK: - Adjacent Spread (peel preview layer)
 
     @ViewBuilder
-    private func adjacentSpread(isNext: Bool, showingDual: Bool, geo: GeometryProxy) -> some View {
-        if showingDual {
+    private func adjacentSpread(isNext: Bool, currentDual: Bool, geo: GeometryProxy) -> some View {
+        if currentDual {
             let spread = isNext ? bufferManager.nextSpread : bufferManager.prevSpread
             dualSpreadView(geo: geo, spread: spread)
         } else {
@@ -363,7 +364,7 @@ struct PPLReaderView: View {
             }
             Task { @MainActor in
                 try? await Task.sleep(nanoseconds: pageTurnStyle == .flip3D ? 200_000_000 : 160_000_000)
-                nextPage(geo: geo.size, showingDual: showingDual)
+                nextPage(geo: geo.size, targetDual: targetDual)
                 swipeDragX = pageTurnStyle == .flip3D ? 0 : w * 0.15
                 withAnimation(.spring(response: 0.22, dampingFraction: 0.9)) { swipeDragX = 0 }
                 isCommittingSwipe = false
@@ -375,7 +376,7 @@ struct PPLReaderView: View {
             }
             Task { @MainActor in
                 try? await Task.sleep(nanoseconds: 160_000_000)
-                prevPage(geo: geo.size, showingDual: showingDual)
+                prevPage(geo: geo.size, targetDual: targetDual)
                 swipeDragX = -w * 0.15
                 withAnimation(.spring(response: 0.22, dampingFraction: 0.9)) { swipeDragX = 0 }
                 isCommittingSwipe = false
@@ -462,22 +463,23 @@ struct PPLReaderView: View {
         guard scale <= 1.0 || isZoomLockEnabled || isGuidedReadingActive else { return }
         let w = geo.size.width
         let isLandscape = geo.size.width > geo.size.height
-        let showingDual = effectiveDoublePage && isLandscape
+        let targetDual = effectiveDoublePage && isLandscape
         let zones = tapZoneStyle.zones
+        let touchX = location.x
 
         if isGuidedReadingActive {
-            if location.x < w * zones.leftEdge {
+            if touchX < w * zones.leftEdge {
                 if isMangaMode { nextGuidedPanel(geo: geo.size) } else { prevGuidedPanel(geo: geo.size) }
-            } else if location.x > w * zones.rightEdge {
+            } else if touchX > w * zones.rightEdge {
                 if isMangaMode { prevGuidedPanel(geo: geo.size) } else { nextGuidedPanel(geo: geo.size) }
             } else {
                 onCenterTap()
             }
         } else {
-            if location.x < w * zones.leftEdge {
-                if isMangaMode { nextPage(geo: geo.size, showingDual: showingDual) } else { prevPage(geo: geo.size, showingDual: showingDual) }
-            } else if location.x > w * zones.rightEdge {
-                if isMangaMode { prevPage(geo: geo.size, showingDual: showingDual) } else { nextPage(geo: geo.size, showingDual: showingDual) }
+            if touchX < w * zones.leftEdge {
+                if isMangaMode { nextPage(geo: geo.size, targetDual: targetDual) } else { prevPage(geo: geo.size, targetDual: targetDual) }
+            } else if touchX > w * zones.rightEdge {
+                if isMangaMode { prevPage(geo: geo.size, targetDual: targetDual) } else { nextPage(geo: geo.size, targetDual: targetDual) }
             } else {
                 onCenterTap()
             }
@@ -508,7 +510,7 @@ struct PPLReaderView: View {
 
     // MARK: - Navigation
 
-    private func nextPage(geo: CGSize, showingDual: Bool) {
+    private func nextPage(geo: CGSize, targetDual: Bool) {
         let isSpread     = bufferManager.currentImage.map { isWideSpread($0) } ?? false
         let nextIsSpread = bufferManager.nextImage.map   { isWideSpread($0) } ?? false
         let isPortrait   = geo.height > geo.width
@@ -521,14 +523,14 @@ struct PPLReaderView: View {
         // right-slot index and stall for a tap. This gives the natural
         // "every tap = one spread forward" feel the user expects.
         // In single-page mode, just use the current page index.
-        let lead = showingDual
+        let lead = targetDual
             ? PageBufferManager.canonicalLeadIndex(for: currentPageIndex, isMangaMode: isMangaMode)
             : currentPageIndex
-        let isCover = showingDual && lead == 0
+        let isCover = targetDual && lead == 0
 
         // In dual-page mode hop by 2 (one full spread) unless the current or next
         // page is a wide physical spread — those always occupy a solo slot.
-        let hop: Int = (showingDual && !isSpread && !nextIsSpread && !isCover) ? 2 : 1
+        let hop: Int = (targetDual && !isSpread && !nextIsSpread && !isCover) ? 2 : 1
         let next = lead + hop
 
         if next < pages.count {
@@ -543,7 +545,7 @@ struct PPLReaderView: View {
         }
     }
 
-    private func prevPage(geo: CGSize, showingDual: Bool) {
+    private func prevPage(geo: CGSize, targetDual: Bool) {
         let isSpread     = bufferManager.currentImage.map { isWideSpread($0) } ?? false
         let prevIsSpread = bufferManager.prevImage.map    { isWideSpread($0) } ?? false
         let isPortrait   = geo.height > geo.width
@@ -553,17 +555,17 @@ struct PPLReaderView: View {
         }
 
         // Always base hop arithmetic on the canonical lead in dual-page mode — same reasoning as nextPage.
-        let lead = showingDual
+        let lead = targetDual
             ? PageBufferManager.canonicalLeadIndex(for: currentPageIndex, isMangaMode: isMangaMode)
             : currentPageIndex
-        let isCover = showingDual && lead == 0
+        let isCover = targetDual && lead == 0
         guard lead > 0 else {
             Haptics.shared.playImpact(style: .rigid)
             return
         }
 
         // In dual-page mode hop back by 2 (one full spread), respecting wide pages.
-        let hop: Int = (showingDual && !isSpread && !prevIsSpread && !isCover) ? 2 : 1
+        let hop: Int = (targetDual && !isSpread && !prevIsSpread && !isCover) ? 2 : 1
         Haptics.shared.playImpact(style: .light)
         currentPageIndex = max(0, lead - hop)
     }
@@ -572,7 +574,7 @@ struct PPLReaderView: View {
 
     private func setupBuffer(geo: GeometryProxy, dual: Bool) {
         let isLandscape = geo.size.width > geo.size.height
-        let showingDual = dual && isLandscape
+        let targetDual = dual && isLandscape
 
         if let firstPage = pages.first,
            let archiveURL = PageBufferManager.findArchiveURL(in: firstPage) {
@@ -584,12 +586,12 @@ struct PPLReaderView: View {
                 url: archiveURL,
                 initialPageIndex: currentPageIndex,
                 bounds: geo.size,
-                dual: showingDual,
+                dual: targetDual,
                 isMangaMode: isMangaMode
             )
         } else {
             bufferManager.setup(pages: pages)
-            if showingDual {
+            if targetDual {
                 let lead = PageBufferManager.canonicalLeadIndex(
                     for: currentPageIndex, isMangaMode: isMangaMode)
                 bufferManager.renderDual(
