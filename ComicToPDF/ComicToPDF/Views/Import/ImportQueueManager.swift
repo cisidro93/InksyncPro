@@ -58,21 +58,14 @@ class ImportQueueManager: ObservableObject {
         })
 
         // Move the heavy loop off the main thread
-        let result = await Task.detached(priority: .userInitiated) { [weak self] () -> (toStage: [URL], dupes: [URL]) in
+        let result = await Task.detached(priority: .userInitiated) { () -> (toStage: [URL], dupes: [URL]) in
             var seenPaths = Set<String>()
             let dedupedIncoming = incomingURLs.filter { seenPaths.insert($0.path).inserted }
 
             var toStage: [URL] = []
             var dupes: [URL] = []
-            let total = dedupedIncoming.count
 
-            for (index, url) in dedupedIncoming.enumerated() {
-                if index % 50 == 0 || index == total - 1 {
-                    await MainActor.run {
-                        self?.stagingProgress = (current: index + 1, total: total)
-                    }
-                }
-
+            for url in dedupedIncoming {
                 let filename = url.lastPathComponent
                 let seriesFolder = url.deletingLastPathComponent().lastPathComponent
 

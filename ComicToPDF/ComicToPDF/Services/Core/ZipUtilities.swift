@@ -105,13 +105,10 @@ struct ZipUtilities {
                         //             O(all images) — eliminates the iOS memory pressure crash.
 
                         // ── Phase 1: Enumerate qualifying entry paths (no I/O, metadata only) ──
-                        let enumerationArchive: ZIPFoundation.Archive
-                        do {
-                            enumerationArchive = try ZIPFoundation.Archive(url: sourceURL, accessMode: .read)
-                        } catch {
+                        guard let enumerationArchive = ZIPFoundation.Archive(url: sourceURL, accessMode: .read) else {
                             throw NSError(domain: "ZipError", code: 1,
                                           userInfo: [NSLocalizedDescriptionKey:
-                                            "Could not open CBZ archive '\(sourceURL.lastPathComponent)': \(error.localizedDescription)"])
+                                            "Could not open CBZ archive '\(sourceURL.lastPathComponent)'"])
                         }
 
                         let imageExtensions: Set<String> = ["jpg", "jpeg", "png", "webp", "gif", "heic"]
@@ -152,7 +149,7 @@ struct ZipUtilities {
                                 defer { workerGroup.leave() }
 
                                 // Each worker opens its own Archive — independent file handle & position.
-                                guard let workerArchive = try? ZIPFoundation.Archive(
+                                guard let workerArchive = ZIPFoundation.Archive(
                                     url: sourceURL, accessMode: .read
                                 ) else {
                                     Logger.shared.log(
@@ -220,7 +217,9 @@ struct ZipUtilities {
                     let secure = sourceURL.startAccessingSecurityScopedResource()
                     defer { if secure { sourceURL.stopAccessingSecurityScopedResource() } }
                     
-                    let archive = try Archive(url: sourceURL, accessMode: .read)
+                    guard let archive = Archive(url: sourceURL, accessMode: .read) else {
+                        throw NSError(domain: "ZipError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to read archive"])
+                    }
                     let entries = archive.filter { entry in
                         let name = entry.path
                         let ext = URL(fileURLWithPath: name).pathExtension.lowercased()
@@ -258,7 +257,9 @@ struct ZipUtilities {
                     }
                     
                     // Creates a new archive at destinationURL
-                    let archive = try Archive(url: destinationURL, accessMode: .create)
+                    guard let archive = Archive(url: destinationURL, accessMode: .create) else {
+                        throw NSError(domain: "ZipError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to create archive"])
+                    }
                     
                     // Get all files in source directory
                     let fileURLs = try fileManager.contentsOfDirectory(at: sourceURL, includingPropertiesForKeys: nil)
