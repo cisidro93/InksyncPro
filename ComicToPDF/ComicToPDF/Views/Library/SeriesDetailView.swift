@@ -1125,12 +1125,20 @@ struct SeriesDetailView: View {
     }
 
     private func loadHeaderCover() async {
-        guard let url = series.coverURL else { return }
-        let img = await Task.detached(priority: .userInitiated) {
-            guard let data = try? Data(contentsOf: url) else { return UIImage?.none }
-            return UIImage(data: data)?.preparingThumbnail(of: CGSize(width: 160, height: 240))
-        }.value
-        await MainActor.run { headerCover = img }
+        guard let coverIssueID = series.coverIssueID,
+              let issue = series.issues.first(where: { $0.id == coverIssueID }) else { return }
+        
+        let key = issue.id.uuidString as NSString
+        if let cached = await MainActor.run({ conversionManager.thumbnailCache.object(forKey: key) }) {
+            await MainActor.run { headerCover = cached }
+            return
+        }
+        
+        await ThumbnailGenerationQueue.shared.enqueue(issue, manager: conversionManager)
+        
+        if let cached = await MainActor.run({ conversionManager.thumbnailCache.object(forKey: key) }) {
+            await MainActor.run { headerCover = cached }
+        }
     }
 }
 

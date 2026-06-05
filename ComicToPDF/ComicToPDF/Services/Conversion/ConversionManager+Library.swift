@@ -13,7 +13,7 @@ extension ConversionManager {
      
     // MARK: - Thumbnails & Helpers
     func generateCoverThumbnail(for pdf: ConvertedPDF) async {
-        await PhysicalFileSystemRouter.shared.generateCoverThumbnail(for: pdf, manager: self)
+        await ThumbnailGenerationQueue.shared.enqueue(pdf, manager: self)
     }
     
     func backfillMissingThumbnails() {
