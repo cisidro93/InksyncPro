@@ -105,11 +105,13 @@ class PhysicalFileSystemRouter {
             }
         }
         
-        if let index = manager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
-            manager.convertedPDFs[index].coverImageData = nil
-            // Route through the debounced subject so rapid backfill saves coalesce
-            // into one SwiftUI diff per 150ms window instead of one per cover write.
-            manager.thumbnailReadySubject.send()
+        Task { @MainActor in
+            if let index = manager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                manager.convertedPDFs[index].coverImageData = nil
+                // Route through the debounced subject so rapid backfill saves coalesce
+                // into one SwiftUI diff per 150ms window instead of one per cover write.
+                manager.thumbnailReadySubject.send()
+            }
         }
     }
     
@@ -262,30 +264,20 @@ class PhysicalFileSystemRouter {
             if warmedAny {
                 await MainActor.run { manager.objectWillChange.send() }
             }
-        }
-
-
-        // Pass 2 — generate covers for files that have no on-disk cover yet.
-        // IMPORTANT: Process in batches of 5 with yield between batches to prevent
-        // saturating the NAND / memory bus when importing hundreds of files at once.
-        // Without batching, every generateCoverThumbnail runs concurrently via
-        // Task.detached which causes OOM crashes on large library imports.
+               // Pass 2 — generate covers for files that have no on-disk cover yet.
+        // ✅ OOM Crash Fix: Hand off all missing covers to the `ThumbnailGenerationQueue`.
+        // This ensures they are processed strictly maxConcurrent = 2 at a time, preventing
+        // overlapping bulk tasks from exhausting device RAM during large imports.
         let pdfsNeedingCovers = allPDFs.filter { pdf in
             guard let coverURL = getCoverURL(for: pdf) else { return true }
             return !FileManager.default.fileExists(atPath: coverURL.path)
         }
         guard !pdfsNeedingCovers.isEmpty else { return }
         Task(priority: .background) {
-            let batchSize = 5
-            for batchStart in stride(from: 0, to: pdfsNeedingCovers.count, by: batchSize) {
-                let batch = pdfsNeedingCovers[batchStart ..< min(batchStart + batchSize, pdfsNeedingCovers.count)]
-                for pdf in batch {
-                    await generateCoverThumbnail(for: pdf, manager: manager)
-                }
-                // Yield after each batch so the system can reclaim memory and
-                // service other lower-priority tasks (UI, scrolling).
-                await Task.yield()
+            for pdf in pdfsNeedingCovers {
+                await ThumbnailGenerationQueue.shared.enqueue(pdf, manager: manager)
             }
+        }
         }
 
         // Pass 3 — cloud cover extraction for Dropbox files still missing on-disk covers.
@@ -761,7 +753,16 @@ class PhysicalFileSystemRouter {
                         _ = try archive.extract(targetEntry) { chunk in
                             data.append(chunk)
                         }
-                        return UIImage(data: data)
+                        // ✅ Memory Optimization: Downsample directly from data without loading full bitmap
+                        let srcOpts = [kCGImageSourceShouldCache: false] as CFDictionary
+                        guard let source = CGImageSourceCreateWithData(data as CFData, srcOpts) else { return nil }
+                        let downsampleOpts = [
+                            kCGImageSourceCreateThumbnailFromImageAlways: true,
+                            kCGImageSourceCreateThumbnailWithTransform: true,
+                            kCGImageSourceThumbnailMaxPixelSize: 600
+                        ] as CFDictionary
+                        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, downsampleOpts) else { return nil }
+                        return UIImage(cgImage: cgImage)
                     } catch {
                         return nil
                     }
@@ -796,7 +797,16 @@ class PhysicalFileSystemRouter {
                     return autoreleasepool {
                         do {
                             let data = try archive.extract(targetEntry)
-                            return UIImage(data: data)
+                            // ✅ Memory Optimization: Downsample directly from data without loading full bitmap
+                            let srcOpts = [kCGImageSourceShouldCache: false] as CFDictionary
+                            guard let source = CGImageSourceCreateWithData(data as CFData, srcOpts) else { return nil }
+                            let downsampleOpts = [
+                                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                                kCGImageSourceCreateThumbnailWithTransform: true,
+                                kCGImageSourceThumbnailMaxPixelSize: 600
+                            ] as CFDictionary
+                            guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, downsampleOpts) else { return nil }
+                            return UIImage(cgImage: cgImage)
                         } catch {
                             return nil
                         }

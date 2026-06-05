@@ -640,21 +640,17 @@ struct PPLReaderView: View {
         bufferManager.isPPLEnabled = false
         bufferManager.updateViewport(rect: .full)
 
-        // ✅ Rotation crash fix: eagerly clear spread state BEFORE issuing the
-        // new render. Without this, the old dual-page CGImages remain alive in
-        // currentSpread while the new render sets currentImage = nil (isLoading=true).
-        // SwiftUI then picks the singlePageView branch and passes currentImage=nil
-        // to MetalCanvasView — crashing the GPU texture upload path.
-        // Clearing spreads here makes the body show the loading indicator instead.
-        if !dual {
-            bufferManager.currentSpread = nil
-            bufferManager.nextSpread = nil
-            bufferManager.prevSpread = nil
-        } else {
-            bufferManager.currentImage = nil
-            bufferManager.nextImage = nil
-            bufferManager.prevImage = nil
-        }
+        // ✅ Rotation crash fix: eagerly clear ALL spread and image states BEFORE issuing the
+        // new render. This guarantees bufferManager.currentImage is nil, forcing the
+        // loadingIndicator to show. If we don't clear currentImage when switching from dual
+        // to single, MetalCanvasView stays mounted during the MTKView's drawableSize transition,
+        // which causes a Metal pipeline crash on device rotation.
+        bufferManager.currentImage = nil
+        bufferManager.currentSpread = nil
+        bufferManager.nextImage = nil
+        bufferManager.nextSpread = nil
+        bufferManager.prevImage = nil
+        bufferManager.prevSpread = nil
 
         if dual {
             let lead = PageBufferManager.canonicalLeadIndex(for: currentPageIndex, isMangaMode: isMangaMode)
