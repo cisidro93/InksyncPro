@@ -305,7 +305,9 @@ class PhysicalFileSystemRouter {
 
     
     func loadThumbnailAsync(for pdf: ConvertedPDF, manager: ConversionManager) async {
-        if manager.thumbnailCache.object(forKey: pdf.id.uuidString as NSString) != nil { return }
+        let key = pdf.id.uuidString as NSString
+        let isCached = await MainActor.run { manager.thumbnailCache.object(forKey: key) != nil }
+        if isCached { return }
         
         var generatedImage: UIImage? = nil
         if let coverURL = self.getCoverURL(for: pdf) {
@@ -333,7 +335,8 @@ class PhysicalFileSystemRouter {
             }
         } else {
             await self.generateCoverThumbnail(for: pdf, manager: manager)
-            if manager.thumbnailCache.object(forKey: pdf.id.uuidString as NSString) != nil {
+            let isCachedNow = await MainActor.run { manager.thumbnailCache.object(forKey: pdf.id.uuidString as NSString) != nil }
+            if isCachedNow {
                 await MainActor.run { manager.thumbnailReadySubject.send() }
             }
         }
