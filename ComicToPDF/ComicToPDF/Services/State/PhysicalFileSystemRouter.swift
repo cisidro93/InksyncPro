@@ -334,11 +334,7 @@ class PhysicalFileSystemRouter {
                 manager.thumbnailReadySubject.send()
             }
         } else {
-            await self.generateCoverThumbnail(for: pdf, manager: manager)
-            let isCachedNow = await MainActor.run { manager.thumbnailCache.object(forKey: pdf.id.uuidString as NSString) != nil }
-            if isCachedNow {
-                await MainActor.run { manager.thumbnailReadySubject.send() }
-            }
+            await ThumbnailGenerationQueue.shared.enqueue(pdf, manager: manager)
         }
     }
     
@@ -427,7 +423,12 @@ class PhysicalFileSystemRouter {
     nonisolated static func extractCoverImageStatic(from url: URL) -> UIImage? {
         let ext = url.pathExtension.lowercased()
         if ext == "pdf" {
-            let accessing = url.startAccessingSecurityScopedResource()
+            let accessing: Bool
+            if url.path.contains("Documents") || url.path.contains("tmp") {
+                accessing = false
+            } else {
+                accessing = url.startAccessingSecurityScopedResource()
+            }
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }
             
             return ConcurrencyLocks.pdfLock.withLock {
@@ -474,7 +475,12 @@ class PhysicalFileSystemRouter {
         }
 
         if ["cbz", "zip", "epub"].contains(ext) {
-            let accessing = url.startAccessingSecurityScopedResource()
+            let accessing: Bool
+            if url.path.contains("Documents") || url.path.contains("tmp") {
+                accessing = false
+            } else {
+                accessing = url.startAccessingSecurityScopedResource()
+            }
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }
             
             guard FileManager.default.fileExists(atPath: url.path) else { return nil }
