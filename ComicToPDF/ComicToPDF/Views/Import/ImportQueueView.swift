@@ -109,8 +109,12 @@ struct ImportQueueView: View {
                 }
             }
             .onChange(of: showSeriesConflict) { _, newValue in
-                if newValue == false && queue.stagedURLs.isEmpty {
+                if newValue == false {
                     dismiss()
+                    Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 350_000_000)
+                        queue.clear()
+                    }
                 }
             }
         }
@@ -237,7 +241,6 @@ struct ImportQueueView: View {
 
     private func importAll() {
         let urls = queue.stagedURLs
-        queue.clear()
         
         // Group into series using SeriesNameParser
         let groups = SeriesNameParser.groupIntoSeries(urls)
@@ -263,7 +266,12 @@ struct ImportQueueView: View {
             }
         } else {
             dismiss()
-            Task { await runImport(groups: groups, manager: safeManager) }
+            // Wait for dismissal animation before clearing state and starting heavy work
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 350_000_000)
+                queue.clear()
+                await runImport(groups: groups, manager: safeManager)
+            }
         }
     }
 
