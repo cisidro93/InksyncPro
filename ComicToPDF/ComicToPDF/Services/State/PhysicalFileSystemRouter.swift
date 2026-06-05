@@ -264,7 +264,9 @@ class PhysicalFileSystemRouter {
             if warmedAny {
                 await MainActor.run { manager.objectWillChange.send() }
             }
-               // Pass 2 — generate covers for files that have no on-disk cover yet.
+        }
+
+        // Pass 2 — generate covers for files that have no on-disk cover yet.
         // ✅ OOM Crash Fix: Hand off all missing covers to the `ThumbnailGenerationQueue`.
         // This ensures they are processed strictly maxConcurrent = 2 at a time, preventing
         // overlapping bulk tasks from exhausting device RAM during large imports.
@@ -277,7 +279,6 @@ class PhysicalFileSystemRouter {
             for pdf in pdfsNeedingCovers {
                 await ThumbnailGenerationQueue.shared.enqueue(pdf, manager: manager)
             }
-        }
         }
 
         // Pass 3 — cloud cover extraction for Dropbox files still missing on-disk covers.
