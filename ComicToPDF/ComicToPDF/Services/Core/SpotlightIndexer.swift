@@ -196,9 +196,10 @@ final class SpotlightIndexer {
             
             var items: [CSSearchableItem] = []
             
-            // Limit full Vision OCR to first 10 pages for image/scanned documents to avoid battery drain,
-            // but native text can be indexed for all pages.
-            let maxPages = doc.pageCount
+            // Limit indexing to the first 15 pages maximum.
+            // Full-book OCR and text extraction on 200+ page comic books causes the CGPDFService
+            // to cache every page and hit its Jetsam memory limit, resulting in silent OOM kills.
+            let maxPages = min(doc.pageCount, 15)
             
             for pageIndex in 0..<maxPages {
                 guard let page = doc.page(at: pageIndex) else { continue }
@@ -206,10 +207,8 @@ final class SpotlightIndexer {
                 
                 // Scanned PDF/Comic fallback to Vision OCR
                 if pageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    if pageIndex < 10 {
-                        // Render page & run OCR
-                        pageText = await self.runVisionOCR(on: page)
-                    }
+                    // Render page & run OCR
+                    pageText = await self.runVisionOCR(on: page)
                 }
                 
                 let trimmed = pageText.trimmingCharacters(in: .whitespacesAndNewlines)
