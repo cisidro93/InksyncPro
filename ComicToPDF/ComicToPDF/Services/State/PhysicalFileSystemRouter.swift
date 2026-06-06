@@ -536,6 +536,7 @@ class PhysicalFileSystemRouter {
                 }
                 imageEntries.sort { $0.0.localizedStandardCompare($1.0) == .orderedAscending }
 
+                var firstSpreadImage: UIImage? = nil
                 for (_, entry) in imageEntries.prefix(6) {
                     // Safe cancellation check inside a synchronous nonisolated func:
                     // Task.isCancelled can only be called from async context; using
