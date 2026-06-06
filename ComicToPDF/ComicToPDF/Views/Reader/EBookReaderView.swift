@@ -1074,6 +1074,12 @@ struct EBookWebReader: UIViewRepresentable {
                 webView.evaluateJavaScript(js)
             }
         }
+
+        /// Recover from Jetsam Out-Of-Memory (OOM) WebKit process crashes.
+        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            Logger.shared.log("WebKit process terminated (OOM Jetsam crash). Reloading EPUB chapter.", category: "EBookWebReader", type: .error)
+            webView.reload()
+        }
     }
 } // end EBookWebReader
 

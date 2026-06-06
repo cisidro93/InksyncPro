@@ -385,6 +385,12 @@ struct EPUBWebView: UIViewRepresentable {
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             parent.onPageLoaded?(webView)
         }
+
+        /// Recover from Jetsam Out-Of-Memory (OOM) WebKit process crashes.
+        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            Logger.shared.log("WebKit process terminated (OOM Jetsam crash). Reloading EPUB chapter.", category: "EPUBWebView", type: .error)
+            webView.reload()
+        }
     }
 
     func makeCoordinator() -> Coordinator {
