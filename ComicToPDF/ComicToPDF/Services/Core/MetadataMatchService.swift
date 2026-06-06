@@ -115,6 +115,10 @@ class MetadataMatchService: ObservableObject {
         let cluster = activeClusters[idx]
         let pdfsToUpdate = cluster.pdfs
         
+        let descriptor = FetchDescriptor<SDConvertedPDF>()
+        guard let allPDFs = try? modelContext.fetch(descriptor) else { return }
+        var didSave = false
+        
         for pdf in pdfsToUpdate {
             let issueNum = extractIssueNumber(from: pdf.name)
             
@@ -124,7 +128,15 @@ class MetadataMatchService: ObservableObject {
             updatedMetadata.publisher = candidate.publisher
             updatedMetadata.issueNumber = issueNum
             
-            await updatePDFMetadata(pdfID: pdf.id, metadata: updatedMetadata)
+            if let match = allPDFs.first(where: { $0.id == pdf.id }) {
+                match.metadata = updatedMetadata
+                didSave = true
+            }
+        }
+        
+        if didSave {
+            try? modelContext.save()
+            NotificationCenter.default.post(name: Notification.Name.NSManagedObjectContextDidSave, object: nil)
         }
         
         // Download and pre-cache mock Character nodes & relationship updates
@@ -139,25 +151,29 @@ class MetadataMatchService: ObservableObject {
         let pdfsToUpdate = cluster.pdfs
         let defaultSeriesName = cluster.name
         
+        let descriptor = FetchDescriptor<SDConvertedPDF>()
+        guard let allPDFs = try? modelContext.fetch(descriptor) else { return }
+        var didSave = false
+        
         for pdf in pdfsToUpdate {
             var updated = pdf.metadata
             updated.series = metadata.series
             updated.universalSeriesID = metadata.universalSeriesID
             updated.publisher = metadata.publisher
             updated.issueNumber = extractIssueNumber(from: pdf.name)
-            await updatePDFMetadata(pdfID: pdf.id, metadata: updated)
+            
+            if let match = allPDFs.first(where: { $0.id == pdf.id }) {
+                match.metadata = updated
+                didSave = true
+            }
         }
         
-        updateClusterStatus(clusterID: clusterID, status: .matched(seriesName: metadata.series ?? defaultSeriesName))
-    }
-    
-    private func updatePDFMetadata(pdfID: UUID, metadata: PDFMetadata) async {
-        let descriptor = FetchDescriptor<SDConvertedPDF>(predicate: #Predicate { $0.id == pdfID })
-        if let pdfs = try? modelContext.fetch(descriptor), let match = pdfs.first {
-            match.metadata = metadata
+        if didSave {
             try? modelContext.save()
             NotificationCenter.default.post(name: Notification.Name.NSManagedObjectContextDidSave, object: nil)
         }
+        
+        updateClusterStatus(clusterID: clusterID, status: .matched(seriesName: metadata.series ?? defaultSeriesName))
     }
     
     private func extractComicInfoXML(for pdf: ConvertedPDF) async throws -> PDFMetadata? {
