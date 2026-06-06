@@ -8,6 +8,7 @@ struct ContentView: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @StateObject private var conversionManager = ConversionManager()
+    @StateObject private var taskEngine = TaskEngine.shared
     @StateObject private var settingsManager = AppSettingsManager.shared
     @ObservedObject private var router = AppRouter.shared
     // Wi-Fi Server for Kindle Sync
@@ -87,7 +88,7 @@ struct ContentView: View {
         .environmentObject(SecurityManager.shared)
         .environment(\.dynamicTypeSize, settingsManager.conversionSettings.textSize.swiftUIValue)
         .sheet(item: $pdfToShare) { pdf in ShareSheet(activityItems: [pdf.url]) }
-        .alert(item: $conversionManager.appAlert) { alert in
+        .alert(item: $taskEngine.appAlert) { alert in
             Alert(title: Text(alert.title), message: Text(alert.message), dismissButton: .default(Text("OK")))
         }
         .onAppear {

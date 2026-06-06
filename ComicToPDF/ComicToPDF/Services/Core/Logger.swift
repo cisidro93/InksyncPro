@@ -79,7 +79,17 @@ class Logger: ObservableObject, @unchecked Sendable {
         let fileURL = self.logFileURL
         queue.async { [weak self] in
             guard let self = self else { return }
-            let logs = (try? String(contentsOf: fileURL, encoding: .utf8)) ?? ""
+            var logs = ""
+            // Prevent Jetsam memory crashes by capping file load
+            if let attrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
+               let size = attrs[.size] as? UInt64, size > 2_000_000 {
+                try? FileManager.default.removeItem(at: fileURL)
+                logs = "[SYSTEM] Log file exceeded 2MB and was truncated to preserve memory.\n"
+                try? logs.write(to: fileURL, atomically: true, encoding: .utf8)
+            } else {
+                logs = (try? String(contentsOf: fileURL, encoding: .utf8)) ?? ""
+            }
+            
             let parsed = self.parseLogFile(content: logs)
             DispatchQueue.main.async {
                 self.parsedLogs = parsed
@@ -233,7 +243,7 @@ class Logger: ObservableObject, @unchecked Sendable {
     private func parseLogFile(content: String) -> [LogEntry] {
         var entries: [LogEntry] = []
         let lines = content.components(separatedBy: .newlines)
-        for line in lines.reversed() { // Newest first
+        for line in lines.reversed().prefix(500) { // Newest first, capped to 500 to prevent unbounded memory growth
             if let entry = LogEntry.from(line: line) {
                 entries.append(entry)
             }

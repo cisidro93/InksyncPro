@@ -308,11 +308,27 @@ struct PPLReaderView: View {
         MagnificationGesture()
             .onChanged { val in
                 let targetScale = lastScale * val
-                scale = min(max(targetScale, 1.0), 5.0)
+                if targetScale < 1.0 {
+                    scale = 1.0 - (1.0 - targetScale) * 0.5
+                } else if targetScale > 5.0 {
+                    scale = 5.0 + (targetScale - 5.0) * 0.3
+                } else {
+                    scale = targetScale
+                }
             }
             .onEnded { _ in
-                lastScale = scale
-                updatePPL(in: geo.size)
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
+                    if scale < 1.0 {
+                        scale = 1.0
+                        offset = .zero
+                        Haptics.shared.playImpact(style: .light)
+                    } else if scale > 5.0 {
+                        scale = 5.0
+                        Haptics.shared.playImpact(style: .light)
+                    }
+                    lastScale = scale
+                    updatePPL(in: geo.size)
+                }
             }
     }
 
@@ -321,7 +337,23 @@ struct PPLReaderView: View {
             .onChanged { val in
                 momentumTask?.cancel()
                 if scale > 1.0 {
-                    dragOffset = val.translation
+                    // Rubber-band resistance at pan boundaries
+                    let maxOffsetX = geo.size.width * (scale - 1) / 2
+                    let maxOffsetY = geo.size.height * (scale - 1) / 2
+                    
+                    var dx = val.translation.width
+                    var dy = val.translation.height
+                    
+                    let intendedX = offset.width + dx
+                    let intendedY = offset.height + dy
+                    
+                    if intendedX > maxOffsetX { dx = maxOffsetX - offset.width + (intendedX - maxOffsetX) * 0.3 }
+                    else if intendedX < -maxOffsetX { dx = -maxOffsetX - offset.width + (intendedX + maxOffsetX) * 0.3 }
+                    
+                    if intendedY > maxOffsetY { dy = maxOffsetY - offset.height + (intendedY - maxOffsetY) * 0.3 }
+                    else if intendedY < -maxOffsetY { dy = -maxOffsetY - offset.height + (intendedY + maxOffsetY) * 0.3 }
+                    
+                    dragOffset = CGSize(width: dx, height: dy)
                 } else {
                     let dx = val.translation.width
                     let dy = val.translation.height
@@ -402,10 +434,13 @@ struct PPLReaderView: View {
     // MARK: - Pan Commit + Momentum
 
     private func commitPan(val: DragGesture.Value, geo: GeometryProxy) {
-        offset.width  += val.translation.width
-        offset.height += val.translation.height
+        offset.width  += dragOffset.width
+        offset.height += dragOffset.height
         dragOffset = .zero
-        updatePPL(in: geo.size)
+        
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
+            updatePPL(in: geo.size)
+        }
 
         let vel = val.velocity
         guard abs(vel.width) > 30 || abs(vel.height) > 30 else { return }

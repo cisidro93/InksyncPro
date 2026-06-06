@@ -72,6 +72,9 @@ struct ReaderChrome: View {
     // Phase 4A: Swipe-down-to-dismiss
     var onSwipeDown: (() -> Void)? = nil
 
+    // Scrubber interaction state
+    @State private var isScrubbing: Bool = false
+
     // MARK: - Body
 
     var body: some View {
@@ -194,8 +197,44 @@ struct ReaderChrome: View {
                         .foregroundColor(.white.opacity(0.5))
                         .frame(width: 20, alignment: .leading)
 
-                    Slider(value: $currentProgress, in: 0...1)
-                        .tint(Color.white)
+                    Slider(
+                        value: Binding(
+                            get: { currentProgress },
+                            set: { newValue in
+                                if abs(newValue - currentProgress) > (1.0 / Double(max(totalPages, 1))) {
+                                    Haptics.shared.playImpact(style: .light)
+                                }
+                                currentProgress = newValue
+                            }
+                        ),
+                        in: 0...1,
+                        onEditingChanged: { editing in
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                isScrubbing = editing
+                            }
+                        }
+                    )
+                    .tint(Color.white)
+                    .overlay(
+                        GeometryReader { sliderGeo in
+                            if isScrubbing {
+                                let pageNum = max(1, Int(currentProgress * Double(max(totalPages, 1))))
+                                Text("Page \(pageNum)")
+                                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 6)
+                                    .background(Color(white: 0.15).opacity(0.85), in: Capsule())
+                                    .overlay(Capsule().stroke(Color.white.opacity(0.2), lineWidth: 0.5))
+                                    .shadow(color: .black.opacity(0.4), radius: 8, y: 4)
+                                    .position(
+                                        x: 14 + (sliderGeo.size.width - 28) * CGFloat(currentProgress),
+                                        y: -24
+                                    )
+                                    .transition(.scale(scale: 0.8).combined(with: .opacity))
+                            }
+                        }
+                    )
 
                     Text("\(totalPages)")
                         .font(.system(size: 11, weight: .medium))
@@ -207,10 +246,16 @@ struct ReaderChrome: View {
                 .padding(.bottom, 10)
             }
             
-            Text("\(Int(currentProgress * 100))%")
-                .font(.system(size: 10, weight: .bold, design: .rounded))
-                .foregroundColor(.white.opacity(0.4))
-                .padding(.bottom, 8)
+            if !isScrubbing {
+                Text("\(Int(currentProgress * 100))%")
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .foregroundColor(.white.opacity(0.4))
+                    .padding(.bottom, 8)
+            } else {
+                Text(" ") // Keeps layout stable
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .padding(.bottom, 8)
+            }
 
             // ── Thin divider ───────────────────────────────────────────────────
             Rectangle()
@@ -226,7 +271,7 @@ struct ReaderChrome: View {
                         icon: onBookmarkActive ? "bookmark.fill" : "bookmark",
                         tint: onBookmarkActive ? .yellow : .white
                     ) {
-                        HapticEngine.success()
+                        Haptics.shared.playImpact(style: .light)
                         onBookmark()
                     }
 
@@ -235,14 +280,15 @@ struct ReaderChrome: View {
                             icon: isSpeaking ? "waveform" : "headphones",
                             tint: isSpeaking ? .orange : .white
                         ) {
+                            Haptics.shared.playImpact(style: .light)
                             onTTSToggle?()
                         }
                     }
 
                     if onNarrationToggle != nil {
                         Button {
+                            Haptics.shared.playImpact(style: .light)
                             onNarrationToggle?()
-                            HapticEngine.light()
                         } label: {
                             ZStack {
                                 if isNarrationOCRing {
@@ -271,8 +317,8 @@ struct ReaderChrome: View {
 
                 // Page counter / Time Left — centred and prominent
                 Button {
+                    Haptics.shared.playImpact(style: .light)
                     onProgressModeToggle?()
-                    HapticEngine.light()
                 } label: {
                     VStack(spacing: 2) {
                         Text(pageText)
@@ -295,13 +341,22 @@ struct ReaderChrome: View {
                 // Right cluster
                 HStack(spacing: 4) {
                     if let onTOC = onTOCToggle {
-                        barButton(icon: "list.bullet", tint: .white, action: onTOC)
+                        barButton(icon: "list.bullet", tint: .white) {
+                            Haptics.shared.playImpact(style: .light)
+                            onTOC()
+                        }
                     }
                     if let onAnnotations = onAnnotationsToggle {
-                        barButton(icon: "pencil.and.outline", tint: .white, action: onAnnotations)
+                        barButton(icon: "pencil.and.outline", tint: .white) {
+                            Haptics.shared.playImpact(style: .light)
+                            onAnnotations()
+                        }
                     }
                     if let onCharacterMap = onCharacterMapToggle {
-                        barButton(icon: "square.stack.3d.up.badge.a", tint: .white, action: onCharacterMap)
+                        barButton(icon: "square.stack.3d.up.badge.a", tint: .white) {
+                            Haptics.shared.playImpact(style: .light)
+                            onCharacterMap()
+                        }
                     }
                 }
             }
@@ -359,7 +414,10 @@ struct ReaderChrome: View {
         badgeText: String? = nil,
         action: @escaping () -> Void
     ) -> some View {
-        Button(action: action) {
+        Button {
+            Haptics.shared.playImpact(style: .light)
+            action()
+        } label: {
             VStack(spacing: 1) {
                 Image(systemName: icon)
                     .font(.system(size: 15, weight: .medium))
