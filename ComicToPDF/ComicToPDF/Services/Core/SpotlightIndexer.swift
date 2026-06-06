@@ -40,7 +40,7 @@ final class SpotlightIndexer {
                 attributeSet: attrs
             )
         }
-        self.index.indexSearchableItems(items) { error in
+        self.index.indexSearchableItems(items) { @Sendable error in
             if let error = error {
                 Logger.shared.log("Spotlight: failed to index library — \(error)", category: "Spotlight", type: .error)
             }
@@ -50,7 +50,7 @@ final class SpotlightIndexer {
     /// Index (or re-index) a single book — call after metadata edit.
     func indexBook(_ pdf: ConvertedPDF) {
         let item = makeBookItem(pdf)
-        self.index.indexSearchableItems([item]) { error in
+        self.index.indexSearchableItems([item]) { @Sendable error in
             if let error = error {
                 Logger.shared.log("Spotlight: failed to index book item — \(error)", category: "Spotlight", type: .error)
             }
