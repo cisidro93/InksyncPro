@@ -103,6 +103,8 @@ struct DevicesView: View {
                 } else {
                     NavigationStack {
                         SettingsView()
+                            .environmentObject(manager)
+                            .environmentObject(AppSettingsManager.shared)
                     }
                 }
             }
