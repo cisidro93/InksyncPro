@@ -456,19 +456,22 @@ class PhysicalFileSystemRouter {
                     }
                 }
                 
-                // Try up to the first 3 pages to find a portrait cover
-                for i in 0..<min(document.pageCount, 3) {
+                // Try up to the first 5 pages to find a portrait cover
+                var firstSpreadImage: UIImage? = nil
+                for i in 0..<min(document.pageCount, 5) {
                     if let page = document.page(at: i) {
                         let bounds = page.bounds(for: .mediaBox)
-                        // Skip if it's the first page and appears to be a 2-page spread
-                        if i == 0 && bounds.width > bounds.height && document.pageCount > 1 {
+                        // Skip landscape (two-page spread)
+                        if bounds.width > bounds.height && document.pageCount > 1 {
+                            if firstSpreadImage == nil { firstSpreadImage = drawPage(page) }
                             continue
                         }
-                        return drawPage(page)
+                        if let portrait = drawPage(page) { return portrait }
                     }
                 }
                 
-                // Fallback to page 0 if no portrait pages were found
+                // Fallback to the first spread, or page 0 if nothing else worked
+                if let fallback = firstSpreadImage { return fallback }
                 if let page = document.page(at: 0) {
                     return drawPage(page)
                 }
@@ -520,11 +523,7 @@ class PhysicalFileSystemRouter {
                 // The CBR path already uses prefix(5); we mirror that here. Sorting all
                 // 400 entries of a CBZ just to read the first image was O(N log N) waste.
                 let imageExts: Set<String> = ["jpg", "jpeg", "png", "webp"]
-                var firstSpreadImage: UIImage? = nil
-                var attempts = 0
-
-                // Collect and sort only image entries (central directory read is fast;
-                // we still need sorted order so page 1 is the cover, not a random entry).
+                // Collect and sort ALL image entries first to ensure we get the true first pages
                 var imageEntries: [(String, ZIPFoundation.Entry)] = []
                 for entry in archive {
                     if entry.type == .directory { continue }
@@ -534,12 +533,10 @@ class PhysicalFileSystemRouter {
                           !(entry.path as NSString).lastPathComponent.hasPrefix("._"),
                           !entry.path.hasSuffix(".DS_Store") else { continue }
                     imageEntries.append((entry.path, entry))
-                    // Early collection cap: we only need the first few to find a portrait cover
-                    if imageEntries.count >= 6 { break }
                 }
                 imageEntries.sort { $0.0.localizedStandardCompare($1.0) == .orderedAscending }
 
-                for (_, entry) in imageEntries {
+                for (_, entry) in imageEntries.prefix(6) {
                     // Safe cancellation check inside a synchronous nonisolated func:
                     // Task.isCancelled can only be called from async context; using
                     // withUnsafeCurrentTask avoids a Swift runtime crash.
@@ -573,9 +570,8 @@ class PhysicalFileSystemRouter {
                     }
                     
                     if let img = image {
-                        attempts += 1
-                        if attempts == 1 && img.size.width > img.size.height {
-                            firstSpreadImage = img
+                        if img.size.width > img.size.height {
+                            if firstSpreadImage == nil { firstSpreadImage = img }
                             continue
                         }
                         return img
@@ -608,8 +604,7 @@ class PhysicalFileSystemRouter {
                         .sorted { $0.fileName.localizedStandardCompare($1.fileName) == .orderedAscending }
 
                     var firstSpread: UIImage? = nil
-                    var attempts = 0
-                    for entry in sorted.prefix(5) {
+                    for entry in sorted.prefix(6) {
                         let image = autoreleasepool { () -> UIImage? in
                             do {
                                 let data = try archive.extract(entry)
@@ -633,10 +628,8 @@ class PhysicalFileSystemRouter {
                             }
                         }
                         guard let img = image else { continue }
-                        attempts += 1
-                        // Skip landscape (two-page spread) on first attempt — prefer portrait cover
-                        if attempts == 1 && img.size.width > img.size.height && sorted.count > 1 {
-                            firstSpread = img
+                        if img.size.width > img.size.height {
+                            if firstSpread == nil { firstSpread = img }
                             continue
                         }
                         return img
