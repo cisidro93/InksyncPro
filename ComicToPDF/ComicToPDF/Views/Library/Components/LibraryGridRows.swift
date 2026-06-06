@@ -390,96 +390,83 @@ struct ModernGridFileCell: View {
     }
 }
 
-/// A glassmorphic folder representing a collection or series folder.
-/// Shows a smaller thumbnail of the artwork peeking out of a transparent glass pocket.
-struct FolderThumbnailView: View {
+/// A modern Book Stack representing a collection or series.
+/// Shows the main cover filling the bounds, with stacked pages peeking behind.
+struct SeriesStackThumbnailView: View {
     let image: UIImage?
     let count: Int
+    @Environment(\.horizontalSizeClass) private var hSizeClass
     
     var body: some View {
-        ZStack {
-            // Folder Back
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [Color.primary.opacity(0.08), Color.primary.opacity(0.02)],
-                        startPoint: .topLeading, endPoint: .bottomTrailing
-                    )
-                )
-                .background(.ultraThinMaterial)
+        GeometryReader { geo in
+            let w = geo.size.width
+            let h = geo.size.height
+            let cornerRad: CGFloat = hSizeClass == .regular ? 14 : 12
             
-            // Folder Tab (Top-Left)
-            VStack(spacing: 0) {
-                HStack {
-                    Path { path in
-                        path.move(to: CGPoint(x: 10, y: 0))
-                        path.addLine(to: CGPoint(x: 50, y: 0))
-                        path.addQuadCurve(to: CGPoint(x: 58, y: 8), control: CGPoint(x: 55, y: 0))
-                        path.addLine(to: CGPoint(x: 65, y: 16))
-                        path.addLine(to: CGPoint(x: 10, y: 16))
-                        path.closeSubpath()
-                    }
-                    .fill(Color.primary.opacity(0.08))
-                    .frame(width: 80, height: 16)
-                    .offset(y: -8)
-                    Spacer()
-                }
-                Spacer()
-            }
-            
-            // Artwork Cover (Centered, smaller, tilted with shadow)
-            Group {
-                if let img = image {
-                    Image(uiImage: img)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                } else {
-                    ZStack {
-                        Color.secondary.opacity(0.1)
-                        Image(systemName: "books.vertical.fill")
-                            .font(.system(size: 28))
-                            .foregroundColor(.secondary)
-                    }
-                }
-            }
-            .frame(width: 76, height: 108)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(Color.white.opacity(0.1), lineWidth: 0.5)
-            )
-            .shadow(color: .black.opacity(0.4), radius: 8, y: 4)
-            .rotationEffect(.degrees(-3))
-            .offset(y: -4)
-            .clipped()
-            
-            // Folder Front Pocket (overlapping bottom portion)
-            VStack {
-                Spacer()
-                ZStack(alignment: .top) {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: [Color.white.opacity(0.12), Color.white.opacity(0.02)],
-                                startPoint: .top, endPoint: .bottom
-                            )
+            ZStack {
+                // Stack Layer 2 (Back)
+                if count > 2 {
+                    RoundedRectangle(cornerRadius: cornerRad, style: .continuous)
+                        .fill(Color(white: 0.15))
+                        .frame(width: w * 0.88, height: h * 0.94)
+                        .offset(x: w * 0.06, y: -h * 0.04)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: cornerRad, style: .continuous)
+                                .stroke(Color.white.opacity(0.05), lineWidth: 0.5)
+                                .offset(x: w * 0.06, y: -h * 0.04)
                         )
-                        .background(.thinMaterial)
-                    
-                    // Folder front flap edge highlight line
-                    Capsule()
-                        .fill(Color.white.opacity(0.20))
-                        .frame(height: 1.2)
-                        .padding(.top, 0.5)
                 }
-                .frame(height: 64)
+                
+                // Stack Layer 1 (Middle)
+                if count > 1 {
+                    RoundedRectangle(cornerRadius: cornerRad, style: .continuous)
+                        .fill(Color(white: 0.2))
+                        .frame(width: w * 0.94, height: h * 0.97)
+                        .offset(x: w * 0.03, y: -h * 0.02)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: cornerRad, style: .continuous)
+                                .stroke(Color.white.opacity(0.08), lineWidth: 0.5)
+                                .offset(x: w * 0.03, y: -h * 0.02)
+                        )
+                }
+                
+                // Main Cover (Front)
+                Group {
+                    if let img = image {
+                        Image(uiImage: img)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                    } else {
+                        ZStack {
+                            Color(white: 0.12)
+                            Image(systemName: "books.vertical.fill")
+                                .font(.system(size: w * 0.35))
+                                .foregroundColor(.secondary.opacity(0.5))
+                        }
+                    }
+                }
+                .frame(width: w, height: h)
+                .clipShape(RoundedRectangle(cornerRadius: cornerRad, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: cornerRad, style: .continuous)
+                        .stroke(Color.white.opacity(0.12), lineWidth: 0.5)
+                )
+                // Left spine shadow for realism
+                .overlay(
+                    HStack {
+                        LinearGradient(
+                            colors: [.black.opacity(0.28), .black.opacity(0.05), .clear],
+                            startPoint: .leading, endPoint: .trailing
+                        )
+                        .frame(width: 16)
+                        Spacer()
+                    }
+                )
             }
+            // Dual shadow: crisp near + soft ambient
+            .shadow(color: .black.opacity(0.28), radius: 4, y: 3)
+            .shadow(color: .black.opacity(0.12), radius: hSizeClass == .regular ? 18 : 14, y: hSizeClass == .regular ? 12 : 10)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(Color.white.opacity(0.12), lineWidth: 0.5)
-        )
     }
 }
 
@@ -508,9 +495,9 @@ struct ModernGridSeriesCell: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
 
-            // Folder Image with pocket stack design
+            // Folder Image with stack design
             ZStack(alignment: .bottomTrailing) {
-                FolderThumbnailView(image: coverImage, count: group.count)
+                SeriesStackThumbnailView(image: coverImage, count: group.count)
                     .aspectRatio(0.63, contentMode: .fit)
 
                 // Issue count pill — bottom-right corner (compact)
@@ -630,12 +617,34 @@ struct ModernGridSeriesCell: View {
             guard let issueID = group.coverIssueID,
                   let pdf = conversionManager.convertedPDFs.first(where: { $0.id == issueID }) else { return }
             let key = issueID.uuidString as NSString
+            
+            // 2a. Already in cache
             if let cached = conversionManager.thumbnailCache.object(forKey: key) {
                 self.localCover = cached; return
             }
-            guard let coverURL = conversionManager.getCoverURL(for: pdf),
-                  FileManager.default.fileExists(atPath: coverURL.path) else { return }
             
+            // 2b. Fast ImageIO direct disk read (bypasses ThumbnailGenerationQueue entirely)
+            if let coverURL = conversionManager.getCoverURL(for: pdf), FileManager.default.fileExists(atPath: coverURL.path) {
+                let image = await Task.detached(priority: .userInitiated) { () -> UIImage? in
+                    let srcOpts = [kCGImageSourceShouldCache: false] as CFDictionary
+                    guard let src = CGImageSourceCreateWithURL(coverURL as CFURL, srcOpts) else { return nil }
+                    let downsampleOpts = [
+                        kCGImageSourceCreateThumbnailFromImageAlways: true,
+                        kCGImageSourceShouldCacheImmediately: true,
+                        kCGImageSourceCreateThumbnailWithTransform: true,
+                        kCGImageSourceThumbnailMaxPixelSize: 300
+                    ] as CFDictionary
+                    guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, downsampleOpts) else { return nil }
+                    return UIImage(cgImage: cg)
+                }.value
+                if let image {
+                    conversionManager.thumbnailCache.setObject(image, forKey: key)
+                    self.localCover = image
+                }
+                return
+            }
+            
+            // 3. Fallback: Queue generation
             await ThumbnailGenerationQueue.shared.enqueue(pdf, manager: conversionManager)
         }
     }
