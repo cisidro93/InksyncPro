@@ -224,7 +224,7 @@ struct PPLReaderView: View {
         } else {
             HStack(spacing: 0) {
                 if let left = leftImg {
-                    MetalCanvasView(image: left, lockedRect: .full, isPPLEnabled: false)
+                    MetalCanvasView(image: left, lockedRect: .full, isPPLEnabled: false, alignment: isMangaMode ? .leading : .trailing)
                         .id("dual-left-\(spread?.leadIndex ?? 0)")
                 } else {
                     Color.black
@@ -238,7 +238,7 @@ struct PPLReaderView: View {
                 }
 
                 if let right = rightImg {
-                    MetalCanvasView(image: right, lockedRect: .full, isPPLEnabled: false)
+                    MetalCanvasView(image: right, lockedRect: .full, isPPLEnabled: false, alignment: isMangaMode ? .trailing : .leading)
                         .id("dual-right-\(spread?.leadIndex ?? 0)")
                 } else {
                     Color.black
@@ -677,13 +677,15 @@ struct PPLReaderView: View {
             withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { offset = .zero }
             return
         }
-        bufferManager.isPPLEnabled = true
-        let visW = size.width  / scale
-        let visH = size.height / scale
-        let x = ((size.width  - visW) / 2) - (offset.width  / scale)
-        let y = ((size.height - visH) / 2) - (offset.height / scale)
-        bufferManager.updateViewport(rect: CoordinateConverter.normalize(
-            rect: CGRect(x: x, y: y, width: visW, height: visH), in: size))
+        // Manual pinch/tap zoom uses native SwiftUI scaleEffect to avoid double-dipping with Metal's PPL crop.
+        // This ensures tap-to-zoom is professionally clean and works flawlessly on dual-page spreads.
+        bufferManager.isPPLEnabled = false
+        
+        // Clamp the pan offset so the image doesn't fly off screen
+        let maxOffsetX = size.width * (scale - 1) / 2
+        let maxOffsetY = size.height * (scale - 1) / 2
+        offset.width = max(-maxOffsetX, min(maxOffsetX, offset.width))
+        offset.height = max(-maxOffsetY, min(maxOffsetY, offset.height))
     }
 
     // MARK: - Spread Detection

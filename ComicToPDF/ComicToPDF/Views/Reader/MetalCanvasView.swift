@@ -7,6 +7,7 @@ struct MetalCanvasView: UIViewRepresentable {
     var image: CGImage?
     var lockedRect: NormalizedRect
     var isPPLEnabled: Bool
+    var alignment: HorizontalAlignment = .center
     
     func makeUIView(context: Context) -> MTKView {
         let mtkView = MTKView()
@@ -40,6 +41,7 @@ struct MetalCanvasView: UIViewRepresentable {
         context.coordinator.image = image
         context.coordinator.lockedRect = lockedRect
         context.coordinator.isPPLEnabled = isPPLEnabled
+        context.coordinator.alignment = alignment
         
         // Push the frame through the pipe
         uiView.setNeedsDisplay()
@@ -57,6 +59,7 @@ struct MetalCanvasView: UIViewRepresentable {
         var image: CGImage?
         var lockedRect: NormalizedRect = .full
         var isPPLEnabled: Bool = false
+        var alignment: HorizontalAlignment = .center
         
         // Double buffering offscreen textures & state cache
         private var frontTexture: MTLTexture?
@@ -64,6 +67,7 @@ struct MetalCanvasView: UIViewRepresentable {
         private var lastRenderedImage: CGImage?
         private var lastRenderedLockedRect: NormalizedRect?
         private var lastRenderedPPLEnabled: Bool?
+        private var lastRenderedAlignment: HorizontalAlignment?
         private var lastRenderedSize: CGSize = .zero
         
         init(_ parent: MetalCanvasView) {
@@ -111,7 +115,7 @@ struct MetalCanvasView: UIViewRepresentable {
                 return
             }
             
-            let contentChanged = cgImage !== lastRenderedImage || lockedRect != lastRenderedLockedRect || isPPLEnabled != lastRenderedPPLEnabled
+            let contentChanged = cgImage !== lastRenderedImage || lockedRect != lastRenderedLockedRect || isPPLEnabled != lastRenderedPPLEnabled || alignment != lastRenderedAlignment
             
             if contentChanged || frontTexture == nil {
                 // Render the new frame to the backTexture offscreen using Core Image
@@ -162,7 +166,17 @@ struct MetalCanvasView: UIViewRepresentable {
                 let scale = min(scaleX, scaleY)
 
                 let scaledImage = ciImage.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
-                let xOffset = (drawableSize.width - scaledImage.extent.width) / 2.0
+                
+                let xOffset: CGFloat
+                switch alignment {
+                case .leading:
+                    xOffset = 0
+                case .trailing:
+                    xOffset = drawableSize.width - scaledImage.extent.width
+                default:
+                    xOffset = (drawableSize.width - scaledImage.extent.width) / 2.0
+                }
+                
                 let yOffset = (drawableSize.height - scaledImage.extent.height) / 2.0
                 let centeredImage = scaledImage.transformed(by: CGAffineTransform(translationX: xOffset, y: yOffset))
 
@@ -200,6 +214,7 @@ struct MetalCanvasView: UIViewRepresentable {
                 lastRenderedImage = cgImage
                 lastRenderedLockedRect = lockedRect
                 lastRenderedPPLEnabled = isPPLEnabled
+                lastRenderedAlignment = alignment
             }
             
             // Blit frontTexture to MTKView drawable texture
