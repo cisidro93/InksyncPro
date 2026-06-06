@@ -5,6 +5,16 @@ import PDFKit
 import ZIPFoundation
 import Unrar
 
+private let _globalCoversDirectory: URL = {
+    let fileManager = FileManager.default
+    let appSupportDir = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? fileManager.temporaryDirectory
+    let dir = appSupportDir.appendingPathComponent("Covers", isDirectory: true)
+    if !fileManager.fileExists(atPath: dir.path) {
+        try? fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
+    }
+    return dir
+}()
+
 /// Safely handles all iOS Storage interactions, including disk persistence, thumbnail caching into Application Support, and atomic NSFileCoordinator bindings independent from the Presentation logic.
 @MainActor
 class PhysicalFileSystemRouter {
@@ -12,18 +22,9 @@ class PhysicalFileSystemRouter {
     private init() {}
     
     // MARK: - Core File IO Storage
-    static let coversDirectory: URL = {
-        let fileManager = FileManager.default
-        let appSupportDir = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? fileManager.temporaryDirectory
-        let dir = appSupportDir.appendingPathComponent("Covers", isDirectory: true)
-        if !fileManager.fileExists(atPath: dir.path) {
-            try? fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
-        }
-        return dir
-    }()
 
     nonisolated static func getCoversDirectory() -> URL {
-        return coversDirectory
+        return _globalCoversDirectory
     }
     
     func getCoverURL(for pdf: ConvertedPDF) -> URL? {
