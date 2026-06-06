@@ -189,6 +189,8 @@ struct ContentView: View {
         .sheet(isPresented: $showingSettingsInspector) {
             NavigationStack {
                 SettingsView()
+                    .environmentObject(conversionManager)
+                    .environmentObject(settingsManager)
                     .navigationTitle("Settings")
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar {

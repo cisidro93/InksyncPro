@@ -29,6 +29,7 @@ class BackgroundMetadataEngine: ObservableObject {
         
         let apiKey = AppSettingsManager.shared.conversionSettings.comicVineAPIKey
         if apiKey.isEmpty {
+            TaskEngine.shared.appAlert = AppAlert(title: "API Key Required", message: "Please enter your ComicVine API Key in Settings to enable Auto-Match.")
             isRunning = false
             return
         }
