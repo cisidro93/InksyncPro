@@ -2,6 +2,7 @@ import SwiftUI
 
 struct InboxReviewView: View {
     @EnvironmentObject var manager: ConversionManager
+    @Environment(\.dismiss) var dismiss
     
     // Derived subset of Library: Items lacking series or author (meaning they likely need review)
     var reviewItems: [ConvertedPDF] {
@@ -79,6 +80,13 @@ struct InboxReviewView: View {
                                 .foregroundColor(Theme.textSecondary)
                         }
                         Spacer()
+                        
+                        Button("Dismiss") {
+                            dismiss()
+                        }
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(Theme.textSecondary)
+                        .padding(.trailing, 12)
                         
                         ActionPill(title: "Auto-Match", icon: "wand.and.stars.inverse", color: Theme.orange) {
                             Task {

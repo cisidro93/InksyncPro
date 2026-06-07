@@ -36,6 +36,7 @@ struct ModernLibraryView: View {
         case grid = "Grid"
     }
     @AppStorage("libraryViewStyle") private var viewStyle: LibraryViewStyle = .grid
+    @AppStorage("dismissCharacterReviewBanner") private var dismissCharacterReviewBanner = false
     @AppStorage("libraryTapAction") private var tapAction: LibraryTapAction = .read
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding: Bool = false
     @AppStorage("libraryHeaderPinMode") private var headerPinModeRaw: String = HeaderPinMode.auto.rawValue
@@ -628,7 +629,7 @@ struct ModernLibraryView: View {
             Spacer().frame(height: 60) // Top padding to prevent overlap with the status bar and branding
 
 
-            if MetadataMatchService.shared.activeClusters.contains(where: {
+            if !dismissCharacterReviewBanner, MetadataMatchService.shared.activeClusters.contains(where: {
                 if case .matched = $0.status { return false }
                 return true
             }) {
@@ -653,6 +654,15 @@ struct ModernLibraryView: View {
                     .padding(.vertical, 6)
                     .background(Color.purple.opacity(0.2), in: Capsule())
                     .foregroundColor(.purple)
+                    
+                    Button {
+                        withAnimation { dismissCharacterReviewBanner = true }
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 16))
+                            .foregroundColor(Theme.textTertiary)
+                    }
+                    .padding(.leading, 4)
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
