@@ -530,7 +530,7 @@ class PanelViewEPUBConverter {
         <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
           <head>
             <title>Page \(pageNum)</title>
-            <meta name="viewport" content="width=\(W), height=\(H), initial-scale=1.0"/>
+            <meta name="viewport" content="width=\(W), height=\(H)"/>
             <link rel="stylesheet" type="text/css" href="../css/comic.css"/>
           </head>
           <body>
@@ -697,12 +697,15 @@ class PanelViewEPUBConverter {
         """
         <?xml version="1.0" encoding="UTF-8"?>
         <!DOCTYPE html>
-        <html xmlns="http://www.w3.org/1999/xhtml">
+        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
           <head>
             <title>Blank</title>
-            <meta name="viewport" content="width=\(Int(pageWidth)), height=\(Int(pageHeight)), initial-scale=1.0"/>
+            <meta name="viewport" content="width=\(Int(pageWidth)), height=\(Int(pageHeight))"/>
+            <link rel="stylesheet" type="text/css" href="../css/comic.css"/>
           </head>
-          <body style="background-color:#000000;"></body>
+          <body style="background-color:#000000;">
+            <div class="page"></div>
+          </body>
         </html>
     """
     }

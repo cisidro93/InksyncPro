@@ -16,6 +16,7 @@ struct BatchMetadataItem: Identifiable {
         case matched = "Matched!"
         case partialMatch = "Partial Match"
         case failed = "Failed"
+        case ignored = "Ignored"
     }
 }
 
@@ -53,6 +54,15 @@ class BatchMetadataFetcher: ObservableObject {
         var volumeIssuesCache: [Int: [ComicVineIssueDetails]] = [:]
         
         for index in items.indices {
+            if items[index].status == .ignored {
+                if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == items[index].id }) {
+                    conversionManager.convertedPDFs[idx].metadata.autoMatchFailed = true
+                }
+                conversionManager.failedMetadataPDFs.removeAll(where: { $0.id == items[index].id })
+                conversionManager.saveLibrary()
+                continue
+            }
+            
             items[index].status = .searching
             
             let query = items[index].editSeriesName
@@ -308,6 +318,19 @@ struct BatchMetadataFetchView: View {
                                     .frame(width: 80)
                                     .keyboardType(.numberPad)
                             }
+                            
+                            Button {
+                                if item.status == .ignored {
+                                    item.status = .waiting
+                                } else {
+                                    item.status = .ignored
+                                }
+                            } label: {
+                                Image(systemName: item.status == .ignored ? "eye.slash.fill" : "eye")
+                                    .foregroundColor(item.status == .ignored ? .red : .gray)
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.leading, 6)
                         }
                     }
                     .padding(.vertical, 4)
@@ -353,6 +376,7 @@ struct BatchMetadataFetchView: View {
         case .matched: return .green
         case .partialMatch: return .orange
         case .failed: return .red
+        case .ignored: return .gray
         }
     }
 }

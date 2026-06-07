@@ -20,6 +20,7 @@ enum LibrarySheetDestination: Identifiable {
     case convert(ConvertedPDF)
     case inbox
     case metadataInbox
+    case metadataSpreadsheet([ConvertedPDF])
     
     var id: String {
         switch self {
@@ -42,6 +43,7 @@ enum LibrarySheetDestination: Identifiable {
         case .convert(let p): return "convert_\(p.id)"
         case .inbox: return "inbox"
         case .metadataInbox: return "metadataInbox"
+        case .metadataSpreadsheet: return "metadataSpreadsheet"
         }
     }
 }

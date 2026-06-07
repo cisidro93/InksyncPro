@@ -664,6 +664,13 @@ struct SettingsView: View {
                 }
             }
             
+            NavigationLink(destination: DiagnosticsView()) {
+                HStack {
+                    settingsIcon("memorychip.fill", color: .red)
+                    Text("Telemetry & Diagnostics")
+                }
+            }
+            
             NavigationLink(destination: LogsView()) {
                 HStack {
                     settingsIcon("terminal.fill", color: .gray)

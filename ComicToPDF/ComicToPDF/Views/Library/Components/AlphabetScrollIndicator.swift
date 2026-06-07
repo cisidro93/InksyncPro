@@ -107,6 +107,7 @@ enum LibraryPillKey: String, CaseIterable, Identifiable {
     case reviewMissing = "reviewMissing"
     case stats         = "stats"
     case vault         = "vault"
+    case metadataSpreadsheet = "metadataSpreadsheet"
 
     var id: String { rawValue }
 
@@ -123,6 +124,7 @@ enum LibraryPillKey: String, CaseIterable, Identifiable {
         case .reviewMissing: return "Review Missing"
         case .stats:         return "Stats"
         case .vault:         return "Vault"
+        case .metadataSpreadsheet: return "Grid Editor"
         }
     }
 
@@ -139,6 +141,7 @@ enum LibraryPillKey: String, CaseIterable, Identifiable {
         case .reviewMissing: return "exclamationmark.triangle.fill"
         case .stats:         return "flame.fill"
         case .vault:         return "lock.fill"
+        case .metadataSpreadsheet: return "tablecells"
         }
     }
 }

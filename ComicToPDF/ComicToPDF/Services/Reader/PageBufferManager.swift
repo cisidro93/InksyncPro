@@ -273,6 +273,16 @@ class PageBufferManager: ObservableObject {
         lockedRect = rect
     }
 
+    func clearImageCache() {
+        imageCache.removeAllObjects()
+        currentImage = nil
+        nextImage = nil
+        prevImage = nil
+        currentSpread = nil
+        nextSpread = nil
+        prevSpread = nil
+    }
+
     // MARK: - Single Page Render
 
     func render(pageIndex: Int, bounds: CGSize) {

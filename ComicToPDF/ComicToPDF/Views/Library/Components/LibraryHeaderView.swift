@@ -599,6 +599,18 @@ struct LibraryHeaderView: View {
                                 else { withAnimation { isBatchMode = true }; conversionManager.appAlert = AppAlert(title: "Select Issues", message: "Select 2 or more issues from your library, then tap Convert & Merge again.") }
                             })
                         }
+                        if pillConfig.isEnabled(.metadataSpreadsheet) {
+                            ActionPill(title: "Grid Editor", icon: "tablecells", color: Theme.orange, action: {
+                                if multiSelection.count >= 1 {
+                                    let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
+                                    onSheetTrigger(.metadataSpreadsheet(items))
+                                    withAnimation { isBatchMode = false }
+                                } else { 
+                                    withAnimation { isBatchMode = true }
+                                    conversionManager.appAlert = AppAlert(title: "Select Issues", message: "Select issues to edit in the Grid Editor.") 
+                                }
+                            })
+                        }
 
                         // Metadata + stats
                         if pillConfig.isEnabled(.autoMatch) {

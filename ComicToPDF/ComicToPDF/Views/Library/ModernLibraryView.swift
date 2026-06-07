@@ -506,6 +506,12 @@ struct ModernLibraryView: View {
         case .reviewMetadata: BatchMetadataFetchView(pdfs: conversionManager.failedMetadataPDFs, conversionManager: conversionManager)
         case .editMetadata(let pdf): AdvancedMetadataEditorView(pdf: pdf)
         case .batchMetadata(let pdfs): BatchMetadataEditorView(selectedPDFs: pdfs)
+        case .metadataSpreadsheet(let pdfs): 
+            if #available(iOS 16.0, *) {
+                MetadataSpreadsheetView(items: pdfs).environmentObject(conversionManager)
+            } else {
+                Text("Grid Editor requires iOS 16+")
+            }
         case .cognitiveBatchRenamer(let pdfs):
             BatchLocalRenamerView(pdfs: pdfs).environmentObject(conversionManager)
  
