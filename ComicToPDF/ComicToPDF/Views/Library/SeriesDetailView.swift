@@ -1,4 +1,4 @@
-﻿import SwiftUI
+import SwiftUI
 
 struct SeriesDetailView: View {
     let series: SeriesGroup
@@ -33,6 +33,26 @@ struct SeriesDetailView: View {
     @State private var showingMergeConfig: Bool = false
     @State private var showBatchMetadataEditor: Bool = false
     @State private var showingBatchSeriesAssignment: Bool = false
+    @AppStorage("libraryViewStyle") private var viewStyle: LibraryViewStyle = .grid
+    
+    @AppStorage("libraryTapAction") private var tapAction: LibraryTapAction = .read
+    @AppStorage("defaultSeriesSort") private var sortOption: SeriesSortOption = .issueNumber
+    @AppStorage("fastBundleOmnibus") private var fastBundleOmnibus = false
+    @AppStorage("manualOmnibusBuildsCount") private var manualOmnibusBuildsCount = 0
+    
+    @State private var headerCover: UIImage? = nil
+    
+    // Config Sheet & Prompt State
+    @State private var showingOmnibusPrompt: Bool = false
+    @State private var pendingConfigSelection: Set<UUID>? = nil
+    @State private var mergeConfigSuggestedName: String? = nil
+    
+    // Batch Selection
+    @State private var selection = Set<UUID>()
+    @State private var isSelectionMode: Bool = false
+    @State private var showingMergeConfig: Bool = false
+    @State private var showBatchMetadataEditor: Bool = false
+    @State private var showingBatchSeriesAssignment: Bool = false
     
     // Context Menu State
     @State private var pdfToRename: ConvertedPDF?
@@ -44,6 +64,10 @@ struct SeriesDetailView: View {
     @State private var pdfToRead: ConvertedPDF? // Added for Reader
     @State private var pdfToDetails: ConvertedPDF? // Details sheet (non-nav-stack path)
     @State private var pdfToDelete: ConvertedPDF? // QoL: Delete confirmation gate
+    
+    // Action Sheet Support
+    @State private var pendingActionPDF: ConvertedPDF? = nil
+    @State private var showingActionSheet: Bool = false
 
     enum SeriesSortOption: String, CaseIterable, Identifiable {
         case manual = "Custom Order"
@@ -177,11 +201,12 @@ struct SeriesDetailView: View {
 
     private var mainContent: some View {
         ScrollViewReader { scrollProxy in
-        Group {
-            if viewStyle == .grid {
-                gridView(scrollProxy: scrollProxy)
-            } else {
-                listView(scrollProxy: scrollProxy)
+            Group {
+                if viewStyle == .grid {
+                    gridView(scrollProxy: scrollProxy)
+                } else {
+                    listView(scrollProxy: scrollProxy)
+                }
             }
         }
     }
@@ -512,7 +537,6 @@ struct SeriesDetailView: View {
                 }
             }
         }
-        } // end ScrollViewReader
     }
 
     private func gridView(scrollProxy: ScrollViewProxy) -> some View {
@@ -547,11 +571,11 @@ struct SeriesDetailView: View {
                                 
                                 if let vol = nextIssue.metadata.volume, !vol.isEmpty,
                                    let issue = nextIssue.metadata.issueNumber {
-                                    Text("Vol. $vol • Ch. $issue • Page $((nextIssue.metadata.lastReadPage ?? 0) + 1)")
+                                    Text("Vol. \(vol) • Ch. \(issue) • Page \((nextIssue.metadata.lastReadPage ?? 0) + 1)")
                                         .font(.system(size: 11, design: .rounded))
                                         .foregroundColor(Theme.orange)
                                 } else {
-                                    Text("Page $((nextIssue.metadata.lastReadPage ?? 0) + 1) of $(nextIssue.pageCount)")
+                                    Text("Page \((nextIssue.metadata.lastReadPage ?? 0) + 1) of \(nextIssue.pageCount)")
                                         .font(.system(size: 11, design: .rounded))
                                         .foregroundColor(Theme.orange)
                                 }
@@ -599,7 +623,7 @@ struct SeriesDetailView: View {
                         Section(header: 
                             volumeHeaderView(group: group, isCollapsed: isCollapsed, progress: progress, completed: completed)
                                 .background(.ultraThinMaterial)
-                                .id("vol_$(group.key)")
+                                .id("vol_\(group.key)")
                         ) {
                             if !isCollapsed {
                                 LazyVGrid(columns: columns, spacing: hSizeClass == .regular ? 28 : 14) {
@@ -645,13 +669,13 @@ struct SeriesDetailView: View {
                         .font(.system(size: 14))
                         .foregroundColor(completed == group.issues.count ? .green : (group.key == "Ungrouped" ? Theme.textSecondary : Theme.blue))
                     
-                    Text(group.key == "Ungrouped" ? "Ungrouped Issues" : "Volume $(group.key)")
+                    Text(group.key == "Ungrouped" ? "Ungrouped Issues" : "Volume \(group.key)")
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundColor(Theme.text)
                     
                     Spacer()
                     
-                    Text("$(completed)/$(group.issues.count)")
+                    Text("\(completed)/\(group.issues.count)")
                         .font(.system(size: 12, weight: .medium, design: .rounded))
                         .foregroundColor(completed == group.issues.count ? .green : Theme.textSecondary)
                         .padding(.horizontal, 8)
@@ -685,17 +709,17 @@ struct SeriesDetailView: View {
             Button {
                 if fastBundleOmnibus {
                     conversionManager.enqueueOmnibus(
-                        name: "$(series.title) Vol. $(formattedVolumeKey(group.key))",
+                        name: "\(series.title) Vol. \(formattedVolumeKey(group.key))",
                         sourceFiles: group.issues
                     )
                 } else {
                     let selectedIDs = Set(group.issues.map { $0.id })
                     selection = selectedIDs
-                    mergeConfigSuggestedName = "$(series.title) Vol. $(formattedVolumeKey(group.key))"
+                    mergeConfigSuggestedName = "\(series.title) Vol. \(formattedVolumeKey(group.key))"
                     showingMergeConfig = true
                 }
             } label: {
-                Label("Build Kindle Omnibus for Vol. $(formattedVolumeKey(group.key))", systemImage: "books.vertical.fill")
+                Label("Build Kindle Omnibus for Vol. \(formattedVolumeKey(group.key))", systemImage: "books.vertical.fill")
             }
             
             Button {
@@ -739,15 +763,6 @@ struct SeriesDetailView: View {
             .contextMenu { contextMenuContent(pdf) }
         }
     }
-    var body: some View {
-        contentList
-        .fullScreenCover(item: $pdfToRead) { pdf in
-            UnifiedReaderView(pdf: pdf)
-        }
-        .safeAreaInset(edge: .bottom) {
-            if isSelectionMode {
-                VStack(spacing: 0) {
-                    Divider().background(Color.white.opacity(0.1))
                     
                     HStack(spacing: 16) {
                         Button(action: {

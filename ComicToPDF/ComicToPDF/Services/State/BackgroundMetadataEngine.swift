@@ -90,7 +90,7 @@ class BackgroundMetadataEngine: ObservableObject {
                 let results = try await ComicVineService.shared.searchVolumes(query: query, apiKey: apiKey)
                 
                 if let bestVolume = results.first {
-                    TaskEngine.shared.processingStatus = "Downloading details for \(bestVolume.name ?? query)..."
+                    TaskEngine.shared.processingStatus = "Downloading details for \(bestVolume.name)..."
                     
                     // Bulk fetch issues with pagination
                     var allIssues: [ComicVineIssueDetails] = []
