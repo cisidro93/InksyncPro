@@ -50,6 +50,7 @@ class BatchMetadataFetcher: ObservableObject {
         
         // Cache to prevent repetitive API calls for volume searches
         var volumeCache: [String: ComicVineVolume] = [:]
+        var volumeIssuesCache: [Int: [ComicVineIssueDetails]] = [:]
         
         for index in items.indices {
             items[index].status = .searching
@@ -100,15 +101,29 @@ class BatchMetadataFetcher: ObservableObject {
                         items[index].message = "Found Volume '\(bestVolume.name)'..."
                         
                         if deepFetch, !issueStr.isEmpty, let issueNum = Int(issueStr) {
-                            try? await Task.sleep(nanoseconds: 1_100_000_000) // 1.1s pacing
-                            if let issue = try await ComicVineService.shared.getIssue(volumeID: bestVolume.id, issueNumber: "\(issueNum)", apiKey: apiKey) {
+                            if volumeIssuesCache[bestVolume.id] == nil {
+                                try? await Task.sleep(nanoseconds: 1_100_000_000) // 1.1s pacing
+                                let bulkIssues = try await ComicVineService.shared.getIssuesForVolume(volumeID: bestVolume.id, apiKey: apiKey)
+                                volumeIssuesCache[bestVolume.id] = bulkIssues.results
+                            }
+                            
+                            let allIssues = volumeIssuesCache[bestVolume.id] ?? []
+                            if let issue = allIssues.first(where: { $0.issue_number == "\(issueNum)" }) {
                                 applyFullMatch(to: index, volume: bestVolume, issue: issue, issueNum: issueNum)
                                 items[index].status = .matched
-                                items[index].message = "Deep Fetch matched!"
+                                items[index].message = "Deep Fetch (Cached) matched!"
                             } else {
-                                applyPartialMatch(to: index, volume: bestVolume, issueNum: issueNum)
-                                items[index].status = .partialMatch
-                                items[index].message = "Series found, Issue # missing."
+                                try? await Task.sleep(nanoseconds: 1_100_000_000) // 1.1s pacing
+                                if let issue = try await ComicVineService.shared.getIssue(volumeID: bestVolume.id, issueNumber: "\(issueNum)", apiKey: apiKey) {
+                                    applyFullMatch(to: index, volume: bestVolume, issue: issue, issueNum: issueNum)
+                                    volumeIssuesCache[bestVolume.id]?.append(issue)
+                                    items[index].status = .matched
+                                    items[index].message = "Deep Fetch matched!"
+                                } else {
+                                    applyPartialMatch(to: index, volume: bestVolume, issueNum: issueNum)
+                                    items[index].status = .partialMatch
+                                    items[index].message = "Series found, Issue # missing."
+                                }
                             }
                         } else {
                             let iNum = Int(issueStr)
