@@ -33,26 +33,6 @@ struct SeriesDetailView: View {
     @State private var showingMergeConfig: Bool = false
     @State private var showBatchMetadataEditor: Bool = false
     @State private var showingBatchSeriesAssignment: Bool = false
-    @AppStorage("libraryViewStyle") private var viewStyle: LibraryViewStyle = .grid
-    
-    @AppStorage("libraryTapAction") private var tapAction: LibraryTapAction = .read
-    @AppStorage("defaultSeriesSort") private var sortOption: SeriesSortOption = .issueNumber
-    @AppStorage("fastBundleOmnibus") private var fastBundleOmnibus = false
-    @AppStorage("manualOmnibusBuildsCount") private var manualOmnibusBuildsCount = 0
-    
-    @State private var headerCover: UIImage? = nil
-    
-    // Config Sheet & Prompt State
-    @State private var showingOmnibusPrompt: Bool = false
-    @State private var pendingConfigSelection: Set<UUID>? = nil
-    @State private var mergeConfigSuggestedName: String? = nil
-    
-    // Batch Selection
-    @State private var selection = Set<UUID>()
-    @State private var isSelectionMode: Bool = false
-    @State private var showingMergeConfig: Bool = false
-    @State private var showBatchMetadataEditor: Bool = false
-    @State private var showingBatchSeriesAssignment: Bool = false
     
     // Context Menu State
     @State private var pdfToRename: ConvertedPDF?
@@ -537,6 +517,7 @@ struct SeriesDetailView: View {
                 }
             }
         }
+        } // end ScrollViewReader
     }
 
     private func gridView(scrollProxy: ScrollViewProxy) -> some View {
@@ -763,6 +744,15 @@ struct SeriesDetailView: View {
             .contextMenu { contextMenuContent(pdf) }
         }
     }
+    var body: some View {
+        mainContent
+        .fullScreenCover(item: $pdfToRead) { pdf in
+            UnifiedReaderView(pdf: pdf)
+        }
+        .safeAreaInset(edge: .bottom) {
+            if isSelectionMode {
+                VStack(spacing: 0) {
+                    Divider().background(Color.white.opacity(0.1))
                     
                     HStack(spacing: 16) {
                         Button(action: {
