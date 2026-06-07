@@ -153,6 +153,31 @@ actor ComicVineService {
              throw ComicVineError.decodingError(error)
         }
     }
+    func getIssuesForVolume(volumeID: Int, apiKey: String, offset: Int = 0) async throws -> ComicVineIssueSearchResult {
+        try await waitForRateLimit()
+        
+        let urlString = "https://comicvine.gamespot.com/api/issues/?api_key=\(apiKey)&format=json&filter=volume:\(volumeID)&limit=100&offset=\(offset)"
+        guard let url = URL(string: urlString) else { throw ComicVineError.invalidURL }
+        
+        var request = URLRequest(url: url)
+        request.setValue("InksyncPro/1.0", forHTTPHeaderField: "User-Agent")
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        if let httpResponse = response as? HTTPURLResponse {
+            if httpResponse.statusCode == 401 { throw ComicVineError.invalidAPIKey }
+            if httpResponse.statusCode == 420 { throw ComicVineError.rateLimited }
+            if httpResponse.statusCode != 200 { throw ComicVineError.networkError(NSError(domain: "", code: httpResponse.statusCode, userInfo: nil)) }
+        }
+        
+        do {
+            let result = try JSONDecoder().decode(ComicVineIssueSearchResult.self, from: data)
+            return result
+        } catch {
+             Logger.shared.log("Issue Decoding Error: \(error.localizedDescription)", category: "Metadata", type: .error)
+             throw ComicVineError.decodingError(error)
+        }
+    }
 }
 
 // MARK: - Detailed Models
@@ -161,6 +186,10 @@ struct ComicVineIssueResult: Codable {
 }
 
 struct ComicVineIssueSearchResult: Codable {
+    let error: String?
+    let limit: Int?
+    let offset: Int?
+    let number_of_total_results: Int?
     let results: [ComicVineIssueDetails]
 }
 

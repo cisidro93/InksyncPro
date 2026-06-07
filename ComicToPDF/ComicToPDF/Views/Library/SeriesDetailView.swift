@@ -1,4 +1,4 @@
-import SwiftUI
+﻿import SwiftUI
 
 struct SeriesDetailView: View {
     let series: SeriesGroup
@@ -6,6 +6,14 @@ struct SeriesDetailView: View {
     @Environment(\.dismiss) var dismiss
     @Binding var selectedPDF: ConvertedPDF?
     var useNavigationStack: Bool
+    @Environment(\.horizontalSizeClass) private var hSizeClass
+    
+    enum LibraryViewStyle: String {
+        case list = "List"
+        case grid = "Grid"
+    }
+    
+    @AppStorage("libraryViewStyle") private var viewStyle: LibraryViewStyle = .grid
     
     @AppStorage("libraryTapAction") private var tapAction: LibraryTapAction = .read
     @AppStorage("defaultSeriesSort") private var sortOption: SeriesSortOption = .issueNumber
@@ -146,7 +154,7 @@ struct SeriesDetailView: View {
         return nil
     }
     
-    /// Calculates reading progress (0.0–1.0) for a set of issues
+    /// Calculates reading progress (0.0â€“1.0) for a set of issues
     private func readingProgress(for issues: [ConvertedPDF]) -> Double {
         let totalPages = issues.reduce(0) { $0 + max($1.pageCount, 1) }
         let readPages = issues.reduce(0) { $0 + ($1.metadata.lastReadPage ?? 0) }
@@ -167,11 +175,21 @@ struct SeriesDetailView: View {
         issues.filter { ($0.metadata.lastReadPage ?? 0) >= $0.pageCount && $0.pageCount > 0 }.count
     }
 
-    private var contentList: some View {
+    private var mainContent: some View {
         ScrollViewReader { scrollProxy in
+        Group {
+            if viewStyle == .grid {
+                gridView(scrollProxy: scrollProxy)
+            } else {
+                listView(scrollProxy: scrollProxy)
+            }
+        }
+    }
+    
+    private func listView(scrollProxy: ScrollViewProxy) -> some View {
         List {
             Section(header: headerView) {
-                // ── Continue Reading Smart Button ────────────────────────
+                // â”€â”€ Continue Reading Smart Button â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                 if let nextIssue = nextUnreadIssue {
                     Button {
                         pdfToRead = nextIssue
@@ -197,7 +215,7 @@ struct SeriesDetailView: View {
                                 
                                 if let vol = nextIssue.metadata.volume, !vol.isEmpty,
                                    let issue = nextIssue.metadata.issueNumber {
-                                    Text("Vol. \(vol) • Ch. \(issue) • Page \((nextIssue.metadata.lastReadPage ?? 0) + 1)")
+                                    Text("Vol. \(vol) â€¢ Ch. \(issue) â€¢ Page \((nextIssue.metadata.lastReadPage ?? 0) + 1)")
                                         .font(.system(size: 11, design: .rounded))
                                         .foregroundColor(Theme.orange)
                                 } else {
@@ -229,13 +247,13 @@ struct SeriesDetailView: View {
                     .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 8, trailing: 0))
                 }
                 
-                // ── Missing Issue Banner ──────────────────────────────
+                // â”€â”€ Missing Issue Banner â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                 if !missingIssues.isEmpty {
                     MissingIssueBanner(gaps: missingIssues)
                 }
                 
                 if showVolumeGrouping && hasVolumeData {
-                    // ── Collapsible Volume Sections ──────────────────────────
+                    // â”€â”€ Collapsible Volume Sections â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                     ForEach(volumeGroups, id: \.key) { group in
                         let isCollapsed = collapsedVolumes.contains(group.key)
                         let progress = readingProgress(for: group.issues)
@@ -351,7 +369,7 @@ struct SeriesDetailView: View {
                         }
                     }
                 } else {
-                    // ── Flat List (original behavior) ────────────────────────
+                    // â”€â”€ Flat List (original behavior) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                     ForEach(localIssues) { pdf in
                         issueRow(pdf)
                     }
@@ -373,7 +391,7 @@ struct SeriesDetailView: View {
         .onChange(of: conversionManager.convertedPDFs.count) { localIssues = sortedIssues }
         .listStyle(InsetGroupedListStyle())
         .navigationTitle(series.title)
-        // ── Volume Jump: ensure target is expanded then scroll to its anchor ──
+        // â”€â”€ Volume Jump: ensure target is expanded then scroll to its anchor â”€â”€
         .onChange(of: jumpToVolume) { _, targetKey in
             guard let targetKey else { return }
             // 1. Expand the volume if it was collapsed
@@ -497,6 +515,230 @@ struct SeriesDetailView: View {
         } // end ScrollViewReader
     }
 
+    private func gridView(scrollProxy: ScrollViewProxy) -> some View {
+        ScrollView {
+            LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
+                headerView
+                    .padding(.horizontal)
+                    .padding(.bottom, 16)
+                
+                if let nextIssue = nextUnreadIssue {
+                    Button {
+                        pdfToRead = nextIssue
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "play.circle.fill")
+                                .font(.system(size: 28))
+                                .foregroundStyle(
+                                    LinearGradient(colors: [Theme.orange, Theme.red],
+                                                   startPoint: .topLeading, endPoint: .bottomTrailing)
+                                )
+                            
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Continue Reading")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundColor(Theme.textSecondary)
+                                    .tracking(0.8)
+                                
+                                Text(nextIssue.name)
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundColor(Theme.text)
+                                    .lineLimit(1)
+                                
+                                if let vol = nextIssue.metadata.volume, !vol.isEmpty,
+                                   let issue = nextIssue.metadata.issueNumber {
+                                    Text("Vol. $vol • Ch. $issue • Page $((nextIssue.metadata.lastReadPage ?? 0) + 1)")
+                                        .font(.system(size: 11, design: .rounded))
+                                        .foregroundColor(Theme.orange)
+                                } else {
+                                    Text("Page $((nextIssue.metadata.lastReadPage ?? 0) + 1) of $(nextIssue.pageCount)")
+                                        .font(.system(size: 11, design: .rounded))
+                                        .foregroundColor(Theme.orange)
+                                }
+                            }
+                            
+                            Spacer()
+                            
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(Theme.textSecondary)
+                        }
+                        .padding(.vertical, 8)
+                        .padding(.horizontal, 12)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(Theme.orange.opacity(0.1))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .stroke(Theme.orange.opacity(0.2), lineWidth: 1)
+                                )
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal)
+                    .padding(.bottom, 16)
+                }
+                
+                if !missingIssues.isEmpty {
+                    MissingIssueBanner(gaps: missingIssues)
+                        .padding(.horizontal)
+                        .padding(.bottom, 16)
+                }
+
+                let hPad: CGFloat = hSizeClass == .regular ? 24 : 12
+                let colSpacing: CGFloat = hSizeClass == .regular ? 20 : 10
+                let colCount = hSizeClass == .regular ? 5 : 3
+                let columns = Array(repeating: GridItem(.flexible(), spacing: colSpacing), count: colCount)
+
+                if showVolumeGrouping && hasVolumeData {
+                    ForEach(volumeGroups, id: \.key) { group in
+                        let isCollapsed = collapsedVolumes.contains(group.key)
+                        let progress = readingProgress(for: group.issues)
+                        let completed = completedCount(for: group.issues)
+                        
+                        Section(header: 
+                            volumeHeaderView(group: group, isCollapsed: isCollapsed, progress: progress, completed: completed)
+                                .background(.ultraThinMaterial)
+                                .id("vol_$(group.key)")
+                        ) {
+                            if !isCollapsed {
+                                LazyVGrid(columns: columns, spacing: hSizeClass == .regular ? 28 : 14) {
+                                    ForEach(group.issues) { pdf in
+                                        gridIssueCell(pdf)
+                                    }
+                                }
+                                .padding(.horizontal, hPad)
+                                .padding(.vertical, 16)
+                            }
+                        }
+                    }
+                } else {
+                    LazyVGrid(columns: columns, spacing: hSizeClass == .regular ? 28 : 14) {
+                        ForEach(localIssues) { pdf in
+                            gridIssueCell(pdf)
+                        }
+                    }
+                    .padding(.horizontal, hPad)
+                    .padding(.bottom, 120)
+                }
+            }
+        }
+    }
+    private func volumeHeaderView(group: (key: String, issues: [ConvertedPDF]), isCollapsed: Bool, progress: Double, completed: Int) -> some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.25)) {
+                if isCollapsed {
+                    collapsedVolumes.remove(group.key)
+                } else {
+                    collapsedVolumes.insert(group.key)
+                }
+            }
+        } label: {
+            VStack(spacing: 6) {
+                HStack(spacing: 10) {
+                    Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(Theme.orange)
+                        .frame(width: 16)
+                    
+                    Image(systemName: completed == group.issues.count ? "book.closed.fill" : "book.closed")
+                        .font(.system(size: 14))
+                        .foregroundColor(completed == group.issues.count ? .green : (group.key == "Ungrouped" ? Theme.textSecondary : Theme.blue))
+                    
+                    Text(group.key == "Ungrouped" ? "Ungrouped Issues" : "Volume $(group.key)")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(Theme.text)
+                    
+                    Spacer()
+                    
+                    Text("$(completed)/$(group.issues.count)")
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundColor(completed == group.issues.count ? .green : Theme.textSecondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Theme.text.opacity(0.08))
+                        .clipShape(Capsule())
+                }
+                
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(Theme.text.opacity(0.08))
+                            .frame(height: 3)
+                        
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(
+                                progress >= 1.0
+                                    ? AnyShapeStyle(Color.green)
+                                    : AnyShapeStyle(LinearGradient(colors: [Theme.orange, Theme.red], startPoint: .leading, endPoint: .trailing))
+                            )
+                            .frame(width: geo.size.width * CGFloat(min(progress, 1.0)), height: 3)
+                    }
+                }
+                .frame(height: 3)
+            }
+            .padding(.vertical, 12)
+            .padding(.horizontal, 16)
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            Button {
+                if fastBundleOmnibus {
+                    conversionManager.enqueueOmnibus(
+                        name: "$(series.title) Vol. $(formattedVolumeKey(group.key))",
+                        sourceFiles: group.issues
+                    )
+                } else {
+                    let selectedIDs = Set(group.issues.map { $0.id })
+                    selection = selectedIDs
+                    mergeConfigSuggestedName = "$(series.title) Vol. $(formattedVolumeKey(group.key))"
+                    showingMergeConfig = true
+                }
+            } label: {
+                Label("Build Kindle Omnibus for Vol. $(formattedVolumeKey(group.key))", systemImage: "books.vertical.fill")
+            }
+            
+            Button {
+                withAnimation {
+                    if isCollapsed {
+                        collapsedVolumes.remove(group.key)
+                    } else {
+                        collapsedVolumes.insert(group.key)
+                    }
+                }
+            } label: {
+                Label(isCollapsed ? "Expand" : "Collapse", systemImage: isCollapsed ? "rectangle.expand.vertical" : "rectangle.compress.vertical")
+            }
+        }
+    }
+    @ViewBuilder
+    private func gridIssueCell(_ pdf: ConvertedPDF) -> some View {
+        if isSelectionMode {
+            Button {
+                if selection.contains(pdf.id) {
+                    selection.remove(pdf.id)
+                } else {
+                    selection.insert(pdf.id)
+                }
+            } label: {
+                ModernGridFileCell(pdf: pdf, isSelected: selection.contains(pdf.id), isBatch: true)
+            }
+            .buttonStyle(PlainButtonStyle())
+        } else {
+            Button {
+                if tapAction == .read {
+                    pdfToRead = pdf
+                } else {
+                    pendingActionPDF = pdf
+                    showingActionSheet = true
+                }
+            } label: {
+                ModernGridFileCell(pdf: pdf, isSelected: selectedPDF?.id == pdf.id, isBatch: false)
+            }
+            .buttonStyle(PlainButtonStyle())
+            .contextMenu { contextMenuContent(pdf) }
+        }
+    }
     var body: some View {
         contentList
         .fullScreenCover(item: $pdfToRead) { pdf in
@@ -615,7 +857,7 @@ struct SeriesDetailView: View {
         .sheet(item: $pdfToSearchMetadata) { pdf in
             MetadataSearchSheet(pdf: pdf)
         }
-        // ✅ Fix: pdfToDetails now correctly presents MediaDetailSheet in all non-nav-stack contexts.
+        // âœ… Fix: pdfToDetails now correctly presents MediaDetailSheet in all non-nav-stack contexts.
         .sheet(item: $pdfToDetails) { pdf in
             MediaDetailSheet(pdf: pdf) { action in
                 switch action {
@@ -664,7 +906,7 @@ struct SeriesDetailView: View {
                     assignSeriesText = pdf.metadata.series ?? ""
                     pdfToAssignSeries = pdf
                 case .covers:
-                    // Cover Studio requires the main library context — navigate there after dismiss
+                    // Cover Studio requires the main library context â€” navigate there after dismiss
                     pdfToDetails = nil
                     // Post notification so ModernLibraryView can open the Cover Studio sheet
                     NotificationCenter.default.post(name: .init("InksyncPro.openCoverStudio"), object: pdf)
@@ -1141,5 +1383,6 @@ struct SeriesDetailView: View {
         }
     }
 }
+
 
 
