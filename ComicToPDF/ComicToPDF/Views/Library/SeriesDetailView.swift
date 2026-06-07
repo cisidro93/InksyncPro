@@ -517,7 +517,6 @@ struct SeriesDetailView: View {
                 }
             }
         }
-        } // end ScrollViewReader
     }
 
     private func gridView(scrollProxy: ScrollViewProxy) -> some View {
