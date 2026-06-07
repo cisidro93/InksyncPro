@@ -79,6 +79,7 @@ struct MetadataSearchSheet: View {
                                         Text(publisher).font(.caption2).foregroundColor(.gray)
                                     }
                                 }
+                            }
                         }
                         .listRowBackground(Color.inkSurface.opacity(0.4))
                     }
@@ -104,6 +105,7 @@ struct MetadataSearchSheet: View {
                                         Text(year).font(.caption2).foregroundColor(.gray)
                                     }
                                 }
+                            }
                         }
                         .listRowBackground(Color.inkSurface.opacity(0.4))
                     }

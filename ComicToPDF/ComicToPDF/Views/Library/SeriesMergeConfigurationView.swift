@@ -75,9 +75,13 @@ struct SeriesMergeConfigurationView: View {
                             .disabled(isMergeDisabled)
                             .foregroundColor(isMergeDisabled ? .gray : .white)
                             .listRowBackground(
-                                isMergeDisabled
-                                ? AnyShapeStyle(Color.inkSurface.opacity(0.4))
-                                : AnyShapeStyle(LinearGradient(colors: [Color.inkBlue, Color.inkViolet.opacity(0.8)], startPoint: .leading, endPoint: .trailing))
+                                Group {
+                                    if isMergeDisabled {
+                                        Color.inkSurface.opacity(0.4)
+                                    } else {
+                                        LinearGradient(colors: [Color.inkBlue, Color.inkViolet.opacity(0.8)], startPoint: .leading, endPoint: .trailing)
+                                    }
+                                }
                             )
                         }
                     }
