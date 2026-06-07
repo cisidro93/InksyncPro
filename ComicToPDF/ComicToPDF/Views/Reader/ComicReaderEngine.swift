@@ -509,7 +509,6 @@ struct ComicReaderEngine: View {
     @State private var orientationTask: Task<Void, Never>? = nil
     /// AI Narration Engine — connects to the image cache on appear
     @StateObject private var narrationEngine = NarrationEngine()
-    @ObservedObject private var gamification = GamificationManager.shared
     /// Phase 3: Live Reading Room — MultipeerConnectivity co-reading session.
     @StateObject private var readingRoom = ReadingRoomSession()
     /// Phase 4A: Auto-hide chrome — cancellable idle timer.
@@ -655,7 +654,6 @@ struct ComicReaderEngine: View {
             }
         }
         .onChange(of: currentIndex) { _, newIndex in
-            GamificationManager.shared.logPageRead()
             // Panels-style ambient colour — sample edge pixels on page change
             extractAmbientColor(for: newIndex)
             // Notify narration engine of manual page changes (distinct from narration-driven advances)
@@ -1038,19 +1036,8 @@ struct ComicReaderEngine: View {
         }
     }
 
-    /// Achievement unlock toast (slides in from the top edge).
     @ViewBuilder private var achievementToastView: some View {
-        if let achievement = gamification.newlyUnlocked {
-            VStack {
-                AchievementToastView(achievement: achievement)
-                    .padding(.top, 60)
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                    .animation(.spring(response: 0.45, dampingFraction: 0.8),
-                               value: gamification.newlyUnlocked?.id)
-                Spacer()
-            }
-            .zIndex(20)
-        }
+        EmptyView()
     }
 
     // MARK: - Private Helpers
@@ -1099,7 +1086,6 @@ struct ComicReaderEngine: View {
         } else {
             narrationEngine.isMangaMode = (readingMode == .mangaRTL)
             narrationEngine.startNarrating(from: currentIndex)
-            GamificationManager.shared.logNarrationUsed()
         }
     }
 

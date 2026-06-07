@@ -98,7 +98,6 @@ struct ContentView: View {
             
             Task { @MainActor in
                 MigrationService.shared.migrateLegacyDataIfNeeded(context: modelContext)
-                MigrationService.shared.runZettelkastenNLPBackfill(context: modelContext)
                 let genCount = MigrationService.shared.performSmartGrouping(context: modelContext)
                 
                 if genCount > 0 {

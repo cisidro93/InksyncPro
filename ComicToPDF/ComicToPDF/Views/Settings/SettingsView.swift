@@ -15,10 +15,7 @@ struct SettingsView: View {
     // Background Auto-Sync
     @AppStorage("enableBackgroundSync") private var enableBackgroundSync = false
 
-    // Gamification Settings
-    @AppStorage("enableSerendipity") private var enableSerendipity = true
-    @AppStorage("dailyPageGoal") private var dailyPageGoal = 5
-    @AppStorage("streakTheme") private var streakTheme: StreakTheme = .classic
+
 
     // Library Typography Themes
     @AppStorage("mangaBadgeColorHex") private var mangaBadgeColorHex = "#2dd4a0"
@@ -27,8 +24,7 @@ struct SettingsView: View {
     // Adaptive Learning Engine
     @ObservedObject private var aiManager = AdaptiveLearningManager.shared
 
-    @State private var showingAddDevice = false
-    @State private var showingDeleteAlert = false
+    @State private var showingSystemLogs = false
     
     // Preset & AI Export State
     @State private var showingPresetAlert = false
@@ -41,8 +37,7 @@ struct SettingsView: View {
     @State private var aiFeedbackTitle = ""
     @State private var aiFeedbackMessage = ""
     
-    // Danger Zone state
-    @State private var showingZettelkastenPurgeConfirm = false
+
 
     // ComicVine API key verification state
     @State private var isVerifying = false
@@ -114,11 +109,9 @@ struct SettingsView: View {
             
             imageFiltersSection
             aiSection
-            gamificationSection
             integrationsSection
             systemSection
             legalSection
-            dangerZoneSection
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
@@ -155,24 +148,6 @@ struct SettingsView: View {
                 }
             }
         }
-        .confirmationDialog(
-            "Purge Zettelkasten Database?",
-            isPresented: $showingZettelkastenPurgeConfirm,
-            titleVisibility: .visible
-        ) {
-            Button("Purge Everything", role: .destructive) {
-                let context = InksyncProApp.sharedModelContainer.mainContext
-                let descriptor = FetchDescriptor<SDAnnotation>()
-                if let annotations = try? context.fetch(descriptor) {
-                    for ann in annotations {
-                        context.delete(ann)
-                    }
-                    try? context.save()
-                }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This will permanently delete all highlights, notes, and Readwise imports. This action cannot be undone.")
         }
     }
     
@@ -732,43 +707,6 @@ struct SettingsView: View {
             }
         } header: { Text("System") }
     }
-    
-    @ViewBuilder
-    private var gamificationSection: some View {
-        Section {
-            HStack {
-                settingsIcon("sparkles", color: .purple)
-                Toggle("Daily Serendipity Engine", isOn: $enableSerendipity)
-            }
-            Text("Surfaces 5 random highlights from your Zettelkasten on the Library Dashboard to help you connect old ideas.")
-                .font(.caption2)
-                .foregroundColor(.secondary)
-            
-            HStack {
-                settingsIcon("target", color: .red)
-                Picker("Daily Reading Goal (Pages/Chapters)", selection: $dailyPageGoal) {
-                    ForEach(1...20, id: \.self) { goal in
-                        Text("\(goal)").tag(goal)
-                    }
-                }
-                .pickerStyle(.menu)
-            }
-            Text("Hitting this goal banks a 'Streak Charge'. Miss a day, and we'll consume a charge instead of breaking your streak!")
-                .font(.caption2)
-                .foregroundColor(.secondary)
-            
-            HStack {
-                settingsIcon(streakTheme.icon, color: streakTheme.color)
-                Picker("Streak Charge Icon Theme", selection: $streakTheme) {
-                    ForEach(StreakTheme.allCases) { theme in
-                        Text(theme.rawValue).tag(theme)
-                    }
-                }
-                .pickerStyle(.menu)
-            }
-        } header: { Text("Gamification & Learning") }
-    }
-    
     @ViewBuilder
     private var legalSection: some View {
         Section {
@@ -781,25 +719,6 @@ struct SettingsView: View {
         } header: { Text("Legal") }
     }
     
-    @ViewBuilder
-    private var dangerZoneSection: some View {
-        Section {
-            Button(action: {
-                showingZettelkastenPurgeConfirm = true
-            }) {
-                HStack {
-                    settingsIcon("flame.fill", color: .red)
-                    Text("Purge Zettelkasten Database")
-                        .foregroundColor(.red)
-                        .fontWeight(.semibold)
-                }
-            }
-        } header: {
-            Text("Danger Zone")
-                .foregroundColor(.red)
-        }
-    }
-
     private func importAIProfile(_ url: URL) {
         let accessing = url.startAccessingSecurityScopedResource()
         Task.detached(priority: .userInitiated) {

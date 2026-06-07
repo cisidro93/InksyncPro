@@ -824,7 +824,6 @@ final class WiFiServer: ObservableObject, Sendable {
             
             if isPageTurn {
                 progress.totalPagesRead += 1
-                GamificationManager.shared.logPageRead()
             }
             
             progress.completionFraction = Double(pageIndex) / Double(max(1, totalPages - 1))

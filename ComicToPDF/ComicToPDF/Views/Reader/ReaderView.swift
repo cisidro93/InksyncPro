@@ -257,12 +257,6 @@ struct ReaderView: View {
                 if fired { if let onExit = onExit { onExit() } else { dismiss() } }
             }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("Reader_EndOfBookReached"))) { _ in nextPage() }
-            // Item 7 — Jump-to-source from Zettelkasten hub
-            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("Reader_JumpToPage"))) { note in
-                if let idx = note.userInfo?["pageIndex"] as? Int, idx >= 0, idx < pages.count {
-                    withAnimation { currentPageIndex = idx }
-                }
-            }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("Reader_BookmarkCurrentPage"))) { note in
                 if let idx = note.userInfo?["pageIndex"] as? Int {
                     NotificationCenter.default.post(name: NSNotification.Name("BookmarkAdded"),
@@ -505,21 +499,7 @@ struct ReaderView: View {
                                         withAnimation(.easeInOut(duration: 0.2)) { isToolbarVisible.toggle() }
                                     },
                                     onViewCreated: { ref in pdfViewRef = ref },
-                                    onHighlightRequested: { selectedText in
-                                        guard let pdfID = pdf?.id else { return }
-                                        let ann = Annotation(
-                                            pdfID: pdfID,
-                                            pageIndex: currentPageIndex,
-                                            chapterTitle: "Page \(currentPageIndex + 1)",
-                                            kind: .highlight,
-                                            createdAt: Date(),
-                                            modifiedAt: Date(),
-                                            colorHex: "#ffd700",
-                                            selectedText: selectedText
-                                        )
-                                        AnnotationStore.shared.add(ann)
-                                        StudyNotesStore.shared.appendHighlight(selectedText, chapter: "Page \(currentPageIndex + 1)")
-                                    }
+                                    onHighlightRequested: { _ in }
                                 )
                                 .colorMultiply(.white)
                                 .colorInvertIfDark(theme: EBookPreferences.shared.activeTheme)
@@ -1308,7 +1288,6 @@ struct ReaderView: View {
         progress.currentPageIndex = currentPageIndex
         if isPageTurn {
             progress.totalPagesRead += 1
-            GamificationManager.shared.logPageRead()
         }
         if !pages.isEmpty {
            progress.completionFraction = Double(currentPageIndex) / Double(max(1, pages.count - 1))

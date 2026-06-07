@@ -879,10 +879,8 @@ struct BookReaderEngine: View {
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
-        .onChange(of: vm.currentChapterIndex) { _, _ in
-            GamificationManager.shared.logPageRead()
-        }
     }
+
 
     // MARK: - Series Continuation
     /// Posts openMergedBook with the next volume in the series when the user finishes the last chapter.

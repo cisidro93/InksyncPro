@@ -97,24 +97,7 @@ struct EBookReaderView: View {
                             onNext:      nextChapter,
                             onPrev:      prevChapter,
                             onCenterTap: { withAnimation(.easeInOut(duration: 0.2)) { showHUD.toggle() } },
-                            onHighlightCreated: { selectedText in
-                                let highlight = Annotation(
-                                    pdfID: pdf?.id ?? UUID(),
-                                    pageIndex: currentIndex,
-                                    chapterTitle: meta.spineItems[currentIndex].label,
-                                    kind: .highlight,
-                                    createdAt: Date(),
-                                    modifiedAt: Date(),
-                                    colorHex: "#ffd700",
-                                    selectedText: selectedText
-                                )
-                                AnnotationStore.shared.add(highlight)
-                                StudyNotesStore.shared.appendHighlight(selectedText, chapter: meta.spineItems[currentIndex].label)
-                                
-                                // Zettelkasten Integration: Instantly pop up editor for new highlight
-                                let sdAnnotation = SDAnnotation(from: highlight)
-                                self.activeHighlightToEdit = sdAnnotation
-                            },
+                            onHighlightCreated: { _ in },
                             pdfID: pdf?.id
                         )
                         // Directional page-turn: slide left for forward, right for back.
@@ -162,11 +145,7 @@ struct EBookReaderView: View {
         .sheet(isPresented: $showShareSheet) {
             ShareSheet(activityItems: [fileURL])
         }
-        .sheet(item: $activeHighlightToEdit) { annotation in
-            AnnotationEditSheet(annotation: annotation)
-                .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
-        }
+
         .task { await loadBook() }
         .onDisappear { cleanup(); saveProgress() }
         .overlay { if prefs.showReadingRuler { ReadingRulerOverlay() } }

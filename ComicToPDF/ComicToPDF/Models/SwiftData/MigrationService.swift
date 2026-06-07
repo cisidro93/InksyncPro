@@ -130,51 +130,6 @@ class MigrationService {
         return generatedCount + assignedCount
     }
     
-    @MainActor
-    func runZettelkastenNLPBackfill(context: ModelContext) {
-        if UserDefaults.standard.bool(forKey: "zettelNLPBackfillVersion_v1") { return }
-        
-        let fetchDescriptor = FetchDescriptor<SDAnnotation>()
-        let allAnnotations = (try? context.fetch(fetchDescriptor)) ?? []
-        
-        let targets = allAnnotations.filter { 
-            ($0.tags?.isEmpty ?? true) && 
-            $0.kindRaw == "highlight" && 
-            $0.selectedText != nil && 
-            $0.selectedText?.isEmpty == false 
-        }.map { ($0.id, $0.selectedText!) }
-        
-        guard !targets.isEmpty else {
-            UserDefaults.standard.set(true, forKey: "zettelNLPBackfillVersion_v1")
-            return
-        }
-        
-        Logger.shared.log("Starting NLP backfill for \(targets.count) annotations...", category: "Migration")
-        
-        Task {
-            let results = await Task.detached(priority: .background) { () -> [(UUID, [String])] in
-                var extracted: [(UUID, [String])] = []
-                for (id, text) in targets {
-                    let tags = await AnnotationStore.shared.extractNLPKeywords(from: text)
-                    extracted.append((id, tags))
-                }
-                return extracted
-            }.value
-            
-            for (id, tags) in results {
-                let refreshDescriptor = FetchDescriptor<SDAnnotation>(
-                    predicate: #Predicate { $0.id == id }
-                )
-                if let annotation = try? context.fetch(refreshDescriptor).first {
-                    annotation.tags = tags
-                }
-            }
-            try? context.save()
-            UserDefaults.standard.set(true, forKey: "zettelNLPBackfillVersion_v1")
-            Logger.shared.log("Completed NLP backfill migration successfully.", category: "Migration")
-        }
-    }
-    
     // ✅ Full reconciliation sync (used on app save / quit).
     // Fetches entire DB, upserts changed records, prunes deleted ones.
     // O(n) in library size. Do NOT call this in a tight per-file loop.
