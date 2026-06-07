@@ -79,9 +79,10 @@ struct MetadataSearchSheet: View {
                                         Text(publisher).font(.caption2).foregroundColor(.gray)
                                     }
                                 }
-                            }
                         }
+                        .listRowBackground(Color.inkSurface.opacity(0.4))
                     }
+                    .scrollContentBackground(.hidden)
                 } else {
                     List(comicResults) { volume in
                         Button(action: { selectVolume(volume) }) {
@@ -103,11 +104,13 @@ struct MetadataSearchSheet: View {
                                         Text(year).font(.caption2).foregroundColor(.gray)
                                     }
                                 }
-                            }
                         }
+                        .listRowBackground(Color.inkSurface.opacity(0.4))
                     }
+                    .scrollContentBackground(.hidden)
                 }
             }
+            .background(Color.inkBackground.ignoresSafeArea())
             .navigationTitle("Find Series")
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) { Button("Cancel") { dismiss() } }

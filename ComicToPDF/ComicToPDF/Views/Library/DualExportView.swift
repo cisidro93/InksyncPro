@@ -21,8 +21,11 @@ struct DualExportView: View {
     
     var body: some View {
         NavigationStack {
-            VStack(spacing: 24) {
-                // Header
+            ZStack {
+                Color.inkBackground.ignoresSafeArea()
+                
+                VStack(spacing: 24) {
+                    // Header
                 VStack(spacing: 8) {
                     Text("Export '\(pdf.name)'")
                         .font(.headline)
@@ -57,7 +60,7 @@ struct DualExportView: View {
                     }
                 }
                 .padding()
-                .background(Color(.secondarySystemBackground))
+                .background(Color.inkSurface.opacity(0.8))
                 .cornerRadius(8)
                 .cornerRadius(8)
                 .padding(.horizontal)
@@ -85,7 +88,7 @@ struct DualExportView: View {
                             .foregroundStyle(.secondary)
                     }
                     .padding()
-                    .background(Color(.secondarySystemBackground))
+                    .background(Color.inkSurface.opacity(0.8))
                     .cornerRadius(12)
                 }
                 
@@ -112,7 +115,7 @@ struct DualExportView: View {
                             .foregroundStyle(.secondary)
                     }
                     .padding()
-                    .background(Color(.secondarySystemBackground))
+                    .background(Color.inkSurface.opacity(0.8))
                     .cornerRadius(12)
                 }
                 
@@ -139,7 +142,7 @@ struct DualExportView: View {
                             .foregroundStyle(.secondary)
                     }
                     .padding()
-                    .background(Color(.secondarySystemBackground))
+                    .background(Color.inkSurface.opacity(0.8))
                     .cornerRadius(12)
                 }
                 
@@ -172,7 +175,7 @@ struct DualExportView: View {
                                 .foregroundStyle(.secondary)
                         }
                         .padding()
-                        .background(Color(.secondarySystemBackground))
+                        .background(Color.inkSurface.opacity(0.8))
                         .cornerRadius(12)
                     }
                 }
@@ -184,7 +187,8 @@ struct DualExportView: View {
                 
                 Spacer()
                 
-                // Hidden Navigation handled by navigationDestination
+                }
+                .padding()
             }
             .navigationDestination(isPresented: $navigateToSync) {
                 WiFiView()
@@ -310,7 +314,7 @@ struct KFXInstructionCardView: View {
                         InstructionStep(number: 4, title: "Transfer to Kindle", description: "Connect your Kindle via USB and copy the resulting **.kfx** file into the 'documents' folder.")
                     }
                     .padding()
-                    .background(Color(.secondarySystemBackground))
+                    .background(Color.inkSurface.opacity(0.8))
                     .cornerRadius(12)
                     
                     Button(action: {

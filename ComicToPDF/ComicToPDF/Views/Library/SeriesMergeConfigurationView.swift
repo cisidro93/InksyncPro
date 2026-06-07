@@ -50,32 +50,41 @@ struct SeriesMergeConfigurationView: View {
                                 }
                             }
                         }
+                        .listRowBackground(Color.inkSurface.opacity(0.4))
                         
                         Section(header: Text("Merge Order"), footer: Text("Drag to reorder. The top file will be the first issue in the merged volume.")) {
-                    List {
-                        ForEach(itemsToMerge) { pdf in
-                            pdfRow(for: pdf)
+                            ForEach(itemsToMerge) { pdf in
+                                pdfRow(for: pdf)
+                            }
+                            .onMove(perform: moveItems)
                         }
-                        .onMove(perform: moveItems)
-                    }
-                }
-                
-                Section {
-                    Button {
-                        startMerge()
-                    } label: {
-                        HStack {
-                            Spacer()
-                            Text("Convert & Merge")
-                                .bold()
-                            Spacer()
+                        .listRowBackground(Color.inkSurface.opacity(0.4))
+                        
+                        Section {
+                            Button {
+                                startMerge()
+                            } label: {
+                                HStack {
+                                    Spacer()
+                                    Text("Convert & Merge")
+                                        .bold()
+                                    Spacer()
+                                }
+                                .padding(.vertical, 4)
+                            }
+                            .disabled(isMergeDisabled)
+                            .foregroundColor(isMergeDisabled ? .gray : .white)
+                            .listRowBackground(
+                                isMergeDisabled
+                                ? AnyShapeStyle(Color.inkSurface.opacity(0.4))
+                                : AnyShapeStyle(LinearGradient(colors: [Color.inkBlue, Color.inkViolet.opacity(0.8)], startPoint: .leading, endPoint: .trailing))
+                            )
                         }
                     }
-                        }
-                        .disabled(isMergeDisabled)
-                    }
+                    .scrollContentBackground(.hidden)
                 }
             }
+            .background(Color.inkBackground.ignoresSafeArea())
             .navigationTitle("Configure Merge")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
