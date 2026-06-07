@@ -464,18 +464,8 @@ struct ModernLibraryView: View {
     private func destinationSheet(for item: LibrarySheetDestination) -> some View {
         switch item {
         case .inbox:
-            NavigationStack {
-                InboxReviewView()
-                    .environmentObject(conversionManager)
-                    .toolbar {
-                        ToolbarItem(placement: .navigationBarTrailing) {
-                            Button("Done") {
-                                AppRouter.shared.dismissSheet()
-                            }
-                            .foregroundColor(.inkBlue)
-                        }
-                    }
-            }
+            WorkspaceView()
+                .environmentObject(conversionManager)
             
         case .importQueue:
             ImportQueueView()

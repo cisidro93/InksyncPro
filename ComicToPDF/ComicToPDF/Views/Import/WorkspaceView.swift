@@ -35,6 +35,7 @@ enum WorkspaceMode: String, CaseIterable {
 struct WorkspaceView: View {
     @State private var mode: WorkspaceMode = .inbox
     @EnvironmentObject var conversionManager: ConversionManager
+    @Environment(\.dismiss) var dismiss
     
     var body: some View {
         NavigationStack {
@@ -66,6 +67,14 @@ struct WorkspaceView: View {
             .background(Color.clear)
             .navigationTitle(navigationTitle)
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                    .bold()
+                }
+            }
         }
     }
 
