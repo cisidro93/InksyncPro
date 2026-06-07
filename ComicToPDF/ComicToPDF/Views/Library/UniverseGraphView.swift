@@ -53,14 +53,15 @@ final class UniverseGraphEngine: NSObject, ObservableObject {
     @Published var draggedNodeID: String? = nil
     var pinchBaseScale: CGFloat = 1.0
 
-    // Physics tuning — wider spring lengths for the comic universe layout
-    let repulsionStrength: Double = 12_000.0
-    let springStiffness: Double  = 0.018
-    let springLength: Double     = 180.0
-    let damping: Double          = 0.78
-    let centerGravity: Double    = 0.012
+    // Physics tuning — tuned for a highly fluid, floating organic feel
+    let repulsionStrength: Double = 18_000.0   // Push further apart for less clutter
+    let springStiffness: Double  = 0.012       // Softer springs for a breathing, organic pull
+    let springLength: Double     = 240.0       // Wider baseline distance to show scale
+    let damping: Double          = 0.86        // Less friction for smoother, longer settling
+    let centerGravity: Double    = 0.008       // Lighter center pull to let the universe expand
 
     nonisolated(unsafe) private var displayLink: CADisplayLink?
+    private var simulationTask: Task<Void, Never>?
     private var tickCount: Int = 0
     private var nodeIndex: [String: Int] = [:]
 
@@ -207,78 +208,116 @@ final class UniverseGraphEngine: NSObject, ObservableObject {
     }
 
     // MARK: - Simulation
-
     func startSimulation() {
         stopSimulation()
         tickCount = 0
-        displayLink = CADisplayLink(target: self, selector: #selector(physicsTick))
-        displayLink?.add(to: .main, forMode: .common)
+        simulationTask = Task.detached(priority: .userInitiated) { [weak self] in
+            guard let self = self else { return }
+            await self.runPhysicsLoop()
+        }
     }
 
     func stopSimulation() {
-        displayLink?.invalidate()
-        displayLink = nil
+        simulationTask?.cancel()
+        simulationTask = nil
     }
 
-    @objc private func physicsTick() {
-        tickCount += 1
-        let center = CGPoint(x: UIScreen.main.bounds.width / 2, y: UIScreen.main.bounds.height / 2)
-        var forces: [String: CGVector] = [:]
-        for n in nodes { forces[n.id] = .zero }
-
-        // Repulsion
-        for i in 0..<nodes.count {
-            for j in (i+1)..<nodes.count {
-                let dx = nodes[i].position.x - nodes[j].position.x
-                let dy = nodes[i].position.y - nodes[j].position.y
-                let dSq = dx*dx + dy*dy
-                guard dSq > 1, dSq < 200_000 else { continue }
-                let dist = sqrt(dSq)
-                let f = repulsionStrength / dSq
-                forces[nodes[i].id]?.dx += (dx/dist)*f
-                forces[nodes[i].id]?.dy += (dy/dist)*f
-                forces[nodes[j].id]?.dx -= (dx/dist)*f
-                forces[nodes[j].id]?.dy -= (dy/dist)*f
+    private func runPhysicsLoop() async {
+        let center = await MainActor.run { CGPoint(x: UIScreen.main.bounds.width / 2, y: UIScreen.main.bounds.height / 2) }
+        
+        while !Task.isCancelled {
+            let start = Date()
+            
+            // 1. Snapshot state
+            let currentNodes = await MainActor.run { return self.nodes }
+            let currentEdges = await MainActor.run { return self.edges }
+            let draggedID = await MainActor.run { return self.draggedNodeID }
+            let currentTick = await MainActor.run { self.tickCount += 1; return self.tickCount }
+            
+            var newNodes = currentNodes
+            var forces: [String: CGVector] = [:]
+            for n in newNodes { forces[n.id] = .zero }
+            
+            // 2. Repulsion
+            for i in 0..<newNodes.count {
+                for j in (i+1)...<newNodes.count {
+                    let dx = newNodes[i].position.x - newNodes[j].position.x
+                    let dy = newNodes[i].position.y - newNodes[j].position.y
+                    let dSq = dx*dx + dy*dy
+                    guard dSq > 1, dSq < 200_000 else { continue }
+                    let dist = sqrt(dSq)
+                    let f = self.repulsionStrength / dSq
+                    forces[newNodes[i].id]?.dx += (dx/dist)*f
+                    forces[newNodes[i].id]?.dy += (dy/dist)*f
+                    forces[newNodes[j].id]?.dx -= (dx/dist)*f
+                    forces[newNodes[j].id]?.dy -= (dy/dist)*f
+                }
+            }
+            
+            // 3. Springs
+            let idxMap = Dictionary(uniqueKeysWithValues: newNodes.enumerated().map { ($0.element.id, $0.offset) })
+            for edge in currentEdges {
+                guard let i1 = idxMap[edge.sourceID], let i2 = idxMap[edge.targetID] else { continue }
+                let dx = newNodes[i2].position.x - newNodes[i1].position.x
+                let dy = newNodes[i2].position.y - newNodes[i1].position.y
+                let dist = sqrt(dx*dx + dy*dy)
+                guard dist > 0 else { continue }
+                let displacement = dist - self.springLength * (2.0 / (edge.weight + 1))
+                let force = self.springStiffness * displacement * edge.weight
+                let fx = (dx/dist)*force; let fy = (dy/dist)*force
+                forces[newNodes[i1].id]?.dx += fx; forces[newNodes[i1].id]?.dy += fy
+                forces[newNodes[i2].id]?.dx -= fx; forces[newNodes[i2].id]?.dy -= fy
+            }
+            
+            // 4. Integrate
+            var stillCount = 0
+            for i in 0..<newNodes.count {
+                guard newNodes[i].id != draggedID else { continue }
+                let dx = center.x - newNodes[i].position.x
+                let dy = center.y - newNodes[i].position.y
+                forces[newNodes[i].id]?.dx += dx * self.centerGravity
+                forces[newNodes[i].id]?.dy += dy * self.centerGravity
+                guard let f = forces[newNodes[i].id] else { continue }
+                
+                let mass = Double(newNodes[i].connectionCount) * 0.5 + 1.0
+                newNodes[i].velocity.dx = (newNodes[i].velocity.dx + f.dx/mass) * self.damping
+                newNodes[i].velocity.dy = (newNodes[i].velocity.dy + f.dy/mass) * self.damping
+                
+                let spd = newNodes[i].velocity.dx*newNodes[i].velocity.dx + newNodes[i].velocity.dy*newNodes[i].velocity.dy
+                if spd > 1600 {
+                    let s = sqrt(spd)
+                    newNodes[i].velocity.dx = newNodes[i].velocity.dx/s*40
+                    newNodes[i].velocity.dy = newNodes[i].velocity.dy/s*40
+                }
+                
+                newNodes[i].position.x += newNodes[i].velocity.dx
+                newNodes[i].position.y += newNodes[i].velocity.dy
+                
+                if abs(newNodes[i].velocity.dx) < 0.3 && abs(newNodes[i].velocity.dy) < 0.3 {
+                    stillCount += 1
+                }
+            }
+            
+            // 5. Commit state back to Main thread
+            await MainActor.run { self.nodes = newNodes }
+            
+            if (stillCount == newNodes.count || currentTick > 300) && draggedID == nil {
+                await MainActor.run { self.stopSimulation() }
+                break
+            }
+            
+            // 6. Pace to ~60Hz
+            let elapsed = Date().timeIntervalSince(start)
+            let remaining = (1.0 / 60.0) - elapsed
+            if remaining > 0 {
+                try? await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
             }
         }
-
-        // Springs
-        for edge in edges {
-            guard let i1 = nodeIndex[edge.sourceID], let i2 = nodeIndex[edge.targetID],
-                  i1 < nodes.count, i2 < nodes.count else { continue }
-            let dx = nodes[i2].position.x - nodes[i1].position.x
-            let dy = nodes[i2].position.y - nodes[i1].position.y
-            let dist = sqrt(dx*dx + dy*dy)
-            guard dist > 0 else { continue }
-            let displacement = dist - springLength * (2.0 / (edge.weight + 1))
-            let force = springStiffness * displacement * edge.weight
-            let fx = (dx/dist)*force; let fy = (dy/dist)*force
-            forces[nodes[i1].id]?.dx += fx; forces[nodes[i1].id]?.dy += fy
-            forces[nodes[i2].id]?.dx -= fx; forces[nodes[i2].id]?.dy -= fy
-        }
-
-        // Integrate
-        for i in 0..<nodes.count {
-            guard nodes[i].id != draggedNodeID else { continue }
-            let dx = center.x - nodes[i].position.x
-            let dy = center.y - nodes[i].position.y
-            forces[nodes[i].id]?.dx += dx * centerGravity
-            forces[nodes[i].id]?.dy += dy * centerGravity
-            guard let f = forces[nodes[i].id] else { continue }
-            let mass = Double(nodes[i].connectionCount) * 0.5 + 1.0
-            nodes[i].velocity.dx = (nodes[i].velocity.dx + f.dx/mass) * damping
-            nodes[i].velocity.dy = (nodes[i].velocity.dy + f.dy/mass) * damping
-            let spd = nodes[i].velocity.dx*nodes[i].velocity.dx + nodes[i].velocity.dy*nodes[i].velocity.dy
-            if spd > 40*40 { let s = sqrt(spd); nodes[i].velocity.dx = nodes[i].velocity.dx/s*40; nodes[i].velocity.dy = nodes[i].velocity.dy/s*40 }
-            nodes[i].position.x += nodes[i].velocity.dx
-            nodes[i].position.y += nodes[i].velocity.dy
-        }
-
-        let still = nodes.allSatisfy { abs($0.velocity.dx) < 0.3 && abs($0.velocity.dy) < 0.3 }
-        if (still || tickCount > 300) && draggedNodeID == nil { stopSimulation() }
     }
 
-    deinit { displayLink?.invalidate() }
+    deinit {
+        simulationTask?.cancel()
+    }
 }
 
 // MARK: - Universe Graph View
@@ -289,6 +328,7 @@ struct UniverseGraphView: View {
     @StateObject private var engine = UniverseGraphEngine()
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.horizontalSizeClass) private var hSizeClass
+    @Environment(\.dismiss) private var dismiss
 
     @State private var selectedNodeID: String? = nil
     @State private var isPanning = false
@@ -304,7 +344,7 @@ struct UniverseGraphView: View {
     private var isIPad: Bool { UIDevice.current.userInterfaceIdiom == .pad }
 
     private var bgColor: Color {
-        colorScheme == .dark ? Color(hex: "#08080F") : Color(hex: "#F0F0F5")
+        colorScheme == .dark ? Theme.background : Color(hex: "#F0F0F5")
     }
 
     var body: some View {
@@ -467,7 +507,7 @@ struct UniverseGraphView: View {
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 7)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 .frame(width: 200)
 
                 Button {
@@ -479,7 +519,17 @@ struct UniverseGraphView: View {
                         .font(.system(size: 13, weight: .bold))
                         .foregroundColor(.primary)
                         .padding(8)
-                        .background(.regularMaterial, in: Circle())
+                        .background(.ultraThinMaterial, in: Circle())
+                }
+                
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundColor(.primary)
+                        .padding(8)
+                        .background(.ultraThinMaterial, in: Circle())
                 }
             }
             .padding(.top, 14)
@@ -510,7 +560,7 @@ struct UniverseGraphView: View {
                     if item.0 == "plus" { Divider().frame(width: 38) }
                 }
             }
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color.primary.opacity(0.08), lineWidth: 0.5))
             .padding(.leading, 14)
             .padding(.bottom, 24)
@@ -526,7 +576,7 @@ struct UniverseGraphView: View {
                 Spacer()
                 universeInspectorPanel(node: node)
                     .frame(width: inspectorWidth)
-                    .background(.regularMaterial)
+                    .background(.ultraThinMaterial)
                     .overlay(
                         Rectangle().fill(Color.primary.opacity(0.1)).frame(width: 0.5),
                         alignment: .leading
@@ -545,7 +595,7 @@ struct UniverseGraphView: View {
                 Spacer()
                 universeInspectorPanel(node: node)
                     .frame(maxWidth: .infinity)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
                     .padding(.horizontal, 8)
                     .padding(.bottom, 90)
                     .transition(.move(edge: .bottom).combined(with: .opacity))

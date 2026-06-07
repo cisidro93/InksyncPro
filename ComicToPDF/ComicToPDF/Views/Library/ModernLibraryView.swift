@@ -22,6 +22,7 @@ struct ModernLibraryView: View {
     @Binding var multiSelection: Set<UUID>
     @Binding var showingBatchMergeReorder: Bool
     @Binding var batchMergeItems: [ConvertedPDF]
+    @State private var showingUniverseGraph = false
     
     // Navigation Mode
     var useNavigationStack: Bool = false
@@ -340,8 +341,13 @@ struct ModernLibraryView: View {
                         SmartCollectionDetailView(rule: rule).environmentObject(conversionManager)
                     }
                 }
-                .sheet(item: $router.activeSheet) { item in destinationSheet(for: item) }
-
+                .sheet(item: $router.activeSheet) { item in 
+                    destinationSheet(for: item) 
+                }
+            .fullScreenCover(isPresented: $showingUniverseGraph) {
+                UniverseGraphView()
+                    .environmentObject(conversionManager)
+            }
             // Branding Overlay
             VStack {
                 HStack(spacing: 8) {
@@ -372,7 +378,8 @@ struct ModernLibraryView: View {
                 onImport: onFolderImport ?? {},
                 onSettings: { NotificationCenter.default.post(name: NSNotification.Name("ShowSettingsInspector"), object: nil) },
                 onVaultToggle: handleVaultToggle,
-                onSearch: { withAnimation(.spring) { isSearchActive.toggle() } }
+                onSearch: { withAnimation(.spring) { isSearchActive.toggle() } },
+                onUniverseGraph: { showingUniverseGraph = true }
             )
             .ignoresSafeArea(edges: .bottom)
             

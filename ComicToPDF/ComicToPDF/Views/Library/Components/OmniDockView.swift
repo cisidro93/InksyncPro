@@ -14,6 +14,7 @@ struct OmniDockView: View {
     var onSettings: () -> Void
     var onVaultToggle: () -> Void
     var onSearch: () -> Void
+    var onUniverseGraph: () -> Void
     
     @State private var offset: CGSize = .zero
     @State private var position: DockPosition = .bottom
@@ -172,6 +173,9 @@ struct OmniDockView: View {
             }
             Button(action: { AppRouter.shared.presentSheet(.stats) }) {
                 Label("Stats", systemImage: "chart.bar.fill")
+            }
+            Button(action: onUniverseGraph) {
+                Label("Universe Explorer", systemImage: "network")
             }
             Divider()
             Button(action: { withAnimation { isBatchMode.toggle() } }) {
