@@ -120,6 +120,7 @@ struct SettingsView: View {
             legalSection
             dangerZoneSection
         }
+        .formStyle(.grouped)
         .scrollContentBackground(.hidden)
         .background(Color.inkBackground.ignoresSafeArea())
         .listRowBackground(Color.inkSurface.opacity(0.4))

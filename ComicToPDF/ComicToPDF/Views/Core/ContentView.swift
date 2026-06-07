@@ -192,15 +192,15 @@ struct ContentView: View {
                 SettingsView()
                     .environmentObject(conversionManager)
                     .environmentObject(settingsManager)
-                    .navigationTitle("Settings")
-                    .navigationBarTitleDisplayMode(.inline)
                     .toolbar {
                         ToolbarItem(placement: .confirmationAction) {
                             Button("Done") { showingSettingsInspector = false }.bold()
                         }
                     }
             }
-            .presentationDetents([.medium, .large])
+            .presentationDetents([.large])
+            .presentationCornerRadius(32)
+            .presentationDragIndicator(.visible)
         }
         .environmentObject(router)
     }
