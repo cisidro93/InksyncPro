@@ -121,14 +121,9 @@ struct SettingsView: View {
             dangerZoneSection
         }
         .scrollContentBackground(.hidden)
-        .background(Color.clear)
+        .background(Color.inkBackground.ignoresSafeArea())
         .listRowBackground(Color.inkSurface.opacity(0.4))
         .navigationTitle("Preferences")
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button(action: { dismiss() }) { Text("Done").bold() }
-            }
-        }
         .onChange(of: settingsManager.conversionSettings) {
             settingsManager.save()
         }
