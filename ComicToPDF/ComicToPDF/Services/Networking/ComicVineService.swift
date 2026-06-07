@@ -91,7 +91,7 @@ actor ComicVineService {
         
         if let httpResponse = response as? HTTPURLResponse {
             if httpResponse.statusCode == 401 { throw ComicVineError.invalidAPIKey }
-            if httpResponse.statusCode == 420 { throw ComicVineError.rateLimited }
+            if httpResponse.statusCode == 420 || httpResponse.statusCode == 429 || httpResponse.statusCode == 403 { throw ComicVineError.rateLimited }
             if httpResponse.statusCode != 200 { throw ComicVineError.networkError(NSError(domain: "", code: httpResponse.statusCode, userInfo: nil)) }
         }
         
@@ -120,7 +120,7 @@ actor ComicVineService {
         
         if let httpResponse = response as? HTTPURLResponse {
             if httpResponse.statusCode == 401 { throw ComicVineError.invalidAPIKey }
-            if httpResponse.statusCode == 420 { throw ComicVineError.rateLimited }
+            if httpResponse.statusCode == 420 || httpResponse.statusCode == 429 || httpResponse.statusCode == 403 { throw ComicVineError.rateLimited }
             if httpResponse.statusCode != 200 { throw ComicVineError.networkError(NSError(domain: "", code: httpResponse.statusCode, userInfo: nil)) }
         }
         
@@ -141,7 +141,7 @@ actor ComicVineService {
         
         if let httpResponse = response as? HTTPURLResponse {
             if httpResponse.statusCode == 401 { throw ComicVineError.invalidAPIKey }
-            if httpResponse.statusCode == 420 { throw ComicVineError.rateLimited }
+            if httpResponse.statusCode == 420 || httpResponse.statusCode == 429 || httpResponse.statusCode == 403 { throw ComicVineError.rateLimited }
             if httpResponse.statusCode != 200 { throw ComicVineError.networkError(NSError(domain: "", code: httpResponse.statusCode, userInfo: nil)) }
         }
         
@@ -166,7 +166,7 @@ actor ComicVineService {
         
         if let httpResponse = response as? HTTPURLResponse {
             if httpResponse.statusCode == 401 { throw ComicVineError.invalidAPIKey }
-            if httpResponse.statusCode == 420 { throw ComicVineError.rateLimited }
+            if httpResponse.statusCode == 420 || httpResponse.statusCode == 429 || httpResponse.statusCode == 403 { throw ComicVineError.rateLimited }
             if httpResponse.statusCode != 200 { throw ComicVineError.networkError(NSError(domain: "", code: httpResponse.statusCode, userInfo: nil)) }
         }
         

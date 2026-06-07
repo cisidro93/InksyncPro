@@ -90,6 +90,7 @@ class BatchMetadataFetcher: ObservableObject {
                     if let cached = volumeCache[query] {
                         bestVolume = cached
                     } else {
+                        try? await Task.sleep(nanoseconds: 1_100_000_000) // 1.1s pacing
                         let results = try await ComicVineService.shared.searchVolumes(query: query, apiKey: apiKey)
                         bestVolume = results.first
                         if let v = bestVolume { volumeCache[query] = v }
@@ -99,6 +100,7 @@ class BatchMetadataFetcher: ObservableObject {
                         items[index].message = "Found Volume '\(bestVolume.name)'..."
                         
                         if deepFetch, !issueStr.isEmpty, let issueNum = Int(issueStr) {
+                            try? await Task.sleep(nanoseconds: 1_100_000_000) // 1.1s pacing
                             if let issue = try await ComicVineService.shared.getIssue(volumeID: bestVolume.id, issueNumber: "\(issueNum)", apiKey: apiKey) {
                                 applyFullMatch(to: index, volume: bestVolume, issue: issue, issueNum: issueNum)
                                 items[index].status = .matched
@@ -123,16 +125,22 @@ class BatchMetadataFetcher: ObservableObject {
                 items[index].status = .failed
                 items[index].message = error.localizedDescription
                 aggregatedErrors.append("Error on \(query): \(error.localizedDescription)")
+                
+                if let vineError = error as? ComicVineError, case .rateLimited = vineError {
+                    aggregatedErrors.append("Aborted remaining queue due to ComicVine rate limits / cluster block.")
+                    break
+                }
+            }
+            
+            // ✅ Incremental Save
+            let status = items[index].status
+            if status == .matched || status == .partialMatch {
+                if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == items[index].id }) {
+                    conversionManager.convertedPDFs[idx] = items[index].pdf
+                }
+                conversionManager.saveLibrary()
             }
         }
-        
-        // Save to conversion manager
-        for item in items where item.status == .matched || item.status == .partialMatch {
-            if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == item.id }) {
-                conversionManager.convertedPDFs[idx] = item.pdf
-            }
-        }
-        conversionManager.saveLibrary()
         
         currentPhase = .finished
     }
