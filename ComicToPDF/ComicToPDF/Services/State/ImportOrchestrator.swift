@@ -230,7 +230,8 @@ actor ImportOrchestrator {
                 let overrideMeta = overrides[url]
 
                 // ── Duplicate Detection ────────────────────────────────────────────────
-                let incomingSize = (try? fileManager.attributesOfItem(atPath: url.path)[.size] as? Int64) ?? 0
+                let attrs = try? fileManager.attributesOfItem(atPath: url.path)
+                let incomingSize: Int64 = (attrs?[.size] as? Int64) ?? 0
                 let compositeKey = "\(fileName)||\(incomingSize)"
 
                 // 1. Exact match: same filename AND same byte-count in library → true duplicate, skip
@@ -267,7 +268,13 @@ actor ImportOrchestrator {
                     }
                     
                     // Re-use incomingSize if known, otherwise fallback to destURL attribute
-                    let size = incomingSize > 0 ? incomingSize : autoreleasepool { ((try? fileManager.attributesOfItem(atPath: destURL.path)[.size] as? Int64) ?? 0) }
+                    let size: Int64
+                    if incomingSize > 0 {
+                        size = incomingSize
+                    } else {
+                        let destAttrs = try? fileManager.attributesOfItem(atPath: destURL.path)
+                        size = (destAttrs?[.size] as? Int64) ?? 0
+                    }
 
                     let cType = MetadataHeuristics.detectAsymmetricContentType(url: destURL)
 
