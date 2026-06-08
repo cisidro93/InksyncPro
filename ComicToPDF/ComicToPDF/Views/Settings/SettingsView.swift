@@ -51,7 +51,7 @@ struct SettingsView: View {
     @State private var isVerifyingMangaUpdates = false
     @State private var mangaUpdatesVerificationStatus: KeyStatus = .none
     
-    enum KeyStatus {
+    enum KeyStatus: Equatable {
         case none, verifying, success, invalid, localizedError(String)
         
         var title: String {
