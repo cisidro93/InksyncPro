@@ -124,16 +124,24 @@ class DropboxProvider: NSObject, CloudStorageProvider, ObservableObject {
                     }
                 }
                 // Grab the key window safely, falling back to the first available window
-                let activeScene = UIApplication.shared.connectedScenes
-                    .compactMap({ $0 as? UIWindowScene })
-                    .first(where: { $0.activationState == .foregroundActive })
-                    
-                let keyWindow = activeScene?.windows.first(where: { $0.isKeyWindow })
-                    ?? activeScene?.windows.first
-                    ?? UIApplication.shared.connectedScenes
-                        .compactMap({ $0 as? UIWindowScene })
-                        .flatMap({ $0.windows })
-                        .first
+                var activeScene: UIWindowScene? = nil
+                let windowScenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+                if let fg = windowScenes.first(where: { $0.activationState == .foregroundActive }) {
+                    activeScene = fg
+                }
+                
+                var keyWindow: UIWindow? = nil
+                if let active = activeScene {
+                    if let key = active.windows.first(where: { $0.isKeyWindow }) {
+                        keyWindow = key
+                    } else if let first = active.windows.first {
+                        keyWindow = first
+                    }
+                }
+                
+                if keyWindow == nil {
+                    keyWindow = windowScenes.flatMap { $0.windows }.first
+                }
                 guard let window = keyWindow else {
                     continuation.resume(throwing: NSError(
                         domain: "Dropbox", code: 2,

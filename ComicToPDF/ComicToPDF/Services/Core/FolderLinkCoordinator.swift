@@ -73,11 +73,22 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
 
     private static func topViewController() -> UIViewController? {
         let scenes = UIApplication.shared.connectedScenes
-        let windowScene = scenes.first(where: { $0.activationState == .foregroundActive }) as? UIWindowScene
-            ?? scenes.first as? UIWindowScene
-        guard let root = windowScene?.windows.first(where: { $0.isKeyWindow })?.rootViewController
-                      ?? windowScene?.windows.first?.rootViewController else { return nil }
-        var top = root
+        var windowScene: UIWindowScene? = nil
+        if let active = scenes.first(where: { $0.activationState == .foregroundActive }) as? UIWindowScene {
+            windowScene = active
+        } else if let first = scenes.first as? UIWindowScene {
+            windowScene = first
+        }
+        guard let windowScene = windowScene else { return nil }
+        
+        var root: UIViewController? = nil
+        if let keyRoot = windowScene.windows.first(where: { $0.isKeyWindow })?.rootViewController {
+            root = keyRoot
+        } else if let firstRoot = windowScene.windows.first?.rootViewController {
+            root = firstRoot
+        }
+        guard var top = root else { return nil }
+        
         while let presented = top.presentedViewController { top = presented }
         return top
     }
