@@ -98,6 +98,9 @@ class ConversionQueueManager: ObservableObject {
         statusMessage = "Cancelled"
         pendingGoDisplayNames.removeAll()   // ✅ Clear pending Go file list
         stopTimer()
+        #if os(iOS)
+        UIApplication.shared.isIdleTimerDisabled = false
+        #endif
     }
     
     private func processNext() {
@@ -106,6 +109,10 @@ class ConversionQueueManager: ObservableObject {
             activeItem = nil
             statusMessage = "Queue complete."
             stopTimer()
+            
+            #if os(iOS)
+            UIApplication.shared.isIdleTimerDisabled = false
+            #endif
             
             // Tell the main manager to rescan the library when the queue finishes, passing the last item's mode.
             Task { @MainActor in
@@ -119,6 +126,10 @@ class ConversionQueueManager: ObservableObject {
         }
         
         isProcessing = true
+        #if os(iOS)
+        UIApplication.shared.isIdleTimerDisabled = true
+        #endif
+        
         let item = queue.removeFirst()
         // ✅ Track this item's mode so we can tag the library after the queue empties
         lastCompletedMode = item.mode
@@ -129,6 +140,28 @@ class ConversionQueueManager: ObservableObject {
         // Spawn detached background task to prevent ANY main thread locking
         processingTask = Task.detached(priority: .userInitiated) { [weak self] in
             guard let self = self else { return }
+            
+            #if os(iOS)
+            let bgTask = await MainActor.run {
+                var task = UIBackgroundTaskIdentifier.invalid
+                task = UIApplication.shared.beginBackgroundTask {
+                    Task { @MainActor in
+                        if task != .invalid {
+                            UIApplication.shared.endBackgroundTask(task)
+                        }
+                    }
+                }
+                return task
+            }
+            defer {
+                let task = bgTask
+                Task { @MainActor in
+                    if task != .invalid {
+                        UIApplication.shared.endBackgroundTask(task)
+                    }
+                }
+            }
+            #endif
             
             do {
                 _ = try await ConversionEngine.shared.process(url: item.sourceURL, settings: item.settings)

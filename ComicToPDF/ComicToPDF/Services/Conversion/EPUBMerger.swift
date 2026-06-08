@@ -48,7 +48,7 @@ struct EPUBMerger: Sendable {
             <html xmlns="http://www.w3.org/1999/xhtml">
             <head>
                 <title>Cover</title>
-                <meta name="viewport" content="width=1000, height=1500, initial-scale=1.0"/>
+                <meta name="viewport" content="width=1000, height=1500"/>
                 <link rel="stylesheet" type="text/css" href="css/style.css"/>
             </head>
             <body>
@@ -92,7 +92,7 @@ struct EPUBMerger: Sendable {
                     <html xmlns="http://www.w3.org/1999/xhtml">
                     <head>
                         <title>Page \(globalPageIndex)</title>
-                        <meta name="viewport" content="width=1000, height=1500, initial-scale=1.0"/>
+                        <meta name="viewport" content="width=1000, height=1500"/>
                         <link rel="stylesheet" type="text/css" href="css/style.css"/>
                     </head>
                     <body>
@@ -284,7 +284,7 @@ struct EPUBMerger: Sendable {
                     <?xml version="1.0" encoding="UTF-8"?>
                     <!DOCTYPE html>
                     <html xmlns="http://www.w3.org/1999/xhtml">
-                    <head><title>Cover</title><meta name="viewport" content="width=1000, height=1500, initial-scale=1.0"/><link rel="stylesheet" type="text/css" href="css/style.css"/></head>
+                    <head><title>Cover</title><meta name="viewport" content="width=1000, height=1500"/><link rel="stylesheet" type="text/css" href="css/style.css"/></head>
                     <body><div class="svg-wrapper"><img src="images/\(coverName)" alt="Cover"/></div></body>
                     </html>
                 """
@@ -336,7 +336,7 @@ struct EPUBMerger: Sendable {
                         <?xml version="1.0" encoding="UTF-8"?>
                         <!DOCTYPE html>
                         <html xmlns="http://www.w3.org/1999/xhtml">
-                        <head><title>Page</title><meta name="viewport" content="width=1000, height=1500, initial-scale=1.0"/><link rel="stylesheet" type="text/css" href="css/style.css"/></head>
+                        <head><title>Page</title><meta name="viewport" content="width=1000, height=1500"/><link rel="stylesheet" type="text/css" href="css/style.css"/></head>
                         <body><div class="svg-wrapper"><img src="images/\(newName)" alt="Page"/></div></body>
                         </html>
                     """
@@ -383,60 +383,64 @@ struct EPUBMerger: Sendable {
         return newDir
     }
     
-    // Engine Component: Cover Art Sticker Placer 
     private func createBadgedCover(from originalData: Data, partNumber: Int, placement: CoverBadgePlacement) -> Data? {
         guard placement != .hidden, let uiImage = UIImage(data: originalData) else { return originalData }
         if partNumber <= 1 { return originalData } // Only badge Part 2+
         
         let size = uiImage.size
-        UIGraphicsBeginImageContextWithOptions(size, false, 1.0)
-        defer { UIGraphicsEndImageContext() }
-        uiImage.draw(at: .zero)
+        // 🚨 ENFORCE sRGB Color Space. Wide-color (P3) JPEGs will hard-brick Kindle E-Ink screens.
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1.0
+        format.preferredRange = .standard // Forces sRGB instead of device-dependent P3
         
-        let text = "PART \(partNumber)"
-        let fontSize = max(size.width * 0.05, 40)
-        let font = UIFont.systemFont(ofSize: fontSize, weight: .black)
-        
-        let strokeTextAttributes: [NSAttributedString.Key: Any] = [
-            .strokeColor: UIColor.black,
-            .foregroundColor: UIColor.white,
-            .strokeWidth: -6.0,
-            .font: font
-        ]
-        
-        let attrStr = NSAttributedString(string: text, attributes: strokeTextAttributes)
-        let textSize = attrStr.size()
-        
-        let badgePadding: CGFloat = 16
-        let boxWidth = textSize.width + (badgePadding * 2)
-        let boxHeight = textSize.height + (badgePadding * 2)
-        let offset: CGFloat = size.width * 0.03
-        
-        var boxOrigin = CGPoint.zero
-        switch placement {
-        case .topLeft: boxOrigin = CGPoint(x: offset, y: offset)
-        case .topRight: boxOrigin = CGPoint(x: size.width - boxWidth - offset, y: offset)
-        case .bottomLeft: boxOrigin = CGPoint(x: offset, y: size.height - boxHeight - offset)
-        case .bottomRight: boxOrigin = CGPoint(x: size.width - boxWidth - offset, y: size.height - boxHeight - offset)
-        case .center: boxOrigin = CGPoint(x: (size.width - boxWidth)/2, y: (size.height - boxHeight)/2)
-        case .hidden: return originalData
-        }
-        
-        let rect = CGRect(origin: boxOrigin, size: CGSize(width: boxWidth, height: boxHeight))
-        let path = UIBezierPath(roundedRect: rect, cornerRadius: 10)
-        
-        if let ctx = UIGraphicsGetCurrentContext() {
-            ctx.saveGState()
-            ctx.setShadow(offset: CGSize(width: 4, height: 4), blur: 8, color: UIColor.black.withAlphaComponent(0.6).cgColor)
+        let renderer = UIGraphicsImageRenderer(size: size, format: format)
+        let finalImage = renderer.image { ctx in
+            uiImage.draw(at: .zero)
+            
+            let text = "PART \(partNumber)"
+            let fontSize = max(size.width * 0.05, 40)
+            let font = UIFont.systemFont(ofSize: fontSize, weight: .black)
+            
+            let strokeTextAttributes: [NSAttributedString.Key: Any] = [
+                .strokeColor: UIColor.black,
+                .foregroundColor: UIColor.white,
+                .strokeWidth: -6.0,
+                .font: font
+            ]
+            
+            let attrStr = NSAttributedString(string: text, attributes: strokeTextAttributes)
+            let textSize = attrStr.size()
+            
+            let badgePadding: CGFloat = 16
+            let boxWidth = textSize.width + (badgePadding * 2)
+            let boxHeight = textSize.height + (badgePadding * 2)
+            let offset: CGFloat = size.width * 0.03
+            
+            var boxOrigin = CGPoint.zero
+            switch placement {
+            case .topLeft: boxOrigin = CGPoint(x: offset, y: offset)
+            case .topRight: boxOrigin = CGPoint(x: size.width - boxWidth - offset, y: offset)
+            case .bottomLeft: boxOrigin = CGPoint(x: offset, y: size.height - boxHeight - offset)
+            case .bottomRight: boxOrigin = CGPoint(x: size.width - boxWidth - offset, y: size.height - boxHeight - offset)
+            case .center: boxOrigin = CGPoint(x: (size.width - boxWidth)/2, y: (size.height - boxHeight)/2)
+            case .hidden: return
+            }
+            
+            let rect = CGRect(origin: boxOrigin, size: CGSize(width: boxWidth, height: boxHeight))
+            let path = UIBezierPath(roundedRect: rect, cornerRadius: 10)
+            
+            let cgCtx = ctx.cgContext
+            cgCtx.saveGState()
+            cgCtx.setShadow(offset: CGSize(width: 4, height: 4), blur: 8, color: UIColor.black.withAlphaComponent(0.6).cgColor)
             UIColor.systemRed.setFill()
             path.fill()
-            ctx.restoreGState()
+            cgCtx.restoreGState()
+            
+            let textOrigin = CGPoint(x: boxOrigin.x + badgePadding, y: boxOrigin.y + badgePadding)
+            attrStr.draw(at: textOrigin)
         }
         
-        let textOrigin = CGPoint(x: boxOrigin.x + badgePadding, y: boxOrigin.y + badgePadding)
-        attrStr.draw(at: textOrigin)
-        
-        return UIGraphicsGetImageFromCurrentImageContext()?.jpegData(compressionQuality: 0.9)
+        return finalImage.jpegData(compressionQuality: 0.9)
     }
 
     private func findImages(in directory: URL) throws -> [URL] {

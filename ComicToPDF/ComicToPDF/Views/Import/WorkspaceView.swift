@@ -42,6 +42,7 @@ struct WorkspaceView: View {
                     .background(Color.inkBorderVisible)
 
                 // ── Content — all views stay alive ────────────────────────────
+                ZStack {
                     InboxReviewView()
                         .workspaceVisible(mode == .inbox)
 

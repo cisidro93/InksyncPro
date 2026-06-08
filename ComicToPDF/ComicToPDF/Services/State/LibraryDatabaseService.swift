@@ -107,7 +107,7 @@ actor LibraryDatabaseService {
                         
                         let newIds = Set(pdfs.map { $0.id.uuidString })
                         for pdf in pdfs {
-                            var rec = LibraryFileRecord.from(pdf)
+                            let rec = LibraryFileRecord.from(pdf)
                             if let existing = existingRecords[rec.id] {
                                 // Ignore modifiedAt difference
                                 var tempRec = rec

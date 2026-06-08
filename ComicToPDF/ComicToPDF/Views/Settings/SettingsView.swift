@@ -148,7 +148,6 @@ struct SettingsView: View {
                 }
             }
         }
-        }
     }
     
     // MARK: - Extracted Sections

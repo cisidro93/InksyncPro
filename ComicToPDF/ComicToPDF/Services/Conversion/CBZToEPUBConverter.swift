@@ -26,9 +26,11 @@ struct CBZToEPUBConverter: Sendable {
         
         let originalImageURLs = extractResult.imageURLs
         
-        // Fix 3: `batches` is now `var` so we can drain it entry-by-entry during
-        // packaging, releasing each batch's Data the moment it is no longer needed.
-        var batches = try await processAndBatch(imageURLs: originalImageURLs, settings: settings, progress: progress)
+        let processedSandboxDir = fileManager.temporaryDirectory.appendingPathComponent("ProcessedSandbox_\(UUID().uuidString)")
+        try fileManager.createDirectory(at: processedSandboxDir, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: processedSandboxDir) }
+        
+        var batches = try await processAndBatch(imageURLs: originalImageURLs, settings: settings, sandboxDir: processedSandboxDir, progress: progress)
         let totalBatches = batches.count
         
         // Stage 3 & 4
@@ -36,9 +38,7 @@ struct CBZToEPUBConverter: Sendable {
         var globalFirstBatchCoverData: Data? = nil
         
         for batchIndex in 0..<totalBatches {
-            // Fix 3: Pull the batch out of the array and clear the slot immediately.
-            // When `batch` falls out of scope at the end of this iteration, its
-            // Data buffers are ARC-released — only 1 batch is in RAM at a time.
+            // Memory Release trick: Empty the current batch so the disk URLs drop out of scope soon
             let batch = batches[batchIndex]
             batches[batchIndex] = []
             
@@ -48,7 +48,7 @@ struct CBZToEPUBConverter: Sendable {
             if let coverOverride = coverOverrideData {
                 globalFirstBatchCoverData = coverOverride
             } else if batchIndex == 0, let firstImage = batch.first {
-                globalFirstBatchCoverData = firstImage.data
+                globalFirstBatchCoverData = try? Data(contentsOf: firstImage.processedDiskURL)
             }
             
             let batchDir = try await buildEPUBDirectory(
@@ -87,10 +87,10 @@ struct CBZToEPUBConverter: Sendable {
     }
 
     // Stage 2 — Process and batch images...
-    private func processAndBatch(imageURLs: [URL], settings: ConversionSettings, progress: @escaping @Sendable (Double) -> Void) async throws -> [[(data: Data, sourceURL: URL, index: Int)]] {
+    private func processAndBatch(imageURLs: [URL], settings: ConversionSettings, sandboxDir: URL, progress: @escaping @Sendable (Double) -> Void) async throws -> [[(processedDiskURL: URL, sourceURL: URL, index: Int)]] {
         Logger.shared.log("Stage 2 Start: Processing and Batching", category: "Converter")
-        var batches: [[(url: URL, index: Int, data: Data)]] = []
-        var currentBatch: [(url: URL, index: Int, data: Data)] = []
+        var batches: [[(processedDiskURL: URL, sourceURL: URL, index: Int)]] = []
+        var currentBatch: [(processedDiskURL: URL, sourceURL: URL, index: Int)] = []
         var currentBatchSize: Int64 = 0
         let limit = settings.splitMode.limit
         
@@ -139,11 +139,6 @@ struct CBZToEPUBConverter: Sendable {
                 
                 let needsProcessing = needsCompression || needsEnhancement || settings.optimizeForDevice || settings.trimMargins || isUnsafeFormat
                 
-                // Fix 2/4: appendToBatch now accepts itemSourceURL explicitly.
-                // Slices always produce JPEG data; passing a synthetic .jpg URL
-                // ensures buildEPUBDirectory sets media-type="image/jpeg" correctly
-                // even when the original spread was a PNG. Without this, Kindle
-                // receives a JPEG payload labelled as image/png → E013.
                 let appendToBatch = { (data: Data, indexToUse: Int, itemSourceURL: URL) in
                     let itemSize = Int64(data.count)
                     let overheadBuffer: Int64 = 500 * 1024
@@ -158,7 +153,11 @@ struct CBZToEPUBConverter: Sendable {
                         currentBatchSize = 0
                     }
                     
-                    currentBatch.append((url: itemSourceURL, index: indexToUse, data: data))
+                    // Immediately write data to disk instead of hoarding in memory
+                    let diskURL = sandboxDir.appendingPathComponent("processed_\(UUID().uuidString).jpg")
+                    try? data.write(to: diskURL)
+                    
+                    currentBatch.append((processedDiskURL: diskURL, sourceURL: itemSourceURL, index: indexToUse))
                     currentBatchSize += itemSize
                     globalImageIndex += 1
                 }
@@ -222,12 +221,12 @@ struct CBZToEPUBConverter: Sendable {
         
         Logger.shared.log("Stage 2 End: Built \(batches.count) batches", category: "Converter")
         return batches.map { chunk in
-            chunk.map { (data: $0.data, sourceURL: $0.url, index: $0.index) }
+            chunk.map { (processedDiskURL: $0.processedDiskURL, sourceURL: $0.sourceURL, index: $0.index) }
         }
     }
 
     // Stage 3 — Build EPUB directory structure...
-    private func buildEPUBDirectory(sourceURL: URL, batch: [(data: Data, sourceURL: URL, index: Int)], batchIndex: Int, totalBatches: Int, baseFilename: String, settings: ConversionSettings, coverData: Data?, isCoverOverrideActive: Bool = false) async throws -> URL {
+    private func buildEPUBDirectory(sourceURL: URL, batch: [(processedDiskURL: URL, sourceURL: URL, index: Int)], batchIndex: Int, totalBatches: Int, baseFilename: String, settings: ConversionSettings, coverData: Data?, isCoverOverrideActive: Bool = false) async throws -> URL {
         Logger.shared.log("Stage 3 Start: Building EPUB Directory for Part \(batchIndex + 1)", category: "Converter")
         let fileManager = FileManager.default
         let tempDir = fileManager.temporaryDirectory // Or pass it if needed, but we can generate a unique one
@@ -326,14 +325,18 @@ struct CBZToEPUBConverter: Sendable {
         for (localIndex, item) in batch.enumerated() {
             // ✅ IF COVER OVERRIDE IS ACTIVE, REPLACE THE FIRST IMAGE OF THE FIRST BATCH ENTIRELY
             let isFirstImageOfBook = (localIndex == 0 && batchIndex == 0)
-            let dataToWrite = (isFirstImageOfBook && isCoverOverrideActive) ? (coverData ?? item.data) : item.data
             
             let trueExt = (item.sourceURL.pathExtension.lowercased() == "png") ? "png" : "jpg"
             let safeExt = (trueExt == "jpg") ? "jpeg" : trueExt
             
             let newImageName = String(format: "image_%04d.%@", localIndex + 1, trueExt)
             let destURL = imagesDir.appendingPathComponent(newImageName)
-            try dataToWrite.write(to: destURL)
+            
+            if isFirstImageOfBook && isCoverOverrideActive, let coverData = coverData {
+                try? coverData.write(to: destURL)
+            } else {
+                try? fileManager.copyItem(at: item.processedDiskURL, to: destURL)
+            }
             
             let properties = isFirstImageOfBook ? "properties=\"cover-image\"" : ""
             let propString = properties.isEmpty ? "" : " \(properties)"

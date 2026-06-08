@@ -8,11 +8,13 @@ final class ConversionOrchestrator: Sendable {
     func convertComic(_ pdf: ConvertedPDF, mangaMode: Bool? = nil, manager: ConversionManager) async {
         #if os(iOS)
         let bgTask = await MainActor.run {
+            UIApplication.shared.isIdleTimerDisabled = true
             var task = UIBackgroundTaskIdentifier.invalid
             task = UIApplication.shared.beginBackgroundTask {
                 Task { @MainActor in
                     if task != .invalid {
                         UIApplication.shared.endBackgroundTask(task)
+                        UIApplication.shared.isIdleTimerDisabled = false
                     }
                 }
             }
@@ -23,6 +25,7 @@ final class ConversionOrchestrator: Sendable {
             Task { @MainActor in
                 if task != .invalid {
                     UIApplication.shared.endBackgroundTask(task)
+                    UIApplication.shared.isIdleTimerDisabled = false
                 }
             }
         }
@@ -73,6 +76,7 @@ final class ConversionOrchestrator: Sendable {
                 await MainActor.run { manager.processingStatus = "Extracting Images..." }
                 let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
                 try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
+                defer { try? fileManager.removeItem(at: tempDir) }
                 
                 let imageURLs = try await manager.extractImageURLs(from: pdf.url)
                 for (idx, url) in imageURLs.enumerated() {
@@ -91,7 +95,6 @@ final class ConversionOrchestrator: Sendable {
                 
                 if fileManager.fileExists(atPath: outputURL.path) { try fileManager.removeItem(at: outputURL) }
                 try await ZipUtilities.zipDirectory(tempDir, to: outputURL)
-                try fileManager.removeItem(at: tempDir)
                 
                 await MainActor.run { manager.isConverting = false; manager.conversionProgress = 1.0; manager.statusMessage = "✅ Conversion Complete!"; manager.scanLibrary() }
                 Logger.shared.log("Conversion Successful: \(pdf.name) -> CBZ", category: "Converter")
@@ -134,11 +137,13 @@ final class ConversionOrchestrator: Sendable {
         
         #if os(iOS)
         let bgTask = await MainActor.run {
+            UIApplication.shared.isIdleTimerDisabled = true
             var task = UIBackgroundTaskIdentifier.invalid
             task = UIApplication.shared.beginBackgroundTask {
                 Task { @MainActor in
                     if task != .invalid {
                         UIApplication.shared.endBackgroundTask(task)
+                        UIApplication.shared.isIdleTimerDisabled = false
                     }
                 }
             }
@@ -149,6 +154,7 @@ final class ConversionOrchestrator: Sendable {
             Task { @MainActor in
                 if task != .invalid {
                     UIApplication.shared.endBackgroundTask(task)
+                    UIApplication.shared.isIdleTimerDisabled = false
                 }
             }
         }
@@ -206,6 +212,7 @@ final class ConversionOrchestrator: Sendable {
                     let outputURL = docDir.appendingPathComponent(pName)
                     let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
                     try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
+                    defer { try? fileManager.removeItem(at: tempDir) }
                     
                     let imageURLs = try await manager.extractImageURLs(from: pdf.url)
                     for (idx, url) in imageURLs.enumerated() {
@@ -221,7 +228,6 @@ final class ConversionOrchestrator: Sendable {
                     }
                     if fileManager.fileExists(atPath: outputURL.path) { try fileManager.removeItem(at: outputURL) }
                     try await ZipUtilities.zipDirectory(tempDir, to: outputURL)
-                    try fileManager.removeItem(at: tempDir)
                     await MainActor.run { manager.scanLibrary() }
                 } else if jobSettings.outputPipeline == .proPanel {
                     await MainActor.run { manager.processingStatus = "Reading panels for \(pdf.name)..." }
@@ -256,11 +262,13 @@ final class ConversionOrchestrator: Sendable {
         
         #if os(iOS)
         let bgTask = await MainActor.run {
+            UIApplication.shared.isIdleTimerDisabled = true
             var task = UIBackgroundTaskIdentifier.invalid
             task = UIApplication.shared.beginBackgroundTask {
                 Task { @MainActor in
                     if task != .invalid {
                         UIApplication.shared.endBackgroundTask(task)
+                        UIApplication.shared.isIdleTimerDisabled = false
                     }
                 }
             }
@@ -271,6 +279,7 @@ final class ConversionOrchestrator: Sendable {
             Task { @MainActor in
                 if task != .invalid {
                     UIApplication.shared.endBackgroundTask(task)
+                    UIApplication.shared.isIdleTimerDisabled = false
                 }
             }
         }
@@ -364,13 +373,14 @@ final class ConversionOrchestrator: Sendable {
                             let fm = FileManager.default
                             let tempDir = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
                             try fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
+                            defer { try? fm.removeItem(at: tempDir) }
+                            
                             for (idx, url) in finalBatchImages.enumerated() {
                                 let pathExt = url.pathExtension.isEmpty ? "jpg" : url.pathExtension
                                 let dest = tempDir.appendingPathComponent(String(format: "page_%04d.%@", idx, pathExt))
                                 try fm.copyItem(at: url, to: dest)
                             }
                             try await ZipUtilities.zipDirectory(tempDir, to: finalOutputURL)
-                            try fm.removeItem(at: tempDir)
                         }
                         try await task.value
                     }
