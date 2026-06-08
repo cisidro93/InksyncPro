@@ -659,6 +659,72 @@ struct ConversionSettings: Codable, Equatable, Sendable {
         }
     }
     
+    private nonisolated(unsafe) static var _cachedAniListAPIToken: String? = nil
+    var aniListAPIToken: String {
+        get {
+            if let cached = Self._cachedAniListAPIToken { return cached }
+            if let data = KeychainHelper.standard.read(service: "com.antigravity.InksyncPro", account: "aniListAPIToken"),
+               let key = String(data: data, encoding: .utf8) {
+                Self._cachedAniListAPIToken = key
+                return key
+            }
+            return ""
+        }
+        set {
+            Self._cachedAniListAPIToken = newValue.isEmpty ? nil : newValue
+            if newValue.isEmpty {
+                KeychainHelper.standard.delete(service: "com.antigravity.InksyncPro", account: "aniListAPIToken")
+            } else {
+                let data = Data(newValue.utf8)
+                KeychainHelper.standard.save(data, service: "com.antigravity.InksyncPro", account: "aniListAPIToken")
+            }
+        }
+    }
+    
+    private nonisolated(unsafe) static var _cachedMangaUpdatesUsername: String? = nil
+    var mangaUpdatesUsername: String {
+        get {
+            if let cached = Self._cachedMangaUpdatesUsername { return cached }
+            if let data = KeychainHelper.standard.read(service: "com.antigravity.InksyncPro", account: "mangaUpdatesUsername"),
+               let value = String(data: data, encoding: .utf8) {
+                Self._cachedMangaUpdatesUsername = value
+                return value
+            }
+            return ""
+        }
+        set {
+            Self._cachedMangaUpdatesUsername = newValue.isEmpty ? nil : newValue
+            if newValue.isEmpty {
+                KeychainHelper.standard.delete(service: "com.antigravity.InksyncPro", account: "mangaUpdatesUsername")
+            } else {
+                let data = Data(newValue.utf8)
+                KeychainHelper.standard.save(data, service: "com.antigravity.InksyncPro", account: "mangaUpdatesUsername")
+            }
+        }
+    }
+    
+    private nonisolated(unsafe) static var _cachedMangaUpdatesPassword: String? = nil
+    var mangaUpdatesPassword: String {
+        get {
+            if let cached = Self._cachedMangaUpdatesPassword { return cached }
+            if let data = KeychainHelper.standard.read(service: "com.antigravity.InksyncPro", account: "mangaUpdatesPassword"),
+               let value = String(data: data, encoding: .utf8) {
+                Self._cachedMangaUpdatesPassword = value
+                return value
+            }
+            return ""
+        }
+        set {
+            Self._cachedMangaUpdatesPassword = newValue.isEmpty ? nil : newValue
+            if newValue.isEmpty {
+                KeychainHelper.standard.delete(service: "com.antigravity.InksyncPro", account: "mangaUpdatesPassword")
+            } else {
+                let data = Data(newValue.utf8)
+                KeychainHelper.standard.save(data, service: "com.antigravity.InksyncPro", account: "mangaUpdatesPassword")
+            }
+        }
+    }
+    
     // openRouterAPIKey, anthropicAPIKey, openAIAPIKey, geminiAPIKey removed.
     // All AI vendor integrations have been removed from InksyncPro.
     // Panel detection uses the on-device CoreML Neural Engine exclusively.

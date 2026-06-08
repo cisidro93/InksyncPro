@@ -132,7 +132,7 @@ actor AniListService {
         lastRequestTime = Date()
     }
     
-    func searchManga(query: String) async throws -> [AniListManga] {
+    func searchManga(query: String, apiToken: String? = nil) async throws -> [AniListManga] {
         let cleanedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !cleanedQuery.isEmpty else { return [] }
         
@@ -201,6 +201,11 @@ actor AniListService {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("InksyncPro/1.0", forHTTPHeaderField: "User-Agent")
+        
+        if let token = apiToken, !token.isEmpty {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        
         request.httpBody = postData
         
         let (data, response) = try await URLSession.shared.data(for: request)
@@ -220,5 +225,41 @@ actor AniListService {
             Logger.shared.log("AniList Decoding Error: \(error.localizedDescription)", category: "Metadata", type: .error)
             throw AniListError.decodingError(error)
         }
+    }
+    
+    func validateToken(_ token: String) async -> Bool {
+        guard let url = URL(string: "https://graphql.anilist.co") else { return false }
+        
+        // Simple GraphQL query checking current viewer details
+        let graphqlQuery = """
+        query {
+          Viewer {
+            id
+            name
+          }
+        }
+        """
+        
+        let payload: [String: Any] = ["query": graphqlQuery]
+        guard let postData = try? JSONSerialization.data(withJSONObject: payload, options: []) else { return false }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("InksyncPro/1.0", forHTTPHeaderField: "User-Agent")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.httpBody = postData
+        
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse {
+                // If it is 200, authentication succeeded. 
+                // Note: If token is valid, we get 200, even if the viewer object query has some restrictions,
+                // and if it's invalid we get a 400 or 401.
+                return httpResponse.statusCode == 200
+            }
+        } catch {}
+        return false
     }
 }

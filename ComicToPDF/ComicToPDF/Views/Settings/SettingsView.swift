@@ -43,15 +43,23 @@ struct SettingsView: View {
     @State private var isVerifying = false
     @State private var verificationStatus: KeyStatus = .none
     
+    // AniList API key verification state
+    @State private var isVerifyingAniList = false
+    @State private var aniListVerificationStatus: KeyStatus = .none
+    
+    // MangaUpdates verification state
+    @State private var isVerifyingMangaUpdates = false
+    @State private var mangaUpdatesVerificationStatus: KeyStatus = .none
+    
     enum KeyStatus {
         case none, verifying, success, invalid, localizedError(String)
         
         var title: String {
             switch self {
-            case .none: return "Verify Key"
+            case .none: return "Verify"
             case .verifying: return "Verifying..."
-            case .success: return "Key Validated"
-            case .invalid: return "Invalid Key"
+            case .success: return "Validated"
+            case .invalid: return "Invalid"
             case .localizedError(let msg): return msg
             }
         }
@@ -85,6 +93,39 @@ struct SettingsView: View {
             await MainActor.run {
                 isVerifying = false
                 verificationStatus = isValid ? .success : .invalid
+            }
+        }
+    }
+    
+    func verifyAniListToken() {
+        let token = settingsManager.conversionSettings.aniListAPIToken
+        guard !token.isEmpty else { return }
+        
+        isVerifyingAniList = true
+        aniListVerificationStatus = .verifying
+        
+        Task {
+            let isValid = await AniListService.shared.validateToken(token)
+            await MainActor.run {
+                isVerifyingAniList = false
+                aniListVerificationStatus = isValid ? .success : .invalid
+            }
+        }
+    }
+    
+    func verifyMangaUpdatesCredentials() {
+        let user = settingsManager.conversionSettings.mangaUpdatesUsername
+        let pass = settingsManager.conversionSettings.mangaUpdatesPassword
+        guard !user.isEmpty && !pass.isEmpty else { return }
+        
+        isVerifyingMangaUpdates = true
+        mangaUpdatesVerificationStatus = .verifying
+        
+        Task {
+            let isValid = await MangaUpdatesService.shared.validateCredentials(username: user, password: pass)
+            await MainActor.run {
+                isVerifyingMangaUpdates = false
+                mangaUpdatesVerificationStatus = isValid ? .success : .invalid
             }
         }
     }
@@ -580,6 +621,7 @@ struct SettingsView: View {
     @ViewBuilder
     private var integrationsSection: some View {
         Section {
+            // ComicVine
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
                     settingsIcon("server.rack", color: .indigo)
@@ -588,7 +630,6 @@ struct SettingsView: View {
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
                 }
-                
                 Text("To comply with ComicVine's commercial guidelines, please enter your free personal API key for metadata lookups.")
                     .font(.caption2)
                     .foregroundColor(.secondary)
@@ -597,7 +638,7 @@ struct SettingsView: View {
             if !settingsManager.conversionSettings.comicVineAPIKey.isEmpty {
                 Button(action: verifyAPIKey) {
                     HStack {
-                        Text(verificationStatus.title)
+                        Text(verificationStatus == .none ? "Verify ComicVine Key" : "ComicVine: \(verificationStatus.title)")
                         Spacer()
                         if isVerifying { ProgressView() } 
                         else if let icon = verificationStatus.icon { Image(systemName: icon).foregroundColor(verificationStatus.color) }
@@ -612,19 +653,15 @@ struct SettingsView: View {
                         .font(.caption).bold()
                         .foregroundColor(.primary)
                         .padding(.top, 4)
-                    
                     Text("1. Sign up for a free account at comicvine.gamespot.com")
                         .font(.caption2)
                         .foregroundColor(.secondary)
-                    
                     Text("2. Visit comicvine.gamespot.com/api/ to request an API Key")
                         .font(.caption2)
                         .foregroundColor(.secondary)
-                    
                     Text("3. Copy the 40-character key and paste it in the field above")
                         .font(.caption2)
                         .foregroundColor(.secondary)
-                    
                     Link("Open ComicVine API Page ↗", destination: URL(string: "https://comicvine.gamespot.com/api/") ?? URL(fileURLWithPath: "/"))
                         .font(.caption2)
                         .foregroundColor(.blue)
@@ -632,9 +669,93 @@ struct SettingsView: View {
                 }
                 .padding(.bottom, 4)
             } label: {
-                Label("API Key Instructions", systemImage: "info.circle")
+                Label("ComicVine API Key Instructions", systemImage: "info.circle")
                     .font(.caption)
                     .foregroundColor(.secondary)
+            }
+            
+            // AniList
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    settingsIcon("square.stack.3d.up.fill", color: .blue)
+                    SecureField("AniList Personal Token (Optional)", text: $settingsManager.conversionSettings.aniListAPIToken)
+                        .textContentType(.password)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                }
+                Text("Enter a personal developer token to authenticate requests and increase rate limits on AniList.")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+            
+            if !settingsManager.conversionSettings.aniListAPIToken.isEmpty {
+                Button(action: verifyAniListToken) {
+                    HStack {
+                        Text(aniListVerificationStatus == .none ? "Verify AniList Token" : "AniList: \(aniListVerificationStatus.title)")
+                        Spacer()
+                        if isVerifyingAniList { ProgressView() } 
+                        else if let icon = aniListVerificationStatus.icon { Image(systemName: icon).foregroundColor(aniListVerificationStatus.color) }
+                    }
+                }
+                .disabled(isVerifyingAniList)
+            }
+            
+            DisclosureGroup {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("How to get your personal token:")
+                        .font(.caption).bold()
+                        .foregroundColor(.primary)
+                        .padding(.top, 4)
+                    Text("1. Log in to anilist.co and navigate to Settings → Developer")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    Text("2. Create a new Client / Personal Access Token")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    Text("3. Copy the token and paste it in the field above")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    Link("Open AniList Developer Page ↗", destination: URL(string: "https://anilist.co/settings/developer") ?? URL(fileURLWithPath: "/"))
+                        .font(.caption2)
+                        .foregroundColor(.blue)
+                        .padding(.top, 2)
+                }
+                .padding(.bottom, 4)
+            } label: {
+                Label("AniList Token Instructions", systemImage: "info.circle")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            
+            // MangaUpdates
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    settingsIcon("books.vertical.fill", color: .purple)
+                    VStack(alignment: .leading, spacing: 4) {
+                        TextField("MangaUpdates Username (Optional)", text: $settingsManager.conversionSettings.mangaUpdatesUsername)
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.never)
+                        SecureField("MangaUpdates Password (Optional)", text: $settingsManager.conversionSettings.mangaUpdatesPassword)
+                            .textContentType(.password)
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.never)
+                    }
+                }
+                Text("Log in to MangaUpdates to search and fetch series details using your personal account profile.")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+            
+            if !settingsManager.conversionSettings.mangaUpdatesUsername.isEmpty && !settingsManager.conversionSettings.mangaUpdatesPassword.isEmpty {
+                Button(action: verifyMangaUpdatesCredentials) {
+                    HStack {
+                        Text(mangaUpdatesVerificationStatus == .none ? "Verify MangaUpdates Login" : "MangaUpdates: \(mangaUpdatesVerificationStatus.title)")
+                        Spacer()
+                        if isVerifyingMangaUpdates { ProgressView() } 
+                        else if let icon = mangaUpdatesVerificationStatus.icon { Image(systemName: icon).foregroundColor(mangaUpdatesVerificationStatus.color) }
+                    }
+                }
+                .disabled(isVerifyingMangaUpdates)
             }
 
             NavigationLink(destination: CloudConnectionSettingsView()) {

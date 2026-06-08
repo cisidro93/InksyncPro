@@ -11,6 +11,7 @@ struct MetadataSearchSheet: View {
     enum MetadataProvider: String, CaseIterable, Identifiable {
         case comicVine = "ComicVine"
         case aniList = "AniList"
+        case mangaUpdates = "MangaUpdates"
         case googleBooks = "Google Books"
         
         var id: String { rawValue }
@@ -21,6 +22,7 @@ struct MetadataSearchSheet: View {
     @State private var comicResults: [ComicVineVolume] = []
     @State private var bookResults: [GoogleBookItem] = []
     @State private var mangaResults: [AniListManga] = []
+    @State private var mangaUpdatesResults: [MangaUpdatesManga] = []
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var showingErrorAlert = false
@@ -30,7 +32,7 @@ struct MetadataSearchSheet: View {
             VStack {
                 // Search Bar
                 HStack {
-                    TextField(selectedProvider == .aniList ? "Manga Name (e.g. Naruto)" : "Series Name (e.g. Saga)", text: $query)
+                    TextField((selectedProvider == .aniList || selectedProvider == .mangaUpdates) ? "Manga Name (e.g. Naruto)" : "Series Name (e.g. Saga)", text: $query)
                         .textFieldStyle(RoundedBorderTextFieldStyle())
                         .onSubmit { performSearch() }
                     
@@ -143,6 +145,49 @@ struct MetadataSearchSheet: View {
                         }
                         .scrollContentBackground(.hidden)
                         
+                    case .mangaUpdates:
+                        List(mangaUpdatesResults) { manga in
+                            Button(action: { selectMangaUpdates(manga) }) {
+                                HStack {
+                                    if let urlStr = manga.image?.url?.thumb ?? manga.image?.url?.original,
+                                       let url = URL(string: urlStr) {
+                                        AsyncImage(url: url) { phase in
+                                            if let image = phase.image {
+                                                image.resizable().aspectRatio(contentMode: .fit)
+                                            } else {
+                                                Color.gray.frame(width: 55, height: 75)
+                                            }
+                                        }
+                                        .frame(width: 50, height: 75)
+                                        .cornerRadius(4)
+                                    } else {
+                                        Rectangle().fill(Color.gray).frame(width: 50, height: 75)
+                                            .overlay(Image(systemName: "text.book.closed").foregroundColor(.white))
+                                    }
+                                    
+                                    VStack(alignment: .leading) {
+                                        Text(manga.title).font(.headline)
+                                        HStack {
+                                            if let format = manga.type {
+                                                Text(format).font(.caption2).foregroundColor(.gray)
+                                            }
+                                            if let year = manga.year, !year.isEmpty {
+                                                Text("(\(year))").font(.caption2).foregroundColor(.gray)
+                                            }
+                                        }
+                                        if let genres = manga.genres, !genres.isEmpty {
+                                            Text(genres.map { $0.genre }.joined(separator: ", "))
+                                                .font(.caption2)
+                                                .foregroundColor(.secondary)
+                                                .lineLimit(1)
+                                        }
+                                    }
+                                }
+                            }
+                            .listRowBackground(Color.inkSurface.opacity(0.4))
+                        }
+                        .scrollContentBackground(.hidden)
+                        
                     case .comicVine:
                         List(comicResults) { volume in
                             Button(action: { selectVolume(volume) }) {
@@ -221,12 +266,30 @@ struct MetadataSearchSheet: View {
             }
             
         case .aniList:
+            let token = settingsManager.conversionSettings.aniListAPIToken
             Task {
                 do {
-                    mangaResults = try await AniListService.shared.searchManga(query: query)
+                    mangaResults = try await AniListService.shared.searchManga(query: query, apiToken: token)
                     await MainActor.run { isLoading = false }
                 } catch {
                     Logger.shared.log("AniList Search Failed: \(error.localizedDescription)", category: "Metadata", type: .error)
+                    await MainActor.run {
+                        isLoading = false
+                        errorMessage = error.localizedDescription
+                        showingErrorAlert = true
+                    }
+                }
+            }
+            
+        case .mangaUpdates:
+            let username = settingsManager.conversionSettings.mangaUpdatesUsername
+            let password = settingsManager.conversionSettings.mangaUpdatesPassword
+            Task {
+                do {
+                    mangaUpdatesResults = try await MangaUpdatesService.shared.searchManga(query: query, username: username, password: password)
+                    await MainActor.run { isLoading = false }
+                } catch {
+                    Logger.shared.log("MangaUpdates Search Failed: \(error.localizedDescription)", category: "Metadata", type: .error)
                     await MainActor.run {
                         isLoading = false
                         errorMessage = error.localizedDescription
@@ -304,6 +367,7 @@ struct MetadataSearchSheet: View {
     
     func selectManga(_ manga: AniListManga) {
         isLoading = true
+        let originalSeries = pdf.metadata.series // Capture original to identify siblings
         Task {
             await MainActor.run {
                 var newMeta = pdf.metadata
@@ -337,6 +401,9 @@ struct MetadataSearchSheet: View {
                 
                 conversionManager.updatePDFMetadata(pdf, metadata: newMeta)
                 
+                // Trigger background metadata propagation for sister volumes
+                intelligentFetchRelatedManga(for: manga, originalSeries: originalSeries)
+                
                 if let urlStr = manga.coverImage?.bestImageURL {
                     Task {
                         await fetchAndSaveCover(urlStr)
@@ -348,6 +415,90 @@ struct MetadataSearchSheet: View {
                 } else {
                     isLoading = false
                     dismiss()
+                }
+            }
+        }
+    }
+    
+    func selectMangaUpdates(_ manga: MangaUpdatesManga) {
+        isLoading = true
+        let originalSeries = pdf.metadata.series // Capture original to identify siblings
+        let username = settingsManager.conversionSettings.mangaUpdatesUsername
+        let password = settingsManager.conversionSettings.mangaUpdatesPassword
+        
+        Task {
+            do {
+                let details = try await MangaUpdatesService.shared.getSeries(id: manga.id, username: username, password: password)
+                
+                await MainActor.run {
+                    var newMeta = pdf.metadata
+                    newMeta.series = details.title
+                    newMeta.tags.append("MangaUpdates")
+                    newMeta.isManga = true
+                    
+                    if let type = details.type {
+                        newMeta.tags.append(type)
+                    }
+                    
+                    if let authors = details.authors {
+                        let writers = authors.filter { $0.type.lowercased() == "author" }.map { $0.name }.joined(separator: ", ")
+                        let artists = authors.filter { $0.type.lowercased() == "artist" }.map { $0.name }.joined(separator: ", ")
+                        newMeta.writer = writers.isEmpty ? nil : writers
+                        newMeta.author = writers.isEmpty ? nil : writers
+                        newMeta.penciller = artists.isEmpty ? nil : artists
+                    }
+                    
+                    if let publishers = details.publishers {
+                        let engPublishers = publishers.filter { $0.type.lowercased() == "english" }.map { $0.publisher_name }.joined(separator: ", ")
+                        let origPublishers = publishers.filter { $0.type.lowercased() == "original" }.map { $0.publisher_name }.joined(separator: ", ")
+                        newMeta.publisher = engPublishers.isEmpty ? (origPublishers.isEmpty ? nil : origPublishers) : engPublishers
+                    }
+                    
+                    if let desc = details.description {
+                        newMeta.summary = desc.replacingOccurrences(of: "<[^>]+>", with: "", options: String.CompareOptions.regularExpression, range: nil)
+                    }
+                    
+                    if let year = details.year, let y = Int(year) {
+                        var comps = DateComponents()
+                        comps.year = y
+                        comps.month = 1
+                        comps.day = 1
+                        newMeta.publicationDate = Calendar.current.date(from: comps)
+                    }
+                    
+                    newMeta.externalSeriesID = "mangaupdates:\(details.id)"
+                    
+                    if let issueString = extractIssueNumber(from: pdf.name) {
+                        newMeta.volume = issueString
+                        newMeta.issueNumber = issueString
+                        newMeta.title = "\(details.title) #\(issueString)"
+                    } else {
+                        newMeta.title = details.title
+                    }
+                    
+                    conversionManager.updatePDFMetadata(pdf, metadata: newMeta)
+                    
+                    intelligentFetchRelatedMangaUpdates(for: details, originalSeries: originalSeries)
+                    
+                    if let urlStr = details.image?.url?.original ?? details.image?.url?.thumb {
+                        Task {
+                            await fetchAndSaveCover(urlStr)
+                            await MainActor.run {
+                                isLoading = false
+                                dismiss()
+                            }
+                        }
+                    } else {
+                        isLoading = false
+                        dismiss()
+                    }
+                }
+            } catch {
+                Logger.shared.log("MangaUpdates Details Fetch Failed: \(error.localizedDescription)", category: "Metadata", type: .error)
+                await MainActor.run {
+                    isLoading = false
+                    errorMessage = error.localizedDescription
+                    showingErrorAlert = true
                 }
             }
         }
@@ -514,6 +665,127 @@ struct MetadataSearchSheet: View {
                 await MainActor.run {
                     managerInfo.updatePDFMetadata(relatedPdf, metadata: finalMeta)
                 }
+            }
+        }
+    }
+    
+    // MARK: - Intelligent Manga Series Fetch
+    // Silently updates metadata for all other files that shared the same original series grouping,
+    // avoiding unnecessary network calls by using the already-loaded AniList record.
+    private func intelligentFetchRelatedManga(for manga: AniListManga, originalSeries: String?) {
+        guard let oldSeriesName = originalSeries, !oldSeriesName.isEmpty else { return }
+        
+        let relatedFiles = conversionManager.convertedPDFs.filter {
+            $0.metadata.series == oldSeriesName && $0.id != pdf.id
+        }
+        guard !relatedFiles.isEmpty else { return }
+        
+        let managerInfo = conversionManager
+        
+        Task { @MainActor in
+            for relatedPdf in relatedFiles {
+                var newMeta = relatedPdf.metadata
+                
+                newMeta.series = manga.title.preferredTitle
+                newMeta.isManga = true
+                if !newMeta.tags.contains("AniList") {
+                    newMeta.tags.append("AniList")
+                }
+                
+                if let creators = manga.creatorNames {
+                    newMeta.writer = creators
+                    newMeta.author = creators
+                }
+                
+                if let desc = manga.description {
+                    newMeta.summary = desc.replacingOccurrences(of: "<[^>]+>", with: "", options: String.CompareOptions.regularExpression, range: nil)
+                }
+                
+                if let date = manga.startDate?.toDate {
+                    newMeta.publicationDate = date
+                }
+                
+                newMeta.externalSeriesID = "anilist:\(manga.id)"
+                
+                // Dynamically format title and issue numbers based on clean filename numbers
+                if let issueString = extractIssueNumber(from: relatedPdf.name) {
+                    newMeta.volume = issueString
+                    newMeta.issueNumber = issueString
+                    newMeta.title = "\(manga.title.preferredTitle) #\(issueString)"
+                } else {
+                    newMeta.title = manga.title.preferredTitle
+                }
+                
+                managerInfo.updatePDFMetadata(relatedPdf, metadata: newMeta)
+            }
+        }
+    }
+    
+    // MARK: - Intelligent MangaUpdates Series Fetch
+    // Silently updates metadata for all other files that shared the same original series grouping,
+    // avoiding unnecessary network calls by using the already-loaded MangaUpdates record.
+    private func intelligentFetchRelatedMangaUpdates(for details: MangaUpdatesSeriesDetails, originalSeries: String?) {
+        guard let oldSeriesName = originalSeries, !oldSeriesName.isEmpty else { return }
+        
+        let relatedFiles = conversionManager.convertedPDFs.filter {
+            $0.metadata.series == oldSeriesName && $0.id != pdf.id
+        }
+        guard !relatedFiles.isEmpty else { return }
+        
+        let managerInfo = conversionManager
+        
+        Task { @MainActor in
+            for relatedPdf in relatedFiles {
+                var newMeta = relatedPdf.metadata
+                
+                newMeta.series = details.title
+                newMeta.isManga = true
+                if !newMeta.tags.contains("MangaUpdates") {
+                    newMeta.tags.append("MangaUpdates")
+                }
+                
+                if let type = details.type, !newMeta.tags.contains(type) {
+                    newMeta.tags.append(type)
+                }
+                
+                if let authors = details.authors {
+                    let writers = authors.filter { $0.type.lowercased() == "author" }.map { $0.name }.joined(separator: ", ")
+                    let artists = authors.filter { $0.type.lowercased() == "artist" }.map { $0.name }.joined(separator: ", ")
+                    newMeta.writer = writers.isEmpty ? nil : writers
+                    newMeta.author = writers.isEmpty ? nil : writers
+                    newMeta.penciller = artists.isEmpty ? nil : artists
+                }
+                
+                if let publishers = details.publishers {
+                    let engPublishers = publishers.filter { $0.type.lowercased() == "english" }.map { $0.publisher_name }.joined(separator: ", ")
+                    let origPublishers = publishers.filter { $0.type.lowercased() == "original" }.map { $0.publisher_name }.joined(separator: ", ")
+                    newMeta.publisher = engPublishers.isEmpty ? (origPublishers.isEmpty ? nil : origPublishers) : engPublishers
+                }
+                
+                if let desc = details.description {
+                    newMeta.summary = desc.replacingOccurrences(of: "<[^>]+>", with: "", options: String.CompareOptions.regularExpression, range: nil)
+                }
+                
+                if let year = details.year, let y = Int(year) {
+                    var comps = DateComponents()
+                    comps.year = y
+                    comps.month = 1
+                    comps.day = 1
+                    newMeta.publicationDate = Calendar.current.date(from: comps)
+                }
+                
+                newMeta.externalSeriesID = "mangaupdates:\(details.id)"
+                
+                // Dynamically format title and issue numbers based on clean filename numbers
+                if let issueString = extractIssueNumber(from: relatedPdf.name) {
+                    newMeta.volume = issueString
+                    newMeta.issueNumber = issueString
+                    newMeta.title = "\(details.title) #\(issueString)"
+                } else {
+                    newMeta.title = details.title
+                }
+                
+                managerInfo.updatePDFMetadata(relatedPdf, metadata: newMeta)
             }
         }
     }
