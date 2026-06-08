@@ -19,7 +19,7 @@ struct BatchMetadataItem: Identifiable {
     }
 }
 
-struct SeriesGroup: Identifiable {
+struct BatchSeriesGroup: Identifiable {
     let id = UUID()
     var seriesName: String
     var items: [BatchMetadataItem]
@@ -28,7 +28,7 @@ struct SeriesGroup: Identifiable {
 
 @MainActor
 class BatchMetadataFetcher: ObservableObject {
-    @Published var seriesGroups: [SeriesGroup] = []
+    @Published var seriesGroups: [BatchSeriesGroup] = []
     
     // ✅ Phase Tracking
     enum Phase {
@@ -54,7 +54,7 @@ class BatchMetadataFetcher: ObservableObject {
         
         let sortedKeys = groupsDict.keys.sorted()
         self.seriesGroups = sortedKeys.map { key in
-            SeriesGroup(seriesName: key, items: groupsDict[key]!.sorted { $0.pdf.name < $1.pdf.name })
+            BatchSeriesGroup(seriesName: key, items: groupsDict[key]!.sorted { $0.pdf.name < $1.pdf.name })
         }
     }
     
@@ -450,3 +450,4 @@ struct BatchMetadataFetchView: View {
         }
     }
 }
+
