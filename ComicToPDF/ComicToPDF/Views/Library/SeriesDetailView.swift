@@ -216,198 +216,13 @@ struct SeriesDetailView: View {
     private func listView(scrollProxy: ScrollViewProxy) -> some View {
         List {
             Section(header: headerView) {
-                // â”€â”€ Continue Reading Smart Button â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-                if let nextIssue = nextUnreadIssue {
-                    Button {
-                        pdfToRead = nextIssue
-                    } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: "play.circle.fill")
-                                .font(.system(size: 28))
-                                .foregroundStyle(
-                                    LinearGradient(colors: [Theme.orange, Theme.red],
-                                                   startPoint: .topLeading, endPoint: .bottomTrailing)
-                                )
-                            
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Continue Reading")
-                                    .font(.system(size: 11, weight: .bold))
-                                    .foregroundColor(Theme.textSecondary)
-                                    .tracking(0.8)
-                                
-                                Text(nextIssue.name)
-                                    .font(.system(size: 14, weight: .semibold))
-                                    .foregroundColor(Theme.text)
-                                    .lineLimit(1)
-                                
-                                if let vol = nextIssue.metadata.volume, !vol.isEmpty,
-                                   let issue = nextIssue.metadata.issueNumber {
-                                    Text("Vol. \(vol) â€¢ Ch. \(issue) â€¢ Page \((nextIssue.metadata.lastReadPage ?? 0) + 1)")
-                                        .font(.system(size: 11, design: .rounded))
-                                        .foregroundColor(Theme.orange)
-                                } else {
-                                    Text("Page \((nextIssue.metadata.lastReadPage ?? 0) + 1) of \(nextIssue.pageCount)")
-                                        .font(.system(size: 11, design: .rounded))
-                                        .foregroundColor(Theme.orange)
-                                }
-                            }
-                            
-                            Spacer()
-                            
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundColor(Theme.textSecondary)
-                        }
-                        .padding(.vertical, 8)
-                        .padding(.horizontal, 12)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .fill(Theme.orange.opacity(0.1))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                        .stroke(Theme.orange.opacity(0.2), lineWidth: 1)
-                                )
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .listRowBackground(Color.clear)
-                    .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 8, trailing: 0))
-                }
-                
-                // â”€â”€ Missing Issue Banner â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-                if !missingIssues.isEmpty {
-                    MissingIssueBanner(gaps: missingIssues)
-                }
+                continueReadingSection
+                missingIssuesSection
                 
                 if showVolumeGrouping && hasVolumeData {
-                    // â”€â”€ Collapsible Volume Sections â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-                    ForEach(volumeGroups, id: \.key) { group in
-                        let isCollapsed = collapsedVolumes.contains(group.key)
-                        let progress = readingProgress(for: group.issues)
-                        let completed = completedCount(for: group.issues)
-                        
-                        // Volume Header (tap to collapse/expand)
-                        Button {
-                            withAnimation(.easeInOut(duration: 0.25)) {
-                                if isCollapsed {
-                                    collapsedVolumes.remove(group.key)
-                                } else {
-                                    collapsedVolumes.insert(group.key)
-                                }
-                            }
-                        } label: {
-
-                            VStack(spacing: 6) {
-                                HStack(spacing: 10) {
-                                    Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
-                                        .font(.system(size: 12, weight: .bold))
-                                        .foregroundColor(Theme.orange)
-                                        .frame(width: 16)
-                                    
-                                    Image(systemName: completed == group.issues.count ? "book.closed.fill" : "book.closed")
-                                        .font(.system(size: 14))
-                                        .foregroundColor(completed == group.issues.count ? .green : (group.key == "Ungrouped" ? Theme.textSecondary : Theme.blue))
-                                    
-                                    Text(group.key == "Ungrouped" ? "Ungrouped Issues" : "Volume \(group.key)")
-                                        .font(.system(size: 15, weight: .semibold))
-                                        .foregroundColor(Theme.text)
-                                    
-                                    Spacer()
-                                    
-                                    Text("\(completed)/\(group.issues.count)")
-                                        .font(.system(size: 12, weight: .medium, design: .rounded))
-                                        .foregroundColor(completed == group.issues.count ? .green : Theme.textSecondary)
-                                        .padding(.horizontal, 8)
-                                        .padding(.vertical, 3)
-                                        .background(Theme.text.opacity(0.08))
-                                        .clipShape(Capsule())
-                                }
-                                
-                                // Reading Progress Bar
-                                GeometryReader { geo in
-                                    ZStack(alignment: .leading) {
-                                        RoundedRectangle(cornerRadius: 2)
-                                            .fill(Theme.text.opacity(0.08))
-                                            .frame(height: 3)
-                                        
-                                        RoundedRectangle(cornerRadius: 2)
-                                            .fill(
-                                                progress >= 1.0
-                                                    ? AnyShapeStyle(Color.green)
-                                                    : AnyShapeStyle(LinearGradient(colors: [Theme.orange, Theme.red], startPoint: .leading, endPoint: .trailing))
-                                            )
-                                            .frame(width: geo.size.width * CGFloat(min(progress, 1.0)), height: 3)
-                                    }
-                                }
-                                .frame(height: 3)
-                            }
-                            .padding(.vertical, 6)
-                        }
-                        .buttonStyle(.plain)
-                        .listRowBackground(Theme.surface.opacity(0.5))
-                        .id("vol_\(group.key)")  // anchor for QuickVolumeJump scroll
-                        // Feature 3: Volume Omnibus Quick-Build (long-press)
-                        .contextMenu {
-                            Button {
-                                if fastBundleOmnibus {
-                                    // User opted-in to the background autobuilder
-                                    conversionManager.enqueueOmnibus(
-                                        name: "\(series.title) Vol. \(formattedVolumeKey(group.key))",
-                                        sourceFiles: group.issues
-                                    )
-                                } else {
-                                    // User prefers the manual control sheet
-                                    manualOmnibusBuildsCount += 1
-                                    let selectedIDs = Set(group.issues.map { $0.id })
-                                    
-                                    // Trigger the prompt instead of instantly showing if they hit the 3-build threshold
-                                    if manualOmnibusBuildsCount == 3 {
-                                        pendingConfigSelection = selectedIDs
-                                        mergeConfigSuggestedName = "\(series.title) Vol. \(formattedVolumeKey(group.key))"
-                                        showingOmnibusPrompt = true
-                                    } else {
-                                        selection = selectedIDs
-                                        mergeConfigSuggestedName = "\(series.title) Vol. \(formattedVolumeKey(group.key))"
-                                        showingMergeConfig = true
-                                    }
-                                }
-                            } label: {
-                                Label("Build Kindle Omnibus for Vol. \(formattedVolumeKey(group.key))", systemImage: "books.vertical.fill")
-                            }
-                            
-                            Button {
-                                withAnimation {
-                                    if isCollapsed {
-                                        collapsedVolumes.remove(group.key)
-                                    } else {
-                                        collapsedVolumes.insert(group.key)
-                                    }
-                                }
-                            } label: {
-                                Label(isCollapsed ? "Expand" : "Collapse", systemImage: isCollapsed ? "rectangle.expand.vertical" : "rectangle.compress.vertical")
-                            }
-                        }
-                        
-                        // Volume Contents (shown when expanded)
-                        if !isCollapsed {
-                            ForEach(group.issues) { pdf in
-                                issueRow(pdf)
-                            }
-                        }
-                    }
+                    volumeGroupingSection
                 } else {
-                    // â”€â”€ Flat List (original behavior) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-                    ForEach(localIssues) { pdf in
-                        issueRow(pdf)
-                    }
-                    .onMove { source, destination in
-                        if isCollection {
-                            localIssues.move(fromOffsets: source, toOffset: destination)
-                            if let colID = UUID(uuidString: series.id) {
-                                conversionManager.updateCollectionOrder(collectionID: colID, newOrderIDs: localIssues.map { $0.id })
-                            }
-                        }
-                    }
+                    flatListSection
                 }
             }
         }
@@ -419,7 +234,7 @@ struct SeriesDetailView: View {
         .onChange(of: conversionManager.collections) { localIssues = sortedIssues }
         .listStyle(InsetGroupedListStyle())
         .navigationTitle(series.title)
-        // â”€â”€ Volume Jump: ensure target is expanded then scroll to its anchor â”€â”€
+        // ── Volume Jump: ensure target is expanded then scroll to its anchor ──
         .onChange(of: jumpToVolume) { _, targetKey in
             guard let targetKey else { return }
             // 1. Expand the volume if it was collapsed
@@ -428,7 +243,7 @@ struct SeriesDetailView: View {
             }
             // 2. Scroll after the expand animation gives the List time to render
             Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 350_000_000) // 0.35 s \u2014 matches expand animation
+                try? await Task.sleep(nanoseconds: 350_000_000) // 0.35 s — matches expand animation
                 withAnimation(.easeInOut(duration: 0.4)) {
                     scrollProxy.scrollTo("vol_\(targetKey)", anchor: .top)
                 }
@@ -437,99 +252,283 @@ struct SeriesDetailView: View {
             }
         }
         .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                HStack(spacing: 16) {
-                    if isSelectionMode {
-                        Button(action: {
-                            withAnimation {
-                                if selection.count == localIssues.count {
-                                    selection.removeAll()
-                                } else {
-                                    selection = Set(localIssues.map { $0.id })
-                                }
-                            }
-                        }) {
-                            Text(selection.count == localIssues.count ? "Deselect All" : "Select All")
+            listViewToolbar
+        }
+    }
+
+    @ViewBuilder
+    private var continueReadingSection: some View {
+        if let nextIssue = nextUnreadIssue {
+            Button {
+                pdfToRead = nextIssue
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "play.circle.fill")
+                        .font(.system(size: 28))
+                        .foregroundStyle(
+                            LinearGradient(colors: [Theme.orange, Theme.red],
+                                           startPoint: .topLeading, endPoint: .bottomTrailing)
+                        )
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Continue Reading")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(Theme.textSecondary)
+                            .tracking(0.8)
+                        
+                        Text(nextIssue.name)
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(Theme.text)
+                            .lineLimit(1)
+                        
+                        if let vol = nextIssue.metadata.volume, !vol.isEmpty,
+                           let issue = nextIssue.metadata.issueNumber {
+                            Text("Vol. \(vol) • Ch. \(issue) • Page \((nextIssue.metadata.lastReadPage ?? 0) + 1)")
+                                .font(.system(size: 11, design: .rounded))
+                                .foregroundColor(Theme.orange)
+                        } else {
+                            Text("Page \((nextIssue.metadata.lastReadPage ?? 0) + 1) of \(nextIssue.pageCount)")
+                                .font(.system(size: 11, design: .rounded))
+                                .foregroundColor(Theme.orange)
                         }
                     }
                     
+                    Spacer()
+                    
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(Theme.textSecondary)
+                }
+                .padding(.vertical, 8)
+                .padding(.horizontal, 12)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Theme.orange.opacity(0.1))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .stroke(Theme.orange.opacity(0.2), lineWidth: 1)
+                        )
+                )
+            }
+            .buttonStyle(.plain)
+            .listRowBackground(Color.clear)
+            .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 8, trailing: 0))
+        }
+    }
+
+    @ViewBuilder
+    private var missingIssuesSection: some View {
+        if !missingIssues.isEmpty {
+            MissingIssueBanner(gaps: missingIssues)
+        }
+    }
+
+    @ViewBuilder
+    private var volumeGroupingSection: some View {
+        ForEach(volumeGroups, id: \.key) { group in
+            volumeGroupRow(group)
+        }
+    }
+
+    @ViewBuilder
+    private func volumeGroupRow(_ group: (key: String, issues: [ConvertedPDF])) -> some View {
+        let isCollapsed = collapsedVolumes.contains(group.key)
+        let progress = readingProgress(for: group.issues)
+        let completed = completedCount(for: group.issues)
+        
+        // Volume Header (tap to collapse/expand)
+        Button {
+            withAnimation(.easeInOut(duration: 0.25)) {
+                if isCollapsed {
+                    collapsedVolumes.remove(group.key)
+                } else {
+                    collapsedVolumes.insert(group.key)
+                }
+            }
+        } label: {
+            VStack(spacing: 6) {
+                HStack(spacing: 10) {
+                    Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(Theme.orange)
+                        .frame(width: 16)
+                    
+                    Image(systemName: completed == group.issues.count ? "book.closed.fill" : "book.closed")
+                        .font(.system(size: 14))
+                        .foregroundColor(completed == group.issues.count ? .green : (group.key == "Ungrouped" ? Theme.textSecondary : Theme.blue))
+                    
+                    Text(group.key == "Ungrouped" ? "Ungrouped Issues" : "Volume \(group.key)")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(Theme.text)
+                    
+                    Spacer()
+                    
+                    Text("\(completed)/\(group.issues.count)")
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundColor(completed == group.issues.count ? .green : Theme.textSecondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Theme.text.opacity(0.08))
+                        .clipShape(Capsule())
+                }
+                
+                // Reading Progress Bar
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(Theme.text.opacity(0.08))
+                            .frame(height: 3)
+                        
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(
+                                progress >= 1.0
+                                    ? AnyShapeStyle(Color.green)
+                                    : AnyShapeStyle(LinearGradient(colors: [Theme.orange, Theme.red], startPoint: .leading, endPoint: .trailing))
+                            )
+                            .frame(width: geo.size.width * CGFloat(min(progress, 1.0)), height: 3)
+                    }
+                }
+                .frame(height: 3)
+            }
+            .padding(.vertical, 6)
+        }
+        .buttonStyle(.plain)
+        .listRowBackground(Theme.surface.opacity(0.5))
+        .id("vol_\(group.key)")  // anchor for QuickVolumeJump scroll
+        // Feature 3: Volume Omnibus Quick-Build (long-press)
+        .contextMenu {
+            Button {
+                if fastBundleOmnibus {
+                    // User opted-in to the background autobuilder
+                    conversionManager.enqueueOmnibus(
+                        name: "\(series.title) Vol. \(formattedVolumeKey(group.key))",
+                        sourceFiles: group.issues
+                    )
+                } else {
+                    // User prefers the manual control sheet
+                    manualOmnibusBuildsCount += 1
+                    let selectedIDs = Set(group.issues.map { $0.id })
+                    
+                    // Trigger the prompt instead of instantly showing if they hit the 3-build threshold
+                    if manualOmnibusBuildsCount == 3 {
+                        pendingConfigSelection = selectedIDs
+                        mergeConfigSuggestedName = "\(series.title) Vol. \(formattedVolumeKey(group.key))"
+                        showingOmnibusPrompt = true
+                    } else {
+                        selection = selectedIDs
+                        mergeConfigSuggestedName = "\(series.title) Vol. \(formattedVolumeKey(group.key))"
+                        showingMergeConfig = true
+                    }
+                }
+            } label: {
+                Label("Build Kindle Omnibus for Vol. \(formattedVolumeKey(group.key))", systemImage: "books.vertical.fill")
+            }
+            
+            Button {
+                withAnimation {
+                    if isCollapsed {
+                        collapsedVolumes.remove(group.key)
+                    } else {
+                        collapsedVolumes.insert(group.key)
+                    }
+                }
+            } label: {
+                Label(isCollapsed ? "Expand" : "Collapse", systemImage: isCollapsed ? "rectangle.expand.vertical" : "rectangle.compress.vertical")
+            }
+        }
+        
+        // Volume Contents (shown when expanded)
+        if !isCollapsed {
+            ForEach(group.issues) { pdf in
+                issueRow(pdf)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var flatListSection: some View {
+        ForEach(localIssues) { pdf in
+            issueRow(pdf)
+        }
+        .onMove { source, destination in
+            if isCollection {
+                localIssues.move(fromOffsets: source, toOffset: destination)
+                if let colID = UUID(uuidString: series.id) {
+                    conversionManager.updateCollectionOrder(collectionID: colID, newOrderIDs: localIssues.map { $0.id })
+                }
+            }
+        }
+    }
+
+    @ToolbarContentBuilder
+    private var listViewToolbar: some ToolbarContent {
+        ToolbarItem(placement: .navigationBarTrailing) {
+            HStack(spacing: 16) {
+                if isSelectionMode {
                     Button(action: {
-                        let generator = UIImpactFeedbackGenerator(style: .medium)
-                        generator.impactOccurred()
                         withAnimation {
-                            isSelectionMode.toggle()
-                            selection.removeAll()
+                            if selection.count == localIssues.count {
+                                selection.removeAll()
+                            } else {
+                                selection = Set(localIssues.map { $0.id })
+                            }
                         }
                     }) {
-                        Text(isSelectionMode ? "Cancel" : "Select")
-                            .bold(isSelectionMode)
+                        Text(selection.count == localIssues.count ? "Deselect All" : "Select All")
                     }
-                    
-                    if !isSelectionMode {
+                }
+                
+                Button(action: {
+                    let generator = UIImpactFeedbackGenerator(style: .medium)
+                    generator.impactOccurred()
+                    withAnimation {
+                        isSelectionMode.toggle()
+                        selection.removeAll()
+                    }
+                }) {
+                    Text(isSelectionMode ? "Cancel" : "Select")
+                        .bold(isSelectionMode)
+                }
+                
+                if !isSelectionMode {
+                    Button {
+                        pendingRenameSeriesName = series.title
+                        showingRenameSeriesAlert = true
+                    } label: {
+                        Image(systemName: "pencil")
+                            .foregroundColor(.blue)
+                    }
+
+                    Button {
+                        withAnimation { showBookmarksOnly.toggle() }
+                    } label: {
+                        Image(systemName: showBookmarksOnly ? "bookmark.fill" : "bookmark")
+                            .foregroundColor(showBookmarksOnly ? Theme.orange : .blue)
+                    }
+
+                    // Volume Grouping Toggle (only visible when volume data exists)
+                    if hasVolumeData {
                         Button {
-                            pendingRenameSeriesName = series.title
-                            showingRenameSeriesAlert = true
+                            withAnimation { showVolumeGrouping.toggle() }
                         } label: {
-                            Image(systemName: "pencil")
-                                .foregroundColor(.blue)
+                            Image(systemName: showVolumeGrouping ? "rectangle.3.group.fill" : "rectangle.3.group")
+                                .foregroundColor(showVolumeGrouping ? Theme.orange : .blue)
                         }
+                    }
 
-                        Button {
-                            withAnimation { showBookmarksOnly.toggle() }
-                        } label: {
-                            Image(systemName: showBookmarksOnly ? "bookmark.fill" : "bookmark")
-                                .foregroundColor(showBookmarksOnly ? Theme.orange : .blue)
-                        }
-
-                        // Volume Grouping Toggle (only visible when volume data exists)
-                        if hasVolumeData {
-                            Button {
-                                withAnimation { showVolumeGrouping.toggle() }
-                            } label: {
-                                Image(systemName: showVolumeGrouping ? "rectangle.3.group.fill" : "rectangle.3.group")
-                                    .foregroundColor(showVolumeGrouping ? Theme.orange : .blue)
+                    Menu {
+                        Picker("Sort By", selection: $sortOption) {
+                            if isCollection {
+                                Text(SeriesSortOption.manual.rawValue).tag(SeriesSortOption.manual)
+                            }
+                            ForEach(SeriesSortOption.allCases.filter { $0 != .manual }) { option in
+                                Text(option.rawValue).tag(option)
                             }
                         }
-
-                        Menu {
-                            Picker("Sort By", selection: $sortOption) {
-                                if isCollection {
-                                    Text(SeriesSortOption.manual.rawValue).tag(SeriesSortOption.manual)
-                                }
-                                ForEach(SeriesSortOption.allCases.filter { $0 != .manual }) { option in
-                                    Text(option.rawValue).tag(option)
-                                }
-                            }
-                            
-                            if showVolumeGrouping && hasVolumeData {
-                                Divider()
-                                
-                                Button {
-                                    withAnimation {
-                                        collapsedVolumes = Set(volumeGroups.map { $0.key })
-                                    }
-                                } label: {
-                                    Label("Collapse All Volumes", systemImage: "rectangle.compress.vertical")
-                                }
-                                
-                                Button {
-                                    withAnimation {
-                                        collapsedVolumes.removeAll()
-                                    }
-                                } label: {
-                                    Label("Expand All Volumes", systemImage: "rectangle.expand.vertical")
-                                }
-                            }
-                            
+                        
+                        if showVolumeGrouping && hasVolumeData {
                             Divider()
                             
-                            // Feature 5: Smart List Template Export
-                            Button {
-                                exportSmartListTemplate()
-                            } label: {
-                                Label("Export as Smart List (.csv)", systemImage: "square.and.arrow.up")
-                            }
-                        } label: {
                             Image(systemName: "arrow.up.arrow.down")
                         }
                         
