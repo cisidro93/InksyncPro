@@ -580,12 +580,18 @@ struct SettingsView: View {
     @ViewBuilder
     private var integrationsSection: some View {
         Section {
-            HStack {
-                settingsIcon("server.rack", color: .indigo)
-                SecureField("ComicVine API Key", text: $settingsManager.conversionSettings.comicVineAPIKey)
-                    .textContentType(.password)
-                    .autocorrectionDisabled()
-                    .textInputAutocapitalization(.never)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    settingsIcon("server.rack", color: .indigo)
+                    SecureField("ComicVine API Key (Optional)", text: $settingsManager.conversionSettings.comicVineAPIKey)
+                        .textContentType(.password)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                }
+                
+                Text("To comply with ComicVine's commercial guidelines, please enter your free personal API key for metadata lookups.")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
             }
             
             if !settingsManager.conversionSettings.comicVineAPIKey.isEmpty {
@@ -600,8 +606,36 @@ struct SettingsView: View {
                 .disabled(isVerifying)
             }
             
-            Link("Get Free API Key", destination: URL(string: "https://comicvine.gamespot.com/api/") ?? URL(fileURLWithPath: "/"))
-                .font(.caption).foregroundColor(.blue)
+            DisclosureGroup {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("How to get your free key:")
+                        .font(.caption).bold()
+                        .foregroundColor(.primary)
+                        .padding(.top, 4)
+                    
+                    Text("1. Sign up for a free account at comicvine.gamespot.com")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    
+                    Text("2. Visit comicvine.gamespot.com/api/ to request an API Key")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    
+                    Text("3. Copy the 40-character key and paste it in the field above")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    
+                    Link("Open ComicVine API Page ↗", destination: URL(string: "https://comicvine.gamespot.com/api/") ?? URL(fileURLWithPath: "/"))
+                        .font(.caption2)
+                        .foregroundColor(.blue)
+                        .padding(.top, 2)
+                }
+                .padding(.bottom, 4)
+            } label: {
+                Label("API Key Instructions", systemImage: "info.circle")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
 
             NavigationLink(destination: CloudConnectionSettingsView()) {
                 HStack {
