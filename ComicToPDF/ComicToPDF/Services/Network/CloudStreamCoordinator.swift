@@ -122,7 +122,8 @@ final class CloudStreamCoordinator: ObservableObject {
         // ── A: Download to temp ───────────────────────────────────────────────────
         await MainActor.run { self.phase = .downloading(0.0) }
         let localCBR = try await CloudDownloadManager.shared.streamCloudFile(pdf: pdf)
-        let cbrFileSize = (try? FileManager.default.attributesOfItem(atPath: localCBR.path)[.size] as? Int64) ?? 0
+        let cbrAttrs = try? FileManager.default.attributesOfItem(atPath: localCBR.path)
+        let cbrFileSize: Int64 = (cbrAttrs?[.size] as? Int64) ?? 0
 
         // Guard: bail immediately on an empty file — avoids Unrar Error 2 on 0-byte bodies
         guard cbrFileSize > 0 else {

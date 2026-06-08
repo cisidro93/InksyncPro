@@ -307,7 +307,11 @@ struct EPUBMerger: Sendable {
             try fileManager.unzipItem(at: sourceBox, to: scratchDir)
             
             let images = try findImages(in: scratchDir)
-            let issueMB = images.compactMap { try? fileManager.attributesOfItem(atPath: $0.path)[.size] as? Int }.reduce(0, +)
+            let issueMB: Int = images.reduce(0) { sum, imgURL in
+                let imgAttrs = try? fileManager.attributesOfItem(atPath: imgURL.path)
+                let bytes: Int = (imgAttrs?[.size] as? Int) ?? 0
+                return sum + bytes
+            }
             
             if currentBundleBytes + issueMB > thresholdBytes && currentBundleBytes > 0 {
                 let builtEPUBURL = try sealCurrentEPUB(currentEpubDir, currentVolumeIndex, manifestItems, spineItems)

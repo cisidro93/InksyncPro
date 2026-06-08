@@ -275,7 +275,7 @@ struct SmartImportSheet: View {
                     name: vm.title,
                     url: sourceURL,
                     pageCount: vm.pageCount,
-                    fileSize: (try? FileManager.default.attributesOfItem(atPath: sourceURL.path)[.size] as? Int64) ?? 0,
+                    fileSize: sourceFileSize,
                     metadata: PDFMetadata(
                         title: vm.title,
                         series: vm.seriesName.isEmpty ? nil : vm.seriesName,
@@ -303,6 +303,11 @@ struct ImportFormView: View {
     // calls UIImage(contentsOfFile:) synchronously on the main thread. The .task
     // modifier runs on the cooperative thread pool and posts back to MainActor.
     @State private var coverImage: UIImage? = nil
+
+    private var sourceFileSize: Int64 {
+        let attrs = try? FileManager.default.attributesOfItem(atPath: vm.sourceURL.path)
+        return (attrs?[.size] as? Int64) ?? 0
+    }
 
     var body: some View {
         Group {
