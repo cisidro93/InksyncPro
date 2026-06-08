@@ -637,7 +637,7 @@ struct SettingsView: View {
         if !settingsManager.conversionSettings.comicVineAPIKey.isEmpty {
             Button(action: verifyAPIKey) {
                 HStack {
-                    Text(verificationStatus == .none ? "Verify ComicVine Key" : "ComicVine: \(verificationStatus.title)")
+                    Text(verificationStatus == KeyStatus.none ? "Verify ComicVine Key" : "ComicVine: \(verificationStatus.title)")
                     Spacer()
                     if isVerifying { ProgressView() } 
                     else if let icon = verificationStatus.icon { Image(systemName: icon).foregroundColor(verificationStatus.color) }
@@ -693,7 +693,7 @@ struct SettingsView: View {
         if !settingsManager.conversionSettings.aniListAPIToken.isEmpty {
             Button(action: verifyAniListToken) {
                 HStack {
-                    Text(aniListVerificationStatus == .none ? "Verify AniList Token" : "AniList: \(aniListVerificationStatus.title)")
+                    Text(aniListVerificationStatus == KeyStatus.none ? "Verify AniList Token" : "AniList: \(aniListVerificationStatus.title)")
                     Spacer()
                     if isVerifyingAniList { ProgressView() } 
                     else if let icon = aniListVerificationStatus.icon { Image(systemName: icon).foregroundColor(aniListVerificationStatus.color) }
@@ -754,7 +754,7 @@ struct SettingsView: View {
         if !settingsManager.conversionSettings.mangaUpdatesUsername.isEmpty && !settingsManager.conversionSettings.mangaUpdatesPassword.isEmpty {
             Button(action: verifyMangaUpdatesCredentials) {
                 HStack {
-                    Text(mangaUpdatesVerificationStatus == .none ? "Verify MangaUpdates Login" : "MangaUpdates: \(mangaUpdatesVerificationStatus.title)")
+                    Text(mangaUpdatesVerificationStatus == KeyStatus.none ? "Verify MangaUpdates Login" : "MangaUpdates: \(mangaUpdatesVerificationStatus.title)")
                     Spacer()
                     if isVerifyingMangaUpdates { ProgressView() } 
                     else if let icon = mangaUpdatesVerificationStatus.icon { Image(systemName: icon).foregroundColor(mangaUpdatesVerificationStatus.color) }
