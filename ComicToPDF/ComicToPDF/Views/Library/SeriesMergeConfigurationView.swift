@@ -8,6 +8,7 @@ struct SeriesMergeConfigurationView: View {
     
     // Initial configuration
     let sourceFiles: [ConvertedPDF]
+    let suggestedName: String?
     
     // State
     @State private var itemsToMerge: [ConvertedPDF]
@@ -17,6 +18,7 @@ struct SeriesMergeConfigurationView: View {
     
     init(sourceFiles: [ConvertedPDF], suggestedName: String? = nil) {
         self.sourceFiles = sourceFiles
+        self.suggestedName = suggestedName
         // Default sort by logical name (usually volume/issue number)
         _itemsToMerge = State(initialValue: sourceFiles.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending })
         if let name = suggestedName {
@@ -89,6 +91,14 @@ struct SeriesMergeConfigurationView: View {
                 }
             }
             .background(Color.inkBackground.ignoresSafeArea())
+            .onAppear {
+                itemsToMerge = sourceFiles.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+                if let name = suggestedName {
+                    outputName = name
+                } else {
+                    outputName = ""
+                }
+            }
             .navigationTitle("Configure Merge")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
