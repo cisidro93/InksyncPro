@@ -65,8 +65,31 @@ struct SeriesDetailView: View {
     @State private var showingRenameSeriesAlert = false
     @State private var pendingRenameSeriesName = ""
 
+    var freshIssues: [ConvertedPDF] {
+        if let folderUUID = UUID(uuidString: series.id) {
+            // It's a custom Collection folder
+            let sorted = conversionManager.convertedPDFs.filter { $0.collectionId == folderUUID }
+            if let collection = conversionManager.collections.first(where: { $0.id == folderUUID }),
+               let manualOrder = collection.manualSortOrder, !manualOrder.isEmpty {
+                let orderDict = Dictionary(uniqueKeysWithValues: manualOrder.enumerated().map { ($0.element, $0.offset) })
+                return sorted.sorted { pdf1, pdf2 in
+                    let idx1 = orderDict[pdf1.id] ?? Int.max
+                    let idx2 = orderDict[pdf2.id] ?? Int.max
+                    if idx1 == idx2 {
+                        return pdf1.name.localizedStandardCompare(pdf2.name) == .orderedAscending
+                    }
+                    return idx1 < idx2
+                }
+            }
+            return sorted
+        } else {
+            // It's a publisher series
+            return conversionManager.convertedPDFs.filter { $0.metadata.series == series.title && $0.collectionId == nil }
+        }
+    }
+
     var sortedIssues: [ConvertedPDF] {
-        var sorted = series.issues
+        var sorted = freshIssues
         
         switch sortOption {
         case .manual:
@@ -85,8 +108,7 @@ struct SeriesDetailView: View {
         case .titleDesc:
             sorted.sort { $0.name.localizedStandardCompare($1.name) == .orderedDescending }
         case .dateNewest:
-            sorted.removeAll() // We can't trust original appending sequence chronologically due to bulk processing imports
-            sorted = series.issues.reversed() // Fallback to inverted addition (approximating dateNewest for legacy items)
+            sorted = freshIssues.reversed() // Fallback to inverted addition (approximating dateNewest for legacy items)
         case .dateOldest:
             break // Native loop append order is Date Added
         case .sizeLargest:
@@ -393,7 +415,8 @@ struct SeriesDetailView: View {
             localIssues = sortedIssues
         }
         .onChange(of: sortOption) { localIssues = sortedIssues }
-        .onChange(of: conversionManager.convertedPDFs.count) { localIssues = sortedIssues }
+        .onChange(of: conversionManager.convertedPDFs) { localIssues = sortedIssues }
+        .onChange(of: conversionManager.collections) { localIssues = sortedIssues }
         .listStyle(InsetGroupedListStyle())
         .navigationTitle(series.title)
         // â”€â”€ Volume Jump: ensure target is expanded then scroll to its anchor â”€â”€
@@ -848,11 +871,11 @@ struct SeriesDetailView: View {
             }
         }
         .sheet(isPresented: $showingMergeConfig) {
-            let filesToMerge = series.issues.filter { selection.contains($0.id) }
+            let filesToMerge = freshIssues.filter { selection.contains($0.id) }
             SeriesMergeConfigurationView(sourceFiles: filesToMerge, suggestedName: mergeConfigSuggestedName)
         }
         .sheet(isPresented: $showBatchMetadataEditor) {
-            let selectedFiles = series.issues.filter { selection.contains($0.id) }
+            let selectedFiles = freshIssues.filter { selection.contains($0.id) }
             BatchMetadataEditorView(selectedPDFs: selectedFiles)
         }
         .sheet(item: $pdfToExport) { pdf in
@@ -861,7 +884,7 @@ struct SeriesDetailView: View {
         .sheet(item: $pdfToSearchMetadata) { pdf in
             MetadataSearchSheet(pdf: pdf)
         }
-        // âœ… Fix: pdfToDetails now correctly presents MediaDetailSheet in all non-nav-stack contexts.
+        // ✅ Fix: pdfToDetails now correctly presents MediaDetailSheet in all non-nav-stack contexts.
         .sheet(item: $pdfToDetails) { pdf in
             MediaDetailSheet(pdf: pdf) { action in
                 handleMediaDetailAction(action, for: pdf)
@@ -876,7 +899,7 @@ struct SeriesDetailView: View {
             CollectionEditorSheet { name, icon, color in
                 let cleanName = name.trimmingCharacters(in: .whitespaces)
                 if !cleanName.isEmpty {
-                    let selectedFiles = series.issues.filter { selection.contains($0.id) }
+                    let selectedFiles = freshIssues.filter { selection.contains($0.id) }
                     for pdf in selectedFiles {
                         conversionManager.assignToSeries(pdf, seriesName: cleanName)
                     }
@@ -918,7 +941,7 @@ struct SeriesDetailView: View {
                     conversionManager.collections[colIdx].name = newName
                 }
                 
-                for pdf in series.issues {
+                for pdf in freshIssues {
                     if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
                         conversionManager.convertedPDFs[idx].metadata.series = newName
                     }
@@ -954,7 +977,7 @@ struct SeriesDetailView: View {
                 
                 // Route them directly to background queue
                 if let pending = pendingConfigSelection {
-                    let files = series.issues.filter { pending.contains($0.id) }
+                    let files = freshIssues.filter { pending.contains($0.id) }
                     conversionManager.enqueueOmnibus(name: "\(series.title) Omnibus", sourceFiles: files)
                 }
                 pendingConfigSelection = nil
@@ -1094,11 +1117,11 @@ struct SeriesDetailView: View {
                         .foregroundStyle(Theme.text)
 
                     HStack(spacing: 6) {
-                        Text("\(series.count) ISSUES")
+                        Text("\(freshIssues.count) ISSUES")
                             .font(.system(size: 10, weight: .bold, design: .monospaced))
                             .foregroundStyle(Theme.textSecondary)
                             .tracking(0.8)
-                        if let publisher = series.issues.first?.metadata.publisher {
+                        if let publisher = freshIssues.first?.metadata.publisher {
                             Text(publisher)
                                 .font(.system(size: 10, weight: .semibold))
                                 .foregroundStyle(Color.inkBlue)
@@ -1376,7 +1399,7 @@ struct SeriesDetailView: View {
 
     private func loadHeaderCover() async {
         guard let coverIssueID = series.coverIssueID,
-              let issue = series.issues.first(where: { $0.id == coverIssueID }) else { return }
+              let issue = freshIssues.first(where: { $0.id == coverIssueID }) else { return }
         
         let key = issue.id.uuidString as NSString
         if let cached = await MainActor.run(body: { conversionManager.thumbnailCache.object(forKey: key) }) {
