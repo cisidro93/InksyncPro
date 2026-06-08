@@ -619,165 +619,172 @@ struct SettingsView: View {
     }
     
     @ViewBuilder
+    private var comicVineSettings: some View {
+        // ComicVine
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                settingsIcon("server.rack", color: .indigo)
+                SecureField("ComicVine API Key (Optional)", text: $settingsManager.conversionSettings.comicVineAPIKey)
+                    .textContentType(.password)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+            }
+            Text("To comply with ComicVine's commercial guidelines, please enter your free personal API key for metadata lookups.")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+        }
+        
+        if !settingsManager.conversionSettings.comicVineAPIKey.isEmpty {
+            Button(action: verifyAPIKey) {
+                HStack {
+                    Text(verificationStatus == .none ? "Verify ComicVine Key" : "ComicVine: \(verificationStatus.title)")
+                    Spacer()
+                    if isVerifying { ProgressView() } 
+                    else if let icon = verificationStatus.icon { Image(systemName: icon).foregroundColor(verificationStatus.color) }
+                }
+            }
+            .disabled(isVerifying)
+        }
+        
+        DisclosureGroup {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("How to get your free key:")
+                    .font(.caption).bold()
+                    .foregroundColor(.primary)
+                    .padding(.top, 4)
+                Text("1. Sign up for a free account at comicvine.gamespot.com")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                Text("2. Visit comicvine.gamespot.com/api/ to request an API Key")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                Text("3. Copy the 40-character key and paste it in the field above")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                Link("Open ComicVine API Page ↗", destination: URL(string: "https://comicvine.gamespot.com/api/") ?? URL(fileURLWithPath: "/"))
+                    .font(.caption2)
+                    .foregroundColor(.blue)
+                    .padding(.top, 2)
+            }
+            .padding(.bottom, 4)
+        } label: {
+            Label("ComicVine API Key Instructions", systemImage: "info.circle")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private var aniListSettings: some View {
+        // AniList
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                settingsIcon("square.stack.3d.up.fill", color: .blue)
+                SecureField("AniList Personal Token (Optional)", text: $settingsManager.conversionSettings.aniListAPIToken)
+                    .textContentType(.password)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+            }
+            Text("Enter a personal developer token to authenticate requests and increase rate limits on AniList.")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+        }
+        
+        if !settingsManager.conversionSettings.aniListAPIToken.isEmpty {
+            Button(action: verifyAniListToken) {
+                HStack {
+                    Text(aniListVerificationStatus == .none ? "Verify AniList Token" : "AniList: \(aniListVerificationStatus.title)")
+                    Spacer()
+                    if isVerifyingAniList { ProgressView() } 
+                    else if let icon = aniListVerificationStatus.icon { Image(systemName: icon).foregroundColor(aniListVerificationStatus.color) }
+                }
+            }
+            .disabled(isVerifyingAniList)
+        }
+        
+        DisclosureGroup {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("How to get your personal token:")
+                    .font(.caption).bold()
+                    .foregroundColor(.primary)
+                    .padding(.top, 4)
+                Text("1. Log in to anilist.co and navigate to Settings → Developer")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                Text("2. Create a new Client / Personal Access Token")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                Text("3. Copy the token and paste it in the field above")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                Link("Open AniList Developer Page ↗", destination: URL(string: "https://anilist.co/settings/developer") ?? URL(fileURLWithPath: "/"))
+                    .font(.caption2)
+                    .foregroundColor(.blue)
+                    .padding(.top, 2)
+            }
+            .padding(.bottom, 4)
+        } label: {
+            Label("AniList Token Instructions", systemImage: "info.circle")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private var mangaUpdatesSettings: some View {
+        // MangaUpdates
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                settingsIcon("books.vertical.fill", color: .purple)
+                VStack(alignment: .leading, spacing: 4) {
+                    TextField("MangaUpdates Username (Optional)", text: $settingsManager.conversionSettings.mangaUpdatesUsername)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                    SecureField("MangaUpdates Password (Optional)", text: $settingsManager.conversionSettings.mangaUpdatesPassword)
+                        .textContentType(.password)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                }
+            }
+            Text("Log in to MangaUpdates to search and fetch series details using your personal account profile.")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+        }
+        
+        if !settingsManager.conversionSettings.mangaUpdatesUsername.isEmpty && !settingsManager.conversionSettings.mangaUpdatesPassword.isEmpty {
+            Button(action: verifyMangaUpdatesCredentials) {
+                HStack {
+                    Text(mangaUpdatesVerificationStatus == .none ? "Verify MangaUpdates Login" : "MangaUpdates: \(mangaUpdatesVerificationStatus.title)")
+                    Spacer()
+                    if isVerifyingMangaUpdates { ProgressView() } 
+                    else if let icon = mangaUpdatesVerificationStatus.icon { Image(systemName: icon).foregroundColor(mangaUpdatesVerificationStatus.color) }
+                }
+            }
+            .disabled(isVerifyingMangaUpdates)
+        }
+    }
+
+    @ViewBuilder
     private var integrationsSection: some View {
         Section {
-            Group {
-                // ComicVine
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        settingsIcon("server.rack", color: .indigo)
-                        SecureField("ComicVine API Key (Optional)", text: $settingsManager.conversionSettings.comicVineAPIKey)
-                            .textContentType(.password)
-                            .autocorrectionDisabled()
-                            .textInputAutocapitalization(.never)
-                    }
-                    Text("To comply with ComicVine's commercial guidelines, please enter your free personal API key for metadata lookups.")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
-                
-                if !settingsManager.conversionSettings.comicVineAPIKey.isEmpty {
-                    Button(action: verifyAPIKey) {
-                        HStack {
-                            Text(verificationStatus == .none ? "Verify ComicVine Key" : "ComicVine: \(verificationStatus.title)")
-                            Spacer()
-                            if isVerifying { ProgressView() } 
-                            else if let icon = verificationStatus.icon { Image(systemName: icon).foregroundColor(verificationStatus.color) }
-                        }
-                    }
-                    .disabled(isVerifying)
-                }
-                
-                DisclosureGroup {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("How to get your free key:")
-                            .font(.caption).bold()
-                            .foregroundColor(.primary)
-                            .padding(.top, 4)
-                        Text("1. Sign up for a free account at comicvine.gamespot.com")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                        Text("2. Visit comicvine.gamespot.com/api/ to request an API Key")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                        Text("3. Copy the 40-character key and paste it in the field above")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                        Link("Open ComicVine API Page ↗", destination: URL(string: "https://comicvine.gamespot.com/api/") ?? URL(fileURLWithPath: "/"))
-                            .font(.caption2)
-                            .foregroundColor(.blue)
-                            .padding(.top, 2)
-                    }
-                    .padding(.bottom, 4)
-                } label: {
-                    Label("ComicVine API Key Instructions", systemImage: "info.circle")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-            
-            Group {
-                // AniList
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        settingsIcon("square.stack.3d.up.fill", color: .blue)
-                        SecureField("AniList Personal Token (Optional)", text: $settingsManager.conversionSettings.aniListAPIToken)
-                            .textContentType(.password)
-                            .autocorrectionDisabled()
-                            .textInputAutocapitalization(.never)
-                    }
-                    Text("Enter a personal developer token to authenticate requests and increase rate limits on AniList.")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
-                
-                if !settingsManager.conversionSettings.aniListAPIToken.isEmpty {
-                    Button(action: verifyAniListToken) {
-                        HStack {
-                            Text(aniListVerificationStatus == .none ? "Verify AniList Token" : "AniList: \(aniListVerificationStatus.title)")
-                            Spacer()
-                            if isVerifyingAniList { ProgressView() } 
-                            else if let icon = aniListVerificationStatus.icon { Image(systemName: icon).foregroundColor(aniListVerificationStatus.color) }
-                        }
-                    }
-                    .disabled(isVerifyingAniList)
-                }
-                
-                DisclosureGroup {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("How to get your personal token:")
-                            .font(.caption).bold()
-                            .foregroundColor(.primary)
-                            .padding(.top, 4)
-                        Text("1. Log in to anilist.co and navigate to Settings → Developer")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                        Text("2. Create a new Client / Personal Access Token")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                        Text("3. Copy the token and paste it in the field above")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                        Link("Open AniList Developer Page ↗", destination: URL(string: "https://anilist.co/settings/developer") ?? URL(fileURLWithPath: "/"))
-                            .font(.caption2)
-                            .foregroundColor(.blue)
-                            .padding(.top, 2)
-                    }
-                    .padding(.bottom, 4)
-                } label: {
-                    Label("AniList Token Instructions", systemImage: "info.circle")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-            
-            Group {
-                // MangaUpdates
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        settingsIcon("books.vertical.fill", color: .purple)
-                        VStack(alignment: .leading, spacing: 4) {
-                            TextField("MangaUpdates Username (Optional)", text: $settingsManager.conversionSettings.mangaUpdatesUsername)
-                                .autocorrectionDisabled()
-                                .textInputAutocapitalization(.never)
-                            SecureField("MangaUpdates Password (Optional)", text: $settingsManager.conversionSettings.mangaUpdatesPassword)
-                                .textContentType(.password)
-                                .autocorrectionDisabled()
-                                .textInputAutocapitalization(.never)
-                        }
-                    }
-                    Text("Log in to MangaUpdates to search and fetch series details using your personal account profile.")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
-                
-                if !settingsManager.conversionSettings.mangaUpdatesUsername.isEmpty && !settingsManager.conversionSettings.mangaUpdatesPassword.isEmpty {
-                    Button(action: verifyMangaUpdatesCredentials) {
-                        HStack {
-                            Text(mangaUpdatesVerificationStatus == .none ? "Verify MangaUpdates Login" : "MangaUpdates: \(mangaUpdatesVerificationStatus.title)")
-                            Spacer()
-                            if isVerifyingMangaUpdates { ProgressView() } 
-                            else if let icon = mangaUpdatesVerificationStatus.icon { Image(systemName: icon).foregroundColor(mangaUpdatesVerificationStatus.color) }
-                        }
-                    }
-                    .disabled(isVerifyingMangaUpdates)
-                }
+            comicVineSettings
+            aniListSettings
+            mangaUpdatesSettings
 
-                NavigationLink(destination: CloudConnectionSettingsView()) {
-                    HStack {
-                        settingsIcon("cloud.fill", color: .blue)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Cloud Storage")
-                            Text("Dropbox & Google Drive direct integration")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                        Spacer()
-                        // Live connection badges
-                        HStack(spacing: 4) {
-                            if DropboxProvider.shared.isConnected {
-                                Image(systemName: "checkmark.circle.fill").foregroundColor(.green).font(.caption)
-                            }
+            NavigationLink(destination: CloudConnectionSettingsView()) {
+                HStack {
+                    settingsIcon("cloud.fill", color: .blue)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Cloud Storage")
+                        Text("Dropbox & Google Drive direct integration")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    // Live connection badges
+                    HStack(spacing: 4) {
+                        if DropboxProvider.shared.isConnected {
+                            Image(systemName: "checkmark.circle.fill").foregroundColor(.green).font(.caption)
                         }
                     }
                 }
