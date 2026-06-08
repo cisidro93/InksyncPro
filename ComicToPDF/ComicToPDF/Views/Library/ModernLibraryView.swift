@@ -130,84 +130,97 @@ struct ModernLibraryView: View {
             }
     }
 
+    // MARK: - Notification Handlers
+    private func handleOpenMergedBook(_ notification: Notification) {
+        if let newBook = notification.object as? ConvertedPDF {
+            Task {
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                await MainActor.run { AppRouter.shared.presentFullScreen(.read(newBook)) }
+            }
+        }
+    }
+    
+    private func handleHandoffRequested(_ notification: Notification) {
+        if let userInfo = notification.userInfo,
+           let pdfID = userInfo["pdfID"] as? UUID,
+           let pageIndex = userInfo["pageIndex"] as? Int {
+            let targetPDF = cachedVisiblePDFs.first(where: { $0.id == pdfID })
+                ?? conversionManager.convertedPDFs.first(where: { $0.id == pdfID })
+            if let targetPDF = targetPDF {
+                var progress = ReaderProgressTracker.shared.progress(for: targetPDF.id) ?? ReadingProgress(pdfID: targetPDF.id, lastOpenedAt: Date(), currentPageIndex: pageIndex, totalPagesRead: 1, completionFraction: 0, readingSessionDates: [])
+                progress.currentPageIndex = pageIndex
+                ReaderProgressTracker.shared.update(progress)
+                Task {
+                    try? await Task.sleep(nanoseconds: 300_000_000)
+                    await MainActor.run { AppRouter.shared.presentFullScreen(.read(targetPDF)) }
+                }
+            }
+        }
+    }
+    
+    private func handleResumeLastRead(_ notification: Notification) {
+        if let mostRecent = ReaderProgressTracker.shared.recentSessions().first {
+            let pdf = cachedVisiblePDFs.first(where: { $0.id == mostRecent.pdfID })
+                ?? conversionManager.convertedPDFs.first(where: { $0.id == mostRecent.pdfID })
+            if let pdf = pdf {
+                let readingMode = notification.userInfo?["readingMode"] as? String
+                AppRouter.shared.presentFullScreen(.read(pdf, initialReadingMode: readingMode))
+            }
+        }
+    }
+    
+    private func handleOpenBook(_ notification: Notification) {
+        if let searchTitle = notification.userInfo?["searchTitle"] as? String {
+            let pdf = cachedVisiblePDFs.first(where: { $0.name.localizedCaseInsensitiveContains(searchTitle) || $0.metadata.title.localizedCaseInsensitiveContains(searchTitle) })
+            if let pdf = pdf {
+                AppRouter.shared.presentFullScreen(.read(pdf))
+            } else {
+                viewModel.searchText = searchTitle
+            }
+        }
+    }
+    
+    private func handleOPDSDownloadCompleted(_ note: Notification) {
+        if let fileURL = note.userInfo?["fileURL"] as? URL {
+            Task { await conversionManager.processImportedFiles(urls: [fileURL]) }
+        }
+    }
+    
+    private func handleInkTabDoubleTapLibrary(_ notification: Notification) {
+        HapticEngine.selection()
+        NotificationCenter.default.post(name: Notification.Name("Library_ScrollToTop"), object: nil)
+    }
+    
+    private func handleRequestSeriesRename(_ notification: Notification) {
+        guard let group = notification.object as? SeriesGroup else { return }
+        listRenameGroup = group
+        listRenamePendingName = group.title
+    }
+    
+    private func handleInksyncOpenShelf(_ notification: Notification) {
+        router.activeSheet = nil
+        router.activeFullScreen = nil
+    }
+    
+    private func handleManagedObjectContextDidSave(_ notification: Notification) {
+        InksyncProApp.sharedModelContainer.mainContext.processPendingChanges()
+        rebuildNativeCache()
+        viewModel.updateLibraryItemsCache(pdfs: cachedVisiblePDFs, collections: cachedCollections, sortOption: sortOption)
+    }
+
     // MARK: - Notification Shell (onReceive + debug overlay)
     @ViewBuilder
     private var shellWithNotifications: some View {
         shellWithChangeHandlers
-            .onReceive(NotificationCenter.default.publisher(for: .openMergedBook)) { notification in
-                if let newBook = notification.object as? ConvertedPDF {
-                    Task {
-                        try? await Task.sleep(nanoseconds: 500_000_000)
-                        await MainActor.run { AppRouter.shared.presentFullScreen(.read(newBook)) }
-                    }
-                }
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .handoffRequested)) { notification in
-                if let userInfo = notification.userInfo,
-                   let pdfID = userInfo["pdfID"] as? UUID,
-                   let pageIndex = userInfo["pageIndex"] as? Int {
-                    // Search cached list first; fall back to conversionManager for cold-launch
-                    let targetPDF = cachedVisiblePDFs.first(where: { $0.id == pdfID })
-                        ?? conversionManager.convertedPDFs.first(where: { $0.id == pdfID })
-                    if let targetPDF = targetPDF {
-                        var progress = ReaderProgressTracker.shared.progress(for: targetPDF.id) ?? ReadingProgress(pdfID: targetPDF.id, lastOpenedAt: Date(), currentPageIndex: pageIndex, totalPagesRead: 1, completionFraction: 0, readingSessionDates: [])
-                        progress.currentPageIndex = pageIndex
-                        ReaderProgressTracker.shared.update(progress)
-                        Task {
-                            try? await Task.sleep(nanoseconds: 300_000_000)
-                            await MainActor.run { AppRouter.shared.presentFullScreen(.read(targetPDF)) }
-                        }
-                    }
-                }
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .inkTabDoubleTapLibrary)) { _ in
-                HapticEngine.selection()
-                NotificationCenter.default.post(name: Notification.Name("Library_ScrollToTop"), object: nil)
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .requestSeriesRename)) { notification in
-                guard let group = notification.object as? SeriesGroup else { return }
-                listRenameGroup = group
-                listRenamePendingName = group.title
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .inksyncResumeLastRead)) { notification in
-                if let mostRecent = ReaderProgressTracker.shared.recentSessions().first {
-                    let pdf = cachedVisiblePDFs.first(where: { $0.id == mostRecent.pdfID })
-                        ?? conversionManager.convertedPDFs.first(where: { $0.id == mostRecent.pdfID })
-                    if let pdf = pdf {
-                        let readingMode = notification.userInfo?["readingMode"] as? String
-                        AppRouter.shared.presentFullScreen(.read(pdf, initialReadingMode: readingMode))
-                    }
-                }
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .inksyncOpenShelf)) { _ in
-                // Close any open sheets or full screen covers to reveal the library shelf
-                router.activeSheet = nil
-                router.activeFullScreen = nil
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .inksyncOpenBook)) { notification in
-                if let searchTitle = notification.userInfo?["searchTitle"] as? String {
-                    let pdf = cachedVisiblePDFs.first(where: { $0.name.localizedCaseInsensitiveContains(searchTitle) || $0.metadata.title.localizedCaseInsensitiveContains(searchTitle) })
-                    if let pdf = pdf {
-                        AppRouter.shared.presentFullScreen(.read(pdf))
-                    } else {
-                        // Just set the search text if not explicitly found, so user can see partial matches
-                        viewModel.searchText = searchTitle
-                    }
-                }
-            }
-            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("OPDSDownloadCompleted"))) { note in
-                // Item 9 — Background OPDS download completed; import into library
-                if let fileURL = note.userInfo?["fileURL"] as? URL {
-                    Task { await conversionManager.processImportedFiles(urls: [fileURL]) }
-                }
-            }
-            .onReceive(NotificationCenter.default.publisher(for: Notification.Name.NSManagedObjectContextDidSave)) { _ in
-                // Background context saves trigger NSManagedObjectContextDidSave.
-                // We force-merge changes on the main context and refresh the cached items.
-                InksyncProApp.sharedModelContainer.mainContext.processPendingChanges()
-                rebuildNativeCache()
-                viewModel.updateLibraryItemsCache(pdfs: cachedVisiblePDFs, collections: cachedCollections, sortOption: sortOption)
-            }
+            .onReceive(NotificationCenter.default.publisher(for: .openMergedBook), perform: handleOpenMergedBook)
+            .onReceive(NotificationCenter.default.publisher(for: .handoffRequested), perform: handleHandoffRequested)
+            .onReceive(NotificationCenter.default.publisher(for: .inkTabDoubleTapLibrary), perform: handleInkTabDoubleTapLibrary)
+            .onReceive(NotificationCenter.default.publisher(for: .requestSeriesRename), perform: handleRequestSeriesRename)
+            .onReceive(NotificationCenter.default.publisher(for: .inksyncResumeLastRead), perform: handleResumeLastRead)
+            .onReceive(NotificationCenter.default.publisher(for: .inksyncOpenShelf), perform: handleInksyncOpenShelf)
+            .onReceive(NotificationCenter.default.publisher(for: .inksyncOpenBook), perform: handleOpenBook)
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("OPDSDownloadCompleted")), perform: handleOPDSDownloadCompleted)
+            .onReceive(NotificationCenter.default.publisher(for: Notification.Name.NSManagedObjectContextDidSave), perform: handleManagedObjectContextDidSave)
             .overlay(alignment: .bottomTrailing) {
                 if settingsManager.conversionSettings.showEditorDebug {
                     LibraryDebugHUD(
@@ -702,22 +715,9 @@ struct ModernLibraryView: View {
                     tapAction: $tapAction,
                     selectedPDF: $selectedPDF,
                     onAction: { (action: LibraryRowAction, pdf: ConvertedPDF) in viewModel.handleDetailAction(action: action, for: pdf, conversionManager: conversionManager) },
-                    onImport: onFolderImport ?? { 
-                        ImportCoordinator.present(type: .unified) { urls in
-                            Task { await conversionManager.processImportedFiles(urls: urls) }
-                        }
-                    },
+                    onImport: onFolderImport ?? handleDefaultImport,
                     onFolderTap: { uuid in viewModel.currentFolderID = uuid },
-                    onDropApplied: {
-                        let livePDFs = settingsManager.isVaultUnlocked
-                            ? conversionManager.convertedPDFs
-                            : conversionManager.convertedPDFs.filter { !$0.isPrivate }
-                        viewModel.updateLibraryItemsCache(
-                            pdfs: livePDFs,
-                            collections: conversionManager.collections,
-                            sortOption: sortOption
-                        )
-                    },
+                    onDropApplied: handleDropApplied,
                     isScrolledPastHeader: $isScrolledPastHeader
                 )
             } else {
@@ -729,22 +729,9 @@ struct ModernLibraryView: View {
                     tapAction: $tapAction,
                     selectedPDF: $selectedPDF,
                     onAction: { (action: LibraryRowAction, pdf: ConvertedPDF) in viewModel.handleDetailAction(action: action, for: pdf, conversionManager: conversionManager) },
-                    onImport: onFolderImport ?? { 
-                        ImportCoordinator.present(type: .unified) { urls in
-                            Task { await conversionManager.processImportedFiles(urls: urls) }
-                        }
-                    },
+                    onImport: onFolderImport ?? handleDefaultImport,
                     onFolderTap: { uuid in viewModel.currentFolderID = uuid },
-                    onDropApplied: {
-                        let livePDFs = settingsManager.isVaultUnlocked
-                            ? conversionManager.convertedPDFs
-                            : conversionManager.convertedPDFs.filter { !$0.isPrivate }
-                        viewModel.updateLibraryItemsCache(
-                            pdfs: livePDFs,
-                            collections: conversionManager.collections,
-                            sortOption: sortOption
-                        )
-                    },
+                    onDropApplied: handleDropApplied,
                     isScrolledPastHeader: $isScrolledPastHeader
                 )
             }
@@ -1199,6 +1186,23 @@ struct ModernLibraryView: View {
             .padding(.vertical, 12)
             .background(.ultraThinMaterial)
             .foregroundColor(Theme.text)
+        }
+    }
+    
+    private func handleDropApplied() {
+        let livePDFs = settingsManager.isVaultUnlocked
+            ? conversionManager.convertedPDFs
+            : conversionManager.convertedPDFs.filter { !$0.isPrivate }
+        viewModel.updateLibraryItemsCache(
+            pdfs: livePDFs,
+            collections: conversionManager.collections,
+            sortOption: sortOption
+        )
+    }
+    
+    private func handleDefaultImport() {
+        ImportCoordinator.present(type: .unified) { urls in
+            Task { await conversionManager.processImportedFiles(urls: urls) }
         }
     }
 }
