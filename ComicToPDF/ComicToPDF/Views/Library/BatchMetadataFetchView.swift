@@ -280,7 +280,7 @@ class BatchMetadataFetcher: ObservableObject {
 
 struct BatchMetadataFetchView: View {
     let pdfs: [ConvertedPDF]
-    @Environment(\\.dismiss) var dismiss
+    @Environment(\.dismiss) var dismiss
     @EnvironmentObject var conversionManager: ConversionManager
     @EnvironmentObject var settingsManager: AppSettingsManager
     
