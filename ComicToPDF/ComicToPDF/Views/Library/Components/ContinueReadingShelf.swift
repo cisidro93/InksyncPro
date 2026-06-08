@@ -1,150 +1,259 @@
 import SwiftUI
 
 // ============================================================================
-// ContinueReadingShelf
+// PremiumHeroBanner (Replaces ContinueReadingShelf)
 // ============================================================================
-// Panels-style horizontal shelf showing in-progress reads at the top of the
-// library. Card sizes scale for iPhone vs iPad using horizontalSizeClass.
+// A stunning, high-impact Hero Banner for the top of the Library.
+// Displays the most recent in-progress books with a glassmorphism aesthetic,
+// glowing progress bars, and a premium edge-to-edge layout.
 // ============================================================================
 
 struct ContinueReadingShelf: View {
     let inProgress: [ConvertedPDF]
     let onTap: (ConvertedPDF) -> Void
-
+    
     @Environment(\.horizontalSizeClass) private var hSizeClass
-
-    private var h: CGFloat { hSizeClass == .regular ? 20 : 16 }  // edge padding
-
+    @State private var activeIndex: Int = 0
+    
+    // Show max 5 recent items to avoid cluttering the hero section
+    private var displayItems: [ConvertedPDF] { Array(inProgress.prefix(5)) }
+    
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            // Section header
-            HStack {
-                Image(systemName: "book.fill")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(Theme.orange.gradient)
-                Text("Continue Reading")
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundColor(Theme.text)
-                Spacer()
-                Text("\(inProgress.count)")
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-                    .foregroundColor(Theme.textSecondary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(Theme.surface, in: Capsule())
-            }
-            .padding(.horizontal, h)
-
-            // Horizontal card scroll
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
-                    ForEach(inProgress) { pdf in
-                        Button {
-                            onTap(pdf)
-                        } label: {
-                            ContinueReadingCard(pdf: pdf)
-                        }
-                        .buttonStyle(CellButtonStyle())
+        if !displayItems.isEmpty {
+            VStack(spacing: 12) {
+                // Subtle Header
+                HStack {
+                    Text("Continue Reading")
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .foregroundStyle(Theme.textSecondary)
+                        .textCase(.uppercase)
+                        .tracking(1.2)
+                    Spacer()
+                }
+                .padding(.horizontal, hSizeClass == .regular ? 24 : 16)
+                
+                // Hero Banner Carousel
+                TabView(selection: $activeIndex) {
+                    ForEach(Array(displayItems.enumerated()), id: \.element.id) { index, pdf in
+                        PremiumHeroCard(pdf: pdf)
+                            .tag(index)
+                            .onTapGesture { onTap(pdf) }
+                            .padding(.horizontal, hSizeClass == .regular ? 24 : 16)
                     }
                 }
-                .padding(.horizontal, h)
-                .padding(.bottom, 4)
+                .tabViewStyle(PageTabViewStyle(indexDisplayMode: .never))
+                .frame(height: hSizeClass == .regular ? 260 : 380)
+                
+                // Custom Dot Indicator
+                if displayItems.count > 1 {
+                    HStack(spacing: 6) {
+                        ForEach(0..<displayItems.count, id: \.self) { index in
+                            Circle()
+                                .fill(activeIndex == index ? Theme.purple : Theme.textTertiary)
+                                .frame(width: activeIndex == index ? 8 : 6, height: activeIndex == index ? 8 : 6)
+                                .animation(.spring(response: 0.3), value: activeIndex)
+                        }
+                    }
+                }
             }
+            .padding(.top, 16)
+            .padding(.bottom, 8)
         }
-        .padding(.top, 16)
-        .padding(.bottom, 8)
     }
 }
 
-// MARK: - Individual Card
+// MARK: - Premium Hero Card
 
-private struct ContinueReadingCard: View {
+private struct PremiumHeroCard: View {
     let pdf: ConvertedPDF
     @EnvironmentObject var conversionManager: ConversionManager
     @Environment(\.horizontalSizeClass) private var hSizeClass
     @State private var cover: UIImage? = nil
-
-    // iPad cards are 40% wider
-    private var cardW: CGFloat { hSizeClass == .regular ? 154 : 110 }
-    private var cardH: CGFloat { hSizeClass == .regular ? 231 : 165 }
-    private var ringSize: CGFloat { hSizeClass == .regular ? 34 : 26 }
-
+    
     private var progress: Double {
         Double(pdf.metadata.lastReadPage ?? 0) / Double(max(pdf.pageCount, 1))
     }
-
+    
     var body: some View {
-        ZStack(alignment: .bottomLeading) {
-            // Cover image
+        GeometryReader { geo in
             ZStack {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Theme.surface)
-
-                if let img = conversionManager.thumbnailCache.object(forKey: pdf.id.uuidString as NSString) ?? cover {
+                // 1. Background Blurred Cover
+                if let img = cover {
                     Image(uiImage: img)
                         .resizable()
                         .scaledToFill()
+                        .frame(width: geo.size.width, height: geo.size.height)
+                        .blur(radius: 40)
+                        .overlay(Color.black.opacity(0.4))
                         .clipped()
                 } else {
-                    Image(systemName: "book.closed.fill")
-                        .font(.system(size: hSizeClass == .regular ? 36 : 28))
-                        .foregroundStyle(Theme.textSecondary)
+                    Theme.surfaceElevated
                 }
-
-                // Spine shadow
-                HStack(spacing: 0) {
-                    LinearGradient(colors: [.black.opacity(0.35), .clear], startPoint: .leading, endPoint: .trailing)
-                        .frame(width: 20)
-                    Spacer()
-                }
-
-                // Bottom scrim
-                VStack(spacing: 0) {
-                    Spacer()
-                    LinearGradient(colors: [.clear, .black.opacity(0.75)], startPoint: .top, endPoint: .bottom)
-                        .frame(height: 70)
+                
+                // 2. Glassmorphism Container
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .fill(.ultraThinMaterial)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 24, style: .continuous)
+                            .stroke(
+                                LinearGradient(
+                                    colors: [Color.white.opacity(0.3), Color.white.opacity(0.05)],
+                                    startPoint: .topLeading, endPoint: .bottomTrailing
+                                ),
+                                lineWidth: 1
+                            )
+                    )
+                
+                // 3. Content Layout (iPad vs iPhone)
+                if hSizeClass == .regular {
+                    iPadLayout(geo: geo)
+                } else {
+                    iPhoneLayout(geo: geo)
                 }
             }
-            .frame(width: cardW, height: cardH)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .shadow(color: .black.opacity(0.25), radius: 6, y: 4)
-            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.white.opacity(0.12), lineWidth: 0.5))
-
-            // Bottom info
-            VStack(alignment: .leading, spacing: 3) {
-                Text(pdf.name)
-                    .font(.system(size: hSizeClass == .regular ? 12 : 10, weight: .bold))
-                    .foregroundColor(.white)
-                    .lineLimit(1)
-                    .shadow(radius: 2)
-                Text("\(Int(progress * 100))%")
-                    .font(.system(size: hSizeClass == .regular ? 11 : 9, weight: .medium, design: .rounded))
-                    .foregroundColor(.white.opacity(0.7))
-            }
-            .padding(.horizontal, 8)
-            .padding(.bottom, 8)
-
-            // Progress ring
-            ZStack {
-                Circle().stroke(.white.opacity(0.15), lineWidth: 3)
-                Circle()
-                    .trim(from: 0, to: CGFloat(progress))
-                    .stroke(progress >= 0.98 ? Color.green : Theme.orange,
-                            style: StrokeStyle(lineWidth: 3, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
-                    .animation(.spring(response: 0.5), value: progress)
-            }
-            .frame(width: ringSize, height: ringSize)
-            .padding(8)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .shadow(color: .black.opacity(0.3), radius: 20, y: 10)
         }
-        .frame(width: cardW, height: cardH)
         .task(id: pdf.id) {
             let key = pdf.id.uuidString as NSString
             if let cached = conversionManager.thumbnailCache.object(forKey: key) { cover = cached; return }
             guard let url = conversionManager.getCoverURL(for: pdf),
                   FileManager.default.fileExists(atPath: url.path) else { return }
             await ThumbnailGenerationQueue.shared.enqueue(pdf, manager: conversionManager)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .thumbnailGenerated)) { note in
+            if let id = note.userInfo?["id"] as? UUID, id == pdf.id,
+               let image = note.userInfo?["image"] as? UIImage {
+                self.cover = image
+            }
+        }
+    }
+    
+    // MARK: - iPad Wide Layout
+    @ViewBuilder
+    private func iPadLayout(geo: GeometryProxy) -> some View {
+        HStack(spacing: 24) {
+            // High-Res Crisp Cover
+            ZStack {
+                if let img = cover {
+                    Image(uiImage: img)
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    Image(systemName: "book.closed.fill")
+                        .font(.system(size: 40))
+                        .foregroundStyle(Theme.textSecondary)
+                }
+            }
+            .frame(width: 160, height: 220)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .shadow(color: .black.opacity(0.4), radius: 12, y: 6)
+            
+            // Info & Progress
+            VStack(alignment: .leading, spacing: 8) {
+                if let series = pdf.metadata.series, !series.isEmpty {
+                    Text(series.uppercased())
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .foregroundStyle(Theme.purple)
+                        .tracking(1.5)
+                }
+                
+                Text(pdf.name)
+                    .font(.system(size: 26, weight: .bold))
+                    .foregroundColor(.white)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                    .shadow(radius: 2)
+                
+                Spacer()
+                
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text("\(Int(progress * 100))% COMPLETED")
+                            .font(.system(size: 11, weight: .bold, design: .monospaced))
+                            .foregroundColor(.white.opacity(0.7))
+                        Spacer()
+                        Text("\(pdf.metadata.lastReadPage ?? 0) / \(pdf.pageCount)")
+                            .font(.system(size: 11, weight: .bold, design: .monospaced))
+                            .foregroundColor(.white.opacity(0.5))
+                    }
+                    
+                    // Glowing Neon Progress Bar
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Color.white.opacity(0.1)).frame(height: 6)
+                        Capsule()
+                            .fill(LinearGradient(colors: [Theme.purple, Color.pink], startPoint: .leading, endPoint: .trailing))
+                            .frame(width: geo.size.width * 0.4 * progress, height: 6) // Roughly 40% of geo width is the bar area
+                            .shadow(color: Theme.purple.opacity(0.8), radius: 8, y: 0)
+                    }
+                }
+            }
+            .padding(.vertical, 20)
+            Spacer()
+            
+            // Action Button
+            Image(systemName: "play.circle.fill")
+                .font(.system(size: 44))
+                .foregroundStyle(LinearGradient(colors: [Theme.purple, Color.pink], startPoint: .topLeading, endPoint: .bottomTrailing))
+                .shadow(color: Theme.purple.opacity(0.5), radius: 10, y: 4)
+                .padding(.trailing, 12)
+        }
+        .padding(20)
+    }
+    
+    // MARK: - iPhone Tall Layout
+    @ViewBuilder
+    private func iPhoneLayout(geo: GeometryProxy) -> some View {
+        VStack(spacing: 0) {
+            // Full Width Cover Top
+            ZStack(alignment: .bottom) {
+                if let img = cover {
+                    Image(uiImage: img)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(height: 240)
+                        .clipped()
+                } else {
+                    Rectangle().fill(Theme.surfaceElevated).frame(height: 240)
+                    Image(systemName: "book.closed.fill")
+                        .font(.system(size: 40))
+                        .foregroundStyle(Theme.textSecondary)
+                }
+                
+                // Gradient Fade to Body
+                LinearGradient(colors: [.clear, .black.opacity(0.8)], startPoint: .top, endPoint: .bottom)
+                    .frame(height: 100)
+            }
+            
+            // Info & Progress Bottom
+            VStack(alignment: .leading, spacing: 8) {
+                if let series = pdf.metadata.series, !series.isEmpty {
+                    Text(series.uppercased())
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .foregroundStyle(Theme.purple)
+                        .tracking(1.5)
+                }
+                
+                Text(pdf.name)
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundColor(.white)
+                    .lineLimit(2)
+                    .shadow(radius: 2)
+                
+                Spacer()
+                
+                // Glowing Neon Progress Bar
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.white.opacity(0.1)).frame(height: 6)
+                    Capsule()
+                        .fill(LinearGradient(colors: [Theme.purple, Color.pink], startPoint: .leading, endPoint: .trailing))
+                        .frame(width: max(0, (geo.size.width - 40) * progress), height: 6)
+                        .shadow(color: Theme.purple.opacity(0.8), radius: 8, y: 0)
+                }
+                .padding(.bottom, 4)
+            }
+            .padding(20)
+            .frame(height: 140)
         }
     }
 }

@@ -70,9 +70,16 @@ struct OmniDockView: View {
         .background(.ultraThinMaterial, in: Capsule())
         .overlay(
             Capsule()
-                .strokeBorder(Color.white.opacity(colorScheme == .dark ? 0.15 : 0.4), lineWidth: 0.5)
+                .strokeBorder(
+                    LinearGradient(
+                        colors: [Color.white.opacity(colorScheme == .dark ? 0.3 : 0.6), Color.white.opacity(0.05)],
+                        startPoint: .topLeading, endPoint: .bottomTrailing
+                    ), 
+                    lineWidth: 1
+                )
         )
-        .shadow(color: .black.opacity(0.3), radius: 20, x: 0, y: 10)
+        .shadow(color: Color.inkBlue.opacity(colorScheme == .dark ? 0.3 : 0.15), radius: 24, x: 0, y: 12)
+        .shadow(color: .black.opacity(0.3), radius: 10, x: 0, y: 5)
         .offset(offset)
         .gesture(dragGesture)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignmentForPosition)

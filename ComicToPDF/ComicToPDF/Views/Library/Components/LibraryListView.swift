@@ -49,6 +49,27 @@ struct LibraryListView: View {
                         .listRowSeparator(.hidden)
                         .listRowInsets(EdgeInsets())
 
+                        let inProgress: [ConvertedPDF] = items.compactMap {
+                            if case .single(let pdf) = $0 {
+                                let prog = Double(pdf.metadata.lastReadPage ?? 0) / Double(max(pdf.pageCount, 1))
+                                return (prog > 0.01 && prog < 0.98) ? pdf : nil
+                            }
+                            return nil
+                        }
+                        if !inProgress.isEmpty {
+                            ContinueReadingShelf(inProgress: Array(inProgress.prefix(10))) { pdf in
+                                if tapAction == .read {
+                                    onAction(.read, pdf)
+                                } else {
+                                    onAction(.convert, pdf)
+                                }
+                            }
+                            .environmentObject(conversionManager)
+                            .listRowInsets(EdgeInsets())
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                        }
+
                         ForEach(items) { item in
                             listRow(for: item)
                         }

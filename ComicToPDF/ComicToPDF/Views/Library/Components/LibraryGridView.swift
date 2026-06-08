@@ -75,21 +75,19 @@ struct LibraryGridView: View {
                                     }
                                 }
                                 .environmentObject(conversionManager)
-                                Divider().background(Theme.text.opacity(0.06)).padding(.horizontal, 16)
                             }
+
 
                             // Recently Added banner removed to declutter workspace
 
                             // ── Main grid ─────────────────────────────────
-                            let hPad: CGFloat = hSizeClass == .regular ? 24 : 12
-                            let colSpacing: CGFloat = hSizeClass == .regular ? 20 : 10
-                            // Increased column count (5 on iPad, 3 on iPhone) to make thumbnails
-                            // smaller and fit more series on screen simultaneously.
+                            let hPad: CGFloat = hSizeClass == .regular ? 16 : 10
+                            let colSpacing: CGFloat = hSizeClass == .regular ? 16 : 10
                             let colCount = hSizeClass == .regular ? 5 : 3
                             let columns = Array(repeating: GridItem(.flexible(), spacing: colSpacing), count: colCount)
                             LazyVGrid(
                                 columns: columns,
-                                spacing: hSizeClass == .regular ? 28 : 14
+                                spacing: hSizeClass == .regular ? 24 : 16
                             ) {
                                 ForEach(items) { item in
                                     switch item {
