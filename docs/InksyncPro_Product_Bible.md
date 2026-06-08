@@ -1,6 +1,6 @@
 # InksyncPro Product Bible
 
-**Last Updated:** June 3, 2026
+**Last Updated:** June 7, 2026
 
 ---
 
@@ -18,11 +18,13 @@ The user experience philosophy: **the app should feel like a beautifully crafted
 
 2. **Robust Data Integrity & Sentinel Security:** Cloud-first, non-destructive architecture with strict lifecycle management. Features an `InstallGuardService` utilizing a non-synced Sentinel file (`.inksync_install_sentinel_v1`) stored in the local `Application Support` directory to accurately detect clean installations versus app updates. Wipes ghost files synced by iCloud in the public `Documents` directory upon fresh installs, avoiding Vault-based copy mechanisms that cause storage bloat and compiler debt.
 
-3. **High-Performance Architecture:** Swift 6 concurrency compliance, background-threaded extraction, and robust memory management preventing OOM crashes. Uses `CGImageSourceCreateThumbnailAtIndex` for professional image downsampling during the I/O read phase, a custom LRU `NSCache` with `maxCacheSize = 7` to restrict the memory footprint to ~15MB, and asynchronous prefetching tasks (`±2` pages around the active page) to ensure seamless reading performance.
+3. **High-Performance Architecture:** Swift 6 concurrency compliance, background-threaded extraction, and robust memory management preventing OOM crashes. The conversion pipeline utilizes `O(1)` memory disk streaming for massive `.cbz` payloads to bypass `JetsamEvent` kills. The reader uses `CGImageSourceCreateThumbnailAtIndex` for professional image downsampling during the I/O read phase, a custom LRU `NSCache` with `maxCacheSize = 7` to restrict the memory footprint to ~15MB, and asynchronous prefetching tasks (`±2` pages around the active page) to ensure seamless reading performance.
 
-4. **Crash-Free Import & Conversion Pipeline:** Every import operation opens security-scoped resource access explicitly before touching user-selected files. Heavy I/O (ZIP packaging, RAR extraction) is always moved off the Swift cooperative thread pool via `DispatchQueue.global` + `withCheckedThrowingContinuation`. All temporary directories are cleaned up with `defer` regardless of outcome.
+4. **Crash-Free Import & Conversion Pipeline:** Every import operation opens security-scoped resource access explicitly before touching user-selected files. Heavy I/O (ZIP packaging, RAR extraction) is always moved off the Swift cooperative thread pool via `DispatchQueue.global` + `withCheckedThrowingContinuation`. All temporary directories are strictly cleaned up with `defer` regardless of outcome, preventing SSD bloat and subsequent I/O failures.
 
-5. **Professional Workflows:** Deep Zettelkasten integration, annotation markdown export, and precision extraction tools that elevate comic reading to professional study and research.
+5. **Diagnostic Telemetry Engine:** `MemoryMonitor` runs a persistent 2-second heartbeat checking `os_proc_available_memory()`. If RAM drops below critical thresholds, it triggers aggressive cache purges. Full crash analytics and memory telemetry are logged locally to `.ips` and `.json` formats for debugging without compromising user privacy.
+
+6. **Professional Workflows:** Deep Zettelkasten integration, annotation markdown export, and precision extraction tools that elevate comic reading to professional study and research.
 
 ---
 
@@ -102,7 +104,7 @@ img { display: block; width: 100%; height: 100%; }
 /* object-position: center  — not in Kindle CSS subset */
 ```
 
-**Page sizing** is controlled entirely by `<meta name="viewport" content="width=1980, height=2640"/>` and the `rendition:layout pre-paginated` OPF metadata — never by `@page { size }`.
+**Page sizing** is controlled entirely by `<meta name="viewport" content="width=1980, height=2640"/>` and the `rendition:layout pre-paginated` OPF metadata — never by `@page { size }`. *Critically, viewport tags must NOT include `initial-scale=1.0`, as this triggers E013 rendering kernel panics and screen bricking on older Kindle firmware.*
 
 **Cover page** body element must carry `epub:type="cover"`:
 ```html
@@ -118,6 +120,7 @@ img { display: block; width: 100%; height: 100%; }
 - **Asymmetric Binding Margins:** Generates gutter space padding (Left, Right, or Alternating Odd/Even) at the native device resolution to offset physical bindings.
 - **Auto-Cropping:** Scans `CGImage` pixel thresholds to strip blank/white borders before scaling, maximizing the active artwork area.
 - **Moiré Reduction:** Pre-scaling Gaussian blur to suppress high-frequency screentone matrices and prevent screen interference patterns, paired with post-conversion re-sharpening.
+- **Color Space Safety:** `UIGraphicsImageRenderer` output **must** be forced to `.standard` (sRGB) color space. Exporting badged covers or merged graphics in wide-gamut (P3) color spaces will silently crash E-Ink devices upon loading.
 - **Hardware Grayscale & Dithering:** Strips color saturation and applies a 15% contrast boost via `CIColorControls` to enhance text legibility, combined with `CIColorPosterize` 16-level ordered dithering to match Kindle and e-reader panels.
 
 ---
@@ -212,6 +215,7 @@ Before any EPUB output is delivered to the user, it must satisfy:
 - [ ] `rendition:layout` = `pre-paginated` declared in OPF `<metadata>`
 - [ ] `rendition:spread` = `auto` declared in OPF `<metadata>`
 - [ ] `<meta name="viewport" content="width=W, height=H"/>` present in every XHTML `<head>`
+- [ ] **NO** `initial-scale=1.0` in the viewport meta tag
 - [ ] No `position: fixed` in any CSS
 - [ ] No `@media amzn-kf8` or `@media amzn-kfx` blocks
 - [ ] No `@page { size: ... }` declarations
