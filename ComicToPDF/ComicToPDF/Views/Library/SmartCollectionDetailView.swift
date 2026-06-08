@@ -335,8 +335,10 @@ import SwiftUI
         ZStack(alignment: .topTrailing) {
             // Tap → navigate to series detail
             NavigationLink(destination:
-                SeriesDetailView(series: group, selectedPDF: .constant(nil), useNavigationStack: false)
-                    .environmentObject(conversionManager)
+                LazyView {
+                    SeriesDetailView(series: group, selectedPDF: .constant(nil), useNavigationStack: false)
+                        .environmentObject(conversionManager)
+                }
             ) {
                 ModernGridSeriesCell(group: group, isSelected: false, isBatch: false)
             }
@@ -435,8 +437,10 @@ import SwiftUI
         let isDownloadingThis = downloadingSeriesID == group.id
 
         NavigationLink(destination:
-            SeriesDetailView(series: group, selectedPDF: .constant(nil), useNavigationStack: false)
-                .environmentObject(conversionManager)
+            LazyView {
+                SeriesDetailView(series: group, selectedPDF: .constant(nil), useNavigationStack: false)
+                    .environmentObject(conversionManager)
+            }
         ) {
             HStack(spacing: 12) {
                 // Cover stack

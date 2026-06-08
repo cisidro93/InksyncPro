@@ -402,7 +402,7 @@ struct LibraryListView: View {
                         } label: { Label("Delete Folder", systemImage: "trash") }
                     }
                 } else {
-                    NavigationLink(destination: SeriesDetailView(series: group, selectedPDF: $selectedPDF, useNavigationStack: useNavigationStack)) {
+                    NavigationLink(destination: LazyView { SeriesDetailView(series: group, selectedPDF: $selectedPDF, useNavigationStack: useNavigationStack) }) {
                         ModernSeriesRow(group: group, isSelected: false, isBatch: false)
                     }
                     .contextMenu {

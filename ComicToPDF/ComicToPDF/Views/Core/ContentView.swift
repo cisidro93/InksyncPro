@@ -98,13 +98,12 @@ struct ContentView: View {
             
             Task { @MainActor in
                 MigrationService.shared.migrateLegacyDataIfNeeded(context: modelContext)
-                let genCount = MigrationService.shared.performSmartGrouping(context: modelContext)
+                let _ = MigrationService.shared.performSmartGrouping(context: modelContext)
                 
-                if genCount > 0 {
-                    if let (sdPdfs, sdCols) = try? await MigrationService.shared.fetchSwiftDataLegacyBridge() {
-                        conversionManager.convertedPDFs = sdPdfs.map { $0.toDTO() }
-                        conversionManager.collections = sdCols.map { $0.toDTO() }
-                    }
+                // Always fetch the latest SwiftData on startup to ensure conversionManager matches the DB.
+                if let (sdPdfs, sdCols) = try? await MigrationService.shared.fetchSwiftDataLegacyBridge() {
+                    conversionManager.convertedPDFs = sdPdfs.map { $0.toDTO() }
+                    conversionManager.collections = sdCols.map { $0.toDTO() }
                 }
                 
                 await SandboxCleanupManager.shared.passiveScan()

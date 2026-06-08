@@ -268,3 +268,16 @@ struct LibraryIndexScrubber: View {
         .frame(width: 28)
     }
 }
+
+// MARK: - LazyView Helper
+/// A thin helper that wraps a view constructor closure to bypass eager NavigationLink evaluation.
+struct LazyView<Content: View>: View {
+    let build: () -> Content
+    init(_ build: @escaping () -> Content) {
+        self.build = build
+    }
+    var body: Content {
+        build()
+    }
+}
+

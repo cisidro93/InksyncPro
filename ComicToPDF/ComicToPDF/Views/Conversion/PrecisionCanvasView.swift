@@ -38,140 +38,21 @@ struct PrecisionCanvasView: View {
     var body: some View {
         ZStack {
             Color.black.edgesIgnoringSafeArea(.all)
-            
-            // MARK: - Main Canvas
-            if let image = pageImage {
-                GeometryReader { geo in
-                    canvasView(image: image, geo: geo)
-                }
-                .edgesIgnoringSafeArea(.top) // Allow canvas to go behind status bar
-                .supportPencilDoubleTap {
-                    pencilDoubleTapAction()
-                }
-            } else {
-                ProgressView("Loading Page...")
-                    .foregroundColor(.white)
-            }
-            
-            // MARK: - Security Overlay
+            mainCanvasLayout
             securityOverlay
-            
-            // Processing Overlay
             processingOverlay
         }
         .navigationTitle("Page \(pageIndex + 1)")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
-                HStack(spacing: 16) {
-                    if pageIndex > 0 {
-                        Button(action: {
-                            PageModelStore.shared.savePageModel(editorState.pageModel, for: pdf.id)
-                            pageIndex -= 1
-                        }) {
-                            Image(systemName: "chevron.left")
-                        }
-                    }
-                    if pageIndex < totalCount - 1 {
-                        Button(action: {
-                            PageModelStore.shared.savePageModel(editorState.pageModel, for: pdf.id)
-                            pageIndex += 1
-                        }) {
-                            Image(systemName: "chevron.right")
-                        }
-                    }
-
-                    Button(action: { withAnimation { editorState.undo() } }) {
-                        Image(systemName: "arrow.uturn.backward")
-                    }
-                    .disabled(!editorState.canUndo)
-                    .keyboardShortcut("z", modifiers: .command)
-                    
-                    Button(action: { withAnimation { editorState.redo() } }) {
-                        Image(systemName: "arrow.uturn.forward")
-                    }
-                    .disabled(!editorState.canRedo)
-                    .keyboardShortcut("z", modifiers: [.command, .shift])
-                    
-                    if let index = editorState.selectedPanelIndex {
-                        Button(role: .destructive, action: {
-                            withAnimation {
-                                if index < editorState.pageModel.panels.count {
-                                    let rect = editorState.pageModel.panels[index]
-                                    editorState.execute(.removePanel(index: index, rect: rect))
-                                    editorState.selectedPanelIndex = nil
-                                    currentDragRect = nil
-                                }
-                            }
-                        }) {
-                            Image(systemName: "trash").foregroundColor(.red)
-                        }
-                    }
-                    
-                    if !editorState.pageModel.proposedPanels.isEmpty {
-                        Button("Commit") {
-                            withAnimation { editorState.commitProposals() }
-                        }
-                        .bold()
-                        .foregroundColor(.green)
-                    }
-                }
+                navigationBarTrailingItems
             }
-            
             ToolbarItemGroup(placement: .bottomBar) {
-                Spacer()
-                Button(action: runScan) {
-                    VStack(spacing: 4) { Image(systemName: "sparkles"); Text("Scan").font(.caption2) }
-                }
-                
-                Spacer()
-                
-                Button(action: { selectedTool = .edit }) {
-                    VStack(spacing: 4) { Image(systemName: "cursorarrow.rays"); Text("Edit").font(.caption2) }
-                }
-                .foregroundColor(selectedTool == .edit ? .blue : .primary)
-                
-                Spacer()
-                
-                Button(action: { selectedTool = .knife }) {
-                    VStack(spacing: 4) { Image(systemName: "scissors"); Text("Split").font(.caption2) }
-                }
-                .foregroundColor(selectedTool == .knife ? .blue : .primary)
-                
-                Spacer()
-                
-                Button(action: { selectedTool = .anchor }) {
-                    VStack(spacing: 4) { Image(systemName: "plus.square.dashed"); Text("Add").font(.caption2) }
-                }
-                .foregroundColor(selectedTool == .anchor ? .blue : .primary)
-                
-                Spacer()
-                
-                Button(action: { selectedTool = .draw }) {
-                    VStack(spacing: 4) { Image(systemName: "pencil.tip"); Text("Draw").font(.caption2) }
-                }
-                .foregroundColor(selectedTool == .draw ? .blue : .primary)
-                
-                Spacer()
-                
-                Button(action: { selectedTool = .preview }) {
-                    VStack(spacing: 4) { Image(systemName: "eye"); Text("Preview").font(.caption2) }
-                }
-                .foregroundColor(selectedTool == .preview ? .blue : .primary)
-                Spacer()
+                bottomBarItems
             }
         }
-        .background(
-            // Hidden Keyboard Shortcuts
-            Group {
-                Button("") { if pageIndex > 0 { PageModelStore.shared.savePageModel(editorState.pageModel, for: pdf.id); pageIndex -= 1 } }
-                    .keyboardShortcut(.leftArrow, modifiers: [])
-                    .opacity(0)
-                Button("") { if pageIndex < totalCount - 1 { PageModelStore.shared.savePageModel(editorState.pageModel, for: pdf.id); pageIndex += 1 } }
-                    .keyboardShortcut(.rightArrow, modifiers: [])
-                    .opacity(0)
-            }
-        )
+        .background(hiddenKeyboardShortcuts)
         .task {
             loadPage()
         }
@@ -188,8 +69,7 @@ struct PrecisionCanvasView: View {
             get: { selectedTool == .preview },
             set: { if !$0 { selectedTool = .edit } }
         )) {
-            GuidedViewPreview(pdf: pdf, startingPageIndex: pageIndex)
-                .environmentObject(conversionManager)
+            previewDestination
         }
         .onDisappear {
             // ✅ Auto-save changes when leaving the page
@@ -197,6 +77,143 @@ struct PrecisionCanvasView: View {
             // ✅ Clean up temporary files when closing editor
             conversionManager.endSession()
         }
+    }
+
+    @ViewBuilder
+    private var mainCanvasLayout: some View {
+        if let image = pageImage {
+            GeometryReader { geo in
+                canvasView(image: image, geo: geo)
+            }
+            .edgesIgnoringSafeArea(.top) // Allow canvas to go behind status bar
+            .supportPencilDoubleTap {
+                pencilDoubleTapAction()
+            }
+        } else {
+            ProgressView("Loading Page...")
+                .foregroundColor(.white)
+        }
+    }
+
+    @ViewBuilder
+    private var navigationBarTrailingItems: some View {
+        HStack(spacing: 16) {
+            if pageIndex > 0 {
+                Button(action: {
+                    PageModelStore.shared.savePageModel(editorState.pageModel, for: pdf.id)
+                    pageIndex -= 1
+                }) {
+                    Image(systemName: "chevron.left")
+                }
+            }
+            if pageIndex < totalCount - 1 {
+                Button(action: {
+                    PageModelStore.shared.savePageModel(editorState.pageModel, for: pdf.id)
+                    pageIndex += 1
+                }) {
+                    Image(systemName: "chevron.right")
+                }
+            }
+
+            Button(action: { withAnimation { editorState.undo() } }) {
+                Image(systemName: "arrow.uturn.backward")
+            }
+            .disabled(!editorState.canUndo)
+            .keyboardShortcut("z", modifiers: .command)
+            
+            Button(action: { withAnimation { editorState.redo() } }) {
+                Image(systemName: "arrow.uturn.forward")
+            }
+            .disabled(!editorState.canRedo)
+            .keyboardShortcut("z", modifiers: [.command, .shift])
+            
+            if let index = editorState.selectedPanelIndex {
+                Button(role: .destructive, action: {
+                    withAnimation {
+                        if index < editorState.pageModel.panels.count {
+                            let rect = editorState.pageModel.panels[index]
+                            editorState.execute(.removePanel(index: index, rect: rect))
+                            editorState.selectedPanelIndex = nil
+                            currentDragRect = nil
+                        }
+                    }
+                }) {
+                    Image(systemName: "trash").foregroundColor(.red)
+                }
+            }
+            
+            if !editorState.pageModel.proposedPanels.isEmpty {
+                Button("Commit") {
+                    withAnimation { editorState.commitProposals() }
+                }
+                .bold()
+                .foregroundColor(.green)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var bottomBarItems: some View {
+        Group {
+            Spacer()
+            Button(action: runScan) {
+                VStack(spacing: 4) { Image(systemName: "sparkles"); Text("Scan").font(.caption2) }
+            }
+            
+            Spacer()
+            
+            Button(action: { selectedTool = .edit }) {
+                VStack(spacing: 4) { Image(systemName: "cursorarrow.rays"); Text("Edit").font(.caption2) }
+            }
+            .foregroundColor(selectedTool == .edit ? .blue : .primary)
+            
+            Spacer()
+            
+            Button(action: { selectedTool = .knife }) {
+                VStack(spacing: 4) { Image(systemName: "scissors"); Text("Split").font(.caption2) }
+            }
+            .foregroundColor(selectedTool == .knife ? .blue : .primary)
+            
+            Spacer()
+            
+            Button(action: { selectedTool = .anchor }) {
+                VStack(spacing: 4) { Image(systemName: "plus.square.dashed"); Text("Add").font(.caption2) }
+            }
+            .foregroundColor(selectedTool == .anchor ? .blue : .primary)
+            
+            Spacer()
+            
+            Button(action: { selectedTool = .draw }) {
+                VStack(spacing: 4) { Image(systemName: "pencil.tip"); Text("Draw").font(.caption2) }
+            }
+            .foregroundColor(selectedTool == .draw ? .blue : .primary)
+            
+            Spacer()
+            
+            Button(action: { selectedTool = .preview }) {
+                VStack(spacing: 4) { Image(systemName: "eye"); Text("Preview").font(.caption2) }
+            }
+            .foregroundColor(selectedTool == .preview ? .blue : .primary)
+            Spacer()
+        }
+    }
+
+    @ViewBuilder
+    private var hiddenKeyboardShortcuts: some View {
+        Group {
+            Button("") { if pageIndex > 0 { PageModelStore.shared.savePageModel(editorState.pageModel, for: pdf.id); pageIndex -= 1 } }
+                .keyboardShortcut(.leftArrow, modifiers: [])
+                .opacity(0)
+            Button("") { if pageIndex < totalCount - 1 { PageModelStore.shared.savePageModel(editorState.pageModel, for: pdf.id); pageIndex += 1 } }
+                .keyboardShortcut(.rightArrow, modifiers: [])
+                .opacity(0)
+        }
+    }
+
+    @ViewBuilder
+    private var previewDestination: some View {
+        GuidedViewPreview(pdf: pdf, startingPageIndex: pageIndex)
+            .environmentObject(conversionManager)
     }
 
     @ViewBuilder

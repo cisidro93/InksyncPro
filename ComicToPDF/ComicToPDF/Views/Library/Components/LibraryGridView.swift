@@ -248,7 +248,7 @@ struct LibraryGridView: View {
                     }
                 } else {
                     // It's a generated Publisher Series — show the details sheet/stack
-                    NavigationLink(destination: SeriesDetailView(series: group, selectedPDF: $selectedPDF, useNavigationStack: useNavigationStack)) {
+                    NavigationLink(destination: LazyView { SeriesDetailView(series: group, selectedPDF: $selectedPDF, useNavigationStack: useNavigationStack) }) {
                         ModernGridSeriesCell(group: group, isSelected: false, isBatch: false)
                     }
                     .buttonStyle(PlainButtonStyle())
