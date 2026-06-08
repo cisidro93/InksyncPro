@@ -70,8 +70,8 @@ private struct PremiumHeroCard: View {
     @Environment(\.horizontalSizeClass) private var hSizeClass
     @State private var cover: UIImage? = nil
     
-    private var progress: Double {
-        Double(pdf.metadata.lastReadPage ?? 0) / Double(max(pdf.pageCount, 1))
+    private var progress: CGFloat {
+        CGFloat(pdf.metadata.lastReadPage ?? 0) / CGFloat(max(pdf.pageCount, 1))
     }
     
     var body: some View {
