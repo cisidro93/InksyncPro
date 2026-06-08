@@ -113,9 +113,38 @@ struct AniListManga: Codable, Identifiable {
 actor AniListService {
     static let shared = AniListService()
     
+    // In-memory query cache to prevent redundant api calls
+    private var searchCache: [String: [AniListManga]] = [:]
+    
+    // Rate Limiting: 1 request per second spacing
+    private var lastRequestTime: Date = Date.distantPast
+    private let minRequestInterval: TimeInterval = 1.0
+    
     private init() {}
     
+    private func throttle() async {
+        let now = Date()
+        let elapsed = now.timeIntervalSince(lastRequestTime)
+        if elapsed < minRequestInterval {
+            let delay = minRequestInterval - elapsed
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+        }
+        lastRequestTime = Date()
+    }
+    
     func searchManga(query: String) async throws -> [AniListManga] {
+        let cleanedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !cleanedQuery.isEmpty else { return [] }
+        
+        // 1. Check Cache first to eliminate duplicate network calls
+        if let cached = searchCache[cleanedQuery] {
+            Logger.shared.log("AniList Cache Hit for query: '\(cleanedQuery)'", category: "Metadata", type: .info)
+            return cached
+        }
+        
+        // 2. Throttle calls to respect rate guidelines
+        await throttle()
+        
         guard let url = URL(string: "https://graphql.anilist.co") else {
             throw AniListError.invalidURL
         }
@@ -183,6 +212,9 @@ actor AniListService {
         do {
             let result = try JSONDecoder().decode(AniListResponse.self, from: data)
             let list = result.data.Page.media
+            
+            // 3. Save to Cache on successful result
+            searchCache[cleanedQuery] = list
             return list
         } catch {
             Logger.shared.log("AniList Decoding Error: \(error.localizedDescription)", category: "Metadata", type: .error)
