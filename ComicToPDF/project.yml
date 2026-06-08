@@ -51,7 +51,7 @@ targets:
           OTHER_SWIFT_FLAGS: $(inherited) -Xfrontend -warn-long-expression-type-checking=150 -Xfrontend -warn-long-function-bodies=150
         Release:
           SWIFT_OPTIMIZATION_LEVEL: -O
-          SWIFT_COMPILATION_MODE: wholemodule
+          SWIFT_COMPILATION_MODE: singlefile
           GCC_OPTIMIZATION_LEVEL: s
           LLVM_LTO: YES_THIN
           DEAD_CODE_STRIPPING: YES
