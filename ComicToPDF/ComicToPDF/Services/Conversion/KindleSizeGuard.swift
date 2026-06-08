@@ -17,7 +17,8 @@ enum KindleSizeGuard {
 
     /// Evaluate the file at the given URL and return the appropriate outcome + a user-facing message.
     static func evaluate(epubURL: URL) -> (outcome: DeliveryOutcome, message: String, fileSizeMB: Double)? {
-        guard let attributes = try? FileManager.default.attributesOfItem(atPath: epubURL.path),
+        let attrs = try? FileManager.default.attributesOfItem(atPath: epubURL.path)
+        guard let attributes = attrs,
               let fileSize = attributes[.size] as? Int64 else { return nil }
 
         let mb = Double(fileSize) / 1_024.0 / 1_024.0

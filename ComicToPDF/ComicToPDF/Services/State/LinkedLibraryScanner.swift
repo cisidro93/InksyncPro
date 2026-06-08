@@ -493,7 +493,8 @@ final class LinkedLibraryScanner: ObservableObject {
         var newPDFs: [ConvertedPDF] = []
 
         for fileURL in files {
-            guard let attrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
+            let fileAttrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path)
+            guard let attrs = fileAttrs,
                   let fileSize = attrs[.size] as? Int64
             else { continue }
 

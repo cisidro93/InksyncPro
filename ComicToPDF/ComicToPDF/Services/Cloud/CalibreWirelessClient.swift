@@ -393,7 +393,8 @@ actor CalibreWirelessClient {
     // MARK: - Utilities
 
     private func availableBytes() -> Int64 {
-        if let attrs = try? FileManager.default.attributesOfFileSystem(forPath: NSHomeDirectory()),
+        let fsAttrs = try? FileManager.default.attributesOfFileSystem(forPath: NSHomeDirectory())
+        if let attrs = fsAttrs,
            let free = attrs[.systemFreeSize] as? Int64 {
             return free
         }

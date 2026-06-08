@@ -81,7 +81,8 @@ class Logger: ObservableObject, @unchecked Sendable {
             guard let self = self else { return }
             var logs = ""
             // Prevent Jetsam memory crashes by capping file load
-            if let attrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
+            let logAttrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path)
+            if let attrs = logAttrs,
                let size = attrs[.size] as? UInt64, size > 2_000_000 {
                 try? FileManager.default.removeItem(at: fileURL)
                 logs = "[SYSTEM] Log file exceeded 2MB and was truncated to preserve memory.\n"
