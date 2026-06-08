@@ -42,43 +42,11 @@ struct PrecisionCanvasView: View {
             // MARK: - Main Canvas
             if let image = pageImage {
                 GeometryReader { geo in
-                    let displayedRect = AVMakeRect(aspectRatio: image.size, insideRect: CGRect(origin: .zero, size: geo.size))
-                    
-                    ZStack(alignment: .topLeading) {
-                        Image(uiImage: image)
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .frame(width: geo.size.width, height: geo.size.height)
-                            .position(x: geo.frame(in: .local).midX, y: geo.frame(in: .local).midY)
-                        
-                        panelOverlayCanvas(displayedRect: displayedRect)
-                            .gesture(canvasGesture(in: displayedRect))
-
-                        // ✅ DEV overlays — extracted to break compiler type-check timeout
-                        devWatermarkOverlay
-                        devLogHUD(geoWidth: geo.size.width)
-
-                    } // end ZStack alignment: .topLeading
-                    .onAppear { viewSize = geo.size }
-                    .onChange(of: geo.size) { _, newSize in viewSize = newSize }
-                    
-                    // MARK: - PencilKit Overlay
-                    // Overlay PencilKit specifically over the image geometry
-                    if selectedTool == .draw {
-                        PencilKitDrawView(canvas: $canvasView)
-                            .frame(width: geo.size.width, height: geo.size.height)
-                            .position(x: geo.frame(in: .local).midX, y: geo.frame(in: .local).midY)
-                    }
+                    canvasView(image: image, geo: geo)
                 }
                 .edgesIgnoringSafeArea(.top) // Allow canvas to go behind status bar
                 .supportPencilDoubleTap {
-                    if selectedTool == .anchor {
-                        selectedTool = .edit
-                        editorState.log("Switched to Edit Placement")
-                    } else {
-                        selectedTool = .anchor
-                        editorState.log("Switched to Add Panel")
-                    }
+                    pencilDoubleTapAction()
                 }
             } else {
                 ProgressView("Loading Page...")
@@ -86,16 +54,10 @@ struct PrecisionCanvasView: View {
             }
             
             // MARK: - Security Overlay
-            if pdf.isPrivate {
-               FaceIDOverlay()
-            }
+            securityOverlay
             
             // Processing Overlay
-            if editorState.isProcessing {
-                Color.black.opacity(0.4)
-                    .overlay(ProgressView().tint(.white))
-                    .ignoresSafeArea()
-            }
+            processingOverlay
         }
         .navigationTitle("Page \(pageIndex + 1)")
         .navigationBarTitleDisplayMode(.inline)
@@ -234,6 +196,61 @@ struct PrecisionCanvasView: View {
             PageModelStore.shared.savePageModel(editorState.pageModel, for: pdf.id)
             // ✅ Clean up temporary files when closing editor
             conversionManager.endSession()
+        }
+    }
+
+    @ViewBuilder
+    private func canvasView(image: UIImage, geo: GeometryProxy) -> some View {
+        let displayedRect = AVMakeRect(aspectRatio: image.size, insideRect: CGRect(origin: .zero, size: geo.size))
+        
+        ZStack {
+            ZStack(alignment: .topLeading) {
+                Image(uiImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: geo.size.width, height: geo.size.height)
+                    .position(x: geo.frame(in: .local).midX, y: geo.frame(in: .local).midY)
+                
+                panelOverlayCanvas(displayedRect: displayedRect)
+                    .gesture(canvasGesture(in: displayedRect))
+
+                devWatermarkOverlay
+                devLogHUD(geoWidth: geo.size.width)
+            }
+            
+            if selectedTool == .draw {
+                PencilKitDrawView(canvas: $canvasView)
+                    .frame(width: geo.size.width, height: geo.size.height)
+                    .position(x: geo.frame(in: .local).midX, y: geo.frame(in: .local).midY)
+            }
+        }
+        .onAppear { viewSize = geo.size }
+        .onChange(of: geo.size) { _, newSize in viewSize = newSize }
+    }
+
+    private func pencilDoubleTapAction() {
+        if selectedTool == .anchor {
+            selectedTool = .edit
+            editorState.log("Switched to Edit Placement")
+        } else {
+            selectedTool = .anchor
+            editorState.log("Switched to Add Panel")
+        }
+    }
+    
+    @ViewBuilder
+    private var securityOverlay: some View {
+        if pdf.isPrivate {
+            FaceIDOverlay()
+        }
+    }
+    
+    @ViewBuilder
+    private var processingOverlay: some View {
+        if editorState.isProcessing {
+            Color.black.opacity(0.4)
+                .overlay(ProgressView().tint(.white))
+                .ignoresSafeArea()
         }
     }
     
