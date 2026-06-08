@@ -529,12 +529,37 @@ struct SeriesDetailView: View {
                         if showVolumeGrouping && hasVolumeData {
                             Divider()
                             
-                            Image(systemName: "arrow.up.arrow.down")
+                            Button {
+                                withAnimation {
+                                    collapsedVolumes = Set(volumeGroups.map { $0.key })
+                                }
+                            } label: {
+                                Label("Collapse All Volumes", systemImage: "rectangle.compress.vertical")
+                            }
+                            
+                            Button {
+                                withAnimation {
+                                    collapsedVolumes.removeAll()
+                                }
+                            } label: {
+                                Label("Expand All Volumes", systemImage: "rectangle.expand.vertical")
+                            }
                         }
                         
-                        if isCollection {
-                            EditButton()
+                        Divider()
+                        
+                        // Feature 5: Smart List Template Export
+                        Button {
+                            exportSmartListTemplate()
+                        } label: {
+                            Label("Export as Smart List (.csv)", systemImage: "square.and.arrow.up")
                         }
+                    } label: {
+                        Image(systemName: "arrow.up.arrow.down")
+                    }
+                    
+                    if isCollection {
+                        EditButton()
                     }
                 }
             }
