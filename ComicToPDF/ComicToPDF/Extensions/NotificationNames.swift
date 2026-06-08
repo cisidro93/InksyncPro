@@ -15,6 +15,8 @@ extension Notification.Name {
     static let libraryNeedsSave       = Notification.Name("LibraryNeedsSave")
     /// Fired after a merge completes, carrying the newly created `ConvertedPDF`.
     static let openMergedBook         = Notification.Name("OpenMergedBook")
+    /// Fired when a thumbnail is successfully generated for a converted PDF.
+    static let thumbnailGenerated     = Notification.Name("ThumbnailGenerated")
     // NOTE: .cloudCoverReady is declared in BookmarkResolver.swift alongside the
     // other cloud-cover notification infrastructure. Do not redeclare it here.
 
