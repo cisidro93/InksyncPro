@@ -864,63 +864,7 @@ struct SeriesDetailView: View {
         // âœ… Fix: pdfToDetails now correctly presents MediaDetailSheet in all non-nav-stack contexts.
         .sheet(item: $pdfToDetails) { pdf in
             MediaDetailSheet(pdf: pdf) { action in
-                switch action {
-                case .read:          pdfToRead = pdf
-                case .export:        pdfToExport = pdf
-                case .fetchMetadata: pdfToSearchMetadata = pdf
-                case .editMetadata:  pdfToSearchMetadata = pdf
-                case .rename:        renameText = pdf.name; pdfToRename = pdf
-                case .delete:        pdfToDelete = pdf
-                case .convert:
-                    let settingsReady = AppSettingsManager.shared.conversionSettings.isConfigured
-                    if case .cloud = pdf.sourceMode {
-                        Task {
-                            await CloudDownloadManager.shared.downloadAndStore(
-                                pdf: pdf,
-                                thenConvert: settingsReady,
-                                manager: conversionManager
-                            )
-                        }
-                    } else {
-                        Task { await conversionManager.convertComic(pdf) }
-                    }
-                case .share, .sync, .sendToKindle:
-                    // For share/kindle we dismiss and fire via UIActivityViewController
-                    let url = pdf.url
-                    Task { @MainActor in
-                        let activityVC = UIActivityViewController(activityItems: [url], applicationActivities: nil)
-                        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                           let rootVC = windowScene.windows.first?.rootViewController {
-                            var topVC = rootVC
-                            while let presented = topVC.presentedViewController { topVC = presented }
-                            if let popover = activityVC.popoverPresentationController {
-                                popover.sourceView = topVC.view
-                                popover.sourceRect = CGRect(x: topVC.view.bounds.midX, y: topVC.view.bounds.midY, width: 0, height: 0)
-                                popover.permittedArrowDirections = []
-                            }
-                            topVC.present(activityVC, animated: true)
-                        }
-                    }
-                case .favorite:
-                    if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
-                        conversionManager.convertedPDFs[idx].isFavorite.toggle()
-                        conversionManager.saveLibrary()
-                    }
-                case .addToSeries:
-                    assignSeriesText = pdf.metadata.series ?? ""
-                    pdfToAssignSeries = pdf
-                case .covers:
-                    // Cover Studio requires the main library context â€” navigate there after dismiss
-                    pdfToDetails = nil
-                    // Post notification so ModernLibraryView can open the Cover Studio sheet
-                    NotificationCenter.default.post(name: .init("InksyncPro.openCoverStudio"), object: pdf)
-                case .toggleVault:
-                    if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
-                        conversionManager.convertedPDFs[idx].isPrivate.toggle()
-                        conversionManager.saveLibrary()
-                    }
-                default: break
-                }
+                handleMediaDetailAction(action, for: pdf)
             }
             .environmentObject(conversionManager)
         }
@@ -1368,6 +1312,66 @@ struct SeriesDetailView: View {
         Button {
             pdfToSearchMetadata = pdf
         } label: { Label("Fetch Metadata", systemImage: "magnifyingglass") }
+    }
+
+    private func handleMediaDetailAction(_ action: LibraryRowAction, for pdf: ConvertedPDF) {
+        switch action {
+        case .read:          pdfToRead = pdf
+        case .export:        pdfToExport = pdf
+        case .fetchMetadata: pdfToSearchMetadata = pdf
+        case .editMetadata:  pdfToSearchMetadata = pdf
+        case .rename:        renameText = pdf.name; pdfToRename = pdf
+        case .delete:        pdfToDelete = pdf
+        case .convert:
+            let settingsReady = AppSettingsManager.shared.conversionSettings.isConfigured
+            if case .cloud = pdf.sourceMode {
+                Task {
+                    await CloudDownloadManager.shared.downloadAndStore(
+                        pdf: pdf,
+                        thenConvert: settingsReady,
+                        manager: conversionManager
+                    )
+                }
+            } else {
+                Task { await conversionManager.convertComic(pdf) }
+            }
+        case .share, .sync, .sendToKindle:
+            // For share/kindle we dismiss and fire via UIActivityViewController
+            let url = pdf.url
+            Task { @MainActor in
+                let activityVC = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+                if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                   let rootVC = windowScene.windows.first?.rootViewController {
+                    var topVC = rootVC
+                    while let presented = topVC.presentedViewController { topVC = presented }
+                    if let popover = activityVC.popoverPresentationController {
+                        popover.sourceView = topVC.view
+                        popover.sourceRect = CGRect(x: topVC.view.bounds.midX, y: topVC.view.bounds.midY, width: 0, height: 0)
+                        popover.permittedArrowDirections = []
+                    }
+                    topVC.present(activityVC, animated: true)
+                }
+            }
+        case .favorite:
+            if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                conversionManager.convertedPDFs[idx].isFavorite.toggle()
+                conversionManager.saveLibrary()
+            }
+        case .addToSeries:
+            assignSeriesText = pdf.metadata.series ?? ""
+            pdfToAssignSeries = pdf
+        case .covers:
+            // Cover Studio requires the main library context â€” navigate there after dismiss
+            pdfToDetails = nil
+            // Post notification so ModernLibraryView can open the Cover Studio sheet
+            NotificationCenter.default.post(name: .init("InksyncPro.openCoverStudio"), object: pdf)
+        case .toggleVault:
+            if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                conversionManager.convertedPDFs[idx].isPrivate.toggle()
+                conversionManager.saveLibrary()
+            }
+        default: break
+        }
     }
 
     private func loadHeaderCover() async {
