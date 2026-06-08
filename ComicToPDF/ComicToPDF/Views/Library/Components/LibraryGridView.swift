@@ -37,6 +37,16 @@ struct LibraryGridView: View {
     // Drop-result confirmation sheet
     @State private var pendingDropInfo: DropResolutionInfo? = nil
 
+    private var inProgress: [ConvertedPDF] {
+        items.compactMap {
+            if case .single(let pdf) = $0 {
+                let prog = Double(pdf.metadata.lastReadPage ?? 0) / Double(max(pdf.pageCount, 1))
+                return (prog > 0.01 && prog < 0.98) ? pdf : nil
+            }
+            return nil
+        }
+    }
+
     var body: some View {
         Group {
             if conversionManager.visiblePDFs.isEmpty {
@@ -59,13 +69,6 @@ struct LibraryGridView: View {
                             .frame(height: 0)
 
                             // ── Continue Reading shelf ─────────────────────
-                            let inProgress: [ConvertedPDF] = items.compactMap {
-                                if case .single(let pdf) = $0 {
-                                    let prog = Double(pdf.metadata.lastReadPage ?? 0) / Double(max(pdf.pageCount, 1))
-                                    return (prog > 0.01 && prog < 0.98) ? pdf : nil
-                                }
-                                return nil
-                            }
                             if !inProgress.isEmpty {
                                 ContinueReadingShelf(inProgress: Array(inProgress.prefix(10))) { pdf in
                                     if tapAction == .read {
