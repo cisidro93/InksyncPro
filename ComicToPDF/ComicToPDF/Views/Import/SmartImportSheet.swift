@@ -540,19 +540,25 @@ struct ImportFormView: View {
         }
     }
 
+    private var destinationSymbol: String {
+        vm.destinationDevice?.deviceType.sfSymbol ?? "questionmark.circle"
+    }
+
+    private var destinationName: String {
+        vm.destinationDevice?.name ?? "No device — tap to add"
+    }
+
     @ViewBuilder
     private var deviceSelector: some View {
         HStack {
-            let symbol = vm.destinationDevice?.deviceType.sfSymbol ?? "questionmark.circle"
-            Image(systemName: symbol)
+            Image(systemName: destinationSymbol)
                 .foregroundColor(.inkBlue)
                 .font(.system(size: 16))
             VStack(alignment: .leading, spacing: 2) {
                 Text("Sending to")
                     .font(.system(size: 12, design: .monospaced))
                     .foregroundColor(.inkTextSecondary)
-                let deviceName = vm.destinationDevice?.name ?? "No device — tap to add"
-                Text(deviceName)
+                Text(destinationName)
                     .font(.system(size: 14, weight: .medium))
                     .foregroundColor(.inkTextPrimary)
             }
@@ -570,6 +576,18 @@ struct SkippedImportView: View {
     @State private var timerActive = true
     let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
+    private var skipDeviceName: String {
+        vm.destinationDevice?.name ?? "device"
+    }
+
+    private var displaySettings: [String] {
+        [
+            vm.isManga ? "Manga RTL" : "LTR",
+            vm.destinationDevice?.deviceType.rawValue ?? "",
+            "Auto quality"
+        ].filter { !$0.isEmpty }
+    }
+
     var body: some View {
         VStack(spacing: 24) {
             Spacer()
@@ -582,7 +600,6 @@ struct SkippedImportView: View {
                 Text("Converting as usual")
                     .font(.system(size: 20, weight: .semibold))
                     .foregroundColor(.inkTextPrimary)
-                let skipDeviceName = vm.destinationDevice?.name ?? "device"
                 Text("\(vm.seriesName) · \(skipDeviceName)")
                     .font(.system(size: 14))
                     .foregroundColor(.inkTextSecondary)
@@ -590,13 +607,7 @@ struct SkippedImportView: View {
 
             // Settings recap pills
             HStack(spacing: 8) {
-                let settings = [
-                    vm.isManga ? "Manga RTL" : "LTR",
-                    vm.destinationDevice?.deviceType.rawValue ?? "",
-                    "Auto quality"
-                ].filter { !$0.isEmpty }
-
-                ForEach(settings, id: \.self) { setting in
+                ForEach(displaySettings, id: \.self) { setting in
                     Text(setting)
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundColor(.inkTextSecondary)
