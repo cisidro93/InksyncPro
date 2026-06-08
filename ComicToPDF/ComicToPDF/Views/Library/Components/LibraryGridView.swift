@@ -47,6 +47,16 @@ struct LibraryGridView: View {
         }
     }
 
+    private var gridColumns: [GridItem] {
+        let colSpacing: CGFloat = hSizeClass == .regular ? 16 : 10
+        let colCount = hSizeClass == .regular ? 5 : 3
+        return Array(repeating: GridItem(.flexible(), spacing: colSpacing), count: colCount)
+    }
+
+    private var hPad: CGFloat {
+        hSizeClass == .regular ? 16 : 10
+    }
+
     var body: some View {
         Group {
             if conversionManager.visiblePDFs.isEmpty {
@@ -83,13 +93,8 @@ struct LibraryGridView: View {
 
                             // Recently Added banner removed to declutter workspace
 
-                            // ── Main grid ─────────────────────────────────
-                            let hPad: CGFloat = hSizeClass == .regular ? 16 : 10
-                            let colSpacing: CGFloat = hSizeClass == .regular ? 16 : 10
-                            let colCount = hSizeClass == .regular ? 5 : 3
-                            let columns = Array(repeating: GridItem(.flexible(), spacing: colSpacing), count: colCount)
                             LazyVGrid(
-                                columns: columns,
+                                columns: gridColumns,
                                 spacing: hSizeClass == .regular ? 24 : 16
                             ) {
                                 ForEach(items) { item in

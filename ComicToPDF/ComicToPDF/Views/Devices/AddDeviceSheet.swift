@@ -11,6 +11,13 @@ struct AddDeviceSheet: View {
     @State private var kindleEmail: String = ""
 
     var isValid: Bool { !name.isEmpty }
+    
+    var availableMethods: [RegisteredDevice.TransferMethod] {
+        RegisteredDevice.TransferMethod.allCases.filter { m in
+            if !deviceType.isKindle && m == .sendToKindle { return false }
+            return true
+        }
+    }
 
     var body: some View {
         NavigationStack {
@@ -104,12 +111,6 @@ struct AddDeviceSheet: View {
                                 .font(.system(size: 11, weight: .bold, design: .monospaced))
                                 .foregroundColor(.inkTextSecondary)
                                 .tracking(1.2)
-                            
-                            // Filter valid methods based on device type
-                            let availableMethods = RegisteredDevice.TransferMethod.allCases.filter { m in
-                                if !deviceType.isKindle && m == .sendToKindle { return false }
-                                return true
-                            }
                             
                             VStack(spacing: 8) {
                                 ForEach(availableMethods, id: \.self) { method in
