@@ -147,7 +147,8 @@ actor CalibreWirelessClient {
 
         // Read JSON payload
         let jsonData = try await receive(exactly: length)
-        guard let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+        let jsonRaw = try? JSONSerialization.jsonObject(with: jsonData)
+        guard let json = jsonRaw as? [String: Any],
               let opInt = json["op"] as? Int
         else { throw CalibreError.badPacket }
 

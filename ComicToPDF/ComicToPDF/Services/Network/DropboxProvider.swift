@@ -292,7 +292,8 @@ class DropboxProvider: NSObject, CloudStorageProvider, ObservableObject {
         // A deleted or moved file returns a 409 with a JSON error_summary, not a TemporaryLinkResponse.
         if let httpResponse = response as? HTTPURLResponse, !(200...299).contains(httpResponse.statusCode) {
             // Attempt to surface Dropbox's own error_summary if present
-            let summary = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])
+            let dropboxJsonRaw = try? JSONSerialization.jsonObject(with: data)
+            let summary = (dropboxJsonRaw as? [String: Any])
                 .flatMap { $0["error_summary"] as? String } ?? "HTTP \(httpResponse.statusCode)"
             throw NSError(
                 domain: "Dropbox",

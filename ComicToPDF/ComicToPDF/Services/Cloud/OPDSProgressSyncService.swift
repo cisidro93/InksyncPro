@@ -116,8 +116,10 @@ import Foundation
 
         let request = try authRequest(url: url, method: "GET", body: nil, server: server)
         let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode)
+        else { return nil }
+        let kavitaJsonRaw = try? JSONSerialization.jsonObject(with: data)
+        guard let json = kavitaJsonRaw as? [String: Any],
               let pageNum = json["pageNum"] as? Int
         else { return nil }
 
@@ -160,8 +162,10 @@ import Foundation
         let request = try authRequest(url: url, method: "GET", body: nil, server: server)
         let (data, response) = try await URLSession.shared.data(for: request)
 
-        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode)
+        else { return nil }
+        let komgaJsonRaw = try? JSONSerialization.jsonObject(with: data)
+        guard let json = komgaJsonRaw as? [String: Any],
               let readProgress = json["readProgress"] as? [String: Any],
               let page = readProgress["page"] as? Int
         else { return nil }
