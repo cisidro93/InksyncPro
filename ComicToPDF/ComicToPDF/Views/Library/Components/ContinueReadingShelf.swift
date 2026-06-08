@@ -183,7 +183,7 @@ private struct PremiumHeroCard: View {
                         Capsule().fill(Color.white.opacity(0.1)).frame(height: 6)
                         Capsule()
                             .fill(LinearGradient(colors: [Theme.purple, Color.pink], startPoint: .leading, endPoint: .trailing))
-                            .frame(width: geo.size.width * 0.4 * progress, height: 6) // Roughly 40% of geo width is the bar area
+                            .frame(width: geo.size.width * CGFloat(0.4) * progress, height: 6) // Roughly 40% of geo width is the bar area
                             .shadow(color: Theme.purple.opacity(0.8), radius: 8, y: 0)
                     }
                 }
@@ -247,7 +247,7 @@ private struct PremiumHeroCard: View {
                     Capsule().fill(Color.white.opacity(0.1)).frame(height: 6)
                     Capsule()
                         .fill(LinearGradient(colors: [Theme.purple, Color.pink], startPoint: .leading, endPoint: .trailing))
-                        .frame(width: max(0, (geo.size.width - 40) * progress), height: 6)
+                        .frame(width: max(CGFloat(0), (geo.size.width - CGFloat(40)) * progress), height: 6)
                         .shadow(color: Theme.purple.opacity(0.8), radius: 8, y: 0)
                 }
                 .padding(.bottom, 4)
