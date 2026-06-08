@@ -109,8 +109,9 @@ final class CoverFetchService: Sendable {
               let url = URL(string: "https://itunes.apple.com/search?term=\(encoded)&media=ebook&limit=\(limit)") else { return [] }
         do {
             let (data, _) = try await URLSession.shared.data(from: url)
-            if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let results = json["results"] as? [[String: Any]] {
+            let json = try JSONSerialization.jsonObject(with: data)
+            if let dict = json as? [String: Any],
+               let results = dict["results"] as? [[String: Any]] {
                 return results.compactMap { result in
                     if let artworkUrlRaw = result["artworkUrl100"] as? String {
                         // Secret Apple API hack: Replacing 100x100bb with a much larger bounds returns high res original
@@ -131,8 +132,9 @@ final class CoverFetchService: Sendable {
               let url = URL(string: "https://www.googleapis.com/books/v1/volumes?q=\(encoded)&maxResults=\(limit)") else { return [] }
         do {
             let (data, _) = try await URLSession.shared.data(from: url)
-            if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let items = json["items"] as? [[String: Any]] {
+            let json = try JSONSerialization.jsonObject(with: data)
+            if let dict = json as? [String: Any],
+               let items = dict["items"] as? [[String: Any]] {
                 return items.compactMap { item in
                     if let volumeInfo = item["volumeInfo"] as? [String: Any],
                        let imageLinks = volumeInfo["imageLinks"] as? [String: Any],
@@ -157,8 +159,9 @@ final class CoverFetchService: Sendable {
               let url = URL(string: "https://openlibrary.org/search.json?q=\(encoded)&limit=\(limit)") else { return [] }
         do {
             let (data, _) = try await URLSession.shared.data(from: url)
-            if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let docs = json["docs"] as? [[String: Any]] {
+            let json = try JSONSerialization.jsonObject(with: data)
+            if let dict = json as? [String: Any],
+               let docs = dict["docs"] as? [[String: Any]] {
                 return docs.compactMap { doc in
                     if let coverI = doc["cover_i"] as? Int {
                         // OpenLibrary allows fetching large (-L) covers by DB ID
