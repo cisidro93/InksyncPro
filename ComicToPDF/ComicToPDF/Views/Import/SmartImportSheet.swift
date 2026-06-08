@@ -221,6 +221,11 @@ struct SmartImportSheet: View {
     
     @Query private var savedDevices: [SDRegisteredDevice]
 
+    private var sourceFileSize: Int64 {
+        let attrs = try? FileManager.default.attributesOfItem(atPath: sourceURL.path)
+        return (attrs?[.size] as? Int64) ?? 0
+    }
+
     init(sourceURL: URL) {
         self.sourceURL = sourceURL
         _vm = StateObject(wrappedValue: SmartImportViewModel(sourceURL: sourceURL))
