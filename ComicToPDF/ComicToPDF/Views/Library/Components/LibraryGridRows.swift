@@ -572,7 +572,7 @@ struct ModernGridSeriesCell: View {
                             .foregroundColor(Theme.textTertiary)
                             .tracking(0.6)
                             .lineLimit(1)
-                    } else if let first = group.issues.first(where: { $0.contentType == .comic }) {
+                    } else if let first = firstComicIssue {
                         let isManga = first.metadata.isManga ?? false
                         Text(isManga ? "MANGA" : "COMICS")
                             .font(.system(size: 8, weight: .bold, design: .rounded))
@@ -647,6 +647,10 @@ struct ModernGridSeriesCell: View {
             // 3. Fallback: Queue generation
             await ThumbnailGenerationQueue.shared.enqueue(pdf, manager: conversionManager)
         }
+    }
+
+    private var firstComicIssue: ConvertedPDF? {
+        return group.issues.first(where: { $0.contentType == .comic })
     }
 }
 

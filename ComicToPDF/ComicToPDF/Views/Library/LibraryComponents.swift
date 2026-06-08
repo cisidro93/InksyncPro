@@ -62,8 +62,7 @@ struct LibraryGridItem: View {
                     .foregroundColor(.primary)
                 
                 HStack {
-                    if let collectionId = pdf.collectionId,
-                       let col = conversionManager.collections.first(where: { $0.id == collectionId }) {
+                    if let col = matchingCollection {
                         Circle().fill(colorFor(col.color)).frame(width: 8, height: 8)
                     }
                     Text(pdf.formattedSize)
@@ -77,6 +76,11 @@ struct LibraryGridItem: View {
         .background(Color(UIColor.secondarySystemGroupedBackground))
         .cornerRadius(12)
         .contentShape(Rectangle())
+    }
+
+    private var matchingCollection: PDFCollection? {
+        guard let id = pdf.collectionId else { return nil }
+        return conversionManager.collections.first(where: { $0.id == id })
     }
 }
 
@@ -151,8 +155,7 @@ struct LibraryPDFRowWithCover: View {
                 }
                 
                 HStack {
-                    if let collectionId = pdf.collectionId,
-                       let collection = conversionManager.collections.first(where: { $0.id == collectionId }) {
+                    if let collection = matchingCollection {
                         Text(collection.name)
                             .font(.caption2)
                             .padding(.horizontal, 6)
@@ -191,6 +194,11 @@ struct LibraryPDFRowWithCover: View {
             }
             await ThumbnailGenerationQueue.shared.enqueue(pdf, manager: conversionManager)
         }
+    }
+
+    private var matchingCollection: PDFCollection? {
+        guard let id = pdf.collectionId else { return nil }
+        return conversionManager.collections.first(where: { $0.id == id })
     }
 }
 

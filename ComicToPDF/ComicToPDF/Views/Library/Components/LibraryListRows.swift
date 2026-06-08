@@ -251,7 +251,7 @@ struct ModernSeriesRow: View {
                     .foregroundColor(Theme.blue)
                     .cornerRadius(4)
                     
-                    if let first = group.issues.first(where: { $0.contentType == .comic }) {
+                    if let first = firstComicIssue {
                         let isManga = first.metadata.isManga ?? false
                         Text(isManga ? "MANGA" : "COMIC")
                             .font(.system(size: 10, weight: .bold))
@@ -301,5 +301,9 @@ struct ModernSeriesRow: View {
                 }
             }
         }
+    }
+
+    private var firstComicIssue: ConvertedPDF? {
+        return group.issues.first(where: { $0.contentType == .comic })
     }
 }
