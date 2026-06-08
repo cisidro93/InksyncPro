@@ -8,24 +8,29 @@ struct MetadataSearchSheet: View {
     let pdf: ConvertedPDF
     // Service is now a singleton
     
+    enum MetadataProvider: String, CaseIterable, Identifiable {
+        case comicVine = "ComicVine"
+        case aniList = "AniList"
+        case googleBooks = "Google Books"
+        
+        var id: String { rawValue }
+    }
+    
     @State private var query = ""
+    @State private var selectedProvider: MetadataProvider = .comicVine
     @State private var comicResults: [ComicVineVolume] = []
     @State private var bookResults: [GoogleBookItem] = []
+    @State private var mangaResults: [AniListManga] = []
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var showingErrorAlert = false
-    
-    // Auto-Select the platform based on File Type
-    private var isBookMode: Bool {
-        return pdf.contentType == .book || pdf.url.pathExtension.lowercased() == "epub"
-    }
     
     var body: some View {
         NavigationStack {
             VStack {
                 // Search Bar
                 HStack {
-                    TextField("Series Name (e.g. Saga)", text: $query)
+                    TextField(selectedProvider == .aniList ? "Manga Name (e.g. Naruto)" : "Series Name (e.g. Saga)", text: $query)
                         .textFieldStyle(RoundedBorderTextFieldStyle())
                         .onSubmit { performSearch() }
                     
@@ -36,10 +41,21 @@ struct MetadataSearchSheet: View {
                             .clipShape(Circle())
                     }
                 }
-                .padding()
+                .padding(.horizontal)
+                .padding(.top)
+                
+                // Segmented Picker for Metadata Source
+                Picker("Metadata Source", selection: $selectedProvider) {
+                    ForEach(MetadataProvider.allCases) { provider in
+                        Text(provider.rawValue).tag(provider)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal)
+                .padding(.bottom, 8)
                 
                 // API Key Warning (Only pertinent to ComicVine)
-                if !isBookMode && settingsManager.conversionSettings.comicVineAPIKey.isEmpty {
+                if selectedProvider == .comicVine && settingsManager.conversionSettings.comicVineAPIKey.isEmpty {
                     Text("⚠️ Please set ComicVine API Key in Settings")
                         .font(.caption)
                         .foregroundColor(.red)
@@ -50,13 +66,88 @@ struct MetadataSearchSheet: View {
                 if isLoading {
                     ProgressView()
                     Spacer()
-                } else if isBookMode {
-                    List(bookResults) { book in
-                        Button(action: { selectBook(book) }) {
-                            HStack {
-                                if let urlStr = book.volumeInfo.imageLinks?.bestQualityURL,
-                                   let url = URL(string: urlStr) {
-                                    AsyncImage(url: url) { phase in
+                } else {
+                    switch selectedProvider {
+                    case .googleBooks:
+                        List(bookResults) { book in
+                            Button(action: { selectBook(book) }) {
+                                HStack {
+                                    if let urlStr = book.volumeInfo.imageLinks?.bestQualityURL,
+                                       let url = URL(string: urlStr) {
+                                        AsyncImage(url: url) { phase in
+                                            if let image = phase.image {
+                                                image.resizable().aspectRatio(contentMode: .fit)
+                                            } else {
+                                                Color.gray.frame(width: 55, height: 75)
+                                            }
+                                        }
+                                        .frame(width: 50, height: 75)
+                                        .cornerRadius(4)
+                                    } else {
+                                        Rectangle().fill(Color.gray).frame(width: 50, height: 75)
+                                            .overlay(Image(systemName: "book.closed").foregroundColor(.white))
+                                    }
+                                    
+                                    VStack(alignment: .leading) {
+                                        Text(book.volumeInfo.title).font(.headline)
+                                        if let authors = book.volumeInfo.authors {
+                                            Text(authors.joined(separator: ", ")).font(.caption).foregroundColor(.secondary)
+                                        }
+                                        if let publisher = book.volumeInfo.publisher {
+                                            Text(publisher).font(.caption2).foregroundColor(.gray)
+                                        }
+                                    }
+                                }
+                            }
+                            .listRowBackground(Color.inkSurface.opacity(0.4))
+                        }
+                        .scrollContentBackground(.hidden)
+                        
+                    case .aniList:
+                        List(mangaResults) { manga in
+                            Button(action: { selectManga(manga) }) {
+                                HStack {
+                                    if let urlStr = manga.coverImage?.bestImageURL,
+                                       let url = URL(string: urlStr) {
+                                        AsyncImage(url: url) { phase in
+                                            if let image = phase.image {
+                                                image.resizable().aspectRatio(contentMode: .fit)
+                                            } else {
+                                                Color.gray.frame(width: 55, height: 75)
+                                            }
+                                        }
+                                        .frame(width: 50, height: 75)
+                                        .cornerRadius(4)
+                                    } else {
+                                        Rectangle().fill(Color.gray).frame(width: 50, height: 75)
+                                            .overlay(Image(systemName: "text.book.closed").foregroundColor(.white))
+                                    }
+                                    
+                                    VStack(alignment: .leading) {
+                                        Text(manga.title.preferredTitle).font(.headline)
+                                        if let creators = manga.creatorNames {
+                                            Text(creators).font(.caption).foregroundColor(.secondary)
+                                        }
+                                        HStack {
+                                            if let format = manga.format {
+                                                Text(format).font(.caption2).foregroundColor(.gray)
+                                            }
+                                            if let date = manga.startDate, let year = date.year {
+                                                Text("(\(String(year)))").font(.caption2).foregroundColor(.gray)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            .listRowBackground(Color.inkSurface.opacity(0.4))
+                        }
+                        .scrollContentBackground(.hidden)
+                        
+                    case .comicVine:
+                        List(comicResults) { volume in
+                            Button(action: { selectVolume(volume) }) {
+                                HStack {
+                                    AsyncImage(url: URL(string: volume.image?.icon_url ?? "")) { phase in
                                         if let image = phase.image {
                                             image.resizable().aspectRatio(contentMode: .fit)
                                         } else {
@@ -65,51 +156,20 @@ struct MetadataSearchSheet: View {
                                     }
                                     .frame(width: 50, height: 75)
                                     .cornerRadius(4)
-                                } else {
-                                    Rectangle().fill(Color.gray).frame(width: 50, height: 75)
-                                        .overlay(Image(systemName: "book.closed").foregroundColor(.white))
-                                }
-                                
-                                VStack(alignment: .leading) {
-                                    Text(book.volumeInfo.title).font(.headline)
-                                    if let authors = book.volumeInfo.authors {
-                                        Text(authors.joined(separator: ", ")).font(.caption).foregroundColor(.secondary)
-                                    }
-                                    if let publisher = book.volumeInfo.publisher {
-                                        Text(publisher).font(.caption2).foregroundColor(.gray)
+                                    
+                                    VStack(alignment: .leading) {
+                                        Text(volume.name).font(.headline)
+                                        Text(volume.publisher?.name ?? "Unknown Publisher").font(.caption).foregroundColor(.secondary)
+                                        if let year = volume.start_year {
+                                            Text(year).font(.caption2).foregroundColor(.gray)
+                                        }
                                     }
                                 }
                             }
+                            .listRowBackground(Color.inkSurface.opacity(0.4))
                         }
-                        .listRowBackground(Color.inkSurface.opacity(0.4))
+                        .scrollContentBackground(.hidden)
                     }
-                    .scrollContentBackground(.hidden)
-                } else {
-                    List(comicResults) { volume in
-                        Button(action: { selectVolume(volume) }) {
-                            HStack {
-                                AsyncImage(url: URL(string: volume.image?.icon_url ?? "")) { phase in
-                                    if let image = phase.image {
-                                        image.resizable().aspectRatio(contentMode: .fit)
-                                    } else {
-                                        Color.gray.frame(width: 55, height: 75)
-                                    }
-                                }
-                                .frame(width: 50, height: 75)
-                                .cornerRadius(4)
-                                
-                                VStack(alignment: .leading) {
-                                    Text(volume.name).font(.headline)
-                                    Text(volume.publisher?.name ?? "Unknown Publisher").font(.caption).foregroundColor(.secondary)
-                                    if let year = volume.start_year {
-                                        Text(year).font(.caption2).foregroundColor(.gray)
-                                    }
-                                }
-                            }
-                        }
-                        .listRowBackground(Color.inkSurface.opacity(0.4))
-                    }
-                    .scrollContentBackground(.hidden)
                 }
             }
             .background(Color.inkBackground.ignoresSafeArea())
@@ -125,6 +185,15 @@ struct MetadataSearchSheet: View {
             .onAppear {
                 // Pre-fill query with filename
                 query = cleanFilename(pdf.name)
+                
+                // Select default provider based on content type or format
+                if pdf.contentType == .manga {
+                    selectedProvider = .aniList
+                } else if pdf.contentType == .book || pdf.url.pathExtension.lowercased() == "epub" {
+                    selectedProvider = .googleBooks
+                } else {
+                    selectedProvider = .comicVine
+                }
             }
         }
     }
@@ -135,13 +204,14 @@ struct MetadataSearchSheet: View {
         isLoading = true
         errorMessage = nil
         
-        if isBookMode {
+        switch selectedProvider {
+        case .googleBooks:
             Task {
                 do {
                     bookResults = try await BookMetadataService.shared.searchBooks(query: query)
-                    isLoading = false
+                    await MainActor.run { isLoading = false }
                 } catch {
-                    Logger.shared.log("BookVine Search Failed: \(error.localizedDescription)", category: "Metadata", type: .error)
+                    Logger.shared.log("Google Books Search Failed: \(error.localizedDescription)", category: "Metadata", type: .error)
                     await MainActor.run {
                         isLoading = false
                         errorMessage = error.localizedDescription
@@ -149,25 +219,42 @@ struct MetadataSearchSheet: View {
                     }
                 }
             }
-            return
-        }
-        
-        let key = settingsManager.conversionSettings.comicVineAPIKey
-        guard !key.isEmpty else {
-            isLoading = false
-            return
-        }
-        
-        Task {
-            do {
-                comicResults = try await ComicVineService.shared.searchVolumes(query: query, apiKey: key)
+            
+        case .aniList:
+            Task {
+                do {
+                    mangaResults = try await AniListService.shared.searchManga(query: query)
+                    await MainActor.run { isLoading = false }
+                } catch {
+                    Logger.shared.log("AniList Search Failed: \(error.localizedDescription)", category: "Metadata", type: .error)
+                    await MainActor.run {
+                        isLoading = false
+                        errorMessage = error.localizedDescription
+                        showingErrorAlert = true
+                    }
+                }
+            }
+            
+        case .comicVine:
+            let key = settingsManager.conversionSettings.comicVineAPIKey
+            guard !key.isEmpty else {
                 isLoading = false
-            } catch {
-                Logger.shared.log("Search Failed: \(error.localizedDescription)", category: "Metadata", type: .error)
-                await MainActor.run {
-                    isLoading = false
-                    errorMessage = error.localizedDescription
-                    showingErrorAlert = true
+                errorMessage = "ComicVine API Key is required. Please set it in Preferences."
+                showingErrorAlert = true
+                return
+            }
+            
+            Task {
+                do {
+                    comicResults = try await ComicVineService.shared.searchVolumes(query: query, apiKey: key)
+                    await MainActor.run { isLoading = false }
+                } catch {
+                    Logger.shared.log("ComicVine Search Failed: \(error.localizedDescription)", category: "Metadata", type: .error)
+                    await MainActor.run {
+                        isLoading = false
+                        errorMessage = error.localizedDescription
+                        showingErrorAlert = true
+                    }
                 }
             }
         }
@@ -200,8 +287,66 @@ struct MetadataSearchSheet: View {
                 conversionManager.updatePDFMetadata(pdf, metadata: newMeta)
                 
                 if let urlStr = book.volumeInfo.imageLinks?.bestQualityURL {
-                    Task { await fetchAndSaveCover(urlStr) }
+                    Task {
+                        await fetchAndSaveCover(urlStr)
+                        await MainActor.run {
+                            isLoading = false
+                            dismiss()
+                        }
+                    }
                 } else {
+                    isLoading = false
+                    dismiss()
+                }
+            }
+        }
+    }
+    
+    func selectManga(_ manga: AniListManga) {
+        isLoading = true
+        Task {
+            await MainActor.run {
+                var newMeta = pdf.metadata
+                newMeta.series = manga.title.preferredTitle
+                newMeta.tags.append("AniList")
+                newMeta.isManga = true
+                
+                if let creators = manga.creatorNames {
+                    newMeta.writer = creators
+                    newMeta.author = creators
+                }
+                
+                if let desc = manga.description {
+                    newMeta.summary = desc.replacingOccurrences(of: "<[^>]+>", with: "", options: String.CompareOptions.regularExpression, range: nil)
+                }
+                
+                if let date = manga.startDate?.toDate {
+                    newMeta.publicationDate = date
+                }
+                
+                newMeta.externalSeriesID = "anilist:\(manga.id)"
+                
+                // Keep the existing issue/volume values if present
+                if let issueString = extractIssueNumber(from: pdf.name) {
+                    newMeta.volume = issueString
+                    newMeta.issueNumber = issueString
+                    newMeta.title = "\(manga.title.preferredTitle) #\(issueString)"
+                } else {
+                    newMeta.title = manga.title.preferredTitle
+                }
+                
+                conversionManager.updatePDFMetadata(pdf, metadata: newMeta)
+                
+                if let urlStr = manga.coverImage?.bestImageURL {
+                    Task {
+                        await fetchAndSaveCover(urlStr)
+                        await MainActor.run {
+                            isLoading = false
+                            dismiss()
+                        }
+                    }
+                } else {
+                    isLoading = false
                     dismiss()
                 }
             }
@@ -217,10 +362,10 @@ struct MetadataSearchSheet: View {
                 // Try to guess issue number
                 if let issueNum = extractIssueNumber(from: pdf.name) {
                      if let issue = try await ComicVineService.shared.getIssue(volumeID: volume.id, issueNumber: issueNum, apiKey: key) {
-                         await applyIssueMetadata(issue, volume: volume)
-                         // Trigger intelligent background fetch
-                         intelligentFetchRelatedIssues(for: volume, originalSeries: originalSeries)
-                         return
+                          await applyIssueMetadata(issue, volume: volume)
+                          // Trigger intelligent background fetch
+                          intelligentFetchRelatedIssues(for: volume, originalSeries: originalSeries)
+                          return
                      }
                 }
                 
@@ -268,9 +413,17 @@ struct MetadataSearchSheet: View {
             conversionManager.updatePDFMetadata(pdf, metadata: newMeta)
              // Fetch cover if available?
              if let url = issue.image?.original_url {
-                 Task { await fetchAndSaveCover(url) }
+                 Task {
+                     await fetchAndSaveCover(url)
+                     await MainActor.run {
+                         isLoading = false
+                         dismiss()
+                     }
+                 }
+             } else {
+                 isLoading = false
+                 dismiss()
              }
-            dismiss()
         }
     }
     
@@ -282,7 +435,19 @@ struct MetadataSearchSheet: View {
             newMeta.tags.append("ComicVine")
             
             conversionManager.updatePDFMetadata(pdf, metadata: newMeta)
-            dismiss()
+            
+            if let url = volume.image?.original_url {
+                Task {
+                    await fetchAndSaveCover(url)
+                    await MainActor.run {
+                        isLoading = false
+                        dismiss()
+                    }
+                }
+            } else {
+                isLoading = false
+                dismiss()
+            }
         }
     }
     
