@@ -115,6 +115,11 @@ struct ModernLibraryView: View {
         MetadataMatchService.shared.rebuildClusters(pdfs: cachedVisiblePDFs)
     }
 
+    private var currentFolder: PDFCollection? {
+        guard let id = viewModel.currentFolderID else { return nil }
+        return conversionManager.collections.first(where: { $0.id == id })
+    }
+
     var body: some View {
         shellWithNotifications
             // PERF D-C1 boot fix: seed the cache before the view fully renders
@@ -683,8 +688,7 @@ struct ModernLibraryView: View {
             // Daily Brief and Recently Added sections removed for an uncluttered bookshelf view.
 
             // MARK: - Breadcrumb Navigation for Nested Folders
-            if let folderID = viewModel.currentFolderID,
-               let folder = conversionManager.collections.first(where: { $0.id == folderID }) {
+            if let folder = currentFolder {
                 breadcrumbRow(folder: folder)
             }
 

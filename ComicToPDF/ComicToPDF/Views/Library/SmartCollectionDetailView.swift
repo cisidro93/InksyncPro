@@ -133,6 +133,13 @@ import SwiftUI
         return items.map { $0.1 }
     }
 
+    // MARK: - Helpers
+    private func getCoverImage(for group: SeriesGroup) -> UIImage? {
+        guard let coverID = group.coverIssueID,
+              let cover = group.issues.first(where: { $0.id == coverID }) else { return nil }
+        return conversionManager.getThumbnail(for: cover)
+    }
+
     // MARK: - Body
 
     var body: some View {
@@ -435,9 +442,7 @@ import SwiftUI
                 // Cover stack
                 ZStack {
                     RoundedRectangle(cornerRadius: 6).fill(Theme.surface).frame(width: 40, height: 56)
-                    if let coverID = group.coverIssueID,
-                       let cover = group.issues.first(where: { $0.id == coverID }),
-                       let img = conversionManager.getThumbnail(for: cover) {
+                    if let img = getCoverImage(for: group) {
                         Image(uiImage: img).resizable().scaledToFill()
                             .frame(width: 40, height: 56).clipShape(RoundedRectangle(cornerRadius: 6))
                     } else {
