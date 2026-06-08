@@ -160,9 +160,11 @@ final class LibraryPillConfig: ObservableObject {
     @Published var disabledPills: Set<LibraryPillKey> = []
 
     init() {
-        if let data = UserDefaults.standard.data(forKey: storageKey),
-           let saved = try? JSONDecoder().decode(Set<String>.self, from: data) {
-            disabledPills = Set(saved.compactMap { LibraryPillKey(rawValue: $0) })
+        if let data = UserDefaults.standard.data(forKey: storageKey) {
+            let optSaved = try? JSONDecoder().decode(Set<String>.self, from: data)
+            if let saved = optSaved {
+                disabledPills = Set(saved.compactMap { LibraryPillKey(rawValue: $0) })
+            }
         }
     }
 

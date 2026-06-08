@@ -143,32 +143,35 @@ class ImportQueueManager: ObservableObject {
         let entries: [QueueEntry] = stagedURLs.compactMap { url in
             let accessing = url.startAccessingSecurityScopedResource()
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-            guard let data = try? url.bookmarkData(
+            let optData = try? url.bookmarkData(
                 options: .minimalBookmark,
                 includingResourceValuesForKeys: nil,
                 relativeTo: nil
-            ) else { return nil }
+            )
+            guard let data = optData else { return nil }
             return QueueEntry(bookmarkData: data, originalPath: url.path)
         }
-        if let encoded = try? JSONEncoder().encode(entries) {
+        let optEncoded = try? JSONEncoder().encode(entries)
+        if let encoded = optEncoded {
             UserDefaults.standard.set(encoded, forKey: "importQueueBookmarks")
         }
     }
 
     private func loadPersistedQueue() {
-        guard let data = UserDefaults.standard.data(forKey: "importQueueBookmarks"),
-              let entries = try? JSONDecoder().decode([QueueEntry].self, from: data)
-        else { return }
+        guard let data = UserDefaults.standard.data(forKey: "importQueueBookmarks") else { return }
+        let optEntries = try? JSONDecoder().decode([QueueEntry].self, from: data)
+        guard let entries = optEntries else { return }
 
         var resolved: [URL] = []
         for entry in entries {
             var isStale = false
-            if let url = try? URL(
+            let optURL = try? URL(
                 resolvingBookmarkData: entry.bookmarkData,
                 options: .withoutUI,
                 relativeTo: nil,
                 bookmarkDataIsStale: &isStale
-            ), !isStale {
+            )
+            if let url = optURL, !isStale {
                 resolved.append(url)
             }
             // Stale bookmarks are silently pruned — file may have moved or been deleted

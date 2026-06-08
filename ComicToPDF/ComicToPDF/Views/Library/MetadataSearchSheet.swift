@@ -365,7 +365,8 @@ struct MetadataSearchSheet: View {
     
     func extractIssueNumber(from name: String) -> String? {
         let pattern = "#?(\\d+)"
-        if let regex = try? NSRegularExpression(pattern: pattern),
+        let optRegex = try? NSRegularExpression(pattern: pattern)
+        if let regex = optRegex,
            let match = regex.firstMatch(in: name, range: NSRange(name.startIndex..., in: name)) {
             if let range = Range(match.range(at: 1), in: name) {
                 return String(name[range])

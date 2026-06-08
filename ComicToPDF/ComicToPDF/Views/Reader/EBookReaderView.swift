@@ -739,17 +739,22 @@ struct EBookWebReader: UIViewRepresentable {
             let styledHTML: String? = await Task.detached(priority: .userInitiated) {
                 var rawHTML: String?
                 var enc: String.Encoding = .utf8
-                if let html = try? String(contentsOf: capturedURL, usedEncoding: &enc) {
+                let optString = try? String(contentsOf: capturedURL, usedEncoding: &enc)
+                if let html = optString {
                     rawHTML = html
-                } else if let data = try? Data(contentsOf: capturedURL) {
-                    rawHTML = String(data: data, encoding: .isoLatin1)
-                           ?? String(data: data, encoding: .ascii)
+                } else {
+                    let optData = try? Data(contentsOf: capturedURL)
+                    if let data = optData {
+                        rawHTML = String(data: data, encoding: .isoLatin1)
+                               ?? String(data: data, encoding: .ascii)
+                    }
                 }
                 guard var html = rawHTML else { return nil }
 
                 // Strip legacy charset tags
                 let pattern = "<meta[^>]*charset[^>]*>"
-                if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) {
+                let optRegex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive)
+                if let regex = optRegex {
                     html = regex.stringByReplacingMatches(
                         in: html, range: NSRange(html.startIndex..., in: html), withTemplate: ""
                     )

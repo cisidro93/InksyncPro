@@ -153,11 +153,11 @@ class PhysicalFileSystemRouter {
     // MARK: - Heavy Graphics Generation
     func generateCoverThumbnail(for pdf: ConvertedPDF, manager: ConversionManager) async {
         let variantData: Data? = autoreleasepool {
-            if let variantID = pdf.metadata.selectedCoverID,
-               let variantURL = pdf.metadata.coverVariants[variantID],
-               FileManager.default.fileExists(atPath: variantURL.path),
-               let data = try? Data(contentsOf: variantURL),
-               let image = UIImage(data: data) {
+            guard let variantID = pdf.metadata.selectedCoverID,
+                  let variantURL = pdf.metadata.coverVariants[variantID],
+                  FileManager.default.fileExists(atPath: variantURL.path) else { return nil }
+            let optData = try? Data(contentsOf: variantURL)
+            if let data = optData, let image = UIImage(data: data) {
                 return image.jpegData(compressionQuality: 0.7)
             }
             return nil

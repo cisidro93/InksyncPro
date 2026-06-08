@@ -268,7 +268,8 @@ struct ReaderView: View {
                 if let idx = note.userInfo?["pageIndex"] as? Int, idx < pages.count {
                     let pageURL = pages[idx]
                     Task.detached(priority: .userInitiated) {
-                        if let data = try? Data(contentsOf: pageURL),
+                        let optData = try? Data(contentsOf: pageURL)
+                        if let data = optData,
                            let img  = UIImage(data: data) {
                             await MainActor.run { shareImage = img; showShareSheet = true }
                         }
@@ -641,7 +642,8 @@ struct ReaderView: View {
     private func sampleAmbientColor(from pageURL: URL) {
         Task(priority: .utility) {
             let color = await Task.detached(priority: .utility) { () -> Color in
-                guard let data = try? Data(contentsOf: pageURL),
+                let optData = try? Data(contentsOf: pageURL)
+                guard let data = optData,
                       let img = UIImage(data: data) else { return .clear }
                 return img.dominantColor()
             }.value
@@ -1268,7 +1270,8 @@ struct ReaderView: View {
                     let refreshDescriptor = FetchDescriptor<SDAnnotation>(
                         predicate: #Predicate { $0.id == targetID }
                     )
-                    if let active = try? self.modelContext.fetch(refreshDescriptor).first, active.drawingOCRText != ocrText {
+                    let fetched = try? self.modelContext.fetch(refreshDescriptor)
+                    if let active = fetched?.first, active.drawingOCRText != ocrText {
                         active.drawingOCRText = ocrText
                         active.modifiedAt = Date()
                         try? self.modelContext.save()

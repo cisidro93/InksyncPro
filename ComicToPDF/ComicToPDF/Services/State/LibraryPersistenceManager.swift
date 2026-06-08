@@ -60,10 +60,12 @@ class LibraryPersistenceManager {
                 manager.convertedPDFs = legacyPDFs
                 manager.collections = legacyCols
                 
-                if let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent(self.libraryFileName),
-                   FileManager.default.fileExists(atPath: url.path),
-                   let data = try? Data(contentsOf: url),
-                   let index = try? JSONDecoder().decode(LibraryIndex.self, from: data) {
+                let dirURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+                if let url = dirURL?.appendingPathComponent(self.libraryFileName),
+                   FileManager.default.fileExists(atPath: url.path) {
+                    let optData = try? Data(contentsOf: url)
+                    if let data = optData,
+                       let index = try? JSONDecoder().decode(LibraryIndex.self, from: data) {
                     
                     if let legacyPanels = index.panelOverrides, !legacyPanels.isEmpty {
                         for (pdfID, pages) in legacyPanels {
@@ -93,6 +95,7 @@ class LibraryPersistenceManager {
                     DeviceRegistry.shared.primaryDeviceID = index.primaryDeviceID
                     
                     try? FileManager.default.removeItem(at: url)
+                    }
                 }
             } catch {
                 Logger.shared.log("Critical Boot Error: Bridge Load Failed. \(error.localizedDescription)", category: "Library", type: .error)

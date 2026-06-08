@@ -175,7 +175,8 @@ struct WebtoonScrollView: UIViewRepresentable {
         private func loadImage(at index: Int, url: URL, into iv: UIImageView) {
             guard loadTasks[index] == nil else { return }
             loadTasks[index] = Task.detached(priority: .userInitiated) {
-                guard let data = try? Data(contentsOf: url),
+                let optData = try? Data(contentsOf: url)
+                guard let data = optData,
                       let img  = UIImage(data: data) else { return }
 
                 let isSmartCrop = UserDefaults.standard.bool(forKey: "isAutoCropEnabled")
