@@ -32,6 +32,8 @@ struct SeriesDetailView: View {
     @State private var selection = Set<UUID>()
     @State private var isSelectionMode: Bool = false
     @State private var showingMergeConfig: Bool = false
+    @State private var mergeSessionID = UUID()
+    @State private var metadataSessionID = UUID()
     @State private var showBatchMetadataEditor: Bool = false
     @State private var showingBatchSeriesAssignment: Bool = false
     
@@ -898,12 +900,16 @@ struct SeriesDetailView: View {
         .sheet(isPresented: $showingMergeConfig) {
             LazyView {
                 SeriesMergeConfigurationView(sourceFiles: freshIssues.filter { selection.contains($0.id) }, suggestedName: mergeConfigSuggestedName)
+                    .id(mergeSessionID)
                     .environmentObject(conversionManager)
                     .environmentObject(settingsManager)
             }
         }
         .sheet(isPresented: $showBatchMetadataEditor) {
-            BatchMetadataEditorView(selectedPDFs: freshIssues.filter { selection.contains($0.id) })
+            LazyView {
+                BatchMetadataEditorView(selectedPDFs: freshIssues.filter { selection.contains($0.id) })
+                    .id(metadataSessionID)
+            }
         }
         .sheet(item: $pdfToExport) { pdf in
             DualExportView(pdf: pdf)
@@ -1048,6 +1054,16 @@ struct SeriesDetailView: View {
             Button("Cancel", role: .cancel) { pdfToDelete = nil }
         } message: {
             Text("\"\(pdfToDelete?.name ?? "this file")\" will be removed. Move to Trash allows recovery via the Files app.")
+        }
+        .onChange(of: showingMergeConfig) { _, newValue in
+            if newValue {
+                mergeSessionID = UUID()
+            }
+        }
+        .onChange(of: showBatchMetadataEditor) { _, newValue in
+            if newValue {
+                metadataSessionID = UUID()
+            }
         }
         .task(id: series.id) { await loadHeaderCover() }
     }

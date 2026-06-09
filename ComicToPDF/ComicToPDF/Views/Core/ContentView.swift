@@ -29,6 +29,7 @@ struct ContentView: View {
     @State private var isBatchMode = false
     @State private var multiSelection = Set<UUID>()
     @State private var showingBatchMergeReorder = false
+    @State private var batchMergeSessionID = UUID()
     @State private var batchMergeItems: [ConvertedPDF] = []
 
     // Save & Open Workflow
@@ -135,8 +136,14 @@ struct ContentView: View {
         .sheet(isPresented: $showingBatchMergeReorder) {
             LazyView {
                 SeriesMergeConfigurationView(sourceFiles: batchMergeItems)
+                    .id(batchMergeSessionID)
                     .environmentObject(conversionManager)
                     .environmentObject(settingsManager)
+            }
+        }
+        .onChange(of: showingBatchMergeReorder) { _, newValue in
+            if newValue {
+                batchMergeSessionID = UUID()
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("GlobalErrorTriggered"))) { notification in
