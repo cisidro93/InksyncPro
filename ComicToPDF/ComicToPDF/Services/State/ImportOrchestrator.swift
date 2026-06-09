@@ -409,18 +409,6 @@ actor ImportOrchestrator {
         
         await MainActor.run { ImportMonitorManager.shared.completeImport() }
         guard !importedPDFs.isEmpty else { return [] }
-
-        // Fast-path SwiftData insert for ONLY the new records.
-        // This bypasses the expensive full-library reconciliation that syncToSwiftData does.
-        // The regular saveLibrary debounce will run syncToSwiftData later for full consistency.
-        await MigrationService.shared.batchInsertToSwiftData(newPDFs: importedPDFs)
-
-        // ✅ Import History: log each successfully imported file
-        for pdf in importedPDFs {
-            let size = pdf.fileSize > 0 ? ByteCountFormatter.string(fromByteCount: pdf.fileSize, countStyle: .file) : "unknown size"
-            Logger.shared.log("✓ Imported: \(pdf.name) (\(size))", category: "Import", type: .success)
-        }
-        Logger.shared.log("✅ Import batch complete: \(importedPDFs.count) file(s) added to library.", category: "Import", type: .success)
         
         var clusters: [String: [ConvertedPDF]] = [:]
         
@@ -462,6 +450,17 @@ actor ImportOrchestrator {
             manager.backfillMissingThumbnails()
             return allImported
         }
+        
+        // Fast-path SwiftData insert for ONLY the new records, now with collectionId and series metadata fully assigned.
+        await MigrationService.shared.batchInsertToSwiftData(newPDFs: finalImportedPDFs)
+
+        // ✅ Import History: log each successfully imported file
+        for pdf in finalImportedPDFs {
+            let size = pdf.fileSize > 0 ? ByteCountFormatter.string(fromByteCount: pdf.fileSize, countStyle: .file) : "unknown size"
+            Logger.shared.log("✓ Imported: \(pdf.name) (\(size))", category: "Import", type: .success)
+        }
+        Logger.shared.log("✅ Import batch complete: \(finalImportedPDFs.count) file(s) added to library.", category: "Import", type: .success)
+        
         return finalImportedPDFs
     }
     
