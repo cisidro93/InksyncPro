@@ -388,7 +388,14 @@ struct LibraryHeaderView: View {
                     .all:    conversionManager.convertedPDFs.count,
                     .comics: conversionManager.convertedPDFs.filter { ($0.contentType == .comic) && !($0.metadata.isManga ?? false) }.count,
                     .manga:  conversionManager.convertedPDFs.filter { $0.contentType == .manga || ($0.metadata.isManga ?? false) }.count,
-                    .books:  conversionManager.convertedPDFs.filter { $0.contentType == .book }.count
+                    .books:  conversionManager.convertedPDFs.filter { $0.contentType == .book }.count,
+                    .converted: conversionManager.convertedPDFs.filter { pdf in
+                        let nameLower = pdf.name.lowercased()
+                        return pdf.lastOutputFormat != nil ||
+                               pdf.url.path.contains("/Merged/") ||
+                               nameLower.contains("_converted") ||
+                               nameLower.contains("go merge")
+                    }.count
                 ]
             )
             .padding(.top, 6)
