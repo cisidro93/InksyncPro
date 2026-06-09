@@ -233,13 +233,16 @@ struct EPUBMerger: Sendable {
         try "application/epub+zip".write(to: mimetypePath, atomically: true, encoding: .ascii)
         try archive.addEntry(with: "mimetype", fileURL: mimetypePath, compressionMethod: .none)
         
-        // 8. Recursive Payload Addition
+        // Inject container.xml second and uncompressed, matching CBZToEPUBConverter
+        let containerPath = epubDir.appendingPathComponent("META-INF/container.xml")
+        try archive.addEntry(with: "META-INF/container.xml", fileURL: containerPath, compressionMethod: .none)
+        
+        // 8. Recursive Payload Addition of OEBPS folder contents
+        let oebpsDir = epubDir.appendingPathComponent("OEBPS")
         let keys: [URLResourceKey] = [.nameKey, .isDirectoryKey]
-        if let enumerator = fileManager.enumerator(at: epubDir, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) {
+        if let enumerator = fileManager.enumerator(at: oebpsDir, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) {
             while let fileURL = enumerator.nextObject() as? URL {
                 try autoreleasepool {
-                    if fileURL.lastPathComponent == "mimetype" { return }
-                    
                     var isDirectory: ObjCBool = false
                     fileManager.fileExists(atPath: fileURL.path, isDirectory: &isDirectory)
                     if isDirectory.boolValue { return }
@@ -354,11 +357,14 @@ struct EPUBMerger: Sendable {
             try "application/epub+zip".write(to: mimetypePath, atomically: true, encoding: .ascii)
             try archive.addEntry(with: "mimetype", fileURL: mimetypePath, compressionMethod: .none)
             
+            let containerPath = dirURL.appendingPathComponent("META-INF/container.xml")
+            try archive.addEntry(with: "META-INF/container.xml", fileURL: containerPath, compressionMethod: .none)
+            
+            let oebpsDir = dirURL.appendingPathComponent("OEBPS")
             let keys: [URLResourceKey] = [.nameKey, .isDirectoryKey]
-            if let enumerator = fileManager.enumerator(at: dirURL, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) {
+            if let enumerator = fileManager.enumerator(at: oebpsDir, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) {
                 while let fileURL = enumerator.nextObject() as? URL {
                     try autoreleasepool {
-                        if fileURL.lastPathComponent == "mimetype" { return }
                         var isDirectory: ObjCBool = false
                         fileManager.fileExists(atPath: fileURL.path, isDirectory: &isDirectory)
                         if isDirectory.boolValue { return }
