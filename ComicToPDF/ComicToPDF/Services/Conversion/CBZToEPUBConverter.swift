@@ -253,6 +253,8 @@ struct CBZToEPUBConverter: Sendable {
         var spineItems: [String] = []
         var manifestItems: [String] = []
         
+        let isManga = settings.mangaMode
+        
         // Dynamic Cover Generation for Split Volumes
         if let coverData = coverData, totalBatches > 1 {
             let badgedCoverData = CoverGenerator.generateCover(from: coverData, partNumber: batchIndex + 1, totalParts: totalBatches)
@@ -263,7 +265,7 @@ struct CBZToEPUBConverter: Sendable {
             manifestItems.append("<item id=\"cover-page\" href=\"text/cover.xhtml\" media-type=\"application/xhtml+xml\"/>")
             spineItems.append("<itemref idref=\"cover-page\"/>")
             
-            let coverXHTML = EPUBManifestBuilder.buildCoverXHTML(coverFilename: coverFilename)
+            let coverXHTML = EPUBManifestBuilder.buildCoverXHTML(coverFilename: coverFilename, isManga: isManga)
             try? coverXHTML.write(to: textDir.appendingPathComponent("cover.xhtml"), atomically: true, encoding: .utf8)
         }
         
@@ -298,7 +300,7 @@ struct CBZToEPUBConverter: Sendable {
         } else {
             firstPageHref = "text/page_0001.xhtml"
         }
-        let navContent = EPUBManifestBuilder.buildNavContent(firstPageHref: firstPageHref)
+        let navContent = EPUBManifestBuilder.buildNavContent(firstPageHref: firstPageHref, isManga: isManga)
         try navContent.write(to: oebpsDir.appendingPathComponent("nav.xhtml"), atomically: true, encoding: .utf8)
 
         let ncxContent = EPUBManifestBuilder.buildNCXContent(
@@ -311,7 +313,6 @@ struct CBZToEPUBConverter: Sendable {
         var currentChunkImages: [String] = []
         var chunkIndex = 0
         
-        let isManga = settings.mangaMode
         var globalPageCounter = 1
         
         if batchIndex > 0, let coverData = coverData {
@@ -350,7 +351,8 @@ struct CBZToEPUBConverter: Sendable {
                 images: currentChunkImages,
                 title: "Page \(chunkIndex)",
                 bookUUID: bookUUID,
-                pageIndex: item.index
+                pageIndex: item.index,
+                isManga: isManga
             )
             let chunkName = String(format: "page_%04d.xhtml", chunkIndex)
             try chunkXHTML.write(to: textDir.appendingPathComponent(chunkName), atomically: true, encoding: .utf8)
@@ -358,11 +360,13 @@ struct CBZToEPUBConverter: Sendable {
             
             // Universally Apply Advanced Landscape Spread Tagging (RTL vs LTR)
             let spreadTag: String
-            if isManga {
-                // RTL Manga Sequence: Cover is Left, Page 2 is Right, Page 3 is Left
+            if globalPageCounter == 1 {
+                spreadTag = ""
+            } else if isManga {
+                // RTL Manga Sequence: Cover has no spread (is page 1), Page 2 is Right, Page 3 is Left
                 spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-left\"" : " properties=\"page-spread-right\""
             } else {
-                // LTR Western Sequence: Cover is Right, Page 2 is Left, Page 3 is Right
+                // LTR Western Sequence: Cover has no spread (is page 1), Page 2 is Left, Page 3 is Right
                 spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
             }
             
@@ -477,8 +481,8 @@ struct CBZToEPUBConverter: Sendable {
         return capturedOutputURL
     }
 
-    static func generateChunkXHTML(chunkIndex: Int, images: [String], title: String, width: Int? = nil, height: Int? = nil, bookUUID: String? = nil, pageIndex: Int? = nil) -> String {
-        return EPUBManifestBuilder.buildChunkXHTML(chunkIndex: chunkIndex, images: images, title: title, bookUUID: bookUUID, pageIndex: pageIndex)
+    static func generateChunkXHTML(chunkIndex: Int, images: [String], title: String, width: Int? = nil, height: Int? = nil, bookUUID: String? = nil, pageIndex: Int? = nil, isManga: Bool = false) -> String {
+        return EPUBManifestBuilder.buildChunkXHTML(chunkIndex: chunkIndex, images: images, title: title, bookUUID: bookUUID, pageIndex: pageIndex, isManga: isManga)
     }
     
     // MARK: - KFX Export Pipeline

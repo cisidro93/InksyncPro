@@ -47,9 +47,10 @@ struct EPUBMerger: Sendable {
             let destURL = imagesDir.appendingPathComponent(coverFilename)
             try? coverData.write(to: destURL)
             
+            let lang = settings.mangaMode ? "ja" : "en"
             let coverXHTML = """
             <?xml version="1.0" encoding="UTF-8"?>
-            <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="en" xml:lang="en">
+            <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="\(lang)" xml:lang="\(lang)">
             <head>
                 <title>Cover</title>
                 <meta name="viewport" content="width=1980, height=2640"/>
@@ -91,9 +92,10 @@ struct EPUBMerger: Sendable {
                     
                     // Manifest & HTML
                     let htmlName = String(format: "page_%05d.xhtml", globalPageIndex)
+                    let lang = settings.mangaMode ? "ja" : "en"
                     let htmlContent = """
                     <?xml version="1.0" encoding="UTF-8"?>
-                    <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="en" xml:lang="en">
+                    <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="\(lang)" xml:lang="\(lang)">
                     <head>
                         <meta charset="UTF-8"/>
                         <meta name="viewport" content="width=1980, height=2640"/>
@@ -126,7 +128,9 @@ struct EPUBMerger: Sendable {
                     
                     // Apply Dynamic Landscape Spreads Tagging (RTL vs LTR)
                     let spreadTag: String
-                    if settings.mangaMode {
+                    if globalPageCounter == 1 {
+                        spreadTag = ""
+                    } else if settings.mangaMode {
                         spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-left\"" : " properties=\"page-spread-right\""
                     } else {
                         spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
@@ -160,7 +164,7 @@ struct EPUBMerger: Sendable {
                 <dc:title>\(opfTitle.xmlEscaped())</dc:title>
                 <dc:creator>\(opfCreator.xmlEscaped())</dc:creator>
                 <dc:description>\(opfDesc.xmlEscaped())</dc:description>
-                <dc:language>en</dc:language>
+                <dc:language>\(settings.mangaMode ? "ja" : "en")</dc:language>
                 <meta property="dcterms:modified">\(dateIso)</meta>
                 <meta property="rendition:layout">pre-paginated</meta>
                 <meta property="rendition:orientation">auto</meta>
@@ -184,9 +188,10 @@ struct EPUBMerger: Sendable {
         try opfContent.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8)
         
         // 5. Nav
+        let lang = settings.mangaMode ? "ja" : "en"
         let navContent = """
         <?xml version="1.0" encoding="UTF-8"?>
-        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="en" xml:lang="en">
+        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="\(lang)" xml:lang="\(lang)">
         <head><title>Navigation</title><meta charset="utf-8" /></head>
         <body>
             <nav epub:type="toc" id="toc"><h1>Table of Contents</h1><ol><li><a href="\(firstPageHref)">Start Reading</a></li></ol></nav>
@@ -238,7 +243,6 @@ struct EPUBMerger: Sendable {
         try archive.addEntry(with: "META-INF/container.xml", fileURL: containerPath, compressionMethod: .none)
         
         // 8. Recursive Payload Addition of OEBPS folder contents
-        let oebpsDir = epubDir.appendingPathComponent("OEBPS")
         let keys: [URLResourceKey] = [.nameKey, .isDirectoryKey]
         if let enumerator = fileManager.enumerator(at: oebpsDir, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) {
             while let fileURL = enumerator.nextObject() as? URL {
@@ -297,7 +301,7 @@ struct EPUBMerger: Sendable {
                     <dc:title>\(opfTitle.xmlEscaped())</dc:title>
                     <dc:creator>\(opfCreator.xmlEscaped())</dc:creator>
                     <dc:description>\(opfDesc.xmlEscaped())</dc:description>
-                    <dc:language>en</dc:language>
+                    <dc:language>\(settings.mangaMode ? "ja" : "en")</dc:language>
                     <meta property="dcterms:modified">\(dateIso)</meta>
                     <meta property="rendition:layout">pre-paginated</meta>
                     <meta property="rendition:orientation">auto</meta>
@@ -320,9 +324,10 @@ struct EPUBMerger: Sendable {
             """
             try opf.write(to: oebps.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8)
             
+            let lang = settings.mangaMode ? "ja" : "en"
             let navContent = """
             <?xml version="1.0" encoding="UTF-8"?>
-            <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="en" xml:lang="en">
+            <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="\(lang)" xml:lang="\(lang)">
             <head><title>Navigation</title><meta charset="utf-8" /></head>
             <body>
                 <nav epub:type="toc" id="toc"><h1>Table of Contents</h1><ol><li><a href="\(firstPageHref)">Start Reading</a></li></ol></nav>
@@ -387,9 +392,10 @@ struct EPUBMerger: Sendable {
                 let coverFilename = "cover.jpg"
                 try badgedData.write(to: targetImagesDir.appendingPathComponent(coverFilename))
                 let htmlName = "cover.xhtml"
+                let lang = settings.mangaMode ? "ja" : "en"
                 let content = """
                 <?xml version="1.0" encoding="UTF-8"?>
-                <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="en" xml:lang="en">
+                <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="\(lang)" xml:lang="\(lang)">
                 <head>
                     <title>Cover</title>
                     <meta name="viewport" content="width=1980, height=2640"/>
@@ -457,9 +463,10 @@ struct EPUBMerger: Sendable {
                     try copyAndPrepareImage(from: img, to: destURL, settings: settings)
                     
                     let htmlName = String(format: "page_%05d.xhtml", globalPageIndex)
+                    let lang = settings.mangaMode ? "ja" : "en"
                     let htmlContent = """
                     <?xml version="1.0" encoding="UTF-8"?>
-                    <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="en" xml:lang="en">
+                    <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="\(lang)" xml:lang="\(lang)">
                     <head>
                         <meta charset="UTF-8"/>
                         <meta name="viewport" content="width=1980, height=2640"/>
@@ -491,7 +498,9 @@ struct EPUBMerger: Sendable {
                     
                     // Apply Dynamic Landscape Spreads Tagging (RTL vs LTR)
                     let spreadTag: String
-                    if settings.mangaMode {
+                    if globalPageCounter == 1 {
+                        spreadTag = ""
+                    } else if settings.mangaMode {
                         spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-left\"" : " properties=\"page-spread-right\""
                     } else {
                         spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""

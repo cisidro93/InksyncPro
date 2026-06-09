@@ -22,10 +22,11 @@ public struct EPUBManifestBuilder {
     a.app-amzn-magnify { display: block; text-decoration: none; background: transparent; }
     """
 
-    public static func buildCoverXHTML(coverFilename: String) -> String {
+    public static func buildCoverXHTML(coverFilename: String, isManga: Bool = false) -> String {
+        let lang = isManga ? "ja" : "en"
         return """
         <?xml version="1.0" encoding="UTF-8"?>
-        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="en" xml:lang="en">
+        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="\(lang)" xml:lang="\(lang)">
         <head><title>Cover</title><style type="text/css">
         html, body { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #000000; }
         img { display: block; width: 100%; height: 100%; }
@@ -38,10 +39,11 @@ public struct EPUBManifestBuilder {
     /// Generates a nav.xhtml pointing to the correct first content page.
     /// - Parameter firstPageHref: The href of the first spine item, e.g. "text/page_0001.xhtml"
     ///   or "text/cover.xhtml" when a badged cover is prepended.
-    public static func buildNavContent(firstPageHref: String = "text/page_0001.xhtml") -> String {
+    public static func buildNavContent(firstPageHref: String = "text/page_0001.xhtml", isManga: Bool = false) -> String {
+        let lang = isManga ? "ja" : "en"
         return """
         <?xml version="1.0" encoding="UTF-8"?>
-        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="en" xml:lang="en">
+        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="\(lang)" xml:lang="\(lang)">
         <head><title>Navigation</title><meta charset="utf-8" /></head>
         <body>
             <nav epub:type="toc" id="toc"><h1>Table of Contents</h1><ol><li><a href="\(firstPageHref)">Start Reading</a></li></ol></nav>
@@ -89,13 +91,14 @@ public struct EPUBManifestBuilder {
         // unknown source size. Without it renders are blurry on high-DPI screens.
         let originalResolution = "1980x2640"
 
+        let lang = isManga ? "ja" : "en"
         return """
         <?xml version="1.0" encoding="UTF-8"?>
         <package xmlns="http://www.idpf.org/2007/opf" xmlns:epub="http://www.idpf.org/2007/ops" unique-identifier="BookID" version="3.0" prefix="rendition: http://www.idpf.org/vocab/rendition/# dcterms: http://purl.org/dc/terms/">
             <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
                 <dc:identifier id="BookID">urn:uuid:\(bookUUID)</dc:identifier>
                 <dc:title>\(baseFilename.xmlEscaped())</dc:title>
-                <dc:language>en</dc:language>
+                <dc:language>\(lang)</dc:language>
                 <meta property="dcterms:modified">\(modified)</meta>
                 <meta property="rendition:layout">pre-paginated</meta>
                 <meta property="rendition:orientation">auto</meta>
@@ -118,7 +121,7 @@ public struct EPUBManifestBuilder {
         """
     }
 
-    public static func buildChunkXHTML(chunkIndex: Int, images: [String], title: String, bookUUID: String? = nil, pageIndex: Int? = nil) -> String {
+    public static func buildChunkXHTML(chunkIndex: Int, images: [String], title: String, bookUUID: String? = nil, pageIndex: Int? = nil, isManga: Bool = false) -> String {
         let imageElements = images.enumerated().map { _, imageName in
             """
                 <div class="page">
@@ -140,9 +143,10 @@ public struct EPUBManifestBuilder {
         // • NO @page { size: } (CSS Paged Media L3, rejected by Amazon's cloud validator)
         // • NO object-fit/object-position (not in Kindle CSS subset → E013)
         // Page sizing is controlled entirely by the viewport meta + rendition:layout OPF meta.
+        let lang = isManga ? "ja" : "en"
         return """
         <?xml version="1.0" encoding="UTF-8"?>
-        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="en" xml:lang="en">
+        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="\(lang)" xml:lang="\(lang)">
         <head>
             <meta charset="UTF-8"/>
             <meta name="viewport" content="width=1980, height=2640"/>

@@ -264,7 +264,7 @@ class PanelViewEPUBConverter {
             // Write ancillary files
             try buildCSS().write(to: cssDir.appendingPathComponent("comic.css"), atomically: true, encoding: .utf8)
             try buildContainerXML().write(to: metaDir.appendingPathComponent("container.xml"), atomically: true, encoding: .utf8)
-            try buildNavXHTML(title: batchName, firstPage: pageCatalog.first?.xhtmlName ?? "page001.xhtml")
+            try buildNavXHTML(title: batchName, firstPage: pageCatalog.first?.xhtmlName ?? "page001.xhtml", isManga: isManga)
                 .write(to: oebpsDir.appendingPathComponent("nav.xhtml"), atomically: true, encoding: .utf8)
             try buildTocNCX(title: batchName, uuid: bookUUID, firstPage: pageCatalog.first?.xhtmlName ?? "page001.xhtml")
                 .write(to: oebpsDir.appendingPathComponent("toc.ncx"), atomically: true, encoding: .utf8)
@@ -272,7 +272,7 @@ class PanelViewEPUBConverter {
             // Blank page (Manga odd-page handling)
             let needsBlank = isManga && (pageCatalog.count % 2 != 0)
             if needsBlank {
-                let blankXHTML = buildBlankXHTML(pageWidth: pageW, pageHeight: pageH)
+                let blankXHTML = buildBlankXHTML(pageWidth: pageW, pageHeight: pageH, isManga: isManga)
                 try blankXHTML.write(to: pagesDir.appendingPathComponent("blank.xhtml"), atomically: true, encoding: .utf8)
             }
 
@@ -368,7 +368,7 @@ class PanelViewEPUBConverter {
             <dc:title>\(title.xmlEscaped())</dc:title>
             <dc:creator>\(author.xmlEscaped())</dc:creator>
             <dc:identifier id="BookID">\(uuid)</dc:identifier>
-            <dc:language>en</dc:language>
+             <dc:language>\(isManga ? "ja" : "en")</dc:language>
             <dc:date>\(pubDate)</dc:date>
             <meta property="dcterms:modified">\(ISO8601DateFormatter().string(from: Date()))</meta>
             
@@ -423,14 +423,11 @@ class PanelViewEPUBConverter {
         if isManga {
             for (idx, entry) in pageCatalog.enumerated() {
                 let idref = "page\(entry.paddedNum)"
-                let isFirstPair = (idx < 2)
-                let isEvenSlot  = (idx % 2 == 0) // RTL Manga: Cover (0) is Left
-
-                if isFirstPair {
-                    let prop = isEvenSlot ? "facing-page-left" : "facing-page-right"
-                    items.append(#"<itemref idref="\#(idref)" properties="\#(prop)"/>"#)
+                if idx == 0 {
+                    // Cover page should not have a spread property or should be page-spread-right
+                    items.append(#"<itemref idref="\#(idref)"/>"#)
                 } else {
-                    let prop = isEvenSlot ? "page-spread-left" : "page-spread-right"
+                    let prop = (idx % 2 == 1) ? "page-spread-right" : "page-spread-left"
                     items.append(#"<itemref idref="\#(idref)" properties="\#(prop)"/>"#)
                 }
             }
@@ -522,12 +519,13 @@ class PanelViewEPUBConverter {
         // Pages with no panels: Kindle performs 2×2 Virtual Panel automatically.
         let panelSection = panels.isEmpty ? "    <!-- No panels: Kindle will apply 2×2 Virtual Panel fallback -->\n" : (tapTargets + "\n" + magnifyBlocks)
 
+        let lang = isManga ? "ja" : "en"
         return """
         <?xml version="1.0" encoding="UTF-8"?>
         <!DOCTYPE html>
         <!-- Fix 1: xmlns:epub required for EPUB 3 XHTML Content Documents compliance.
              Without it the KFX ingestor flags a structural mismatch (E013). -->
-        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="en" xml:lang="en">
+        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="\(lang)" xml:lang="\(lang)">
           <head>
             <title>Page \(pageNum)</title>
             <meta name="viewport" content="width=\(W), height=\(H)"/>
@@ -653,11 +651,12 @@ class PanelViewEPUBConverter {
     """
     }
 
-    private func buildNavXHTML(title: String, firstPage: String) -> String {
-        """
+    private func buildNavXHTML(title: String, firstPage: String, isManga: Bool) -> String {
+        let lang = isManga ? "ja" : "en"
+        return """
         <?xml version="1.0" encoding="UTF-8"?>
         <!DOCTYPE html>
-        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="en" xml:lang="en">
+        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="\(lang)" xml:lang="\(lang)">
           <head><meta charset="UTF-8"/><title>\(title.xmlEscaped())</title></head>
           <body>
             <nav epub:type="toc" id="toc">
@@ -693,11 +692,12 @@ class PanelViewEPUBConverter {
     """
     }
 
-    private func buildBlankXHTML(pageWidth: CGFloat, pageHeight: CGFloat) -> String {
-        """
+    private func buildBlankXHTML(pageWidth: CGFloat, pageHeight: CGFloat, isManga: Bool) -> String {
+        let lang = isManga ? "ja" : "en"
+        return """
         <?xml version="1.0" encoding="UTF-8"?>
         <!DOCTYPE html>
-        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="en" xml:lang="en">
+        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="\(lang)" xml:lang="\(lang)">
           <head>
             <title>Blank</title>
             <meta name="viewport" content="width=\(Int(pageWidth)), height=\(Int(pageHeight))"/>

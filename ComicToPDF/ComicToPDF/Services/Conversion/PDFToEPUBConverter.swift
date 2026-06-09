@@ -316,10 +316,11 @@ final class PDFToEPUBConverter: Sendable {
                 coverManifestItem = "<item id=\"cover-image\" href=\"images/\(coverFilename)\" media-type=\"image/jpeg\"/>\n<item id=\"cover-page\" href=\"cover.xhtml\" media-type=\"application/xhtml+xml\"/>\n"
                 coverSpineItem = "<itemref idref=\"cover-page\"/>\n"
                 // Write cover.xhtml
+                let lang = options.mangaMode ? "ja" : "en"
                 let coverXHTML = """
                 <?xml version="1.0" encoding="UTF-8"?>
                 <!DOCTYPE html>
-                <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+                <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="\(lang)" xml:lang="\(lang)">
                 <head>
                     <title>Cover</title>
                     <meta name="viewport" content="width=1000, height=1500"/>
@@ -355,7 +356,8 @@ final class PDFToEPUBConverter: Sendable {
                 chunkIndex: chunkIndex + 1,
                 images: chunkImages,
                 title: title,
-                startIndex: (chunkIndex * pageLimit) + 1
+                startIndex: (chunkIndex * pageLimit) + 1,
+                isManga: options.mangaMode
             )
             try chunkXHTML.write(to: oebpsDir.appendingPathComponent(chunkFileName), atomically: true, encoding: String.Encoding.utf8)
             xhtmlFiles.append(chunkFileName)
@@ -384,7 +386,7 @@ final class PDFToEPUBConverter: Sendable {
         try ncxContent.write(to: oebpsDir.appendingPathComponent("toc.ncx"), atomically: true, encoding: String.Encoding.utf8)
         
         // Generate nav.xhtml (EPUB3)
-        let navXHTML = generateNavXHTML(title: title, xhtmlFiles: xhtmlFiles)
+        let navXHTML = generateNavXHTML(title: title, xhtmlFiles: xhtmlFiles, isManga: options.mangaMode)
         try navXHTML.write(to: oebpsDir.appendingPathComponent("nav.xhtml"), atomically: true, encoding: String.Encoding.utf8)
         
         // 🚨 CRITICAL FIX: Generate global style.css overriding Amazon's @page Region padding
@@ -443,7 +445,7 @@ final class PDFToEPUBConverter: Sendable {
             <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">
                 <dc:title>\(escapeXML(title))</dc:title>
                 <dc:creator>\(escapeXML(author))</dc:creator>
-                <dc:language>en</dc:language>
+                <dc:language>\(mangaMode ? "ja" : "en")</dc:language>
                 <dc:identifier id="BookId">urn:uuid:\(bookID)</dc:identifier>
                 
                 <!-- Strict Fixed-Layout Flags -->
@@ -501,7 +503,7 @@ final class PDFToEPUBConverter: Sendable {
         """
     }
     
-    private func generateNavXHTML(title: String, xhtmlFiles: [String]) -> String {
+    private func generateNavXHTML(title: String, xhtmlFiles: [String], isManga: Bool) -> String {
         // For a single content.xhtml, we'll just have one nav item
         let navItems = xhtmlFiles.enumerated().map { index, xhtmlFile in
             "<li><a href=\"\(xhtmlFile)\">Start</a></li>"
@@ -509,10 +511,11 @@ final class PDFToEPUBConverter: Sendable {
         
         let firstFile = xhtmlFiles.first ?? "chunk_0001.xhtml"
         
+        let lang = isManga ? "ja" : "en"
         return """
         <?xml version="1.0" encoding="UTF-8"?>
         <!DOCTYPE html>
-        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="en">
+        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="\(lang)" xml:lang="\(lang)">
         <head>
             <meta charset="utf-8" />
             <title>\(escapeXML(title))</title>
@@ -537,17 +540,18 @@ final class PDFToEPUBConverter: Sendable {
         """
     }
     
-    private func generateChunkXHTML(chunkIndex: Int, images: [String], title: String, startIndex: Int) -> String {
+    private func generateChunkXHTML(chunkIndex: Int, images: [String], title: String, startIndex: Int, isManga: Bool) -> String {
         let imageElements = images.enumerated().map { i, imageName in
             """
             <img style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain;" src="images/\(imageName)" alt="Page \(startIndex + i)"/>
             """
         }.joined(separator: "\n")
         
+        let lang = isManga ? "ja" : "en"
         return """
         <?xml version="1.0" encoding="UTF-8"?>
         <!DOCTYPE html>
-        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="\(lang)" xml:lang="\(lang)">
         <head>
             <title>\(escapeXML(title))</title>
             <meta name="viewport" content="width=1000, height=1500"/>
