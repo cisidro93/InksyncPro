@@ -237,7 +237,7 @@ extension ConversionManager {
             baseMetadata.issueNumber = nil
             baseMetadata.volume = nil
             
-            let newPDF = ConvertedPDF(
+            var newPDF = ConvertedPDF(
                 id: UUID(),
                 name: outputURL.lastPathComponent,
                 url: outputURL,
