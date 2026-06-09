@@ -72,7 +72,7 @@ The user experience philosophy: **the app should feel like a beautifully crafted
 Downsamples images using aspect-fit rendering to match target e-reader profiles:
 
 | Device | Resolution | Notes |
-|---|---|---|
+| --- | --- | --- |
 | Kindle Scribe Colorsoft 11" | 1980 × 2640 px (300 PPI) | Primary target |
 | Kindle Scribe Colorsoft 7" | 1264 × 1680 px (300 PPI) | |
 | Kindle Paperwhite | 1236 × 1648 px (300 PPI) | |
@@ -85,7 +85,7 @@ Features dynamic orientation-aware scaling to rotate spreads for landscape scree
 
 All EPUBs produced by `CBZToEPUBConverter` and `EPUBManifestBuilder` **must** conform to the following rules to pass both sideloading (AZW3) and Send to Kindle cloud conversion (KFX) without E013 / E999 errors:
 
-**CSS — Approved Subset Only**
+##### CSS — Approved Subset Only
 
 ```css
 /* ✅ ALLOWED */
@@ -107,6 +107,7 @@ img { display: block; width: 100%; height: 100%; }
 **Page sizing** is controlled entirely by `<meta name="viewport" content="width=1980, height=2640"/>` and the `rendition:layout pre-paginated` OPF metadata — never by `@page { size }`. *Critically, viewport tags must NOT include `initial-scale=1.0`, as this triggers E013 rendering kernel panics and screen bricking on older Kindle firmware.*
 
 **Cover page** body element must carry `epub:type="cover"`:
+
 ```html
 <body epub:type="cover"><img src="../images/cover.jpg" alt="Cover"/></body>
 ```
@@ -140,7 +141,7 @@ All import operations follow a strict sequence:
 #### 5.2 Supported Formats
 
 | Format | Handler | Notes |
-|---|---|---|
+| --- | --- | --- |
 | `.cbz` / `.zip` | `ZipUtilities` + ZIPFoundation | Primary format |
 | `.cbr` / `.rar` | `CBRExtractor` + libunrar | Requires security scope before `Unrar.Archive(fileURL:)` |
 | `.epub` | `EPUBImporter` | Extracted to images, repackaged as CBZ |
@@ -192,7 +193,7 @@ All import operations follow a strict sequence:
 ### Concurrency Rules
 
 | Rule | Rationale |
-|---|---|
+| --- | --- |
 | All `FileManager` operations go on `DispatchQueue.global` | Prevents cooperative thread pool starvation |
 | `UIImage(contentsOfFile:)` always inside `autoreleasepool` on background thread | Prevents OOM on main stack |
 | `@MainActor` properties updated only via `await MainActor.run {}` | Swift 6 strict concurrency compliance |

@@ -16,6 +16,7 @@ jobs:
       # Redirect module cache to /tmp so it is NEVER cached between runs.
       # This is the definitive fix for "mtime changed" SwiftShims errors.
       CLANG_MODULE_CACHE_PATH: /tmp/clang-module-cache
+      SHORT_SHA: ""
 
     steps:
     - uses: actions/checkout@v4
