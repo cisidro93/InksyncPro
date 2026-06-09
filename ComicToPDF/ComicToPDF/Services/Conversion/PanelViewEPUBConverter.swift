@@ -368,7 +368,7 @@ class PanelViewEPUBConverter {
             <dc:title>\(title.xmlEscaped())</dc:title>
             <dc:creator>\(author.xmlEscaped())</dc:creator>
             <dc:identifier id="BookID">\(uuid)</dc:identifier>
-            <dc:language>\(isManga ? "ja" : "en")</dc:language>
+            <dc:language>en</dc:language>
             <dc:date>\(pubDate)</dc:date>
             <meta property="dcterms:modified">\(ISO8601DateFormatter().string(from: Date()))</meta>
             

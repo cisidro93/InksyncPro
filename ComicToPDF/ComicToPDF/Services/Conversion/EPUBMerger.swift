@@ -162,7 +162,7 @@ struct EPUBMerger: Sendable {
                 <dc:title>\(opfTitle.replacingOccurrences(of: "&", with: "&amp;"))</dc:title>
                 <dc:creator>\(opfCreator.replacingOccurrences(of: "&", with: "&amp;"))</dc:creator>
                 <dc:description>\(opfDesc.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;").replacingOccurrences(of: ">", with: "&gt;"))</dc:description>
-                <dc:language>\(settings.mangaMode ? "ja" : "en")</dc:language>
+                <dc:language>en</dc:language>
                 <meta property="dcterms:modified">\(dateIso)</meta>
                 <meta property="rendition:layout">pre-paginated</meta>
                 <meta property="rendition:orientation">auto</meta>
@@ -296,7 +296,7 @@ struct EPUBMerger: Sendable {
                     <dc:title>\(opfTitle.replacingOccurrences(of: "&", with: "&amp;"))</dc:title>
                     <dc:creator>\(opfCreator.replacingOccurrences(of: "&", with: "&amp;"))</dc:creator>
                     <dc:description>\(opfDesc.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;").replacingOccurrences(of: ">", with: "&gt;"))</dc:description>
-                    <dc:language>\(settings.mangaMode ? "ja" : "en")</dc:language>
+                    <dc:language>en</dc:language>
                     <meta property="dcterms:modified">\(dateIso)</meta>
                     <meta property="rendition:layout">pre-paginated</meta>
                     <meta property="rendition:orientation">auto</meta>

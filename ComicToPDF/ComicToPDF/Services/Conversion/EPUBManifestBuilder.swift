@@ -95,7 +95,7 @@ public struct EPUBManifestBuilder {
             <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
                 <dc:identifier id="BookID">urn:uuid:\(bookUUID)</dc:identifier>
                 <dc:title>\(baseFilename.xmlEscaped())</dc:title>
-                <dc:language>\(isManga ? "ja" : "en")</dc:language>
+                <dc:language>en</dc:language>
                 <meta property="dcterms:modified">\(modified)</meta>
                 <meta property="rendition:layout">pre-paginated</meta>
                 <meta property="rendition:orientation">auto</meta>
