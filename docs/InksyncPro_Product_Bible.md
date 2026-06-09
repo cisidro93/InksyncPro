@@ -1,6 +1,6 @@
 # InksyncPro Product Bible
 
-**Last Updated:** June 7, 2026
+**Last Updated:** June 9, 2026
 
 ---
 
@@ -24,7 +24,7 @@ The user experience philosophy: **the app should feel like a beautifully crafted
 
 5. **Diagnostic Telemetry Engine:** `MemoryMonitor` runs a persistent 2-second heartbeat checking `os_proc_available_memory()`. If RAM drops below critical thresholds, it triggers aggressive cache purges. Full crash analytics and memory telemetry are logged locally to `.ips` and `.json` formats for debugging without compromising user privacy.
 
-6. **Professional Workflows:** Deep Zettelkasten integration, annotation markdown export, and precision extraction tools that elevate comic reading to professional study and research.
+6. **Future Extensibility:** Architecture designed to support Zettelkasten integrations, advanced markdown exports, and precision page editing tools in future iterations (currently prepared in `V2_Archive`).
 
 ---
 
@@ -33,41 +33,38 @@ The user experience philosophy: **the app should feel like a beautifully crafted
 ### 1. Library & Organization
 
 - **Modern Grid & List:** High-performance SwiftData-backed library views featuring dynamic sorting (Date Added, Title, Size, Favorites, Type, Extension Type, Location) and live filtering (Unread, Reading, Completed, On Drive, Cloud).
+
 - **Apple Books-Style Content Shelves:** Persisted shelf selector tab strip (All / Comics / Manga / Books) featuring custom icons, label names, live item count badges, accent colors (Blue, Red-Orange, Teal), and micro-animated scale transitions.
+
 - **Smart Collections Engine:** Dynamic, rule-based filtering accessible via an elegant "overflow strip" in the library header. Predefined collections include:
   - *Recently Added* (Top 50 newest additions)
   - *Reading Now* (In-progress items, sorted by last opened)
   - *All Unread* (Untouched items)
   - *Manga Mode* (Items flagged for right-to-left reading)
   - *Completed* (Finished items)
+
 - **Smart Series Grouping:** Automatic grouping of issues by parsed metadata or folder structure, with support for nested collections, manual sort orders, and automatic cover assignment.
-- **Badges & Streaks:** Visual indicators for series completion and consecutive daily reading streaks.
 
 ---
 
 ### 2. The Guided Reading Experience
 
 - **ReaderProgressTracker:** The single source of truth for reading telemetry, page tracking, reading streaks, and last-opened timestamps. Synced across devices via iCloud.
+
 - **Reading Mode Quick Picker:** A bottom-anchored frosted capsule that pops up on swipe-up gestures when the chrome is hidden, letting users instantly switch and persist per-book layouts:
   - *Normal* (Horizontal LTR page turns)
   - *Manga* (Native RTL reading and tracking)
   - *Webtoon* (Continuous vertical scrolling with page redraw isolation)
+
 - **Panel Navigation (Guided View):** Intelligent, Vision-framework-powered panel detection (`EnsemblePanelDetector`). Provides a curated, panel-by-panel guided reading experience with graceful fallbacks and frosted HUD overlays.
+
 - **Manga Native:** Fully supports right-to-left orientation and specifically tracks books requiring this mode.
 
 ---
 
-### 3. The Work Area & Precision Editor
+### 3. E-Ink Conversion & Optimization Pipeline
 
-- **WorkspaceFocusManager:** A curation system that allows users to explicitly "Send to Work Area" only the files they are actively researching or modifying, preventing editor congestion.
-- **Multi-Page Preview:** Dynamic previews in the Work Area leveraging `PageModelStore` to simulate the panel flow and visually inspect extractions before committing.
-- **Precision Canvas:** Deep crop, split, and annotation tools allowing for exact modifications to comic pages.
-
----
-
-### 4. E-Ink Conversion & Optimization Pipeline
-
-#### 4.1 Resolution-Aware Scaling (`EInkOptimizer`)
+#### 3.1 Resolution-Aware Scaling (`EInkOptimizer`)
 
 Downsamples images using aspect-fit rendering to match target e-reader profiles:
 
@@ -81,7 +78,7 @@ Downsamples images using aspect-fit rendering to match target e-reader profiles:
 
 Features dynamic orientation-aware scaling to rotate spreads for landscape screens.
 
-#### 4.2 EPUB Output — Kindle Compliance Standard
+#### 3.2 EPUB Output — Kindle Compliance Standard
 
 All EPUBs produced by `CBZToEPUBConverter` and `EPUBManifestBuilder` **must** conform to the following rules to pass both sideloading (AZW3) and Send to Kindle cloud conversion (KFX) without E013 / E999 errors:
 
@@ -116,19 +113,23 @@ img { display: block; width: 100%; height: 100%; }
 
 **Manga RTL** is declared via `<spine page-progression-direction="rtl">` in the OPF — do not rely on CSS `direction: rtl` as Kindle ignores it for page-turn direction.
 
-#### 4.3 Other Conversion Features
+#### 3.3 Other Conversion Features
 
 - **Asymmetric Binding Margins:** Generates gutter space padding (Left, Right, or Alternating Odd/Even) at the native device resolution to offset physical bindings.
+
 - **Auto-Cropping:** Scans `CGImage` pixel thresholds to strip blank/white borders before scaling, maximizing the active artwork area.
+
 - **Moiré Reduction:** Pre-scaling Gaussian blur to suppress high-frequency screentone matrices and prevent screen interference patterns, paired with post-conversion re-sharpening.
+
 - **Color Space Safety:** `UIGraphicsImageRenderer` output **must** be forced to `.standard` (sRGB) color space. Exporting badged covers or merged graphics in wide-gamut (P3) color spaces will silently crash E-Ink devices upon loading.
+
 - **Hardware Grayscale & Dithering:** Strips color saturation and applies a 15% contrast boost via `CIColorControls` to enhance text legibility, combined with `CIColorPosterize` 16-level ordered dithering to match Kindle and e-reader panels.
 
 ---
 
-### 5. Import & Cloud Infrastructure
+### 4. Import & Cloud Infrastructure
 
-#### 5.1 Import Pipeline Architecture
+#### 4.1 Import Pipeline Architecture
 
 All import operations follow a strict sequence:
 
@@ -138,7 +139,7 @@ All import operations follow a strict sequence:
 4. **Atomic Writes:** Final output files are written atomically. On EPUB rebuild, the new archive is built in a temp path and swapped with `FileManager.moveItem` — never written directly over the live file.
 5. **Library Scan:** `scanLibrary()` is called on `@MainActor` after all copy/import tasks complete.
 
-#### 5.2 Supported Formats
+#### 4.2 Supported Formats
 
 | Format | Handler | Notes |
 | --- | --- | --- |
@@ -147,34 +148,30 @@ All import operations follow a strict sequence:
 | `.epub` | `EPUBImporter` | Extracted to images, repackaged as CBZ |
 | `.pdf` | `ConversionEngine` | Split into pages |
 
-#### 5.3 Other Infrastructure
+#### 4.3 Other Infrastructure
 
 - **Universal Conversion Engine:** Non-blocking background threads for all heavy extractions. `ConversionOrchestrator` manages job lifecycle.
+
 - **Linked External Drives:** Users can link Dropbox, Google Drive, or physical external SSDs. The `DriveMonitor` constantly syncs file changes.
+
 - **Streaming Architecture:** Remote files require a `resolveLocalURL` gate to safely cache and process without mutating the cloud source.
+
 - **Wi-Fi Server:** A secure, rate-limited local server for wireless, high-speed comic importing via a web browser.
 
 ---
 
-### 6. Research & Zettelkasten
-
-- **Zettelkasten Hub:** A frosted-glass knowledge graph displaying relationships between annotations, characters, and series. Features Multi-Indexed "By Topic" sorting, allowing cross-referenced highlights to appear under multiple themes, with collapsible headers and an alphabetical index bar for rapid navigation.
-- **Intelligent Auto-Tagging:** Background NLP (Natural Language Processing) automatically analyzes untagged highlights and extracts lexical entities and contextual keywords to organize user research.
-- **Zettel Board:** A high-performance Kanban-style outliner and review board. It enables column-based outlining, lazy-loaded lists (120 FPS performance), an inbox drawer for unassigned highlights, bidirectional note-to-note linking, and compiling structured highlight outlines directly into Manuscript documents.
-- **Annotation Export:** Seamless export of highlights, notes, and clipped panels to Markdown (optimized for Obsidian integration).
-- **Interactive Page-Linking & Previews:** An integrated cross-referencing subsystem using double-bracket page links (e.g., `[[Page X]]`). Tapping a page reference summons a floating glassmorphic page preview modal with a high-fidelity thumbnail and a single-tap "Jump to Page" controller.
-
----
-
-### 7. Apple Ecosystem Integration
+### 5. Apple Ecosystem Integration
 
 - **Spotlight Indexing:** Every comic is deeply indexed by iOS Spotlight. Users can swipe down on their home screen and search for a comic title to jump directly into the book.
+
 - **App Intents (Siri Shortcuts):** Fully parametric iOS Shortcuts:
   - *Resume Reading:* Jump instantly back to the active book.
   - *Open Specific Book:* Ask Siri to open a specific title from the library.
   - *Panel Mode Launch:* Open the most recent comic directly into Guided Panel Mode.
   - *Add Bookmark:* Headless shortcut to bookmark the current active page.
+
 - **Keychain API Key Storage:** ComicVine API keys are stored securely in the iOS Keychain, migrating legacy plaintext settings JSON on first launch.
+
 - **100% On-Device AI Processing:** All panel detection is run locally using the CoreML Neural Engine, removing dependencies on external AI vendors to preserve absolute user privacy.
 
 ---
@@ -182,8 +179,11 @@ All import operations follow a strict sequence:
 ## UI / UX Design Language
 
 - **Theme System:** Adheres to a strict, centralized `Theme` struct utilizing `Theme.bg`, `Theme.surface`, `Theme.text`, and `Theme.orange` for highlights.
+
 - **Materials:** Extensive use of `.ultraThinMaterial` and `.regularMaterial` over gradient backgrounds to create a deep, layered, iOS-native feel.
+
 - **Typography:** `Inter` or `Rounded` system fonts heavily utilized to provide crisp, legible metadata tags.
+
 - **Animations:** Swift spring animations (`.spring(response: 0.3, dampingFraction: 0.75)`) provide tactile feedback on menus, transitions, and layout changes.
 
 ---
@@ -203,9 +203,9 @@ All import operations follow a strict sequence:
 
 ### Memory Management
 
-- `NSCache` with `maxCacheSize = 7` caps the live page buffer to ~15MB
-- `CGImageSourceCreateThumbnailAtIndex` used for cover/thumbnail generation (not `UIImage(contentsOfFile:)`)
-- Large bitmap operations wrapped in `autoreleasepool` to release decoded pixel buffers promptly
+- `NSCache` with `maxCacheSize = 7` caps the live page buffer to ~15MB.
+- `CGImageSourceCreateThumbnailAtIndex` used for cover/thumbnail generation (not `UIImage(contentsOfFile:)`).
+- Large bitmap operations wrapped in `autoreleasepool` to release decoded pixel buffers promptly.
 
 ### Kindle EPUB Validation Checklist
 
@@ -224,6 +224,30 @@ Before any EPUB output is delivered to the user, it must satisfy:
 - [ ] Cover body element carries `epub:type="cover"`
 - [ ] No remote HTTP(S) resources (tracking pixels, fonts, stylesheets) — causes E999
 - [ ] OPF `<package>` carries `prefix="rendition: http://www.idpf.org/vocab/rendition/#"`
+
+---
+
+## Inactive / Archived / Planned V2 Features
+
+The following features and their corresponding code/view files are currently moved to the `V2_Archive` directory and are not compiled or active in the current MVP build to maintain a clean footprint and avoid scope creep:
+
+### 1. Library Gamification & Engagement
+
+- **Badges & Streaks:** Visual indicators for series completion and consecutive daily reading streaks. Code files `GamificationManager.swift` and `GamificationDashboardView.swift` are located in `V2_Archive/`.
+
+### 2. Creative Work Area & Precision Editor
+
+- **Workspace Focus List:** A workspace view that displays only explicitly sent files for research/annotation, preventing library-wide editing clutter.
+- **Multi-Page Preview:** Dynamic previews in the Work Area leveraging `PageModelStore` to simulate panel flows.
+- **Precision Canvas:** High-fidelity cropping, splitting, PencilKit drawing, and page margin trimming tools. Code files `PrecisionCanvasView.swift`, `PencilKitDrawView.swift`, `AdvancedWorkspaceView.swift`, and other editor sheets/views are located in `V2_Archive/Editor/`.
+
+### 3. Study Notes & Zettelkasten Graph
+
+- **Zettelkasten Hub:** A frosted-glass knowledge graph displaying annotation nodes, book sources, and tag groups. Features Multi-Indexed "By Topic" sorting, allowing highlights to appear under multiple themes, with collapsible headers and an alphabetical search index.
+- **Zettel Board:** A high-performance column-based Kanban outliner and review board to organize highlights and compile structured manuscript outlines.
+- **Annotation Export:** Exporting highlights, notes, and clipped panels to Obsidian-compliant Markdown.
+- **Interactive Page-Linking & Previews:** Subsystem using double-bracket links (e.g. `[[Page X]]`) with floating preview popups. Code files `GlobalZettelkastenHubView.swift`, `ZettelkastenGraphView.swift`, `ZettelkastenBoardView.swift`, `StudyNotebookView.swift`, and `ZettelkastenExporter.swift` are located in `V2_Archive/` and `V2_Archive/Editor/`.
+- **Intelligent Auto-Tagging:** Background NLP (Natural Language Processing) analyzing untagged highlights and extracting entities/keywords.
 
 ---
 
