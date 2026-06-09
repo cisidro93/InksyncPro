@@ -92,6 +92,9 @@ private struct GoQuickMergeSheet: View {
                     errorMessage = "Merge completed but output could not be located. Check Settings → Logs."
                 } else {
                     Logger.shared.log("Quick Merge complete", category: "GoUI")
+                    if !ConversionQueueManager.shared.completedGoSourceStems.contains(name) {
+                        ConversionQueueManager.shared.completedGoSourceStems.append(name)
+                    }
                     onMergeComplete(merged)
                     dismiss()
                 }

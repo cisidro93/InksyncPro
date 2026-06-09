@@ -289,7 +289,9 @@ final class ConversionOrchestrator: Sendable {
         var newMergedPDFs: [ConvertedPDF] = []
         
         let fileManager = FileManager.default
-        let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
+        let docRoot = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
+        let documentsDir = docRoot.appendingPathComponent("Merged")
+        try? FileManager.default.createDirectory(at: documentsDir, withIntermediateDirectories: true)
         var jobSettings = await MainActor.run { AppSettingsManager.shared.conversionSettings }
         jobSettings.mangaMode = mangaMode
         
@@ -386,9 +388,23 @@ final class ConversionOrchestrator: Sendable {
                     }
                     
                     let finalFileSize = (try? finalOutputURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
-                    let outputPDF = ConvertedPDF(name: outputFilename, url: finalOutputURL, pageCount: batch.count, fileSize: finalFileSize, metadata: PDFMetadata(title: outputFilename, series: overrideSeries, isManga: jobSettings.mangaMode))
+                    let inferredMode = sourceFiles.first?.addedByMode ?? .pro
+                    let outputPDF = ConvertedPDF(
+                        id: UUID(),
+                        name: outputFilename,
+                        url: finalOutputURL,
+                        pageCount: batch.count,
+                        fileSize: finalFileSize,
+                        metadata: PDFMetadata(title: outputFilename, series: overrideSeries, isManga: jobSettings.mangaMode),
+                        collectionId: sourceFiles.first?.collectionId,
+                        contentType: sourceFiles.first?.contentType ?? .comic,
+                        addedByMode: inferredMode
+                    )
                     newMergedPDFs.append(outputPDF)
-                    await MainActor.run { manager.convertedPDFs.insert(outputPDF, at: 0) }
+                    await MainActor.run {
+                        manager.convertedPDFs.insert(outputPDF, at: 0)
+                        manager.saveLibrary()
+                    }
                 }
                 
                 await MainActor.run { manager.scanLibrary(); manager.statusMessage = "✅ Merge Complete!"; manager.processingStatus = ""; manager.conversionProgress = 1.0; manager.isConverting = false }
@@ -471,9 +487,23 @@ final class ConversionOrchestrator: Sendable {
                 let finalFileSize = (try? finalOutputURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
                 let outputURL = finalOutputURL
                 let totalPages = await Task.detached(priority: .background) { return PhysicalFileSystemRouter.getPageCountStatic(from: outputURL) }.value
-                let outputPDF = ConvertedPDF(name: outputFilename, url: finalOutputURL, pageCount: totalPages, fileSize: finalFileSize, metadata: PDFMetadata(title: outputFilename, series: overrideSeries, isManga: mangaMode))
+                let inferredMode = sourceFiles.first?.addedByMode ?? .pro
+                let outputPDF = ConvertedPDF(
+                    id: UUID(),
+                    name: outputFilename,
+                    url: finalOutputURL,
+                    pageCount: totalPages,
+                    fileSize: finalFileSize,
+                    metadata: PDFMetadata(title: outputFilename, series: overrideSeries, isManga: mangaMode),
+                    collectionId: sourceFiles.first?.collectionId,
+                    contentType: sourceFiles.first?.contentType ?? .comic,
+                    addedByMode: inferredMode
+                )
                 newMergedPDFs.append(outputPDF)
-                await MainActor.run { manager.convertedPDFs.insert(outputPDF, at: 0) }
+                await MainActor.run {
+                    manager.convertedPDFs.insert(outputPDF, at: 0)
+                    manager.saveLibrary()
+                }
                 // 📦 Kindle size audit — warn if merged EPUB exceeds delivery limits
                 await KindleSizeGuard.auditAndNotify(epubURL: finalOutputURL, manager: manager)
             }

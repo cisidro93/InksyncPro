@@ -104,6 +104,13 @@ class LibraryViewModel: ObservableObject {
                     guard pdf.contentType == .manga || (pdf.metadata.isManga ?? false) else { continue }
                 case .books:
                     guard pdf.contentType == .book else { continue }
+                case .converted:
+                    let nameLower = pdf.name.lowercased()
+                    let isConverted = pdf.lastOutputFormat != nil ||
+                                      pdf.url.path.contains("/Merged/") ||
+                                      nameLower.contains("_converted") ||
+                                      nameLower.contains("go merge")
+                    guard isConverted else { continue }
                 }
 
                 // Apply Reading Progress Filters
@@ -453,6 +460,7 @@ enum ContentShelf: String, CaseIterable, Identifiable {
     case comics = "Comics"
     case manga  = "Manga"
     case books  = "Books"
+    case converted = "Converted"
 
     var id: String { rawValue }
 
@@ -462,6 +470,7 @@ enum ContentShelf: String, CaseIterable, Identifiable {
         case .comics: return "books.vertical.fill"
         case .manga:  return "text.book.closed.fill"
         case .books:  return "book.fill"
+        case .converted: return "arrow.triangle.2.circlepath"
         }
     }
 
@@ -471,6 +480,7 @@ enum ContentShelf: String, CaseIterable, Identifiable {
         case .comics: return Color(red: 0.25, green: 0.55, blue: 1.0)   // blue
         case .manga:  return Color(red: 1.0, green: 0.35, blue: 0.25)   // red-orange
         case .books:  return Color(red: 0.15, green: 0.75, blue: 0.65)  // teal
+        case .converted: return Color(red: 0.95, green: 0.6, blue: 0.1) // amber/orange
         }
     }
 }

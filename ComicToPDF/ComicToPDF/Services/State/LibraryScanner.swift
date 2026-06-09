@@ -59,13 +59,21 @@ actor LibraryScanner {
                 // • PDF  → book by default (most PDFs are documents/books, not comics)
                 // • CBZ/CBR/CBT/ZIP → comic (these are the canonical comic archive formats)
                 let inferredContentType: ContentType
-                switch ext {
-                case "epub", "pdf":
-                    inferredContentType = .book
-                case "cbz", "cbr", "cbt", "zip":
-                    inferredContentType = .comic
-                default:
-                    inferredContentType = .comic
+                if fileURL.path.contains("/Merged/") {
+                    if filename.localizedCaseInsensitiveContains("manga") {
+                        inferredContentType = .manga
+                    } else {
+                        inferredContentType = .comic
+                    }
+                } else {
+                    switch ext {
+                    case "epub", "pdf":
+                        inferredContentType = .book
+                    case "cbz", "cbr", "cbt", "zip":
+                        inferredContentType = .comic
+                    default:
+                        inferredContentType = .comic
+                    }
                 }
 
                 var newPDF = ConvertedPDF(
