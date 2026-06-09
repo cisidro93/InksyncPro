@@ -237,7 +237,7 @@ struct EPUBMerger: Sendable {
         let keys: [URLResourceKey] = [.nameKey, .isDirectoryKey]
         if let enumerator = fileManager.enumerator(at: epubDir, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) {
             while let fileURL = enumerator.nextObject() as? URL {
-                autoreleasepool {
+                try autoreleasepool {
                     if fileURL.lastPathComponent == "mimetype" { return }
                     
                     var isDirectory: ObjCBool = false
@@ -357,7 +357,7 @@ struct EPUBMerger: Sendable {
             let keys: [URLResourceKey] = [.nameKey, .isDirectoryKey]
             if let enumerator = fileManager.enumerator(at: dirURL, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) {
                 while let fileURL = enumerator.nextObject() as? URL {
-                    autoreleasepool {
+                    try autoreleasepool {
                         if fileURL.lastPathComponent == "mimetype" { return }
                         var isDirectory: ObjCBool = false
                         fileManager.fileExists(atPath: fileURL.path, isDirectory: &isDirectory)
