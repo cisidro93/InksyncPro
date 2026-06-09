@@ -185,8 +185,8 @@ public struct KFXScriptProvider {
         # CSS
         css = """@page { margin: 0; padding: 0; }
     body { margin: 0; padding: 0; background: #000; }
-    .page-container { position: relative; width: 100vw; height: 100vh; overflow: hidden; }
-    .comic-page { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; }"""
+    .page-container { position: relative; width: 100%; height: 100%; }
+    .comic-page { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }"""
         with open(os.path.join(work_dir, "OEBPS", "css", "comic.css"), "w") as f:
             f.write(css)
 

@@ -325,9 +325,9 @@ final class PDFToEPUBConverter: Sendable {
                     <title>Cover</title>
                     <meta name="viewport" content="width=1000, height=1500"/>
                 </head>
-                <body style="margin: 0; padding: 0; background-color: #000000; overflow: hidden;">
-                    <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden;">
-                        <img style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain;" src="images/\(coverFilename)" alt="Cover"/>
+                <body style="margin: 0; padding: 0; background-color: #000000;">
+                    <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; margin: 0; padding: 0;">
+                        <img style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;" src="images/\(coverFilename)" alt="Cover"/>
                     </div>
                 </body>
                 </html>
@@ -392,9 +392,9 @@ final class PDFToEPUBConverter: Sendable {
         // 🚨 CRITICAL FIX: Generate global style.css overriding Amazon's @page Region padding
         let cssContent = """
         @page { margin: 0; padding: 0; }
-        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #000000; overflow: hidden; }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #000000; }
         div { margin: 0; padding: 0; position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
-        img { margin: 0; padding: 0; position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; }
+        img { margin: 0; padding: 0; position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
         """
         try cssContent.write(to: oebpsDir.appendingPathComponent("style.css"), atomically: true, encoding: String.Encoding.utf8)
         
@@ -543,7 +543,7 @@ final class PDFToEPUBConverter: Sendable {
     private func generateChunkXHTML(chunkIndex: Int, images: [String], title: String, startIndex: Int, isManga: Bool) -> String {
         let imageElements = images.enumerated().map { i, imageName in
             """
-            <img style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain;" src="images/\(imageName)" alt="Page \(startIndex + i)"/>
+            <img style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;" src="images/\(imageName)" alt="Page \(startIndex + i)"/>
             """
         }.joined(separator: "\n")
         

@@ -256,9 +256,9 @@ class EPUBGenerator {
         // 🚨 CRITICAL 5.19.3 FIX: Explicit global CSS to negate AWS padding overrides
         let cssContent = """
         @page { margin: 0; padding: 0; }
-        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #000000; overflow: hidden; }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #000000; }
         div { margin: 0; padding: 0; position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
-        img { margin: 0; padding: 0; position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; }
+        img { margin: 0; padding: 0; position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
         svg { margin: 0; padding: 0; display: block; width: 100%; height: 100%; }
         """
         try cssContent.write(to: tempDirectory.appendingPathComponent("OEBPS/style.css"), atomically: true, encoding: .utf8)
