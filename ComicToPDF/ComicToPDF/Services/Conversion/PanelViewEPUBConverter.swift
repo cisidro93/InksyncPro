@@ -420,8 +420,8 @@ class PanelViewEPUBConverter {
             for (idx, entry) in pageCatalog.enumerated() {
                 let idref = "page\(entry.paddedNum)"
                 if idx == 0 {
-                    // Cover page should not have a spread property or should be page-spread-right
-                    items.append(#"<itemref idref="\#(idref)"/>"#)
+                    // Cover page should not have a spread property and should be non-linear on Kindle to prevent duplicate cover
+                    items.append(#"<itemref idref="\#(idref)" linear="no"/>"#)
                 } else {
                     let prop = (idx % 2 == 1) ? "page-spread-right" : "page-spread-left"
                     items.append(#"<itemref idref="\#(idref)" properties="\#(prop)"/>"#)
@@ -435,7 +435,8 @@ class PanelViewEPUBConverter {
             for (idx, entry) in pageCatalog.enumerated() {
                 let idref = "page\(entry.paddedNum)"
                 let prop = (idx % 2 == 0) ? "page-spread-right" : "page-spread-left"
-                items.append(#"<itemref idref="\#(idref)" properties="\#(prop)"/>"#)
+                let linearAttr = (idx == 0) ? #" linear="no""# : ""
+                items.append(#"<itemref idref="\#(idref)" properties="\#(prop)"\#(linearAttr)/>"#)
             }
         }
         if embedCharacterGlossary {

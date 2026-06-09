@@ -816,11 +816,22 @@ struct EBookWebReader: UIViewRepresentable {
         let defaultColumns = deviceIsPad ? 2 : 1
         let cols = prefs.columnCount == 0 ? defaultColumns : prefs.columnCount
         
+        let gap = cols == 2 ? 16 : Int(margin * 2)
+        
         let pagedCSS = isPaged ? """
             column-count: \(cols) !important;
-            column-gap: \(margin * 2)px !important;
+            column-gap: \(gap)px !important;
             column-fill: auto !important;
         """ : ""
+
+        let maxSpreadWidthCSS = (isPaged && cols == 2) ? """
+            max-width: calc(1.42 * (100vh - 120px) + \(gap)px) !important;
+            margin-left: auto !important;
+            margin-right: auto !important;
+        """ : ""
+
+        let paddingLeft = (isPaged && cols == 2) ? 0 : margin
+        let paddingRight = (isPaged && cols == 2) ? 0 : margin
 
         return """
         <meta charset="utf-8">
@@ -840,13 +851,14 @@ struct EBookWebReader: UIViewRepresentable {
             line-height: \(lineHeight);
             text-align: \(textAlign) !important;
             \(pagedCSS)
+            \(maxSpreadWidthCSS)
             margin: 0 !important;
             height: 100vh !important;
             \(widthCSS)
             padding-top: 60px !important;
             padding-bottom: 60px !important;
-            padding-left: \(margin)px !important;
-            padding-right: \(margin)px !important;
+            padding-left: \(paddingLeft)px !important;
+            padding-right: \(paddingRight)px !important;
             box-sizing: border-box !important;
             word-wrap: break-word;
             -webkit-text-size-adjust: none;
@@ -857,6 +869,7 @@ struct EBookWebReader: UIViewRepresentable {
         }
         p { margin-bottom: \(paraSpace)em !important; text-indent: \(paraIndent)em !important; }
         p, div, span, li, td, th, h1, h2, h3, h4, h5, h6 { color: \(textColor) !important; line-height: \(lineHeight); }
+        img, svg, .page, .chunk-container { display: block !important; margin-left: auto !important; margin-right: auto !important; }
         img { max-width: 100%; height: auto; border-radius: 4px; object-fit: contain; max-height: calc(100vh - 120px); }
         a { color: \(linkColor) !important; }
         blockquote { border-left: 3px solid \(linkColor); margin-left: 0; padding-left: 16px; opacity: 0.85; }

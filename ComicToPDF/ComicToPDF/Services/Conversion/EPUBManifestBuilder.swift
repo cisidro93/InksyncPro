@@ -75,15 +75,13 @@ public struct EPUBManifestBuilder {
     public static func buildOPFContent(
         bookUUID: String,
         baseFilename: String,
-        batchIndex: Int,
-        hasCoverData: Bool,
+        coverMetaID: String,
         manifestItems: [String],
         spineItems: [String],
         isManga: Bool,
         firstPageHref: String = "text/page_0001.xhtml"
     ) -> String {
         let modified = ISO8601DateFormatter().string(from: Date())
-        let coverMeta = (batchIndex > 0 && hasCoverData) ? "cover_reused_img" : "img_1"
         let direction = isManga ? "rtl" : "ltr"
         // Kindle Scribe Colorsoft native B&W resolution: 1980x2640 (300ppi, portrait).
         // The original-resolution meta is required by Amazon's KF8 fixed-layout spec so
@@ -105,7 +103,7 @@ public struct EPUBManifestBuilder {
                 <meta property="rendition:spread">auto</meta>
                 <meta name="fixed-layout" content="true"/>
                 <meta name="original-resolution" content="\(originalResolution)"/>
-                <meta name="cover" content="\(coverMeta)"/>
+                <meta name="cover" content="\(coverMetaID)"/>
             </metadata>
             <manifest>
                 \(manifestItems.joined(separator: "\n        "))

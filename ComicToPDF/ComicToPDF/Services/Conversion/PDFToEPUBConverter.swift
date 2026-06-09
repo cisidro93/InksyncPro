@@ -314,7 +314,7 @@ final class PDFToEPUBConverter: Sendable {
                 let coverFilename = "badged_cover.jpg"
                 try? badgedCoverData.write(to: imagesDir.appendingPathComponent(coverFilename))
                 coverManifestItem = "<item id=\"cover-image\" href=\"images/\(coverFilename)\" media-type=\"image/jpeg\"/>\n<item id=\"cover-page\" href=\"cover.xhtml\" media-type=\"application/xhtml+xml\"/>\n"
-                coverSpineItem = "<itemref idref=\"cover-page\"/>\n"
+                coverSpineItem = "<itemref idref=\"cover-page\" linear=\"no\"/>\n"
                 // Write cover.xhtml
                 let lang = options.mangaMode ? "ja" : "en"
                 let coverXHTML = """
@@ -436,7 +436,8 @@ final class PDFToEPUBConverter: Sendable {
         
         var spineItems = coverSpine
         for (index, _) in xhtmlFiles.enumerated() {
-            spineItems += "<itemref idref=\"chunk\(index + 1)\"/>\n        "
+            let linearAttr = (index == 0 && coverSpine.isEmpty) ? " linear=\"no\"" : ""
+            spineItems += "<itemref idref=\"chunk\(index + 1)\"\(linearAttr)/>\n        "
         }
         
         return """

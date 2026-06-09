@@ -468,6 +468,7 @@ struct EPUBWebView: UIViewRepresentable {
                     padding-left: \(prefs.textMargin)px !important;
                     padding-right: \(prefs.textMargin)px !important;
                 }
+                img, svg, .page, .chunk-container { display: block !important; margin-left: auto !important; margin-right: auto !important; }
                 img { max-width: 100% !important; max-height: 100% !important; border-radius: 4px; object-fit: contain; }
                 .inksync-highlight { background-color: #ffd700; color: inherit; border-radius: 2px; mix-blend-mode: multiply; -webkit-mix-blend-mode: multiply; padding: 0 1px; }
             `;
@@ -675,6 +676,7 @@ struct EPUBWebView: UIViewRepresentable {
         a { color: \(link) !important; }
         html { background-color: \(bg) !important; }
         .content-container { padding-left: \(marg)px !important; padding-right: \(marg)px !important; }
+        img, svg, .page, .chunk-container { display: block !important; margin-left: auto !important; margin-right: auto !important; }
         """
 
         let js = """

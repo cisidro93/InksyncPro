@@ -261,9 +261,9 @@ struct CBZToEPUBConverter: Sendable {
             let coverFilename = "badged_cover.jpg"
             try? badgedCoverData.write(to: imagesDir.appendingPathComponent(coverFilename))
             
-            manifestItems.append("<item id=\"cover-image\" href=\"images/\\(coverFilename)\" media-type=\"image/jpeg\" properties=\"cover-image\"/>")
+            manifestItems.append("<item id=\"cover-image\" href=\"images/\(coverFilename)\" media-type=\"image/jpeg\" properties=\"cover-image\"/>")
             manifestItems.append("<item id=\"cover-page\" href=\"text/cover.xhtml\" media-type=\"application/xhtml+xml\"/>")
-            spineItems.append("<itemref idref=\"cover-page\"/>")
+            spineItems.append("<itemref idref=\"cover-page\" linear=\"no\"/>")
             
             let coverXHTML = EPUBManifestBuilder.buildCoverXHTML(coverFilename: coverFilename, isManga: isManga)
             try? coverXHTML.write(to: textDir.appendingPathComponent("cover.xhtml"), atomically: true, encoding: .utf8)
@@ -313,17 +313,17 @@ struct CBZToEPUBConverter: Sendable {
         var currentChunkImages: [String] = []
         var chunkIndex = 0
         
-        var globalPageCounter = 1
-        
-        if batchIndex > 0, let coverData = coverData {
-            let coverName = "cover_reused.jpg"
-            let coverURL = imagesDir.appendingPathComponent(coverName)
-            try? coverData.write(to: coverURL)
-            manifestItems.append("<item id=\"cover_reused_img\" href=\"images/\\(coverName)\" media-type=\"image/jpeg\" properties=\"cover-image\"/>")
-            currentChunkImages.append(coverName)
-        }
+        var globalPageCounter = (totalBatches > 1) ? 2 : 1
         
         for (localIndex, item) in batch.enumerated() {
+            // If we split the book into multiple parts, a custom badged cover page (cover.xhtml)
+            // is generated and prepended to the spine for Part 1 (batchIndex == 0).
+            // To prevent double cover pages (which throws off the double-page spread alignment
+            // by 1 page), we skip the first page of the batch (original un-badged cover) in Part 1.
+            if totalBatches > 1 && batchIndex == 0 && localIndex == 0 {
+                continue
+            }
+            
             // ✅ IF COVER OVERRIDE IS ACTIVE, REPLACE THE FIRST IMAGE OF THE FIRST BATCH ENTIRELY
             let isFirstImageOfBook = (localIndex == 0 && batchIndex == 0)
             
@@ -364,13 +364,14 @@ struct CBZToEPUBConverter: Sendable {
                 spreadTag = ""
             } else if isManga {
                 // RTL Manga Sequence: Cover has no spread (is page 1), Page 2 is Right, Page 3 is Left
-                spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-left\"" : " properties=\"page-spread-right\""
+                spreadTag = (globalPageCounter % 2 == 0) ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
             } else {
                 // LTR Western Sequence: Cover has no spread (is page 1), Page 2 is Left, Page 3 is Right
-                spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
+                spreadTag = (globalPageCounter % 2 == 0) ? " properties=\"page-spread-left\"" : " properties=\"page-spread-right\""
             }
             
-            spineItems.append("<itemref idref=\"page_\(chunkIndex)\"\(spreadTag)/>")
+            let linearAttr = (chunkIndex == 1 && totalBatches == 1) ? " linear=\"no\"" : ""
+            spineItems.append("<itemref idref=\"page_\(chunkIndex)\"\(spreadTag)\(linearAttr)/>")
             
             globalPageCounter += 1
             currentChunkImages.removeAll()
@@ -396,11 +397,11 @@ struct CBZToEPUBConverter: Sendable {
             }
         }
         
+        let coverMetaID = (totalBatches > 1) ? "cover-image" : "img_1"
         let opfContent = EPUBManifestBuilder.buildOPFContent(
             bookUUID: bookUUID,
             baseFilename: baseFilename,
-            batchIndex: batchIndex,
-            hasCoverData: coverData != nil,
+            coverMetaID: coverMetaID,
             manifestItems: manifestItems,
             spineItems: spineItems,
             isManga: settings.mangaMode,
