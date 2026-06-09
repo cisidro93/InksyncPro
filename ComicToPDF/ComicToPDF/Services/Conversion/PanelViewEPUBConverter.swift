@@ -527,7 +527,7 @@ class PanelViewEPUBConverter {
         <!DOCTYPE html>
         <!-- Fix 1: xmlns:epub required for EPUB 3 XHTML Content Documents compliance.
              Without it the KFX ingestor flags a structural mismatch (E013). -->
-        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="en" xml:lang="en">
           <head>
             <title>Page \(pageNum)</title>
             <meta name="viewport" content="width=\(W), height=\(H)"/>
@@ -657,7 +657,7 @@ class PanelViewEPUBConverter {
         """
         <?xml version="1.0" encoding="UTF-8"?>
         <!DOCTYPE html>
-        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="en">
+        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="en" xml:lang="en">
           <head><meta charset="UTF-8"/><title>\(title.xmlEscaped())</title></head>
           <body>
             <nav epub:type="toc" id="toc">
@@ -697,7 +697,7 @@ class PanelViewEPUBConverter {
         """
         <?xml version="1.0" encoding="UTF-8"?>
         <!DOCTYPE html>
-        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="en" xml:lang="en">
           <head>
             <title>Blank</title>
             <meta name="viewport" content="width=\(Int(pageWidth)), height=\(Int(pageHeight))"/>

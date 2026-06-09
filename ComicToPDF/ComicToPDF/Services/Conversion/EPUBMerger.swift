@@ -49,7 +49,7 @@ struct EPUBMerger: Sendable {
             
             let coverXHTML = """
             <?xml version="1.0" encoding="UTF-8"?>
-            <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+            <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="en" xml:lang="en">
             <head>
                 <title>Cover</title>
                 <meta name="viewport" content="width=1980, height=2640"/>
@@ -80,22 +80,20 @@ struct EPUBMerger: Sendable {
             let foundImages = try findImages(in: unzipDir)
             
             for imgURL in foundImages {
-                autoreleasepool {
+                try autoreleasepool {
                     let trueExt = (imgURL.pathExtension.lowercased() == "png") ? "png" : "jpg"
                     let safeExt = (trueExt == "jpg") ? "jpeg" : trueExt
                     let newName = String(format: "image_%05d.%@", globalPageIndex, trueExt)
                     let destURL = imagesDir.appendingPathComponent(newName)
                     
-                    // Copy
-                    if let data = try? Data(contentsOf: imgURL) {
-                        try? data.write(to: destURL)
-                    }
+                    // Copy and convert WebP to JPEG if needed
+                    try copyAndPrepareImage(from: imgURL, to: destURL)
                     
                     // Manifest & HTML
                     let htmlName = String(format: "page_%05d.xhtml", globalPageIndex)
                     let htmlContent = """
                     <?xml version="1.0" encoding="UTF-8"?>
-                    <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+                    <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="en" xml:lang="en">
                     <head>
                         <meta charset="UTF-8"/>
                         <meta name="viewport" content="width=1980, height=2640"/>
@@ -159,9 +157,9 @@ struct EPUBMerger: Sendable {
         <package xmlns="http://www.idpf.org/2007/opf" xmlns:epub="http://www.idpf.org/2007/ops" unique-identifier="BookID" version="3.0" prefix="rendition: http://www.idpf.org/vocab/rendition/# dcterms: http://purl.org/dc/terms/">
             <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
                 <dc:identifier id="BookID">urn:uuid:\(bookUUID)</dc:identifier>
-                <dc:title>\(opfTitle.replacingOccurrences(of: "&", with: "&amp;"))</dc:title>
-                <dc:creator>\(opfCreator.replacingOccurrences(of: "&", with: "&amp;"))</dc:creator>
-                <dc:description>\(opfDesc.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;").replacingOccurrences(of: ">", with: "&gt;"))</dc:description>
+                <dc:title>\(opfTitle.xmlEscaped())</dc:title>
+                <dc:creator>\(opfCreator.xmlEscaped())</dc:creator>
+                <dc:description>\(opfDesc.xmlEscaped())</dc:description>
                 <dc:language>en</dc:language>
                 <meta property="dcterms:modified">\(dateIso)</meta>
                 <meta property="rendition:layout">pre-paginated</meta>
@@ -203,7 +201,7 @@ struct EPUBMerger: Sendable {
         <?xml version="1.0" encoding="UTF-8"?>
         <ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
             <head><meta name="dtb:uid" content="urn:uuid:\(bookUUID)"/></head>
-            <docTitle><text>\(opfTitle)</text></docTitle>
+            <docTitle><text>\(opfTitle.xmlEscaped())</text></docTitle>
             <navMap>
                 <navPoint id="navPoint-1" playOrder="1">
                     <navLabel><text>Start</text></navLabel>
@@ -250,7 +248,7 @@ struct EPUBMerger: Sendable {
                     let ext = fileURL.pathExtension.lowercased()
                     let compression: CompressionMethod = ["jpg", "jpeg", "png", "webp"].contains(ext) ? .none : .deflate
                     
-                    try? archive.addEntry(with: relativePath, fileURL: fileURL, compressionMethod: compression)
+                    try archive.addEntry(with: relativePath, fileURL: fileURL, compressionMethod: compression)
                 }
             }
         }
@@ -293,9 +291,9 @@ struct EPUBMerger: Sendable {
             <package xmlns="http://www.idpf.org/2007/opf" xmlns:epub="http://www.idpf.org/2007/ops" unique-identifier="BookID" version="3.0" prefix="rendition: http://www.idpf.org/vocab/rendition/# dcterms: http://purl.org/dc/terms/">
                 <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
                     <dc:identifier id="BookID">urn:uuid:\(bookUUID)</dc:identifier>
-                    <dc:title>\(opfTitle.replacingOccurrences(of: "&", with: "&amp;"))</dc:title>
-                    <dc:creator>\(opfCreator.replacingOccurrences(of: "&", with: "&amp;"))</dc:creator>
-                    <dc:description>\(opfDesc.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;").replacingOccurrences(of: ">", with: "&gt;"))</dc:description>
+                    <dc:title>\(opfTitle.xmlEscaped())</dc:title>
+                    <dc:creator>\(opfCreator.xmlEscaped())</dc:creator>
+                    <dc:description>\(opfDesc.xmlEscaped())</dc:description>
                     <dc:language>en</dc:language>
                     <meta property="dcterms:modified">\(dateIso)</meta>
                     <meta property="rendition:layout">pre-paginated</meta>
@@ -335,7 +333,7 @@ struct EPUBMerger: Sendable {
             <?xml version="1.0" encoding="UTF-8"?>
             <ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
                 <head><meta name="dtb:uid" content="urn:uuid:\(bookUUID)"/></head>
-                <docTitle><text>\(opfTitle)</text></docTitle>
+                <docTitle><text>\(opfTitle.xmlEscaped())</text></docTitle>
                 <navMap>
                     <navPoint id="navPoint-1" playOrder="1">
                         <navLabel><text>Start</text></navLabel>
@@ -368,7 +366,7 @@ struct EPUBMerger: Sendable {
                         let relativePath = fileURL.path.replacingOccurrences(of: dirURL.path + "/", with: "")
                         let ext = fileURL.pathExtension.lowercased()
                         let compression: CompressionMethod = ["jpg", "jpeg", "png", "webp"].contains(ext) ? .none : .deflate
-                        try? archive.addEntry(with: relativePath, fileURL: fileURL, compressionMethod: compression)
+                        try archive.addEntry(with: relativePath, fileURL: fileURL, compressionMethod: compression)
                     }
                 }
             }
@@ -385,7 +383,7 @@ struct EPUBMerger: Sendable {
                 let htmlName = "cover.xhtml"
                 let content = """
                 <?xml version="1.0" encoding="UTF-8"?>
-                <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+                <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="en" xml:lang="en">
                 <head>
                     <title>Cover</title>
                     <meta name="viewport" content="width=1980, height=2640"/>
@@ -445,17 +443,17 @@ struct EPUBMerger: Sendable {
             let activeText = activeOEBPS.appendingPathComponent("text")
             
             for img in images {
-                autoreleasepool {
+                try autoreleasepool {
                     let trueExt = (img.pathExtension.lowercased() == "png") ? "png" : "jpg"
                     let safeExt = (trueExt == "jpg") ? "jpeg" : trueExt
                     let newName = String(format: "image_%05d.%@", globalPageIndex, trueExt)
                     let destURL = activeImages.appendingPathComponent(newName)
-                    if let data = try? Data(contentsOf: img) { try? data.write(to: destURL) }
+                    try copyAndPrepareImage(from: img, to: destURL)
                     
                     let htmlName = String(format: "page_%05d.xhtml", globalPageIndex)
                     let htmlContent = """
                     <?xml version="1.0" encoding="UTF-8"?>
-                    <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+                    <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="en" xml:lang="en">
                     <head>
                         <meta charset="UTF-8"/>
                         <meta name="viewport" content="width=1980, height=2640"/>
@@ -592,6 +590,22 @@ struct EPUBMerger: Sendable {
         }
         
         return finalImage.jpegData(compressionQuality: 0.9)
+    }
+
+    private func copyAndPrepareImage(from srcURL: URL, to destURL: URL) throws {
+        let ext = srcURL.pathExtension.lowercased()
+        if ext == "webp" {
+            if let image = UIImage(contentsOfFile: srcURL.path),
+               let jpegData = image.jpegData(compressionQuality: 0.9) {
+                try jpegData.write(to: destURL)
+            } else {
+                let data = try Data(contentsOf: srcURL)
+                try data.write(to: destURL)
+            }
+        } else {
+            let data = try Data(contentsOf: srcURL)
+            try data.write(to: destURL)
+        }
     }
 
     private func findImages(in directory: URL) throws -> [URL] {

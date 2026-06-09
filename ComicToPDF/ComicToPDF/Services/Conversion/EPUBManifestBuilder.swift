@@ -25,7 +25,7 @@ public struct EPUBManifestBuilder {
     public static func buildCoverXHTML(coverFilename: String) -> String {
         return """
         <?xml version="1.0" encoding="UTF-8"?>
-        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="en" xml:lang="en">
         <head><title>Cover</title><style type="text/css">
         html, body { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #000000; }
         img { display: block; width: 100%; height: 100%; }
@@ -142,7 +142,7 @@ public struct EPUBManifestBuilder {
         // Page sizing is controlled entirely by the viewport meta + rendition:layout OPF meta.
         return """
         <?xml version="1.0" encoding="UTF-8"?>
-        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="en" xml:lang="en">
         <head>
             <meta charset="UTF-8"/>
             <meta name="viewport" content="width=1980, height=2640"/>
