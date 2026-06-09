@@ -133,9 +133,11 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $showingBatchMergeReorder) {
-            SeriesMergeConfigurationView(sourceFiles: batchMergeItems)
-                .environmentObject(conversionManager)
-                .environmentObject(settingsManager)
+            LazyView {
+                SeriesMergeConfigurationView(sourceFiles: batchMergeItems)
+                    .environmentObject(conversionManager)
+                    .environmentObject(settingsManager)
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("GlobalErrorTriggered"))) { notification in
             if let userInfo = notification.userInfo,

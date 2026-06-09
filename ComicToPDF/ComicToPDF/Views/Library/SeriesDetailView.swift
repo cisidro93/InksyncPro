@@ -211,6 +211,12 @@ struct SeriesDetailView: View {
                 }
             }
         }
+        .onAppear {
+            localIssues = sortedIssues
+        }
+        .onChange(of: sortOption) { localIssues = sortedIssues }
+        .onChange(of: conversionManager.convertedPDFs) { localIssues = sortedIssues }
+        .onChange(of: conversionManager.collections) { localIssues = sortedIssues }
     }
     
     private func listView(scrollProxy: ScrollViewProxy) -> some View {
@@ -226,12 +232,6 @@ struct SeriesDetailView: View {
                 }
             }
         }
-        .onAppear {
-            localIssues = sortedIssues
-        }
-        .onChange(of: sortOption) { localIssues = sortedIssues }
-        .onChange(of: conversionManager.convertedPDFs) { localIssues = sortedIssues }
-        .onChange(of: conversionManager.collections) { localIssues = sortedIssues }
         .listStyle(InsetGroupedListStyle())
         .navigationTitle(series.title)
         // ── Volume Jump: ensure target is expanded then scroll to its anchor ──
@@ -895,8 +895,12 @@ struct SeriesDetailView: View {
             }
         }
         .sheet(isPresented: $showingMergeConfig) {
-            let filesToMerge = freshIssues.filter { selection.contains($0.id) }
-            SeriesMergeConfigurationView(sourceFiles: filesToMerge, suggestedName: mergeConfigSuggestedName)
+            LazyView {
+                let filesToMerge = freshIssues.filter { selection.contains($0.id) }
+                SeriesMergeConfigurationView(sourceFiles: filesToMerge, suggestedName: mergeConfigSuggestedName)
+                    .environmentObject(conversionManager)
+                    .environmentObject(settingsManager)
+            }
         }
         .sheet(isPresented: $showBatchMetadataEditor) {
             let selectedFiles = freshIssues.filter { selection.contains($0.id) }
