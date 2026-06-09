@@ -463,9 +463,11 @@ struct CBZToEPUBConverter: Sendable {
                         while let fileURL = enumerator.nextObject() as? URL {
                             let resourceValues = try fileURL.resourceValues(forKeys: [.isDirectoryKey])
                             if resourceValues.isDirectory == true { continue }
-                            if let relativePath = fileURL.path.components(separatedBy: "\(capturedBatchDir.path)/").last {
-                                try archive.addEntry(with: relativePath, fileURL: fileURL, compressionMethod: .deflate)
-                            }
+                            let normalizedFile = fileURL.path.replacingOccurrences(of: "\\", with: "/")
+                            let normalizedBase = capturedBatchDir.path.replacingOccurrences(of: "\\", with: "/")
+                            let prefix = normalizedBase.hasSuffix("/") ? normalizedBase : normalizedBase + "/"
+                            let relativePath = normalizedFile.replacingOccurrences(of: prefix, with: "")
+                            try archive.addEntry(with: relativePath, fileURL: fileURL, compressionMethod: .deflate)
                         }
                     }
                     continuation.resume()

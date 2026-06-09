@@ -251,11 +251,12 @@ struct EPUBMerger: Sendable {
                     fileManager.fileExists(atPath: fileURL.path, isDirectory: &isDirectory)
                     if isDirectory.boolValue { return }
                     
-                    let relativePath = fileURL.path.replacingOccurrences(of: epubDir.path + "/", with: "")
-                    let ext = fileURL.pathExtension.lowercased()
-                    let compression: CompressionMethod = ["jpg", "jpeg", "png", "webp"].contains(ext) ? .none : .deflate
+                    let normalizedFile = fileURL.path.replacingOccurrences(of: "\\", with: "/")
+                    let normalizedBase = epubDir.path.replacingOccurrences(of: "\\", with: "/")
+                    let prefix = normalizedBase.hasSuffix("/") ? normalizedBase : normalizedBase + "/"
+                    let relativePath = normalizedFile.replacingOccurrences(of: prefix, with: "")
                     
-                    try archive.addEntry(with: relativePath, fileURL: fileURL, compressionMethod: compression)
+                    try archive.addEntry(with: relativePath, fileURL: fileURL, compressionMethod: .deflate)
                 }
             }
         }
@@ -374,10 +375,11 @@ struct EPUBMerger: Sendable {
                         fileManager.fileExists(atPath: fileURL.path, isDirectory: &isDirectory)
                         if isDirectory.boolValue { return }
                         
-                        let relativePath = fileURL.path.replacingOccurrences(of: dirURL.path + "/", with: "")
-                        let ext = fileURL.pathExtension.lowercased()
-                        let compression: CompressionMethod = ["jpg", "jpeg", "png", "webp"].contains(ext) ? .none : .deflate
-                        try archive.addEntry(with: relativePath, fileURL: fileURL, compressionMethod: compression)
+                        let normalizedFile = fileURL.path.replacingOccurrences(of: "\\", with: "/")
+                        let normalizedBase = dirURL.path.replacingOccurrences(of: "\\", with: "/")
+                        let prefix = normalizedBase.hasSuffix("/") ? normalizedBase : normalizedBase + "/"
+                        let relativePath = normalizedFile.replacingOccurrences(of: prefix, with: "")
+                        try archive.addEntry(with: relativePath, fileURL: fileURL, compressionMethod: .deflate)
                     }
                 }
             }

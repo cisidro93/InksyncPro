@@ -592,7 +592,10 @@ final class PDFToEPUBConverter: Sendable {
         for case let fileURL as URL in enumerator {
             let resourceValues = try fileURL.resourceValues(forKeys: Set(resourceKeys))
             let isDirectory = resourceValues.isDirectory ?? false
-            let path = fileURL.path.replacingOccurrences(of: tempDir.path + "/", with: "")
+            let normalizedFile = fileURL.path.replacingOccurrences(of: "\\", with: "/")
+            let normalizedBase = tempDir.path.replacingOccurrences(of: "\\", with: "/")
+            let prefix = normalizedBase.hasSuffix("/") ? normalizedBase : normalizedBase + "/"
+            let path = normalizedFile.replacingOccurrences(of: prefix, with: "")
             
             if path == "mimetype" || path.isEmpty { continue }
             

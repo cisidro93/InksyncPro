@@ -310,8 +310,7 @@ final class ConversionOrchestrator: Sendable {
                     let fileSize = file.fileSize
                     if sizeLimit != Int64.max && !currentBatch.isEmpty && (currentBatchSize + fileSize) > sizeLimit { batches.append(currentBatch); currentBatch = []; currentBatchSize = 0 }
                     
-                    var images = try await manager.extractImageURLs(from: file.url)
-                    if file.url.pathExtension.lowercased() == "pdf", let isManga = file.metadata.isManga, isManga { images.reverse() }
+                    let images = try await manager.extractImageURLs(from: file.url)
                     
                     let chapterStartIndex = currentBatch.count
                     let chapterTitle = file.name.replacingOccurrences(of: ".cbz", with: "").replacingOccurrences(of: ".zip", with: "").replacingOccurrences(of: ".pdf", with: "").replacingOccurrences(of: ".epub", with: "")
@@ -433,8 +432,7 @@ final class ConversionOrchestrator: Sendable {
                         firstEPUBFileCoverData = try? Data(contentsOf: url)
                     }
                     if firstEPUBFileCoverData == nil {
-                        if var images = try? await manager.extractImageURLs(from: file.url) {
-                            if file.url.pathExtension.lowercased() == "pdf" && (file.metadata.isManga == true) { images.reverse() }
+                        if let images = try? await manager.extractImageURLs(from: file.url) {
                             if let firstImage = images.first { firstEPUBFileCoverData = try? Data(contentsOf: firstImage) }
                         }
                     }
