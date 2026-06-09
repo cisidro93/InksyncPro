@@ -87,7 +87,7 @@ struct EPUBMerger: Sendable {
                     let destURL = imagesDir.appendingPathComponent(newName)
                     
                     // Copy and convert WebP to JPEG if needed
-                    try copyAndPrepareImage(from: imgURL, to: destURL)
+                    try copyAndPrepareImage(from: imgURL, to: destURL, settings: settings)
                     
                     // Manifest & HTML
                     let htmlName = String(format: "page_%05d.xhtml", globalPageIndex)
@@ -448,7 +448,7 @@ struct EPUBMerger: Sendable {
                     let safeExt = (trueExt == "jpg") ? "jpeg" : trueExt
                     let newName = String(format: "image_%05d.%@", globalPageIndex, trueExt)
                     let destURL = activeImages.appendingPathComponent(newName)
-                    try copyAndPrepareImage(from: img, to: destURL)
+                    try copyAndPrepareImage(from: img, to: destURL, settings: settings)
                     
                     let htmlName = String(format: "page_%05d.xhtml", globalPageIndex)
                     let htmlContent = """
@@ -592,11 +592,11 @@ struct EPUBMerger: Sendable {
         return finalImage.jpegData(compressionQuality: 0.9)
     }
 
-    private func copyAndPrepareImage(from srcURL: URL, to destURL: URL) throws {
+    private func copyAndPrepareImage(from srcURL: URL, to destURL: URL, settings: ConversionSettings) throws {
         let ext = srcURL.pathExtension.lowercased()
         if ext == "webp" {
             if let image = UIImage(contentsOfFile: srcURL.path),
-               let jpegData = image.jpegData(compressionQuality: 0.9) {
+               let jpegData = image.jpegData(compressionQuality: settings.compressionQuality.value) {
                 try jpegData.write(to: destURL)
             } else {
                 let data = try Data(contentsOf: srcURL)
