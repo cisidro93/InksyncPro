@@ -27,11 +27,13 @@ The only features that exist are those supporting:
 ## 2. Structural Constraints (Strict Mode)
 
 ### Scope
+
 - **NO SCOPE CREEP.** If a request touches Zettelkasten, NLP, Kanban, or
   Siri/Spotlight integration, **refuse** the request and log it to
   `BACKLOG_V2.md`.
 
 ### Memory
+
 - **MEMORY FIRST.** Every task must prioritize low memory overhead.
 - All image decode operations must use `CGImageSourceCreateThumbnailAtIndex`.
 - Live image buffer must be cache-limited to **7 items** using
@@ -44,6 +46,7 @@ The only features that exist are those supporting:
   `withExtendedLifetime` to prevent ARC releasing the backing buffer early.
 
 ### Threading
+
 - **ALL I/O and conversion logic must run off the main thread.**
   - ZIP/RAR extraction: `DispatchQueue.global(qos: .userInitiated)` via
     `withCheckedThrowingContinuation`.
@@ -55,6 +58,7 @@ The only features that exist are those supporting:
   **before** any file operation; closed **after** the operation completes.
 
 ### Swift 6
+
 - All code must be fully **Swift 6 concurrency compliant**.
 - Use `[weak self]` in **all** `Task {}` and closure captures.
 - Include `deinit` logging (`Logger.shared.log("ClassName: deinit")`) in
@@ -104,7 +108,7 @@ threading violation, or actor isolation error).
 ## 6. Audit Status (June 3, 2026)
 
 | Component | Status | Commit |
-|---|---|---|
+| --- | --- | --- |
 | `SmartImportSheet.analyse()` — security scope | ✅ Fixed | `6b188e9c` |
 | `SmartImportSheet.analyse()` — workingDir leak | ✅ Fixed | `6b188e9c` |
 | `MetadataInjector` — `transfer.tmp` CRC crash | ✅ Fixed | `6b188e9c` |
