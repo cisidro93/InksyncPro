@@ -57,8 +57,19 @@ class AppSettingsManager: ObservableObject {
     private let settingsURL: URL
     
     private init() {
-        let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
-        settingsURL = docDir.appendingPathComponent("inksync_app_settings.json")
+        let oldDocDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+        let oldURL = oldDocDir?.appendingPathComponent("inksync_app_settings.json")
+        
+        let appSupportDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
+        try? FileManager.default.createDirectory(at: appSupportDir, withIntermediateDirectories: true)
+        let newURL = appSupportDir.appendingPathComponent("inksync_app_settings.json")
+        
+        // Migrate old file if it exists in documents directory
+        if let oldURL = oldURL, FileManager.default.fileExists(atPath: oldURL.path) {
+            try? FileManager.default.moveItem(at: oldURL, to: newURL)
+        }
+        
+        settingsURL = newURL
         
         self.conversionSettings = ConversionSettings()
         self.conversionPresets = []

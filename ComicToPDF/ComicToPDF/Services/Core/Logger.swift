@@ -99,8 +99,21 @@ class Logger: ObservableObject, @unchecked Sendable {
     }
     
     nonisolated var logFileURL: URL {
-        let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
-        return docDir.appendingPathComponent(logFileName)
+        let oldDocDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+        let oldURL = oldDocDir?.appendingPathComponent(logFileName)
+        
+        let cacheDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
+        let newURL = cacheDir.appendingPathComponent(logFileName)
+        
+        // Migrate old log file if it exists in documents directory
+        if let oldURL = oldURL, FileManager.default.fileExists(atPath: oldURL.path) {
+            if !FileManager.default.fileExists(atPath: newURL.path) {
+                try? FileManager.default.moveItem(at: oldURL, to: newURL)
+            } else {
+                try? FileManager.default.removeItem(at: oldURL)
+            }
+        }
+        return newURL
     }
     
     nonisolated func log(_ message: String, category: String = "INFO", type: LogType = .info) {

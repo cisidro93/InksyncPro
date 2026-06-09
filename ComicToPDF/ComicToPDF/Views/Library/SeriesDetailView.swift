@@ -3,6 +3,7 @@ import SwiftUI
 struct SeriesDetailView: View {
     let series: SeriesGroup
     @EnvironmentObject var conversionManager: ConversionManager
+    @EnvironmentObject var settingsManager: AppSettingsManager
     @Environment(\.dismiss) var dismiss
     @Binding var selectedPDF: ConvertedPDF?
     var useNavigationStack: Bool
@@ -896,15 +897,13 @@ struct SeriesDetailView: View {
         }
         .sheet(isPresented: $showingMergeConfig) {
             LazyView {
-                let filesToMerge = freshIssues.filter { selection.contains($0.id) }
-                SeriesMergeConfigurationView(sourceFiles: filesToMerge, suggestedName: mergeConfigSuggestedName)
+                SeriesMergeConfigurationView(sourceFiles: freshIssues.filter { selection.contains($0.id) }, suggestedName: mergeConfigSuggestedName)
                     .environmentObject(conversionManager)
                     .environmentObject(settingsManager)
             }
         }
         .sheet(isPresented: $showBatchMetadataEditor) {
-            let selectedFiles = freshIssues.filter { selection.contains($0.id) }
-            BatchMetadataEditorView(selectedPDFs: selectedFiles)
+            BatchMetadataEditorView(selectedPDFs: freshIssues.filter { selection.contains($0.id) })
         }
         .sheet(item: $pdfToExport) { pdf in
             DualExportView(pdf: pdf)

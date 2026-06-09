@@ -44,12 +44,36 @@ class ReaderProgressTracker: ObservableObject {
     private let queue = DispatchQueue(label: "com.inksync.ProgressTracker", qos: .userInitiated)
 // Removed fileManager properties to avoid actor isolation issues
     private nonisolated func getProgressDir() -> URL {
-        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
-        let dir = docs.appendingPathComponent("progress")
-        if !FileManager.default.fileExists(atPath: dir.path) {
-            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
+        let newDir = appSupport.appendingPathComponent("progress")
+        
+        // Ensure new directory exists
+        if !FileManager.default.fileExists(atPath: newDir.path) {
+            try? FileManager.default.createDirectory(at: newDir, withIntermediateDirectories: true)
         }
-        return dir
+        
+        // Migration logic
+        let oldDocs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+        if let oldDocs = oldDocs {
+            let oldDir = oldDocs.appendingPathComponent("progress")
+            if FileManager.default.fileExists(atPath: oldDir.path) {
+                // Move contents from oldDir to newDir
+                if let files = try? FileManager.default.contentsOfDirectory(at: oldDir, includingPropertiesForKeys: nil) {
+                    for file in files {
+                        let destFile = newDir.appendingPathComponent(file.lastPathComponent)
+                        if !FileManager.default.fileExists(atPath: destFile.path) {
+                            try? FileManager.default.moveItem(at: file, to: destFile)
+                        } else {
+                            try? FileManager.default.removeItem(at: file)
+                        }
+                    }
+                }
+                // Try to remove oldDir
+                try? FileManager.default.removeItem(at: oldDir)
+            }
+        }
+        
+        return newDir
     }
     
     /// Key prefix used in NSUbiquitousKeyValueStore so our keys never collide with other apps.
