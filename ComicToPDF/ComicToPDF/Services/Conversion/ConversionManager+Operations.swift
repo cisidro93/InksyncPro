@@ -11,7 +11,9 @@ extension ConversionManager {
         let pdfPairs = sourceFiles  // pass full objects — avoids fragile URL equality match for cloud files
         let startCover = sourceFiles.first?.coverImageData
         let settings = AppSettingsManager.shared.conversionSettings
-        let saveDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
+        let docRoot = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
+        let saveDir = docRoot.appendingPathComponent("Merged")
+        try? FileManager.default.createDirectory(at: saveDir, withIntermediateDirectories: true)
         let taskId = task.id
         
         Task {
@@ -72,15 +74,22 @@ extension ConversionManager {
                         let attrs = try FileManager.default.attributesOfItem(atPath: fileURL.path)
                         let size = attrs[.size] as? Int64 ?? 0
                         
+                        let firstPDF = pdfPairs.first
+                        var baseMetadata = firstPDF?.metadata ?? PDFMetadata(title: fileURL.deletingPathExtension().lastPathComponent)
+                        baseMetadata.title = fileURL.deletingPathExtension().lastPathComponent
+                        baseMetadata.issueNumber = nil
+                        baseMetadata.volume = nil
+                        
                         var newPDF = ConvertedPDF(
                             id: UUID(),
                             name: fileURL.deletingPathExtension().lastPathComponent,
                             url: fileURL,
                             pageCount: 0,
                             fileSize: size,
-                            metadata: PDFMetadata(title: fileURL.deletingPathExtension().lastPathComponent),
-                            contentType: .book
+                            metadata: baseMetadata,
+                            contentType: firstPDF?.contentType ?? .book
                         )
+                        newPDF.collectionId = firstPDF?.collectionId
                         newPDF.lastOutputFormat = settings.outputFormat
                         newPDF.coverImageData = startCover
                         self.convertedPDFs.append(newPDF)
@@ -169,7 +178,9 @@ extension ConversionManager {
     // MARK: - Merge & Convert
     func mergePDFs(_ pdfs: [ConvertedPDF], outputName: String, mangaMode: Bool) async {
         isConverting = true; processingStatus = "Merging..."; statusMessage = "Starting merge..."
-        let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
+        let docRoot = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
+        let docDir = docRoot.appendingPathComponent("Merged")
+        try? FileManager.default.createDirectory(at: docDir, withIntermediateDirectories: true)
         let safeName = outputName.isEmpty ? "Merged Collection" : outputName; let outputURL = docDir.appendingPathComponent("\(safeName).epub")
         let merger = EPUBMerger()
         
@@ -220,8 +231,26 @@ extension ConversionManager {
             
             let totalPages = pdfs.reduce(0) { $0 + $1.pageCount }
             
-            let newPDF = ConvertedPDF(name: outputURL.lastPathComponent, url: outputURL, pageCount: totalPages, fileSize: fileSize, metadata: PDFMetadata(title: safeName))
-            await MainActor.run { self.convertedPDFs.append(newPDF) }
+            let firstPDF = pdfs.first
+            var baseMetadata = firstPDF?.metadata ?? PDFMetadata(title: safeName)
+            baseMetadata.title = safeName
+            baseMetadata.issueNumber = nil
+            baseMetadata.volume = nil
+            
+            let newPDF = ConvertedPDF(
+                id: UUID(),
+                name: outputURL.lastPathComponent,
+                url: outputURL,
+                pageCount: totalPages,
+                fileSize: fileSize,
+                metadata: baseMetadata,
+                contentType: firstPDF?.contentType ?? .book
+            )
+            newPDF.collectionId = firstPDF?.collectionId
+            await MainActor.run {
+                self.convertedPDFs.append(newPDF)
+                self.saveLibrary()
+            }
             if let cover = inheritedCover {
                 thumbnailCache.setObject(cover, forKey: newPDF.id.uuidString as NSString)
                 objectWillChange.send()
