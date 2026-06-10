@@ -27,10 +27,16 @@ public struct EPUBManifestBuilder {
         return """
         <?xml version="1.0" encoding="UTF-8"?>
         <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="\(lang)" xml:lang="\(lang)">
-        <head><title>Cover</title><style type="text/css">
-        html, body { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #000000; }
-        img { display: block; width: 100%; height: 100%; }
-        </style></head>
+        <head>
+            <meta charset="UTF-8"/>
+            <meta name="viewport" content="width=1980, height=2640"/>
+            <title>Cover</title>
+            <style type="text/css">
+            @page { margin: 0; padding: 0; }
+            html, body { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #000000; }
+            img { display: block; width: 100%; height: 100%; }
+            </style>
+        </head>
         <body epub:type="cover"><img src="../images/\(coverFilename)" alt="Cover"/></body>
         </html>
         """

@@ -256,13 +256,22 @@ struct CBZToEPUBConverter: Sendable {
         let isManga = settings.mangaMode
         
         // Dynamic Cover Generation for Split Volumes
+        // hasBadgedCover tracks whether a separate badged cover image has been written.
+        var hasBadgedCover = false
         if let coverData = coverData, totalBatches > 1 {
             let badgedCoverData = CoverGenerator.generateCover(from: coverData, partNumber: batchIndex + 1, totalParts: totalBatches)
             let coverFilename = "badged_cover.jpg"
             try? badgedCoverData.write(to: imagesDir.appendingPathComponent(coverFilename))
             
             manifestItems.append("<item id=\"cover-image\" href=\"images/\(coverFilename)\" media-type=\"image/jpeg\" properties=\"cover-image\"/>")
-            // Omit cover-page XHTML and spine entry to prevent duplicate covers on Kindle.
+            // Write cover.xhtml so the cover-image manifest item is referenced from the spine.
+            // Kindle Cloud auto-injects a duplicate cover page for any cover-image item that
+            // is NOT in the spine — this cover.xhtml prevents that auto-injection.
+            let coverXHTML = EPUBManifestBuilder.buildCoverXHTML(coverFilename: coverFilename, isManga: isManga)
+            try coverXHTML.write(to: textDir.appendingPathComponent("cover.xhtml"), atomically: true, encoding: .utf8)
+            manifestItems.append("<item id=\"cover-page\" href=\"text/cover.xhtml\" media-type=\"application/xhtml+xml\"/>")
+            spineItems.append("<itemref idref=\"cover-page\"/>")
+            hasBadgedCover = true
         }
         
         // ── Pre-flight: fetch SwiftData metadata once on the MainActor before
@@ -290,7 +299,9 @@ struct CBZToEPUBConverter: Sendable {
         
         // Determine firstPageHref for nav.xhtml BEFORE writing it — if a badged
         // cover is prepended the NAV must point to cover.xhtml, not page_0001.xhtml.
-        let firstPageHref = "text/page_0001.xhtml"
+        // cover.xhtml is always the entry-point: written either above (badged cover path)
+        // or below (single-volume first-image path).
+        let firstPageHref = "text/cover.xhtml"
         let navContent = EPUBManifestBuilder.buildNavContent(firstPageHref: firstPageHref, isManga: isManga)
         try navContent.write(to: oebpsDir.appendingPathComponent("nav.xhtml"), atomically: true, encoding: .utf8)
 
@@ -315,21 +326,30 @@ struct CBZToEPUBConverter: Sendable {
             let newImageName = String(format: "image_%04d.%@", localIndex + 1, trueExt)
             let destURL = imagesDir.appendingPathComponent(newImageName)
             
-            if isFirstImageOfBook && isCoverOverrideActive, let coverData = coverData {
+            if isFirstImageOfBook && isCoverOverrideActive && !hasBadgedCover, let coverData = coverData {
                 try? coverData.write(to: destURL)
             } else {
                 try? fileManager.copyItem(at: item.processedDiskURL, to: destURL)
             }
             
-            let properties = isFirstImageOfBook ? "properties=\"cover-image\"" : ""
+            // Only apply properties="cover-image" when there is no separate badged cover.
+            // When hasBadgedCover is true the badged cover already has that property;
+            // adding it to img_1 as well would produce two cover-image items (invalid EPUB3).
+            let properties = (isFirstImageOfBook && !hasBadgedCover) ? "properties=\"cover-image\"" : ""
             let propString = properties.isEmpty ? "" : " \(properties)"
             manifestItems.append("<item id=\"img_\(localIndex+1)\" href=\"images/\(newImageName)\" media-type=\"image/\(safeExt)\"\(propString)/>")
             
-            // If this is the cover image of the book (first image of first batch),
-            // we skip creating its XHTML page and spine reference to prevent duplicate covers on Kindle.
-            // It remains in the manifest and images directory so Kindle renders it as the cover thumbnail.
-            if isFirstImageOfBook {
-                continue
+            // Single-volume cover path: write cover.xhtml wrapping img_1 and add it as the
+            // first spine entry. This prevents Kindle Cloud from auto-injecting the cover-image
+            // manifest item as a separate prepended page (which creates the visible duplicate).
+            // When hasBadgedCover is true the cover.xhtml was already written above; let img_1
+            // fall through to normal page XHTML generation so no content page is lost.
+            if isFirstImageOfBook && !hasBadgedCover {
+                let coverXHTML = EPUBManifestBuilder.buildCoverXHTML(coverFilename: newImageName, isManga: isManga)
+                try coverXHTML.write(to: textDir.appendingPathComponent("cover.xhtml"), atomically: true, encoding: .utf8)
+                manifestItems.append("<item id=\"cover-page\" href=\"text/cover.xhtml\" media-type=\"application/xhtml+xml\"/>")
+                spineItems.append("<itemref idref=\"cover-page\"/>")
+                continue // cover handled via cover.xhtml; no separate page XHTML needed for img_1
             }
             
             currentChunkImages.append(newImageName)
