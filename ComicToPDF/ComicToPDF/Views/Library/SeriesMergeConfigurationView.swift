@@ -1,6 +1,19 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+@MainActor
+class SeriesMergeConfigurationViewModel: ObservableObject {
+    @Published var itemsToMerge: [ConvertedPDF]
+    @Published var outputName: String
+    @Published var mangaMode: Bool = false
+    @Published var isProcessing: Bool = false
+    
+    init(itemsToMerge: [ConvertedPDF], outputName: String) {
+        self.itemsToMerge = itemsToMerge
+        self.outputName = outputName
+    }
+}
+
 struct SeriesMergeConfigurationView: View {
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var conversionManager: ConversionManager
@@ -10,35 +23,35 @@ struct SeriesMergeConfigurationView: View {
     let sourceFiles: [ConvertedPDF]
     let suggestedName: String?
     
-    // State
-    @State private var itemsToMerge: [ConvertedPDF]
-    @State private var outputName: String = ""
-    @State private var mangaMode: Bool = false
-    @State private var isProcessing: Bool = false
+    // State ViewModel
+    @StateObject private var viewModel: SeriesMergeConfigurationViewModel
     
     init(sourceFiles: [ConvertedPDF], suggestedName: String? = nil) {
         self.sourceFiles = sourceFiles
         self.suggestedName = suggestedName
         // Default sort by logical name (usually volume/issue number)
-        _itemsToMerge = State(initialValue: sourceFiles.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending })
-        if let name = suggestedName {
-            _outputName = State(initialValue: name)
-        }
+        let initialMerge = sourceFiles.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        let initialName = suggestedName ?? ""
+        
+        _viewModel = StateObject(wrappedValue: SeriesMergeConfigurationViewModel(
+            itemsToMerge: initialMerge,
+            outputName: initialName
+        ))
     }
     
     var body: some View {
         NavigationStack {
             VStack {
-                if isProcessing {
+                if viewModel.isProcessing {
                     ImmersiveConversionOverlay(
-                        pdfName: outputName.isEmpty ? "Merged Collection" : outputName,
+                        pdfName: viewModel.outputName.isEmpty ? "Merged Collection" : viewModel.outputName,
                         customMessage: conversionManager.statusMessage ?? "Merging..."
                     )
                 } else {
                     Form {
                         Section(header: Text("Output Volume Configuration"), footer: Text("The merged file will automatically be assigned to the current series.")) {
-                            TextField("New Volume Name (e.g., Volume 1)", text: $outputName)
-                            Toggle("Manga Mode (Right-to-Left)", isOn: $mangaMode)
+                            TextField("New Volume Name (e.g., Volume 1)", text: $viewModel.outputName)
+                            Toggle("Manga Mode (Right-to-Left)", isOn: $viewModel.mangaMode)
                             
                             Picker("Image Quality", selection: $settingsManager.conversionSettings.compressionQuality) {
                                 ForEach(CompressionPreset.allCases, id: \.self) { preset in
@@ -55,7 +68,7 @@ struct SeriesMergeConfigurationView: View {
                         .listRowBackground(Color.inkSurface.opacity(0.4))
                         
                         Section(header: Text("Merge Order"), footer: Text("Drag to reorder. The top file will be the first issue in the merged volume.")) {
-                            ForEach(itemsToMerge) { pdf in
+                            ForEach(viewModel.itemsToMerge) { pdf in
                                 pdfRow(for: pdf)
                             }
                             .onMove(perform: moveItems)
@@ -91,25 +104,17 @@ struct SeriesMergeConfigurationView: View {
                 }
             }
             .background(Color.inkBackground.ignoresSafeArea())
-            .onAppear {
-                itemsToMerge = sourceFiles.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
-                if let name = suggestedName {
-                    outputName = name
-                } else {
-                    outputName = ""
-                }
-            }
             .navigationTitle("Configure Merge")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    if !isProcessing {
+                    if !viewModel.isProcessing {
                         Button("Cancel") { dismiss() }
                     }
                 }
                 // Requires EditButton to easily expose drag handles
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    if !isProcessing {
+                    if !viewModel.isProcessing {
                         EditButton()
                     }
                 }
@@ -147,19 +152,19 @@ struct SeriesMergeConfigurationView: View {
     }
     
     private var isMergeDisabled: Bool {
-        itemsToMerge.count < 2 || outputName.trimmingCharacters(in: .whitespaces).isEmpty
+        viewModel.itemsToMerge.count < 2 || viewModel.outputName.trimmingCharacters(in: .whitespaces).isEmpty
     }
     
     private func moveItems(from source: IndexSet, to destination: Int) {
-        itemsToMerge.move(fromOffsets: source, toOffset: destination)
+        viewModel.itemsToMerge.move(fromOffsets: source, toOffset: destination)
     }
     
     private func startMerge() {
-        let files = itemsToMerge
-        let name = outputName.trimmingCharacters(in: .whitespaces)
-        let mode = mangaMode
+        let files = viewModel.itemsToMerge
+        let name = viewModel.outputName.trimmingCharacters(in: .whitespaces)
+        let mode = viewModel.mangaMode
         
-        isProcessing = true
+        viewModel.isProcessing = true
         
         Task {
             // Explicitly extract the Series mapping tag to assign the generated merge automatically
@@ -174,7 +179,7 @@ struct SeriesMergeConfigurationView: View {
                     print("Merged Book generated natively: \(newBook.name)")
                     NotificationCenter.default.post(name: Notification.Name("OpenMergedBook"), object: newBook)
                 }
-                isProcessing = false
+                viewModel.isProcessing = false
                 dismiss()
             }
         }

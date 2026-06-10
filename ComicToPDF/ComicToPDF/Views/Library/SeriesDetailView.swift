@@ -1320,6 +1320,14 @@ struct SeriesDetailView: View {
             pdfToRead = pdf
         } label: { Label("Read / Preview", systemImage: "book.pages") }
         
+        if case .cloud = pdf.sourceMode {
+            // Cloud files download via Cloud & Sync
+        } else {
+            Button {
+                AppRouter.shared.presentSheet(.convert(pdf))
+            } label: { Label("Convert File", systemImage: "arrow.triangle.2.circlepath") }
+        }
+        
         let isPinned = WorkspaceFocusManager.shared.isPinned(pdf)
         Button {
             if isPinned {

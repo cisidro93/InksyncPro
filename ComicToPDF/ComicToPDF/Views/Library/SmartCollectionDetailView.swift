@@ -511,6 +511,10 @@ import SwiftUI
             Divider()
             Button { downloadFile(pdf, thenConvert: false) } label: { Label("Download", systemImage: "arrow.down.circle") }
             Button { downloadFile(pdf, thenConvert: true) } label: { Label("Download & Convert", systemImage: "arrow.down.circle.fill") }
+        } else {
+            Button {
+                AppRouter.shared.presentSheet(.convert(pdf))
+            } label: { Label("Convert File", systemImage: "arrow.triangle.2.circlepath") }
         }
     }
 
