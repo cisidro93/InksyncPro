@@ -262,11 +262,7 @@ struct CBZToEPUBConverter: Sendable {
             try? badgedCoverData.write(to: imagesDir.appendingPathComponent(coverFilename))
             
             manifestItems.append("<item id=\"cover-image\" href=\"images/\(coverFilename)\" media-type=\"image/jpeg\" properties=\"cover-image\"/>")
-            manifestItems.append("<item id=\"cover-page\" href=\"text/cover.xhtml\" media-type=\"application/xhtml+xml\"/>")
-            spineItems.append("<itemref idref=\"cover-page\" linear=\"no\"/>")
-            
-            let coverXHTML = EPUBManifestBuilder.buildCoverXHTML(coverFilename: coverFilename, isManga: isManga)
-            try? coverXHTML.write(to: textDir.appendingPathComponent("cover.xhtml"), atomically: true, encoding: .utf8)
+            // Omit cover-page XHTML and spine entry to prevent duplicate covers on Kindle.
         }
         
         // ── Pre-flight: fetch SwiftData metadata once on the MainActor before
@@ -294,12 +290,7 @@ struct CBZToEPUBConverter: Sendable {
         
         // Determine firstPageHref for nav.xhtml BEFORE writing it — if a badged
         // cover is prepended the NAV must point to cover.xhtml, not page_0001.xhtml.
-        let firstPageHref: String
-        if let _ = coverData, totalBatches > 1 {
-            firstPageHref = "text/cover.xhtml"
-        } else {
-            firstPageHref = "text/page_0001.xhtml"
-        }
+        let firstPageHref = "text/page_0001.xhtml"
         let navContent = EPUBManifestBuilder.buildNavContent(firstPageHref: firstPageHref, isManga: isManga)
         try navContent.write(to: oebpsDir.appendingPathComponent("nav.xhtml"), atomically: true, encoding: .utf8)
 
@@ -316,15 +307,6 @@ struct CBZToEPUBConverter: Sendable {
         var globalPageCounter = (totalBatches > 1) ? 2 : 1
         
         for (localIndex, item) in batch.enumerated() {
-            // If we split the book into multiple parts, a custom badged cover page (cover.xhtml)
-            // is generated and prepended to the spine for Part 1 (batchIndex == 0).
-            // To prevent double cover pages (which throws off the double-page spread alignment
-            // by 1 page), we skip the first page of the batch (original un-badged cover) in Part 1.
-            if totalBatches > 1 && batchIndex == 0 && localIndex == 0 {
-                continue
-            }
-            
-            // ✅ IF COVER OVERRIDE IS ACTIVE, REPLACE THE FIRST IMAGE OF THE FIRST BATCH ENTIRELY
             let isFirstImageOfBook = (localIndex == 0 && batchIndex == 0)
             
             let trueExt = (item.sourceURL.pathExtension.lowercased() == "png") ? "png" : "jpg"
@@ -342,6 +324,14 @@ struct CBZToEPUBConverter: Sendable {
             let properties = isFirstImageOfBook ? "properties=\"cover-image\"" : ""
             let propString = properties.isEmpty ? "" : " \(properties)"
             manifestItems.append("<item id=\"img_\(localIndex+1)\" href=\"images/\(newImageName)\" media-type=\"image/\(safeExt)\"\(propString)/>")
+            
+            // If this is the cover image of the book (first image of first batch),
+            // we skip creating its XHTML page and spine reference to prevent duplicate covers on Kindle.
+            // It remains in the manifest and images directory so Kindle renders it as the cover thumbnail.
+            if isFirstImageOfBook {
+                continue
+            }
+            
             currentChunkImages.append(newImageName)
             
             // Generate DOM Page
@@ -370,11 +360,7 @@ struct CBZToEPUBConverter: Sendable {
                 spreadTag = (globalPageCounter % 2 == 0) ? " properties=\"page-spread-left\"" : " properties=\"page-spread-right\""
             }
             
-            if chunkIndex == 1 && totalBatches == 1 {
-                spineItems.append("<itemref idref=\"page_\(chunkIndex)\" linear=\"no\"/>")
-            } else {
-                spineItems.append("<itemref idref=\"page_\(chunkIndex)\"\(spreadTag)/>")
-            }
+            spineItems.append("<itemref idref=\"page_\(chunkIndex)\"\(spreadTag)/>")
             
             globalPageCounter += 1
             currentChunkImages.removeAll()
