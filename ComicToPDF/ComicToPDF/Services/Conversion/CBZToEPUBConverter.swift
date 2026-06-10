@@ -303,11 +303,12 @@ struct CBZToEPUBConverter: Sendable {
         manifestItems.append("<item id=\"ncx\" href=\"toc.ncx\" media-type=\"application/x-dtbncx+xml\"/>")
         manifestItems.append("<item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/>")
         
-        // Determine firstPageHref for nav.xhtml BEFORE writing it — if a badged
-        // cover is prepended the NAV must point to cover.xhtml, not page_0001.xhtml.
-        // cover.xhtml is always the entry-point: written either above (badged cover path)
-        // or below (single-volume first-image path).
-        let firstPageHref = "text/cover.xhtml"
+        // Determine firstPageHref for nav.xhtml BEFORE writing it.
+        // Multi-batch: badged cover.xhtml is the first spine item → point here.
+        // Single-volume: page_0001.xhtml (containing img_1 / the cover image) is
+        // the entry-point. Kindle extracts the thumbnail from the properties="cover-image"
+        // manifest attribute on img_1; no separate cover.xhtml is needed.
+        let firstPageHref = hasBadgedCover ? "text/cover.xhtml" : "text/page_0001.xhtml"
         let navContent = EPUBManifestBuilder.buildNavContent(firstPageHref: firstPageHref, isManga: isManga)
         try navContent.write(to: oebpsDir.appendingPathComponent("nav.xhtml"), atomically: true, encoding: .utf8)
 
@@ -321,7 +322,9 @@ struct CBZToEPUBConverter: Sendable {
         var currentChunkImages: [String] = []
         var chunkIndex = 0
         
-        var globalPageCounter = (totalBatches > 1) ? 2 : 1
+        // Multi-batch: cover.xhtml occupies spine slot 1, so content pages start at 2.
+        // Single-volume: img_1 IS page 1, content pages start at 1.
+        var globalPageCounter = hasBadgedCover ? 2 : 1
         
         for (localIndex, item) in batch.enumerated() {
             let isFirstImageOfBook = (localIndex == 0 && batchIndex == 0)
@@ -338,29 +341,16 @@ struct CBZToEPUBConverter: Sendable {
                 try? fileManager.copyItem(at: item.processedDiskURL, to: destURL)
             }
             
-            // The cover image (img_1) must carry properties="cover-image" so that the
-            // OPF <meta name="cover" content="img_1"/> is consistent — Amazon's KFX ingestor
-            // checks that the item referenced by <meta name="cover"> has this property and
-            // fails with E999 if it does not. The duplicate-cover problem is suppressed by
-            // cover.xhtml being the FIRST spine item: Kindle auto-injects a bare cover page
-            // only when a cover-image item has NO spine XHTML wrapper. Since img_1 is
-            // referenced exclusively via cover.xhtml (first spine entry), no extra page is
-            // prepended.
-            let coverImageProp = (isFirstImageOfBook && !hasBadgedCover) ? " properties=\"cover-image\"" : ""
-            manifestItems.append("<item id=\"img_\(localIndex+1)\" href=\"images/\(newImageName)\" media-type=\"image/\(safeExt)\"\(coverImageProp)/>")
-            
-            // Single-volume cover path: write cover.xhtml wrapping img_1 and add it as the
-            // first spine entry. This prevents Kindle Cloud from auto-injecting the cover-image
-            // manifest item as a separate prepended page (which creates the visible duplicate).
-            // When hasBadgedCover is true the cover.xhtml was already written above; let img_1
-            // fall through to normal page XHTML generation so no content page is lost.
-            if isFirstImageOfBook && !hasBadgedCover {
-                let coverXHTML = EPUBManifestBuilder.buildCoverXHTML(coverFilename: newImageName, isManga: isManga)
-                try coverXHTML.write(to: textDir.appendingPathComponent("cover.xhtml"), atomically: true, encoding: .utf8)
-                manifestItems.append("<item id=\"cover-page\" href=\"text/cover.xhtml\" media-type=\"application/xhtml+xml\"/>")
-                spineItems.append("<itemref idref=\"cover-page\"/>")
-                continue // cover handled via cover.xhtml; no separate page XHTML needed for img_1
-            }
+            // img_1 (the first image of the first batch) carries properties="cover-image"
+            // so the OPF <meta name="cover" content="img_1"/> is consistent and Kindle can
+            // extract a thumbnail. img_1 also appears as page_0001.xhtml in the spine —
+            // the manifest property and the spine XHTML are independent roles and do not
+            // conflict. NOTE: this causes Kindle to show a duplicate cover page (auto-injected
+            // thumbnail + page_0001 both show the cover image). That is a known cosmetic
+            // limitation separate from the E999 structural validation error.
+            let properties = isFirstImageOfBook ? "properties=\"cover-image\"" : ""
+            let propString = properties.isEmpty ? "" : " \(properties)"
+            manifestItems.append("<item id=\"img_\(localIndex+1)\" href=\"images/\(newImageName)\" media-type=\"image/\(safeExt)\"\(propString)/>")
             
             currentChunkImages.append(newImageName)
             
@@ -380,14 +370,12 @@ struct CBZToEPUBConverter: Sendable {
             
             // Universally Apply Advanced Landscape Spread Tagging (RTL vs LTR)
             let spreadTag: String
-            if globalPageCounter == 1 {
-                spreadTag = ""
-            } else if isManga {
-                // RTL Manga Sequence: Cover has no spread (is page 1), Page 2 is Right, Page 3 is Left
-                spreadTag = (globalPageCounter % 2 == 0) ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
+            if isManga {
+                // RTL Manga Sequence: Cover (page 1) is Left, Page 2 is Right, Page 3 is Left
+                spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-left\"" : " properties=\"page-spread-right\""
             } else {
-                // LTR Western Sequence: Cover has no spread (is page 1), Page 2 is Left, Page 3 is Right
-                spreadTag = (globalPageCounter % 2 == 0) ? " properties=\"page-spread-left\"" : " properties=\"page-spread-right\""
+                // LTR Western Sequence: Cover (page 1) is Right, Page 2 is Left, Page 3 is Right
+                spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
             }
             
             spineItems.append("<itemref idref=\"page_\(chunkIndex)\"\(spreadTag)/>")
