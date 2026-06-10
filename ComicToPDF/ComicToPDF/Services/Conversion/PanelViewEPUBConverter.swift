@@ -191,7 +191,16 @@ class PanelViewEPUBConverter {
                     } else {
                          imgData = processImage(srcURL: item.url, settings: settings, isOddPage: globalIdx % 2 == 0)
                     }
-                    try? imgData.write(to: imagesDir.appendingPathComponent(imageName))
+                    
+                    if globalIdx > 0 {
+                        try? imgData.write(to: imagesDir.appendingPathComponent(imageName))
+                    }
+                    
+                    // If this is the cover page of the book (globalIdx == 0),
+                    // we skip generating its XHTML page and spine/pageCatalog entry.
+                    if globalIdx == 0 {
+                        return
+                    }
                     
                     // Resolve actual pixel dimensions per page (may differ from page 1)
                     let pageSz = UIImage(data: imgData)?.size ?? pageSize
@@ -418,27 +427,17 @@ class PanelViewEPUBConverter {
 
         if isManga {
             for (idx, entry) in pageCatalog.enumerated() {
-                if idx == 0 {
-                    // Omit the cover page from the spine to prevent duplicate cover pages on Kindle
-                    continue
-                }
                 let idref = "page\(entry.paddedNum)"
-                let prop = (idx % 2 == 1) ? "page-spread-right" : "page-spread-left"
+                let prop = (idx % 2 == 0) ? "page-spread-right" : "page-spread-left"
                 items.append(#"<itemref idref="\#(idref)" properties="\#(prop)"/>"#)
             }
             if needsBlank {
                 items.append(#"<itemref idref="page-blank" properties="layout-blank"/>"#)
             }
         } else {
-            // Western LTR: Cover (0) is omitted from spine.
-            // Page 2 (idx 1) is Left, Page 3 (idx 2) is Right
             for (idx, entry) in pageCatalog.enumerated() {
-                if idx == 0 {
-                    // Omit the cover page from the spine to prevent duplicate cover pages on Kindle
-                    continue
-                }
                 let idref = "page\(entry.paddedNum)"
-                let prop = (idx % 2 == 0) ? "page-spread-right" : "page-spread-left"
+                let prop = (idx % 2 == 1) ? "page-spread-right" : "page-spread-left"
                 items.append(#"<itemref idref="\#(idref)" properties="\#(prop)"/>"#)
             }
         }

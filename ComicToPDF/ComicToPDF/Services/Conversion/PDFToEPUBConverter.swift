@@ -313,26 +313,8 @@ final class PDFToEPUBConverter: Sendable {
                 let badgedCoverData = CoverGenerator.generateCover(from: coverData, partNumber: batchIndex + 1, totalParts: batchDirectories.count)
                 let coverFilename = "badged_cover.jpg"
                 try? badgedCoverData.write(to: imagesDir.appendingPathComponent(coverFilename))
-                coverManifestItem = "<item id=\"cover-image\" href=\"images/\(coverFilename)\" media-type=\"image/jpeg\"/>\n<item id=\"cover-page\" href=\"cover.xhtml\" media-type=\"application/xhtml+xml\"/>\n"
+                coverManifestItem = "<item id=\"cover-image\" href=\"images/\(coverFilename)\" media-type=\"image/jpeg\" properties=\"cover-image\"/>\n"
                 coverSpineItem = ""
-                // Write cover.xhtml
-                let lang = options.mangaMode ? "ja" : "en"
-                let coverXHTML = """
-                <?xml version="1.0" encoding="UTF-8"?>
-                <!DOCTYPE html>
-                <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="\(lang)" xml:lang="\(lang)">
-                <head>
-                    <title>Cover</title>
-                    <meta name="viewport" content="width=1000, height=1500"/>
-                </head>
-                <body style="margin: 0; padding: 0; background-color: #000000;">
-                    <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; margin: 0; padding: 0;">
-                        <img style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;" src="images/\(coverFilename)" alt="Cover"/>
-                    </div>
-                </body>
-                </html>
-                """
-                try? coverXHTML.write(to: oebpsDir.appendingPathComponent("cover.xhtml"), atomically: true, encoding: String.Encoding.utf8)
             }
         
         progressHandler?(ConversionProgress(
@@ -344,9 +326,8 @@ final class PDFToEPUBConverter: Sendable {
         let pageLimit = 1 // ✅ REQUIRED: 1 image per file for Fixed-Layout EPUBs
         var xhtmlFiles: [String] = []
         
-        // If it's the first batch of a split volume, we skip the first page (original cover)
-        // because we have a dynamically generated cover page instead.
-        let skipFirst = (batchIndex == 0 && batchDirectories.count > 1)
+        // Skip the first page of the book (original cover) to prevent duplicate cover pages on Kindle
+        let skipFirst = (batchIndex == 0)
         let filteredImageFiles = skipFirst ? Array(imageFiles.dropFirst()) : imageFiles
         
         // Group images into chunks to prevent single massive HTML files while still allowing dynamic spreads
@@ -441,10 +422,6 @@ final class PDFToEPUBConverter: Sendable {
         
         var spineItems = coverSpine
         for (index, _) in xhtmlFiles.enumerated() {
-            if index == 0 && coverSpine.isEmpty {
-                // Omit the first page (cover) from the spine to prevent duplicate cover pages on Kindle
-                continue
-            }
             spineItems += "<itemref idref=\"chunk\(index + 1)\"/>\n        "
         }
         
