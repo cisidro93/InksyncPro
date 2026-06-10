@@ -172,29 +172,9 @@ struct LibraryListView: View {
     
     @ViewBuilder
     private func contextMenuContent(_ pdf: ConvertedPDF) -> some View {
-        Button {
-            onAction(.read, pdf)
-        } label: { Label("Read / Preview", systemImage: "book.pages") }
-
-        // Cloud files: offer inline convert so the user doesn't need to open the detail sheet
-        if case .cloud = pdf.sourceMode {
-            let settingsReady = AppSettingsManager.shared.conversionSettings.isConfigured
-            Button {
-                onAction(.convert, pdf)
-            } label: {
-                Label(
-                    settingsReady ? "Download & Convert" : "Download",
-                    systemImage: settingsReady ? "arrow.down.circle.fill" : "arrow.down.circle"
-                )
-            }
-            Divider()
-        }
+        // --- PRIMARY ACTIONS ---
+        Button { onAction(.read, pdf) } label: { Label("Read / Preview", systemImage: "book.pages") }
         
-        Button {
-            onAction(.covers, pdf)
-        } label: { Label("Edit in Work Area", systemImage: "paintbrush.pointed") }
-
-        // ── Work Area focus pin ─────────────────────────────────────────────
         let isPinned = WorkspaceFocusManager.shared.isPinned(pdf)
         Button {
             if isPinned {
@@ -208,62 +188,90 @@ struct LibraryListView: View {
                 systemImage: isPinned ? "pin.slash" : "pin"
             )
         }
-
-        Button {
-            onAction(.favorite, pdf)
-        } label: { Label(pdf.isFavorite ? "Unfavorite" : "Favorite", systemImage: pdf.isFavorite ? "star.slash" : "star") }
         
-        Button {
-            onAction(.export, pdf)
-        } label: { Label("Export Options", systemImage: "square.and.arrow.up") }
-        
-        Button {
-            onAction(.sendToKindle, pdf)
-        } label: { Label("Send to Kindle", systemImage: "k.circle.fill") }
-        
-        Button {
-            onAction(.share, pdf)
-        } label: { Label("Share File", systemImage: "square.and.arrow.up") }
-        
-        Button {
-            onAction(.sync, pdf)
-        } label: { Label("Direct Cloud Sync", systemImage: "icloud.and.arrow.up") }
-        
-        Button {
-            onAction(.rename, pdf)
-        } label: { Label("Rename", systemImage: "pencil") }
-        
-        // Layer 4: Manual series assignment
-        Button {
-            onAction(.addToSeries, pdf)
-        } label: { Label("Add to Series...", systemImage: "books.vertical") }
-        
-        // Show Cover Select only if the PDF is part of a series or collection
-        if (pdf.metadata.series?.isEmpty == false) || pdf.collectionId != nil {
-            Button {
-                conversionManager.setExplicitSeriesCover(for: pdf)
-            } label: { Label("Set as Series Cover", systemImage: "photo.on.rectangle") }
-        }
-        
-        Button {
-            Task { await conversionManager.embedPanels(for: pdf) }
-        } label: { Label("Embed Panels", systemImage: "flame") }
-        
-        Button(role: .destructive) { onAction(.delete, pdf) } label: { Label("Delete", systemImage: "trash") }
+        Button { onAction(.favorite, pdf) } label: { Label(pdf.isFavorite ? "Unfavorite" : "Favorite", systemImage: pdf.isFavorite ? "star.slash" : "star") }
         
         Divider()
         
-        Button {
-            onAction(.toggleVault, pdf)
-        } label: { Label(pdf.isPrivate ? "Remove from Vault" : "Move to Vault", systemImage: pdf.isPrivate ? "lock.open" : "lock.fill") }
+        // --- ORGANIZE SUBMENU ---
+        Menu {
+            Button { onAction(.rename, pdf) } label: { Label("Rename", systemImage: "pencil") }
+            Button { onAction(.addToSeries, pdf) } label: { Label("Add to Series...", systemImage: "books.vertical") }
+            if (pdf.metadata.series?.isEmpty == false) || pdf.collectionId != nil {
+                Button { conversionManager.setExplicitSeriesCover(for: pdf) } label: { Label("Set as Series Cover", systemImage: "photo.on.rectangle") }
+            }
+        } label: {
+            Label("Organize", systemImage: "folder.badge.gearshape")
+        }
         
-        Button {
-            onAction(.editMetadata, pdf)
-        } label: { Label("Edit Metadata & Cover", systemImage: "pencil.and.list.clipboard") }
+        // --- CLOUD & SYNC SUBMENU ---
+        Menu {
+            if case .cloud = pdf.sourceMode {
+                let settingsReady = AppSettingsManager.shared.conversionSettings.isConfigured
+                Button { onAction(.convert, pdf) } label: {
+                    Label(
+                        settingsReady ? "Download & Convert" : "Download",
+                        systemImage: settingsReady ? "arrow.down.circle.fill" : "arrow.down.circle"
+                    )
+                }
+            }
+            Button { onAction(.sync, pdf) } label: { Label("Direct Cloud Sync", systemImage: "icloud.and.arrow.up") }
+            if !AppSettingsManager.shared.linkedDrives.isEmpty {
+                Button { onAction(.saveToDrive, pdf) } label: { Label("Save to External Drive…", systemImage: "externaldrive.badge.arrow.down") }
+            }
+        } label: {
+            Label("Cloud & Sync", systemImage: "icloud")
+        }
         
-        Button {
-            onAction(.fetchMetadata, pdf)
-        } label: { Label("Fetch Metadata", systemImage: "magnifyingglass") }
+        // --- SHARE & EXPORT SUBMENU ---
+        Menu {
+            Button { onAction(.sendToKindle, pdf) } label: { Label("Send to Kindle", systemImage: "k.circle.fill") }
+            Button { onAction(.share, pdf) } label: { Label("Share File", systemImage: "square.and.arrow.up") }
+            Button { onAction(.export, pdf) } label: { Label("Export Options", systemImage: "square.and.arrow.up") }
+        } label: {
+            Label("Share & Export", systemImage: "square.and.arrow.up")
+        }
+        
+        // --- METADATA & PRECISION TOOLS ---
+        Menu {
+            Button { onAction(.covers, pdf) } label: { Label("Edit in Work Area", systemImage: "paintbrush.pointed") }
+            Button { onAction(.editMetadata, pdf) } label: { Label("Edit Metadata & Cover", systemImage: "pencil.and.list.clipboard") }
+            Button { onAction(.fetchMetadata, pdf) } label: { Label("Fetch Metadata", systemImage: "magnifyingglass") }
+            Button { Task { await conversionManager.embedPanels(for: pdf) } } label: { Label("Embed Panels", systemImage: "flame") }
+        } label: {
+            Label("Metadata & Tools", systemImage: "slider.horizontal.3")
+        }
+        
+        Divider()
+        
+        // --- VAULT & PROGRESS ---
+        Menu {
+            Button {
+                ReaderProgressTracker.shared.markComplete(pdfID: pdf.id)
+                if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                    conversionManager.convertedPDFs[idx].metadata.lastReadPage = pdf.pageCount
+                    conversionManager.saveProgressOnly()
+                }
+            } label: { Label("Mark as Read", systemImage: "checkmark.circle") }
+            
+            Button {
+                var progress = ReaderProgressTracker.shared.progress(for: pdf.id) ?? ReadingProgress(pdfID: pdf.id, lastOpenedAt: Date(), currentPageIndex: 0, totalPagesRead: 0, completionFraction: 0.0, readingSessionDates: [])
+                progress.currentPageIndex = 0
+                progress.completionFraction = 0.0
+                ReaderProgressTracker.shared.update(progress)
+                
+                if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                    conversionManager.convertedPDFs[idx].metadata.lastReadPage = 0
+                    conversionManager.saveProgressOnly()
+                }
+            } label: { Label("Mark as Unread", systemImage: "circle") }
+            
+            Button { onAction(.toggleVault, pdf) } label: { Label(pdf.isPrivate ? "Remove from Vault" : "Move to Vault", systemImage: pdf.isPrivate ? "lock.open" : "lock.fill") }
+        } label: {
+            Label("Status & Vault", systemImage: "checkmark.shield")
+        }
+        
+        Button(role: .destructive) { onAction(.delete, pdf) } label: { Label("Delete", systemImage: "trash") }
     }
 
     // MARK: - Drop Helper Functions

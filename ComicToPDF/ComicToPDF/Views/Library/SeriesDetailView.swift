@@ -1314,70 +1314,132 @@ struct SeriesDetailView: View {
     }
     
     @ViewBuilder
+    @ViewBuilder
     private func contextMenuContent(_ pdf: ConvertedPDF) -> some View {
+        // --- PRIMARY ACTIONS ---
         Button {
             pdfToRead = pdf
         } label: { Label("Read / Preview", systemImage: "book.pages") }
-
-        // Cloud files: smart Download vs Download & Convert
-        if case .cloud = pdf.sourceMode {
-            let settingsReady = AppSettingsManager.shared.conversionSettings.isConfigured
-            Button {
-                Task {
-                    await CloudDownloadManager.shared.downloadAndStore(
-                        pdf: pdf,
-                        thenConvert: settingsReady,
-                        manager: conversionManager
-                    )
-                }
-            } label: {
-                Label(
-                    settingsReady ? "Download & Convert" : "Download",
-                    systemImage: settingsReady ? "arrow.down.circle.fill" : "arrow.down.circle"
-                )
+        
+        let isPinned = WorkspaceFocusManager.shared.isPinned(pdf)
+        Button {
+            if isPinned {
+                WorkspaceFocusManager.shared.unpin(pdf)
+            } else {
+                WorkspaceFocusManager.shared.pin(pdf)
             }
-            Divider()
+        } label: {
+            Label(
+                isPinned ? "Remove from Work Area" : "Send to Work Area",
+                systemImage: isPinned ? "pin.slash" : "pin"
+            )
         }
-        
-        Button {
-            pdfToExport = pdf
-        } label: { Label("Export Options", systemImage: "square.and.arrow.up") }
-        
-        Button {
-            renameText = pdf.name
-            pdfToRename = pdf
-        } label: { Label("Rename", systemImage: "pencil") }
-        
-        Button {
-            assignSeriesText = pdf.metadata.series ?? ""
-            pdfToAssignSeries = pdf
-        } label: { Label("Add to Series...", systemImage: "books.vertical") }
-        
-        if (pdf.metadata.series?.isEmpty == false) || pdf.collectionId != nil {
-            Button {
-                conversionManager.setExplicitSeriesCover(for: pdf)
-            } label: { Label("Set as Series Cover", systemImage: "photo.on.rectangle") }
-        }
-        
-        Button {
-            Task { await conversionManager.embedPanels(for: pdf) }
-        } label: { Label("Embed Panels", systemImage: "flame") }
-        
-        Button(role: .destructive) { pdfToDelete = pdf } label: { Label("Delete", systemImage: "trash") }
         
         Divider()
         
-        Button {
-            withAnimation {
-                if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
-                    conversionManager.convertedPDFs[idx].isPrivate.toggle()
-                    conversionManager.saveLibrary()
+        // --- ORGANIZE SUBMENU ---
+        Menu {
+            Button {
+                renameText = pdf.name
+                pdfToRename = pdf
+            } label: { Label("Rename", systemImage: "pencil") }
+            
+            Button {
+                assignSeriesText = pdf.metadata.series ?? ""
+                pdfToAssignSeries = pdf
+            } label: { Label("Add to Series...", systemImage: "books.vertical") }
+            
+            if (pdf.metadata.series?.isEmpty == false) || pdf.collectionId != nil {
+                Button {
+                    conversionManager.setExplicitSeriesCover(for: pdf)
+                } label: { Label("Set as Series Cover", systemImage: "photo.on.rectangle") }
+            }
+        } label: {
+            Label("Organize", systemImage: "folder.badge.gearshape")
+        }
+        
+        // --- CLOUD & SYNC SUBMENU ---
+        Menu {
+            if case .cloud = pdf.sourceMode {
+                let settingsReady = AppSettingsManager.shared.conversionSettings.isConfigured
+                Button {
+                    Task {
+                        await CloudDownloadManager.shared.downloadAndStore(
+                            pdf: pdf,
+                            thenConvert: settingsReady,
+                            manager: conversionManager
+                        )
+                    }
+                } label: {
+                    Label(
+                        settingsReady ? "Download & Convert" : "Download",
+                        systemImage: settingsReady ? "arrow.down.circle.fill" : "arrow.down.circle"
+                    )
                 }
             }
-        } label: { Label(pdf.isPrivate ? "Remove from Vault" : "Move to Vault", systemImage: pdf.isPrivate ? "lock.open" : "lock.fill") }
-        Button {
-            pdfToSearchMetadata = pdf
-        } label: { Label("Fetch Metadata", systemImage: "magnifyingglass") }
+        } label: {
+            Label("Cloud & Sync", systemImage: "icloud")
+        }
+        
+        // --- EXPORT SUBMENU ---
+        Menu {
+            Button {
+                pdfToExport = pdf
+            } label: { Label("Export Options", systemImage: "square.and.arrow.up") }
+        } label: {
+            Label("Export", systemImage: "square.and.arrow.up")
+        }
+        
+        // --- METADATA & PRECISION TOOLS ---
+        Menu {
+            Button {
+                pdfToSearchMetadata = pdf
+            } label: { Label("Fetch Metadata", systemImage: "magnifyingglass") }
+            
+            Button {
+                Task { await conversionManager.embedPanels(for: pdf) }
+            } label: { Label("Embed Panels", systemImage: "flame") }
+        } label: {
+            Label("Metadata & Tools", systemImage: "slider.horizontal.3")
+        }
+        
+        Divider()
+        
+        // --- VAULT & PROGRESS ---
+        Menu {
+            Button {
+                ReaderProgressTracker.shared.markComplete(pdfID: pdf.id)
+                if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                    conversionManager.convertedPDFs[idx].metadata.lastReadPage = pdf.pageCount
+                    conversionManager.saveProgressOnly()
+                }
+            } label: { Label("Mark as Read", systemImage: "checkmark.circle") }
+            
+            Button {
+                var progress = ReaderProgressTracker.shared.progress(for: pdf.id) ?? ReadingProgress(pdfID: pdf.id, lastOpenedAt: Date(), currentPageIndex: 0, totalPagesRead: 0, completionFraction: 0.0, readingSessionDates: [])
+                progress.currentPageIndex = 0
+                progress.completionFraction = 0.0
+                ReaderProgressTracker.shared.update(progress)
+                
+                if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                    conversionManager.convertedPDFs[idx].metadata.lastReadPage = 0
+                    conversionManager.saveProgressOnly()
+                }
+            } label: { Label("Mark as Unread", systemImage: "circle") }
+            
+            Button {
+                withAnimation {
+                    if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                        conversionManager.convertedPDFs[idx].isPrivate.toggle()
+                        conversionManager.saveLibrary()
+                    }
+                }
+            } label: { Label(pdf.isPrivate ? "Remove from Vault" : "Move to Vault", systemImage: pdf.isPrivate ? "lock.open" : "lock.fill") }
+        } label: {
+            Label("Status & Vault", systemImage: "checkmark.shield")
+        }
+        
+        Button(role: .destructive) { pdfToDelete = pdf } label: { Label("Delete", systemImage: "trash") }
     }
 
     private func handleMediaDetailAction(_ action: LibraryRowAction, for pdf: ConvertedPDF) {
