@@ -98,7 +98,7 @@ struct OmniDockView: View {
     private var safeAreaPaddingForPosition: EdgeInsets {
         switch position {
         case .top: return EdgeInsets(top: 20, leading: 0, bottom: 0, trailing: 0)
-        case .bottom: return EdgeInsets(top: 0, leading: 0, bottom: 30, trailing: 0)
+        case .bottom: return EdgeInsets(top: 0, leading: 0, bottom: 96, trailing: 0)
         case .left: return EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 0)
         case .right: return EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 20)
         }

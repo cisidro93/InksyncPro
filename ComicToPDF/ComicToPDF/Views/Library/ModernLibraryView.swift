@@ -387,7 +387,7 @@ struct ModernLibraryView: View {
                 viewStyle: Binding(get: { viewStyle }, set: { viewStyle = $0 }),
                 currentFolderID: $viewModel.currentFolderID,
                 collections: cachedCollections,
-                onWorkArea: { AppRouter.shared.presentSheet(.inbox) },
+                onWorkArea: { withAnimation { AppRouter.shared.selectedTab = 1 } },
                 onImport: onFolderImport ?? {},
                 onSettings: { NotificationCenter.default.post(name: NSNotification.Name("ShowSettingsInspector"), object: nil) },
                 onVaultToggle: handleVaultToggle,
@@ -484,7 +484,7 @@ struct ModernLibraryView: View {
     private func destinationSheet(for item: LibrarySheetDestination) -> some View {
         switch item {
         case .inbox:
-            WorkspaceView()
+            WorkspaceView(isSheet: true)
                 .environmentObject(conversionManager)
             
         case .importQueue:
@@ -805,7 +805,7 @@ struct ModernLibraryView: View {
                 // Col 2: Metadata Review
                 let reviewNum = reviewCount
                 Button {
-                    AppRouter.shared.presentSheet(.inbox)
+                    withAnimation { AppRouter.shared.selectedTab = 1 }
                 } label: {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Metadata Tasks")
@@ -845,7 +845,7 @@ struct ModernLibraryView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             } else if reviewCount > 0 {
                 Button {
-                    AppRouter.shared.presentSheet(.inbox)
+                    withAnimation { AppRouter.shared.selectedTab = 1 }
                 } label: {
                     HStack(spacing: 8) {
                         Image(systemName: "wand.and.stars")

@@ -25,6 +25,7 @@ enum WorkspaceMode: String, CaseIterable {
 }
 
 struct WorkspaceView: View {
+    var isSheet: Bool = false
     @State private var mode: WorkspaceMode = .inbox
     @EnvironmentObject var conversionManager: ConversionManager
     @Environment(\.dismiss) var dismiss
@@ -54,11 +55,13 @@ struct WorkspaceView: View {
             .navigationTitle(navigationTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") {
-                        dismiss()
+                if isSheet {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button("Done") {
+                            dismiss()
+                        }
+                        .bold()
                     }
-                    .bold()
                 }
             }
         }

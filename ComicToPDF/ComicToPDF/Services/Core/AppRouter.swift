@@ -10,6 +10,8 @@ class AppRouter: ObservableObject {
     // Global Navigation Path for NavigationStack
     @Published var path = NavigationPath()
     
+    @Published var selectedTab: Int = 0
+    
     func presentSheet(_ sheet: LibrarySheetDestination) {
         Logger.shared.log("AppRouter: presentSheet(\(sheet))", category: "Navigation", type: .info)
         activeSheet = sheet

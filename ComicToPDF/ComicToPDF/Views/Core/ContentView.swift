@@ -13,8 +13,7 @@ struct ContentView: View {
     @ObservedObject private var router = AppRouter.shared
     // Wi-Fi Server for Kindle Sync
     @StateObject private var wifiServer = WiFiServer()
-
-    @State private var selectedTab = 0   // 0 = Library (default launch tab)
+    
     @State private var tabBarHidden = false
     @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
     @State private var selectedPDF: ConvertedPDF?
@@ -52,22 +51,37 @@ struct ContentView: View {
         ZStack {
             NeuralExpressiveBackground()
             
-            NavigationStack(path: $router.path) {
-                ModernLibraryView(
-                    selectedPDF: $selectedPDF,
-                    isBatchMode: $isBatchMode,
-                    multiSelection: $multiSelection,
-                    showingBatchMergeReorder: $showingBatchMergeReorder,
-                    batchMergeItems: $batchMergeItems,
-                    useNavigationStack: true,
-                    onFolderImport: {
-                        AppRouter.shared.presentSheet(.importQueue)
+            ZStack {
+                // Tab 0: Library
+                NavigationStack(path: $router.path) {
+                    ModernLibraryView(
+                        selectedPDF: $selectedPDF,
+                        isBatchMode: $isBatchMode,
+                        multiSelection: $multiSelection,
+                        showingBatchMergeReorder: $showingBatchMergeReorder,
+                        batchMergeItems: $batchMergeItems,
+                        useNavigationStack: true,
+                        onFolderImport: {
+                            AppRouter.shared.presentSheet(.importQueue)
+                        }
+                    )
+                    .toolbar(.hidden, for: .navigationBar)
+                    .navigationDestination(for: ConvertedPDF.self) { pdf in
+                        ConvertView(pdf: pdf).id(pdf.id)
                     }
-                )
-                .toolbar(.hidden, for: .navigationBar)
-                .navigationDestination(for: ConvertedPDF.self) { pdf in
-                    ConvertView(pdf: pdf).id(pdf.id)
                 }
+                .tabVisible(router.selectedTab == 0)
+                
+                // Tab 1: Workspace
+                WorkspaceView(isSheet: false)
+                    .environmentObject(conversionManager)
+                    .tabVisible(router.selectedTab == 1)
+                
+                // Tab 2: Devices
+                DevicesView()
+                    .environmentObject(conversionManager)
+                    .environmentObject(PeerManager.shared)
+                    .tabVisible(router.selectedTab == 2)
             }
             
             // iPad Progress Panel Overlay
@@ -82,11 +96,33 @@ struct ContentView: View {
                 }
             }
         }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if !tabBarHidden && !isBatchMode {
+                InkTabBar(
+                    selectedTab: $router.selectedTab,
+                    isHidden: $tabBarHidden,
+                    convertingProgress: conversionManager.conversionProgress,
+                    isConverting: conversionManager.isConverting,
+                    convertingMessage: conversionManager.processingStatus,
+                    isImporting: ImportMonitorManager.shared.isImporting,
+                    importProgress: ImportMonitorManager.shared.progress,
+                    importMessage: "Importing..."
+                )
+                .padding(.bottom, 8)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InkTabBar_Hide"))) { _ in
+            withAnimation { tabBarHidden = true }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InkTabBar_Show"))) { _ in
+            withAnimation { tabBarHidden = false }
+        }
         .secureVaultPrivacy()
         .environmentObject(conversionManager)
         .environmentObject(settingsManager)
         .environmentObject(wifiServer)
         .environmentObject(SecurityManager.shared)
+        .environmentObject(PeerManager.shared)
         .environment(\.dynamicTypeSize, settingsManager.conversionSettings.textSize.swiftUIValue)
         .sheet(item: $pdfToShare) { pdf in ShareSheet(activityItems: [pdf.url]) }
         .alert(item: $taskEngine.appAlert) { alert in
@@ -172,7 +208,7 @@ struct ContentView: View {
             showingSettingsInspector = true
         }
         .modifier(iPadKeyboardShortcuts(
-            selectedTab: .constant(0),
+            selectedTab: $router.selectedTab,
             showImport: $showingWebExport
         ))
         .onChange(of: showingWebExport) { _, showing in
