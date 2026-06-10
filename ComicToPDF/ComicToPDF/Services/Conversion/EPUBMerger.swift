@@ -60,12 +60,13 @@ struct EPUBMerger: Sendable {
             let destURL = imagesDir.appendingPathComponent(coverFilename)
             try? coverData.write(to: destURL)
             
-            // Do NOT add properties="cover-image" to the image manifest item.
-            // Kindle Cloud auto-injects a duplicate page 0 for any image with that
-            // property that is not a direct spine itemref. cover.xhtml (first spine
-            // item, epub:type="cover") + <meta name="cover"> in the OPF handle
-            // cover identity. The raw image item carries no special property.
-            manifestItems.append("<item id=\"cover_img\" href=\"images/\(coverFilename)\" media-type=\"image/jpeg\"/>")
+            // The cover image must carry properties="cover-image" so that the OPF
+            // <meta name="cover" content="cover_img"/> is consistent. Amazon's KFX
+            // ingestor checks that the item referenced by <meta name="cover"> has this
+            // property and fails with E999 if it does not. The duplicate is still
+            // suppressed because cover.xhtml (first spine item) wraps the image —
+            // auto-injection only fires when a cover-image item has NO spine XHTML wrapper.
+            manifestItems.append("<item id=\"cover_img\" href=\"images/\(coverFilename)\" media-type=\"image/jpeg\" properties=\"cover-image\"/>")
             let coverXHTML = EPUBManifestBuilder.buildCoverXHTML(coverFilename: coverFilename, isManga: settings.mangaMode)
             try coverXHTML.write(to: textDir.appendingPathComponent("cover.xhtml"), atomically: true, encoding: .utf8)
             manifestItems.append("<item id=\"cover_page\" href=\"text/cover.xhtml\" media-type=\"application/xhtml+xml\"/>")
@@ -418,7 +419,7 @@ struct EPUBMerger: Sendable {
                 let coverFilename = "cover.jpg"
                 try badgedData.write(to: targetImagesDir.appendingPathComponent(coverFilename))
                 
-                destManifest.append("<item id=\"cover_img\" href=\"images/\(coverFilename)\" media-type=\"image/jpeg\"/>")
+                destManifest.append("<item id=\"cover_img\" href=\"images/\(coverFilename)\" media-type=\"image/jpeg\" properties=\"cover-image\"/>")
                 // Write cover.xhtml so the cover-image manifest item is referenced from the spine.
                 // Kindle Cloud auto-injects a duplicate cover page for any cover-image item that
                 // is NOT in the spine — this cover.xhtml prevents that auto-injection.

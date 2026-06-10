@@ -263,11 +263,13 @@ struct CBZToEPUBConverter: Sendable {
             let coverFilename = "badged_cover.jpg"
             try? badgedCoverData.write(to: imagesDir.appendingPathComponent(coverFilename))
             
-            // Do NOT add properties="cover-image" here. Kindle Cloud auto-injects a duplicate
-            // page 0 for any manifest image item with that property that is not a direct spine
-            // itemref. The cover.xhtml below (first spine item, epub:type="cover") is the correct
-            // cover declaration — the raw image item needs no special property.
-            manifestItems.append("<item id=\"cover-image\" href=\"images/\(coverFilename)\" media-type=\"image/jpeg\"/>")
+            // The badged cover image must carry properties="cover-image" so the OPF
+            // <meta name="cover" content="cover-image"/> resolves correctly. Amazon's
+            // KFX ingestor requires the item referenced by <meta name="cover"> to have
+            // this property and fails with E999 if it does not. The duplicate is still
+            // suppressed because cover.xhtml (added to the spine below) wraps it —
+            // auto-injection only fires when a cover-image item has NO spine XHTML wrapper.
+            manifestItems.append("<item id=\"cover-image\" href=\"images/\(coverFilename)\" media-type=\"image/jpeg\" properties=\"cover-image\"/>")
             // Write cover.xhtml so the cover-image manifest item is referenced from the spine.
             // Kindle Cloud auto-injects a duplicate cover page for any cover-image item that
             // is NOT in the spine — this cover.xhtml prevents that auto-injection.
@@ -336,12 +338,16 @@ struct CBZToEPUBConverter: Sendable {
                 try? fileManager.copyItem(at: item.processedDiskURL, to: destURL)
             }
             
-            // Do NOT add properties="cover-image" to any image manifest item.
-            // Kindle Cloud auto-injects a duplicate cover page 0 for any image with that
-            // property that is not a direct spine itemref. The cover.xhtml (first spine item,
-            // epub:type="cover") and <meta name="cover"> in the OPF are sufficient — the
-            // raw image item must carry no special property to suppress auto-injection.
-            manifestItems.append("<item id=\"img_\(localIndex+1)\" href=\"images/\(newImageName)\" media-type=\"image/\(safeExt)\"/>")
+            // The cover image (img_1) must carry properties="cover-image" so that the
+            // OPF <meta name="cover" content="img_1"/> is consistent — Amazon's KFX ingestor
+            // checks that the item referenced by <meta name="cover"> has this property and
+            // fails with E999 if it does not. The duplicate-cover problem is suppressed by
+            // cover.xhtml being the FIRST spine item: Kindle auto-injects a bare cover page
+            // only when a cover-image item has NO spine XHTML wrapper. Since img_1 is
+            // referenced exclusively via cover.xhtml (first spine entry), no extra page is
+            // prepended.
+            let coverImageProp = (isFirstImageOfBook && !hasBadgedCover) ? " properties=\"cover-image\"" : ""
+            manifestItems.append("<item id=\"img_\(localIndex+1)\" href=\"images/\(newImageName)\" media-type=\"image/\(safeExt)\"\(coverImageProp)/>")
             
             // Single-volume cover path: write cover.xhtml wrapping img_1 and add it as the
             // first spine entry. This prevents Kindle Cloud from auto-injecting the cover-image
@@ -410,7 +416,9 @@ struct CBZToEPUBConverter: Sendable {
             }
         }
         
-        let coverMetaID = (totalBatches > 1) ? "cover-image" : "img_1"
+        // For single-volume: cover image is img_1 (with properties="cover-image").
+        // For multi-batch: the badged cover written above is "cover-image".
+        let coverMetaID = (totalBatches > 1 && hasBadgedCover) ? "cover-image" : "img_1"
         let opfContent = EPUBManifestBuilder.buildOPFContent(
             bookUUID: bookUUID,
             baseFilename: baseFilename,
