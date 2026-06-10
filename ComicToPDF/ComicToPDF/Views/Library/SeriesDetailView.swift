@@ -1314,7 +1314,6 @@ struct SeriesDetailView: View {
     }
     
     @ViewBuilder
-    @ViewBuilder
     private func contextMenuContent(_ pdf: ConvertedPDF) -> some View {
         // --- PRIMARY ACTIONS ---
         Button {
