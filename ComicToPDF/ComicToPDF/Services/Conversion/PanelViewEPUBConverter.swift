@@ -373,7 +373,7 @@ class PanelViewEPUBConverter {
             <dc:title>\(title.xmlEscaped())</dc:title>
             <dc:creator>\(author.xmlEscaped())</dc:creator>
             <dc:identifier id="BookID">\(uuid)</dc:identifier>
-             <dc:language>\(isManga ? "ja" : "en")</dc:language>
+             <dc:language>en</dc:language>
             <dc:date>\(pubDate)</dc:date>
             <meta property="dcterms:modified">\(ISO8601DateFormatter().string(from: Date()))</meta>
             
@@ -518,7 +518,7 @@ class PanelViewEPUBConverter {
         // Pages with no panels: Kindle performs 2×2 Virtual Panel automatically.
         let panelSection = panels.isEmpty ? "    <!-- No panels: Kindle will apply 2×2 Virtual Panel fallback -->\n" : (tapTargets + "\n" + magnifyBlocks)
 
-        let lang = isManga ? "ja" : "en"
+        let lang = "en"
         return """
         <?xml version="1.0" encoding="UTF-8"?>
         <!DOCTYPE html>
@@ -651,7 +651,8 @@ class PanelViewEPUBConverter {
     }
 
     private func buildNavXHTML(title: String, firstPage: String, isManga: Bool) -> String {
-        let lang = isManga ? "ja" : "en"
+        // lang is intentionally fixed to "en" regardless of manga mode.
+        let lang = "en"
         return """
         <?xml version="1.0" encoding="UTF-8"?>
         <!DOCTYPE html>
@@ -692,7 +693,8 @@ class PanelViewEPUBConverter {
     }
 
     private func buildBlankXHTML(pageWidth: CGFloat, pageHeight: CGFloat, isManga: Bool) -> String {
-        let lang = isManga ? "ja" : "en"
+        // lang is intentionally fixed to "en" regardless of manga mode.
+        let lang = "en"
         return """
         <?xml version="1.0" encoding="UTF-8"?>
         <!DOCTYPE html>

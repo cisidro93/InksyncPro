@@ -98,7 +98,8 @@ struct EPUBMerger: Sendable {
                     
                     // Manifest & HTML
                     let htmlName = String(format: "page_%05d.xhtml", globalPageIndex)
-                    let lang = settings.mangaMode ? "ja" : "en"
+                    // lang is intentionally fixed to "en" regardless of manga mode.
+                    let lang = "en"
                     let htmlContent = """
                     <?xml version="1.0" encoding="UTF-8"?>
                     <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="\(lang)" xml:lang="\(lang)">
@@ -172,7 +173,7 @@ struct EPUBMerger: Sendable {
                 <dc:title>\(opfTitle.xmlEscaped())</dc:title>
                 <dc:creator>\(opfCreator.xmlEscaped())</dc:creator>
                 <dc:description>\(opfDesc.xmlEscaped())</dc:description>
-                <dc:language>\(settings.mangaMode ? "ja" : "en")</dc:language>
+                <dc:language>en</dc:language>
                 <meta property="dcterms:modified">\(dateIso)</meta>
                 <meta property="rendition:layout">pre-paginated</meta>
                 <meta property="rendition:orientation">auto</meta>
@@ -196,7 +197,8 @@ struct EPUBMerger: Sendable {
         try opfContent.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8)
         
         // 5. Nav
-        let lang = settings.mangaMode ? "ja" : "en"
+        // lang is intentionally fixed to "en" regardless of manga mode.
+        let lang = "en"
         let navContent = """
         <?xml version="1.0" encoding="UTF-8"?>
         <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="\(lang)" xml:lang="\(lang)">
@@ -323,7 +325,7 @@ struct EPUBMerger: Sendable {
                     <dc:title>\(opfTitle.xmlEscaped())</dc:title>
                     <dc:creator>\(opfCreator.xmlEscaped())</dc:creator>
                     <dc:description>\(opfDesc.xmlEscaped())</dc:description>
-                    <dc:language>\(settings.mangaMode ? "ja" : "en")</dc:language>
+                    <dc:language>en</dc:language>
                     <meta property="dcterms:modified">\(dateIso)</meta>
                     <meta property="rendition:layout">pre-paginated</meta>
                     <meta property="rendition:orientation">auto</meta>
@@ -346,7 +348,8 @@ struct EPUBMerger: Sendable {
             """
             try opf.write(to: oebps.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8)
             
-            let lang = settings.mangaMode ? "ja" : "en"
+            // lang is intentionally fixed to "en" regardless of manga mode.
+            let lang = "en"
             let navContent = """
             <?xml version="1.0" encoding="UTF-8"?>
             <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="\(lang)" xml:lang="\(lang)">
@@ -481,7 +484,8 @@ struct EPUBMerger: Sendable {
                     try copyAndPrepareImage(from: img, to: destURL, settings: settings)
                     
                     let htmlName = String(format: "page_%05d.xhtml", globalPageIndex)
-                    let lang = settings.mangaMode ? "ja" : "en"
+                    // lang is intentionally fixed to "en" regardless of manga mode.
+                    let lang = "en"
                     let htmlContent = """
                     <?xml version="1.0" encoding="UTF-8"?>
                     <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="\(lang)" xml:lang="\(lang)">

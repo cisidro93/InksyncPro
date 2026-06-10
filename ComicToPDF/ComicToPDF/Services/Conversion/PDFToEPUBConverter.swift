@@ -431,7 +431,7 @@ final class PDFToEPUBConverter: Sendable {
             <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">
                 <dc:title>\(escapeXML(title))</dc:title>
                 <dc:creator>\(escapeXML(author))</dc:creator>
-                <dc:language>\(mangaMode ? "ja" : "en")</dc:language>
+                <dc:language>en</dc:language>
                 <dc:identifier id="BookId">urn:uuid:\(bookID)</dc:identifier>
                 
                 <!-- Strict Fixed-Layout Flags -->
@@ -497,7 +497,8 @@ final class PDFToEPUBConverter: Sendable {
         
         let firstFile = xhtmlFiles.first ?? "chunk_0001.xhtml"
         
-        let lang = isManga ? "ja" : "en"
+        // lang is intentionally fixed to "en" regardless of manga mode.
+        let lang = "en"
         return """
         <?xml version="1.0" encoding="UTF-8"?>
         <!DOCTYPE html>
@@ -533,7 +534,8 @@ final class PDFToEPUBConverter: Sendable {
             """
         }.joined(separator: "\n")
         
-        let lang = isManga ? "ja" : "en"
+        // lang is intentionally fixed to "en" regardless of manga mode.
+        let lang = "en"
         return """
         <?xml version="1.0" encoding="UTF-8"?>
         <!DOCTYPE html>

@@ -23,16 +23,18 @@ public struct EPUBManifestBuilder {
     """
 
     public static func buildCoverXHTML(coverFilename: String, isManga: Bool = false) -> String {
-        let lang = isManga ? "ja" : "en"
+        // lang is intentionally fixed to "en" regardless of manga mode.
+        // Amazon's cloud converter routes lang="ja" through a CJK layout pipeline
+        // that fails with E999 on fixed-layout EPUBs (regressed in commit e953c38b).
+        // Reading direction is controlled by page-progression-direction on the spine,
+        // not by xml:lang. Commit 031174fd resolved E999 by fixing lang to "en".
         return """
         <?xml version="1.0" encoding="UTF-8"?>
-        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="\(lang)" xml:lang="\(lang)">
+        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="en" xml:lang="en">
         <head>
-            <meta charset="UTF-8"/>
             <meta name="viewport" content="width=1980, height=2640"/>
             <title>Cover</title>
             <style type="text/css">
-            @page { margin: 0; padding: 0; }
             html, body { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #000000; }
             img { display: block; width: 100%; height: 100%; }
             </style>
@@ -46,10 +48,11 @@ public struct EPUBManifestBuilder {
     /// - Parameter firstPageHref: The href of the first spine item, e.g. "text/page_0001.xhtml"
     ///   or "text/cover.xhtml" when a badged cover is prepended.
     public static func buildNavContent(firstPageHref: String = "text/page_0001.xhtml", isManga: Bool = false) -> String {
-        let lang = isManga ? "ja" : "en"
+        // lang fixed to "en" — see buildCoverXHTML comment. isManga param kept for
+        // call-site compatibility but does not affect the output language tag.
         return """
         <?xml version="1.0" encoding="UTF-8"?>
-        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="\(lang)" xml:lang="\(lang)">
+        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="en" xml:lang="en">
         <head><title>Navigation</title><meta charset="utf-8" /></head>
         <body>
             <nav epub:type="toc" id="toc"><h1>Table of Contents</h1><ol><li><a href="\(firstPageHref)">Start Reading</a></li></ol></nav>
@@ -94,15 +97,15 @@ public struct EPUBManifestBuilder {
         // Kindle can pre-scale images to native pixels rather than stretching from an
         // unknown source size. Without it renders are blurry on high-DPI screens.
         let originalResolution = "1980x2640"
-
-        let lang = isManga ? "ja" : "en"
+        // dc:language is fixed to "en" — see buildCoverXHTML comment. The reading
+        // direction (RTL for manga) is set on the spine's page-progression-direction.
         return """
         <?xml version="1.0" encoding="UTF-8"?>
         <package xmlns="http://www.idpf.org/2007/opf" xmlns:epub="http://www.idpf.org/2007/ops" unique-identifier="BookID" version="3.0" prefix="rendition: http://www.idpf.org/vocab/rendition/# dcterms: http://purl.org/dc/terms/">
             <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
                 <dc:identifier id="BookID">urn:uuid:\(bookUUID)</dc:identifier>
                 <dc:title>\(baseFilename.xmlEscaped())</dc:title>
-                <dc:language>\(lang)</dc:language>
+                <dc:language>en</dc:language>
                 <meta property="dcterms:modified">\(modified)</meta>
                 <meta property="rendition:layout">pre-paginated</meta>
                 <meta property="rendition:orientation">auto</meta>
@@ -147,10 +150,10 @@ public struct EPUBManifestBuilder {
         // • NO @page { size: } (CSS Paged Media L3, rejected by Amazon's cloud validator)
         // • NO object-fit/object-position (not in Kindle CSS subset → E013)
         // Page sizing is controlled entirely by the viewport meta + rendition:layout OPF meta.
-        let lang = isManga ? "ja" : "en"
+        // lang is intentionally fixed to "en" regardless of manga mode — see buildCoverXHTML comment.
         return """
         <?xml version="1.0" encoding="UTF-8"?>
-        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="\(lang)" xml:lang="\(lang)">
+        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="en" xml:lang="en">
         <head>
             <meta charset="UTF-8"/>
             <meta name="viewport" content="width=1980, height=2640"/>
