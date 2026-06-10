@@ -39,7 +39,7 @@ struct EPUBMerger: Sendable {
         manifestItems.append("<item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/>")
         
         var globalPageIndex = 1
-        var globalPageCounter = 1
+        var globalPageCounter = (overrideCoverData != nil) ? 2 : 1
         
         // 2.5 Inject Override Cover if Present
         if let coverData = overrideCoverData {
@@ -66,7 +66,6 @@ struct EPUBMerger: Sendable {
             
             manifestItems.append("<item id=\"cover_page\" href=\"text/cover.xhtml\" media-type=\"application/xhtml+xml\"/>")
             manifestItems.append("<item id=\"cover_img\" href=\"images/\(coverFilename)\" media-type=\"image/jpeg\" properties=\"cover-image\"/>")
-            spineItems.append("<itemref idref=\"cover_page\"/>")
             
             // Note: Cover doesn't increment globalPageCounter because page-spread tags only align content pages
         }
@@ -127,15 +126,19 @@ struct EPUBMerger: Sendable {
                     manifestItems.append("<item id=\"img_\(globalPageIndex)\" href=\"images/\(newName)\" media-type=\"image/\(safeExt)\"\(properties)/>")
                     
                     // Apply Dynamic Landscape Spreads Tagging (RTL vs LTR)
-                    let spreadTag: String
-                    if globalPageCounter == 1 {
-                        spreadTag = ""
-                    } else if settings.mangaMode {
-                        spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-left\"" : " properties=\"page-spread-right\""
+                    if globalPageIndex == 1 && overrideCoverData == nil {
+                        // Omit the cover page from the spine to prevent duplicate cover pages on Kindle
                     } else {
-                        spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
+                        let spreadTag: String
+                        if globalPageCounter == 1 {
+                            spreadTag = ""
+                        } else if settings.mangaMode {
+                            spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-left\"" : " properties=\"page-spread-right\""
+                        } else {
+                            spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
+                        }
+                        spineItems.append("<itemref idref=\"page_\(globalPageIndex)\"\(spreadTag)/>")
                     }
-                    spineItems.append("<itemref idref=\"page_\(globalPageIndex)\"\(spreadTag)/>")
                     
                     globalPageIndex += 1
                     globalPageCounter += 1
@@ -273,7 +276,7 @@ struct EPUBMerger: Sendable {
         // Setup initial Working Dir
         var currentEpubDir = try initializeBlankEPUBDir(volumeOffset: currentVolumeIndex)
         var globalPageIndex = 1
-        var globalPageCounter = 1
+        var globalPageCounter = (overrideCoverData != nil) ? 2 : 1
         var manifestItems: [String] = []
         manifestItems.append("<item id=\"css\" href=\"css/comic.css\" media-type=\"text/css\"/>")
         manifestItems.append("<item id=\"ncx\" href=\"toc.ncx\" media-type=\"application/x-dtbncx+xml\"/>")
@@ -412,7 +415,6 @@ struct EPUBMerger: Sendable {
                 try content.write(to: targetOESPSDir.appendingPathComponent("text/\(htmlName)"), atomically: true, encoding: .utf8)
                 destManifest.append("<item id=\"cover_page\" href=\"text/\(htmlName)\" media-type=\"application/xhtml+xml\"/>")
                 destManifest.append("<item id=\"cover_img\" href=\"images/\(coverFilename)\" media-type=\"image/jpeg\" properties=\"cover-image\"/>")
-                destSpine.append("<itemref idref=\"cover_page\"/>")
                 return 1
             }
             return 0
@@ -441,7 +443,7 @@ struct EPUBMerger: Sendable {
                 currentVolumeIndex += 1
                 currentBundleBytes = 0
                 globalPageIndex = 1
-                globalPageCounter = 1
+                globalPageCounter = (overrideCoverData != nil) ? 2 : 1
                 currentEpubDir = try initializeBlankEPUBDir(volumeOffset: currentVolumeIndex)
                 manifestItems = []
                 manifestItems.append("<item id=\"css\" href=\"css/comic.css\" media-type=\"text/css\"/>")
@@ -499,15 +501,19 @@ struct EPUBMerger: Sendable {
                     manifestItems.append("<item id=\"img_\(globalPageIndex)\" href=\"images/\(newName)\" media-type=\"image/\(safeExt)\"\(properties)/>")
                     
                     // Apply Dynamic Landscape Spreads Tagging (RTL vs LTR)
-                    let spreadTag: String
-                    if globalPageCounter == 1 {
-                        spreadTag = ""
-                    } else if settings.mangaMode {
-                        spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-left\"" : " properties=\"page-spread-right\""
+                    if globalPageIndex == 1 && overrideCoverData == nil {
+                        // Omit the cover page from the spine to prevent duplicate cover pages on Kindle
                     } else {
-                        spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
+                        let spreadTag: String
+                        if globalPageCounter == 1 {
+                            spreadTag = ""
+                        } else if settings.mangaMode {
+                            spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-left\"" : " properties=\"page-spread-right\""
+                        } else {
+                            spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
+                        }
+                        spineItems.append("<itemref idref=\"page_\(globalPageIndex)\"\(spreadTag)/>")
                     }
-                    spineItems.append("<itemref idref=\"page_\(globalPageIndex)\"\(spreadTag)/>")
                     
                     globalPageIndex += 1
                     globalPageCounter += 1

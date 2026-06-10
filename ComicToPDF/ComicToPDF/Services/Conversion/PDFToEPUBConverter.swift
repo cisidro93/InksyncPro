@@ -314,7 +314,7 @@ final class PDFToEPUBConverter: Sendable {
                 let coverFilename = "badged_cover.jpg"
                 try? badgedCoverData.write(to: imagesDir.appendingPathComponent(coverFilename))
                 coverManifestItem = "<item id=\"cover-image\" href=\"images/\(coverFilename)\" media-type=\"image/jpeg\"/>\n<item id=\"cover-page\" href=\"cover.xhtml\" media-type=\"application/xhtml+xml\"/>\n"
-                coverSpineItem = "<itemref idref=\"cover-page\" linear=\"no\"/>\n"
+                coverSpineItem = ""
                 // Write cover.xhtml
                 let lang = options.mangaMode ? "ja" : "en"
                 let coverXHTML = """
@@ -344,9 +344,14 @@ final class PDFToEPUBConverter: Sendable {
         let pageLimit = 1 // ✅ REQUIRED: 1 image per file for Fixed-Layout EPUBs
         var xhtmlFiles: [String] = []
         
+        // If it's the first batch of a split volume, we skip the first page (original cover)
+        // because we have a dynamically generated cover page instead.
+        let skipFirst = (batchIndex == 0 && batchDirectories.count > 1)
+        let filteredImageFiles = skipFirst ? Array(imageFiles.dropFirst()) : imageFiles
+        
         // Group images into chunks to prevent single massive HTML files while still allowing dynamic spreads
-        let chunks = stride(from: 0, to: imageFiles.count, by: pageLimit).map {
-            Array(imageFiles[$0..<min($0 + pageLimit, imageFiles.count)])
+        let chunks = stride(from: 0, to: filteredImageFiles.count, by: pageLimit).map {
+            Array(filteredImageFiles[$0..<min($0 + pageLimit, filteredImageFiles.count)])
         }
         
         for (chunkIndex, chunkImages) in chunks.enumerated() {
@@ -356,7 +361,7 @@ final class PDFToEPUBConverter: Sendable {
                 chunkIndex: chunkIndex + 1,
                 images: chunkImages,
                 title: title,
-                startIndex: (chunkIndex * pageLimit) + 1,
+                startIndex: (chunkIndex * pageLimit) + (skipFirst ? 2 : 1),
                 isManga: options.mangaMode
             )
             try chunkXHTML.write(to: oebpsDir.appendingPathComponent(chunkFileName), atomically: true, encoding: String.Encoding.utf8)
@@ -436,8 +441,11 @@ final class PDFToEPUBConverter: Sendable {
         
         var spineItems = coverSpine
         for (index, _) in xhtmlFiles.enumerated() {
-            let linearAttr = (index == 0 && coverSpine.isEmpty) ? " linear=\"no\"" : ""
-            spineItems += "<itemref idref=\"chunk\(index + 1)\"\(linearAttr)/>\n        "
+            if index == 0 && coverSpine.isEmpty {
+                // Omit the first page (cover) from the spine to prevent duplicate cover pages on Kindle
+                continue
+            }
+            spineItems += "<itemref idref=\"chunk\(index + 1)\"/>\n        "
         }
         
         return """

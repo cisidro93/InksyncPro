@@ -418,25 +418,28 @@ class PanelViewEPUBConverter {
 
         if isManga {
             for (idx, entry) in pageCatalog.enumerated() {
-                let idref = "page\(entry.paddedNum)"
                 if idx == 0 {
-                    // Cover page should not have a spread property and should be non-linear on Kindle to prevent duplicate cover
-                    items.append(#"<itemref idref="\#(idref)" linear="no"/>"#)
-                } else {
-                    let prop = (idx % 2 == 1) ? "page-spread-right" : "page-spread-left"
-                    items.append(#"<itemref idref="\#(idref)" properties="\#(prop)"/>"#)
+                    // Omit the cover page from the spine to prevent duplicate cover pages on Kindle
+                    continue
                 }
+                let idref = "page\(entry.paddedNum)"
+                let prop = (idx % 2 == 1) ? "page-spread-right" : "page-spread-left"
+                items.append(#"<itemref idref="\#(idref)" properties="\#(prop)"/>"#)
             }
             if needsBlank {
                 items.append(#"<itemref idref="page-blank" properties="layout-blank"/>"#)
             }
         } else {
-            // Western LTR: Cover (0) is Right
+            // Western LTR: Cover (0) is omitted from spine.
+            // Page 2 (idx 1) is Left, Page 3 (idx 2) is Right
             for (idx, entry) in pageCatalog.enumerated() {
+                if idx == 0 {
+                    // Omit the cover page from the spine to prevent duplicate cover pages on Kindle
+                    continue
+                }
                 let idref = "page\(entry.paddedNum)"
                 let prop = (idx % 2 == 0) ? "page-spread-right" : "page-spread-left"
-                let linearAttr = (idx == 0) ? #" linear="no""# : ""
-                items.append(#"<itemref idref="\#(idref)" properties="\#(prop)"\#(linearAttr)/>"#)
+                items.append(#"<itemref idref="\#(idref)" properties="\#(prop)"/>"#)
             }
         }
         if embedCharacterGlossary {
