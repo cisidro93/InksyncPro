@@ -22,7 +22,7 @@ struct PageManagerGridItem: View {
                 .overlay(
                     ZStack(alignment: .topTrailing) {
                         RoundedRectangle(cornerRadius: 8)
-                            .stroke(isSelected ? Color.blue : Color.clear, lineWidth: 3)
+                            .stroke(isSelected ? Theme.blue : Color.clear, lineWidth: 3)
                         
                         if !PageModelStore.shared.getPageModel(for: pdf.id, pageIndex: item.index).panels.isEmpty {
                             HStack(spacing: 2) {
@@ -33,7 +33,7 @@ struct PageManagerGridItem: View {
                                     .bold()
                             }
                             .padding(4)
-                            .background(Color.purple)
+                            .background(Theme.purple)
                             .foregroundColor(.white)
                             .cornerRadius(4)
                             .padding(4)

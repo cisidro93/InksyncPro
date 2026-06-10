@@ -125,7 +125,7 @@ struct PageManagerView: View {
                     VStack(spacing: 20) {
                         Image(systemName: "exclamationmark.triangle")
                             .font(.largeTitle)
-                            .foregroundColor(.orange)
+                            .foregroundColor(Theme.orange)
                         Text("Error Opening File")
                             .font(.headline)
                         Text(error)
@@ -202,8 +202,8 @@ struct PageManagerView: View {
                                 }
                                 .frame(maxWidth: .infinity)
                                 .padding()
-                                .background(Color.blue.opacity(0.1))
-                                .foregroundColor(.blue)
+                                .background(Theme.blue.opacity(0.1))
+                                .foregroundColor(Theme.blue)
                                 .cornerRadius(8)
                             }
                             
@@ -219,8 +219,8 @@ struct PageManagerView: View {
                                 }
                                 .frame(maxWidth: .infinity)
                                 .padding()
-                                .background(Color.orange.opacity(0.1))
-                                .foregroundColor(.orange)
+                                .background(Theme.orange.opacity(0.1))
+                                .foregroundColor(Theme.orange)
                                 .cornerRadius(8)
                             }
                         }
@@ -238,8 +238,8 @@ struct PageManagerView: View {
                             }
                             .frame(maxWidth: .infinity)
                             .padding()
-                            .background(Color.red.opacity(0.1))
-                            .foregroundColor(.red)
+                            .background(Theme.red.opacity(0.1))
+                            .foregroundColor(Theme.red)
                             .cornerRadius(8)
                         }
                     }
@@ -516,7 +516,7 @@ struct SafeGridCell: View {
             if let image = phase.image {
                 image.resizable().scaledToFit()
             } else {
-                Color.gray.opacity(0.1)
+                Theme.surfaceElevated
             }
         }
     }

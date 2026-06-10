@@ -25,7 +25,7 @@ struct WorkspaceCanvasView: View {
         ZStack {
             if let error = viewModel.errorMessage {
                 VStack {
-                    Image(systemName: "exclamationmark.triangle").font(.largeTitle).foregroundColor(.orange)
+                    Image(systemName: "exclamationmark.triangle").font(.largeTitle).foregroundColor(Theme.orange)
                     Text("Error").font(.headline)
                     Text(error).font(.caption)
                 }
@@ -171,7 +171,7 @@ struct WorkspaceToolPalette: View {
                 Button(role: .destructive, action: {
                     Task { await deleteSelected() }
                 }) {
-                    Image(systemName: "trash").foregroundColor(.red)
+                    Image(systemName: "trash").foregroundColor(Theme.red)
                 }
                 
             } else {
@@ -191,7 +191,7 @@ struct WorkspaceToolPalette: View {
                 Button(role: .destructive, action: {
                     Task { await deleteSelected() }
                 }) {
-                    Image(systemName: "trash").foregroundColor(.red)
+                    Image(systemName: "trash").foregroundColor(Theme.red)
                 }
             }
         }
@@ -281,7 +281,7 @@ struct WorkspaceInspectorView: View {
                             .font(.headline)
                             .padding()
                             .frame(maxWidth: .infinity)
-                            .background(Color.blue)
+                            .background(Theme.blue)
                             .foregroundColor(.white)
                             .clipShape(Capsule())
                     }
@@ -393,7 +393,7 @@ struct CoverStudioView: View {
                     Label("Apply Cover", systemImage: "checkmark.seal.fill")
                         .font(.headline)
                         .padding()
-                        .background(Color.blue)
+                        .background(Theme.blue)
                         .foregroundColor(.white)
                         .clipShape(Capsule())
                         .shadow(radius: 5)
@@ -460,17 +460,17 @@ struct CoverStudioView: View {
                             VStack(spacing: 12) {
                                 RoundedRectangle(cornerRadius: 12)
                                     .stroke(style: StrokeStyle(lineWidth: 2, dash: [6]))
-                                    .fill(Color.orange)
+                                    .fill(Theme.orange)
                                     .frame(width: 140, height: 210)
                                     .overlay(
                                         VStack {
                                             Image(systemName: "magnifyingglass.circle.fill")
                                                 .font(.system(size: 40))
-                                                .foregroundColor(.orange)
+                                                .foregroundColor(Theme.orange)
                                             Text(hasFetched ? "Load More" : "Find Covers")
                                                 .font(.caption)
                                                 .fontWeight(.bold)
-                                                .foregroundColor(.orange)
+                                                .foregroundColor(Theme.orange)
                                                 .padding(.top, 4)
                                         }
                                     )
@@ -483,17 +483,17 @@ struct CoverStudioView: View {
                         VStack(spacing: 12) {
                             RoundedRectangle(cornerRadius: 12)
                                 .stroke(style: StrokeStyle(lineWidth: 2, dash: [6]))
-                                .fill(Color.blue)
+                                .fill(Theme.blue)
                                 .frame(width: 140, height: 210)
                                 .overlay(
                                     Image(systemName: "photo.badge.plus")
                                         .font(.system(size: 40))
-                                        .foregroundColor(.blue)
+                                        .foregroundColor(Theme.blue)
                                 )
                             Text("Library")
                                 .font(.caption)
                                 .fontWeight(.bold)
-                                .foregroundColor(.blue)
+                                .foregroundColor(Theme.blue)
                         }
                     }
                     
@@ -623,7 +623,7 @@ struct CoverVariantCell: View {
                                         .resizable()
                                         .aspectRatio(contentMode: .fill)
                                 } else {
-                                    Rectangle().fill(Color.gray.opacity(0.2))
+                                    Rectangle().fill(Theme.surfaceElevated)
                                 }
                             } else {
                                 // Async Web Image Loading
@@ -641,28 +641,28 @@ struct CoverVariantCell: View {
                                 }
                             }
                         } else {
-                            Rectangle().fill(Color.gray.opacity(0.1))
+                            Rectangle().fill(Theme.surfaceElevated)
                         }
                     }
                     .frame(width: 140, height: 210)
                     .cornerRadius(12)
                     .overlay(
                         RoundedRectangle(cornerRadius: 12)
-                            .stroke(isActive ? Color.blue : Color.clear, lineWidth: 4)
+                            .stroke(isActive ? Theme.blue : Color.clear, lineWidth: 4)
                     )
                     .shadow(color: Color.black.opacity(0.1), radius: 5, y: 3)
                     
                     if isAI {
                         Image(systemName: "sparkles")
                             .font(.caption)
-                            .foregroundColor(.purple)
+                            .foregroundColor(Theme.purple)
                             .padding(6)
                             .background(Circle().fill(Color.white))
                             .offset(x: 4, y: 4)
                     } else if isActive {
                         Image(systemName: "checkmark.seal.fill")
                             .font(.title3)
-                            .foregroundColor(.blue)
+                            .foregroundColor(Theme.blue)
                             .background(Circle().fill(Color.white))
                             .offset(x: 4, y: 4)
                     }
