@@ -5,6 +5,9 @@ struct OmniDockView: View {
     @Binding var filterState: LibraryFilterState
     @Binding var sortOption: ModernLibraryView.SortOption
     @Binding var isBatchMode: Bool
+    @Binding var multiSelection: Set<UUID>
+    @Binding var batchMergeItems: [ConvertedPDF]
+    @Binding var showingBatchMergeReorder: Bool
     @Binding var viewStyle: ModernLibraryView.LibraryViewStyle
     @Binding var currentFolderID: UUID?
     var collections: [PDFCollection]
@@ -14,6 +17,10 @@ struct OmniDockView: View {
     var onSettings: () -> Void
     var onVaultToggle: () -> Void
     var onSearch: () -> Void
+    
+    @EnvironmentObject var conversionManager: ConversionManager
+    @EnvironmentObject var settingsManager: AppSettingsManager
+    @AppStorage("libraryTapAction") private var tapAction: LibraryTapAction = .read
     
     @State private var offset: CGSize = .zero
     @State private var position: DockPosition = .bottom
@@ -170,26 +177,133 @@ struct OmniDockView: View {
                 .foregroundColor(.gray)
         }
 
+        // Work Area Button (First-Class Icon)
+        Button(action: onWorkArea) {
+            Image(systemName: "wand.and.stars")
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundColor(Theme.purple)
+        }
+
         Divider().frame(width: position == .top || position == .bottom ? 1 : 20, height: position == .top || position == .bottom ? 20 : 1)
 
         // 2. Tools Menu
         Menu {
-            Button(action: onWorkArea) {
-                Label("Work Area", systemImage: "wand.and.stars")
+            Section("Settings") {
+                Button(action: { viewStyle = viewStyle == .grid ? .list : .grid }) {
+                    Label(viewStyle == .grid ? "Switch to List View" : "Switch to Grid View", systemImage: viewStyle == .grid ? "list.bullet" : "square.grid.2x2")
+                }
+                Button(action: { withAnimation { isBatchMode.toggle() } }) {
+                    Label(isBatchMode ? "Exit Batch Mode" : "Enter Batch Mode", systemImage: "checkmark.circle")
+                }
+                Button(action: onVaultToggle) {
+                    Label(settingsManager.isVaultUnlocked ? "Lock Vault" : "Unlock Vault", systemImage: settingsManager.isVaultUnlocked ? "lock.open.fill" : "lock.fill")
+                }
+                Button(action: { AppRouter.shared.presentSheet(.stats) }) {
+                    Label("Stats", systemImage: "chart.bar.fill")
+                }
             }
-            Button(action: { AppRouter.shared.presentSheet(.stats) }) {
-                Label("Stats", systemImage: "chart.bar.fill")
+            
+            Section("Connections") {
+                Button(action: { AppRouter.shared.presentSheet(.cloudBrowser) }) {
+                    let cloudConnected = DropboxProvider.shared.isConnected
+                    Label("Cloud Library", systemImage: cloudConnected ? "checkmark.icloud.fill" : "icloud.and.arrow.down")
+                }
+                Button(action: { AppRouter.shared.presentSheet(.wifi) }) {
+                    Label("Wi-Fi Sync", systemImage: "wifi")
+                }
+                Button(action: { AppRouter.shared.presentSheet(.smartListImporter) }) {
+                    Label("Smart List Import", systemImage: "list.star")
+                }
             }
-            Divider()
-            Button(action: { withAnimation { isBatchMode.toggle() } }) {
-                Label(isBatchMode ? "Exit Batch Mode" : "Enter Batch Mode", systemImage: "checkmark.circle.badge.questionmark")
+            
+            Section("Reader Settings") {
+                Menu("Target Format: \(settingsManager.conversionSettings.outputFormat.rawValue)", systemImage: "arrow.triangle.2.circlepath") {
+                    Picker("Target Format", selection: $settingsManager.conversionSettings.outputFormat) {
+                        ForEach(OutputFormat.allCases) { format in
+                            Label(format.rawValue, systemImage: format.icon).tag(format)
+                        }
+                    }
+                    if !settingsManager.conversionPresets.isEmpty {
+                        Section("Custom Profiles") {
+                            ForEach(settingsManager.conversionPresets) { preset in
+                                Button {
+                                    settingsManager.conversionSettings = preset.settings
+                                } label: {
+                                    Label(preset.name, systemImage: "list.clipboard.fill")
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                Menu("Tap Action: \(tapAction.rawValue)", systemImage: "hand.tap.fill") {
+                    Picker("Tap Action", selection: $tapAction) {
+                        ForEach(LibraryTapAction.allCases, id: \.self) { action in
+                            Text(action.rawValue).tag(action)
+                        }
+                    }
+                }
             }
-            Button(action: { viewStyle = viewStyle == .grid ? .list : .grid }) {
-                Label(viewStyle == .grid ? "Switch to List View" : "Switch to Grid View", systemImage: viewStyle == .grid ? "list.bullet" : "square.grid.2x2")
+            
+            Section("Metadata & AI") {
+                Button(action: {
+                    Task { await BackgroundMetadataEngine.shared.startEngine(manager: conversionManager) }
+                }) {
+                    Label("Auto-Match Metadata", systemImage: "wand.and.stars.inverse")
+                }
+                
+                if !conversionManager.failedMetadataPDFs.isEmpty {
+                    Button(action: {
+                        AppRouter.shared.presentSheet(.reviewMetadata)
+                    }) {
+                        Label("Review Missing", systemImage: "exclamationmark.triangle.fill")
+                    }
+                }
+                
+                Button(action: {
+                    if multiSelection.count >= 1 {
+                        let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
+                        AppRouter.shared.presentSheet(.cognitiveBatchRenamer(items))
+                    } else {
+                        withAnimation { isBatchMode = true }
+                        conversionManager.appAlert = AppAlert(title: "Select Issues", message: "Select 1 or more scrambled issues from your library to automatically rename using AI Vision.")
+                    }
+                }) {
+                    Label("AI Rename", systemImage: "sparkles.tv")
+                }
+                
+                Button(action: {
+                    if multiSelection.count >= 1 {
+                        let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
+                        AppRouter.shared.presentSheet(.metadataSpreadsheet(items))
+                        withAnimation { isBatchMode = false }
+                    } else {
+                        withAnimation { isBatchMode = true }
+                        conversionManager.appAlert = AppAlert(title: "Select Issues", message: "Select issues to edit in the Grid Editor.")
+                    }
+                }) {
+                    Label("Grid Editor", systemImage: "tablecells")
+                }
             }
-            Divider()
-            Button(action: onVaultToggle) {
-                Label(AppSettingsManager.shared.isVaultUnlocked ? "Lock Vault" : "Unlock Vault", systemImage: AppSettingsManager.shared.isVaultUnlocked ? "lock.open.fill" : "lock.fill")
+            
+            Section("File Operations") {
+                Button(action: {
+                    AppRouter.shared.presentSheet(.merge)
+                }) {
+                    Label("PDF Merge Tool", systemImage: "arrow.triangle.merge")
+                }
+                
+                Button(action: {
+                    if multiSelection.count >= 2 {
+                        batchMergeItems = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
+                        showingBatchMergeReorder = true
+                    } else {
+                        withAnimation { isBatchMode = true }
+                        conversionManager.appAlert = AppAlert(title: "Select Issues", message: "Select 2 or more issues from your library, then tap Convert & Merge again.")
+                    }
+                }) {
+                    Label("Convert & Merge", systemImage: "doc.on.doc.fill")
+                }
             }
         } label: {
             Image(systemName: "ellipsis.circle.fill")
