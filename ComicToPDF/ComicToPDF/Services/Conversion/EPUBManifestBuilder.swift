@@ -14,7 +14,6 @@ public struct EPUBManifestBuilder {
     """
 
     public static let cssContent = """
-    @page { margin: 0; padding: 0; }
     html, body { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #000000; }
     .chunk-container { width: 100%; height: 100%; margin: 0; padding: 0; }
     .page { width: 100%; height: 100%; margin: 0; padding: 0; }
@@ -32,7 +31,6 @@ public struct EPUBManifestBuilder {
             <meta name="viewport" content="width=1980, height=2640"/>
             <title>Cover</title>
             <style type="text/css">
-            @page { margin: 0; padding: 0; }
             html, body { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #000000; }
             img { display: block; width: 100%; height: 100%; }
             </style>
@@ -156,7 +154,6 @@ public struct EPUBManifestBuilder {
             <meta name="viewport" content="width=1980, height=2640"/>
             <title>\(title)</title>
             <style type="text/css">
-                @page { margin: 0; padding: 0; }
                 html, body { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #000000; }
                 .chunk-container { width: 100%; height: 100%; margin: 0; padding: 0; }
                 .page { width: 100%; height: 100%; margin: 0; padding: 0; }
