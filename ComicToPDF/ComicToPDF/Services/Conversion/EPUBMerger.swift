@@ -130,11 +130,14 @@ struct EPUBMerger: Sendable {
                     try? htmlContent.write(to: textDir.appendingPathComponent(htmlName), atomically: true, encoding: .utf8)
                     
                     let isFirstPageCover = (globalPageIndex == 1 && activeCoverData == nil)
-                    // Do NOT add properties="cover-image" to any image manifest item.
-                    // Kindle Cloud auto-injects a duplicate cover page for any image with
-                    // that property that is not a direct spine itemref.
+                    // The cover image (img_1) must carry properties="cover-image" so that the
+                    // OPF <meta name="cover" content="img_1"/> is consistent — Amazon's KFX ingestor
+                    // checks that the item referenced by <meta name="cover"> has this property and
+                    // fails with E999 if it does not. The duplicate-cover problem is suppressed by
+                    // page_1.xhtml being the FIRST spine item wrapping img_1.
+                    let coverImageProp = isFirstPageCover ? " properties=\"cover-image\"" : ""
                     manifestItems.append("<item id=\"page_\(globalPageIndex)\" href=\"text/\(htmlName)\" media-type=\"application/xhtml+xml\"/>")
-                    manifestItems.append("<item id=\"img_\(globalPageIndex)\" href=\"images/\(newName)\" media-type=\"image/\(safeExt)\"/>")
+                    manifestItems.append("<item id=\"img_\(globalPageIndex)\" href=\"images/\(newName)\" media-type=\"image/\(safeExt)\"\(coverImageProp)/>")
                     
                     // Apply Dynamic Landscape Spreads Tagging (RTL vs LTR)
                     let spreadTag: String
@@ -515,11 +518,14 @@ struct EPUBMerger: Sendable {
                     try? htmlContent.write(to: activeText.appendingPathComponent(htmlName), atomically: true, encoding: .utf8)
                     
                     let isFirstPageCover = (globalPageIndex == 1 && activeCoverData == nil)
-                    // Do NOT add properties="cover-image" to any image manifest item.
-                    // Kindle Cloud auto-injects a duplicate cover page for any image with
-                    // that property that is not a direct spine itemref.
+                    // The cover image (img_1) must carry properties="cover-image" so that the
+                    // OPF <meta name="cover" content="img_1"/> is consistent — Amazon's KFX ingestor
+                    // checks that the item referenced by <meta name="cover"> has this property and
+                    // fails with E999 if it does not. The duplicate-cover problem is suppressed by
+                    // page_1.xhtml being the FIRST spine item wrapping img_1.
+                    let coverImageProp = isFirstPageCover ? " properties=\"cover-image\"" : ""
                     manifestItems.append("<item id=\"page_\(globalPageIndex)\" href=\"text/\(htmlName)\" media-type=\"application/xhtml+xml\"/>")
-                    manifestItems.append("<item id=\"img_\(globalPageIndex)\" href=\"images/\(newName)\" media-type=\"image/\(safeExt)\"/>")
+                    manifestItems.append("<item id=\"img_\(globalPageIndex)\" href=\"images/\(newName)\" media-type=\"image/\(safeExt)\"\(coverImageProp)/>")
                     
                     // Apply Dynamic Landscape Spreads Tagging (RTL vs LTR)
                     let spreadTag: String
