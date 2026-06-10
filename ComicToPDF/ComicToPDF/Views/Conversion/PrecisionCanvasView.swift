@@ -138,7 +138,7 @@ struct PrecisionCanvasView: View {
                         }
                     }
                 }) {
-                    Image(systemName: "trash").foregroundColor(.red)
+                    Image(systemName: "trash").foregroundColor(Theme.red)
                 }
             }
             
@@ -147,7 +147,7 @@ struct PrecisionCanvasView: View {
                     withAnimation { editorState.commitProposals() }
                 }
                 .bold()
-                .foregroundColor(.green)
+                .foregroundColor(Theme.green)
             }
         }
     }
@@ -165,35 +165,35 @@ struct PrecisionCanvasView: View {
             Button(action: { selectedTool = .edit }) {
                 VStack(spacing: 4) { Image(systemName: "cursorarrow.rays"); Text("Edit").font(.caption2) }
             }
-            .foregroundColor(selectedTool == .edit ? .blue : .primary)
+            .foregroundColor(selectedTool == .edit ? Theme.blue : .primary)
             
             Spacer()
             
             Button(action: { selectedTool = .knife }) {
                 VStack(spacing: 4) { Image(systemName: "scissors"); Text("Split").font(.caption2) }
             }
-            .foregroundColor(selectedTool == .knife ? .blue : .primary)
+            .foregroundColor(selectedTool == .knife ? Theme.blue : .primary)
             
             Spacer()
             
             Button(action: { selectedTool = .anchor }) {
                 VStack(spacing: 4) { Image(systemName: "plus.square.dashed"); Text("Add").font(.caption2) }
             }
-            .foregroundColor(selectedTool == .anchor ? .blue : .primary)
+            .foregroundColor(selectedTool == .anchor ? Theme.blue : .primary)
             
             Spacer()
             
             Button(action: { selectedTool = .draw }) {
                 VStack(spacing: 4) { Image(systemName: "pencil.tip"); Text("Draw").font(.caption2) }
             }
-            .foregroundColor(selectedTool == .draw ? .blue : .primary)
+            .foregroundColor(selectedTool == .draw ? Theme.blue : .primary)
             
             Spacer()
             
             Button(action: { selectedTool = .preview }) {
                 VStack(spacing: 4) { Image(systemName: "eye"); Text("Preview").font(.caption2) }
             }
-            .foregroundColor(selectedTool == .preview ? .blue : .primary)
+            .foregroundColor(selectedTool == .preview ? Theme.blue : .primary)
             Spacer()
         }
     }
