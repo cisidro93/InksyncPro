@@ -32,6 +32,19 @@ struct EPUBMerger: Sendable {
         """
         try cssContent.write(to: cssDir.appendingPathComponent("comic.css"), atomically: true, encoding: .utf8)
         
+        // 1.5 Load active cover data
+        var activeCoverData = overrideCoverData
+        if activeCoverData == nil, let firstURL = sourceURLs.first {
+            let tempExtract = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try? fileManager.createDirectory(at: tempExtract, withIntermediateDirectories: true)
+            defer { try? fileManager.removeItem(at: tempExtract) }
+            
+            try? fileManager.unzipItem(at: firstURL, to: tempExtract)
+            if let images = try? findImages(in: tempExtract), let firstImg = images.first {
+                activeCoverData = try? Data(contentsOf: firstImg)
+            }
+        }
+        
         var manifestItems: [String] = []
         var spineItems: [String] = []
         manifestItems.append("<item id=\"css\" href=\"css/comic.css\" media-type=\"text/css\"/>")
@@ -39,10 +52,10 @@ struct EPUBMerger: Sendable {
         manifestItems.append("<item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/>")
         
         var globalPageIndex = 1
-        var globalPageCounter = (overrideCoverData != nil) ? 2 : 1
+        var globalPageCounter = (activeCoverData != nil) ? 2 : 1
         
         // 2.5 Inject Override Cover if Present
-        if let coverData = overrideCoverData {
+        if let coverData = activeCoverData {
             let coverFilename = "cover.jpg"
             let destURL = imagesDir.appendingPathComponent(coverFilename)
             try? coverData.write(to: destURL)
@@ -66,6 +79,7 @@ struct EPUBMerger: Sendable {
             
             manifestItems.append("<item id=\"cover_page\" href=\"text/cover.xhtml\" media-type=\"application/xhtml+xml\"/>")
             manifestItems.append("<item id=\"cover_img\" href=\"images/\(coverFilename)\" media-type=\"image/jpeg\" properties=\"cover-image\"/>")
+            spineItems.append("<itemref idref=\"cover_page\" linear=\"no\"/>")
             
             // Note: Cover doesn't increment globalPageCounter because page-spread tags only align content pages
         }
@@ -79,7 +93,12 @@ struct EPUBMerger: Sendable {
             // Extract Images
             let foundImages = try findImages(in: unzipDir)
             
-            for imgURL in foundImages {
+            for (imgIndex, imgURL) in foundImages.enumerated() {
+                // Skip the first page of the first EPUB if we are using it as the cover
+                if index == 0 && imgIndex == 0 && activeCoverData != nil {
+                    continue
+                }
+                
                 try autoreleasepool {
                     let trueExt = (imgURL.pathExtension.lowercased() == "png") ? "png" : "jpg"
                     let safeExt = (trueExt == "jpg") ? "jpeg" : trueExt
@@ -120,14 +139,14 @@ struct EPUBMerger: Sendable {
                     
                     try? htmlContent.write(to: textDir.appendingPathComponent(htmlName), atomically: true, encoding: .utf8)
                     
-                    let isFirstPageCover = (globalPageIndex == 1 && overrideCoverData == nil)
+                    let isFirstPageCover = (globalPageIndex == 1 && activeCoverData == nil)
                     let properties = isFirstPageCover ? " properties=\"cover-image\"" : ""
                     manifestItems.append("<item id=\"page_\(globalPageIndex)\" href=\"text/\(htmlName)\" media-type=\"application/xhtml+xml\"/>")
                     manifestItems.append("<item id=\"img_\(globalPageIndex)\" href=\"images/\(newName)\" media-type=\"image/\(safeExt)\"\(properties)/>")
                     
                     // Apply Dynamic Landscape Spreads Tagging (RTL vs LTR)
-                    if globalPageIndex == 1 && overrideCoverData == nil {
-                        // Omit the cover page from the spine to prevent duplicate cover pages on Kindle
+                    if globalPageIndex == 1 && activeCoverData == nil {
+                        spineItems.append("<itemref idref=\"page_\(globalPageIndex)\" linear=\"no\"/>")
                     } else {
                         let spreadTag: String
                         if globalPageCounter == 1 {
@@ -146,7 +165,7 @@ struct EPUBMerger: Sendable {
             }
         }
         
-        let firstPageHref = (overrideCoverData != nil) ? "text/cover.xhtml" : "text/page_00001.xhtml"
+        let firstPageHref = (activeCoverData != nil) ? "text/cover.xhtml" : "text/page_00001.xhtml"
         
         // 4. Metadata (OPF)
         let opfTitle = sourceMetadata?.series ?? sourceMetadata?.title ?? "Merged Comic Collection"
@@ -157,7 +176,7 @@ struct EPUBMerger: Sendable {
         let dateIso = Date().ISO8601Format()
         let originalResolution = "1980x2640"
         let bookUUID = UUID().uuidString
-        let coverMeta = (overrideCoverData != nil) ? "cover_img" : "img_1"
+        let coverMeta = (activeCoverData != nil) ? "cover_img" : "img_1"
         
         let opfContent = """
         <?xml version="1.0" encoding="UTF-8"?>
@@ -273,10 +292,23 @@ struct EPUBMerger: Sendable {
         let thresholdBytes: Int = settings.omnibusSplitThresholdMB == 99999 ? .max : settings.omnibusSplitThresholdMB * 1024 * 1024
         var currentBundleBytes = 0
         
+        // 1.5 Load active cover data
+        var activeCoverData = overrideCoverData
+        if activeCoverData == nil, let firstURL = sourceURLs.first {
+            let tempExtract = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try? fileManager.createDirectory(at: tempExtract, withIntermediateDirectories: true)
+            defer { try? fileManager.removeItem(at: tempExtract) }
+            
+            try? fileManager.unzipItem(at: firstURL, to: tempExtract)
+            if let images = try? findImages(in: tempExtract), let firstImg = images.first {
+                activeCoverData = try? Data(contentsOf: firstImg)
+            }
+        }
+        
         // Setup initial Working Dir
         var currentEpubDir = try initializeBlankEPUBDir(volumeOffset: currentVolumeIndex)
         var globalPageIndex = 1
-        var globalPageCounter = (overrideCoverData != nil) ? 2 : 1
+        var globalPageCounter = (activeCoverData != nil) ? 2 : 1
         var manifestItems: [String] = []
         manifestItems.append("<item id=\"css\" href=\"css/comic.css\" media-type=\"text/css\"/>")
         manifestItems.append("<item id=\"ncx\" href=\"toc.ncx\" media-type=\"application/x-dtbncx+xml\"/>")
@@ -291,8 +323,8 @@ struct EPUBMerger: Sendable {
             let dateIso = Date().ISO8601Format()
             let originalResolution = "1980x2640"
             let bookUUID = UUID().uuidString
-            let coverMeta = (overrideCoverData != nil) ? "cover_img" : "img_1"
-            let firstPageHref = (overrideCoverData != nil) ? "text/cover.xhtml" : "text/page_00001.xhtml"
+            let coverMeta = (activeCoverData != nil) ? "cover_img" : "img_1"
+            let firstPageHref = (activeCoverData != nil) ? "text/cover.xhtml" : "text/page_00001.xhtml"
             let opfTitle = "\(baseOutputName) (Vol \(volIdx))"
             let opfCreator = "Inksync Pro"
             let opfDesc = "Omnibus edition generated by Inksync."
@@ -391,7 +423,7 @@ struct EPUBMerger: Sendable {
         }
         
         let injectCover = { (targetImagesDir: URL, targetOESPSDir: URL, partNumber: Int, destManifest: inout [String], destSpine: inout [String]) throws -> Int in
-            if let baseCover = overrideCoverData {
+            if let baseCover = activeCoverData {
                 let badgedData = self.createBadgedCover(from: baseCover, partNumber: partNumber, placement: settings.omnibusBadgePlacement) ?? baseCover
                 
                 let coverFilename = "cover.jpg"
@@ -415,6 +447,7 @@ struct EPUBMerger: Sendable {
                 try content.write(to: targetOESPSDir.appendingPathComponent("text/\(htmlName)"), atomically: true, encoding: .utf8)
                 destManifest.append("<item id=\"cover_page\" href=\"text/\(htmlName)\" media-type=\"application/xhtml+xml\"/>")
                 destManifest.append("<item id=\"cover_img\" href=\"images/\(coverFilename)\" media-type=\"image/jpeg\" properties=\"cover-image\"/>")
+                destSpine.append("<itemref idref=\"cover_page\" linear=\"no\"/>")
                 return 1
             }
             return 0
@@ -443,7 +476,7 @@ struct EPUBMerger: Sendable {
                 currentVolumeIndex += 1
                 currentBundleBytes = 0
                 globalPageIndex = 1
-                globalPageCounter = (overrideCoverData != nil) ? 2 : 1
+                globalPageCounter = (activeCoverData != nil) ? 2 : 1
                 currentEpubDir = try initializeBlankEPUBDir(volumeOffset: currentVolumeIndex)
                 manifestItems = []
                 manifestItems.append("<item id=\"css\" href=\"css/comic.css\" media-type=\"text/css\"/>")
@@ -458,8 +491,13 @@ struct EPUBMerger: Sendable {
             let activeImages = activeOEBPS.appendingPathComponent("images")
             let activeText = activeOEBPS.appendingPathComponent("text")
             
-            for img in images {
+            for (imgIdx, img) in images.enumerated() {
                 try autoreleasepool {
+                    // Skip the first image of the first EPUB if cover override is active (Part 1 cover page)
+                    if idx == 0 && imgIdx == 0 && activeCoverData != nil {
+                        return
+                    }
+                    
                     let trueExt = (img.pathExtension.lowercased() == "png") ? "png" : "jpg"
                     let safeExt = (trueExt == "jpg") ? "jpeg" : trueExt
                     let newName = String(format: "image_%05d.%@", globalPageIndex, trueExt)
@@ -495,14 +533,14 @@ struct EPUBMerger: Sendable {
                     """
                     try? htmlContent.write(to: activeText.appendingPathComponent(htmlName), atomically: true, encoding: .utf8)
                     
-                    let isFirstPageCover = (globalPageIndex == 1 && overrideCoverData == nil)
+                    let isFirstPageCover = (globalPageIndex == 1 && activeCoverData == nil)
                     let properties = isFirstPageCover ? " properties=\"cover-image\"" : ""
                     manifestItems.append("<item id=\"page_\(globalPageIndex)\" href=\"text/\(htmlName)\" media-type=\"application/xhtml+xml\"/>")
                     manifestItems.append("<item id=\"img_\(globalPageIndex)\" href=\"images/\(newName)\" media-type=\"image/\(safeExt)\"\(properties)/>")
                     
                     // Apply Dynamic Landscape Spreads Tagging (RTL vs LTR)
-                    if globalPageIndex == 1 && overrideCoverData == nil {
-                        // Omit the cover page from the spine to prevent duplicate cover pages on Kindle
+                    if globalPageIndex == 1 && activeCoverData == nil {
+                        spineItems.append("<itemref idref=\"page_\(globalPageIndex)\" linear=\"no\"/>")
                     } else {
                         let spreadTag: String
                         if globalPageCounter == 1 {

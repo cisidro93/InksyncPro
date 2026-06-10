@@ -263,6 +263,7 @@ struct CBZToEPUBConverter: Sendable {
             
             manifestItems.append("<item id=\"cover-image\" href=\"images/\(coverFilename)\" media-type=\"image/jpeg\" properties=\"cover-image\"/>")
             manifestItems.append("<item id=\"cover-page\" href=\"text/cover.xhtml\" media-type=\"application/xhtml+xml\"/>")
+            spineItems.append("<itemref idref=\"cover-page\" linear=\"no\"/>")
             
             let coverXHTML = EPUBManifestBuilder.buildCoverXHTML(coverFilename: coverFilename, isManga: isManga)
             try? coverXHTML.write(to: textDir.appendingPathComponent("cover.xhtml"), atomically: true, encoding: .utf8)
@@ -370,7 +371,7 @@ struct CBZToEPUBConverter: Sendable {
             }
             
             if chunkIndex == 1 && totalBatches == 1 {
-                // Omit the cover page from the spine to prevent duplicate cover pages on Kindle
+                spineItems.append("<itemref idref=\"page_\(chunkIndex)\" linear=\"no\"/>")
             } else {
                 spineItems.append("<itemref idref=\"page_\(chunkIndex)\"\(spreadTag)/>")
             }
