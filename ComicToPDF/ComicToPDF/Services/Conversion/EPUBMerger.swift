@@ -60,10 +60,12 @@ struct EPUBMerger: Sendable {
             let destURL = imagesDir.appendingPathComponent(coverFilename)
             try? coverData.write(to: destURL)
             
-            manifestItems.append("<item id=\"cover_img\" href=\"images/\(coverFilename)\" media-type=\"image/jpeg\" properties=\"cover-image\"/>")
-            // Write cover.xhtml so the cover-image manifest item is referenced from the spine.
-            // Kindle Cloud auto-injects a duplicate cover page for any cover-image item that
-            // is NOT in the spine — this cover.xhtml prevents that auto-injection.
+            // Do NOT add properties="cover-image" to the image manifest item.
+            // Kindle Cloud auto-injects a duplicate page 0 for any image with that
+            // property that is not a direct spine itemref. cover.xhtml (first spine
+            // item, epub:type="cover") + <meta name="cover"> in the OPF handle
+            // cover identity. The raw image item carries no special property.
+            manifestItems.append("<item id=\"cover_img\" href=\"images/\(coverFilename)\" media-type=\"image/jpeg\"/>")
             let coverXHTML = EPUBManifestBuilder.buildCoverXHTML(coverFilename: coverFilename, isManga: settings.mangaMode)
             try coverXHTML.write(to: textDir.appendingPathComponent("cover.xhtml"), atomically: true, encoding: .utf8)
             manifestItems.append("<item id=\"cover_page\" href=\"text/cover.xhtml\" media-type=\"application/xhtml+xml\"/>")
@@ -126,9 +128,11 @@ struct EPUBMerger: Sendable {
                     try? htmlContent.write(to: textDir.appendingPathComponent(htmlName), atomically: true, encoding: .utf8)
                     
                     let isFirstPageCover = (globalPageIndex == 1 && activeCoverData == nil)
-                    let properties = isFirstPageCover ? " properties=\"cover-image\"" : ""
+                    // Do NOT add properties="cover-image" to any image manifest item.
+                    // Kindle Cloud auto-injects a duplicate cover page for any image with
+                    // that property that is not a direct spine itemref.
                     manifestItems.append("<item id=\"page_\(globalPageIndex)\" href=\"text/\(htmlName)\" media-type=\"application/xhtml+xml\"/>")
-                    manifestItems.append("<item id=\"img_\(globalPageIndex)\" href=\"images/\(newName)\" media-type=\"image/\(safeExt)\"\(properties)/>")
+                    manifestItems.append("<item id=\"img_\(globalPageIndex)\" href=\"images/\(newName)\" media-type=\"image/\(safeExt)\"/>")
                     
                     // Apply Dynamic Landscape Spreads Tagging (RTL vs LTR)
                     let spreadTag: String
@@ -411,7 +415,7 @@ struct EPUBMerger: Sendable {
                 let coverFilename = "cover.jpg"
                 try badgedData.write(to: targetImagesDir.appendingPathComponent(coverFilename))
                 
-                destManifest.append("<item id=\"cover_img\" href=\"images/\(coverFilename)\" media-type=\"image/jpeg\" properties=\"cover-image\"/>")
+                destManifest.append("<item id=\"cover_img\" href=\"images/\(coverFilename)\" media-type=\"image/jpeg\"/>")
                 // Write cover.xhtml so the cover-image manifest item is referenced from the spine.
                 // Kindle Cloud auto-injects a duplicate cover page for any cover-image item that
                 // is NOT in the spine — this cover.xhtml prevents that auto-injection.
@@ -506,9 +510,11 @@ struct EPUBMerger: Sendable {
                     try? htmlContent.write(to: activeText.appendingPathComponent(htmlName), atomically: true, encoding: .utf8)
                     
                     let isFirstPageCover = (globalPageIndex == 1 && activeCoverData == nil)
-                    let properties = isFirstPageCover ? " properties=\"cover-image\"" : ""
+                    // Do NOT add properties="cover-image" to any image manifest item.
+                    // Kindle Cloud auto-injects a duplicate cover page for any image with
+                    // that property that is not a direct spine itemref.
                     manifestItems.append("<item id=\"page_\(globalPageIndex)\" href=\"text/\(htmlName)\" media-type=\"application/xhtml+xml\"/>")
-                    manifestItems.append("<item id=\"img_\(globalPageIndex)\" href=\"images/\(newName)\" media-type=\"image/\(safeExt)\"\(properties)/>")
+                    manifestItems.append("<item id=\"img_\(globalPageIndex)\" href=\"images/\(newName)\" media-type=\"image/\(safeExt)\"/>")
                     
                     // Apply Dynamic Landscape Spreads Tagging (RTL vs LTR)
                     let spreadTag: String

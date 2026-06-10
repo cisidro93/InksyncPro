@@ -263,7 +263,11 @@ struct CBZToEPUBConverter: Sendable {
             let coverFilename = "badged_cover.jpg"
             try? badgedCoverData.write(to: imagesDir.appendingPathComponent(coverFilename))
             
-            manifestItems.append("<item id=\"cover-image\" href=\"images/\(coverFilename)\" media-type=\"image/jpeg\" properties=\"cover-image\"/>")
+            // Do NOT add properties="cover-image" here. Kindle Cloud auto-injects a duplicate
+            // page 0 for any manifest image item with that property that is not a direct spine
+            // itemref. The cover.xhtml below (first spine item, epub:type="cover") is the correct
+            // cover declaration — the raw image item needs no special property.
+            manifestItems.append("<item id=\"cover-image\" href=\"images/\(coverFilename)\" media-type=\"image/jpeg\"/>")
             // Write cover.xhtml so the cover-image manifest item is referenced from the spine.
             // Kindle Cloud auto-injects a duplicate cover page for any cover-image item that
             // is NOT in the spine — this cover.xhtml prevents that auto-injection.
@@ -332,12 +336,12 @@ struct CBZToEPUBConverter: Sendable {
                 try? fileManager.copyItem(at: item.processedDiskURL, to: destURL)
             }
             
-            // Only apply properties="cover-image" when there is no separate badged cover.
-            // When hasBadgedCover is true the badged cover already has that property;
-            // adding it to img_1 as well would produce two cover-image items (invalid EPUB3).
-            let properties = (isFirstImageOfBook && !hasBadgedCover) ? "properties=\"cover-image\"" : ""
-            let propString = properties.isEmpty ? "" : " \(properties)"
-            manifestItems.append("<item id=\"img_\(localIndex+1)\" href=\"images/\(newImageName)\" media-type=\"image/\(safeExt)\"\(propString)/>")
+            // Do NOT add properties="cover-image" to any image manifest item.
+            // Kindle Cloud auto-injects a duplicate cover page 0 for any image with that
+            // property that is not a direct spine itemref. The cover.xhtml (first spine item,
+            // epub:type="cover") and <meta name="cover"> in the OPF are sufficient — the
+            // raw image item must carry no special property to suppress auto-injection.
+            manifestItems.append("<item id=\"img_\(localIndex+1)\" href=\"images/\(newImageName)\" media-type=\"image/\(safeExt)\"/>")
             
             // Single-volume cover path: write cover.xhtml wrapping img_1 and add it as the
             // first spine entry. This prevents Kindle Cloud from auto-injecting the cover-image
