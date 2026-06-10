@@ -91,6 +91,7 @@ struct OmniDockView: View {
         .gesture(dragGesture)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignmentForPosition)
         .padding(safeAreaPaddingForPosition)
+        .animation(.spring(response: 0.35, dampingFraction: 0.78), value: isBatchMode)
     }
 
     private var alignmentForPosition: Alignment {
@@ -105,9 +106,9 @@ struct OmniDockView: View {
     private var safeAreaPaddingForPosition: EdgeInsets {
         switch position {
         case .top: return EdgeInsets(top: 20, leading: 0, bottom: 0, trailing: 0)
-        case .bottom: return EdgeInsets(top: 0, leading: 0, bottom: 96, trailing: 0)
-        case .left: return EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 0)
-        case .right: return EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 20)
+        case .bottom: return EdgeInsets(top: 0, leading: 0, bottom: isBatchMode ? 164 : 96, trailing: 0)
+        case .left: return EdgeInsets(top: 0, leading: 20, bottom: isBatchMode ? 80 : 0, trailing: 0)
+        case .right: return EdgeInsets(top: 0, leading: 0, bottom: isBatchMode ? 80 : 0, trailing: 20)
         }
     }
 
@@ -156,18 +157,32 @@ struct OmniDockView: View {
                 }
             }
         } label: {
-            HStack(spacing: 6) {
-                Image(systemName: filterState != .all ? "line.3.horizontal.decrease.circle.fill" : contentShelf.icon)
-                Text(currentFolderID != nil ? "Collection" : (filterState != .all ? filterState.rawValue : contentShelf.rawValue))
-                    .font(.system(size: 16, weight: .semibold, design: .rounded))
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 10, weight: .bold))
-                    .opacity(0.6)
+            if position == .top || position == .bottom {
+                HStack(spacing: 6) {
+                    Image(systemName: filterState != .all ? "line.3.horizontal.decrease.circle.fill" : contentShelf.icon)
+                    Text(currentFolderID != nil ? "Collection" : (filterState != .all ? filterState.rawValue : contentShelf.rawValue))
+                        .font(.system(size: 16, weight: .semibold, design: .rounded))
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.system(size: 10, weight: .bold))
+                        .opacity(0.6)
+                }
+                .foregroundColor(contentShelf.accentColor)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(contentShelf.accentColor.opacity(0.15), in: Capsule())
+            } else {
+                VStack(spacing: 4) {
+                    Image(systemName: filterState != .all ? "line.3.horizontal.decrease.circle.fill" : contentShelf.icon)
+                        .font(.system(size: 18, weight: .semibold))
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.system(size: 9, weight: .bold))
+                        .opacity(0.6)
+                }
+                .foregroundColor(contentShelf.accentColor)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 12)
+                .background(contentShelf.accentColor.opacity(0.15), in: Circle())
             }
-            .foregroundColor(contentShelf.accentColor)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .background(contentShelf.accentColor.opacity(0.15), in: Capsule())
         }
 
         // Search Button
