@@ -3,13 +3,30 @@ import SwiftUI
 struct iPadKeyboardShortcuts: ViewModifier {
     @Binding var selectedTab: Int
     @Binding var showImport: Bool
-    @ObservedObject var router = AppRouter.shared
+    @ObservedObject var router: AppRouter
 
     // Bindings to sheet states in ContentView
     @Binding var showingSettingsInspector: Bool
     @Binding var showingBatchMergeReorder: Bool
     @Binding var pdfToShare: ConvertedPDF?
     @Binding var pdfToEdit: ConvertedPDF?
+
+    init(
+        selectedTab: Binding<Int>,
+        showImport: Binding<Bool>,
+        showingSettingsInspector: Binding<Bool>,
+        showingBatchMergeReorder: Binding<Bool>,
+        pdfToShare: Binding<ConvertedPDF?>,
+        pdfToEdit: Binding<ConvertedPDF?>
+    ) {
+        self._selectedTab = selectedTab
+        self._showImport = showImport
+        self._showingSettingsInspector = showingSettingsInspector
+        self._showingBatchMergeReorder = showingBatchMergeReorder
+        self._pdfToShare = pdfToShare
+        self._pdfToEdit = pdfToEdit
+        self.router = AppRouter.shared
+    }
 
     func body(content: Content) -> some View {
         content

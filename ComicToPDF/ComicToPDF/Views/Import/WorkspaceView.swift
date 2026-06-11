@@ -405,7 +405,7 @@ struct ActiveWorkspaceListView: View {
                         }
                     }
                     
-                    if press.key == .delete || press.key == .backspace {
+                    if press.key == KeyEquivalent("\u{7F}") || press.key == KeyEquivalent("\u{08}") {
                         if let highlightedItemID = highlightedItemID,
                            let targetPDF = filteredPDFs.first(where: { $0.id == highlightedItemID }) {
                             let items = filteredPDFs
