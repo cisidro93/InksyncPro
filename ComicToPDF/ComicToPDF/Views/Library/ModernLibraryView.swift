@@ -361,42 +361,173 @@ struct ModernLibraryView: View {
                 .sheet(item: $router.activeSheet) { item in 
                     destinationSheet(for: item) 
                 }
-            // Branding Overlay
-            VStack {
-                HStack(spacing: 8) {
-                    Image(systemName: "square.fill.on.square.fill")
-                        .font(.system(size: 20, weight: .bold))
-                        .foregroundStyle(Color.inkBlue)
-                    Text("InkSync Pro")
-                        .font(.system(size: 18, weight: .bold, design: .rounded))
-                        .foregroundStyle(Color.inkTextPrimary)
+            // Top Sticky Navigation Bar Header
+            VStack(spacing: 0) {
+                HStack {
+                    HStack(spacing: 8) {
+                        Image(systemName: "square.fill.on.square.fill")
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundStyle(Color.inkBlue)
+                        Text("InkSync Pro")
+                            .font(.system(size: 18, weight: .bold, design: .rounded))
+                            .foregroundStyle(Color.inkTextPrimary)
+                    }
+                    
                     Spacer()
+                    
+                    HStack(spacing: 20) {
+                        // Search Toggle
+                        Button {
+                            withAnimation(.spring) { isSearchActive.toggle() }
+                        } label: {
+                            Image(systemName: "magnifyingglass")
+                                .font(.system(size: 20, weight: .semibold))
+                                .foregroundColor(.primary)
+                        }
+                        
+                        // Import / Add File
+                        Button {
+                            (onFolderImport ?? handleDefaultImport)()
+                        } label: {
+                            Image(systemName: "plus")
+                                .font(.system(size: 20, weight: .semibold))
+                                .foregroundColor(.primary)
+                        }
+                        
+                        // Advanced Tools Menu
+                        Menu {
+                            // Sort & Filter
+                            Menu("Sort Options", systemImage: "arrow.up.arrow.down") {
+                                Picker("Sort By", selection: Binding(get: { sortOption }, set: { sortOption = $0; rebuildNativeCache(); viewModel.updateLibraryItemsCache(pdfs: cachedVisiblePDFs, collections: cachedCollections, sortOption: $0) })) {
+                                    ForEach(SortOption.allCases) { option in
+                                        Text(option.rawValue).tag(option)
+                                    }
+                                }
+                            }
+                            
+                            Menu("Filter Options", systemImage: "line.3.horizontal.decrease.circle") {
+                                Picker("Filter By", selection: $viewModel.filterState) {
+                                    ForEach(LibraryFilterState.allCases) { state in
+                                        Text(state.rawValue).tag(state)
+                                    }
+                                }
+                            }
+                            
+                            Divider()
+                            
+                            // View Options
+                            Button(action: { viewStyle = viewStyle == .grid ? .list : .grid }) {
+                                Label(viewStyle == .grid ? "Switch to List View" : "Switch to Grid View", systemImage: viewStyle == .grid ? "list.bullet" : "square.grid.2x2")
+                            }
+                            Button(action: { withAnimation { isBatchMode.toggle() } }) {
+                                Label(isBatchMode ? "Exit Batch Mode" : "Enter Batch Mode", systemImage: "checkmark.circle")
+                            }
+                            Button(action: handleVaultToggle) {
+                                Label(settingsManager.isVaultUnlocked ? "Lock Vault" : "Unlock Vault", systemImage: settingsManager.isVaultUnlocked ? "lock.open.fill" : "lock.fill")
+                            }
+                            Button(action: { AppRouter.shared.presentSheet(.stats) }) {
+                                Label("Library Stats", systemImage: "chart.bar.fill")
+                            }
+                            
+                            Divider()
+                            
+                            // Connections
+                            Menu("Connections", systemImage: "network") {
+                                Button(action: { AppRouter.shared.presentSheet(.cloudBrowser) }) {
+                                    let cloudConnected = DropboxProvider.shared.isConnected
+                                    Label("Cloud Library", systemImage: cloudConnected ? "checkmark.icloud.fill" : "icloud.and.arrow.down")
+                                }
+                                Button(action: { AppRouter.shared.presentSheet(.wifi) }) {
+                                    Label("Wi-Fi Sync", systemImage: "wifi")
+                                }
+                                Button(action: { AppRouter.shared.presentSheet(.smartListImporter) }) {
+                                    Label("Smart List Import", systemImage: "list.star")
+                                }
+                            }
+                            
+                            // Metadata & AI
+                            Menu("Metadata & AI", systemImage: "sparkles") {
+                                Button(action: {
+                                    Task { await BackgroundMetadataEngine.shared.startEngine(manager: conversionManager) }
+                                }) {
+                                    Label("Auto-Match Metadata", systemImage: "wand.and.stars.inverse")
+                                }
+                                
+                                if !conversionManager.failedMetadataPDFs.isEmpty {
+                                    Button(action: {
+                                        AppRouter.shared.presentSheet(.reviewMetadata)
+                                    }) {
+                                        Label("Review Missing", systemImage: "exclamationmark.triangle.fill")
+                                    }
+                                }
+                                
+                                Button(action: {
+                                    if multiSelection.count >= 1 {
+                                        let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
+                                        AppRouter.shared.presentSheet(.cognitiveBatchRenamer(items))
+                                    } else {
+                                        withAnimation { isBatchMode = true }
+                                        conversionManager.appAlert = AppAlert(title: "Select Issues", message: "Select 1 or more scrambled issues from your library to automatically rename using AI Vision.")
+                                    }
+                                }) {
+                                    Label("AI Rename", systemImage: "sparkles.tv")
+                                }
+                                
+                                Button(action: {
+                                    if multiSelection.count >= 1 {
+                                        let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
+                                        AppRouter.shared.presentSheet(.metadataSpreadsheet(items))
+                                        withAnimation { isBatchMode = false }
+                                    } else {
+                                        withAnimation { isBatchMode = true }
+                                        conversionManager.appAlert = AppAlert(title: "Select Issues", message: "Select issues to edit in the Grid Editor.")
+                                    }
+                                }) {
+                                    Label("Grid Editor", systemImage: "tablecells")
+                                }
+                            }
+                            
+                            // File Operations
+                            Menu("File Operations", systemImage: "doc.on.doc") {
+                                Button(action: {
+                                    AppRouter.shared.presentSheet(.merge)
+                                }) {
+                                    Label("PDF Merge Tool", systemImage: "arrow.triangle.merge")
+                                }
+                                
+                                Button(action: {
+                                    if multiSelection.count >= 2 {
+                                        batchMergeItems = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
+                                        showingBatchMergeReorder = true
+                                    } else {
+                                        withAnimation { isBatchMode = true }
+                                        conversionManager.appAlert = AppAlert(title: "Select Issues", message: "Select 2 or more issues from your library, then tap Convert & Merge again.")
+                                    }
+                                }) {
+                                    Label("Convert & Merge", systemImage: "doc.on.doc.fill")
+                                }
+                            }
+                            
+                            Divider()
+                            
+                            // App Settings
+                            Button(action: { NotificationCenter.default.post(name: NSNotification.Name("ShowSettingsInspector"), object: nil) }) {
+                                Label("App Settings", systemImage: "gearshape.fill")
+                            }
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
+                                .font(.system(size: 20, weight: .semibold))
+                                .foregroundColor(.primary)
+                        }
+                    }
                 }
                 .padding(.horizontal, 24)
                 .padding(.top, 16)
-                Spacer()
+                .padding(.bottom, 12)
+                .background(.ultraThinMaterial)
+                
+                Divider()
             }
-            .ignoresSafeArea(edges: .bottom)
-            
-            // Omni-Dock Overlay
-            OmniDockView(
-                contentShelf: $viewModel.contentShelf,
-                filterState: $viewModel.filterState,
-                sortOption: Binding(get: { sortOption }, set: { sortOption = $0; _ = viewModel.sortPDFs(cachedVisiblePDFs, sortOption: $0) }),
-                isBatchMode: $isBatchMode,
-                multiSelection: $multiSelection,
-                batchMergeItems: $batchMergeItems,
-                showingBatchMergeReorder: $showingBatchMergeReorder,
-                viewStyle: Binding(get: { viewStyle }, set: { viewStyle = $0 }),
-                currentFolderID: $viewModel.currentFolderID,
-                collections: cachedCollections,
-                onWorkArea: { withAnimation { AppRouter.shared.selectedTab = 1 } },
-                onImport: onFolderImport ?? {},
-                onSettings: { NotificationCenter.default.post(name: NSNotification.Name("ShowSettingsInspector"), object: nil) },
-                onVaultToggle: handleVaultToggle,
-                onSearch: { withAnimation(.spring) { isSearchActive.toggle() } }
-            )
-            .ignoresSafeArea(edges: .bottom)
             
             // Search Overlay
             if isSearchActive {
@@ -654,7 +785,7 @@ struct ModernLibraryView: View {
         VStack(spacing: 0) {
             // MARK: - Legacy Header Removed
             // The Omni-Dock now handles all navigation and filtering.
-            Spacer().frame(height: 60) // Top padding to prevent overlap with the status bar and branding
+            Spacer().frame(height: 100) // Top padding to prevent overlap with the status bar and branding
 
             // Apple Books-style persisted Content Shelf tab strip
             ContentShelfSelector(
