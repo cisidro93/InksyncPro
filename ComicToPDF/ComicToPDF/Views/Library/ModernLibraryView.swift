@@ -733,6 +733,7 @@ struct ModernLibraryView: View {
             } else {
                 LibraryGridView(
                     items: viewModel.cachedLibraryItems,
+                    contentShelf: viewModel.contentShelf,
                     isBatchMode: $isBatchMode,
                     multiSelection: $multiSelection,
                     useNavigationStack: useNavigationStack,

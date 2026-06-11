@@ -11,6 +11,7 @@ struct LibraryGridView: View {
     @Environment(\.horizontalSizeClass) private var hSizeClass
 
     let items: [LibraryListItem]
+    let contentShelf: ContentShelf
     @Binding var isBatchMode: Bool
     @Binding var multiSelection: Set<UUID>
     let useNavigationStack: Bool
@@ -146,7 +147,7 @@ struct LibraryGridView: View {
                                         }
                                         .padding(.horizontal, hPad)
                                         
-                                        ShelfLineView(accentColor: tapAction == .read ? Color.inkBlue : Color.inkOrange)
+                                        ShelfLineView(accentColor: contentShelf.accentColor)
                                             .padding(.horizontal, hPad / 2)
                                     }
                                 }
