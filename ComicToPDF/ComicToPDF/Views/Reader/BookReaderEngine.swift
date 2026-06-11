@@ -710,6 +710,7 @@ struct BookReaderEngine: View {
     @ObservedObject private var prefs = EBookPreferences.shared
     @State private var extractedTextParams: String = "Chapter reading is not extracted to string yet."
     @State private var lastBrightnessDragValue: CGFloat = 0
+    @FocusState private var isReaderFocused: Bool
     
     init(pdf: ConvertedPDF, onDismiss: @escaping () -> Void, allBooks: [ConvertedPDF] = []) {
         self.pdf = pdf
@@ -853,6 +854,7 @@ struct BookReaderEngine: View {
             // Apply per-book theme + typography profiles
             prefs.applyBookTheme(bookID: pdf.id.uuidString)
             prefs.applyBookTypography(bookID: pdf.id.uuidString)
+            isReaderFocused = true
         }
         .onDisappear {
             tts.stop()
@@ -881,8 +883,101 @@ struct BookReaderEngine: View {
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
+        .focusable()
+        .focused($isReaderFocused)
+        .focusEffectDisabled()
+        .onKeyPress(.leftArrow) {
+            pageBackward()
+            return .handled
+        }
+        .onKeyPress(.rightArrow) {
+            pageForward()
+            return .handled
+        }
+        .onKeyPress(.space) {
+            pageForward()
+            return .handled
+        }
+        .onKeyPress(.escape) {
+            onDismiss()
+            return .handled
+        }
     }
 
+
+    // MARK: - Navigation helpers
+
+    private func pageForward() {
+        guard let webView = webViewReference else { return }
+        let scroll = webView.scrollView
+        let isPaged = prefs.paginationMode == EBookPaginationMode.paged.rawValue
+        
+        if isPaged {
+            let width = webView.bounds.width
+            let currentOffset = scroll.contentOffset.x
+            let targetOffset = currentOffset + width
+            let maxOffset = scroll.contentSize.width - width
+            
+            if targetOffset >= scroll.contentSize.width - 4 {
+                let lastIdx = vm.chapterHtmlFiles.count - 1
+                if vm.currentChapterIndex >= lastIdx {
+                    attemptBookSeriesContinuation()
+                } else {
+                    vm.loadChapter(index: min(lastIdx, vm.currentChapterIndex + 1))
+                }
+            } else {
+                scroll.setContentOffset(CGPoint(x: min(targetOffset, maxOffset), y: 0), animated: true)
+            }
+        } else {
+            let height = webView.bounds.height
+            let currentOffset = scroll.contentOffset.y
+            let targetOffset = currentOffset + height * 0.9
+            let maxOffset = scroll.contentSize.height - height
+            
+            if targetOffset >= scroll.contentSize.height - 4 {
+                let lastIdx = vm.chapterHtmlFiles.count - 1
+                if vm.currentChapterIndex >= lastIdx {
+                    attemptBookSeriesContinuation()
+                } else {
+                    vm.loadChapter(index: min(lastIdx, vm.currentChapterIndex + 1))
+                }
+            } else {
+                scroll.setContentOffset(CGPoint(x: 0, y: min(targetOffset, maxOffset)), animated: true)
+            }
+        }
+    }
+
+    private func pageBackward() {
+        guard let webView = webViewReference else { return }
+        let scroll = webView.scrollView
+        let isPaged = prefs.paginationMode == EBookPaginationMode.paged.rawValue
+        
+        if isPaged {
+            let width = webView.bounds.width
+            let currentOffset = scroll.contentOffset.x
+            let targetOffset = currentOffset - width
+            
+            if targetOffset <= 4 {
+                if vm.currentChapterIndex > 0 {
+                    vm.loadChapter(index: vm.currentChapterIndex - 1)
+                }
+            } else {
+                scroll.setContentOffset(CGPoint(x: max(0, targetOffset), y: 0), animated: true)
+            }
+        } else {
+            let height = webView.bounds.height
+            let currentOffset = scroll.contentOffset.y
+            let targetOffset = currentOffset - height * 0.9
+            
+            if targetOffset <= 4 {
+                if vm.currentChapterIndex > 0 {
+                    vm.loadChapter(index: vm.currentChapterIndex - 1)
+                }
+            } else {
+                scroll.setContentOffset(CGPoint(x: 0, y: max(0, targetOffset)), animated: true)
+            }
+        }
+    }
 
     // MARK: - Series Continuation
     /// Posts openMergedBook with the next volume in the series when the user finishes the last chapter.

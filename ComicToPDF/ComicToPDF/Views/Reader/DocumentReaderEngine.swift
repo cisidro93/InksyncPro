@@ -21,6 +21,7 @@ struct DocumentReaderEngine: View {
     @State private var reflowText: String = "Extracting text..."
     @State private var showingSettings = false
     @ObservedObject private var prefs = EBookPreferences.shared
+    @FocusState private var isReaderFocused: Bool
     
     var body: some View {
         ZStack {
@@ -139,6 +140,7 @@ struct DocumentReaderEngine: View {
                 currentPageIndex = saved.currentPageIndex
             }
             if isReflowMode { updateReflowText() }
+            isReaderFocused = true
         }
         .onChange(of: currentPageIndex) { old, new in
             if isReflowMode { updateReflowText() }
@@ -155,6 +157,45 @@ struct DocumentReaderEngine: View {
         .sheet(isPresented: $showingSettings) {
             EBookSettingsPanel(bookID: pdf.id.uuidString)
                 .presentationDetents([.medium, .large])
+        }
+        .focusable()
+        .focused($isReaderFocused)
+        .focusEffectDisabled()
+        .onKeyPress(.leftArrow) {
+            pageBackward()
+            return .handled
+        }
+        .onKeyPress(.rightArrow) {
+            pageForward()
+            return .handled
+        }
+        .onKeyPress(.space) {
+            pageForward()
+            return .handled
+        }
+        .onKeyPress(.escape) {
+            ReaderProgressTracker.shared.update(ReadingProgress(
+                pdfID: pdf.id, lastOpenedAt: Date(), currentPageIndex: currentPageIndex,
+                currentChapterIndex: nil, currentChapterOffset: nil,
+                totalPagesRead: 1, completionFraction: Double(currentPageIndex + 1) / Double(max(1, totalPages)),
+                readingSessionDates: [Date()], estimatedMinutesRemaining: nil
+            ))
+            onDismiss()
+            return .handled
+        }
+    }
+    
+    private func pageForward() {
+        if currentPageIndex < totalPages - 1 {
+            currentPageIndex += 1
+            HapticEngine.light()
+        }
+    }
+    
+    private func pageBackward() {
+        if currentPageIndex > 0 {
+            currentPageIndex -= 1
+            HapticEngine.light()
         }
     }
     
@@ -297,6 +338,18 @@ struct PDFKitRepresentedView: UIViewRepresentable {
     func updateUIView(_ uiView: UIView, context: Context) {
         context.coordinator.canvasView?.isUserInteractionEnabled = isPencilMode
         context.coordinator.parent = self
+        
+        // Sync outer page change to the PDFView
+        if let pdfView = context.coordinator.pdfView,
+           let document = pdfView.document,
+           let currentPage = pdfView.currentPage {
+            let viewPageIndex = document.index(for: currentPage)
+            if viewPageIndex != currentPageIndex && currentPageIndex >= 0 && currentPageIndex < document.pageCount {
+                if let targetPage = document.page(at: currentPageIndex) {
+                    pdfView.go(to: targetPage)
+                }
+            }
+        }
     }
     
     func makeCoordinator() -> Coordinator {

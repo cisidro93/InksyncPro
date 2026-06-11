@@ -47,6 +47,8 @@ struct ModernLibraryView: View {
     @State private var isLandscape: Bool = false
     @Environment(\.verticalSizeClass) private var vSizeClass
     @State private var isSearchActive: Bool = false
+    @State private var highlightedItemID: String? = nil
+    @FocusState private var isLibraryFocused: Bool
 
 
     /// Derived header collapse state.
@@ -127,6 +129,69 @@ struct ModernLibraryView: View {
             // if onAppear hasn't run yet (e.g. app launch via Spotlight/widget).
             .task(id: swiftDataPDFs.count) {
                 if cachedVisiblePDFs.isEmpty { rebuildNativeCache() }
+            }
+            .focusable()
+            .focused($isLibraryFocused)
+            .focusEffectDisabled()
+            .onKeyPress(phases: .down) { press in
+                if press.modifiers.contains(.command) {
+                    if press.key == "f" {
+                        withAnimation(.spring) { isSearchActive.toggle() }
+                        return .handled
+                    }
+                    if press.key == "o" || press.key == "n" {
+                        (onFolderImport ?? handleDefaultImport)()
+                        return .handled
+                    }
+                    if press.key == "a" && isBatchMode {
+                        handleSelectAll()
+                        return .handled
+                    }
+                }
+                
+                if press.key == .escape {
+                    if isSearchActive {
+                        withAnimation {
+                            viewModel.searchText = ""
+                            isSearchActive = false
+                        }
+                        return .handled
+                    }
+                    if isBatchMode {
+                        withAnimation {
+                            isBatchMode = false
+                            multiSelection.removeAll()
+                        }
+                        return .handled
+                    }
+                    if highlightedItemID != nil {
+                        highlightedItemID = nil
+                        return .handled
+                    }
+                }
+                
+                if press.key == .leftArrow {
+                    moveHighlight(direction: .left)
+                    return .handled
+                }
+                if press.key == .rightArrow {
+                    moveHighlight(direction: .right)
+                    return .handled
+                }
+                if press.key == .upArrow {
+                    moveHighlight(direction: .up)
+                    return .handled
+                }
+                if press.key == .downArrow {
+                    moveHighlight(direction: .down)
+                    return .handled
+                }
+                if press.key == .return || press.key == .space {
+                    openHighlightedItem()
+                    return .handled
+                }
+                
+                return .ignored
             }
     }
 
@@ -244,6 +309,7 @@ struct ModernLibraryView: View {
                 // Seed landscape state immediately (handles cold-launch in landscape)
                 let size = UIScreen.main.bounds.size
                 isLandscape = size.width > size.height
+                isLibraryFocused = true
 
                 // PERF D-C1: debounce absorbs page-turn bursts; rebuilds DTO map once per 250ms
                 viewModel.swiftDataCancellable = viewModel.swiftDataDidChange
@@ -283,6 +349,11 @@ struct ModernLibraryView: View {
             }
             .onChange(of: viewModel.currentFolderID) {
                 viewModel.updateLibraryItemsCache(pdfs: cachedVisiblePDFs, collections: cachedCollections, sortOption: sortOption)
+            }
+            .onChange(of: isSearchActive) { _, newVal in
+                if !newVal {
+                    isLibraryFocused = true
+                }
             }
     }
 
@@ -735,6 +806,91 @@ struct ModernLibraryView: View {
         }
     }
 
+    enum MoveDirection {
+        case up, down, left, right
+    }
+
+    private func moveHighlight(direction: MoveDirection) {
+        let items = viewModel.cachedLibraryItems
+        guard !items.isEmpty else { return }
+        
+        let cols = viewStyle == .grid ? (hSizeClass == .regular ? 5 : 3) : 1
+        
+        // Find current index
+        let currentIndex: Int
+        if let currentID = highlightedItemID,
+           let idx = items.firstIndex(where: { $0.id == currentID }) {
+            currentIndex = idx
+        } else {
+            // No highlight, select first item
+            highlightedItemID = items.first?.id
+            return
+        }
+        
+        let targetIndex: Int
+        switch direction {
+        case .up:
+            targetIndex = max(0, currentIndex - cols)
+        case .down:
+            targetIndex = min(items.count - 1, currentIndex + cols)
+        case .left:
+            targetIndex = max(0, currentIndex - 1)
+        case .right:
+            targetIndex = min(items.count - 1, currentIndex + 1)
+        }
+        
+        if items.indices.contains(targetIndex) {
+            highlightedItemID = items[targetIndex].id
+        }
+    }
+    
+    private func openHighlightedItem() {
+        guard let currentID = highlightedItemID,
+              let item = viewModel.cachedLibraryItems.first(where: { $0.id == currentID }) else { return }
+        
+        switch item {
+        case .single(let pdf):
+            if case .cloud = pdf.sourceMode {
+                if tapAction == .convert {
+                    viewModel.handleDetailAction(action: .convert, for: pdf, conversionManager: conversionManager)
+                } else {
+                    viewModel.handleDetailAction(action: .details, for: pdf, conversionManager: conversionManager)
+                }
+            } else {
+                if tapAction == .read {
+                    viewModel.handleDetailAction(action: .read, for: pdf, conversionManager: conversionManager)
+                } else if tapAction == .convert {
+                    viewModel.handleDetailAction(action: .convert, for: pdf, conversionManager: conversionManager)
+                } else {
+                    viewModel.handleDetailAction(action: .details, for: pdf, conversionManager: conversionManager)
+                }
+            }
+        case .series(let group):
+            if let folderUUID = UUID(uuidString: group.id) {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                    viewModel.currentFolderID = folderUUID
+                }
+            } else {
+                if let next = nextUnread(in: group) {
+                    viewModel.handleDetailAction(action: .read, for: next, conversionManager: conversionManager)
+                }
+            }
+        case .driveFolder(let entry):
+            break
+        }
+    }
+
+    private func nextUnread(in group: SeriesGroup) -> ConvertedPDF? {
+        let sorted = group.issues.sorted { a, b in
+            let aNum = Int(a.metadata.issueNumber?.filter(\.isNumber) ?? "") ?? 0
+            let bNum = Int(b.metadata.issueNumber?.filter(\.isNumber) ?? "") ?? 0
+            return aNum < bNum
+        }
+        return sorted.first {
+            (ReaderProgressTracker.shared.progress(for: $0.id)?.completionFraction ?? 0) < 0.95
+        } ?? sorted.first
+    }
+
     // MARK: - Job Banner Helpers
     private func jobBannerIcon(_ job: ConversionJobRecord) -> String {
         switch job.status {
@@ -859,7 +1015,8 @@ struct ModernLibraryView: View {
                     onImport: onFolderImport ?? handleDefaultImport,
                     onFolderTap: { uuid in viewModel.currentFolderID = uuid },
                     onDropApplied: handleDropApplied,
-                    isScrolledPastHeader: $isScrolledPastHeader
+                    isScrolledPastHeader: $isScrolledPastHeader,
+                    highlightedItemID: highlightedItemID
                 )
             } else {
                 LibraryGridView(
@@ -874,7 +1031,8 @@ struct ModernLibraryView: View {
                     onImport: onFolderImport ?? handleDefaultImport,
                     onFolderTap: { uuid in viewModel.currentFolderID = uuid },
                     onDropApplied: handleDropApplied,
-                    isScrolledPastHeader: $isScrolledPastHeader
+                    isScrolledPastHeader: $isScrolledPastHeader,
+                    highlightedItemID: highlightedItemID
                 )
             }
         }

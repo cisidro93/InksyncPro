@@ -19,6 +19,7 @@ struct LibraryListView: View {
     let onFolderTap: (UUID?) -> Void
     let onDropApplied: () -> Void
     @Binding var isScrolledPastHeader: Bool
+    let highlightedItemID: String?
 
     // Drop target highlight
     @State private var dropTargetSeriesTitle: String? = nil   // highlights a series row
@@ -341,19 +342,26 @@ struct LibraryListView: View {
 
     // MARK: - Row Sub-views
 
-    /// Top-level @ViewBuilder dispatcher. The switch-inside-ForEach pattern causes
-    /// "generic parameter V could not be inferred" because each branch produces a
-    /// different concrete type. Routing through this @ViewBuilder func resolves it.
     @ViewBuilder
     private func listRow(for item: LibraryListItem) -> some View {
-        switch item {
-        case .series(let group):
-            seriesRow(group: group)
-        case .single(let pdf):
-            singleRow(pdf: pdf)
-        case .driveFolder(let entry):
-            driveFolderRow(entry: entry)
+        let isHighlighted = item.id == highlightedItemID
+        Group {
+            switch item {
+            case .series(let group):
+                seriesRow(group: group)
+            case .single(let pdf):
+                singleRow(pdf: pdf)
+            case .driveFolder(let entry):
+                driveFolderRow(entry: entry)
+            }
         }
+        .scaleEffect(isHighlighted ? 1.02 : 1.0)
+        .shadow(color: Color.inkBlue.opacity(isHighlighted ? 0.4 : 0), radius: isHighlighted ? 6 : 0)
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color.inkBlue.opacity(isHighlighted ? 1.0 : 0), lineWidth: 2)
+        )
+        .animation(.spring(response: 0.25, dampingFraction: 0.7), value: highlightedItemID)
     }
 
     @ViewBuilder

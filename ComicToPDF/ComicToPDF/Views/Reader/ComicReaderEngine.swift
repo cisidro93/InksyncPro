@@ -513,6 +513,7 @@ struct ComicReaderEngine: View {
     @StateObject private var readingRoom = ReadingRoomSession()
     /// Phase 4A: Auto-hide chrome — cancellable idle timer.
     @State private var chromeIdleTask: Task<Void, Never>? = nil
+    @FocusState private var isReaderFocused: Bool
     
     init(pdf: ConvertedPDF, onDismiss: @escaping () -> Void, allBooks: [ConvertedPDF] = []) {
         self.pdf = pdf
@@ -638,6 +639,7 @@ struct ComicReaderEngine: View {
             // On appear, honour the current physical orientation immediately
             // so opening in landscape already shows two pages.
             syncReadingModeToOrientation()
+            isReaderFocused = true
         }
         // Auto two-up: rotate device → automatically flip reading mode so the
         // user doesn't need to discover the mode-toggle button in the chrome.
@@ -698,6 +700,33 @@ struct ComicReaderEngine: View {
                 issueNumber: Int(pdf.metadata.issueNumber ?? "") ?? 1,
                 pageIndex: currentIndex
             )
+        }
+        .focusable()
+        .focused($isReaderFocused)
+        .focusEffectDisabled()
+        .onKeyPress(.leftArrow) {
+            if readingMode == .mangaRTL {
+                nextPage()
+            } else {
+                prevPage()
+            }
+            return .handled
+        }
+        .onKeyPress(.rightArrow) {
+            if readingMode == .mangaRTL {
+                prevPage()
+            } else {
+                nextPage()
+            }
+            return .handled
+        }
+        .onKeyPress(.space) {
+            nextPage()
+            return .handled
+        }
+        .onKeyPress(.escape) {
+            saveProgressAndDismiss()
+            return .handled
         }
     } // closes GeometryReader
 } // end body
@@ -764,6 +793,22 @@ struct ComicReaderEngine: View {
         )
     }
 
+
+    // MARK: - Navigation helpers
+    
+    private func nextPage() {
+        if currentIndex < cache.pageCount - 1 {
+            currentIndex += 1
+        } else {
+            attemptComicSeriesContinuation()
+        }
+    }
+
+    private func prevPage() {
+        if currentIndex > 0 {
+            currentIndex -= 1
+        }
+    }
 
     // MARK: - Series Continuation
 

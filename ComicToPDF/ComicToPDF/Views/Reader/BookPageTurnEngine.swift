@@ -60,6 +60,36 @@ struct BookFlipGesture: View {
                         .allowsHitTesting(false)
                     )
                     .zIndex(1)
+
+                // ── Instant Tap Zones Overlay ──
+                HStack(spacing: 0) {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            guard !isAnimating else { return }
+                            if isMangaRTL {
+                                if canFlipForward() { flipForward(width: geo.size.width) } else { onFlipPastEnd?() }
+                            } else {
+                                if canFlipBack() { flipBack(width: geo.size.width) }
+                            }
+                        }
+                        .frame(width: geo.size.width / 3)
+                    
+                    Spacer()
+                    
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            guard !isAnimating else { return }
+                            if isMangaRTL {
+                                if canFlipBack() { flipBack(width: geo.size.width) }
+                            } else {
+                                if canFlipForward() { flipForward(width: geo.size.width) } else { onFlipPastEnd?() }
+                            }
+                        }
+                        .frame(width: geo.size.width / 3)
+                }
+                .zIndex(2)
             }
             .contentShape(Rectangle())
             .gesture(

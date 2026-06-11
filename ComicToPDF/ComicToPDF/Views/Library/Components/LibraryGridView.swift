@@ -26,6 +26,7 @@ struct LibraryGridView: View {
     /// for the SwiftData @Query async refresh cycle.
     let onDropApplied: () -> Void
     @Binding var isScrolledPastHeader: Bool
+    let highlightedItemID: String?
 
     // Rename series alert state
     @State private var renamingGroup: SeriesGroup? = nil
@@ -81,14 +82,24 @@ struct LibraryGridView: View {
 
     @ViewBuilder
     private func cellFor(_ item: LibraryListItem) -> some View {
-        switch item {
-        case .series(let group):
-            seriesCell(group: group)
-        case .single(let pdf):
-            singleCell(pdf: pdf)
-        case .driveFolder(let entry):
-            driveFolderCell(entry: entry)
+        let isHighlighted = item.id == highlightedItemID
+        Group {
+            switch item {
+            case .series(let group):
+                seriesCell(group: group)
+            case .single(let pdf):
+                singleCell(pdf: pdf)
+            case .driveFolder(let entry):
+                driveFolderCell(entry: entry)
+            }
         }
+        .scaleEffect(isHighlighted ? 1.04 : 1.0)
+        .shadow(color: Color.inkBlue.opacity(isHighlighted ? 0.6 : 0), radius: isHighlighted ? 8 : 0)
+        .overlay(
+            RoundedRectangle(cornerRadius: item.id.hasPrefix("series") ? 16 : 12, style: .continuous)
+                .stroke(Color.inkBlue.opacity(isHighlighted ? 1.0 : 0), lineWidth: 3)
+        )
+        .animation(.spring(response: 0.25, dampingFraction: 0.7), value: highlightedItemID)
     }
 
     private var hPad: CGFloat {
