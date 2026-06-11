@@ -172,14 +172,8 @@ struct LibraryListView: View {
     
     @ViewBuilder
     private func contextMenuContent(_ pdf: ConvertedPDF) -> some View {
-        // --- PRIMARY ACTIONS ---
+        // ── 1. PRIMARY CONSUMPTION & WORKSPACE ACTIONS ──
         Button { onAction(.read, pdf) } label: { Label("Read / Preview", systemImage: "book.pages") }
-        
-        if case .cloud = pdf.sourceMode {
-            // Cloud files download via Cloud & Sync
-        } else {
-            Button { onAction(.convert, pdf) } label: { Label("Convert File", systemImage: "arrow.triangle.2.circlepath") }
-        }
         
         let isPinned = WorkspaceFocusManager.shared.isPinned(pdf)
         Button {
@@ -199,59 +193,23 @@ struct LibraryListView: View {
         
         Divider()
         
-        // --- ORGANIZE SUBMENU ---
+        // ── 2. E-READER DIRECT CONVERT & SEND ──
+        Button { onAction(.sendToKindle, pdf) } label: { Label("Send to Kindle", systemImage: "k.circle.fill") }
+        
+        Divider()
+        
+        // ── 3. GROUPED FUNCTIONAL SUBMENUS ──
+        
+        // --- MANAGE & ORGANIZE ---
         Menu {
             Button { onAction(.rename, pdf) } label: { Label("Rename", systemImage: "pencil") }
             Button { onAction(.addToSeries, pdf) } label: { Label("Add to Series...", systemImage: "books.vertical") }
             if (pdf.metadata.series?.isEmpty == false) || pdf.collectionId != nil {
                 Button { conversionManager.setExplicitSeriesCover(for: pdf) } label: { Label("Set as Series Cover", systemImage: "photo.on.rectangle") }
             }
-        } label: {
-            Label("Organize", systemImage: "folder.badge.gearshape")
-        }
-        
-        // --- CLOUD & SYNC SUBMENU ---
-        Menu {
-            if case .cloud = pdf.sourceMode {
-                let settingsReady = AppSettingsManager.shared.conversionSettings.isConfigured
-                Button { onAction(.convert, pdf) } label: {
-                    Label(
-                        settingsReady ? "Download & Convert" : "Download",
-                        systemImage: settingsReady ? "arrow.down.circle.fill" : "arrow.down.circle"
-                    )
-                }
-            }
-            Button { onAction(.sync, pdf) } label: { Label("Direct Cloud Sync", systemImage: "icloud.and.arrow.up") }
-            if !AppSettingsManager.shared.linkedDrives.isEmpty {
-                Button { onAction(.saveToDrive, pdf) } label: { Label("Save to External Drive…", systemImage: "externaldrive.badge.arrow.down") }
-            }
-        } label: {
-            Label("Cloud & Sync", systemImage: "icloud")
-        }
-        
-        // --- SHARE & EXPORT SUBMENU ---
-        Menu {
-            Button { onAction(.sendToKindle, pdf) } label: { Label("Send to Kindle", systemImage: "k.circle.fill") }
-            Button { onAction(.share, pdf) } label: { Label("Share File", systemImage: "square.and.arrow.up") }
-            Button { onAction(.export, pdf) } label: { Label("Export Options", systemImage: "square.and.arrow.up") }
-        } label: {
-            Label("Share & Export", systemImage: "square.and.arrow.up")
-        }
-        
-        // --- METADATA & PRECISION TOOLS ---
-        Menu {
-            Button { onAction(.covers, pdf) } label: { Label("Edit in Work Area", systemImage: "paintbrush.pointed") }
-            Button { onAction(.editMetadata, pdf) } label: { Label("Edit Metadata & Cover", systemImage: "pencil.and.list.clipboard") }
-            Button { onAction(.fetchMetadata, pdf) } label: { Label("Fetch Metadata", systemImage: "magnifyingglass") }
-            Button { Task { await conversionManager.embedPanels(for: pdf) } } label: { Label("Embed Panels", systemImage: "flame") }
-        } label: {
-            Label("Metadata & Tools", systemImage: "slider.horizontal.3")
-        }
-        
-        Divider()
-        
-        // --- VAULT & PROGRESS ---
-        Menu {
+            
+            Divider()
+            
             Button {
                 ReaderProgressTracker.shared.markComplete(pdfID: pdf.id)
                 if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
@@ -272,11 +230,55 @@ struct LibraryListView: View {
                 }
             } label: { Label("Mark as Unread", systemImage: "circle") }
             
+            Divider()
+            
             Button { onAction(.toggleVault, pdf) } label: { Label(pdf.isPrivate ? "Remove from Vault" : "Move to Vault", systemImage: pdf.isPrivate ? "lock.open" : "lock.fill") }
         } label: {
-            Label("Status & Vault", systemImage: "checkmark.shield")
+            Label("Manage & Organize", systemImage: "folder.badge.gearshape")
         }
         
+        // --- CONVERT & EDIT TOOLS ---
+        Menu {
+            if case .cloud = pdf.sourceMode {
+                // Cloud files download via Cloud & Sync
+            } else {
+                Button { onAction(.convert, pdf) } label: { Label("Convert File", systemImage: "arrow.triangle.2.circlepath") }
+            }
+            Button { onAction(.covers, pdf) } label: { Label("Edit in Work Area", systemImage: "paintbrush.pointed") }
+            Button { onAction(.editMetadata, pdf) } label: { Label("Edit Metadata & Cover", systemImage: "pencil.and.list.clipboard") }
+            Button { onAction(.fetchMetadata, pdf) } label: { Label("Fetch Metadata", systemImage: "magnifyingglass") }
+            Button { Task { await conversionManager.embedPanels(for: pdf) } } label: { Label("Embed Panels", systemImage: "flame") }
+        } label: {
+            Label("Convert & Edit Tools", systemImage: "slider.horizontal.3")
+        }
+        
+        // --- SYNC & SHARE ---
+        Menu {
+            if case .cloud = pdf.sourceMode {
+                let settingsReady = AppSettingsManager.shared.conversionSettings.isConfigured
+                Button { onAction(.convert, pdf) } label: {
+                    Label(
+                        settingsReady ? "Download & Convert" : "Download",
+                        systemImage: settingsReady ? "arrow.down.circle.fill" : "arrow.down.circle"
+                    )
+                }
+            }
+            Button { onAction(.sync, pdf) } label: { Label("Direct Cloud Sync", systemImage: "icloud.and.arrow.up") }
+            if !AppSettingsManager.shared.linkedDrives.isEmpty {
+                Button { onAction(.saveToDrive, pdf) } label: { Label("Save to External Drive…", systemImage: "externaldrive.badge.arrow.down") }
+            }
+            
+            Divider()
+            
+            Button { onAction(.share, pdf) } label: { Label("Share File", systemImage: "square.and.arrow.up") }
+            Button { onAction(.export, pdf) } label: { Label("Export Options", systemImage: "square.and.arrow.up") }
+        } label: {
+            Label("Sync & Share", systemImage: "square.and.arrow.up")
+        }
+        
+        Divider()
+        
+        // ── 4. DESTRUCTIVE ACTIONS ──
         Button(role: .destructive) { onAction(.delete, pdf) } label: { Label("Delete", systemImage: "trash") }
     }
 
