@@ -15,7 +15,7 @@ struct ModernGridFileCell: View {
     @State private var opacity: Double = 0.0
     @State private var isHovered = false
 
-    @AppStorage("mangaBadgeColorHex") private var mangaBadgeColorHex = "#2dd4a0"
+    @AppStorage("mangaBadgeColorHex") private var mangaBadgeColorHex = "#ff5a36"
     @AppStorage("comicBadgeColorHex") private var comicBadgeColorHex = "#3d6fff"
 
     private var readingProgress: Double {
@@ -506,7 +506,7 @@ struct ModernGridSeriesCell: View {
     @State private var opacity: Double = 0.0
     @State private var isHovered = false
 
-    @AppStorage("mangaBadgeColorHex") private var mangaBadgeColorHex = "#2dd4a0"
+    @AppStorage("mangaBadgeColorHex") private var mangaBadgeColorHex = "#ff5a36"
     @AppStorage("comicBadgeColorHex") private var comicBadgeColorHex = "#3d6fff"
     
     private var coverImage: UIImage? {

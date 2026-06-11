@@ -18,8 +18,10 @@ struct SettingsView: View {
 
 
     // Library Typography Themes
-    @AppStorage("mangaBadgeColorHex") private var mangaBadgeColorHex = "#2dd4a0"
+    @AppStorage("mangaBadgeColorHex") private var mangaBadgeColorHex = "#ff5a36"
     @AppStorage("comicBadgeColorHex") private var comicBadgeColorHex = "#3d6fff"
+    @AppStorage("booksBadgeColorHex") private var booksBadgeColorHex = "#14b8a6"
+    @AppStorage("convertedBadgeColorHex") private var convertedBadgeColorHex = "#f5a623"
 
     // Adaptive Learning Engine
     @ObservedObject private var aiManager = AdaptiveLearningManager.shared
@@ -245,7 +247,7 @@ struct SettingsView: View {
                 settingsIcon("paintpalette.fill", color: .pink)
                 ColorPicker("Manga Badge Background", selection: Binding(
                     get: { Color(hex: mangaBadgeColorHex) },
-                    set: { mangaBadgeColorHex = $0.toHex() ?? "#2dd4a0" }
+                    set: { mangaBadgeColorHex = $0.toHex() ?? "#ff5a36" }
                 ))
             }
             
@@ -254,6 +256,22 @@ struct SettingsView: View {
                 ColorPicker("Comic Badge Background", selection: Binding(
                     get: { Color(hex: comicBadgeColorHex) },
                     set: { comicBadgeColorHex = $0.toHex() ?? "#3d6fff" }
+                ))
+            }
+
+            HStack {
+                settingsIcon("paintpalette.fill", color: .pink)
+                ColorPicker("Books Badge Background", selection: Binding(
+                    get: { Color(hex: booksBadgeColorHex) },
+                    set: { booksBadgeColorHex = $0.toHex() ?? "#14b8a6" }
+                ))
+            }
+
+            HStack {
+                settingsIcon("paintpalette.fill", color: .pink)
+                ColorPicker("Converted Badge Background", selection: Binding(
+                    get: { Color(hex: convertedBadgeColorHex) },
+                    set: { convertedBadgeColorHex = $0.toHex() ?? "#f5a623" }
                 ))
             }
             

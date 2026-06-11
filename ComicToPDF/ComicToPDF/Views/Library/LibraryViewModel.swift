@@ -476,11 +476,20 @@ enum ContentShelf: String, CaseIterable, Identifiable {
 
     var accentColor: Color {
         switch self {
-        case .all:    return Theme.text
-        case .comics: return Color(red: 0.25, green: 0.55, blue: 1.0)   // blue
-        case .manga:  return Color(red: 1.0, green: 0.35, blue: 0.25)   // red-orange
-        case .books:  return Color(red: 0.15, green: 0.75, blue: 0.65)  // teal
-        case .converted: return Color(red: 0.95, green: 0.6, blue: 0.1) // amber/orange
+        case .all:
+            return Theme.text
+        case .comics:
+            let hex = UserDefaults.standard.string(forKey: "comicBadgeColorHex") ?? "#3d6fff"
+            return Color(hex: hex)
+        case .manga:
+            let hex = UserDefaults.standard.string(forKey: "mangaBadgeColorHex") ?? "#ff5a36"
+            return Color(hex: hex)
+        case .books:
+            let hex = UserDefaults.standard.string(forKey: "booksBadgeColorHex") ?? "#14b8a6"
+            return Color(hex: hex)
+        case .converted:
+            let hex = UserDefaults.standard.string(forKey: "convertedBadgeColorHex") ?? "#f5a623"
+            return Color(hex: hex)
         }
     }
 }

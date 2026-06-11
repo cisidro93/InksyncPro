@@ -10,7 +10,7 @@ struct ModernFileRow: View {
     @State private var localCover: UIImage? = nil
     
     // ✅ PHASE 7: Dynamic User Aesthetic Colors
-    @AppStorage("mangaBadgeColorHex") private var mangaBadgeColorHex = "#2dd4a0"
+    @AppStorage("mangaBadgeColorHex") private var mangaBadgeColorHex = "#ff5a36"
     @AppStorage("comicBadgeColorHex") private var comicBadgeColorHex = "#3d6fff"
     
     var body: some View {
@@ -183,7 +183,7 @@ struct ModernSeriesRow: View {
     @State private var localCover: UIImage? = nil
     
     // ✅ PHASE 7: Dynamic User Aesthetic Colors
-    @AppStorage("mangaBadgeColorHex") private var mangaBadgeColorHex = "#2dd4a0"
+    @AppStorage("mangaBadgeColorHex") private var mangaBadgeColorHex = "#ff5a36"
     @AppStorage("comicBadgeColorHex") private var comicBadgeColorHex = "#3d6fff"
     
     var body: some View {
