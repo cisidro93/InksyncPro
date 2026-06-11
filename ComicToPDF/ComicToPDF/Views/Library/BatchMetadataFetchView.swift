@@ -120,7 +120,7 @@ class BatchMetadataFetcher: ObservableObject {
                 }
             } catch {
                 groupError = error.localizedDescription
-                aggregatedErrors.append("Error on \\(query): \\(error.localizedDescription)")
+                aggregatedErrors.append("Error on \(query): \(error.localizedDescription)")
                 if let vineError = error as? ComicVineError, case .rateLimited = vineError {
                     aggregatedErrors.append("Aborted remaining queue due to ComicVine rate limits.")
                     break
@@ -169,13 +169,13 @@ class BatchMetadataFetcher: ObservableObject {
                                 }
                                 
                                 let allIssues = volumeIssuesCache[volume.id] ?? []
-                                if let issue = allIssues.first(where: { $0.issue_number == "\\(issueNum)" }) {
+                                if let issue = allIssues.first(where: { $0.issue_number == "\(issueNum)" }) {
                                     applyFullMatch(to: groupIndex, itemIndex: index, volume: volume, issue: issue, issueNum: issueNum)
                                     seriesGroups[groupIndex].items[index].status = .matched
                                     seriesGroups[groupIndex].items[index].message = "Deep Fetch (Cached) matched!"
                                 } else {
                                     try? await Task.sleep(nanoseconds: 1_100_000_000)
-                                    if let issue = try await ComicVineService.shared.getIssue(volumeID: volume.id, issueNumber: "\\(issueNum)", apiKey: apiKey) {
+                                    if let issue = try await ComicVineService.shared.getIssue(volumeID: volume.id, issueNumber: "\(issueNum)", apiKey: apiKey) {
                                         applyFullMatch(to: groupIndex, itemIndex: index, volume: volume, issue: issue, issueNum: issueNum)
                                         volumeIssuesCache[volume.id]?.append(issue)
                                         seriesGroups[groupIndex].items[index].status = .matched
@@ -246,7 +246,7 @@ class BatchMetadataFetcher: ObservableObject {
         seriesGroups[groupIndex].items[itemIndex].pdf.metadata.publisher = volume.publisher?.name
         
         if let num = issueNum {
-            seriesGroups[groupIndex].items[itemIndex].pdf.metadata.issueNumber = "\\(num)"
+            seriesGroups[groupIndex].items[itemIndex].pdf.metadata.issueNumber = "\(num)"
         }
     }
     
@@ -254,7 +254,7 @@ class BatchMetadataFetcher: ObservableObject {
         seriesGroups[groupIndex].items[itemIndex].pdf.metadata.series = volume.name
         seriesGroups[groupIndex].items[itemIndex].pdf.metadata.universalSeriesID = String(volume.id)
         seriesGroups[groupIndex].items[itemIndex].pdf.metadata.volume = volume.name
-        seriesGroups[groupIndex].items[itemIndex].pdf.metadata.issueNumber = "\\(issueNum)"
+        seriesGroups[groupIndex].items[itemIndex].pdf.metadata.issueNumber = "\(issueNum)"
         seriesGroups[groupIndex].items[itemIndex].pdf.metadata.publisher = volume.publisher?.name
         seriesGroups[groupIndex].items[itemIndex].pdf.metadata.universalIssueID = String(issue.id)
         
@@ -332,7 +332,7 @@ struct BatchMetadataFetchView: View {
                 Button("OK", role: .cancel) { }
             } message: {
                 let totalMatched = fetcher.seriesGroups.flatMap { $0.items }.filter { $0.status == .matched }.count
-                Text("\\(totalMatched) perfectly matched.\\n\\(fetcher.aggregatedErrors.count) items had issues or partial matches.")
+                Text("\(totalMatched) perfectly matched.\n\(fetcher.aggregatedErrors.count) items had issues or partial matches.")
             }
         }
     }

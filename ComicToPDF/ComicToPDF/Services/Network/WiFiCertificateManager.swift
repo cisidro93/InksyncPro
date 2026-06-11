@@ -23,7 +23,7 @@ struct WiFiCertificateManager {
         // SecItemCopyMatching returns CFTypeRef (AnyObject), and the dynamic
         // `as! SecIdentity` cast can throw at runtime if the type-ID changes.
         guard CFGetTypeID(identity) == SecIdentityGetTypeID() else { return nil }
-        return unsafeBitCast(identity, to: SecIdentity.self)
+        return unsafeDowncast(identity, to: SecIdentity.self)
     }
 
     // Generates a new P-256 key pair and stores the private key in Keychain.

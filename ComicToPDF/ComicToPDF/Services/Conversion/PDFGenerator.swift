@@ -59,8 +59,7 @@ struct PDFGenerator: Sendable {
                         isOddPage: index % 2 == 0
                     )
                     
-                    let targetSize = targetProfile.resolution ?? optimizedImage.size
-                    fallbackTargetSize = targetSize
+                    let targetSize = optimizedImage.size
                     let pageRect = CGRect(origin: .zero, size: targetSize)
                     
                     context.beginPage(withBounds: pageRect, pageInfo: [:])
