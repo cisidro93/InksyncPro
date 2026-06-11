@@ -34,6 +34,7 @@ struct WorkspaceView: View {
     @EnvironmentObject var conversionManager: ConversionManager
     @Environment(\.dismiss) var dismiss
     @AppStorage("appUIMode") private var appUIMode: AppUIMode = .pro
+    @FocusState private var isFocused: Bool
     
     private var availableModes: [WorkspaceMode] {
         if appUIMode == .pro {
@@ -82,9 +83,33 @@ struct WorkspaceView: View {
             }
             .onAppear {
                 adjustModeIfNeeded()
+                if mode != .active {
+                    isFocused = true
+                }
             }
             .onChange(of: appUIMode) { _, newValue in
                 adjustModeIfNeeded()
+            }
+            .onChange(of: mode) { _, newMode in
+                if newMode != .active {
+                    isFocused = true
+                }
+            }
+            .focusable()
+            .focused($isFocused)
+            .focusEffectDisabled()
+            .onKeyPress(phases: .down) { press in
+                if press.modifiers.contains(.command) {
+                    if press.key == .leftArrow {
+                        switchSegment(direction: -1)
+                        return .handled
+                    }
+                    if press.key == .rightArrow {
+                        switchSegment(direction: 1)
+                        return .handled
+                    }
+                }
+                return .ignored
             }
         }
     }
@@ -152,7 +177,6 @@ struct WorkspaceView: View {
         .buttonStyle(.plain)
         .animation(.spring(response: 0.25, dampingFraction: 0.7), value: mode)
     }
-    
     private func adjustModeIfNeeded() {
         if appUIMode == .pro {
             if mode != .active && mode != .inbox && mode != .convert {
@@ -164,6 +188,17 @@ struct WorkspaceView: View {
             }
         }
     }
+
+    private func switchSegment(direction: Int) {
+        let modes = availableModes
+        guard !modes.isEmpty else { return }
+        if let currentIndex = modes.firstIndex(of: mode) {
+            let nextIndex = (currentIndex + direction + modes.count) % modes.count
+            withAnimation(.spring(response: 0.28, dampingFraction: 0.78)) {
+                mode = modes[nextIndex]
+            }
+        }
+    }
 }
 
 // MARK: - Active Workspace Section Components
@@ -172,6 +207,13 @@ struct ActiveWorkspaceListView: View {
     @EnvironmentObject var conversionManager: ConversionManager
     @ObservedObject private var focusManager = WorkspaceFocusManager.shared
     @State private var searchText = ""
+    @State private var highlightedItemID: UUID? = nil
+    @FocusState private var isListFocused: Bool
+    @FocusState private var isSearchFocused: Bool
+    
+    enum MoveDirection {
+        case up, down
+    }
     
     var filteredPDFs: [ConvertedPDF] {
         let pinned = focusManager.pinnedIDs.compactMap { id in
@@ -280,7 +322,7 @@ struct ActiveWorkspaceListView: View {
                     .padding(.horizontal, 20)
                     .padding(.vertical, 16)
                     
-                    WorkspaceSearchBar(text: $searchText, placeholder: "Search work area...")
+                    WorkspaceSearchBar(text: $searchText, placeholder: "Search work area...", isFocused: $isSearchFocused)
                         .padding(.horizontal, 16)
                         .padding(.bottom, 8)
                     
@@ -303,7 +345,8 @@ struct ActiveWorkspaceListView: View {
                     } else {
                         List {
                             ForEach(filteredPDFs) { pdf in
-                                ActiveWorkspaceRowView(pdf: pdf) {
+                                let isHighlighted = pdf.id == highlightedItemID
+                                ActiveWorkspaceRowView(pdf: pdf, isHighlighted: isHighlighted) {
                                     AppRouter.shared.presentFullScreen(.advancedWorkspace(pdf))
                                 }
                                 .swipeActions(edge: .trailing, allowsFullSwipe: true) {
@@ -323,13 +366,107 @@ struct ActiveWorkspaceListView: View {
                         .scrollContentBackground(.hidden)
                     }
                 }
+                .focusable()
+                .focused($isListFocused)
+                .focusEffectDisabled()
+                .onKeyPress(phases: .down) { press in
+                    if isSearchFocused {
+                        if press.key == .escape {
+                            searchText = ""
+                            isSearchFocused = false
+                            isListFocused = true
+                            return .handled
+                        }
+                        return .ignored
+                    }
+                    
+                    if press.key == .escape {
+                        if highlightedItemID != nil {
+                            highlightedItemID = nil
+                            return .handled
+                        }
+                    }
+                    
+                    if press.key == .upArrow {
+                        moveHighlight(direction: .up)
+                        return .handled
+                    }
+                    
+                    if press.key == .downArrow {
+                        moveHighlight(direction: .down)
+                        return .handled
+                    }
+                    
+                    if press.key == .return || press.key == .space {
+                        if let highlightedItemID = highlightedItemID,
+                           let targetPDF = filteredPDFs.first(where: { $0.id == highlightedItemID }) {
+                            AppRouter.shared.presentFullScreen(.advancedWorkspace(targetPDF))
+                            return .handled
+                        }
+                    }
+                    
+                    if press.key == .delete || press.key == .backspace {
+                        if let highlightedItemID = highlightedItemID,
+                           let targetPDF = filteredPDFs.first(where: { $0.id == highlightedItemID }) {
+                            let items = filteredPDFs
+                            if let idx = items.firstIndex(where: { $0.id == highlightedItemID }) {
+                                if items.count > 1 {
+                                    if idx < items.count - 1 {
+                                        self.highlightedItemID = items[idx + 1].id
+                                    } else {
+                                        self.highlightedItemID = items[idx - 1].id
+                                    }
+                                } else {
+                                    self.highlightedItemID = nil
+                                }
+                            }
+                            focusManager.unpin(targetPDF)
+                            return .handled
+                        }
+                    }
+                    
+                    return .ignored
+                }
+                .onAppear {
+                    isListFocused = true
+                    if highlightedItemID == nil, let first = filteredPDFs.first {
+                        highlightedItemID = first.id
+                    }
+                }
+                .onChange(of: filteredPDFs.map { $0.id }) { _, newIDs in
+                    if let current = highlightedItemID, !newIDs.contains(current) {
+                        highlightedItemID = newIDs.first
+                    }
+                }
             }
+        }
+    }
+    
+    private func moveHighlight(direction: MoveDirection) {
+        let items = filteredPDFs
+        guard !items.isEmpty else { return }
+        
+        if let currentID = highlightedItemID,
+           let currentIndex = items.firstIndex(where: { $0.id == currentID }) {
+            switch direction {
+            case .up:
+                if currentIndex > 0 {
+                    highlightedItemID = items[currentIndex - 1].id
+                }
+            case .down:
+                if currentIndex < items.count - 1 {
+                    highlightedItemID = items[currentIndex + 1].id
+                }
+            }
+        } else {
+            highlightedItemID = items.first?.id
         }
     }
 }
 
 struct ActiveWorkspaceRowView: View {
     let pdf: ConvertedPDF
+    let isHighlighted: Bool
     let action: () -> Void
     @EnvironmentObject var conversionManager: ConversionManager
     
@@ -399,8 +536,11 @@ struct ActiveWorkspaceRowView: View {
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(Color.inkBorderSubtle, lineWidth: 1)
+                    .stroke(isHighlighted ? Color.inkViolet : Color.inkBorderSubtle, lineWidth: isHighlighted ? 2 : 1)
             )
+            .scaleEffect(isHighlighted ? 1.04 : 1.0)
+            .shadow(color: Color.inkViolet.opacity(isHighlighted ? 0.35 : 0), radius: isHighlighted ? 8 : 0, y: isHighlighted ? 3 : 0)
+            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isHighlighted)
         }
         .buttonStyle(.plain)
         .contextMenu {
@@ -416,6 +556,7 @@ struct ActiveWorkspaceRowView: View {
 struct WorkspaceSearchBar: View {
     @Binding var text: String
     var placeholder: String = "Search..."
+    var isFocused: FocusState<Bool>.Binding
     
     var body: some View {
         HStack(spacing: 8) {
@@ -424,6 +565,7 @@ struct WorkspaceSearchBar: View {
                 .foregroundColor(Theme.textSecondary)
             
             TextField(placeholder, text: $text)
+                .focused(isFocused)
                 .font(.system(size: 14))
                 .foregroundColor(Theme.text)
                 .tint(Theme.purple)

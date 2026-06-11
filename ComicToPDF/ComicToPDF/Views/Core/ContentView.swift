@@ -209,7 +209,11 @@ struct ContentView: View {
         }
         .modifier(iPadKeyboardShortcuts(
             selectedTab: $router.selectedTab,
-            showImport: $showingWebExport
+            showImport: $showingWebExport,
+            showingSettingsInspector: $showingSettingsInspector,
+            showingBatchMergeReorder: $showingBatchMergeReorder,
+            pdfToShare: $pdfToShare,
+            pdfToEdit: $pdfToEdit
         ))
         .onChange(of: showingWebExport) { _, showing in
             if showing {
