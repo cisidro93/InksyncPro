@@ -70,7 +70,8 @@ struct EPUBMerger: Sendable {
             let coverXHTML = EPUBManifestBuilder.buildCoverXHTML(coverFilename: coverFilename, isManga: settings.mangaMode)
             try coverXHTML.write(to: textDir.appendingPathComponent("cover.xhtml"), atomically: true, encoding: .utf8)
             manifestItems.append("<item id=\"cover_page\" href=\"text/cover.xhtml\" media-type=\"application/xhtml+xml\"/>")
-            spineItems.append("<itemref idref=\"cover_page\"/>")
+            let coverSpreadTag = settings.mangaMode ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
+            spineItems.append("<itemref idref=\"cover_page\"\(coverSpreadTag)/>")
         }
         
         // 3. Process Each EPUB
@@ -141,12 +142,10 @@ struct EPUBMerger: Sendable {
                     
                     // Apply Dynamic Landscape Spreads Tagging (RTL vs LTR)
                     let spreadTag: String
-                    if globalPageCounter == 1 {
-                        spreadTag = ""
-                    } else if settings.mangaMode {
-                        spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-left\"" : " properties=\"page-spread-right\""
-                    } else {
+                    if settings.mangaMode {
                         spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
+                    } else {
+                        spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-left\"" : " properties=\"page-spread-right\""
                     }
                     spineItems.append("<itemref idref=\"page_\(globalPageIndex)\"\(spreadTag)/>")
                     
@@ -430,7 +429,8 @@ struct EPUBMerger: Sendable {
                 let textDir = targetOESPSDir.appendingPathComponent("text")
                 try coverXHTML.write(to: textDir.appendingPathComponent("cover.xhtml"), atomically: true, encoding: .utf8)
                 destManifest.append("<item id=\"cover_page\" href=\"text/cover.xhtml\" media-type=\"application/xhtml+xml\"/>")
-                destSpine.append("<itemref idref=\"cover_page\"/>")
+                let coverSpreadTag = settings.mangaMode ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
+                destSpine.append("<itemref idref=\"cover_page\"\(coverSpreadTag)/>")
                 return 0 // cover.xhtml is the first spine entry; regular pages follow at globalPageIndex 1+
             }
             return 0
@@ -529,12 +529,10 @@ struct EPUBMerger: Sendable {
                     
                     // Apply Dynamic Landscape Spreads Tagging (RTL vs LTR)
                     let spreadTag: String
-                    if globalPageCounter == 1 {
-                        spreadTag = ""
-                    } else if settings.mangaMode {
-                        spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-left\"" : " properties=\"page-spread-right\""
-                    } else {
+                    if settings.mangaMode {
                         spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
+                    } else {
+                        spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-left\"" : " properties=\"page-spread-right\""
                     }
                     spineItems.append("<itemref idref=\"page_\(globalPageIndex)\"\(spreadTag)/>")
                     
