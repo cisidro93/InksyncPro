@@ -143,9 +143,9 @@ public struct EPUBManifestBuilder {
         // in-app via the PPLReaderView page-turn callback chain.
 
         // CSS rules use only the Kindle-approved fixed-layout subset:
-        // • NO position:fixed (rejected by KF8/KFX as incompatible element → E013)
+        // • NO position:fixed (rejected by Kindle fixed-layout as incompatible element → E013)
         // • NO overflow:hidden on body (not in Kindle CSS subset)
-        // • NO @media amzn-kf8/@media amzn-kfx (proprietary at-rules rejected by Send
+        // • NO @media amzn-kf8 (proprietary at-rules rejected by Send
         //   to Kindle cloud converter's XML validator → E013)
         // • NO @page { size: } (CSS Paged Media L3, rejected by Amazon's cloud validator)
         // • NO object-fit/object-position (not in Kindle CSS subset → E013)

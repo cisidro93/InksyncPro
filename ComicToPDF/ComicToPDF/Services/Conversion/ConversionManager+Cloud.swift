@@ -50,10 +50,7 @@ extension ConversionManager {
     func exportForCloudSync(_ pdf: ConvertedPDF) async -> URL? {
         return await ExportOrchestrator.shared.exportForCloudSync(pdf, manager: self)
     }
-    
-    func exportForKFX(_ pdf: ConvertedPDF) async -> URL? {
-        return await ExportOrchestrator.shared.exportForKFX(pdf, manager: self)
-    }
+
     
     func exportForLocalSideload(_ pdf: ConvertedPDF) async -> URL? {
         return await ExportOrchestrator.shared.exportForLocalSideload(pdf, manager: self)

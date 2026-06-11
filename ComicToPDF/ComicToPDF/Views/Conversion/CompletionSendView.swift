@@ -221,7 +221,7 @@ struct CompletionSendView: View {
                 }
                 // Stub for actual send logic
                 try await Task.sleep(nanoseconds: 2_000_000_000)
-            case .airDrop, .kfxHandoff, .webDAV, .saveToFiles:
+            case .airDrop, .webDAV, .saveToFiles:
                 // Stub for actual network logic
                 try await Task.sleep(nanoseconds: 1_500_000_000)
             }

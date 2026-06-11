@@ -61,7 +61,7 @@ struct EPUBMerger: Sendable {
             try? coverData.write(to: destURL)
             
             // The cover image must carry properties="cover-image" so that the OPF
-            // <meta name="cover" content="cover_img"/> is consistent. Amazon's KFX
+            // <meta name="cover" content="cover_img"/> is consistent. Kindle's
             // ingestor checks that the item referenced by <meta name="cover"> has this
             // property and fails with E999 if it does not. The duplicate is still
             // suppressed because cover.xhtml (first spine item) wraps the image —
@@ -137,7 +137,7 @@ struct EPUBMerger: Sendable {
                     
                     let isFirstPageCover = (globalPageIndex == 1 && activeCoverData == nil)
                     // The cover image (img_1) must carry properties="cover-image" so that the
-                    // OPF <meta name="cover" content="img_1"/> is consistent — Amazon's KFX ingestor
+                    // OPF <meta name="cover" content="img_1"/> is consistent — Kindle's ingestor
                     // checks that the item referenced by <meta name="cover"> has this property and
                     // fails with E999 if it does not. The duplicate-cover problem is suppressed by
                     // page_1.xhtml being the FIRST spine item wrapping img_1.
@@ -539,7 +539,7 @@ struct EPUBMerger: Sendable {
                     
                     let isFirstPageCover = (globalPageIndex == 1 && activeCoverData == nil)
                     // The cover image (img_1) must carry properties="cover-image" so that the
-                    // OPF <meta name="cover" content="img_1"/> is consistent — Amazon's KFX ingestor
+                    // OPF <meta name="cover" content="img_1"/> is consistent — Kindle's ingestor
                     // checks that the item referenced by <meta name="cover"> has this property and
                     // fails with E999 if it does not. The duplicate-cover problem is suppressed by
                     // page_1.xhtml being the FIRST spine item wrapping img_1.

@@ -112,45 +112,7 @@ class ExportOrchestrator {
         }
     }
     
-    // MARK: - KFX Export
-    func exportForKFX(_ pdf: ConvertedPDF, manager: ConversionManager) async -> URL? {
-        TaskEngine.shared.isConverting = true
-        TaskEngine.shared.processingStatus = "Building KFX Package..."
-        TaskEngine.shared.statusMessage = "Extracting images and scripts..."
 
-        defer {
-            TaskEngine.shared.isConverting = false
-            TaskEngine.shared.statusMessage = nil
-            Task { @MainActor in TaskEngine.shared.processingStatus = "" }
-        }
-
-        // ── Cloud-resolve gate ────────────────────────────────────────────────────
-        let localSourceURL: URL
-        let needsSourceCleanup: Bool
-        do {
-            (localSourceURL, needsSourceCleanup) = try await CloudDownloadManager.shared.resolveLocalURL(for: pdf)
-        } catch {
-            Logger.shared.log("❌ KFX Export: Could not resolve source — \(error.localizedDescription)", category: "Export", type: .error)
-            return nil
-        }
-        defer { if needsSourceCleanup { try? FileManager.default.removeItem(at: localSourceURL) } }
-
-        do {
-            let converter = CBZToEPUBConverter()
-            let outputURL = try await converter.buildKFXPackage(
-                sourceURL: localSourceURL,
-                settings: AppSettingsManager.shared.conversionSettings,
-                metadata: pdf.metadata,
-                progress: { @Sendable progress in
-                    Task { @MainActor in TaskEngine.shared.conversionProgress = progress }
-                }
-            )
-            return outputURL
-        } catch {
-            Logger.shared.log("❌ KFX Export Failed: \(error.localizedDescription)", category: "Export", type: .error)
-            return nil
-        }
-    }
     
     // MARK: - Local Sideload Export
     func exportForLocalSideload(_ pdf: ConvertedPDF, manager: ConversionManager) async -> URL? {

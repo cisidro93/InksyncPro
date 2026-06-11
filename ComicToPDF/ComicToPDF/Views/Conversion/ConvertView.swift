@@ -409,18 +409,18 @@ struct CalibreGuideView: View {
                 VStack(alignment: .leading, spacing: 20) {
 
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Sideloading Panel View to Kindle")
+                        Text("Sideloading to Kindle & E-Readers")
                             .font(.title2.bold())
-                        Text("Due to recent Kindle firmware updates (5.19.2+), standard USB transfers no longer process advanced EPUB features directly on the device. Follow these steps to ensure Panel View works flawlessly.")
+                        Text("Follow these steps to transfer your converted books to your Kindle or other e-readers using Calibre.")
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                     }
                     .padding(.bottom, 10)
 
-                    guideStep(number: 1, title: "Install Calibre & KFX Plugin", description: "Download the free library manager 'Calibre' on your computer. Inside Calibre, go to Preferences → Plugins → Get new plugins, and install the 'KFX Output' plugin.", icon: "gearshape.2.fill")
+                    guideStep(number: 1, title: "Install Calibre", description: "Download the free library manager 'Calibre' on your computer.", icon: "gearshape.2.fill")
                     guideStep(number: 2, title: "Export to Computer", description: "Use the 'Export' button in Inksync Pro to save your translated EPUB to iCloud Drive, or Share it directly to your Mac.", icon: "macbook.and.iphone")
-                    guideStep(number: 3, title: "Convert to KFX", description: "Drag the EPUB into Calibre. Select the book, click 'Convert books', and set the top-right Output Format to 'KFX'. Click OK.", icon: "arrow.triangle.2.circlepath")
-                    guideStep(number: 4, title: "Send via USB", description: "Connect your Kindle via USB. In Calibre, click 'Send to device'. The KFX file will carry all Panel View metadata and render natively on your Kindle.", icon: "cable.connector")
+                    guideStep(number: 3, title: "Add to Calibre", description: "Drag the EPUB file into your Calibre library interface.", icon: "arrow.triangle.2.circlepath")
+                    guideStep(number: 4, title: "Send via USB", description: "Connect your Kindle or e-reader via USB. In Calibre, click 'Send to device' to copy it directly to your device.", icon: "cable.connector")
 
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {

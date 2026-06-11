@@ -174,35 +174,6 @@ struct AddDeviceSheet: View {
                         }
 
                         // ── Desktop Setup Help Card ─────────────────────────
-                        if transferMethod == .kfxHandoff {
-                            VStack(alignment: .leading, spacing: 8) {
-                                HStack(spacing: 8) {
-                                    Image(systemName: "desktopcomputer")
-                                        .foregroundColor(Color.inkAmber)
-                                        .font(.system(size: 18))
-                                    Text("Desktop Setup Required")
-                                        .font(.system(size: 15, weight: .bold))
-                                        .foregroundColor(.inkTextPrimary)
-                                }
-                                
-                                Text("KFX layout conversion requires a desktop assistant to render advanced Kindle typography.")
-                                    .font(.system(size: 13))
-                                    .foregroundColor(.inkTextSecondary)
-                                    .lineSpacing(3)
-                                
-                                Text("Prerequisites: Kindle Previewer 3, Calibre, and the KFX Output plugin installed on your PC or Mac.")
-                                    .font(.system(size: 12, weight: .medium))
-                                    .foregroundColor(.inkTextTertiary)
-                                    .lineSpacing(2)
-                            }
-                            .padding()
-                            .background(Color.inkAmber.opacity(0.08))
-                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                    .stroke(Color.inkAmber.opacity(0.2), lineWidth: 1)
-                            )
-                        }
                     }
                     .padding(24)
                 }

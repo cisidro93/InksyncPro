@@ -399,7 +399,6 @@ struct DeviceRow: View {
         switch device.transferMethod {
         case .airDrop:        return "airplayvideo"
         case .webDAV:         return "server.rack"
-        case .kfxHandoff:     return "desktopcomputer"
         case .sendToKindle:   return "envelope.fill"
         case .saveToFiles:    return "folder.fill"
         }

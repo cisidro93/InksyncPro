@@ -523,7 +523,7 @@ class PanelViewEPUBConverter {
         <?xml version="1.0" encoding="UTF-8"?>
         <!DOCTYPE html>
         <!-- Fix 1: xmlns:epub required for EPUB 3 XHTML Content Documents compliance.
-             Without it the KFX ingestor flags a structural mismatch (E013). -->
+             Without it the Kindle ingestor flags a structural mismatch (E013). -->
         <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="\(lang)" xml:lang="\(lang)">
           <head>
             <title>Page \(pageNum)</title>
