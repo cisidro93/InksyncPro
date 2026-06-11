@@ -47,10 +47,41 @@ struct LibraryGridView: View {
         }
     }
 
-    private var gridColumns: [GridItem] {
-        let colSpacing: CGFloat = hSizeClass == .regular ? 16 : 10
-        let colCount = hSizeClass == .regular ? 5 : 3
-        return Array(repeating: GridItem(.flexible(), spacing: colSpacing), count: colCount)
+    private var colCount: Int {
+        hSizeClass == .regular ? 5 : 3
+    }
+
+    private var colSpacing: CGFloat {
+        hSizeClass == .regular ? 16 : 10
+    }
+
+    private func chunkedItems(_ source: [LibraryListItem]) -> [[LibraryListItem]] {
+        var chunks: [[LibraryListItem]] = []
+        var currentChunk: [LibraryListItem] = []
+        let limit = colCount
+        for item in source {
+            currentChunk.append(item)
+            if currentChunk.count == limit {
+                chunks.append(currentChunk)
+                currentChunk = []
+            }
+        }
+        if !currentChunk.isEmpty {
+            chunks.append(currentChunk)
+        }
+        return chunks
+    }
+
+    @ViewBuilder
+    private func cellFor(_ item: LibraryListItem) -> some View {
+        switch item {
+        case .series(let group):
+            seriesCell(group: group)
+        case .single(let pdf):
+            singleCell(pdf: pdf)
+        case .driveFolder(let entry):
+            driveFolderCell(entry: entry)
+        }
     }
 
     private var hPad: CGFloat {
@@ -93,22 +124,33 @@ struct LibraryGridView: View {
 
                             // Recently Added banner removed to declutter workspace
 
-                            LazyVGrid(
-                                columns: gridColumns,
-                                spacing: hSizeClass == .regular ? 24 : 16
-                            ) {
-                                ForEach(items) { item in
-                                    switch item {
-                                    case .series(let group):
-                                        seriesCell(group: group)
-                                    case .single(let pdf):
-                                        singleCell(pdf: pdf)
-                                    case .driveFolder(let entry):
-                                        driveFolderCell(entry: entry)
+                            let chunks = chunkedItems(items)
+                            LazyVStack(spacing: 24) {
+                                ForEach(0..<chunks.count, id: \.self) { chunkIndex in
+                                    let rowItems = chunks[chunkIndex]
+                                    
+                                    VStack(spacing: 8) {
+                                        HStack(alignment: .bottom, spacing: colSpacing) {
+                                            ForEach(rowItems) { item in
+                                                cellFor(item)
+                                                    .id(item.id)
+                                                    .frame(maxWidth: .infinity)
+                                            }
+                                            
+                                            if rowItems.count < colCount {
+                                                ForEach(0..<(colCount - rowItems.count), id: \.self) { _ in
+                                                    Spacer()
+                                                        .frame(maxWidth: .infinity)
+                                                }
+                                            }
+                                        }
+                                        .padding(.horizontal, hPad)
+                                        
+                                        ShelfLineView(accentColor: tapAction == .read ? Color.inkBlue : Color.inkOrange)
+                                            .padding(.horizontal, hPad / 2)
                                     }
                                 }
                             }
-                            .padding(.horizontal, hPad)
                             .padding(.top, 12)
                             .padding(.bottom, 120)   // overshoots tab bar + home indicator
                         }

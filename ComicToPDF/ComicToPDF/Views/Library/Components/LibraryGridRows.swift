@@ -11,6 +11,9 @@ struct ModernGridFileCell: View {
 
     @State private var localCover: UIImage? = nil
     @State private var shimmerPhase: CGFloat = -1
+    @State private var scale: CGFloat = 0.85
+    @State private var opacity: Double = 0.0
+    @State private var isHovered = false
 
     @AppStorage("mangaBadgeColorHex") private var mangaBadgeColorHex = "#2dd4a0"
     @AppStorage("comicBadgeColorHex") private var comicBadgeColorHex = "#3d6fff"
@@ -291,6 +294,24 @@ struct ModernGridFileCell: View {
         .cornerRadius(12)
         .contentShape(Rectangle())
         .hoverEffect(.lift)
+        .scaleEffect(scale)
+        .opacity(opacity)
+        .rotation3DEffect(
+            .degrees(isHovered && hSizeClass == .regular ? 5 : 0),
+            axis: (x: 0.0, y: 1.0, z: 0.0),
+            perspective: 0.5
+        )
+        .onAppear {
+            withAnimation(.spring(response: 0.45, dampingFraction: 0.72, blendDuration: 0)) {
+                scale = 1.0
+                opacity = 1.0
+            }
+        }
+        .onHover { hovering in
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                isHovered = hovering
+            }
+        }
         .task(id: pdf.id) {
             let key = pdf.id.uuidString as NSString
 
@@ -475,11 +496,15 @@ struct ModernGridSeriesCell: View {
     let isSelected: Bool
     let isBatch: Bool
     @EnvironmentObject var conversionManager: ConversionManager
+    @Environment(\.horizontalSizeClass) private var hSizeClass
 
     @State private var localCover: UIImage? = nil
     // Cached progress — computed in .task, not in body to avoid per-render disk reads
     @State private var cachedReadCount: Int = 0
     @State private var cachedNewCount: Int = 0
+    @State private var scale: CGFloat = 0.85
+    @State private var opacity: Double = 0.0
+    @State private var isHovered = false
 
     @AppStorage("mangaBadgeColorHex") private var mangaBadgeColorHex = "#2dd4a0"
     @AppStorage("comicBadgeColorHex") private var comicBadgeColorHex = "#3d6fff"
@@ -598,6 +623,24 @@ struct ModernGridSeriesCell: View {
         .cornerRadius(12)
         .contentShape(Rectangle())
         .hoverEffect(.lift)
+        .scaleEffect(scale)
+        .opacity(opacity)
+        .rotation3DEffect(
+            .degrees(isHovered && hSizeClass == .regular ? 5 : 0),
+            axis: (x: 0.0, y: 1.0, z: 0.0),
+            perspective: 0.5
+        )
+        .onAppear {
+            withAnimation(.spring(response: 0.45, dampingFraction: 0.72, blendDuration: 0)) {
+                scale = 1.0
+                opacity = 1.0
+            }
+        }
+        .onHover { hovering in
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                isHovered = hovering
+            }
+        }
         // Throttled loader — gets the cover of the series' issue #1
         .task(id: group.id) {
             // 1. Build progress map once — 1 read per issue instead of 2.

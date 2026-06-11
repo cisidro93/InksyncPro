@@ -656,6 +656,13 @@ struct ModernLibraryView: View {
             // The Omni-Dock now handles all navigation and filtering.
             Spacer().frame(height: 60) // Top padding to prevent overlap with the status bar and branding
 
+            // Apple Books-style persisted Content Shelf tab strip
+            ContentShelfSelector(
+                selected: $viewModel.contentShelf,
+                counts: contentShelfCounts
+            )
+            .padding(.bottom, 12)
+
 
             if !dismissCharacterReviewBanner, MetadataMatchService.shared.activeClusters.contains(where: {
                 if case .matched = $0.status { return false }
@@ -744,6 +751,34 @@ struct ModernLibraryView: View {
     // PERF D-H2: reviewCount moved to @State (cachedReviewCount), rebuilt in
     // rebuildNativeCache(). Left as a private accessor for any legacy call sites.
     private var reviewCount: Int { cachedReviewCount }
+
+    private var contentShelfCounts: [ContentShelf: Int] {
+        var counts: [ContentShelf: Int] = [.all: 0, .comics: 0, .manga: 0, .books: 0, .converted: 0]
+        
+        counts[.all] = cachedVisiblePDFs.count
+        
+        for pdf in cachedVisiblePDFs {
+            let nameLower = pdf.name.lowercased()
+            let isConverted = pdf.lastOutputFormat != nil ||
+                              pdf.url.path.contains("/Merged/") ||
+                              nameLower.contains("_converted") ||
+                              nameLower.contains("go merge")
+            
+            if isConverted {
+                counts[.converted, default: 0] += 1
+            }
+            
+            if pdf.contentType == .comic && !(pdf.metadata.isManga ?? false) {
+                counts[.comics, default: 0] += 1
+            } else if pdf.contentType == .manga || (pdf.metadata.isManga ?? false) {
+                counts[.manga, default: 0] += 1
+            } else if pdf.contentType == .book {
+                counts[.books, default: 0] += 1
+            }
+        }
+        
+        return counts
+    }
 
     @ViewBuilder
     private var dailyBriefCard: some View {

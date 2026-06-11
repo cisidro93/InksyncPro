@@ -24,6 +24,7 @@ struct PrecisionCanvasView: View {
     // Geometry State
     @State private var dragStart:  NormalizedCoordinate?
     @State private var currentDragRect: NormalizedRect?
+    @State private var guideOpacity: Double = 0.0
     
     init(pdf: ConvertedPDF, pageIndex: Binding<Int>, totalCount: Int, conversionManager: ConversionManager) {
         self.pdf = pdf
@@ -76,6 +77,17 @@ struct PrecisionCanvasView: View {
             PageModelStore.shared.savePageModel(editorState.pageModel, for: pdf.id)
             // ✅ Clean up temporary files when closing editor
             conversionManager.endSession()
+        }
+        .onChange(of: activeSnapGuides) { _, newValue in
+            if !newValue.isEmpty {
+                withAnimation(.easeIn(duration: 0.15)) {
+                    guideOpacity = 1.0
+                }
+            } else {
+                withAnimation(.easeOut(duration: 0.2)) {
+                    guideOpacity = 0.0
+                }
+            }
         }
     }
 
@@ -328,19 +340,25 @@ struct PrecisionCanvasView: View {
                 let s = CoordinateConverter.denormalize(point: NormalizedCoordinate(x: guide.type == .vertical ? guide.value : 0, y: guide.type == .horizontal ? guide.value : 0), in: displayedRect)
                 let e = CoordinateConverter.denormalize(point: NormalizedCoordinate(x: guide.type == .vertical ? guide.value : 1000, y: guide.type == .horizontal ? guide.value : 1000), in: displayedRect)
                 var p = Path(); p.move(to: s); p.addLine(to: e)
-                context.stroke(p, with: .color(.cyan), lineWidth: 2)
-                context.stroke(p, with: .color(.cyan.opacity(0.5)), lineWidth: 4)
+                context.stroke(p, with: .color(.cyan.opacity(guideOpacity)), lineWidth: 2)
+                context.stroke(p, with: .color(.cyan.opacity(guideOpacity * 0.5)), lineWidth: 4)
             }
             // Drag / Selection Handles
             if let dragRect = currentDragRect {
                 let rect = CoordinateConverter.denormalize(rect: dragRect, in: displayedRect)
                 context.stroke(Path(rect), with: .color(.white), lineWidth: 1)
                 if activeHandle != nil {
-                    for h in getHandleRects(for: rect) { context.fill(Path(h), with: .color(.white)); context.stroke(Path(h), with: .color(.black), lineWidth: 1) }
+                    for h in getHandleVisualRects(for: rect) {
+                        context.fill(Path(h), with: .color(.white))
+                        context.stroke(Path(h), with: .color(.black), lineWidth: 1)
+                    }
                 }
             } else if let idx = editorState.selectedPanelIndex {
                 let rect = CoordinateConverter.denormalize(rect: editorState.pageModel.panels[idx], in: displayedRect)
-                for h in getHandleRects(for: rect) { context.fill(Path(h), with: .color(.white)); context.stroke(Path(h), with: .color(.blue), lineWidth: 1) }
+                for h in getHandleVisualRects(for: rect) {
+                    context.fill(Path(h), with: .color(.white))
+                    context.stroke(Path(h), with: .color(.blue), lineWidth: 1.5)
+                }
             }
             // Anchor Tool
             if selectedTool == .anchor, let dragRect = currentDragRect {
@@ -356,18 +374,31 @@ struct PrecisionCanvasView: View {
     private var devWatermarkOverlay: some View {
         if AppSettingsManager.shared.conversionSettings.showEditorDebug {
             let sysTag = editorState.pageModel.coordinateSystem.rawValue
-            VStack(alignment: .trailing, spacing: 2) {
-                Text("coords: \(sysTag)")
-                    .font(.system(size: 9, weight: .bold, design: .monospaced))
-                    .foregroundColor(.cyan)
-                Text("\(editorState.pageModel.panels.count) panels · \(editorState.pageModel.proposedPanels.count) proposed")
-                    .font(.system(size: 9, weight: .regular, design: .monospaced))
+            VStack(alignment: .trailing, spacing: 3) {
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(Color.cyan)
+                        .frame(width: 4, height: 4)
+                        .symbolEffect(.pulse, isActive: true)
+                    Text("COORDS: \(sysTag.uppercased())")
+                        .font(.system(size: 8, weight: .bold, design: .monospaced))
+                        .foregroundColor(.cyan)
+                }
+                Text("\(editorState.pageModel.panels.count) PANELS / \(editorState.pageModel.proposedPanels.count) AI")
+                    .font(.system(size: 8, weight: .bold, design: .monospaced))
                     .foregroundColor(.cyan.opacity(0.8))
             }
-            .padding(6)
-            .background(.black.opacity(0.55))
-            .cornerRadius(6)
-            .padding(8)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.black.opacity(0.75))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .stroke(Color.cyan.opacity(0.3), lineWidth: 1)
+                    )
+            )
+            .padding(12)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
             .allowsHitTesting(false)
         }
@@ -379,7 +410,7 @@ struct PrecisionCanvasView: View {
         if AppSettingsManager.shared.conversionSettings.showEditorDebug {
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 2) {
+                    LazyVStack(alignment: .leading, spacing: 3) {
                         ForEach(Array(editorState.debugLog.suffix(20).enumerated()), id: \.offset) { _, entry in
                             Text(entry)
                                 .font(.system(size: 8, weight: .regular, design: .monospaced))
@@ -391,12 +422,18 @@ struct PrecisionCanvasView: View {
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
-                    .padding(6)
+                    .padding(8)
                 }
                 .frame(width: min(geoWidth * 0.45, 280), height: 110)
-                .background(.black.opacity(0.65))
-                .cornerRadius(8)
-                .padding(8)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Color.black.opacity(0.80))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .stroke(Color.white.opacity(0.15), lineWidth: 1)
+                        )
+                )
+                .padding(12)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
                 .allowsHitTesting(false)
                 .onChange(of: editorState.debugLog.count) { _, _ in
@@ -615,8 +652,22 @@ struct PreviewMaskShape: Shape {
 }
     
     // MARK: - Helper for Handles
-    private func getHandleRects(for rect: CGRect) -> [CGRect] {
-        let size: CGFloat = 32 // Tripped size for explicit Pencil touch grabbing
+    private func getHandleHitRects(for rect: CGRect) -> [CGRect] {
+        let size: CGFloat = 32 // Touch target size
+        return [
+            CGRect(x: rect.minX - size/2, y: rect.minY - size/2, width: size, height: size), // TopLeft 0
+            CGRect(x: rect.midX - size/2, y: rect.minY - size/2, width: size, height: size), // TopEdge 1
+            CGRect(x: rect.maxX - size/2, y: rect.minY - size/2, width: size, height: size), // TopRight 2
+            CGRect(x: rect.maxX - size/2, y: rect.midY - size/2, width: size, height: size), // RightEdge 3
+            CGRect(x: rect.maxX - size/2, y: rect.maxY - size/2, width: size, height: size),  // BottomRight 4
+            CGRect(x: rect.midX - size/2, y: rect.maxY - size/2, width: size, height: size), // BottomEdge 5
+            CGRect(x: rect.minX - size/2, y: rect.maxY - size/2, width: size, height: size), // BottomLeft 6
+            CGRect(x: rect.minX - size/2, y: rect.midY - size/2, width: size, height: size) // LeftEdge 7
+        ]
+    }
+
+    private func getHandleVisualRects(for rect: CGRect) -> [CGRect] {
+        let size: CGFloat = 10 // Sleek visual size
         return [
             CGRect(x: rect.minX - size/2, y: rect.minY - size/2, width: size, height: size), // TopLeft 0
             CGRect(x: rect.midX - size/2, y: rect.minY - size/2, width: size, height: size), // TopEdge 1
@@ -630,7 +681,7 @@ struct PreviewMaskShape: Shape {
     }
     
     private func hitTestHandle(at point: CGPoint, for rect: CGRect) -> ResizeHandle? {
-        let handles = getHandleRects(for: rect)
+        let handles = getHandleHitRects(for: rect)
         // Hit-testing in reverse order might be useful for overlaps, but list is explicit
         if handles[0].contains(point) { return .topLeft }
         if handles[1].contains(point) { return .topEdge }
