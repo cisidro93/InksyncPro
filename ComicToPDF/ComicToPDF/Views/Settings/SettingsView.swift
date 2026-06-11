@@ -357,6 +357,10 @@ struct SettingsView: View {
                     settingsIcon("character.book.closed.fill", color: .purple)
                     Toggle("Embed Character Glossary", isOn: $settingsManager.conversionSettings.embedCharacterGlossary)
                 }
+                HStack {
+                    settingsIcon("book.double.fill", color: .purple)
+                    Toggle("Link Cover Page as Spread", isOn: $settingsManager.conversionSettings.linkCoverAsSpread)
+                }
             }
             
             HStack {

@@ -84,6 +84,7 @@ struct FileMergeView: View {
                 Section(header: Text("Output Options")) {
                     TextField("Collection Name (e.g., My Omnibus)", text: $viewModel.outputName)
                     Toggle("Manga Mode (Right-to-Left)", isOn: $viewModel.mangaMode)
+                    Toggle("Link Cover Page as Spread", isOn: $settingsManager.conversionSettings.linkCoverAsSpread)
                     
                     Picker("Target Device", selection: $settingsManager.conversionSettings.targetDeviceProfile) {
                         ForEach(TargetDeviceProfile.allCases) { device in

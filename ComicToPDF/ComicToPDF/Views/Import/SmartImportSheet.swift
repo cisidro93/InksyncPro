@@ -70,6 +70,18 @@ class SmartImportViewModel: ObservableObject {
             let detected = SeriesNameDetector.detect(from: sourceURL.lastPathComponent)
             seriesName = detected.seriesName
             volumeNumber = detected.issueNumber.map(String.init) ?? ""
+            
+            let filenameLower = sourceURL.lastPathComponent.lowercased()
+            if filenameLower.contains("manga") || filenameLower.contains("chapter") || filenameLower.contains("ch.") || filenameLower.contains("raw") {
+                isManga = true
+                detectedIsManga = true
+            } else if filenameLower.contains("issue") || filenameLower.contains("comic") || filenameLower.contains("marvel") || filenameLower.contains("dc") {
+                isManga = false
+                detectedIsManga = false
+            } else {
+                isManga = AppSettingsManager.shared.conversionSettings.mangaMode
+                detectedIsManga = false
+            }
         }
 
         // 3. Series memory (SwiftData fetch — must stay on MainActor, context is not Sendable)

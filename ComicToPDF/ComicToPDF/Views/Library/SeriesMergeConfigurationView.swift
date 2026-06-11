@@ -52,6 +52,7 @@ struct SeriesMergeConfigurationView: View {
                         Section(header: Text("Output Volume Configuration"), footer: Text("The merged file will automatically be assigned to the current series.")) {
                             TextField("New Volume Name (e.g., Volume 1)", text: $viewModel.outputName)
                             Toggle("Manga Mode (Right-to-Left)", isOn: $viewModel.mangaMode)
+                            Toggle("Link Cover Page as Spread", isOn: $settingsManager.conversionSettings.linkCoverAsSpread)
                             
                             Picker("Image Quality", selection: $settingsManager.conversionSettings.compressionQuality) {
                                 ForEach(CompressionPreset.allCases, id: \.self) { preset in

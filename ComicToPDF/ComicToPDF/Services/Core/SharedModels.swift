@@ -584,6 +584,7 @@ struct ConversionSettings: Codable, Equatable, Sendable {
     var splitSpreads: Bool = false // âœ… NEW: Landscape Double-Page Split for E-Ink
     var trimMargins: Bool = false
     var embedCharacterGlossary: Bool = true // ✅ NEW: Toggle to append glossary page for Kindle
+    var linkCoverAsSpread: Bool = false // ✅ NEW: Pair Cover Page with Page 2 as a spread
 
 
     /// Returns `true` when the user has changed at least one meaningful conversion
@@ -599,6 +600,7 @@ struct ConversionSettings: Codable, Equatable, Sendable {
         trimMargins                         ||
         targetDeviceProfile != .original    ||
         bindingMarginOffset  != 0           ||
+        linkCoverAsSpread                   ||
         !embedCharacterGlossary
     }
     var splitMode: FileSizeSplitMode = .none
@@ -737,7 +739,7 @@ struct ConversionSettings: Codable, Equatable, Sendable {
     enum CodingKeys: String, CodingKey {
         // Core conversion settings
         case outputFormat, compressionQuality, optimizeForDevice, targetDeviceProfile
-        case mangaMode, enablePanelSplit, splitWebtoon, splitSpreads, trimMargins, embedCharacterGlossary
+        case mangaMode, enablePanelSplit, splitWebtoon, splitSpreads, trimMargins, embedCharacterGlossary, linkCoverAsSpread
         case splitMode, enableBackgroundQueue, textSize, panelEditorMode
         case bindingMarginOffset, bindingMarginSide, showEditorDebug
         case readingPrefetchLimit
@@ -766,6 +768,7 @@ struct ConversionSettings: Codable, Equatable, Sendable {
         splitSpreads = try container.decodeIfPresent(Bool.self, forKey: .splitSpreads) ?? false
         trimMargins = try container.decodeIfPresent(Bool.self, forKey: .trimMargins) ?? false
         embedCharacterGlossary = try container.decodeIfPresent(Bool.self, forKey: .embedCharacterGlossary) ?? true
+        linkCoverAsSpread = try container.decodeIfPresent(Bool.self, forKey: .linkCoverAsSpread) ?? false
         splitMode = try container.decode(FileSizeSplitMode.self, forKey: .splitMode)
         enableBackgroundQueue = try container.decodeIfPresent(Bool.self, forKey: .enableBackgroundQueue) ?? true
         epubSettings = try container.decode(EPUBSettings.self, forKey: .epubSettings)
@@ -816,6 +819,7 @@ struct ConversionSettings: Codable, Equatable, Sendable {
         try container.encode(splitSpreads, forKey: .splitSpreads)
         try container.encode(trimMargins, forKey: .trimMargins)
         try container.encode(embedCharacterGlossary, forKey: .embedCharacterGlossary)
+        try container.encode(linkCoverAsSpread, forKey: .linkCoverAsSpread)
         try container.encode(splitMode, forKey: .splitMode)
         try container.encode(enableBackgroundQueue, forKey: .enableBackgroundQueue)
         try container.encode(epubSettings, forKey: .epubSettings)

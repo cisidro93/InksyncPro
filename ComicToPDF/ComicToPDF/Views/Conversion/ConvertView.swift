@@ -180,6 +180,22 @@ struct ConvertView: View {
                             .tint(.inkBlue)
                             .disabled(conversionManager.isConverting)
                     }
+                    Divider().overlay(Color.inkBorderSubtle)
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Link Cover Page as Spread")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundColor(.inkTextPrimary)
+                            Text("Pairs Cover Page with Page 2 as a spread")
+                                .font(.system(size: 12))
+                                .foregroundColor(.inkTextSecondary)
+                        }
+                        Spacer()
+                        Toggle("", isOn: $settingsManager.conversionSettings.linkCoverAsSpread)
+                            .labelsHidden()
+                            .tint(.inkBlue)
+                            .disabled(conversionManager.isConverting)
+                    }
                 }
 
                 // MARK: Status Message

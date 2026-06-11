@@ -47,6 +47,8 @@ struct BatchMergeReorderView: View {
                             
                             Toggle("E-Ink High Contrast Filter", isOn: $settingsManager.conversionSettings.optimizeForDevice)
                             
+                            Toggle("Link Cover Page as Spread", isOn: $settingsManager.conversionSettings.linkCoverAsSpread)
+                            
                             Picker("Image Quality", selection: $settingsManager.conversionSettings.compressionQuality) {
                                 ForEach(CompressionPreset.allCases, id: \.self) { preset in
                                     Text(preset.rawValue).tag(preset)

@@ -276,7 +276,12 @@ struct CBZToEPUBConverter: Sendable {
             let coverXHTML = EPUBManifestBuilder.buildCoverXHTML(coverFilename: coverFilename, isManga: isManga)
             try coverXHTML.write(to: textDir.appendingPathComponent("cover.xhtml"), atomically: true, encoding: .utf8)
             manifestItems.append("<item id=\"cover-page\" href=\"text/cover.xhtml\" media-type=\"application/xhtml+xml\"/>")
-            let coverSpreadTag = isManga ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
+            let coverSpreadTag: String
+            if settings.linkCoverAsSpread {
+                coverSpreadTag = isManga ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
+            } else {
+                coverSpreadTag = ""
+            }
             spineItems.append("<itemref idref=\"cover-page\"\(coverSpreadTag)/>")
             hasBadgedCover = true
         }
@@ -371,12 +376,24 @@ struct CBZToEPUBConverter: Sendable {
             
             // Universally Apply Advanced Landscape Spread Tagging (RTL vs LTR)
             let spreadTag: String
-            if isManga {
-                // RTL Manga Sequence: Cover (page 1) is Right, Page 2 is Left, Page 3 is Right
-                spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
+            if settings.linkCoverAsSpread {
+                if isManga {
+                    // RTL Manga Sequence: Cover (page 1) is Right, Page 2 is Left, Page 3 is Right
+                    spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
+                } else {
+                    // LTR Western Sequence: Cover (page 1) is Left, Page 2 is Right, Page 3 is Left
+                    spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-left\"" : " properties=\"page-spread-right\""
+                }
             } else {
-                // LTR Western Sequence: Cover (page 1) is Left, Page 2 is Right, Page 3 is Left
-                spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-left\"" : " properties=\"page-spread-right\""
+                if globalPageCounter == 1 {
+                    spreadTag = "" // Cover stands alone centered
+                } else if isManga {
+                    // RTL Manga Sequence: Page 2 is Right, Page 3 is Left
+                    spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-left\"" : " properties=\"page-spread-right\""
+                } else {
+                    // LTR Western Sequence: Page 2 is Left, Page 3 is Right
+                    spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
+                }
             }
             
             spineItems.append("<itemref idref=\"page_\(chunkIndex)\"\(spreadTag)/>")

@@ -22,20 +22,25 @@ struct OmniDockView: View {
     @EnvironmentObject var settingsManager: AppSettingsManager
     @AppStorage("libraryTapAction") private var tapAction: LibraryTapAction = .read
     
-    @State private var offset: CGSize = .zero
-    @State private var position: DockPosition = .bottom
-    @Environment(\.colorScheme) var colorScheme
-
-    enum DockPosition {
-        case bottom, top, left, right
+    enum DockPosition: String, Codable {
+        case bottom = "bottom"
+        case top = "top"
+        case left = "left"
+        case right = "right"
     }
+
+    @AppStorage("omniDockPosition") private var position: DockPosition = .bottom
+    @State private var offset: CGSize = .zero
+    @Environment(\.colorScheme) var colorScheme
 
     private var dragGesture: some Gesture {
         DragGesture()
             .onChanged { value in
+                guard !isBatchMode else { return }
                 offset = value.translation
             }
             .onEnded { value in
+                guard !isBatchMode else { return }
                 let screenSize = UIScreen.main.bounds.size
                 let finalX = value.predictedEndLocation.x
                 let finalY = value.predictedEndLocation.y
@@ -92,6 +97,14 @@ struct OmniDockView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignmentForPosition)
         .padding(safeAreaPaddingForPosition)
         .animation(.spring(response: 0.35, dampingFraction: 0.78), value: isBatchMode)
+        .onChange(of: isBatchMode) { _, newValue in
+            if newValue {
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
+                    position = .top
+                    offset = .zero
+                }
+            }
+        }
     }
 
     private var alignmentForPosition: Alignment {
