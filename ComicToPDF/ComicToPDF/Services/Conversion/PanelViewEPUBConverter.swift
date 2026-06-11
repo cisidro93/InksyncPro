@@ -797,51 +797,17 @@ class PanelViewEPUBConverter {
         let needsOptimization = settings.optimizeForDevice || settings.trimMargins || needsEnhancement
 
         if needsOptimization, let rawImage = UIImage(contentsOfFile: srcURL.path) {
-            var workingImage = rawImage
-            if settings.optimizeForDevice {
-                // ── Landscape half-slot pre-fit (Kindle Scribe only) ──────────────
-                // For large-screen Scribes the EPUB uses rendition:spread=landscape,
-                // meaning each page occupies exactly half the screen width.
-                // Pre-scaling to the half-slot dimensions eliminates the ~73 px
-                // letterbox that would otherwise appear at the top and bottom of
-                // each page because portrait comic pages are wider than the slot.
-                // Only applies to portrait source images; landscape source images
-                // (spreads) are left at full resolution.
-                let halfSlot = settings.targetDeviceProfile.landscapeHalfSlotResolution
-                let isPortraitSource = rawImage.size.height >= rawImage.size.width
-                let effectiveProfile = settings.targetDeviceProfile
-
-                if let slot = halfSlot, isPortraitSource {
-                    // Use a synthetic profile resolution that matches the exact half-slot.
-                    // EInkOptimizer.processImage already aspect-fits, so this is safe.
-                    workingImage = EInkOptimizer.shared.processImage(
-                        rawImage,
-                        for: effectiveProfile,                 // carries grayscale, moire, binding settings
-                        applyGrayscale: settings.imageEnhancement.grayscale,
-                        cropMargins: settings.trimMargins,
-                        reduceMoire: settings.imageEnhancement.reduceMoire,
-                        dither: settings.imageEnhancement.ditheringEnabled,
-                        marginOffset: settings.bindingMarginOffset,
-                        marginSide: settings.bindingMarginSide,
-                        isOddPage: isOddPage,
-                        customTargetSize: slot
-                    )
-                } else {
-                    workingImage = EInkOptimizer.shared.processImage(
-                        workingImage,
-                        for: settings.targetDeviceProfile,
-                        applyGrayscale: settings.imageEnhancement.grayscale,
-                        cropMargins: settings.trimMargins,
-                        reduceMoire: settings.imageEnhancement.reduceMoire,
-                        dither: settings.imageEnhancement.ditheringEnabled,
-                        marginOffset: settings.bindingMarginOffset,
-                        marginSide: settings.bindingMarginSide,
-                        isOddPage: isOddPage
-                    )
-                }
-            }
-            // Traditional Filters
-            workingImage = ImageProcessor.process(image: workingImage, settings: settings) ?? workingImage
+            let halfSlot = settings.optimizeForDevice ? settings.targetDeviceProfile.landscapeHalfSlotResolution : nil
+            let isPortraitSource = rawImage.size.height >= rawImage.size.width
+            let customSize = (halfSlot != nil && isPortraitSource) ? halfSlot : nil
+            
+            let workingImage = EInkOptimizer.shared.processImage(
+                rawImage,
+                settings: settings,
+                isOddPage: isOddPage,
+                customTargetSize: customSize
+            )
+            
             let quality = settings.compressionQuality.value
             return workingImage.jpegData(compressionQuality: quality) ?? (try? Data(contentsOf: srcURL)) ?? Data()
         }

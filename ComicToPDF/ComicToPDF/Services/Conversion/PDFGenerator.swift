@@ -53,21 +53,9 @@ struct PDFGenerator: Sendable {
                     }
                     
                     // Apply E-Ink Filtering and Scaling
-                    let targetProfile = settings.targetDeviceProfile
-                    let applyEInkFilter = settings.imageEnhancement.grayscale
-                    let cropMargins = settings.trimMargins
-                    let reduceMoire = settings.imageEnhancement.reduceMoire
-                    let dither = settings.imageEnhancement.ditheringEnabled
-                    
                     let optimizedImage = EInkOptimizer.shared.processImage(
                         safeImage,
-                        for: targetProfile,
-                        applyGrayscale: applyEInkFilter,
-                        cropMargins: cropMargins,
-                        reduceMoire: reduceMoire,
-                        dither: dither,
-                        marginOffset: settings.bindingMarginOffset,
-                        marginSide: settings.bindingMarginSide,
+                        settings: settings,
                         isOddPage: index % 2 == 0
                     )
                     

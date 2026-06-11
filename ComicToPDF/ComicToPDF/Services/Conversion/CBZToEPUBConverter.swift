@@ -175,7 +175,7 @@ struct CBZToEPUBConverter: Sendable {
                         var finalData = Data()
                         autoreleasepool {
                             if needsProcessing {
-                                let processedImage = ImageProcessor.process(image: slice, settings: settings) ?? slice
+                                let processedImage = ImageProcessor.process(image: slice, settings: settings, isOddPage: globalImageIndex % 2 == 0) ?? slice
                                 finalData = processedImage.jpegData(compressionQuality: settings.compressionQuality.value) ?? Data()
                             } else {
                                 finalData = slice.jpegData(compressionQuality: 1.0) ?? Data()
@@ -193,7 +193,7 @@ struct CBZToEPUBConverter: Sendable {
                     var finalData = Data()
                     autoreleasepool {
                         if needsProcessing {
-                            if let processedImage = ImageProcessor.process(imageURL: srcURL, settings: settings) {
+                            if let processedImage = ImageProcessor.process(imageURL: srcURL, settings: settings, isOddPage: originalIndex % 2 == 0) {
                                 let quality = settings.compressionQuality.value
                                 finalData = processedImage.jpegData(compressionQuality: quality) ?? Data()
                             }
