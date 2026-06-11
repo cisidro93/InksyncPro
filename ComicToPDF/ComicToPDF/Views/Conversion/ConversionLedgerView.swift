@@ -2,17 +2,20 @@ import SwiftUI
 import Combine
 
 // Conversion ledger sheet — shows all jobs with status, retry controls.
+// Refactored to observe ConversionLedger.shared directly via @ObservedObject.
 // Theme tokens only. No hardcoded colors.
 
 struct ConversionLedgerView: View {
-    @State private var jobs: [ConversionJobRecord] = []
-    @State private var refreshTimer: Timer?
+    @ObservedObject private var ledger = ConversionLedger.shared
+    @EnvironmentObject var conversionManager: ConversionManager
+    @Environment(\.dismiss) var dismiss
 
     var body: some View {
         NavigationStack {
             ZStack {
-                Color.clear.ignoresSafeArea()
+                Theme.bg.ignoresSafeArea()
 
+                let jobs = ledger.allJobs()
                 if jobs.isEmpty {
                     emptyState
                 } else {
@@ -29,32 +32,30 @@ struct ConversionLedgerView: View {
             .navigationTitle("Conversion History")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Close") {
+                        dismiss()
+                    }
+                    .foregroundColor(Color.inkTextSecondary)
+                }
+
                 ToolbarItemGroup(placement: .topBarTrailing) {
+                    let jobs = ledger.allJobs()
                     if jobs.contains(where: { $0.status == .failed || $0.status == .abandoned }) {
                         Button("Retry All Failed") {
-                            Task { await ConversionLedger.shared.retryFailed() }
+                            ledger.retryFailed(manager: conversionManager)
                         }
                         .font(.subheadline.weight(.semibold))
                         .foregroundColor(Theme.orange)
                     }
 
                     Button("Clear Done") {
-                        Task {
-                            await ConversionLedger.shared.clearCompleted()
-                            await refreshJobs()
-                        }
+                        ledger.clearCompleted()
                     }
                     .foregroundColor(Color.inkTextSecondary)
                 }
             }
         }
-        .task { await refreshJobs() }
-        .onAppear {
-            refreshTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { _ in
-                Task { await refreshJobs() }
-            }
-        }
-        .onDisappear { refreshTimer?.invalidate() }
     }
 
     // MARK: - Subviews
@@ -101,10 +102,10 @@ struct ConversionLedgerView: View {
 
             if job.status == .failed || job.status == .abandoned {
                 Button("Retry") {
-                    Task { await ConversionLedger.shared.retryFailed() }
+                    ledger.retryJob(job.id, manager: conversionManager)
                 }
                 .font(.caption.weight(.semibold))
-                .foregroundColor(Color.inkBackground)
+                .foregroundColor(.white)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
                 .background(Theme.orange)
@@ -137,12 +138,5 @@ struct ConversionLedgerView: View {
             }
         }
         .font(.title3)
-    }
-
-    // MARK: - Data
-
-    private func refreshJobs() async {
-        let all = await ConversionLedger.shared.allJobs()
-        await MainActor.run { self.jobs = all }
     }
 }

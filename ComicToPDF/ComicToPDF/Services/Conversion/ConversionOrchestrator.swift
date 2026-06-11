@@ -256,6 +256,21 @@ final class ConversionOrchestrator: Sendable {
         await MainActor.run { manager.isConverting = false; manager.statusMessage = nil }
     }
     
+    func processLedgerQueue(manager: ConversionManager) async {
+        let queuedJobs = await ConversionLedger.shared.allJobs().filter { $0.status == .queued }
+        guard !queuedJobs.isEmpty else { return }
+        
+        let pdfsToConvert = await MainActor.run {
+            queuedJobs.compactMap { job in
+                manager.convertedPDFs.first(where: { $0.id == job.fileID })
+            }
+        }
+        
+        if !pdfsToConvert.isEmpty {
+            await convertQueue(pdfsToConvert, manager: manager)
+        }
+    }
+    
     @discardableResult
     func convertAndMerge(sourceFiles: [ConvertedPDF], outputName: String, mangaMode: Bool, overrideSeries: String? = nil, manager: ConversionManager) async -> [ConvertedPDF] {
         guard !sourceFiles.isEmpty else { return [] }

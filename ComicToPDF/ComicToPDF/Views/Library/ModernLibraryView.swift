@@ -12,7 +12,7 @@ struct ModernLibraryView: View {
     @State private var isCollectionsExpanded: Bool = true
     @ObservedObject private var router = AppRouter.shared
     @StateObject private var viewModel = LibraryViewModel()
-    @ObservedObject private var jobQueue = ConversionJobQueue.shared
+    @ObservedObject private var ledger = ConversionLedger.shared
     
     @Query(sort: \SDConvertedPDF.lastModified, order: .reverse) private var swiftDataPDFs: [SDConvertedPDF]
     @Query private var swiftDataCollections: [SDPDFCollection]
@@ -486,8 +486,8 @@ struct ModernLibraryView: View {
     @ViewBuilder
     private func destinationSheet(for item: LibrarySheetDestination) -> some View {
         switch item {
-        case .inbox:
-            WorkspaceView(isSheet: true)
+        case .ledger:
+            ConversionLedgerView()
                 .environmentObject(conversionManager)
             
         case .importQueue:
@@ -605,31 +605,31 @@ struct ModernLibraryView: View {
     }
 
     // MARK: - Job Banner Helpers
-    private func jobBannerIcon(_ job: ConversionJob) -> String {
+    private func jobBannerIcon(_ job: ConversionJobRecord) -> String {
         switch job.status {
-        case .suspended:       return "pause.circle.fill"
-        case .failed:          return "exclamationmark.circle.fill"
-        case .waitingForDownload: return "arrow.down.circle.fill"
-        default:               return "arrow.triangle.2.circlepath.circle.fill"
+        case .queued:          return "clock"
+        case .running:         return "arrow.triangle.2.circlepath.circle.fill"
+        case .retrying:        return "arrow.clockwise.circle"
+        case .failed, .abandoned: return "exclamationmark.triangle.fill"
+        case .succeeded:       return "checkmark.circle.fill"
         }
     }
 
-    private func jobBannerColor(_ job: ConversionJob) -> Color {
+    private func jobBannerColor(_ job: ConversionJobRecord) -> Color {
         switch job.status {
-        case .failed:    return Theme.red
-        case .suspended: return Theme.orange
-        default:         return Theme.blue
+        case .failed, .abandoned: return Theme.red
+        case .queued, .retrying:  return Theme.orange
+        default:                  return Theme.blue
         }
     }
 
-    private func jobBannerMessage(_ job: ConversionJob) -> String {
+    private func jobBannerMessage(_ job: ConversionJobRecord) -> String {
         switch job.status {
-        case .waitingForDownload: return "Downloading from cloud..."
-        case .extracting:         return "Extracting & converting..."
-        case .merging:            return "Merging volumes..."
-        case .suspended:          return "Conversion paused — tap Resume to continue"
-        case .failed:             return "Download failed — tap Retry to try again"
-        default:                  return ""
+        case .queued:    return "Waiting in queue..."
+        case .running:   return "Converting and packaging..."
+        case .retrying:  return "Retrying..."
+        case .failed, .abandoned: return "Conversion failed: \(job.failureReason ?? "Unknown error")"
+        case .succeeded: return "Complete"
         }
     }
     
@@ -810,19 +810,24 @@ struct ModernLibraryView: View {
                 }
                 Spacer()
                 
-                // Active status pulse
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(jobQueue.jobs.isEmpty ? Color.inkGreen : Color.inkBlue)
-                        .frame(width: 8, height: 8)
-                    Text(jobQueue.jobs.isEmpty ? "Engine Idle" : "Converting")
-                        .font(.system(size: 11, weight: .medium, design: .monospaced))
-                        .foregroundColor(Color.inkTextSecondary)
+                // Active status pulse Button
+                Button {
+                    AppRouter.shared.presentSheet(.ledger)
+                } label: {
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(!ledger.hasActiveJobs ? Color.inkGreen : Color.inkBlue)
+                            .frame(width: 8, height: 8)
+                        Text(!ledger.hasActiveJobs ? "Engine Idle" : "Converting")
+                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .foregroundColor(Color.inkTextSecondary)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Color.inkBackground.opacity(0.4))
+                    .clipShape(Capsule())
                 }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(Color.inkBackground.opacity(0.4))
-                .clipShape(Capsule())
+                .buttonStyle(.plain)
             }
 
             // Summary Stats Cards (2 Columns)
@@ -870,11 +875,11 @@ struct ModernLibraryView: View {
             }
 
             // Active conversions preview / smart hint
-            if !jobQueue.jobs.isEmpty {
+            if ledger.hasActiveJobs {
                 HStack(spacing: 10) {
                     NeuralWaveformView(speed: 1.6, primaryColor: Color.inkBlue, secondaryColor: Color.inkViolet)
                         .frame(width: 64, height: 28)
-                    Text("Processing \(jobQueue.jobs.count) file\(jobQueue.jobs.count > 1 ? "s" : "")...")
+                    Text("Processing \(ledger.activeJobsCount) file\(ledger.activeJobsCount > 1 ? "s" : "")...")
                         .font(.system(size: 13, weight: .medium))
                         .foregroundColor(Color.inkTextSecondary)
                 }
@@ -975,9 +980,9 @@ struct ModernLibraryView: View {
 
     @ViewBuilder
     private var pendingJobsBanner: some View {
-        let pendingJobs = jobQueue.jobs.filter {
-            $0.status == .suspended || $0.status == .waitingForDownload ||
-            $0.status == .extracting || $0.status == .failed
+        let pendingJobs = ledger.allJobs().filter {
+            $0.status == .queued || $0.status == .running ||
+            $0.status == .retrying || $0.status == .failed || $0.status == .abandoned
         }
         if !pendingJobs.isEmpty {
             VStack(spacing: 8) {
@@ -991,13 +996,13 @@ struct ModernLibraryView: View {
     }
 
     @ViewBuilder
-    private func pendingJobRow(job: ConversionJob) -> some View {
+    private func pendingJobRow(job: ConversionJobRecord) -> some View {
         VStack(spacing: 8) {
             HStack {
                 Image(systemName: jobBannerIcon(job))
                     .foregroundColor(jobBannerColor(job))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(job.targetFileName)
+                    Text(job.fileName)
                         .font(.system(size: 14, weight: .bold))
                         .foregroundColor(Color.inkTextPrimary)
                         .lineLimit(1)
@@ -1006,8 +1011,8 @@ struct ModernLibraryView: View {
                         .foregroundColor(Color.inkTextSecondary)
                 }
                 Spacer()
-                if job.status == .suspended || job.status == .failed {
-                    Button(job.status == .failed ? "Retry" : "Resume") {
+                if job.status == .failed || job.status == .abandoned {
+                    Button("Retry") {
                         retryOrResumeJob(job)
                     }
                     .font(.caption.bold())
@@ -1018,7 +1023,7 @@ struct ModernLibraryView: View {
                     .clipShape(Capsule())
                 }
                 Button {
-                    jobQueue.removeJob(pdfID: job.pdfID)
+                    ConversionLedger.shared.removeJob(job.id)
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundColor(Color.inkTextTertiary)
@@ -1026,7 +1031,7 @@ struct ModernLibraryView: View {
                 }
             }
 
-            if job.status == .extracting || job.status == .merging || job.status == .waitingForDownload {
+            if job.status == .running {
                 NeuralWaveformView(speed: 1.5, primaryColor: Color.inkBlue, secondaryColor: Color.inkViolet)
                     .frame(height: 24)
                     .padding(.top, 4)
@@ -1037,33 +1042,12 @@ struct ModernLibraryView: View {
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(job.status == .failed ? Color.inkRed.opacity(0.3) : Color.inkBorderSubtle, lineWidth: 1)
+                .stroke(job.status == .failed || job.status == .abandoned ? Color.inkRed.opacity(0.3) : Color.inkBorderSubtle, lineWidth: 1)
         )
     }
 
-    private func retryOrResumeJob(_ job: ConversionJob) {
-        if job.status == .failed {
-            jobQueue.updateJobStatus(pdfID: job.pdfID, newStatus: .waitingForDownload)
-            if let pdf = conversionManager.convertedPDFs.first(where: { $0.id == job.pdfID }) {
-                Task { await CloudDownloadManager.shared.downloadAndStore(pdf: pdf, thenConvert: true, manager: conversionManager) }
-            }
-        } else {
-            jobQueue.updateJobStatus(pdfID: job.pdfID, newStatus: .extracting)
-            if let pdf = conversionManager.convertedPDFs.first(where: { $0.id == job.pdfID }) {
-                Task {
-                    if job.isMerge {
-                        await ConversionOrchestrator.shared.convertAndMerge(
-                            sourceFiles: [pdf], outputName: job.outputName ?? "",
-                            mangaMode: job.mangaMode ?? false, manager: conversionManager
-                        )
-                    } else {
-                        await ConversionOrchestrator.shared.convertComic(pdf, mangaMode: job.mangaMode, manager: conversionManager)
-                    }
-                    jobQueue.updateJobStatus(pdfID: job.pdfID, newStatus: .completed)
-                    jobQueue.removeJob(pdfID: job.pdfID)
-                }
-            }
-        }
+    private func retryOrResumeJob(_ job: ConversionJobRecord) {
+        ConversionLedger.shared.retryJob(job.id, manager: conversionManager)
     }
 
     @ViewBuilder
