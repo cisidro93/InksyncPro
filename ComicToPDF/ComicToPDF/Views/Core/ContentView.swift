@@ -65,7 +65,6 @@ struct ContentView: View {
                             AppRouter.shared.presentSheet(.importQueue)
                         }
                     )
-                    .toolbar(.hidden, for: .navigationBar)
                     .navigationDestination(for: ConvertedPDF.self) { pdf in
                         ConvertView(pdf: pdf).id(pdf.id)
                     }

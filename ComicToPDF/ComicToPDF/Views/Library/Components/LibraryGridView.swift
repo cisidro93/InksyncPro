@@ -39,7 +39,9 @@ struct LibraryGridView: View {
     // Drop-result confirmation sheet
     @State private var pendingDropInfo: DropResolutionInfo? = nil
 
-    @State private var rows: [[LibraryListItem]] = []
+    private var rows: [[LibraryListItem]] {
+        chunkedItems(items)
+    }
 
     private var inProgress: [ConvertedPDF] {
         items.compactMap {
@@ -74,10 +76,6 @@ struct LibraryGridView: View {
             chunks.append(currentChunk)
         }
         return chunks
-    }
-
-    private func rebuildRows() {
-        rows = chunkedItems(items)
     }
 
     @ViewBuilder
@@ -142,7 +140,7 @@ struct LibraryGridView: View {
 
                             // Recently Added banner removed to declutter workspace
 
-                            let chunks = rows.isEmpty && !items.isEmpty ? chunkedItems(items) : rows
+                            let chunks = rows
                             LazyVStack(spacing: 24) {
                                 ForEach(0..<chunks.count, id: \.self) { chunkIndex in
                                     let rowItems = chunks[chunkIndex]
@@ -238,15 +236,6 @@ struct LibraryGridView: View {
                     applyDrop(draggedPDFID: info.draggedID, targetSeriesName: chosenName)
                 }
             }
-        }
-        .onAppear {
-            rebuildRows()
-        }
-        .onChange(of: items) {
-            rebuildRows()
-        }
-        .onChange(of: hSizeClass) {
-            rebuildRows()
         }
     }
 

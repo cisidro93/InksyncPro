@@ -8,6 +8,9 @@ struct SettingsView: View {
     @AppStorage("fastBundleOmnibus") private var fastBundleOmnibus = false
     @AppStorage("appUIMode") private var appUIMode: AppUIMode = .pro
     @AppStorage("useSidebar") private var useSidebar = true
+    @AppStorage("essentialReaderMode") private var essentialReaderMode = false
+    @AppStorage("isHapticsEnabled") private var isHapticsEnabled = true
+    @AppStorage("backTapEnabled") private var backTapEnabled = false
 
     // Kindle Email Storage
     @AppStorage("kindleEmail") private var kindleEmail: String = ""
@@ -145,6 +148,7 @@ struct SettingsView: View {
     var body: some View {
         Form {
             generalUISection
+            readerPerformanceSection
             sendToKindleSection
             exportDefaultsSection
             omnibusSection
@@ -292,6 +296,26 @@ struct SettingsView: View {
                 .font(.caption2)
                 .foregroundColor(.secondary)
         } header: { Text("General UI") }
+    }
+
+    @ViewBuilder
+    private var readerPerformanceSection: some View {
+        Section(header: Text("Reader Performance & Immersion")) {
+            HStack {
+                settingsIcon("bolt.speedometer", color: .orange)
+                Toggle("Essential Speed Mode", isOn: $essentialReaderMode)
+            }
+            if !essentialReaderMode {
+                HStack {
+                    settingsIcon("waveform.path.ecg", color: .orange)
+                    Toggle("Haptic Feedback", isOn: $isHapticsEnabled)
+                }
+            }
+            HStack {
+                settingsIcon("hand.tap.fill", color: .orange)
+                Toggle("Back Tap Navigation", isOn: $backTapEnabled)
+            }
+        }
     }
 
     @ViewBuilder

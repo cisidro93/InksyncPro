@@ -139,21 +139,24 @@ struct MetalCanvasView: UIViewRepresentable {
                 }
                 
                 // Phase 1: Smart Upscaling & Auto Contrast Layer
-                let contrastLevel = UserDefaults.standard.double(forKey: "comic_autoContrastLevel")
-                if contrastLevel > 1.0 {
-                    if let filter = CIFilter(name: "CIColorControls") {
-                        filter.setValue(ciImage, forKey: kCIInputImageKey)
-                        filter.setValue(contrastLevel, forKey: kCIInputContrastKey)
-                        if let output = filter.outputImage { ciImage = output }
+                let isEssential = UserDefaults.standard.bool(forKey: "essentialReaderMode")
+                if !isEssential {
+                    let contrastLevel = UserDefaults.standard.double(forKey: "comic_autoContrastLevel")
+                    if contrastLevel > 1.0 {
+                        if let filter = CIFilter(name: "CIColorControls") {
+                            filter.setValue(ciImage, forKey: kCIInputImageKey)
+                            filter.setValue(contrastLevel, forKey: kCIInputContrastKey)
+                            if let output = filter.outputImage { ciImage = output }
+                        }
                     }
-                }
-                
-                let useSharpening = UserDefaults.standard.bool(forKey: "comic_smartSharpen")
-                if useSharpening {
-                    if let filter = CIFilter(name: "CISharpenLuminance") {
-                        filter.setValue(ciImage, forKey: kCIInputImageKey)
-                        filter.setValue(0.7, forKey: kCIInputSharpnessKey)
-                        if let output = filter.outputImage { ciImage = output }
+                    
+                    let useSharpening = UserDefaults.standard.bool(forKey: "comic_smartSharpen")
+                    if useSharpening {
+                        if let filter = CIFilter(name: "CISharpenLuminance") {
+                            filter.setValue(ciImage, forKey: kCIInputImageKey)
+                            filter.setValue(0.7, forKey: kCIInputSharpnessKey)
+                            if let output = filter.outputImage { ciImage = output }
+                        }
                     }
                 }
 

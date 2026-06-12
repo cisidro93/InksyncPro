@@ -498,6 +498,8 @@ struct ComicReaderEngine: View {
     @State private var activeFilterPreset: ReadingFilterPreset = .original
     @State private var showingFilterHUD = false
     @State private var showingSettingsHUD = false
+    @AppStorage("essentialReaderMode") private var essentialReaderMode = false
+    @AppStorage("backTapEnabled") private var backTapEnabled = false
     @State private var showingCharacterMap = false
     @State private var lastBrightnessDragValue: CGFloat = 0
     /// Panels-style ambient chrome tint — sampled from the current page edges
@@ -639,7 +641,14 @@ struct ComicReaderEngine: View {
             // On appear, honour the current physical orientation immediately
             // so opening in landscape already shows two pages.
             syncReadingModeToOrientation()
+            if essentialReaderMode {
+                if readingMode == .pageHorizontal || readingMode == .mangaRTL {
+                    readingMode = .pageSlide
+                }
+                ambientPageColor = .clear
+            }
             isReaderFocused = true
+            BackTapManager.shared.isEnabled = backTapEnabled
         }
         // Auto two-up: rotate device → automatically flip reading mode so the
         // user doesn't need to discover the mode-toggle button in the chrome.
@@ -674,6 +683,20 @@ struct ComicReaderEngine: View {
         .onChange(of: cache.isLoading) { _, isLoading in
             guard !isLoading, UIDevice.current.orientation.isLandscape else { return }
             syncReadingModeToOrientation()
+        }
+        .onChange(of: essentialReaderMode) { _, isSpeed in
+            if isSpeed {
+                if readingMode == .pageHorizontal {
+                    readingMode = .pageSlide
+                } else if readingMode == .mangaRTL {
+                    readingMode = .pageSlide
+                }
+                ambientPageColor = .clear
+            } else {
+                let isMangaComic = pdf.metadata.isManga == true || pdf.contentType == .manga
+                readingMode = isMangaComic ? .mangaRTL : .pageHorizontal
+                extractAmbientColor(for: currentIndex)
+            }
         }
 
         // ✅ Phase 5: Apple Handoff (Reader State Sync)
@@ -727,6 +750,18 @@ struct ComicReaderEngine: View {
         .onKeyPress(.escape) {
             saveProgressAndDismiss()
             return .handled
+        }
+        .onDisappear {
+            BackTapManager.shared.isEnabled = false
+        }
+        .onChange(of: backTapEnabled) { _, newValue in
+            BackTapManager.shared.isEnabled = newValue
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("Reader_NextPage"))) { _ in
+            nextPage()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("Reader_PrevPage"))) { _ in
+            prevPage()
         }
     } // closes GeometryReader
 } // end body
@@ -886,6 +921,10 @@ struct ComicReaderEngine: View {
     /// the tiny bitmap. This avoids the OOM crash that occurred when drawing a full 4K+
     /// CGImage into a 1×1 context 20 times per page change.
     private func extractAmbientColor(for index: Int) {
+        guard !essentialReaderMode else {
+            ambientPageColor = .clear
+            return
+        }
         guard let image = cache.getImage(at: index),
               let cgImage = image.cgImage else { return }
 
@@ -1201,49 +1240,53 @@ struct ComicPageView: View {
             GeometryReader { geo in
                 let rendered = renderSize(for: image, in: geo.size)
 
-                Image(uiImage: image)
-                    .resizable()
-                    .frame(width: rendered.width, height: rendered.height)
-                    .scaleEffect(currentScale)
-                    .offset(offset)
-                    .position(x: geo.size.width / 2, y: geo.size.height / 2)
-                    .gesture(
-                        SimultaneousGesture(
-                            MagnificationGesture()
-                                .onChanged { val in currentScale = max(1.0, val) }
-                                .onEnded   { _ in
-                                    withAnimation(.spring()) {
-                                        currentScale = 1.0
-                                        offset = .zero
+                ZStack {
+                    Color.black.ignoresSafeArea()
+
+                    Image(uiImage: image)
+                        .resizable()
+                        .frame(width: rendered.width, height: rendered.height)
+                        .scaleEffect(currentScale)
+                        .offset(offset)
+                        .position(x: geo.size.width / 2, y: geo.size.height / 2)
+                        .gesture(
+                            SimultaneousGesture(
+                                MagnificationGesture()
+                                    .onChanged { val in currentScale = max(1.0, val) }
+                                    .onEnded   { _ in
+                                        withAnimation(.spring()) {
+                                            currentScale = 1.0
+                                            offset = .zero
+                                        }
+                                    },
+                                DragGesture()
+                                    .onChanged { val in
+                                        if currentScale > 1.0 { offset = val.translation }
                                     }
-                                },
-                            DragGesture()
-                                .onChanged { val in
-                                    if currentScale > 1.0 { offset = val.translation }
-                                }
-                                .onEnded { _ in
-                                    if currentScale <= 1.0 {
-                                        withAnimation(.spring()) { offset = .zero }
+                                    .onEnded { _ in
+                                        if currentScale <= 1.0 {
+                                            withAnimation(.spring()) { offset = .zero }
+                                        }
                                     }
-                                }
+                            )
                         )
-                    )
-                    .onTapGesture(count: 2) { loc in
-                        withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
-                            if currentScale > 1.0 {
-                                currentScale = 1.0
-                                offset = .zero
-                            } else {
-                                currentScale = 2.5
-                                let centerX = geo.size.width / 2
-                                let centerY = geo.size.height / 2
-                                // Calculate offset to bring the tapped point to the center of the screen
-                                let dx = (centerX - loc.x) * (currentScale - 1)
-                                let dy = (centerY - loc.y) * (currentScale - 1)
-                                offset = CGSize(width: dx, height: dy)
+                        .onTapGesture(count: 2) { loc in
+                            withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
+                                if currentScale > 1.0 {
+                                    currentScale = 1.0
+                                    offset = .zero
+                                } else {
+                                    currentScale = 2.5
+                                    let centerX = geo.size.width / 2
+                                    let centerY = geo.size.height / 2
+                                    // Calculate offset to bring the tapped point to the center of the screen
+                                    let dx = (centerX - loc.x) * (currentScale - 1)
+                                    let dy = (centerY - loc.y) * (currentScale - 1)
+                                    offset = CGSize(width: dx, height: dy)
+                                }
                             }
                         }
-                    }
+                }
                     // Phase 4A: long-press context menu (Save / Share / Bookmark)
                     .contextMenu {
                         if let onSaveToPhotos {

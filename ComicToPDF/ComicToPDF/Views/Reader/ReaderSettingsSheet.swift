@@ -51,6 +51,7 @@ struct ReaderSettingsSheet: View {
                     colorFilterSection
                     ambientSection
                     if isVerticalScroll { webtoonSection }
+                    performanceSection
                     toolsSection
                 }
                 .padding(.horizontal, 20)
@@ -124,6 +125,9 @@ struct ReaderSettingsSheet: View {
 
     // MARK: - Page Turn Style
     @AppStorage("pageTurnStyle") private var pageTurnStyleRaw = PageTurnStyle.slide.rawValue
+    @AppStorage("essentialReaderMode") private var essentialReaderMode = false
+    @AppStorage("isHapticsEnabled") private var isHapticsEnabled = true
+    @AppStorage("backTapEnabled") private var backTapEnabled = false
     private var currentTurnStyle: PageTurnStyle { PageTurnStyle(rawValue: pageTurnStyleRaw) ?? .slide }
 
     @AppStorage("isZoomLockEnabled") private var isZoomLockEnabled = false
@@ -272,6 +276,31 @@ struct ReaderSettingsSheet: View {
                     displayFormat: { String(format: "%.0f px/s", $0) }
                 )
             }
+        }
+    }
+
+    // MARK: - Performance & Immersion
+    private var performanceSection: some View {
+        SettingsSection(title: "Performance & Immersion", icon: "bolt.fill") {
+            SettingsToggleRow(
+                label: "Essential Speed Mode",
+                icon: "bolt.speedometer",
+                isOn: $essentialReaderMode
+            )
+            if !essentialReaderMode {
+                Divider().padding(.leading, 44)
+                SettingsToggleRow(
+                    label: "Haptic Feedback",
+                    icon: "waveform.path.ecg",
+                    isOn: $isHapticsEnabled
+                )
+            }
+            Divider().padding(.leading, 44)
+            SettingsToggleRow(
+                label: "Back Tap Navigation",
+                icon: "hand.tap.fill",
+                isOn: $backTapEnabled
+            )
         }
     }
 
