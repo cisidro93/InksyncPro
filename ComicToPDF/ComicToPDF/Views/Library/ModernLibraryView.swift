@@ -435,8 +435,8 @@ struct ModernLibraryView: View {
                     } label: {
                         Image(systemName: "ellipsis.circle")
                     }
-                }
             }
+        }
 
     // MARK: - Change Handler Shell (onAppear + onChange)
     @ViewBuilder

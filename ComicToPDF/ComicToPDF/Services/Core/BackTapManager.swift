@@ -3,7 +3,7 @@ import CoreMotion
 import UIKit
 
 public final class BackTapManager {
-    public static let shared = BackTapManager()
+    public nonisolated(unsafe) static let shared = BackTapManager()
     
     private let motionManager = CMMotionManager()
     private let queue = OperationQueue()
@@ -75,10 +75,8 @@ public final class BackTapManager {
             let magnitude = abs(accelZ)
             
             if magnitude > self.threshold {
-                let now = Date().timeIntervalSince1970
-                if now - self.lastSpikeTime > self.debounceInterval {
-                    self.lastSpikeTime = now
-                    self.registerTap()
+                DispatchQueue.main.async {
+                    self.handlePotentialTap()
                 }
             }
         }
@@ -92,22 +90,27 @@ public final class BackTapManager {
         tapCount = 0
     }
     
+    private func handlePotentialTap() {
+        let now = Date().timeIntervalSince1970
+        if now - lastSpikeTime > debounceInterval {
+            lastSpikeTime = now
+            registerTap()
+        }
+    }
+    
     private func registerTap() {
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            let now = Date().timeIntervalSince1970
-            if self.tapCount == 0 {
-                self.firstTapTime = now
-                self.tapCount = 1
-                
-                // Close the window and evaluate taps after 350ms
-                DispatchQueue.main.asyncAfter(deadline: .now() + self.tapWindow) { [weak self] in
-                    guard let self = self else { return }
-                    self.evaluateTaps()
-                }
-            } else {
-                self.tapCount += 1
+        let now = Date().timeIntervalSince1970
+        if self.tapCount == 0 {
+            self.firstTapTime = now
+            self.tapCount = 1
+            
+            // Close the window and evaluate taps after 350ms
+            DispatchQueue.main.asyncAfter(deadline: .now() + self.tapWindow) { [weak self] in
+                guard let self = self else { return }
+                self.evaluateTaps()
             }
+        } else {
+            self.tapCount += 1
         }
     }
     
