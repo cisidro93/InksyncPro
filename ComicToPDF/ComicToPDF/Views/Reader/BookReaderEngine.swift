@@ -875,7 +875,7 @@ struct BookReaderEngine: View {
             ))
         }
         .sheet(isPresented: $showAnnotations) {
-            AnnotationListView(pdfID: pdf.id, documentTitle: pdf.name)
+            StudyNotebookView(bookID: pdf.id.uuidString, bookTitle: pdf.name, fileURL: pdf.url)
         }
         .sheet(item: $activeHighlightToEdit) { annotation in
             AnnotationEditSheet(annotation: annotation)
