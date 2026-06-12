@@ -35,6 +35,9 @@ struct Annotation: Codable, Identifiable {
     // SHA-256 thumbprint of the page at annotation time. nil for pre-Phase5 annotations.
     var contentHash: String? = nil
 
+    // ✅ Readwise Book Title Extension
+    var readwiseBookTitle: String? = nil
+
     // ✅ Phase 3: Zettelkasten SRS (Readwise Parity)
     var reviewCount: Int = 0
     var easeFactor: Double = 2.5
@@ -132,6 +135,7 @@ struct Annotation: Codable, Identifiable {
         self.boundsH = dto.bounds?.height
         
         self.isReadwiseImport = false
+        self.readwiseBookTitle = dto.readwiseBookTitle
         self.reviewCount = dto.reviewCount
         self.easeFactor = dto.easeFactor
         self.nextReviewDate = dto.nextReviewDate
@@ -209,6 +213,7 @@ struct Annotation: Codable, Identifiable {
             bounds = CodableCGRect(x: x, y: y, width: w, height: h)
         }
         var dto = Annotation(id: id, pdfID: pdfID, pageIndex: pageIndex, chapterTitle: chapterTitle, kind: kind, createdAt: createdAt, modifiedAt: modifiedAt, colorHex: colorHex, selectedText: selectedText, noteText: noteText, tags: tags, bounds: bounds)
+        dto.readwiseBookTitle = self.readwiseBookTitle
         dto.reviewCount = self.reviewCount
         dto.easeFactor = self.easeFactor
         dto.nextReviewDate = self.nextReviewDate
@@ -234,6 +239,7 @@ struct Annotation: Codable, Identifiable {
         self.boundsW = dto.bounds?.width
         self.boundsH = dto.bounds?.height
         
+        self.readwiseBookTitle = dto.readwiseBookTitle
         self.reviewCount = dto.reviewCount
         self.easeFactor = dto.easeFactor
         self.nextReviewDate = dto.nextReviewDate

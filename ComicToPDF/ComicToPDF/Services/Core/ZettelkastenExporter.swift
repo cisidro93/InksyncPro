@@ -30,7 +30,7 @@ struct ZettelArchiveDocument: FileDocument {
     /// Compiles all SDAnnotations into an Obsidian-ready Markdown archive
     func exportToMarkdownZip(annotations: [Annotation], pdfs: [ConvertedPDF]) async throws -> URL {
         // Execute file-writing and archiving off the Main Actor to prevent UI frames drop
-        try await Task.detached(priority: .userInitiated) {
+        let task = Task.detached(priority: .userInitiated) {
             let fileManager = FileManager.default
             let tempDir = fileManager.temporaryDirectory.appendingPathComponent("MindPalaceExport_\(UUID().uuidString)")
             
@@ -89,6 +89,7 @@ struct ZettelArchiveDocument: FileDocument {
             try? fileManager.removeItem(at: tempDir)
             
             return archiveURL
-        }.value
+        }
+        return try await task.value
     }
 }
