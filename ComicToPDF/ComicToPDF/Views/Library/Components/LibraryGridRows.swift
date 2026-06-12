@@ -33,236 +33,239 @@ struct ModernGridFileCell: View {
         VStack(alignment: .leading, spacing: 5) {
 
             // ── Cover ─────────────────────────────────────────────────────────
-            ZStack(alignment: .bottom) {
-                // Image or placeholder
-                Group {
-                    if let img = conversionManager.thumbnailCache.object(forKey: pdf.id.uuidString as NSString) ?? localCover {
-                        // GPU-composited blur background: drawingGroup() flattens the ZStack
-                        // into a single offscreen Metal texture before compositing. This replaces
-                        // the previous double-image approach (blur + crisp) which ran entirely in
-                        // software and caused ~8ms frame drops per cell during scroll.
-                        ZStack {
-                            // Blurred background: smaller radius (8 vs 18) + drawingGroup = GPU-only
-                            Image(uiImage: img)
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                                .blur(radius: 8, opaque: true)
-                                .overlay(Color.black.opacity(0.40))
-                                .drawingGroup() // ← rasterises blur to GPU texture once
+            Color.clear
+                .aspectRatio(0.63, contentMode: .fit)
+                .overlay(
+                    ZStack(alignment: .bottom) {
+                        // Image or placeholder
+                        Group {
+                            if let img = conversionManager.thumbnailCache.object(forKey: pdf.id.uuidString as NSString) ?? localCover {
+                                // GPU-composited blur background: drawingGroup() flattens the ZStack
+                                // into a single offscreen Metal texture before compositing. This replaces
+                                // the previous double-image approach (blur + crisp) which ran entirely in
+                                // software and caused ~8ms frame drops per cell during scroll.
+                                ZStack {
+                                    // Blurred background: smaller radius (8 vs 18) + drawingGroup = GPU-only
+                                    Image(uiImage: img)
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fill)
+                                        .blur(radius: 8, opaque: true)
+                                        .overlay(Color.black.opacity(0.40))
+                                        .drawingGroup() // ← rasterises blur to GPU texture once
 
-                            // Foreground: actual cover scaled to fit
-                            Image(uiImage: img)
-                                .resizable()
-                                .aspectRatio(contentMode: .fit)
-                                .shadow(color: .black.opacity(0.45), radius: 6, y: 3)
-                        }
+                                    // Foreground: actual cover scaled to fit
+                                    Image(uiImage: img)
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fit)
+                                        .shadow(color: .black.opacity(0.45), radius: 6, y: 3)
+                                }
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .clipped()
 
-                        // Book spine overlay — left-edge depth cue
-                        HStack(spacing: 0) {
-                            LinearGradient(
-                                colors: [.black.opacity(0.28), .black.opacity(0.05), .clear],
-                                startPoint: .leading, endPoint: .trailing
-                            )
-                            .frame(width: 16)
-                            Spacer()
-                        }
-                    } else if isCloudPending {
-                        // Animated cloud-fetch pulse — cover is being extracted in background
-                        ZStack {
-                            LinearGradient(
-                                colors: [Color(red: 0.1, green: 0.35, blue: 0.55),
-                                         Color(red: 0.05, green: 0.2, blue: 0.4)],
-                                startPoint: .topLeading, endPoint: .bottomTrailing
-                            )
-                            Image(systemName: "icloud.and.arrow.down")
-                                .font(.system(size: 26))
-                                .foregroundColor(.white.opacity(0.7))
-                                .symbolEffect(.pulse, isActive: true)
-                        }
-                    } else if case .cloud = pdf.sourceMode {
-                        cloudPlaceholder
-                    } else {
-                        // Shimmer loading placeholder
-                        GeometryReader { geo in
-                            let w = geo.size.width
-                            ZStack {
-                                let ext = pdf.fileExtensionString.uppercased()
-                                let (c1, c2): (Color, Color) = {
-                                    switch ext {
-                                    case "CBZ","CBR": return (Color(red:0.15,green:0.25,blue:0.6), Color(red:0.1,green:0.15,blue:0.4))
-                                    case "PDF":       return (Color(red:0.6,green:0.15,blue:0.15), Color(red:0.4,green:0.1,blue:0.1))
-                                    case "EPUB":      return (Color(red:0.15,green:0.5,blue:0.3),  Color(red:0.1,green:0.35,blue:0.2))
-                                    default:          return (Color(red:0.25,green:0.25,blue:0.3), Color(red:0.15,green:0.15,blue:0.2))
-                                    }
-                                }()
-                                LinearGradient(colors: [c1, c2], startPoint: .topLeading, endPoint: .bottomTrailing)
+                                // Book spine overlay — left-edge depth cue
+                                HStack(spacing: 0) {
+                                    LinearGradient(
+                                        colors: [.black.opacity(0.28), .black.opacity(0.05), .clear],
+                                        startPoint: .leading, endPoint: .trailing
+                                    )
+                                    .frame(width: 16)
+                                    Spacer()
+                                }
+                            } else if isCloudPending {
+                                // Animated cloud-fetch pulse — cover is being extracted in background
+                                ZStack {
+                                    LinearGradient(
+                                        colors: [Color(red: 0.1, green: 0.35, blue: 0.55),
+                                                 Color(red: 0.05, green: 0.2, blue: 0.4)],
+                                        startPoint: .topLeading, endPoint: .bottomTrailing
+                                    )
+                                    Image(systemName: "icloud.and.arrow.down")
+                                        .font(.system(size: 26))
+                                        .foregroundColor(.white.opacity(0.7))
+                                        .symbolEffect(.pulse, isActive: true)
+                                }
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            } else if case .cloud = pdf.sourceMode {
+                                cloudPlaceholder
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            } else {
+                                // Shimmer loading placeholder
+                                GeometryReader { geo in
+                                    let w = geo.size.width
+                                    ZStack {
+                                        let ext = pdf.fileExtensionString.uppercased()
+                                        let (c1, c2): (Color, Color) = {
+                                            switch ext {
+                                            case "CBZ","CBR": return (Color(red:0.15,green:0.25,blue:0.6), Color(red:0.1,green:0.15,blue:0.4))
+                                            case "PDF":       return (Color(red:0.6,green:0.15,blue:0.15), Color(red:0.4,green:0.1,blue:0.1))
+                                            case "EPUB":      return (Color(red:0.15,green:0.5,blue:0.3),  Color(red:0.1,green:0.35,blue:0.2))
+                                            default:          return (Color(red:0.25,green:0.25,blue:0.3), Color(red:0.15,green:0.15,blue:0.2))
+                                            }
+                                        }()
+                                        LinearGradient(colors: [c1, c2], startPoint: .topLeading, endPoint: .bottomTrailing)
 
-                                // Shimmer sweep
-                                LinearGradient(colors: [.clear, .white.opacity(0.07), .clear], startPoint: .leading, endPoint: .trailing)
-                                    .frame(width: w * 0.5)
-                                    .offset(x: shimmerPhase * w)
-                                    .onAppear {
-                                        withAnimation(.linear(duration: 1.6).repeatForever(autoreverses: false)) {
-                                            shimmerPhase = 1.8
+                                        // Shimmer sweep
+                                        LinearGradient(colors: [.clear, .white.opacity(0.07), .clear], startPoint: .leading, endPoint: .trailing)
+                                            .frame(width: w * 0.5)
+                                            .offset(x: shimmerPhase * w)
+                                            .onAppear {
+                                                withAnimation(.linear(duration: 1.6).repeatForever(autoreverses: false)) {
+                                                    shimmerPhase = 1.8
+                                                }
+                                            }
+                                            .blendMode(.screen)
+
+                                        VStack(spacing: 8) {
+                                            Image(systemName: "doc.text.fill").font(.system(size: 26)).foregroundColor(.white.opacity(0.4))
+                                            Text(ext).font(.system(size: 10, weight: .black, design: .rounded)).foregroundColor(.white.opacity(0.35)).tracking(1.5)
                                         }
                                     }
-                                    .blendMode(.screen)
-
-                                VStack(spacing: 8) {
-                                    Image(systemName: "doc.text.fill").font(.system(size: 26)).foregroundColor(.white.opacity(0.4))
-                                    Text(ext).font(.system(size: 10, weight: .black, design: .rounded)).foregroundColor(.white.opacity(0.35)).tracking(1.5)
                                 }
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
                             }
                         }
-                    }
-                }
 
-                // Bottom scrim + progress bar (premium Panels-style)
-                if isInProgress || isFullyRead {
-                    VStack(spacing: 0) {
-                        Spacer()
-                        LinearGradient(
-                            colors: [.clear, .black.opacity(0.72)],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                        .frame(height: 60)
-                    }
-
-                    VStack(spacing: 5) {
-                        Spacer()
-                        HStack {
-                            Text(isFullyRead ? "Finished" : "\(Int(readingProgress * 100))%")
-                                .font(.system(size: 9, weight: .black, design: .rounded))
-                                .foregroundColor(isFullyRead ? Color.green : .white)
-                            Spacer()
-                        }
-                        .padding(.horizontal, 8)
-
-                        GeometryReader { g in
-                            ZStack(alignment: .leading) {
-                                Capsule()
-                                    .fill(Color.white.opacity(0.18))
-                                    .frame(height: 4)
-                                Capsule()
-                                    .fill(
-                                        isFullyRead
-                                            ? AnyShapeStyle(Color.green)
-                                            : AnyShapeStyle(LinearGradient(
-                                                colors: [Color(hue: 0.56, saturation: 0.8, brightness: 1.0),
-                                                         Color(hue: 0.52, saturation: 0.9, brightness: 0.95)],
-                                                startPoint: .leading, endPoint: .trailing
-                                              ))
-                                    )
-                                    .frame(width: g.size.width * CGFloat(readingProgress), height: 4)
-                                    .shadow(color: isFullyRead ? Color.green.opacity(0.6) : Color.blue.opacity(0.5), radius: 4, y: 0)
-                            }
-                        }
-                        .frame(height: 4)
-                        .padding(.horizontal, 8)
-                        .padding(.bottom, 8)
-                    }
-                }
-
-                // "NEW" badge — gradient pill at bottom-left
-                if isNew {
-                    HStack {
-                        Text("NEW")
-                            .font(.system(size: 8, weight: .black, design: .rounded))
-                            .foregroundColor(.white)
-                            .tracking(0.8)
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 4)
-                            .background(
+                        // Bottom scrim + progress bar (premium Panels-style)
+                        if isInProgress || isFullyRead {
+                            VStack(spacing: 0) {
+                                Spacer()
                                 LinearGradient(
-                                    colors: [Color(hue: 0.56, saturation: 0.85, brightness: 1.0),
-                                             Color(hue: 0.63, saturation: 0.9, brightness: 0.9)],
-                                    startPoint: .leading, endPoint: .trailing
-                                ),
-                                in: Capsule()
-                            )
-                            .shadow(color: Color.blue.opacity(0.35), radius: 4, y: 2)
-                            .padding(8)
-                        Spacer()
-                    }
-                    .frame(maxWidth: .infinity)
-                }
+                                    colors: [.clear, .black.opacity(0.72)],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                                .frame(height: 60)
+                            }
 
-                // Fully-read checkmark (Panels style)
-                if isFullyRead {
-                    VStack {
-                        HStack {
+                            VStack(spacing: 5) {
+                                Spacer()
+                                HStack {
+                                    Text(isFullyRead ? "Finished" : "\(Int(readingProgress * 100))%")
+                                        .font(.system(size: 9, weight: .black, design: .rounded))
+                                        .foregroundColor(isFullyRead ? Color.green : .white)
+                                    Spacer()
+                                }
+                                .padding(.horizontal, 8)
+
+                                GeometryReader { g in
+                                    ZStack(alignment: .leading) {
+                                        Capsule()
+                                            .fill(Color.white.opacity(0.18))
+                                            .frame(height: 4)
+                                        Capsule()
+                                            .fill(
+                                                isFullyRead
+                                                    ? AnyShapeStyle(Color.green)
+                                                    : AnyShapeStyle(LinearGradient(
+                                                        colors: [Color(hue: 0.56, saturation: 0.8, brightness: 1.0),
+                                                                 Color(hue: 0.52, saturation: 0.9, brightness: 0.95)],
+                                                        startPoint: .leading, endPoint: .trailing
+                                                      ))
+                                            )
+                                            .frame(width: g.size.width * CGFloat(readingProgress), height: 4)
+                                            .shadow(color: isFullyRead ? Color.green.opacity(0.6) : Color.blue.opacity(0.5), radius: 4, y: 0)
+                                    }
+                                }
+                                .frame(height: 4)
+                                .padding(.horizontal, 8)
+                                .padding(.bottom, 8)
+                            }
+                        }
+
+                        // "NEW" badge — gradient pill at bottom-left
+                        if isNew {
+                            HStack {
+                                Text("NEW")
+                                    .font(.system(size: 8, weight: .black, design: .rounded))
+                                    .foregroundColor(.white)
+                                    .tracking(0.8)
+                                    .padding(.horizontal, 7)
+                                    .padding(.vertical, 4)
+                                    .background(
+                                        LinearGradient(
+                                            colors: [Color(hue: 0.56, saturation: 0.85, brightness: 1.0),
+                                                     Color(hue: 0.63, saturation: 0.9, brightness: 0.9)],
+                                            startPoint: .leading, endPoint: .trailing
+                                        ),
+                                        in: Capsule()
+                                    )
+                                    .shadow(color: Color.blue.opacity(0.35), radius: 4, y: 2)
+                                    .padding(8)
+                                Spacer()
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+
+                        // Fully-read checkmark (Panels style)
+                        if isFullyRead {
+                            VStack {
+                                HStack {
+                                    Spacer()
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .font(.system(size: 18))
+                                        .foregroundStyle(.white, Color.green)
+                                        .padding(8)
+                                        .shadow(color: .black.opacity(0.4), radius: 4)
+                                }
+                                Spacer()
+                            }
+                        }
+
+                        // Source badges (cloud / linked drive) — top-left
+                        VStack {
+                            HStack {
+                                if case .linked = pdf.sourceMode {
+                                    sourceBadge(icon: "externaldrive.fill", color: Theme.blue)
+                                } else if case .cloud = pdf.sourceMode {
+                                    sourceBadge(icon: "icloud.fill", color: Theme.orange)
+                                }
+                                Spacer()
+                            }
                             Spacer()
-                            Image(systemName: "checkmark.circle.fill")
-                                .font(.system(size: 18))
-                                .foregroundStyle(.white, Color.green)
-                                .padding(8)
-                                .shadow(color: .black.opacity(0.4), radius: 4)
                         }
-                        Spacer()
-                    }
-                }
 
-                // Source badges (cloud / linked drive) — top-left
-                VStack {
-                    HStack {
-                        if case .linked = pdf.sourceMode {
-                            sourceBadge(icon: "externaldrive.fill", color: Theme.blue)
-                        } else if case .cloud = pdf.sourceMode {
-                            sourceBadge(icon: "icloud.fill", color: Theme.orange)
+                        // Batch selection overlay
+                        if isBatch {
+                            VStack {
+                                HStack {
+                                    Spacer()
+                                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                                        .font(.title3)
+                                        .foregroundColor(isSelected ? Theme.blue : .white)
+                                        .padding(8)
+                                        .shadow(radius: 2)
+                                }
+                                Spacer()
+                            }
                         }
-                        Spacer()
-                    }
-                    Spacer()
-                }
 
-                // Batch selection overlay
-                if isBatch {
-                    VStack {
-                        HStack {
-                            Spacer()
-                            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                                .font(.title3)
-                                .foregroundColor(isSelected ? Theme.blue : .white)
-                                .padding(8)
-                                .shadow(radius: 2)
+                        // 📌 Work Area pin badge — top-right (only when not in batch mode)
+                        if !isBatch && WorkspaceFocusManager.shared.isPinned(pdf) {
+                            VStack {
+                                HStack {
+                                    Spacer()
+                                    Image(systemName: "pin.fill")
+                                        .font(.system(size: 10, weight: .bold))
+                                        .foregroundStyle(.white)
+                                        .padding(5)
+                                        .background(Color.inkAccentKnowledge, in: Circle())
+                                        .shadow(color: .black.opacity(0.3), radius: 3, y: 1)
+                                        .padding(6)
+                                }
+                                Spacer()
+                            }
                         }
-                        Spacer()
                     }
-                }
-
-                // 📌 Work Area pin badge — top-right (only when not in batch mode)
-                if !isBatch && WorkspaceFocusManager.shared.isPinned(pdf) {
-                    VStack {
-                        HStack {
-                            Spacer()
-                            Image(systemName: "pin.fill")
-                                .font(.system(size: 10, weight: .bold))
-                                .foregroundStyle(.white)
-                                .padding(5)
-                                .background(Color.inkAccentKnowledge, in: Circle())
-                                .shadow(color: .black.opacity(0.3), radius: 3, y: 1)
-                                .padding(6)
-                        }
-                        Spacer()
-                    }
-                }
-            }
-            // ⚠️ WIDTH FIX: .fill content mode lets landscape-ratio covers expand
-            // the ZStack beyond the outer .aspectRatio frame, making column widths vary.
-            // Constraining to maxWidth/Height here forces every cover into its grid slot.
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .clipped()
-            .frame(maxWidth: .infinity)
-            .aspectRatio(0.63, contentMode: .fit)
-            .clipShape(RoundedRectangle(cornerRadius: hSizeClass == .regular ? 14 : 12, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: hSizeClass == .regular ? 14 : 12, style: .continuous)
-                    .stroke(Color.white.opacity(isSelected && !isBatch ? 0.7 : 0.08), lineWidth: isSelected && !isBatch ? 2 : 0.5)
-            )
-            // Dual shadow: crisp near + soft ambient (Apple Books technique)
-            .shadow(color: .black.opacity(0.28), radius: 4, y: 3)
-            .shadow(color: .black.opacity(0.12), radius: hSizeClass == .regular ? 18 : 14, y: hSizeClass == .regular ? 12 : 10)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: hSizeClass == .regular ? 14 : 12, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: hSizeClass == .regular ? 14 : 12, style: .continuous)
+                        .stroke(Color.white.opacity(isSelected && !isBatch ? 0.7 : 0.08), lineWidth: isSelected && !isBatch ? 2 : 0.5)
+                )
+                // Dual shadow: crisp near + soft ambient (Apple Books technique)
+                .shadow(color: .black.opacity(0.28), radius: 4, y: 3)
+                .shadow(color: .black.opacity(0.12), radius: hSizeClass == .regular ? 18 : 14, y: hSizeClass == .regular ? 12 : 10)
 
             // ── Text + type badge ────────────────────────────────────────────
             VStack(alignment: .leading, spacing: 3) {

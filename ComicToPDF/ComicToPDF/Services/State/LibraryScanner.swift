@@ -14,11 +14,28 @@ actor LibraryScanner {
         let inboxDir  = appSupport.appendingPathComponent("InksyncVault/Inbox", isDirectory: true)
         let docDir    = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
 
+        func relativePath(for url: URL) -> String {
+            let path = url.path
+            if let range = path.range(of: "/Documents/") {
+                return "Documents/" + String(path[range.upperBound...])
+            }
+            if let range = path.range(of: "/InksyncVault/Inbox/") {
+                return "Inbox/" + String(path[range.upperBound...])
+            }
+            return url.lastPathComponent
+        }
+
         var newPDFs: [ConvertedPDF] = []
         let keys: [URLResourceKey] = [.nameKey, .isDirectoryKey, .fileSizeKey]
 
         let currentPaths = await MainActor.run {
-            manager.convertedPDFs.map { $0.url.lastPathComponent }
+            manager.convertedPDFs.map { pdf -> String in
+                if pdf.isLinked {
+                    return pdf.url.path
+                } else {
+                    return relativePath(for: pdf.url)
+                }
+            }
         }
         let pathSet = Set(currentPaths)
 
@@ -49,8 +66,8 @@ actor LibraryScanner {
                 let ext = fileURL.pathExtension.lowercased()
                 guard ["pdf", "cbz", "zip", "epub", "cbr", "cbt"].contains(ext) else { continue }
 
-                let filename = fileURL.lastPathComponent
-                guard !pathSet.contains(filename) else { continue }
+                let relPath = relativePath(for: fileURL)
+                guard !pathSet.contains(relPath) else { continue }
 
                 let fileSize = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
 
@@ -163,7 +180,7 @@ actor LibraryScanner {
         let allPDFs = await MainActor.run { manager.convertedPDFs }
         
         var uniquePDFs: [ConvertedPDF] = []
-        var seenNames = Set<String>()
+        var seenPaths = Set<String>()
         var missingIDs = Set<UUID>()
         
         var didRepairURLs = false
@@ -176,55 +193,64 @@ actor LibraryScanner {
             pruneYieldCount += 1
             if pruneYieldCount % 50 == 0 { await Task.yield() }
 
-            if seenNames.contains(pdf.url.lastPathComponent) {
+            if pdf.isLinked {
+                if seenPaths.contains(pdf.url.path) {
+                    missingIDs.insert(pdf.id)
+                    continue
+                }
+                seenPaths.insert(pdf.url.path)
+                uniquePDFs.append(pdf)
+                continue
+            }
+
+            var resolvedURL = pdf.url
+            var didRepair = false
+
+            if !fileManager.fileExists(atPath: pdf.url.path) {
+                // Sandbox-Shift Repair Logic
+                let oldPath = pdf.url.path
+                if let docRange = oldPath.range(of: "/Documents/") {
+                    let relPath = String(oldPath[docRange.upperBound...])
+                    let checkURL = docDir.appendingPathComponent(relPath)
+                    if fileManager.fileExists(atPath: checkURL.path) {
+                        resolvedURL = checkURL
+                        didRepair = true
+                    }
+                }
+                if !didRepair, let inboxRange = oldPath.range(of: "/InksyncVault/Inbox/") {
+                    let relPath = String(oldPath[inboxRange.upperBound...])
+                    let checkURL = inboxDir.appendingPathComponent(relPath)
+                    if fileManager.fileExists(atPath: checkURL.path) {
+                        resolvedURL = checkURL
+                        didRepair = true
+                    }
+                }
+                // Fallback: Check root of Documents and Inbox
+                if !didRepair {
+                    let rootDoc = docDir.appendingPathComponent(pdf.url.lastPathComponent)
+                    let rootInbox = inboxDir.appendingPathComponent(pdf.url.lastPathComponent)
+                    if fileManager.fileExists(atPath: rootDoc.path) {
+                        resolvedURL = rootDoc
+                        didRepair = true
+                    } else if fileManager.fileExists(atPath: rootInbox.path) {
+                        resolvedURL = rootInbox
+                        didRepair = true
+                    }
+                }
+            }
+
+            if didRepair {
+                pdf.url = resolvedURL
+                didRepairURLs = true
+            }
+
+            if seenPaths.contains(resolvedURL.path) {
                 missingIDs.insert(pdf.id)
                 continue
             }
-            seenNames.insert(pdf.url.lastPathComponent)
 
-            if pdf.isLinked {
-                uniquePDFs.append(pdf)
-                continue
-            }
-
-            if fileManager.fileExists(atPath: pdf.url.path) {
-                uniquePDFs.append(pdf)
-                continue
-            }
-
-            // Sandbox-Shift Repair Logic
-            var repairedURL: URL? = nil
-            let oldPath = pdf.url.path
-
-            if let docRange = oldPath.range(of: "/Documents/") {
-                let relPath = String(oldPath[docRange.upperBound...])
-                let checkURL = docDir.appendingPathComponent(relPath)
-                if fileManager.fileExists(atPath: checkURL.path) {
-                    repairedURL = checkURL
-                }
-            }
-            if repairedURL == nil, let inboxRange = oldPath.range(of: "/InksyncVault/Inbox/") {
-                let relPath = String(oldPath[inboxRange.upperBound...])
-                let checkURL = inboxDir.appendingPathComponent(relPath)
-                if fileManager.fileExists(atPath: checkURL.path) {
-                    repairedURL = checkURL
-                }
-            }
-
-            // Fallback: Check root of Documents and Inbox
-            if repairedURL == nil {
-                let rootDoc = docDir.appendingPathComponent(pdf.url.lastPathComponent)
-                let rootInbox = inboxDir.appendingPathComponent(pdf.url.lastPathComponent)
-                if fileManager.fileExists(atPath: rootDoc.path) {
-                    repairedURL = rootDoc
-                } else if fileManager.fileExists(atPath: rootInbox.path) {
-                    repairedURL = rootInbox
-                }
-            }
-
-            if let newURL = repairedURL {
-                pdf.url = newURL
-                didRepairURLs = true
+            if fileManager.fileExists(atPath: resolvedURL.path) {
+                seenPaths.insert(resolvedURL.path)
                 uniquePDFs.append(pdf)
             } else {
                 missingIDs.insert(pdf.id)

@@ -215,11 +215,8 @@ final class LinkedLibraryScanner: ObservableObject {
         }
 
         // Add newly appeared files
-        let existingFilenames = Set(manager.convertedPDFs.compactMap { pdf -> String? in
-            guard case .linked = pdf.sourceMode else { return nil }
-            return pdf.url.lastPathComponent
-        })
-        let newFiles = foundFiles.filter { !existingFilenames.contains($0.lastPathComponent) }
+        let existingPaths = Set(resolvedPathCache.values)
+        let newFiles = foundFiles.filter { !existingPaths.contains($0.path) }
         if !newFiles.isEmpty {
             await registerFiles(newFiles, driveEntry: entry, rootURL: url)
             Logger.shared.log("LinkedLibraryScanner: Sync found \(newFiles.count) new files on '\(entry.displayName)'", category: "Drive")
@@ -573,7 +570,7 @@ final class LinkedLibraryScanner: ObservableObject {
         bookmark: Data,
         manager: ConversionManager
     ) async {
-        if manager.convertedPDFs.contains(where: { $0.url.lastPathComponent == fileURL.lastPathComponent && $0.isLinked }) {
+        if manager.convertedPDFs.contains(where: { $0.url.path == fileURL.path && $0.isLinked }) {
             return
         }
 

@@ -328,35 +328,23 @@ struct TwoUpBookPager: View {
     @State private var spreadIdx: Int = 0
 
     private var spreads: [[Int]] {
-        var currentSpread: [Int] = []
         var allSpreads: [[Int]] = []
+        guard cache.pageCount > 0 else { return [[0]] }
         
-        let startIdx: Int
         if cache.pageCount > 1 {
-            // Page 0 is the cover, keep it solo
-            allSpreads.append([0])
-            startIdx = 1
-        } else {
-            startIdx = 0
-        }
-        
-        for i in startIdx..<cache.pageCount {
-            if isLandscapePage(i) {
-                if !currentSpread.isEmpty {
-                    allSpreads.append(currentSpread)
-                    currentSpread = []
-                }
-                allSpreads.append([i])
-            } else {
-                currentSpread.append(i)
-                if currentSpread.count == 2 {
-                    allSpreads.append(currentSpread)
-                    currentSpread = []
+            allSpreads.append([0]) // Page 0 is the cover, keep it solo
+            var i = 1
+            while i < cache.pageCount {
+                if i + 1 < cache.pageCount {
+                    allSpreads.append([i, i + 1])
+                    i += 2
+                } else {
+                    allSpreads.append([i])
+                    i += 1
                 }
             }
-        }
-        if !currentSpread.isEmpty {
-            allSpreads.append(currentSpread)
+        } else {
+            allSpreads.append([0])
         }
         return allSpreads.isEmpty ? [[0]] : allSpreads
     }

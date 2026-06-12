@@ -87,7 +87,7 @@ struct SeriesDetailView: View {
             return sorted
         } else {
             // It's a publisher series
-            return conversionManager.convertedPDFs.filter { $0.metadata.series == series.title && $0.collectionId == nil }
+            return conversionManager.convertedPDFs.filter { $0.metadata.series == series.title }
         }
     }
 
@@ -214,6 +214,10 @@ struct SeriesDetailView: View {
                 }
             }
         }
+        .navigationTitle(series.title)
+        .toolbar {
+            listViewToolbar
+        }
         .onAppear {
             localIssues = sortedIssues
         }
@@ -236,7 +240,6 @@ struct SeriesDetailView: View {
             }
         }
         .listStyle(InsetGroupedListStyle())
-        .navigationTitle(series.title)
         // ── Volume Jump: ensure target is expanded then scroll to its anchor ──
         .onChange(of: jumpToVolume) { _, targetKey in
             guard let targetKey else { return }
@@ -253,9 +256,6 @@ struct SeriesDetailView: View {
                 HapticEngine.medium()
                 jumpToVolume = nil  // reset so same volume can be re-selected
             }
-        }
-        .toolbar {
-            listViewToolbar
         }
     }
 
