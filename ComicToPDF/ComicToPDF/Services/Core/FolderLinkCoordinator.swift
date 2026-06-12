@@ -28,7 +28,7 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
 
         let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder], asCopy: false)
         picker.delegate = coordinator
-        picker.allowsMultipleSelection = false
+        picker.allowsMultipleSelection = true
         picker.shouldShowFileExtensions = true
         picker.modalPresentationStyle = .pageSheet
 
