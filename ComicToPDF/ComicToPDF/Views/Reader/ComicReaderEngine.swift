@@ -50,7 +50,10 @@ final class ComicImageCache: ObservableObject, @unchecked Sendable {
     private var cache = NSCache<NSNumber, UIImage>()
     private var accessQueue: [Int] = []
     private var fetchingQueue: Set<Int> = [] // Track pending extractions
-    private let maxCacheSize = 7 // Can hold about ~15MB of images in memory depending on screen size
+    private var maxCacheSize: Int {
+        let usage = MemoryMonitor.reportMemoryUsage()
+        return usage > 300.0 ? 3 : 7 // Dynamic Memory Cache scaling
+    }
     private let prefetchLimit: Int // Configurable read-ahead page buffer
     
     // For CBZ extraction — store URL, NOT a shared Archive.
@@ -242,6 +245,11 @@ final class ComicImageCache: ObservableObject, @unchecked Sendable {
         if let tempDir = extractedCBRTempDir {
             try? FileManager.default.removeItem(at: tempDir)
         }
+        if !isPDF && !isStream && !isCBR {
+            Task {
+                await ArchiveManager.shared.clearCache()
+            }
+        }
     }
     
     // MARK: - Cloud Page Source Setup
@@ -365,22 +373,15 @@ final class ComicImageCache: ObservableObject, @unchecked Sendable {
                 return UIImage(cgImage: cgImage)
             }
         } else {
-            // Open a fresh Archive for every extraction.
-            // A single shared Archive is NOT thread-safe — concurrent Task.detached calls
-            // corrupt each other's file-pointer state, producing wrong image data per index.
+            // Open via shared ArchiveManager to serialize calls and reuse file handles.
             guard let url = cbzURL, index < entries.count else { return nil }
             let entry = entries[index]
             let (bounds, scale) = await MainActor.run {
                 (UIScreen.main.bounds, UIScreen.main.scale)
             }
-            return autoreleasepool {
-                guard let archive = try? Archive(url: url, accessMode: .read, pathEncoding: .utf8) else { return nil }
-                var data = Data()
-                do {
-                    _ = try archive.extract(entry, bufferSize: 32768) { chunk in
-                        data.append(chunk)
-                    }
-                    
+            do {
+                let data = try await ArchiveManager.shared.extractEntry(from: url, path: entry.path)
+                return autoreleasepool {
                     // Extremely safe downsampling to prevent OOM on 4K CBZ images (ImageIO trick)
                     let options: [CFString: Any] = [
                         kCGImageSourceShouldCache: false
@@ -402,10 +403,10 @@ final class ComicImageCache: ObservableObject, @unchecked Sendable {
                     }
                     
                     return UIImage(cgImage: downsampledImage)
-                } catch {
-                    Logger.shared.log("CBZ page \(index) extraction error: \(error.localizedDescription)", category: "ComicImageCache", type: .error)
-                    return nil
                 }
+            } catch {
+                Logger.shared.log("CBZ page \(index) extraction error: \(error.localizedDescription)", category: "ComicImageCache", type: .error)
+                return nil
             }
         }
     }

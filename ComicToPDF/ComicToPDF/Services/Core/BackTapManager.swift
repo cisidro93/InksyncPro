@@ -63,7 +63,7 @@ public final class BackTapManager {
         guard motionManager.isDeviceMotionAvailable else { return }
         guard !isMonitoring else { return }
         
-        motionManager.deviceMotionUpdateInterval = 0.01 // 100Hz sampling rate
+        motionManager.deviceMotionUpdateInterval = 0.025 // 40Hz sampling rate (saves 60% CPU callbacks)
         let threshold = self.threshold
         motionManager.startDeviceMotionUpdates(to: queue) { [weak self] motion, error in
             guard let motion = motion, error == nil else { return }

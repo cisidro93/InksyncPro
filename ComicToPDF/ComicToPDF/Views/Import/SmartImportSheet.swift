@@ -141,6 +141,12 @@ class SmartImportViewModel: ObservableObject {
             // UIImage(contentsOfFile:) synchronously decodes the full uncompressed bitmap;
             // manga pages can be 30–100 MB each. Doing this on the main actor → watchdog kill.
             let averageConfidence: Double = await Task.detached(priority: .userInitiated) {
+                // Natural Thermal Conservation: If Speed Mode is active, bypass panel extraction completely
+                if UserDefaults.standard.bool(forKey: "essentialReaderMode") {
+                    Logger.shared.log("SmartImport: Essential Speed Mode active. Bypassing background Vision panel scan.", category: "AI")
+                    return 1.0
+                }
+                
                 var confidences: [Double] = []
                 for url in sample {
                     // Wrap the full decode+detect cycle in autoreleasepool so the
