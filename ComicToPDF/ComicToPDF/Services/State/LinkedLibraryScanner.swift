@@ -523,9 +523,25 @@ final class LinkedLibraryScanner: ObservableObject {
                     }
                 }
                 let url = pdf.url
+                let bookmark = pdf.driveBookmarkData
                 group.addTask {
                     let img = await Task.detached(priority: .background) {
-                        PhysicalFileSystemRouter.extractCoverImageStatic(from: url)
+                        if let bookmark {
+                            var isStale = false
+                            guard let resolvedURL = try? URL(
+                                resolvingBookmarkData: bookmark,
+                                options: .withoutUI,
+                                relativeTo: nil,
+                                bookmarkDataIsStale: &isStale
+                            ) else {
+                                return nil
+                            }
+                            let accessing = resolvedURL.startAccessingSecurityScopedResource()
+                            defer { if accessing { resolvedURL.stopAccessingSecurityScopedResource() } }
+                            return PhysicalFileSystemRouter.extractCoverImageStatic(from: resolvedURL)
+                        } else {
+                            return PhysicalFileSystemRouter.extractCoverImageStatic(from: url)
+                        }
                     }.value
                     return (index, img?.pngData())
                 }

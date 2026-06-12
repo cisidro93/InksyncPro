@@ -5,17 +5,29 @@ import SwiftData
 
 struct CBZToEPUBConverter: Sendable {
     
-    func convert(sourceURL: URL, settings: ConversionSettings, manualManifest: [Int: [PanelExtractor.Panel]]?, sourceIsMangaPDF: Bool = false, coverOverrideData: Data? = nil, progress: @escaping @Sendable (Double) -> Void) async throws -> [URL] {
+    func convert(sourceURL: URL, settings: ConversionSettings, manualManifest: [Int: [PanelExtractor.Panel]]?, sourceIsMangaPDF: Bool = false, coverOverrideData: Data? = nil, customOutputName: String? = nil, progress: @escaping @Sendable (Double) -> Void) async throws -> [URL] {
         Logger.shared.log("Starting Enterprise Conversion (No TOC). Manual Manifest: \(manualManifest?.count ?? 0) pages", category: "Converter")
         
         let fileManager = FileManager.default
         
         // Strip ALL extensions
-        var baseFilename = sourceURL.lastPathComponent
-        while !baseFilename.isEmpty && baseFilename.contains(".") {
-            let stripped = (baseFilename as NSString).deletingPathExtension
-            if stripped == baseFilename { break } // No more extensions
-            baseFilename = stripped
+        var baseFilename: String
+        if let customName = customOutputName, !customName.isEmpty {
+            var derived = customName
+            while derived.contains(".") {
+                let stripped = (derived as NSString).deletingPathExtension
+                if stripped == derived { break }
+                derived = stripped
+            }
+            baseFilename = derived
+        } else {
+            var derived = sourceURL.lastPathComponent
+            while !derived.isEmpty && derived.contains(".") {
+                let stripped = (derived as NSString).deletingPathExtension
+                if stripped == derived { break } // No more extensions
+                derived = stripped
+            }
+            baseFilename = derived
         }
         
         // Stage 1

@@ -30,7 +30,7 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
         picker.delegate = coordinator
         picker.allowsMultipleSelection = false
         picker.shouldShowFileExtensions = true
-        picker.modalPresentationStyle = .fullScreen
+        picker.modalPresentationStyle = .pageSheet
 
         Logger.shared.log("FolderLinkCoordinator: presenting folder picker", category: "FolderLink", type: .info)
         rootVC.present(picker, animated: true)

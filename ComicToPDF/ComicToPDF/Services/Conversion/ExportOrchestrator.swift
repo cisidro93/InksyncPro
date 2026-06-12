@@ -168,7 +168,7 @@ class ExportOrchestrator {
 
         do {
             manager.saveLibrary()
-            let finalEPUB = try await ConversionEngine.shared.process(url: localSourceURL, settings: AppSettingsManager.shared.conversionSettings)
+            let finalEPUB = try await ConversionEngine.shared.process(url: localSourceURL, settings: AppSettingsManager.shared.conversionSettings, customOutputName: pdf.name)
             let finalName = finalEPUB.lastPathComponent
             let destURL = exportDir.appendingPathComponent(finalName)
             if fileManager.fileExists(atPath: destURL.path) { try fileManager.removeItem(at: destURL) }

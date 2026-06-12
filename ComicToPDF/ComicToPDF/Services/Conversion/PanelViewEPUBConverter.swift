@@ -96,6 +96,7 @@ class PanelViewEPUBConverter {
         panels: [Int: [PanelExtractor.Panel]],
         sourceIsMangaPDF: Bool = false,
         coverOverrideData: Data? = nil,
+        customOutputName: String? = nil,
         progress: @escaping (Double) -> Void
     ) async throws -> [URL] {
         Logger.shared.log("PanelViewEPUBConverter: Starting. Pages with panels: \(panels.count)", category: "PVConverter")
@@ -104,11 +105,23 @@ class PanelViewEPUBConverter {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
 
         // ── Strip all extensions from filename ────────────────────────────────
-        var baseFilename = sourceURL.lastPathComponent
-        while baseFilename.contains(".") {
-            let s = (baseFilename as NSString).deletingPathExtension
-            if s == baseFilename { break }
-            baseFilename = s
+        var baseFilename: String
+        if let customName = customOutputName, !customName.isEmpty {
+            var derived = customName
+            while derived.contains(".") {
+                let s = (derived as NSString).deletingPathExtension
+                if s == derived { break }
+                derived = s
+            }
+            baseFilename = derived
+        } else {
+            var derived = sourceURL.lastPathComponent
+            while derived.contains(".") {
+                let s = (derived as NSString).deletingPathExtension
+                if s == derived { break }
+                derived = s
+            }
+            baseFilename = derived
         }
 
         // ── Step 0: Extract archive ───────────────────────────────────────────

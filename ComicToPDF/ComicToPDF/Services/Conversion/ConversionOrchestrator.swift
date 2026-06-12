@@ -102,7 +102,7 @@ final class ConversionOrchestrator: Sendable {
                 await MainActor.run { manager.processingStatus = "Loading Panel Data..." }
                 let combinedManifest = await manager.getCombinedManifest(for: pdf)
                 let pvConverter = PanelViewEPUBConverter()
-                let newURLs = try await pvConverter.convert(sourceURL: pdf.url, settings: jobSettings, panels: combinedManifest, sourceIsMangaPDF: false, coverOverrideData: coverOverrideData) { progress in
+                let newURLs = try await pvConverter.convert(sourceURL: pdf.url, settings: jobSettings, panels: combinedManifest, sourceIsMangaPDF: false, coverOverrideData: coverOverrideData, customOutputName: pdf.name) { progress in
                     Task { @MainActor in manager.conversionProgress = progress; manager.processingStatus = "Converting \(Int(progress * 100))%" }
                 }
                 for epubURL in newURLs { try? await manager.injectMetadata(into: epubURL, panels: combinedManifest, metadata: pdf.metadata) }
@@ -114,7 +114,7 @@ final class ConversionOrchestrator: Sendable {
                 Logger.shared.log("PanelView Conversion Successful: \(pdf.name)", category: "Converter")
             } else {
                 let converter = CBZToEPUBConverter()
-                let newURLs = try await converter.convert(sourceURL: pdf.url, settings: jobSettings, manualManifest: nil, sourceIsMangaPDF: false, coverOverrideData: coverOverrideData) { progress in
+                let newURLs = try await converter.convert(sourceURL: pdf.url, settings: jobSettings, manualManifest: nil, sourceIsMangaPDF: false, coverOverrideData: coverOverrideData, customOutputName: pdf.name) { progress in
                     Task { @MainActor in manager.conversionProgress = progress; manager.processingStatus = "Converting \(Int(progress * 100))%" }
                 }
                 for epubURL in newURLs { try? await manager.injectMetadata(into: epubURL, panels: [:], metadata: pdf.metadata) }
@@ -233,14 +233,14 @@ final class ConversionOrchestrator: Sendable {
                     await MainActor.run { manager.processingStatus = "Reading panels for \(pdf.name)..." }
                     let combinedManifest = await manager.getCombinedManifest(for: pdf)
                     let pvConverter = PanelViewEPUBConverter()
-                    let newURLs = try await pvConverter.convert(sourceURL: pdf.url, settings: jobSettings, panels: combinedManifest, sourceIsMangaPDF: false, coverOverrideData: coverOverrideData) { p in
+                    let newURLs = try await pvConverter.convert(sourceURL: pdf.url, settings: jobSettings, panels: combinedManifest, sourceIsMangaPDF: false, coverOverrideData: coverOverrideData, customOutputName: pdf.name) { p in
                         Task { @MainActor in manager.conversionProgress = p; manager.processingStatus = "Converting \(currentNum) of \(total) (\(Int(p * 100))%)" }
                     }
                     for epubURL in newURLs { try? await manager.injectMetadata(into: epubURL, panels: combinedManifest, metadata: pdf.metadata) }
                     await MainActor.run { manager.scanLibrary() }
                 } else {
                     let converter = CBZToEPUBConverter()
-                    let newURLs = try await converter.convert(sourceURL: pdf.url, settings: jobSettings, manualManifest: nil, sourceIsMangaPDF: false, coverOverrideData: coverOverrideData) { p in
+                    let newURLs = try await converter.convert(sourceURL: pdf.url, settings: jobSettings, manualManifest: nil, sourceIsMangaPDF: false, coverOverrideData: coverOverrideData, customOutputName: pdf.name) { p in
                         Task { @MainActor in manager.conversionProgress = p; manager.processingStatus = "Converting \(currentNum) of \(total) (\(Int(p * 100))%)" }
                     }
                     for epubURL in newURLs { try? await manager.injectMetadata(into: epubURL, panels: [:], metadata: pdf.metadata) }
@@ -465,12 +465,12 @@ final class ConversionOrchestrator: Sendable {
                 
                 if jobSettings.outputPipeline == .proPanel {
                     let converter = PanelViewEPUBConverter()
-                    resultingURLs = try await converter.convert(sourceURL: file.url, settings: jobSettings, panels: combinedManifest, sourceIsMangaPDF: isMangaPDF, coverOverrideData: currentCoverOverride) { progress in
+                    resultingURLs = try await converter.convert(sourceURL: file.url, settings: jobSettings, panels: combinedManifest, sourceIsMangaPDF: isMangaPDF, coverOverrideData: currentCoverOverride, customOutputName: file.name) { progress in
                         Task { @MainActor in manager.conversionProgress = progress }
                     }
                 } else {
                     let converter = CBZToEPUBConverter()
-                    resultingURLs = try await converter.convert(sourceURL: file.url, settings: jobSettings, manualManifest: nil, sourceIsMangaPDF: isMangaPDF, coverOverrideData: currentCoverOverride) { progress in
+                    resultingURLs = try await converter.convert(sourceURL: file.url, settings: jobSettings, manualManifest: nil, sourceIsMangaPDF: isMangaPDF, coverOverrideData: currentCoverOverride, customOutputName: file.name) { progress in
                         Task { @MainActor in manager.conversionProgress = progress }
                     }
                 }

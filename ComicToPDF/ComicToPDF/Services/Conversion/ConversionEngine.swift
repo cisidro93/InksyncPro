@@ -33,7 +33,7 @@ actor ConversionEngine {
     /// - Parameters:
     ///   - url: Source file URL
     ///   - settings: Conversion settings snapshot (Value Type for thread safety)
-    func process(url: URL, settings: ConversionSettings) async throws -> URL {
+    func process(url: URL, settings: ConversionSettings, customOutputName: String? = nil) async throws -> URL {
         // ✅ PHASE 9: Unrestricted Execution
         let backgroundTaskToken = await MainActor.run {
             let box = BackgroundTaskBox()
@@ -72,7 +72,7 @@ actor ConversionEngine {
                 resultURL = tempURL
                 
             } else {
-                resultURL = try await convertArchive(url: url, settings: settings)
+                resultURL = try await convertArchive(url: url, settings: settings, customOutputName: customOutputName)
             }
             
             progressSubject.send(.completed(file: url, result: resultURL))
@@ -106,7 +106,7 @@ actor ConversionEngine {
     }
     
     // Internal Worker: Archive
-    private func convertArchive(url: URL, settings: ConversionSettings) async throws -> URL {
+    private func convertArchive(url: URL, settings: ConversionSettings, customOutputName: String? = nil) async throws -> URL {
         progressSubject.send(.progress(file: url, current: 0, total: 100, message: "Extracting Archive..."))
         
         // Simulate work or call CBZToEPUBConverter
@@ -122,6 +122,7 @@ actor ConversionEngine {
             sourceURL: url,
             settings: settings,
             manualManifest: nil, // We could pass overrides here if we had them in settings
+            customOutputName: customOutputName,
             progress: { @Sendable progress in
                 // Adapt closure to async stream/subject if needed, but for now just fire and forget or ignore
                 // Since this is inside an actor, we need to be careful.
