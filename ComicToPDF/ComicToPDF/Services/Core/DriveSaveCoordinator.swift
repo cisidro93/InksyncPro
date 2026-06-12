@@ -31,7 +31,7 @@ final class DriveSaveCoordinator: NSObject, UIDocumentPickerDelegate {
         picker.delegate = coordinator
         picker.allowsMultipleSelection = true
         picker.shouldShowFileExtensions = true
-        picker.modalPresentationStyle = .fullScreen
+        picker.modalPresentationStyle = .pageSheet
 
         Logger.shared.log("DriveSaveCoordinator: presenting save destination picker", category: "DriveSave", type: .info)
         rootVC.present(picker, animated: true)
@@ -49,18 +49,13 @@ final class DriveSaveCoordinator: NSObject, UIDocumentPickerDelegate {
         }
 
         Logger.shared.log("DriveSaveCoordinator: user selected save destination: \(selectedURL.lastPathComponent)", category: "DriveSave", type: .success)
-        let accessing = selectedURL.startAccessingSecurityScopedResource()
 
         controller.dismiss(animated: true)
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let self else {
-                if accessing { selectedURL.stopAccessingSecurityScopedResource() }
-                return
-            }
+            guard let self else { return }
             DispatchQueue.main.async {
                 self.finish(with: selectedURL)
-                if accessing { selectedURL.stopAccessingSecurityScopedResource() }
             }
         }
     }

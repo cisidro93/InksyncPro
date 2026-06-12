@@ -72,6 +72,16 @@ class BookReaderViewModel: NSObject, ObservableObject, WKNavigationDelegate {
         unpackEPUB()
     }
     
+    deinit {
+        let path = tempDir.path
+        Task.detached(priority: .background) {
+            let fm = FileManager.default
+            if fm.fileExists(atPath: path) {
+                try? fm.removeItem(atPath: path)
+            }
+        }
+    }
+    
     private func unpackEPUB() {
         Task.detached(priority: .userInitiated) { [weak self] in
             guard let self else { return }
@@ -203,7 +213,7 @@ class BookReaderViewModel: NSObject, ObservableObject, WKNavigationDelegate {
             }.value
 
             guard var html = rawHTML else {
-                await MainActor.run { self.isLoading = false }
+                self.isLoading = false
                 return
             }
             // Normalise charset declaration so WKWebView always uses UTF-8
@@ -211,11 +221,9 @@ class BookReaderViewModel: NSObject, ObservableObject, WKNavigationDelegate {
             if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) {
                 html = regex.stringByReplacingMatches(in: html, options: [], range: NSRange(html.startIndex..., in: html), withTemplate: "<meta charset=\\\"utf-8\\\">")
             }
-            // Return to main actor to update @Published properties
-            await MainActor.run {
-                self.currentChapterHTML = html
-                self.isLoading = false
-            }
+            // Update @Published properties directly on MainActor
+            self.currentChapterHTML = html
+            self.isLoading = false
         }
     }
     

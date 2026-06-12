@@ -25,6 +25,8 @@ final class LinkedLibraryScanner: ObservableObject {
 
     static let shared = LinkedLibraryScanner()
 
+    private var activeSyncDrives = Set<UUID>()
+
     /// Published live during linkDrive scanning so the UI can display progress.
     @Published private(set) var scanStatus: String = ""
 
@@ -137,6 +139,13 @@ final class LinkedLibraryScanner: ObservableObject {
 
     /// Non-destructive re-scan when a drive reconnects.
     func syncDrive(_ entry: AppSettingsManager.LinkedDriveEntry) async {
+        guard !activeSyncDrives.contains(entry.id) else {
+            Logger.shared.log("LinkedLibraryScanner: Sync already in progress for '\(entry.displayName)' — skipping", category: "Drive", type: .info)
+            return
+        }
+        activeSyncDrives.insert(entry.id)
+        defer { activeSyncDrives.remove(entry.id) }
+
         // ✅ iOS CORRECT: Resolve with .withoutUI — suppresses blocking system dialogs.
         var isStale = false
         guard let url = try? URL(

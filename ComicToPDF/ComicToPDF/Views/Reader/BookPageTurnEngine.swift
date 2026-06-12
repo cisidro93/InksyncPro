@@ -24,6 +24,12 @@ struct BookFlipGesture: View {
     /// Stored so new flips can cancel the previous in-flight animation Task.
     @State private var flipTask: Task<Void, Never>? = nil
 
+    @Environment(\.horizontalSizeClass) private var hSizeClass
+
+    private func tapZoneWidth(totalWidth: CGFloat) -> CGFloat {
+        hSizeClass == .regular ? totalWidth * 0.15 : totalWidth / 3.0
+    }
+
     var body: some View {
         GeometryReader { geo in
             ZStack {
@@ -62,6 +68,7 @@ struct BookFlipGesture: View {
                     .zIndex(1)
 
                 // ── Instant Tap Zones Overlay ──
+                let zoneW = tapZoneWidth(totalWidth: geo.size.width)
                 HStack(spacing: 0) {
                     Color.clear
                         .contentShape(Rectangle())
@@ -73,7 +80,7 @@ struct BookFlipGesture: View {
                                 if canFlipBack() { flipBack(width: geo.size.width) }
                             }
                         }
-                        .frame(width: geo.size.width / 3)
+                        .frame(width: zoneW)
                     
                     Spacer()
                     
@@ -87,7 +94,7 @@ struct BookFlipGesture: View {
                                 if canFlipForward() { flipForward(width: geo.size.width) } else { onFlipPastEnd?() }
                             }
                         }
-                        .frame(width: geo.size.width / 3)
+                        .frame(width: zoneW)
                 }
                 .zIndex(2)
             }
@@ -123,14 +130,14 @@ struct BookFlipGesture: View {
             )
             .onTapGesture { location in
                 guard !isAnimating else { return }
-                let third = geo.size.width / 3
-                if location.x < third {
+                let zoneW = tapZoneWidth(totalWidth: geo.size.width)
+                if location.x < zoneW {
                     if isMangaRTL { 
                         if canFlipForward() { flipForward(width: geo.size.width) } else { onFlipPastEnd?() }
                     } else { 
                         if canFlipBack() { flipBack(width: geo.size.width) } 
                     }
-                } else if location.x > geo.size.width - third {
+                } else if location.x > geo.size.width - zoneW {
                     if isMangaRTL { 
                         if canFlipBack() { flipBack(width: geo.size.width) } 
                     } else { 
@@ -323,7 +330,17 @@ struct TwoUpBookPager: View {
     private var spreads: [[Int]] {
         var currentSpread: [Int] = []
         var allSpreads: [[Int]] = []
-        for i in 0..<cache.pageCount {
+        
+        let startIdx: Int
+        if cache.pageCount > 1 {
+            // Page 0 is the cover, keep it solo
+            allSpreads.append([0])
+            startIdx = 1
+        } else {
+            startIdx = 0
+        }
+        
+        for i in startIdx..<cache.pageCount {
             if isLandscapePage(i) {
                 if !currentSpread.isEmpty {
                     allSpreads.append(currentSpread)

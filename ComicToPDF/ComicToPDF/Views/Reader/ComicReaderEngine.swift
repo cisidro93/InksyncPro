@@ -127,7 +127,9 @@ final class ComicImageCache: ObservableObject, @unchecked Sendable {
                 
                 if let accessed = accessedURL {
                     if let self = self {
-                        self.activelyAccessedURL = accessed
+                        await MainActor.run {
+                            self.activelyAccessedURL = accessed
+                        }
                     } else {
                         accessed.stopAccessingSecurityScopedResource()
                     }
@@ -147,16 +149,23 @@ final class ComicImageCache: ObservableObject, @unchecked Sendable {
             Task.detached(priority: .userInitiated) { [weak self] in
                 guard let self else { return }
                 let resolvedURL: URL
+                var accessedURL: URL? = nil
                 if case .linked(let bm) = pdf.sourceMode,
                    let url = try? BookmarkResolver.shared.resolve(bm) {
-                    _ = url.startAccessingSecurityScopedResource()
+                    let didAccess = url.startAccessingSecurityScopedResource()
                     resolvedURL = url
+                    if didAccess { accessedURL = url }
                 } else {
                     resolvedURL = pdf.url
                 }
                 do {
                     // CBRExtractor.extract returns (tempDir, sortedImageURLs)
                     let (tempDir, imageURLs) = try await CBRExtractor.extract(from: resolvedURL)
+                    if let accessed = accessedURL {
+                        await MainActor.run {
+                            self.activelyAccessedURL = accessed
+                        }
+                    }
                     await MainActor.run {
                         self.extractedCBRTempDir = tempDir
                         self.extractedCBRImageURLs = imageURLs
@@ -167,6 +176,9 @@ final class ComicImageCache: ObservableObject, @unchecked Sendable {
                         }
                     }
                 } catch {
+                    if let accessed = accessedURL {
+                        accessed.stopAccessingSecurityScopedResource()
+                    }
                     Logger.shared.log(
                         "ComicImageCache: CBR extraction failed for '\(pdf.name)': \(error.localizedDescription)",
                         category: "Engine", type: .error
@@ -183,23 +195,19 @@ final class ComicImageCache: ObservableObject, @unchecked Sendable {
                 // reader session since images are extracted lazily page-by-page on demand.
                 // Store the URL so we can stop access in deinit.
                 let resolvedURL: URL
+                var accessedURL: URL? = nil
                 if case .linked(let bm) = pdf.sourceMode,
                    let url = try? BookmarkResolver.shared.resolve(bm) {
                     let didAccess = url.startAccessingSecurityScopedResource()
                     resolvedURL = url
-                    // Store reference so deinit can call stopAccessingSecurityScopedResource.
-                    // Set synchronously to avoid leaks if dismissed quickly.
-                    if didAccess {
-                        if let self = self {
-                            self.activelyAccessedURL = url
-                        } else {
-                            url.stopAccessingSecurityScopedResource()
-                        }
-                    }
+                    if didAccess { accessedURL = url }
                 } else {
                     resolvedURL = pdf.url
                 }
                 guard let archive = try? Archive(url: resolvedURL, accessMode: .read, pathEncoding: .utf8) else {
+                    if let accessed = accessedURL {
+                        accessed.stopAccessingSecurityScopedResource()
+                    }
                     Logger.shared.log("Failed to open CBZ Archive at \(resolvedURL.lastPathComponent)", category: "ComicImageCache", type: .error)
                     await MainActor.run { [weak self] in
                         self?.loadError = "Could not open the comic archive. The file may be corrupted, password-protected, or in an unsupported format."
@@ -222,6 +230,15 @@ final class ComicImageCache: ObservableObject, @unchecked Sendable {
                     return imageExtensions.contains(ext)
                 }.sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
                 
+                if let accessed = accessedURL {
+                    if let self = self {
+                        await MainActor.run {
+                            self.activelyAccessedURL = accessed
+                        }
+                    } else {
+                        accessed.stopAccessingSecurityScopedResource()
+                    }
+                }
                 await MainActor.run { [weak self] in
                     self?.cbzURL = resolvedURL   // URL for per-extraction Archive instances
                     self?.entries = sortedEntries
@@ -489,6 +506,11 @@ struct ComicReaderEngine: View {
     var onDismiss: () -> Void
     /// All library books — used to auto-advance to the next volume at series end.
     var allBooks: [ConvertedPDF] = []
+    
+    @Environment(\.horizontalSizeClass) private var hSizeClass
+    private var brightnessZoneWidth: CGFloat {
+        hSizeClass == .regular ? 60 : 20
+    }
     
     @EnvironmentObject var conversionManager: ConversionManager
     
@@ -1002,7 +1024,7 @@ struct ComicReaderEngine: View {
         HStack {
             Color.clear
                 .contentShape(Rectangle())
-                .frame(width: 30)
+                .frame(width: brightnessZoneWidth)
                 .gesture(
                     DragGesture()
                         .onChanged { value in
@@ -1015,7 +1037,7 @@ struct ComicReaderEngine: View {
             Spacer()
             Color.clear
                 .contentShape(Rectangle())
-                .frame(width: 30)
+                .frame(width: brightnessZoneWidth)
                 .gesture(
                     DragGesture()
                         .onChanged { value in

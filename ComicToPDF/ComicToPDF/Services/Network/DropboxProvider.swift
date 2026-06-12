@@ -73,6 +73,7 @@ class DropboxProvider: NSObject, CloudStorageProvider, ObservableObject {
     /// if we don't retain the anchor it gets deallocated immediately → error 2.
     private var _oauthAnchor: OAuthWindowAnchor?
     private var _oauthSession: ASWebAuthenticationSession?
+    private var activeRefreshTask: Task<Void, Error>?
 
     private override init() {
         super.init()
@@ -195,32 +196,45 @@ class DropboxProvider: NSObject, CloudStorageProvider, ObservableObject {
 
     private func refreshAccessTokenIfNeeded() async throws {
         guard let expiry = tokenExpiry, expiry < Date().addingTimeInterval(60) else { return }
-        guard let rToken = refreshToken else {
-            self.isConnected = false
-            throw NSError(domain: "Dropbox", code: 401, userInfo: [NSLocalizedDescriptionKey: "No refresh token — please reconnect"])
+        
+        // If a refresh is already in progress, await its completion
+        if let activeTask = activeRefreshTask {
+            _ = try await activeTask.value
+            return
         }
 
-        guard let url = URL(string: "https://api.dropboxapi.com/oauth2/token") else { throw URLError(.badURL) }
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        let task = Task {
+            guard let rToken = refreshToken else {
+                self.isConnected = false
+                throw NSError(domain: "Dropbox", code: 401, userInfo: [NSLocalizedDescriptionKey: "No refresh token — please reconnect"])
+            }
 
-        let params = ["grant_type": "refresh_token", "refresh_token": rToken, "client_id": clientID]
-        request.httpBody = params.map { "\($0.key)=\($0.value)" }.joined(separator: "&").data(using: .utf8)
+            guard let url = URL(string: "https://api.dropboxapi.com/oauth2/token") else { throw URLError(.badURL) }
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
 
-        let (data, response) = try await URLSession.shared.data(for: request)
-        if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode >= 400 {
-            self.isConnected = false
-            self.accessToken = nil
-            self.refreshToken = nil
-            throw NSError(domain: "Dropbox", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Refresh token rejected by Dropbox. Please reconnect."])
+            let params = ["grant_type": "refresh_token", "refresh_token": rToken, "client_id": clientID]
+            request.httpBody = params.map { "\($0.key)=\($0.value)" }.joined(separator: "&").data(using: .utf8)
+
+            let (data, response) = try await URLSession.shared.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode >= 400 {
+                self.isConnected = false
+                self.accessToken = nil
+                self.refreshToken = nil
+                throw NSError(domain: "Dropbox", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Refresh token rejected by Dropbox. Please reconnect."])
+            }
+            let tokenResponse = try JSONDecoder().decode(DropboxTokenResponse.self, from: data)
+            accessToken = tokenResponse.access_token
+            if let expiresIn = tokenResponse.expires_in {
+                tokenExpiry = Date().addingTimeInterval(TimeInterval(expiresIn))
+            }
+            self.isConnected = true
         }
-        let tokenResponse = try JSONDecoder().decode(DropboxTokenResponse.self, from: data)
-        accessToken = tokenResponse.access_token
-        if let expiresIn = tokenResponse.expires_in {
-            tokenExpiry = Date().addingTimeInterval(TimeInterval(expiresIn))
-        }
-        self.isConnected = true
+
+        activeRefreshTask = task
+        defer { activeRefreshTask = nil }
+        try await task.value
     }
 
     // MARK: - Sign Out
