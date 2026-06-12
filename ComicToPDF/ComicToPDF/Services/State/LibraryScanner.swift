@@ -66,6 +66,7 @@ actor LibraryScanner {
                 let ext = fileURL.pathExtension.lowercased()
                 guard ["pdf", "cbz", "zip", "epub", "cbr", "cbt"].contains(ext) else { continue }
 
+                let filename = fileURL.lastPathComponent
                 let relPath = relativePath(for: fileURL)
                 guard !pathSet.contains(relPath) else { continue }
 
