@@ -492,7 +492,7 @@ struct ResolutionItemSuggestionCell: View {
                     kCGImageSourceCreateThumbnailFromImageAlways: true,
                     kCGImageSourceShouldCacheImmediately: true,
                     kCGImageSourceCreateThumbnailWithTransform: true,
-                    kCGImageSourceThumbnailMaxPixelSize: 300
+                    kCGImageSourceThumbnailMaxPixelSize: 600
                 ] as CFDictionary
                 guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, downsampleOptions) else { return nil }
                 return UIImage(cgImage: cgImage)

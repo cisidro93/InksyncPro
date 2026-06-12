@@ -77,7 +77,7 @@ class PhysicalFileSystemRouter {
                         kCGImageSourceCreateThumbnailFromImageAlways: true,
                         kCGImageSourceShouldCacheImmediately: true,
                         kCGImageSourceCreateThumbnailWithTransform: true,
-                        kCGImageSourceThumbnailMaxPixelSize: 300   // grid cells never exceed ~200pt
+                        kCGImageSourceThumbnailMaxPixelSize: 600   // grid cells never exceed ~200pt (Retina 3x = 600px)
                     ] as CFDictionary
                     
                     if let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, downsampleOpts) {
@@ -103,7 +103,7 @@ class PhysicalFileSystemRouter {
         
         autoreleasepool {
             if let image = UIImage(data: data) {
-                let thumbnail = image.preparingThumbnail(of: CGSize(width: 160, height: 240)) ?? image
+                let thumbnail = image.preparingThumbnail(of: CGSize(width: 300, height: 450)) ?? image
                 finalThumbnail = thumbnail
                 // Pixel byte count approximation — accurate enough for NSCache pressure, zero CPU overhead.
                 thumbnailCost = Int(thumbnail.size.width * thumbnail.size.height * thumbnail.scale * thumbnail.scale * 4)
@@ -158,7 +158,7 @@ class PhysicalFileSystemRouter {
                   FileManager.default.fileExists(atPath: variantURL.path) else { return nil }
             let optData = try? Data(contentsOf: variantURL)
             if let data = optData, let image = UIImage(data: data) {
-                return image.jpegData(compressionQuality: 0.7)
+                return image.jpegData(compressionQuality: 0.85)
             }
             return nil
         }
@@ -191,7 +191,7 @@ class PhysicalFileSystemRouter {
         if needsStopAccess { url.stopAccessingSecurityScopedResource() }
         
         let jpegData = autoreleasepool {
-            image?.jpegData(compressionQuality: 0.7)
+            image?.jpegData(compressionQuality: 0.85)
         }
         guard let data = jpegData else { return }
         saveCoverImage(data, for: pdf, manager: manager)
@@ -208,7 +208,7 @@ class PhysicalFileSystemRouter {
         }.value
         
         let jpegData = autoreleasepool {
-            image?.jpegData(compressionQuality: 0.7)
+            image?.jpegData(compressionQuality: 0.85)
         }
         guard let data = jpegData else { return }
         saveCoverImage(data, for: pdf, manager: manager)
@@ -227,7 +227,7 @@ class PhysicalFileSystemRouter {
             let image = await Task.detached(priority: .userInitiated) { () -> UIImage? in
                 UIImage(data: data)
             }.value
-            guard let image, let jpegData = image.jpegData(compressionQuality: 0.7) else { return }
+            guard let image, let jpegData = image.jpegData(compressionQuality: 0.85) else { return }
             saveCoverImage(jpegData, for: pdf, manager: manager)
             Logger.shared.log("PhysicalFileSystemRouter: Cloud cover from byte-range for '\(pdf.name)'", category: "Cloud", type: .success)
         } catch {
@@ -259,7 +259,7 @@ class PhysicalFileSystemRouter {
                         kCGImageSourceCreateThumbnailFromImageAlways: true,
                         kCGImageSourceShouldCacheImmediately: true,
                         kCGImageSourceCreateThumbnailWithTransform: true,
-                        kCGImageSourceThumbnailMaxPixelSize: 300   // grid cells never exceed ~200pt
+                        kCGImageSourceThumbnailMaxPixelSize: 600   // grid cells never exceed ~200pt (Retina 3x = 600px)
                     ] as CFDictionary
                     guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, downsampleOpts) else { return nil }
                     return UIImage(cgImage: cg)
@@ -319,7 +319,7 @@ class PhysicalFileSystemRouter {
                     kCGImageSourceCreateThumbnailFromImageAlways: true,
                     kCGImageSourceShouldCacheImmediately: true,
                     kCGImageSourceCreateThumbnailWithTransform: true,
-                    kCGImageSourceThumbnailMaxPixelSize: 500
+                    kCGImageSourceThumbnailMaxPixelSize: 720
                 ] as CFDictionary
                 
                 if let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, downsampleOptions) {
@@ -357,7 +357,7 @@ class PhysicalFileSystemRouter {
                         kCGImageSourceCreateThumbnailFromImageAlways: true,
                         kCGImageSourceShouldCacheImmediately: true,
                         kCGImageSourceCreateThumbnailWithTransform: true,
-                        kCGImageSourceThumbnailMaxPixelSize: 500
+                        kCGImageSourceThumbnailMaxPixelSize: 720
                     ] as CFDictionary
                     
                     if let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, downsampleOptions) {
