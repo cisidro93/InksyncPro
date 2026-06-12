@@ -8,6 +8,8 @@ struct ModernLibraryView: View {
     @EnvironmentObject var conversionManager: ConversionManager
     @EnvironmentObject var settingsManager: AppSettingsManager
     @Environment(\.horizontalSizeClass) private var hSizeClass
+    @AppStorage("useSidebar") private var useSidebar = true
+    @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
     @State private var iPadSidebarSelection: String? = "all"
     @State private var isCollectionsExpanded: Bool = true
     @ObservedObject private var router = AppRouter.shared
@@ -486,11 +488,28 @@ struct ModernLibraryView: View {
             .onChange(of: viewModel.filterState) {
                 viewModel.updateLibraryItemsCache(pdfs: cachedVisiblePDFs, collections: cachedCollections, sortOption: sortOption)
             }
-            .onChange(of: viewModel.contentShelf) {
+            .onChange(of: viewModel.contentShelf) { _, newValue in
                 viewModel.updateLibraryItemsCache(pdfs: cachedVisiblePDFs, collections: cachedCollections, sortOption: sortOption)
+                if viewModel.currentFolderID == nil {
+                    let shelfVal = String(describing: newValue)
+                    if iPadSidebarSelection != shelfVal {
+                        iPadSidebarSelection = shelfVal
+                    }
+                }
             }
-            .onChange(of: viewModel.currentFolderID) {
+            .onChange(of: viewModel.currentFolderID) { _, newValue in
                 viewModel.updateLibraryItemsCache(pdfs: cachedVisiblePDFs, collections: cachedCollections, sortOption: sortOption)
+                if let folderID = newValue {
+                    let sidebarVal = "col_\(folderID.uuidString)"
+                    if iPadSidebarSelection != sidebarVal {
+                        iPadSidebarSelection = sidebarVal
+                    }
+                } else {
+                    let shelfVal = String(describing: viewModel.contentShelf)
+                    if iPadSidebarSelection != shelfVal {
+                        iPadSidebarSelection = shelfVal
+                    }
+                }
             }
             .onChange(of: isSearchActive) { _, newVal in
                 if !newVal {
@@ -555,25 +574,24 @@ struct ModernLibraryView: View {
         ZStack(alignment: .top) {
             Color.clear.ignoresSafeArea()
             
-            // Edge-to-edge content
-            libraryContent
-                .safeAreaInset(edge: .bottom) {
-                    if isBatchMode { batchBottomToolbar.transition(.move(edge: .bottom)) }
+            if hSizeClass == .regular && useSidebar {
+                NavigationSplitView(columnVisibility: $columnVisibility) {
+                    sidebarContent
+                } detail: {
+                    libraryContent
+                        .safeAreaInset(edge: .bottom) {
+                            if isBatchMode { batchBottomToolbar.transition(.move(edge: .bottom)) }
+                        }
+                        .overlay(alignment: .top) { storageTransferBanner }
                 }
-                .overlay(alignment: .top) { storageTransferBanner }
-                .fullScreenCover(item: $router.activeFullScreen) { dest in
-                    switch dest {
-                    case .read(let pdf, _):
-                        UnifiedReaderView(pdf: pdf, allBooks: conversionManager.convertedPDFs)
-                    case .advancedWorkspace(let pdf):
-                        AdvancedWorkspaceView(pdf: pdf).environmentObject(conversionManager)
-                    case .smartCollection(let rule):
-                        SmartCollectionDetailView(rule: rule).environmentObject(conversionManager)
+            } else {
+                // Edge-to-edge content
+                libraryContent
+                    .safeAreaInset(edge: .bottom) {
+                        if isBatchMode { batchBottomToolbar.transition(.move(edge: .bottom)) }
                     }
-                }
-                .sheet(item: $router.activeSheet) { item in 
-                    destinationSheet(for: item) 
-                }
+                    .overlay(alignment: .top) { storageTransferBanner }
+            }
 
             
             // Search Overlay
@@ -920,11 +938,13 @@ struct ModernLibraryView: View {
             Spacer().frame(height: 16) // Top padding to prevent overlap with the status bar and branding
 
             // Apple Books-style persisted Content Shelf tab strip
-            ContentShelfSelector(
-                selected: $viewModel.contentShelf,
-                counts: contentShelfCounts
-            )
-            .padding(.bottom, 12)
+            if !(hSizeClass == .regular && useSidebar) {
+                ContentShelfSelector(
+                    selected: $viewModel.contentShelf,
+                    counts: contentShelfCounts
+                )
+                .padding(.bottom, 12)
+            }
 
 
             if !dismissCharacterReviewBanner, MetadataMatchService.shared.activeClusters.contains(where: {
@@ -1491,6 +1511,56 @@ struct ModernLibraryView: View {
     private func handleDefaultImport() {
         ImportCoordinator.present(type: .unified) { urls in
             Task { await conversionManager.processImportedFiles(urls: urls) }
+        }
+    }
+
+    // MARK: - iPadOS Sidebar View
+    @ViewBuilder
+    private var sidebarContent: some View {
+        List(selection: $iPadSidebarSelection) {
+            Section(header: Text("Library").font(.caption.bold()).foregroundColor(.secondary)) {
+                Label("All Items", systemImage: "books.vertical.fill")
+                    .tag("all" as String?)
+                Label("Comics", systemImage: "newspaper.fill")
+                    .tag("comics" as String?)
+                Label("Manga", systemImage: "heart.text.square.fill")
+                    .tag("manga" as String?)
+                Label("Books", systemImage: "book.closed.fill")
+                    .tag("books" as String?)
+                Label("Converted", systemImage: "arrow.triangle.2.circlepath.doc.on.doc.fill")
+                    .tag("converted" as String?)
+            }
+            
+            if !cachedCollections.isEmpty {
+                Section(header: Text("Collections").font(.caption.bold()).foregroundColor(.secondary)) {
+                    ForEach(cachedCollections) { col in
+                        Label(col.name, systemImage: col.icon.isEmpty ? "folder.fill" : col.icon)
+                            .foregroundColor(colorFor(col.color))
+                            .tag("col_\(col.id.uuidString)" as String?)
+                    }
+                }
+            }
+        }
+        .listStyle(.sidebar)
+        .navigationTitle("InkSync Pro")
+        .onChange(of: iPadSidebarSelection) { _, newValue in
+            guard let selection = newValue else { return }
+            if selection.hasPrefix("col_") {
+                let colIDStr = String(selection.dropFirst(4))
+                if let uuid = UUID(uuidString: colIDStr) {
+                    viewModel.currentFolderID = uuid
+                }
+            } else {
+                viewModel.currentFolderID = nil
+                switch selection {
+                case "all": viewModel.contentShelf = .all
+                case "comics": viewModel.contentShelf = .comics
+                case "manga": viewModel.contentShelf = .manga
+                case "books": viewModel.contentShelf = .books
+                case "converted": viewModel.contentShelf = .converted
+                default: break
+                }
+            }
         }
     }
 }
