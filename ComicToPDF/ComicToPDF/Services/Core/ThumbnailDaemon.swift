@@ -68,8 +68,8 @@ actor ThumbnailDaemon {
 
                     let thumbnailImage: UIImage? = autoreleasepool {
                         guard let image = PhysicalFileSystemRouter.extractCoverImageStatic(from: url) else { return nil }
-                        let thumbnail = image.preparingThumbnail(of: CGSize(width: 240, height: 360)) ?? image
-                        if let data = thumbnail.jpegData(compressionQuality: 0.5) {
+                        let thumbnail = image.preparingThumbnail(of: CGSize(width: 300, height: 450)) ?? image
+                        if let data = thumbnail.jpegData(compressionQuality: 0.85) {
                             try? data.write(to: cachedURL, options: .atomic)
                             return thumbnail
                         }
