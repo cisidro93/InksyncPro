@@ -516,6 +516,19 @@ struct ModernLibraryView: View {
                     isLibraryFocused = true
                 }
             }
+            .fullScreenCover(item: $router.activeFullScreen) { dest in
+                switch dest {
+                case .read(let pdf, _):
+                    UnifiedReaderView(pdf: pdf, allBooks: conversionManager.convertedPDFs)
+                case .advancedWorkspace(let pdf):
+                    AdvancedWorkspaceView(pdf: pdf).environmentObject(conversionManager)
+                case .smartCollection(let rule):
+                    SmartCollectionDetailView(rule: rule).environmentObject(conversionManager)
+                }
+            }
+            .sheet(item: $router.activeSheet) { item in
+                destinationSheet(for: item)
+            }
     }
 
     // MARK: - Alert Shell (rootShell + alerts + onDrop)
