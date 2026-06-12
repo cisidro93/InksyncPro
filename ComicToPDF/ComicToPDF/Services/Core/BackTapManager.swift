@@ -47,10 +47,6 @@ public final class BackTapManager {
         )
     }
     
-    deinit {
-        motionManager.stopDeviceMotionUpdates()
-    }
-    
     @objc private func handleBackground() {
         if isEnabled {
             stopMonitoring()
