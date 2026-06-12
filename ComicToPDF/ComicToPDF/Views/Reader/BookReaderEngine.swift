@@ -61,19 +61,20 @@ class BookReaderViewModel: NSObject, ObservableObject, WKNavigationDelegate {
     
     let pdf: ConvertedPDF
     private let fileManager = FileManager.default
-    private lazy var tempDir: URL = { fileManager.temporaryDirectory.appendingPathComponent(pdf.id.uuidString) }()
+    nonisolated let tempDirURL: URL
     
     // TTS
     private let speechSynthesizer = AVSpeechSynthesizer()
     
     init(pdf: ConvertedPDF) {
         self.pdf = pdf
+        self.tempDirURL = FileManager.default.temporaryDirectory.appendingPathComponent(pdf.id.uuidString)
         super.init()
         unpackEPUB()
     }
     
     deinit {
-        let path = tempDir.path
+        let path = tempDirURL.path
         Task.detached(priority: .background) {
             let fm = FileManager.default
             if fm.fileExists(atPath: path) {
@@ -86,7 +87,7 @@ class BookReaderViewModel: NSObject, ObservableObject, WKNavigationDelegate {
         Task.detached(priority: .userInitiated) { [weak self] in
             guard let self else { return }
             let fm = FileManager.default
-            let tempDir = await self.tempDir
+            let tempDir = self.tempDirURL
             let sourcePDF = self.pdf
 
             // Linked Library: resolve security-scoped URL for linked files.
@@ -157,7 +158,7 @@ class BookReaderViewModel: NSObject, ObservableObject, WKNavigationDelegate {
     }
     
     private func buildOrLoadSearchIndex() {
-        let indexURL = tempDir.appendingPathComponent("search_index.json")
+        let indexURL = tempDirURL.appendingPathComponent("search_index.json")
         if let data = try? Data(contentsOf: indexURL),
            let decoded = try? JSONDecoder().decode([String: Set<Int>].self, from: data) {
             self.searchIndex = decoded

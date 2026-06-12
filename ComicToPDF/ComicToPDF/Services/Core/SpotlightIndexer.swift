@@ -191,10 +191,9 @@ final class SpotlightIndexer {
             guard url.isFileURL, FileManager.default.fileExists(atPath: url.path) else { return }
             
             // Lock and load via PDFRenderActor or directly using CGPDFDocument/PDFDocument
-            var doc: PDFDocument? = nil
-            ConcurrencyLocks.pdfLock.lock()
-            doc = PDFDocument(url: url)
-            ConcurrencyLocks.pdfLock.unlock()
+            let doc = ConcurrencyLocks.pdfLock.withLock {
+                PDFDocument(url: url)
+            }
             
             guard let pdfDoc = doc else { return }
             
