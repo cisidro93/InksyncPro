@@ -246,7 +246,7 @@ class BatchMetadataFetcher: ObservableObject {
         seriesGroups[groupIndex].items[itemIndex].pdf.metadata.publisher = volume.publisher?.name
         
         if let num = issueNum {
-            seriesGroups[groupIndex].items[itemIndex].pdf.metadata.issueNumber = "\(num)"
+            seriesGroups[groupIndex].items[itemIndex].pdf.metadata.issueNumber = String(num)
         }
     }
     
@@ -331,8 +331,7 @@ struct BatchMetadataFetchView: View {
             .alert("Operation Summary", isPresented: $showingErrorSummary) {
                 Button("OK", role: .cancel) { }
             } message: {
-                let totalMatched = fetcher.seriesGroups.flatMap { $0.items }.filter { $0.status == .matched }.count
-                Text("\(totalMatched) perfectly matched.\n\(fetcher.aggregatedErrors.count) items had issues or partial matches.")
+                Text("\(fetcher.seriesGroups.flatMap { $0.items }.filter { $0.status == .matched }.count) perfectly matched.\n\(fetcher.aggregatedErrors.count) items had issues or partial matches.")
             }
         }
     }

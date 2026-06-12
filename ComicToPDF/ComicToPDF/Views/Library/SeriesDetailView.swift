@@ -463,6 +463,46 @@ struct SeriesDetailView: View {
         }
     }
 
+    @ViewBuilder
+    private var toolbarMenuContent: some View {
+        Picker("Sort By", selection: $sortOption) {
+            ForEach(SeriesSortOption.allCases) { option in
+                if option != .manual || isCollection {
+                    Text(option.rawValue).tag(option)
+                }
+            }
+        }
+        
+        if showVolumeGrouping && hasVolumeData {
+            Divider()
+            
+            Button {
+                withAnimation {
+                    collapsedVolumes = Set(volumeGroups.map { $0.key })
+                }
+            } label: {
+                Label("Collapse All Volumes", systemImage: "rectangle.compress.vertical")
+            }
+            
+            Button {
+                withAnimation {
+                    collapsedVolumes.removeAll()
+                }
+            } label: {
+                Label("Expand All Volumes", systemImage: "rectangle.expand.vertical")
+            }
+        }
+        
+        Divider()
+        
+        // Feature 5: Smart List Template Export
+        Button {
+            exportSmartListTemplate()
+        } label: {
+            Label("Export as Smart List (.csv)", systemImage: "square.and.arrow.up")
+        }
+    }
+
     @ToolbarContentBuilder
     private var listViewToolbar: some ToolbarContent {
         ToolbarItem(placement: .navigationBarTrailing) {
@@ -520,43 +560,7 @@ struct SeriesDetailView: View {
                     }
 
                     Menu {
-                        Picker("Sort By", selection: $sortOption) {
-                            if isCollection {
-                                Text(SeriesSortOption.manual.rawValue).tag(SeriesSortOption.manual)
-                            }
-                            ForEach(SeriesSortOption.allCases.filter { $0 != .manual }) { option in
-                                Text(option.rawValue).tag(option)
-                            }
-                        }
-                        
-                        if showVolumeGrouping && hasVolumeData {
-                            Divider()
-                            
-                            Button {
-                                withAnimation {
-                                    collapsedVolumes = Set(volumeGroups.map { $0.key })
-                                }
-                            } label: {
-                                Label("Collapse All Volumes", systemImage: "rectangle.compress.vertical")
-                            }
-                            
-                            Button {
-                                withAnimation {
-                                    collapsedVolumes.removeAll()
-                                }
-                            } label: {
-                                Label("Expand All Volumes", systemImage: "rectangle.expand.vertical")
-                            }
-                        }
-                        
-                        Divider()
-                        
-                        // Feature 5: Smart List Template Export
-                        Button {
-                            exportSmartListTemplate()
-                        } label: {
-                            Label("Export as Smart List (.csv)", systemImage: "square.and.arrow.up")
-                        }
+                        toolbarMenuContent
                     } label: {
                         Image(systemName: "arrow.up.arrow.down")
                     }
