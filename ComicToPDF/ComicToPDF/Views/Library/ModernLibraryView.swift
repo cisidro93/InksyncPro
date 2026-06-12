@@ -952,7 +952,7 @@ struct ModernLibraryView: View {
                 return true
             }) {
                 HStack {
-                    Image(systemName: "square.stack.3d.up.badge.a.fill")
+                    Image(systemName: "doc.text.magnifyingglass")
                         .foregroundColor(.purple)
                         .font(.system(size: 16))
                     VStack(alignment: .leading, spacing: 2) {
@@ -1375,7 +1375,7 @@ struct ModernLibraryView: View {
                 Button {
                     batchMergeItems = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
                     showingBatchMergeReorder = true
-                } label: { VStack(spacing: 4) { Image(systemName: "doc.on.doc.fill").font(.title3); Text("Convert & Merge").font(.caption) } }
+                } label: { VStack(spacing: 4) { Image(systemName: "arrow.triangle.2.circlepath.doc").font(.title3); Text("Convert & Merge").font(.caption) } }
                 .disabled(multiSelection.count < 2)
                 
                 Spacer()

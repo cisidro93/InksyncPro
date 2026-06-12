@@ -53,7 +53,7 @@ struct StudyNotebookView: View {
             VStack(spacing: 0) {
                 // MARK: Glassmorphic Header
                 HStack(spacing: 12) {
-                    Image(systemName: "character.book.closed.fill")
+                    Image(systemName: "notebook.toptab.fill")
                         .foregroundStyle(LinearGradient(colors: [Theme.blue, Color.purple], startPoint: .topLeading, endPoint: .bottomTrailing))
                         .font(.system(size: 18, weight: .bold))
                     

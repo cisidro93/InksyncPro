@@ -1236,7 +1236,7 @@ struct AnnotationListView: View {
                             
                             if let note = annotation.noteText, !note.isEmpty {
                                 HStack(alignment: .top) {
-                                    Image(systemName: "pencil.line")
+                                    Image(systemName: "note.text")
                                         .foregroundColor(.orange)
                                     Text(note)
                                         .font(.subheadline)
