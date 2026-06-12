@@ -2,8 +2,9 @@ import Foundation
 import CoreMotion
 import UIKit
 
+@MainActor
 public final class BackTapManager {
-    public nonisolated(unsafe) static let shared = BackTapManager()
+    public static let shared = BackTapManager()
     
     private let motionManager = CMMotionManager()
     private let queue = OperationQueue()
@@ -47,8 +48,7 @@ public final class BackTapManager {
     }
     
     deinit {
-        NotificationCenter.default.removeObserver(self)
-        stopMonitoring()
+        motionManager.stopDeviceMotionUpdates()
     }
     
     @objc private func handleBackground() {
@@ -68,15 +68,16 @@ public final class BackTapManager {
         guard !isMonitoring else { return }
         
         motionManager.deviceMotionUpdateInterval = 0.01 // 100Hz sampling rate
+        let threshold = self.threshold
         motionManager.startDeviceMotionUpdates(to: queue) { [weak self] motion, error in
-            guard let self = self, let motion = motion, error == nil else { return }
+            guard let motion = motion, error == nil else { return }
             
             let accelZ = motion.userAcceleration.z
             let magnitude = abs(accelZ)
             
-            if magnitude > self.threshold {
-                DispatchQueue.main.async {
-                    self.handlePotentialTap()
+            if magnitude > threshold {
+                Task { @MainActor in
+                    self?.handlePotentialTap()
                 }
             }
         }
@@ -105,8 +106,9 @@ public final class BackTapManager {
             self.tapCount = 1
             
             // Close the window and evaluate taps after 350ms
-            DispatchQueue.main.asyncAfter(deadline: .now() + self.tapWindow) { [weak self] in
-                guard let self = self else { return }
+            let window = self.tapWindow
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: UInt64(window * 1_000_000_000))
                 self.evaluateTaps()
             }
         } else {
