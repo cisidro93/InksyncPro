@@ -1,9 +1,22 @@
 import Foundation
+import SwiftData
 import SwiftUI
 import CoreGraphics
 import UIKit
 import PDFKit
 import UniformTypeIdentifiers
+import PencilKit
+
+extension PKDrawing: @retroactive @unchecked Sendable {}
+
+// MARK: - Shared Image Extension Sets
+// Single source of truth — prevents 6+ duplicate inline definitions across the codebase.
+extension Set where Element == String {
+    /// Covers and page images: the 4 formats supported by all archive readers.
+    static let coverImageExtensions: Set<String> = ["jpg", "jpeg", "png", "webp"]
+    /// Full comic image set including less-common formats.
+    static let comicImageExtensions: Set<String> = ["jpg", "jpeg", "png", "webp", "gif", "heic"]
+}
 
 // MARK: - Core Data Models
 
@@ -11,6 +24,12 @@ import UniformTypeIdentifiers
 enum AppUIMode: String, Codable, CaseIterable {
     case go = "Go"
     case pro = "Pro"
+}
+
+// ✅ NEW: Global Library Tap Action
+enum LibraryTapAction: String, CaseIterable {
+    case read = "Tap to Read"
+    case convert = "Tap to Convert"
 }
 
 // ✅ NEW: Content Type Classification
@@ -47,27 +66,120 @@ enum ContentType: String, Codable, CaseIterable {
     }
 }
 
-struct ConvertedPDF: Identifiable, Codable, Hashable {
+
+enum DocumentSubtype: String, Codable {
+    case researchPaper
+    case magazine
+    case manual
+    case unknown
+}
+
+// ✅ Linked Library: Defines whether a file lives on-device or on a linked external drive
+enum SourceMode: Sendable {
+    case local
+    case linked(bookmarkData: Data)
+    case cloud(provider: String, remoteID: String)
+    
+    var isLinked: Bool {
+        if case .linked = self { return true }
+        return false
+    }
+    
+    var isCloud: Bool {
+        if case .cloud = self { return true }
+        return false
+    }
+}
+
+// Custom Codable for SourceMode — .local is the default for all legacy data
+extension SourceMode: Codable {
+    enum CodingKeys: String, CodingKey { case type, bookmarkData, provider, remoteID }
+    
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .local:
+            try container.encode("local", forKey: .type)
+        case .linked(let data):
+            try container.encode("linked", forKey: .type)
+            try container.encode(data, forKey: .bookmarkData)
+        case .cloud(let provider, let remoteID):
+            try container.encode("cloud", forKey: .type)
+            try container.encode(provider, forKey: .provider)
+            try container.encode(remoteID, forKey: .remoteID)
+        }
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let type_ = (try? container.decode(String.self, forKey: .type)) ?? "local"
+        switch type_ {
+        case "linked":
+            let data = try container.decode(Data.self, forKey: .bookmarkData)
+            self = .linked(bookmarkData: data)
+        case "cloud":
+            let provider = try container.decode(String.self, forKey: .provider)
+            let remoteID = try container.decode(String.self, forKey: .remoteID)
+            self = .cloud(provider: provider, remoteID: remoteID)
+        default:
+            self = .local
+        }
+    }
+}
+
+struct ConvertedPDF: Identifiable, Codable, Hashable, Sendable {
     let id: UUID
     var name: String
-    let url: URL
+    var url: URL
+    var parentFolderID: UUID? = nil
+    
+    // Core Data Sync fields
+    var dataSyncHash: String? = nil
+    var lastModified: Date = Date()
     var pageCount: Int
     var fileSize: Int64
     var metadata: PDFMetadata
     var collectionId: UUID?
     var isFavorite: Bool = false
-    var isPrivate: Bool = false // ✅ NEW: Privacy Flag
+    var isPrivate: Bool = false // âœ… NEW: Privacy Flag
+    var isExplicitSeriesCover: Bool = false
     var coverImageData: Data?
-    var contentType: ContentType = .comic  // ✅ NEW: Track content type
-    var chapters: [Chapter] = [] // ✅ NEW: Detected Chapters
-    var addedByMode: AppUIMode = .pro // ✅ NEW: Track source UI mode
+    var contentType: ContentType = .comic  // âœ… NEW: Track content type
+    var chapters: [Chapter] = [] // âœ… NEW: Detected Chapters
+    var addedByMode: AppUIMode = .pro // âœ… NEW: Track source UI mode
+    
+    // âœ… NEW: Unified Reader Properties
+    var documentSubtype: DocumentSubtype = .unknown
+    var isOnDevice: Bool = false
+    var lastTransferFailed: Bool = false
+    var lastOutputFormat: OutputFormat? = nil
+    var lastConversionDate: Date? = nil
+    var panelConfidenceScore: Double? = nil
+    
+    // SHA-256 content hash, set ONCE at import. Never update during rename, edit, or metadata refresh.
+    var contentHash: String? = nil
+    
+    // ✅ Linked Library: Source of this file (on-device local vault or external linked drive)
+    var sourceMode: SourceMode = .local
+    
+    // Computed helpers
+    var isLinked: Bool { sourceMode.isLinked }
+    var driveBookmarkData: Data? {
+        if case .linked(let data) = sourceMode { return data }
+        return nil
+    }
+    
+    // âœ… NEW: File Extension Tracker
+    var fileExtensionString: String {
+        return url.pathExtension.uppercased()
+    }
     
     var formattedSize: String {
         let mb = Double(fileSize) / 1024 / 1024
         return String(format: "%.1f MB", mb)
     }
     
-    init(id: UUID = UUID(), name: String, url: URL, pageCount: Int, fileSize: Int64, metadata: PDFMetadata, collectionId: UUID? = nil, isFavorite: Bool = false, isPrivate: Bool = false, coverImageData: Data? = nil, contentType: ContentType = .comic, chapters: [Chapter] = [], addedByMode: AppUIMode = .pro) {
+    init(id: UUID = UUID(), name: String, url: URL, pageCount: Int, fileSize: Int64, metadata: PDFMetadata, collectionId: UUID? = nil, isFavorite: Bool = false, isPrivate: Bool = false, coverImageData: Data? = nil, contentType: ContentType = .comic, chapters: [Chapter] = [], addedByMode: AppUIMode = .pro, contentHash: String? = nil) {
         self.id = id
         self.name = name
         self.url = url
@@ -77,18 +189,66 @@ struct ConvertedPDF: Identifiable, Codable, Hashable {
         self.collectionId = collectionId
         self.isFavorite = isFavorite
         self.isPrivate = isPrivate
+        self.isExplicitSeriesCover = false
         self.coverImageData = coverImageData
         self.contentType = contentType
         self.chapters = chapters
         self.addedByMode = addedByMode
+        self.documentSubtype = .unknown
+        self.isOnDevice = false
+        self.lastTransferFailed = false
+        self.lastOutputFormat = nil
+        self.lastConversionDate = nil
+        self.panelConfidenceScore = nil
     }
     
     func toPDFDocument() -> PDFDocument {
-        return PDFDocument(url: url) ?? PDFDocument()
+        return ConcurrencyLocks.pdfLock.withLock {
+            PDFDocument(url: url) ?? PDFDocument()
+        }
+    }
+    
+    // âœ… NEW: Explicit Equatable & Hashable for Core Rendering Performance
+    // Instead of diffing the massive tree of metadata, dates, and chapters on every frame,
+    // SwiftUI will now only compare the immutable ID, favorite status, name, and page count.
+    
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+        hasher.combine(name)
+        hasher.combine(isFavorite)
+        hasher.combine(pageCount)
+        hasher.combine(fileSize)
+        hasher.combine(isPrivate)
+        hasher.combine(metadata.series)
+        // Use a cheap enum tag comparison instead of JSONEncoder to avoid
+        // per-frame allocation during list scrolling (P1 perf fix).
+        switch sourceMode {
+        case .local:              hasher.combine(0)
+        case .linked(let data):   hasher.combine(1); hasher.combine(data.hashValue)
+        case .cloud(let p, let id): hasher.combine(2); hasher.combine(p); hasher.combine(id)
+        }
+    }
+
+    static func == (lhs: ConvertedPDF, rhs: ConvertedPDF) -> Bool {
+        // Fast paths to bypass heavy layout equality checks
+        guard lhs.id == rhs.id,
+              lhs.name == rhs.name,
+              lhs.isFavorite == rhs.isFavorite,
+              lhs.pageCount == rhs.pageCount,
+              lhs.fileSize == rhs.fileSize,
+              lhs.isPrivate == rhs.isPrivate,
+              lhs.metadata.series == rhs.metadata.series else { return false }
+        // Compare SourceMode without JSONEncoder (cheap tag comparison)
+        switch (lhs.sourceMode, rhs.sourceMode) {
+        case (.local, .local): return true
+        case (.linked(let a), .linked(let b)): return a == b
+        case (.cloud(let p1, let id1), .cloud(let p2, let id2)): return p1 == p2 && id1 == id2
+        default: return false
+        }
     }
 }
 
-// ✅ Shared Error Type
+// âœ… Shared Error Type
 enum ConversionError: Error {
     case invalidFormat
     case archiveCreationFailed
@@ -106,7 +266,11 @@ struct GenericFileDocument: FileDocument {
     }
     
     static var readableContentTypes: [UTType] {
-        return [.pdf, .epub, .zip, UTType(filenameExtension: "cbz")!].compactMap { $0 }
+        var types: [UTType] = [.pdf, .epub, .zip]
+        if let cbz = UTType(filenameExtension: "cbz") {
+            types.append(cbz)
+        }
+        return types
     }
     
     init(configuration: ReadConfiguration) throws {
@@ -119,7 +283,7 @@ struct GenericFileDocument: FileDocument {
     }
 }
 
-struct PDFMetadata: Codable, Equatable, Hashable {
+struct PDFMetadata: Codable, Equatable, Hashable, Sendable {
     var title: String
     var author: String?
     var series: String?
@@ -128,32 +292,66 @@ struct PDFMetadata: Codable, Equatable, Hashable {
     var publisher: String?
     var publicationDate: Date?
     var summary: String?
-    // ✅ Rich Metadata
+    // âœ… Rich Metadata
     var writer: String?
     var penciller: String?
+    
+    // âœ… LEGACY PROPERTIES
+    @available(*, deprecated, message: "Use universalIssueID instead")
     var comicVineID: Int?
+    @available(*, deprecated, message: "Use universalSeriesID instead")
     var seriesID: Int?
+    
+    // âœ… Polymorphic String IDs
+    var externalSeriesID: String?
+    var externalIssueID: String?
+    
+    var universalSeriesID: String? {
+        get { externalSeriesID }
+        set { externalSeriesID = newValue }
+    }
+    
+    var universalIssueID: String? {
+        get { externalIssueID }
+        set { externalIssueID = newValue }
+    }
+    
     var tags: [String] = []
-    // ✅ Calibre-style Reading Options
+    // Reading Progress
+    public var lastReadPage: Int?
+    
+    // âœ… NEW: Advanced Cover Variants Tracking
+    public var selectedCoverID: UUID? = nil
+    public var coverVariants: [UUID: URL] = [:]
+    // âœ… Calibre-style Reading Options
     var isManga: Bool? // Overrides global setting if present
     var isWebtoon: Bool? // For vertical scroll support
     var bookmarkedPages: [Int] = [] // Stores indices of dog-eared pages
+    var autoMatchFailed: Bool? = false
+    
+    // âœ… Reading Order (Smart List / Event Mappings)
+    var readingOrder: String?
+    var sortOrder: Int?
+    var readingEventLabel: String?
+    var isOptional: Bool?
 }
 
-// ✅ NEW: Chapter Structure
-struct Chapter: Identifiable, Codable, Hashable {
+// âœ… NEW: Chapter Structure
+struct Chapter: Identifiable, Codable, Hashable, Sendable {
     var id: UUID = UUID()
     var title: String
     var pageIndex: Int // 0-based index of the start page
 }
 
-struct PDFCollection: Identifiable, Codable, Equatable {
+struct PDFCollection: Identifiable, Codable, Equatable, Sendable {
     let id: UUID
     var name: String
     var icon: String
     var color: String
     var creationDate: Date
     var explicitCoverFileID: UUID?
+    var parentId: UUID? = nil
+    var manualSortOrder: [UUID]? = nil // ENFORCED reading order
 }
 
 func colorFor(_ name: String) -> Color {
@@ -167,7 +365,7 @@ func colorFor(_ name: String) -> Color {
     }
 }
 
-struct KindleDevice: Identifiable, Codable, Equatable, Hashable {
+struct KindleDevice: Identifiable, Codable, Equatable, Hashable, Sendable {
     let id: UUID
     var name: String
     var email: String
@@ -215,9 +413,96 @@ enum KindleDeviceType: String, CaseIterable, Codable, Hashable {
     }
 }
 
+// âœ… NEW: Target E-Ink Device Profiles for Downsampling
+enum TargetDeviceProfile: String, CaseIterable, Codable, Identifiable {
+    // Original Size (No Scaling)
+    case original = "Original Size (No Optimization)"
+    
+    // Amazon Kindle (Sorted by Release Year, Descending)
+    case scribeColorsoft = "Kindle Scribe Colorsoft 11\" (2025)"  // 11-inch — NOT the same as the 7" Colorsoft
+    case colorsoft7       = "Kindle Colorsoft 7\" (2024)"          // 7-inch colour reader — separate device
+    case paperwhite2024  = "Kindle Paperwhite (2024)"
+    case scribe          = "Kindle Scribe (2022)"
+    case paperwhite11    = "Kindle Paperwhite 11th Gen (2021)"
+    case oasis           = "Kindle Oasis (2019)"
+    case kindleBasic     = "Kindle Basic (2022)"
+
+    // Kobo
+    case koboLibraColour = "Kobo Libra Colour (2024)"
+    case koboClaraColour = "Kobo Clara Colour (2024)"
+    case koboElipsa2E = "Kobo Elipsa 2E (2023)"
+    case koboSage = "Kobo Sage (2021)"
+    case koboLibra2 = "Kobo Libra 2 (2021)"
+    
+    // Onyx Boox
+    case booxTabUltraCPro = "Boox Tab Ultra C Pro (2023)"
+    case booxNoteAir3C = "Boox Note Air3 C (2023)"
+    case booxPage = "Boox Page (2023)"
+    case booxPalma = "Boox Palma (2023)"
+    
+    var id: String { rawValue }
+    
+    var brand: String {
+        switch self {
+        case .original: return "General"
+        case .scribeColorsoft, .colorsoft7, .paperwhite2024, .scribe, .paperwhite11, .oasis, .kindleBasic: return "Amazon Kindle"
+        case .koboLibraColour, .koboClaraColour, .koboElipsa2E, .koboSage, .koboLibra2: return "Rakuten Kobo"
+        case .booxTabUltraCPro, .booxNoteAir3C, .booxPage, .booxPalma: return "Onyx Boox"
+        }
+    }
+    
+    var resolution: CGSize? {
+        // Portrait (taller) resolution — the EInkOptimizer aspect-fits into these bounds.
+        switch self {
+        case .original: return nil
+
+        // Amazon Kindle
+        // Kindle Scribe Colorsoft 11" (2025): 300 PPI → 1980 × 2640
+        case .scribeColorsoft: return CGSize(width: 1980, height: 2640)
+        // Kindle Colorsoft 7" (2024): 300 PPI → 1264 × 1680 — SEPARATE device, different physical dimensions
+        case .colorsoft7:       return CGSize(width: 1264, height: 1680)
+        case .paperwhite2024: return CGSize(width: 1264, height: 1680)
+        case .scribe:         return CGSize(width: 1860, height: 2480)
+        case .paperwhite11:   return CGSize(width: 1236, height: 1648)
+        case .oasis:          return CGSize(width: 1264, height: 1680)
+        case .kindleBasic:    return CGSize(width: 1080, height: 1440)
+
+        // Kobo
+        case .koboLibraColour: return CGSize(width: 1264, height: 1680)
+        case .koboClaraColour: return CGSize(width: 1072, height: 1448)
+        case .koboElipsa2E:    return CGSize(width: 1404, height: 1872)
+        case .koboSage:        return CGSize(width: 1440, height: 1920)
+        case .koboLibra2:      return CGSize(width: 1264, height: 1680)
+
+        // Boox
+        case .booxTabUltraCPro: return CGSize(width: 1860, height: 2480)
+        case .booxNoteAir3C:    return CGSize(width: 1860, height: 2480)
+        case .booxPage:         return CGSize(width: 1264, height: 1680)
+        case .booxPalma:        return CGSize(width: 824,  height: 1648)
+        }
+    }
+
+    /// Per-page slot resolution when the device displays two pages side-by-side in landscape.
+    /// Landscape rotates the screen: the longer dimension becomes the width.
+    /// Each page occupies exactly half that width.
+    ///
+    /// Only large-screen Kindles suppress letterboxing enough to make
+    /// the per-slot pre-fit worthwhile; smaller devices (7") use the
+    /// standard portrait resolution and let Kindle scale them.
+    var landscapeHalfSlotResolution: CGSize? {
+        switch self {
+        // Scribe Colorsoft 11": landscape = 2640 × 1980, each slot = 1320 × 1980
+        case .scribeColorsoft: return CGSize(width: 1320, height: 1980)
+        // Kindle Scribe 1st gen 10.2": landscape = 2480 × 1860, each slot = 1240 × 1860
+        case .scribe:          return CGSize(width: 1240, height: 1860)
+        default: return nil
+        }
+    }
+}
+
 // MARK: - Settings Models
 
-// ✅ NEW: File Split Modes
+// âœ… NEW: File Split Modes
 enum FileSizeSplitMode: String, CaseIterable, Codable, Identifiable {
     case none = "No Limit (One File)"
     case email = "Email Safe (23 MB)"
@@ -246,9 +531,9 @@ enum FileSizeSplitMode: String, CaseIterable, Codable, Identifiable {
     }
 }
 
-// ✅ NEW: Panel Generation Strategy REMOVED
+// âœ… NEW: Panel Generation Strategy REMOVED
 
-// ✅ NEW: App Text Size Preference
+// âœ… NEW: App Text Size Preference
 enum AppTextSize: String, CaseIterable, Codable, Identifiable {
     case small = "Small"
     case medium = "Medium"
@@ -266,7 +551,7 @@ enum AppTextSize: String, CaseIterable, Codable, Identifiable {
 }
 
 
-// ✅ NEW: Panel Editor Presentation Mode
+// âœ… NEW: Panel Editor Presentation Mode
 enum PanelEditorPresentationMode: String, CaseIterable, Codable, Identifiable {
     case sheet = "Windowed (Sheet)"
     case fullScreen = "Full Screen"
@@ -274,22 +559,72 @@ enum PanelEditorPresentationMode: String, CaseIterable, Codable, Identifiable {
     var id: String { rawValue }
 }
 
-struct ConversionSettings: Codable, Equatable {
+// AI vendor selection has been removed. InksyncPro uses ComicVine for metadata
+// and the on-device CoreML Neural Engine for panel detection.
+
+enum CoverBadgePlacement: String, Codable, CaseIterable, Identifiable {
+    case topLeft = "Top Left"
+    case topRight = "Top Right"
+    case bottomLeft = "Bottom Left"
+    case bottomRight = "Bottom Right"
+    case center = "Center"
+    case hidden = "Hidden"
+    
+    var id: String { rawValue }
+}
+
+struct ConversionSettings: Codable, Equatable, Sendable {
     var outputFormat: OutputFormat = .epub
     var compressionQuality: CompressionPreset = .balanced
     var optimizeForDevice: Bool = true
-    var targetDevice: KindleDeviceType = .scribeColorsoft
+    var targetDeviceProfile: TargetDeviceProfile = .original // âœ… NEW: E-Ink Target
     var mangaMode: Bool = false
     var enablePanelSplit: Bool = false
-    var splitWebtoon: Bool = false // ✅ Added for Smart Slicing
+    var splitWebtoon: Bool = false // âœ… Added for Smart Slicing
+    var splitSpreads: Bool = false // âœ… NEW: Landscape Double-Page Split for E-Ink
     var trimMargins: Bool = false
+    var embedCharacterGlossary: Bool = true // ✅ NEW: Toggle to append glossary page for Kindle
+    var linkCoverAsSpread: Bool = false // ✅ NEW: Pair Cover Page with Page 2 as a spread
+
+
+    /// Returns `true` when the user has changed at least one meaningful conversion
+    /// setting away from its default value — used to decide whether to show
+    /// "Download" (no settings yet) vs "Download & Convert" (settings established).
+    var isConfigured: Bool {
+        outputFormat      != .epub          ||
+        compressionQuality != .balanced     ||
+        mangaMode                           ||
+        enablePanelSplit                    ||
+        splitWebtoon                        ||
+        splitSpreads                        ||
+        trimMargins                         ||
+        targetDeviceProfile != .original    ||
+        bindingMarginOffset  != 0           ||
+        linkCoverAsSpread                   ||
+        !embedCharacterGlossary
+    }
     var splitMode: FileSizeSplitMode = .none
     var enableBackgroundQueue: Bool = true
     var textSize: AppTextSize = .medium
     var panelEditorMode: PanelEditorPresentationMode = .sheet
+    var bindingMarginOffset: Int = 0             // ✅ NEW: Asymmetric Margin Padding
+    var bindingMarginSide: BindingMarginSide = .none // ✅ NEW: Asymmetric Margin Side
+    
+    // ✅ NEW: Read-Ahead Buffer
+    var readingPrefetchLimit: Int = 2
+    
+    // âœ… NEW: Omnibus Settings
+    var omnibusSplitThresholdMB: Int = 200
+    var omnibusBadgePlacement: CoverBadgePlacement = .bottomRight
     
     // Debugger Visibility
     var showEditorDebug: Bool = false
+    
+    // AI Integrations
+    // aiVendor removed — InksyncPro uses CoreML on-device panel detection only.
+    
+    // Metadata Strategy
+    var deepFetchComicVineIssues: Bool = false
     
     // Export pipeline — the canonical source of truth for which converter to use.
     // .standard  → plain EPUB/PDF, no panel zoom metadata, cloud-safe
@@ -299,19 +634,24 @@ struct ConversionSettings: Codable, Equatable {
     // Legacy computed property — kept for compatibility with existing code.
     // Do NOT set this directly; change outputPipeline instead.
     var isGuidedView: Bool { outputPipeline == .proPanel }
-    
-    // ✅ Keychain Integration
-    // We remove the stored property and use a computed one.
-    // For migration, we define a private coding key to read old JSON.
+
+    // Keychain-backed computed property with a static in-memory cache.
+    // Static (not instance) because ConversionSettings is a struct — getters are
+    // non-mutating, so instance properties cannot be assigned inside get {}.
+    // There is exactly one ComicVine API key per app install, so static is correct.
+    private nonisolated(unsafe) static var _cachedComicVineAPIKey: String? = nil
     var comicVineAPIKey: String {
         get {
+            if let cached = Self._cachedComicVineAPIKey { return cached }
             if let data = KeychainHelper.standard.read(service: "com.antigravity.InksyncPro", account: "comicVineAPIKey"),
                let key = String(data: data, encoding: .utf8) {
+                Self._cachedComicVineAPIKey = key
                 return key
             }
             return ""
         }
         set {
+            Self._cachedComicVineAPIKey = newValue.isEmpty ? nil : newValue
             if newValue.isEmpty {
                 KeychainHelper.standard.delete(service: "com.antigravity.InksyncPro", account: "comicVineAPIKey")
             } else {
@@ -321,15 +661,96 @@ struct ConversionSettings: Codable, Equatable {
         }
     }
     
+    private nonisolated(unsafe) static var _cachedAniListAPIToken: String? = nil
+    var aniListAPIToken: String {
+        get {
+            if let cached = Self._cachedAniListAPIToken { return cached }
+            if let data = KeychainHelper.standard.read(service: "com.antigravity.InksyncPro", account: "aniListAPIToken"),
+               let key = String(data: data, encoding: .utf8) {
+                Self._cachedAniListAPIToken = key
+                return key
+            }
+            return ""
+        }
+        set {
+            Self._cachedAniListAPIToken = newValue.isEmpty ? nil : newValue
+            if newValue.isEmpty {
+                KeychainHelper.standard.delete(service: "com.antigravity.InksyncPro", account: "aniListAPIToken")
+            } else {
+                let data = Data(newValue.utf8)
+                KeychainHelper.standard.save(data, service: "com.antigravity.InksyncPro", account: "aniListAPIToken")
+            }
+        }
+    }
+    
+    private nonisolated(unsafe) static var _cachedMangaUpdatesUsername: String? = nil
+    var mangaUpdatesUsername: String {
+        get {
+            if let cached = Self._cachedMangaUpdatesUsername { return cached }
+            if let data = KeychainHelper.standard.read(service: "com.antigravity.InksyncPro", account: "mangaUpdatesUsername"),
+               let value = String(data: data, encoding: .utf8) {
+                Self._cachedMangaUpdatesUsername = value
+                return value
+            }
+            return ""
+        }
+        set {
+            Self._cachedMangaUpdatesUsername = newValue.isEmpty ? nil : newValue
+            if newValue.isEmpty {
+                KeychainHelper.standard.delete(service: "com.antigravity.InksyncPro", account: "mangaUpdatesUsername")
+            } else {
+                let data = Data(newValue.utf8)
+                KeychainHelper.standard.save(data, service: "com.antigravity.InksyncPro", account: "mangaUpdatesUsername")
+            }
+        }
+    }
+    
+    private nonisolated(unsafe) static var _cachedMangaUpdatesPassword: String? = nil
+    var mangaUpdatesPassword: String {
+        get {
+            if let cached = Self._cachedMangaUpdatesPassword { return cached }
+            if let data = KeychainHelper.standard.read(service: "com.antigravity.InksyncPro", account: "mangaUpdatesPassword"),
+               let value = String(data: data, encoding: .utf8) {
+                Self._cachedMangaUpdatesPassword = value
+                return value
+            }
+            return ""
+        }
+        set {
+            Self._cachedMangaUpdatesPassword = newValue.isEmpty ? nil : newValue
+            if newValue.isEmpty {
+                KeychainHelper.standard.delete(service: "com.antigravity.InksyncPro", account: "mangaUpdatesPassword")
+            } else {
+                let data = Data(newValue.utf8)
+                KeychainHelper.standard.save(data, service: "com.antigravity.InksyncPro", account: "mangaUpdatesPassword")
+            }
+        }
+    }
+    
+    // openRouterAPIKey, anthropicAPIKey, openAIAPIKey, geminiAPIKey removed.
+    // All AI vendor integrations have been removed from InksyncPro.
+    // Panel detection uses the on-device CoreML Neural Engine exclusively.
+    
     var epubSettings: EPUBSettings = EPUBSettings()
     var imageEnhancement: ImageEnhancementSettings = ImageEnhancementSettings()
     
     // Custom Codable implementation to handle migration
                             
     enum CodingKeys: String, CodingKey {
-        case outputFormat, compressionQuality, optimizeForDevice, targetDevice, mangaMode, enablePanelSplit, splitWebtoon, trimMargins, splitMode, enableBackgroundQueue, epubSettings, imageEnhancement, textSize, panelEditorMode, showEditorDebug
-        case outputPipeline   // New canonical export mode
-        case isGuidedView     // Legacy — read-only for migration
+        // Core conversion settings
+        case outputFormat, compressionQuality, optimizeForDevice, targetDeviceProfile
+        case mangaMode, enablePanelSplit, splitWebtoon, splitSpreads, trimMargins, embedCharacterGlossary, linkCoverAsSpread
+        case splitMode, enableBackgroundQueue, textSize, panelEditorMode
+        case bindingMarginOffset, bindingMarginSide, showEditorDebug
+        case readingPrefetchLimit
+        case epubSettings, imageEnhancement
+        // Omnibus settings (previously missing -- fixes silent per-launch reset)
+        case omnibusSplitThresholdMB, omnibusBadgePlacement
+        // Metadata strategy (previously missing -- fixes silent per-launch reset)
+        case deepFetchComicVineIssues
+        // Pipeline
+        case outputPipeline   // Canonical export mode
+        case isGuidedView     // Legacy -- read-only for migration
         case comicVineAPIKey  // Legacy API key migration only
     }
     
@@ -340,19 +761,29 @@ struct ConversionSettings: Codable, Equatable {
         outputFormat = try container.decode(OutputFormat.self, forKey: .outputFormat)
         compressionQuality = try container.decode(CompressionPreset.self, forKey: .compressionQuality)
         optimizeForDevice = try container.decode(Bool.self, forKey: .optimizeForDevice)
-        targetDevice = try container.decode(KindleDeviceType.self, forKey: .targetDevice)
+        targetDeviceProfile = try container.decodeIfPresent(TargetDeviceProfile.self, forKey: .targetDeviceProfile) ?? .original
         mangaMode = try container.decode(Bool.self, forKey: .mangaMode)
         enablePanelSplit = try container.decode(Bool.self, forKey: .enablePanelSplit)
         splitWebtoon = try container.decodeIfPresent(Bool.self, forKey: .splitWebtoon) ?? false
+        splitSpreads = try container.decodeIfPresent(Bool.self, forKey: .splitSpreads) ?? false
         trimMargins = try container.decodeIfPresent(Bool.self, forKey: .trimMargins) ?? false
+        embedCharacterGlossary = try container.decodeIfPresent(Bool.self, forKey: .embedCharacterGlossary) ?? true
+        linkCoverAsSpread = try container.decodeIfPresent(Bool.self, forKey: .linkCoverAsSpread) ?? false
         splitMode = try container.decode(FileSizeSplitMode.self, forKey: .splitMode)
         enableBackgroundQueue = try container.decodeIfPresent(Bool.self, forKey: .enableBackgroundQueue) ?? true
         epubSettings = try container.decode(EPUBSettings.self, forKey: .epubSettings)
         imageEnhancement = try container.decode(ImageEnhancementSettings.self, forKey: .imageEnhancement)
         textSize = try container.decodeIfPresent(AppTextSize.self, forKey: .textSize) ?? .medium
         panelEditorMode = try container.decodeIfPresent(PanelEditorPresentationMode.self, forKey: .panelEditorMode) ?? .sheet
+        bindingMarginOffset = try container.decodeIfPresent(Int.self, forKey: .bindingMarginOffset) ?? 0
+        bindingMarginSide = try container.decodeIfPresent(BindingMarginSide.self, forKey: .bindingMarginSide) ?? .none
         showEditorDebug = try container.decodeIfPresent(Bool.self, forKey: .showEditorDebug) ?? false
-        
+        readingPrefetchLimit = try container.decodeIfPresent(Int.self, forKey: .readingPrefetchLimit) ?? 2
+        // Omnibus settings -- previously missing from Codable; safe migration default.
+        omnibusSplitThresholdMB = try container.decodeIfPresent(Int.self, forKey: .omnibusSplitThresholdMB) ?? 200
+        omnibusBadgePlacement = try container.decodeIfPresent(CoverBadgePlacement.self, forKey: .omnibusBadgePlacement) ?? .bottomRight
+        // Metadata strategy -- previously missing from Codable; safe migration default.
+        deepFetchComicVineIssues = try container.decodeIfPresent(Bool.self, forKey: .deepFetchComicVineIssues) ?? false
         // Migration: if new outputPipeline key is present, decode it.
         // Otherwise fall back to the legacy isGuidedView bool to preserve user's previous setting.
         if let pipeline = try? container.decodeIfPresent(OutputPipeline.self, forKey: .outputPipeline) {
@@ -369,10 +800,11 @@ struct ConversionSettings: Codable, Equatable {
         
         // Legacy API key migration
         if let legacyKey = try? container.decodeIfPresent(String.self, forKey: .comicVineAPIKey), !legacyKey.isEmpty {
-            print("🔐 Migrating Legacy API Key to Keychain...")
+            Logger.shared.log("Migrating Legacy API Key to Keychain...", category: "Migration")
             let data = Data(legacyKey.utf8)
             KeychainHelper.standard.save(data, service: "com.antigravity.InksyncPro", account: "comicVineAPIKey")
         }
+        
     }
     
     func encode(to encoder: Encoder) throws {
@@ -380,31 +812,42 @@ struct ConversionSettings: Codable, Equatable {
         try container.encode(outputFormat, forKey: .outputFormat)
         try container.encode(compressionQuality, forKey: .compressionQuality)
         try container.encode(optimizeForDevice, forKey: .optimizeForDevice)
-        try container.encode(targetDevice, forKey: .targetDevice)
+        try container.encode(targetDeviceProfile, forKey: .targetDeviceProfile)
         try container.encode(mangaMode, forKey: .mangaMode)
         try container.encode(enablePanelSplit, forKey: .enablePanelSplit)
         try container.encode(splitWebtoon, forKey: .splitWebtoon)
+        try container.encode(splitSpreads, forKey: .splitSpreads)
         try container.encode(trimMargins, forKey: .trimMargins)
+        try container.encode(embedCharacterGlossary, forKey: .embedCharacterGlossary)
+        try container.encode(linkCoverAsSpread, forKey: .linkCoverAsSpread)
         try container.encode(splitMode, forKey: .splitMode)
         try container.encode(enableBackgroundQueue, forKey: .enableBackgroundQueue)
         try container.encode(epubSettings, forKey: .epubSettings)
         try container.encode(imageEnhancement, forKey: .imageEnhancement)
         try container.encode(textSize, forKey: .textSize)
         try container.encode(panelEditorMode, forKey: .panelEditorMode)
+        try container.encode(bindingMarginOffset, forKey: .bindingMarginOffset)
+        try container.encode(bindingMarginSide, forKey: .bindingMarginSide)
         try container.encode(outputPipeline, forKey: .outputPipeline)
         try container.encode(showEditorDebug, forKey: .showEditorDebug)
+        try container.encode(readingPrefetchLimit, forKey: .readingPrefetchLimit)
+        // Omnibus settings
+        try container.encode(omnibusSplitThresholdMB, forKey: .omnibusSplitThresholdMB)
+        try container.encode(omnibusBadgePlacement, forKey: .omnibusBadgePlacement)
+        // Metadata strategy
+        try container.encode(deepFetchComicVineIssues, forKey: .deepFetchComicVineIssues)
         // comicVineAPIKey is intentionally not encoded (moved to Keychain)
         // isGuidedView is intentionally not encoded (computed from outputPipeline)
     }
 }
 
-struct EPUBSettings: Codable, Equatable {
+struct EPUBSettings: Codable, Equatable, Sendable {
     enum ReadingDirection: String, Codable {
         case ltr = "ltr"
         case rtl = "rtl"
     }
     
-    // ✅ Export Format (EPUB vs CBZ for Guided View) REMOVED - Enforcing EPUB/Virtual
+    // âœ… Export Format (EPUB vs CBZ for Guided View) REMOVED - Enforcing EPUB/Virtual
     
     var panelDetectionMode: PanelExtractor.ExtractionMode = .automatic
     var includeTableOfContents: Bool = false
@@ -414,15 +857,27 @@ struct EPUBSettings: Codable, Equatable {
     var readingDirection: ReadingDirection = .ltr
 }
 
-struct ImageEnhancementSettings: Codable, Equatable {
+struct ImageEnhancementSettings: Codable, Equatable, Sendable {
     var grayscale: Bool = false
     var autoContrast: Bool = false
     var invertColors: Bool = false
     var brightness: Double = 0.0
     var sharpness: Double = 0.0
     var vibrance: Double = 0.0
-    // ✅ KCC: Gamma Correction (Crucial for E-Ink to prevent black crush)
+    // âœ… KCC: Gamma Correction (Crucial for E-Ink to prevent black crush)
     var gamma: Double = 1.0 
+    // âœ… Pro E-Ink Enhancements
+    var reduceMoire: Bool = false
+    var ditheringEnabled: Bool = false
+}
+
+enum BindingMarginSide: String, Codable, CaseIterable, Identifiable {
+    case none = "None"
+    case left = "Left"
+    case right = "Right"
+    case alternating = "Alternating (Odd/Even)"
+    
+    var id: String { rawValue }
 }
 
 // MARK: - Output Pipeline
@@ -434,6 +889,13 @@ enum OutputPipeline: String, CaseIterable, Codable, Identifiable {
     case proPanel = "Pro Panel (Guided View)"
 
     var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .standard: return "Standard Convert"
+        case .proPanel: return "Pro Panel (Guided View)"
+        }
+    }
 }
 
 enum OutputFormat: String, CaseIterable, Codable, Identifiable {
@@ -465,7 +927,7 @@ enum CompressionPreset: String, CaseIterable, Codable {
     }
 }
 
-struct ConversionPreset: Identifiable, Codable {
+struct ConversionPreset: Identifiable, Codable, Sendable {
     var id: UUID = UUID()
     var name: String
     var settings: ConversionSettings
@@ -561,17 +1023,228 @@ struct PageModel: Identifiable, Codable, Equatable, Hashable {
     var panels: [NormalizedRect] = []
     var proposedPanels: [NormalizedRect] = [] // AI Suggestions
     
-    // ✅ NEW: Explicit Coordinate System Tracking
+    // âœ… NEW: Explicit Coordinate System Tracking
     // This allows us to trust "Known Good" panels (e.g. from Auto-Scan) and only run heuristics on Legacy/Unknown data.
     var coordinateSystem: PageCoordinateSystem = .unknown 
     
-    // We don't store UndoManager here because it's a class and not Codable.
-    // UndoManager will be managed by PageEditorState at runtime.
+    // Explicit Codable Synthesis & Initializers
+    init(id: UUID = UUID(), pageIndex: Int, panels: [NormalizedRect] = [], proposedPanels: [NormalizedRect] = [], coordinateSystem: PageCoordinateSystem = .unknown) {
+        self.id = id
+        self.pageIndex = pageIndex
+        self.panels = panels
+        self.proposedPanels = proposedPanels
+        self.coordinateSystem = coordinateSystem
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(UUID.self, forKey: .id)
+        self.pageIndex = try container.decode(Int.self, forKey: .pageIndex)
+        self.panels = try container.decode([NormalizedRect].self, forKey: .panels)
+        self.proposedPanels = try container.decode([NormalizedRect].self, forKey: .proposedPanels)
+        self.coordinateSystem = try container.decode(PageCoordinateSystem.self, forKey: .coordinateSystem)
+    }
+    
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(pageIndex, forKey: .pageIndex)
+        try container.encode(panels, forKey: .panels)
+        try container.encode(proposedPanels, forKey: .proposedPanels)
+        try container.encode(coordinateSystem, forKey: .coordinateSystem)
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case id, pageIndex, panels, proposedPanels, coordinateSystem
+    }
+    
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+        hasher.combine(pageIndex)
+        hasher.combine(panels)
+        hasher.combine(proposedPanels)
+        hasher.combine(coordinateSystem)
+    }
+    
+    static func == (lhs: PageModel, rhs: PageModel) -> Bool {
+        return lhs.id == rhs.id && lhs.pageIndex == rhs.pageIndex && lhs.panels == rhs.panels && lhs.proposedPanels == rhs.proposedPanels && lhs.coordinateSystem == rhs.coordinateSystem
+    }
 }
 
-// ✅ Coordinate System Helper
+// âœ… Coordinate System Helper
 enum PageCoordinateSystem: String, Codable, Equatable, Hashable {
     case unknown = "check_required" // Legacy files, needs heuristic
     case normalized = "normalized_0_1000" // Known Good (New Scan, Validated)
     case pixels = "pixels" // Raw pixels (needs conversion)
 }
+
+// MARK: - SwiftData Migration Models (Phase 5)
+// These prefixes (SD) allow incremental lazy-loading adoption without instantaneously shattering the 190+ view dependency injections bound to the legacy struct.
+@Model final class SDConvertedPDF: Identifiable, Hashable {
+    @Attribute(.unique) var id: UUID
+    var name: String
+    var url: URL
+    var parentFolderID: UUID?
+    
+    // Core Data Sync fields
+    var dataSyncHash: String?
+    var lastModified: Date
+    var pageCount: Int
+    var fileSize: Int64
+    var metadata: PDFMetadata
+    var collectionId: UUID?
+    var isFavorite: Bool
+    var isPrivate: Bool
+    
+    @Attribute(.externalStorage)
+    var coverImageData: Data?
+    
+    var contentType: ContentType
+    var chapters: [Chapter]
+    var addedByMode: AppUIMode
+    
+    // Linked Library Support
+    var sourceModeData: Data?
+
+    
+    // Unified Reader Properties
+    var documentSubtype: DocumentSubtype
+    var isOnDevice: Bool
+    var lastTransferFailed: Bool
+    var lastOutputFormat: OutputFormat?
+    var lastConversionDate: Date?
+    var panelConfidenceScore: Double?
+    
+    @Transient var fileExtensionString: String {
+        return url.pathExtension.uppercased()
+    }
+    
+    @Transient var formattedSize: String {
+        let mb = Double(fileSize) / 1024 / 1024
+        return String(format: "%.1f MB", mb)
+    }
+    
+    init(id: UUID = UUID(), name: String, url: URL, pageCount: Int, fileSize: Int64, metadata: PDFMetadata, collectionId: UUID? = nil, isFavorite: Bool = false, isPrivate: Bool = false, coverImageData: Data? = nil, contentType: ContentType = .comic, chapters: [Chapter] = [], addedByMode: AppUIMode = .pro, sourceMode: SourceMode = .local) {
+        self.id = id
+        self.name = name
+        self.url = url
+        self.pageCount = pageCount
+        self.fileSize = fileSize
+        self.metadata = metadata
+        self.collectionId = collectionId
+        self.isFavorite = isFavorite
+        self.isPrivate = isPrivate
+        self.coverImageData = coverImageData
+        self.contentType = contentType
+        self.chapters = chapters
+        self.addedByMode = addedByMode
+        
+        self.lastModified = Date()
+        // contentType already set from parameter above — do NOT overwrite with .comic here.
+        self.documentSubtype = .unknown
+        self.isOnDevice = false
+        self.lastTransferFailed = false
+        if let encoded = try? JSONEncoder().encode(sourceMode) {
+            self.sourceModeData = encoded
+        }
+    }
+    
+    // Bridge to Legacy Architecture during Phase 2 transitions
+    func toDTO() -> ConvertedPDF {
+        // coverImageData is passed through — was previously hardcoded nil, losing stored cover art
+        var pdf = ConvertedPDF(id: self.id, name: self.name, url: self.url, pageCount: self.pageCount, fileSize: self.fileSize, metadata: self.metadata, collectionId: self.collectionId, isFavorite: self.isFavorite, isPrivate: self.isPrivate, coverImageData: self.coverImageData)
+        pdf.contentType = self.contentType
+        pdf.chapters = self.chapters
+        pdf.addedByMode = self.addedByMode
+        pdf.documentSubtype = self.documentSubtype
+        pdf.isOnDevice = self.isOnDevice
+        pdf.lastTransferFailed = self.lastTransferFailed
+        pdf.lastOutputFormat = self.lastOutputFormat
+        pdf.lastConversionDate = self.lastConversionDate
+        pdf.lastModified = self.lastModified
+        pdf.panelConfidenceScore = self.panelConfidenceScore
+        
+        if let data = self.sourceModeData, let decoded = try? JSONDecoder().decode(SourceMode.self, from: data) {
+            pdf.sourceMode = decoded
+        }
+        
+        return pdf
+    }
+}
+
+@Model final class SDPDFCollection: Identifiable {
+    @Attribute(.unique) var id: UUID
+    var name: String
+    var icon: String
+    var color: String
+    var creationDate: Date
+    var explicitCoverFileID: UUID?
+    var parentId: UUID?
+    
+    init(id: UUID, name: String, icon: String, color: String, creationDate: Date, explicitCoverFileID: UUID? = nil, parentId: UUID? = nil) {
+        self.id = id
+        self.name = name
+        self.icon = icon
+        self.color = color
+        self.creationDate = creationDate
+        self.explicitCoverFileID = explicitCoverFileID
+        self.parentId = parentId
+    }
+    
+    func toDTO() -> PDFCollection {
+        PDFCollection(id: self.id, name: self.name, icon: self.icon, color: self.color, creationDate: self.creationDate, explicitCoverFileID: self.explicitCoverFileID, parentId: self.parentId)
+    }
+}
+
+@Model final class SDCharacterNode: Identifiable {
+    @Attribute(.unique) var id: UUID
+    var name: String
+    var avatarUrl: String?
+    var bio: String?
+    var firstAppearanceIssue: String?
+    
+    init(id: UUID = UUID(), name: String, avatarUrl: String? = nil, bio: String? = nil, firstAppearanceIssue: String? = nil) {
+        self.id = id
+        self.name = name
+        self.avatarUrl = avatarUrl
+        self.bio = bio
+        self.firstAppearanceIssue = firstAppearanceIssue
+    }
+}
+
+@Model final class SDRelationship: Identifiable {
+    @Attribute(.unique) var id: UUID
+    var sourceCharacterID: UUID
+    var targetCharacterID: UUID
+    var type: String // e.g. "ally", "enemy", "family"
+    
+    // Spoilers Activation Index
+    var visibleAfterIssueNumber: Int
+    var visibleAfterPageIndex: Int
+    
+    init(id: UUID = UUID(), sourceCharacterID: UUID, targetCharacterID: UUID, type: String, visibleAfterIssueNumber: Int = 0, visibleAfterPageIndex: Int = 0) {
+        self.id = id
+        self.sourceCharacterID = sourceCharacterID
+        self.targetCharacterID = targetCharacterID
+        self.type = type
+        self.visibleAfterIssueNumber = visibleAfterIssueNumber
+        self.visibleAfterPageIndex = visibleAfterPageIndex
+    }
+}
+
+@Model final class SDCharacterAppearance: Identifiable {
+    @Attribute(.unique) var id: UUID
+    var seriesID: UUID
+    var issueNumber: Int
+    var pageIndex: Int
+    var characterID: UUID
+    
+    init(id: UUID = UUID(), seriesID: UUID, issueNumber: Int, pageIndex: Int, characterID: UUID) {
+        self.id = id
+        self.seriesID = seriesID
+        self.issueNumber = issueNumber
+        self.pageIndex = pageIndex
+        self.characterID = characterID
+    }
+}
+

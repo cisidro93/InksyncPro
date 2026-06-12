@@ -1,64 +1,123 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+@MainActor
+class SeriesMergeConfigurationViewModel: ObservableObject {
+    @Published var itemsToMerge: [ConvertedPDF]
+    @Published var outputName: String
+    @Published var mangaMode: Bool = false
+    @Published var isProcessing: Bool = false
+    
+    init(itemsToMerge: [ConvertedPDF], outputName: String) {
+        self.itemsToMerge = itemsToMerge
+        self.outputName = outputName
+    }
+}
+
 struct SeriesMergeConfigurationView: View {
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var conversionManager: ConversionManager
+    @EnvironmentObject var settingsManager: AppSettingsManager
     
     // Initial configuration
     let sourceFiles: [ConvertedPDF]
+    let suggestedName: String?
     
-    // State
-    @State private var itemsToMerge: [ConvertedPDF]
-    @State private var outputName: String = ""
-    @State private var mangaMode: Bool = false
+    // State ViewModel
+    @StateObject private var viewModel: SeriesMergeConfigurationViewModel
     
-    init(sourceFiles: [ConvertedPDF]) {
+    init(sourceFiles: [ConvertedPDF], suggestedName: String? = nil) {
         self.sourceFiles = sourceFiles
+        self.suggestedName = suggestedName
         // Default sort by logical name (usually volume/issue number)
-        _itemsToMerge = State(initialValue: sourceFiles.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending })
+        let initialMerge = sourceFiles.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        let initialName = suggestedName ?? ""
+        
+        _viewModel = StateObject(wrappedValue: SeriesMergeConfigurationViewModel(
+            itemsToMerge: initialMerge,
+            outputName: initialName
+        ))
     }
     
     var body: some View {
-        NavigationView {
-            Form {
-                Section(header: Text("Output Volume Configuration"), footer: Text("The merged file will automatically be assigned to the current series.")) {
-                    TextField("New Volume Name (e.g., Volume 1)", text: $outputName)
-                    Toggle("Manga Mode (Right-to-Left)", isOn: $mangaMode)
-                }
-                
-                Section(header: Text("Merge Order"), footer: Text("Drag to reorder. The top file will be the first issue in the merged volume.")) {
-                    List {
-                        ForEach(itemsToMerge) { pdf in
-                            pdfRow(for: pdf)
+        NavigationStack {
+            VStack {
+                if viewModel.isProcessing {
+                    ImmersiveConversionOverlay(
+                        pdfName: viewModel.outputName.isEmpty ? "Merged Collection" : viewModel.outputName,
+                        customMessage: conversionManager.statusMessage ?? "Merging..."
+                    )
+                } else {
+                    Form {
+                        Section(header: Text("Output Volume Configuration"), footer: Text("The merged file will automatically be assigned to the current series.")) {
+                            TextField("New Volume Name (e.g., Volume 1)", text: $viewModel.outputName)
+                            Toggle("Manga Mode (Right-to-Left)", isOn: $viewModel.mangaMode)
+                            Toggle("Link Cover Page as Spread", isOn: $settingsManager.conversionSettings.linkCoverAsSpread)
+                            
+                            Picker("Image Quality", selection: $settingsManager.conversionSettings.compressionQuality) {
+                                ForEach(CompressionPreset.allCases, id: \.self) { preset in
+                                    Text(preset.rawValue).tag(preset)
+                                }
+                            }
+                            
+                            Picker("Smart File Splitting", selection: $settingsManager.conversionSettings.splitMode) {
+                                ForEach(FileSizeSplitMode.allCases) { mode in
+                                    Text(mode.rawValue).tag(mode)
+                                }
+                            }
                         }
-                        .onMove(perform: moveItems)
-                    }
-                }
-                
-                Section {
-                    Button {
-                        startMerge()
-                    } label: {
-                        HStack {
-                            Spacer()
-                            Text("Convert & Merge")
-                                .bold()
-                            Spacer()
+                        .listRowBackground(Color.inkSurface.opacity(0.4))
+                        
+                        Section(header: Text("Merge Order"), footer: Text("Drag to reorder. The top file will be the first issue in the merged volume.")) {
+                            ForEach(viewModel.itemsToMerge) { pdf in
+                                pdfRow(for: pdf)
+                            }
+                            .onMove(perform: moveItems)
+                        }
+                        .listRowBackground(Color.inkSurface.opacity(0.4))
+                        
+                        Section {
+                            Button {
+                                startMerge()
+                            } label: {
+                                HStack {
+                                    Spacer()
+                                    Text("Convert & Merge")
+                                        .bold()
+                                    Spacer()
+                                }
+                                .padding(.vertical, 4)
+                            }
+                            .disabled(isMergeDisabled)
+                            .foregroundColor(isMergeDisabled ? .gray : .white)
+                            .listRowBackground(
+                                Group {
+                                    if isMergeDisabled {
+                                        Color.inkSurface.opacity(0.4)
+                                    } else {
+                                        LinearGradient(colors: [Color.inkBlue, Color.inkViolet.opacity(0.8)], startPoint: .leading, endPoint: .trailing)
+                                    }
+                                }
+                            )
                         }
                     }
-                    .disabled(isMergeDisabled)
+                    .scrollContentBackground(.hidden)
                 }
             }
+            .background(Color.inkBackground.ignoresSafeArea())
             .navigationTitle("Configure Merge")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    if !viewModel.isProcessing {
+                        Button("Cancel") { dismiss() }
+                    }
                 }
                 // Requires EditButton to easily expose drag handles
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    EditButton()
+                    if !viewModel.isProcessing {
+                        EditButton()
+                    }
                 }
             }
         }
@@ -94,31 +153,36 @@ struct SeriesMergeConfigurationView: View {
     }
     
     private var isMergeDisabled: Bool {
-        itemsToMerge.count < 2 || outputName.trimmingCharacters(in: .whitespaces).isEmpty
+        viewModel.itemsToMerge.count < 2 || viewModel.outputName.trimmingCharacters(in: .whitespaces).isEmpty
     }
     
     private func moveItems(from source: IndexSet, to destination: Int) {
-        itemsToMerge.move(fromOffsets: source, toOffset: destination)
+        viewModel.itemsToMerge.move(fromOffsets: source, toOffset: destination)
     }
     
     private func startMerge() {
-        let files = itemsToMerge
-        let name = outputName.trimmingCharacters(in: .whitespaces)
-        let mode = mangaMode
+        let files = viewModel.itemsToMerge
+        let name = viewModel.outputName.trimmingCharacters(in: .whitespaces)
+        let mode = viewModel.mangaMode
+        
+        viewModel.isProcessing = true
         
         Task {
-            // First we need to ensure the resulting PDF is correctly tagged to the series!
-            // Wait, we need the series name!
-            // Let's get it from the first item
-            let seriesName = files.first?.metadata.series
+            // Explicitly extract the Series mapping tag to assign the generated merge automatically
+            let seriesTag = files.first?.metadata.series
             
-            await conversionManager.convertAndMerge(sourceFiles: files, outputName: name, mangaMode: mode)
+            // Execute the bulk engine and implicitly return the generated data payload
+            let mergedBooks = await conversionManager.convertAndMerge(sourceFiles: files, outputName: name, mangaMode: mode, overrideSeries: seriesTag)
             
-            // Wait, convertAndMerge generates new PDFs but doesn't auto-assign them to the series natively in code, it relies on scanLibrary.
-            // But if we want it to automatically appear in the series, we can try to explicitly set the series name on the newly generated output if it replaces something.
-            // Actually, in ConversionManager, convertAndMerge creates EPUBs and relies on scanLibrary. To explicitly set metadata, we would need to edit metadata before scanning, but standard metadata extraction should catch it if the filename matches the series folder, or we can just leave it to user.
-            
-            dismiss()
+            await MainActor.run {
+                // If the Engine produced an array, safely pop it to the UI (already explicitly added to ConversionManager)
+                if let newBook = mergedBooks.first {
+                    print("Merged Book generated natively: \(newBook.name)")
+                    NotificationCenter.default.post(name: Notification.Name("OpenMergedBook"), object: newBook)
+                }
+                viewModel.isProcessing = false
+                dismiss()
+            }
         }
     }
 }

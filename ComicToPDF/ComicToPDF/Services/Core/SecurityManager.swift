@@ -5,6 +5,7 @@ import Combine
 
 /// Manages secure access to the Private Library "Vault"
 /// Handles Biometric Authentication and App Privacy Blur
+@MainActor
 class SecurityManager: ObservableObject {
     static let shared = SecurityManager()
     
@@ -13,16 +14,20 @@ class SecurityManager: ObservableObject {
     @Published var isVaultEnabled: Bool = false // User preference
     @Published var shouldBlurContent: Bool = false
     
-    private var context = LAContext()
-    
     init() {
-        // Load preference
-        self.isVaultEnabled = UserDefaults.standard.bool(forKey: "isVaultEnabled")
+        // Load preference securely
+        if let data = KeychainHelper.standard.read(service: "com.inksync.vault", account: "isVaultEnabled"),
+           let str = String(data: data, encoding: .utf8), str == "true" {
+            self.isVaultEnabled = true
+        } else {
+            self.isVaultEnabled = false
+        }
     }
     
-    /// Toggle Vault protection preference
+    /// Toggle Vault protection preference securely
     func setVaultEnabled(_ enabled: Bool) {
-        UserDefaults.standard.set(enabled, forKey: "isVaultEnabled")
+        let data = Data(String(enabled).utf8)
+        KeychainHelper.standard.save(data, service: "com.inksync.vault", account: "isVaultEnabled")
         self.isVaultEnabled = enabled
         if enabled {
             self.lockVault()
@@ -33,18 +38,17 @@ class SecurityManager: ObservableObject {
     
     /// Attempt to unlock the vault using Device Authentication (FaceID/TouchID -> Passcode fallback)
     func authenticate() async -> Bool {
-        context = LAContext() // Reset context
+        let context = LAContext()
         
         do {
             // .deviceOwnerAuthentication natively tries Biometrics first, then automatically falls back to Passcode.
             // This prevents hard crashes on simulators or devices with disabled FaceID.
             try await context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "Unlock your Comic Vault")
-            await MainActor.run {
-                self.isVaultLocked = false
-            }
+            self.isVaultLocked = false
+            self.shouldBlurContent = false
             return true
         } catch {
-            print("Authentication failed: \(error.localizedDescription)")
+            Logger.shared.log("Vault Authentication failed: \(error.localizedDescription)", category: "System", type: .error)
             return false
         }
     }
@@ -60,12 +64,13 @@ class SecurityManager: ObservableObject {
         if isVaultEnabled {
             shouldBlurContent = true
             lockVault() // Auto-lock on exit
+            AppSettingsManager.shared.isVaultUnlocked = false
         }
     }
     
     /// Call when scene becomes active
     func handleAppForegrounding() {
-        shouldBlurContent = false
+        // Blur remains active until user successfully authenticates
     }
 }
 

@@ -4,22 +4,27 @@ import MessageUI
 struct DualExportView: View {
     let pdf: ConvertedPDF
     @EnvironmentObject var conversionManager: ConversionManager
-    @Environment(\.presentationMode) var presentationMode
+    @EnvironmentObject var settingsManager: AppSettingsManager
+    @Environment(\.dismiss) private var dismiss
     
     @AppStorage("kindleEmail") private var kindleEmail: String = ""
     
     @State private var showingShareSheet = false
     @State private var showingMailView = false
     @State private var showingMailAlert = false
+
     @State private var exportURL: URL?
     @State private var navigateToSync = false
     @State private var isProcessing = false
     @State private var mailResult: Result<MFMailComposeResult, Error>? = nil
     
     var body: some View {
-        NavigationView {
-            VStack(spacing: 24) {
-                // Header
+        NavigationStack {
+            ZStack {
+                Color.inkBackground.ignoresSafeArea()
+                
+                VStack(spacing: 24) {
+                    // Header
                 VStack(spacing: 8) {
                     Text("Export '\(pdf.name)'")
                         .font(.headline)
@@ -37,24 +42,24 @@ struct DualExportView: View {
                         .foregroundStyle(.secondary)
                     
                     HStack {
-                        Text("Format: \(conversionManager.conversionSettings.outputFormat.rawValue)")
+                        Text("Format: \(settingsManager.conversionSettings.outputFormat.rawValue)")
                         Spacer()
-                        Text("Quality: \(conversionManager.conversionSettings.compressionQuality.rawValue)")
+                        Text("Quality: \(settingsManager.conversionSettings.compressionQuality.rawValue)")
                     }
                     .font(.caption2)
                     
-                    if conversionManager.conversionSettings.optimizeForDevice {
-                        Text("Target Device: \(conversionManager.conversionSettings.targetDevice.rawValue)")
+                    if settingsManager.conversionSettings.optimizeForDevice {
+                        Text("Target Device: \(settingsManager.conversionSettings.targetDeviceProfile.rawValue)")
                             .font(.caption2)
                     }
-                    if conversionManager.conversionSettings.imageEnhancement.grayscale || conversionManager.conversionSettings.imageEnhancement.autoContrast {
+                    if settingsManager.conversionSettings.imageEnhancement.grayscale || settingsManager.conversionSettings.imageEnhancement.autoContrast {
                         Text("Filters: E-Ink Optimized")
                             .font(.caption2)
                             .foregroundStyle(.green)
                     }
                 }
                 .padding()
-                .background(Color(.secondarySystemBackground))
+                .background(Color.inkSurface.opacity(0.8))
                 .cornerRadius(8)
                 .cornerRadius(8)
                 .padding(.horizontal)
@@ -82,7 +87,7 @@ struct DualExportView: View {
                             .foregroundStyle(.secondary)
                     }
                     .padding()
-                    .background(Color(.secondarySystemBackground))
+                    .background(Color.inkSurface.opacity(0.8))
                     .cornerRadius(12)
                 }
                 
@@ -109,11 +114,12 @@ struct DualExportView: View {
                             .foregroundStyle(.secondary)
                     }
                     .padding()
-                    .background(Color(.secondarySystemBackground))
+                    .background(Color.inkSurface.opacity(0.8))
                     .cornerRadius(12)
                 }
                 
-                // Option C: Email to Kindle
+
+                // Option D: Email to Kindle
                 if !kindleEmail.isEmpty {
                     Button {
                         if MFMailComposeViewController.canSendMail() {
@@ -142,7 +148,7 @@ struct DualExportView: View {
                                 .foregroundStyle(.secondary)
                         }
                         .padding()
-                        .background(Color(.secondarySystemBackground))
+                        .background(Color.inkSurface.opacity(0.8))
                         .cornerRadius(12)
                     }
                 }
@@ -154,7 +160,8 @@ struct DualExportView: View {
                 
                 Spacer()
                 
-                // Hidden Navigation handled by navigationDestination
+                }
+                .padding()
             }
             .navigationDestination(isPresented: $navigateToSync) {
                 WiFiView()
@@ -164,7 +171,7 @@ struct DualExportView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Close") { presentationMode.wrappedValue.dismiss() }
+                    Button("Close") { dismiss() }
                 }
             }
             .sheet(isPresented: $showingShareSheet) {
@@ -185,6 +192,7 @@ struct DualExportView: View {
                     )
                 }
             }
+
         }
     }
     
@@ -197,23 +205,22 @@ struct DualExportView: View {
                 self.isProcessing = false
                 self.showingShareSheet = true
             }
+            if let safeURL = url {
+                Logger.shared.log("Exported for Cloud Sync: \(safeURL.lastPathComponent)", category: "Export", type: .success)
+            }
         }
     }
     
     private func handleLocalExport() {
         isProcessing = true
         Task {
-            if let hqURL = await conversionManager.exportForLocalSideload(pdf) {
-                await MainActor.run {
-                    self.isProcessing = false
-                    self.navigateToSync = true
-                }
-                print("✅ Exported HQ to: \(hqURL.lastPathComponent)")
-            } else {
-                await MainActor.run {
-                    self.isProcessing = false
-                }
+            TransferQueueManager.shared.clearQueue()
+            TransferQueueManager.shared.stageFile(pdf)
+            await MainActor.run {
+                self.isProcessing = false
+                self.navigateToSync = true
             }
+            Logger.shared.log("Staged single file to queue for Local High-Quality Export", category: "Export", type: .success)
         }
     }
     
@@ -226,6 +233,10 @@ struct DualExportView: View {
                 self.isProcessing = false
                 self.showingMailView = true
             }
+            if let safeURL = url {
+                Logger.shared.log("Exported for Email: \(safeURL.lastPathComponent)", category: "Export", type: .success)
+            }
         }
     }
+    
 }

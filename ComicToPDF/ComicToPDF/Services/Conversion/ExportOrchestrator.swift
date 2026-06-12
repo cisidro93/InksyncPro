@@ -1,0 +1,181 @@
+import Foundation
+import SwiftUI
+import CoreGraphics
+
+@MainActor
+class ExportOrchestrator {
+    static let shared = ExportOrchestrator()
+
+    func exportForCloudSync(_ pdf: ConvertedPDF, manager: ConversionManager) async -> URL? {
+        let fileManager = FileManager.default
+        let tempDir = fileManager.temporaryDirectory
+
+        // ── Cloud-resolve gate ────────────────────────────────────────────────────
+        // Local/linked files pass through instantly. Cloud files download to a temp
+        // location and are cleaned up automatically when this function returns.
+        let localSourceURL: URL
+        let needsSourceCleanup: Bool
+        do {
+            (localSourceURL, needsSourceCleanup) = try await CloudDownloadManager.shared.resolveLocalURL(for: pdf)
+        } catch {
+            Logger.shared.log("❌ Cloud Sync Export: Could not resolve source — \(error.localizedDescription)", category: "Export", type: .error)
+            return nil
+        }
+        defer { if needsSourceCleanup { try? fileManager.removeItem(at: localSourceURL) } }
+
+        if pdf.contentType == .book {
+            let exportURL = tempDir.appendingPathComponent(pdf.name)
+            try? fileManager.removeItem(at: exportURL)
+            do {
+                try fileManager.copyItem(at: localSourceURL, to: exportURL)
+                Logger.shared.log("Book Export: Safe pass-through for \(pdf.name)", category: "Export")
+                return exportURL
+            } catch {
+                Logger.shared.log("❌ Book Export Failed: \(error.localizedDescription)", category: "Export", type: .error)
+                return nil
+            }
+        }
+        
+        if AppSettingsManager.shared.conversionSettings.outputFormat == .pdf {
+            let exportName = pdf.name.replacingOccurrences(of: ".cbz", with: ".pdf")
+            let exportURL = tempDir.appendingPathComponent(exportName)
+            
+            TaskEngine.shared.isConverting = true; TaskEngine.shared.processingStatus = "Generating PDF..."
+            defer { 
+                TaskEngine.shared.isConverting = false 
+                Task { @MainActor in TaskEngine.shared.processingStatus = "" }
+            }
+            
+            do {
+                let imageURLs = try await EditorSessionManager.shared.extractImageURLs(from: localSourceURL)
+                try PDFGenerator.generate(from: imageURLs, to: exportURL, mangaMode: AppSettingsManager.shared.conversionSettings.mangaMode, chapters: pdf.chapters, settings: AppSettingsManager.shared.conversionSettings) { @Sendable progress in
+                    Task { @MainActor in TaskEngine.shared.processingStatus = "Processing \(Int(progress * 100))%" }
+                }
+                return exportURL
+            } catch {
+                Logger.shared.log("❌ PDF Export Failed: \(error)", category: "Export")
+                return nil
+            }
+        }
+
+        // Use pdf.name so the exported file always has the user-facing name,
+        // not the temp UUID path used for cloud-downloaded intermediates.
+        let exportName = pdf.name
+        let exportURL = tempDir.appendingPathComponent(exportName)
+        try? fileManager.removeItem(at: exportURL)
+
+        TaskEngine.shared.isConverting = true; TaskEngine.shared.processingStatus = "Preparing Export..."; TaskEngine.shared.statusMessage = "Embedding Metadata..."
+        defer { 
+            TaskEngine.shared.isConverting = false 
+            TaskEngine.shared.statusMessage = nil 
+            Task { @MainActor in TaskEngine.shared.processingStatus = "" }
+        }
+        
+        do {
+            Logger.shared.log("Starting Cloud Export for \(pdf.name)", category: "Export")
+            try fileManager.copyItem(at: localSourceURL, to: exportURL)
+            
+            var panelsToInject = [Int: [PanelExtractor.Panel]]()
+            if AppSettingsManager.shared.conversionSettings.isGuidedView {
+                panelsToInject = await manager.getCombinedManifest(for: pdf)
+                // Use the already-copied exportURL for panel extraction —
+                // it's a real local file even when the source was cloud.
+                let files = try await EditorSessionManager.shared.extractImageURLs(from: exportURL)
+                
+                for (index, fileURL) in files.enumerated() {
+                    if panelsToInject[index] == nil && AppSettingsManager.shared.conversionSettings.enablePanelSplit {
+                         if let image = UIImage(contentsOfFile: fileURL.path) {
+                            let detected = await PanelExtractor.detectPanels(in: image, mode: .automatic, mangaMode: AppSettingsManager.shared.conversionSettings.mangaMode)
+                            if !detected.isEmpty {
+                                let editedRects = await withCheckedContinuation { (continuation: CheckedContinuation<[CGRect], Never>) in
+                                    Task { @MainActor in
+                                        manager.currentEditorImage = image
+                                        manager.currentEditorPanels = detected.map { $0.boundingBox }
+                                        manager.setPanelEditorContinuation(continuation) // Requires helper on manager
+                                        manager.isPresentingPanelEditor = true
+                                    }
+                                }
+                                panelsToInject[index] = editedRects.map { PanelExtractor.Panel(boundingBox: $0) }
+                            }
+                        }
+                    }
+                    let progress = Double(index) / Double(files.count)
+                    Task { @MainActor in TaskEngine.shared.conversionProgress = progress }
+                }
+            }
+            
+            try? await manager.injectMetadata(into: exportURL, panels: panelsToInject, metadata: pdf.metadata)
+            return exportURL
+        } catch {
+            Logger.shared.log("❌ Cloud Export Failed: \(error)", category: "Export")
+            return nil
+        }
+    }
+    
+
+    
+    // MARK: - Local Sideload Export
+    func exportForLocalSideload(_ pdf: ConvertedPDF, manager: ConversionManager) async -> URL? {
+        let fileManager = FileManager.default
+        let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
+        let exportDir = docDir.appendingPathComponent("KindleExports")
+
+        try? fileManager.createDirectory(at: exportDir, withIntermediateDirectories: true, attributes: nil)
+
+        let tempName = "Kindle_HQ_\(pdf.name)"
+        let targetURL = exportDir.appendingPathComponent(tempName)
+        try? fileManager.removeItem(at: targetURL)
+
+        // ── Cloud-resolve gate ────────────────────────────────────────────────────
+        let localSourceURL: URL
+        let needsSourceCleanup: Bool
+        do {
+            (localSourceURL, needsSourceCleanup) = try await CloudDownloadManager.shared.resolveLocalURL(for: pdf)
+        } catch {
+            Logger.shared.log("❌ Sideload Export: Could not resolve source — \(error.localizedDescription)", category: "Export", type: .error)
+            return nil
+        }
+        defer { if needsSourceCleanup { try? fileManager.removeItem(at: localSourceURL) } }
+
+        if pdf.contentType == .book {
+            do {
+                try fileManager.copyItem(at: localSourceURL, to: targetURL)
+                Logger.shared.log("Book Export: Safe pass-through HQ for \(pdf.name)", category: "Export")
+                return targetURL
+            } catch {
+                return nil
+            }
+        }
+
+        if AppSettingsManager.shared.conversionSettings.outputFormat == .pdf {
+            TaskEngine.shared.isConverting = true; TaskEngine.shared.processingStatus = "Generating PDF..."
+            defer { TaskEngine.shared.isConverting = false; Task { @MainActor in TaskEngine.shared.processingStatus = "" } }
+
+            do {
+                let pdName = pdf.name.replacingOccurrences(of: ".cbz", with: ".pdf")
+                let pdfURL = exportDir.appendingPathComponent(pdName)
+                try? fileManager.removeItem(at: pdfURL)
+
+                let imageURLs = try await EditorSessionManager.shared.extractImageURLs(from: localSourceURL)
+                try PDFGenerator.generate(from: imageURLs, to: pdfURL, mangaMode: AppSettingsManager.shared.conversionSettings.mangaMode, chapters: pdf.chapters, settings: AppSettingsManager.shared.conversionSettings) { @Sendable progress in
+                    Task { @MainActor in TaskEngine.shared.processingStatus = "Processing \(Int(progress * 100))%" }
+                }
+                return pdfURL
+            } catch {
+                return nil
+            }
+        }
+
+        do {
+            manager.saveLibrary()
+            let finalEPUB = try await ConversionEngine.shared.process(url: localSourceURL, settings: AppSettingsManager.shared.conversionSettings, customOutputName: pdf.name)
+            let finalName = finalEPUB.lastPathComponent
+            let destURL = exportDir.appendingPathComponent(finalName)
+            if fileManager.fileExists(atPath: destURL.path) { try fileManager.removeItem(at: destURL) }
+            try fileManager.moveItem(at: finalEPUB, to: destURL)
+            return destURL
+        } catch {
+            return nil
+        }
+    }
+}

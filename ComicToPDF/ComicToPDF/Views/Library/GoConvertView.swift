@@ -92,6 +92,9 @@ private struct GoQuickMergeSheet: View {
                     errorMessage = "Merge completed but output could not be located. Check Settings → Logs."
                 } else {
                     Logger.shared.log("Quick Merge complete", category: "GoUI")
+                    if !ConversionQueueManager.shared.completedGoSourceStems.contains(name) {
+                        ConversionQueueManager.shared.completedGoSourceStems.append(name)
+                    }
                     onMergeComplete(merged)
                     dismiss()
                 }
@@ -103,18 +106,43 @@ private struct GoQuickMergeSheet: View {
 // MARK: - GoConvertView
 struct GoConvertView: View {
     @EnvironmentObject var conversionManager: ConversionManager
-    @StateObject private var queueManager = ConversionQueueManager.shared
+    @EnvironmentObject var settingsManager: AppSettingsManager
+    @ObservedObject private var queueManager = ConversionQueueManager.shared
     
     @State private var selectedFiles: [URL] = []
-    @State private var isTargetingManga = true
-    @State private var useLiquidEInk = true
-    @State private var showingFilePicker = false
+    @StateObject private var viewModel = ConversionViewModel()
+    @StateObject private var previewVM = DevicePreviewViewModel()
+    @State private var showingActionSheet = false
     @State private var shareItems: [URL] = []
     @State private var showingShareSheet = false
     @State private var pdfToRename: ConvertedPDF? = nil
     @State private var renameText: String = ""
     @State private var renameError: String? = nil
     @State private var showingMergeSheet = false
+    @State private var showingLibraryPicker = false
+
+    private var previewPDF: ConvertedPDF? {
+        guard let url = selectedFiles.first else { return nil }
+        return ConvertedPDF(
+            id: UUID(),
+            name: url.lastPathComponent,
+            url: url,
+            pageCount: 10,
+            fileSize: 0,
+            metadata: PDFMetadata(title: url.deletingPathExtension().lastPathComponent)
+        )
+    }
+
+    private var dummyPDF: ConvertedPDF {
+        ConvertedPDF(
+            id: UUID(),
+            name: "Dummy.pdf",
+            url: URL(fileURLWithPath: ""),
+            pageCount: 1,
+            fileSize: 0,
+            metadata: PDFMetadata(title: "Dummy")
+        )
+    }
     
     // ✅ RELIABLE: Match completed Go conversions by source file stem against library
     // This bypasses the addedByMode race condition entirely.
@@ -133,194 +161,60 @@ struct GoConvertView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
-                Text("Go Convert")
-                    .font(.largeTitle).bold().padding(.top, 40)
-                
-                // MARK: Drop Zone
-                Button { showingFilePicker = true } label: {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 24, style: .continuous)
-                            .strokeBorder(Color.blue.opacity(0.5), style: StrokeStyle(lineWidth: 3, dash: [10]))
-                            .background(Color.blue.opacity(0.05).cornerRadius(24))
-                        VStack(spacing: 12) {
-                            Image(systemName: "plus.square.dashed").font(.system(size: 60)).foregroundStyle(.blue)
-                            if selectedFiles.isEmpty {
-                                Text("Tap to Select Files").font(.title3).bold().foregroundStyle(.primary)
-                                Text("or Drag & Drop CBZ/PDF here").font(.subheadline).foregroundStyle(.secondary)
-                            } else {
-                                Text("\(selectedFiles.count) File(s) Selected")
-                                    .font(.title3).bold().foregroundStyle(.blue)
-                                // ✅ Show actual filenames, not just a count
-                                ForEach(selectedFiles.prefix(3), id: \.self) { url in
-                                    Text(url.lastPathComponent)
-                                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                                }
-                                if selectedFiles.count > 3 {
-                                    Text("+ \(selectedFiles.count - 3) more…")
-                                        .font(.caption2).foregroundStyle(.secondary)
-                                }
-                            }
-                        }
-                    }
+                dropZone
+                settingsCards
+
+                // ── Live Device Preview Panel ───────────────────────
+                if !selectedFiles.isEmpty {
+                    DevicePreviewPanel(
+                        viewModel: previewVM,
+                        profile: settingsManager.conversionSettings.targetDeviceProfile,
+                        settings: settingsManager.conversionSettings
+                    )
+                    .padding(.horizontal, 16)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    .animation(.spring(response: 0.4, dampingFraction: 0.85), value: selectedFiles.isEmpty)
                 }
-                .frame(maxWidth: .infinity, minHeight: 200)
-                .padding(.horizontal, 32)
-                .sheet(isPresented: $showingFilePicker) {
-                    DocumentPicker(onDocumentsPicked: { self.selectedFiles = $0 })
-                }
-                
-                // MARK: Settings
-                VStack(spacing: 16) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Content Type").font(.headline)
-                        Picker("Content Type", selection: $isTargetingManga) {
-                            Text("Manga (Right-to-Left)").tag(true)
-                            Text("Western Comic (L-to-R)").tag(false)
-                        }.pickerStyle(.segmented)
-                    }.padding(.horizontal, 32)
-                    
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Target Device").font(.headline)
-                        Picker("Target Device", selection: $conversionManager.conversionSettings.targetDevice) {
-                            ForEach(KindleDeviceType.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                        }
-                        .pickerStyle(.menu).frame(maxWidth: .infinity, alignment: .leading)
-                        .padding().background(Color(.secondarySystemBackground)).cornerRadius(12)
-                    }.padding(.horizontal, 32)
-                    
-                    Toggle(isOn: $useLiquidEInk) {
-                        VStack(alignment: .leading) {
-                            Text("✨ Liquid E-Ink Optimization").font(.headline)
-                            Text("Auto-levels, unsharp masking & gamma for perfect E-Ink contrast.")
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                    }
-                    .padding().background(Color(.secondarySystemBackground)).cornerRadius(12)
-                    .padding(.horizontal, 32)
-                }
-                
-                // MARK: Queue Hub / Convert Button
-                Group {
-                    if queueManager.isProcessing || queueManager.activeItem != nil {
-                        // The UI is now handled by the Immersive Overlay on top, 
-                        // but we leave this block here so the view structure is maintained and buttons are disabled.
-                        VStack(spacing: 12) {
-                            Text("Queue Processing...")
-                                .font(.headline).foregroundStyle(.secondary)
-                            
-                            Button(role: .destructive) { queueManager.cancelAll() } label: {
-                                Text("Cancel Queue").bold()
-                                    .frame(maxWidth: 200).padding(.vertical, 8)
-                                    .background(Color.red.opacity(0.15)).foregroundColor(.red).cornerRadius(10)
-                            }
-                        }
-                        .padding(.horizontal, 32)
-                    } else {
-                        Button { startGoConversion() } label: {
-                            Text("Add to Conversion Queue")
-                                .font(.title2).bold()
-                                .frame(maxWidth: 400).padding()
-                                .background(selectedFiles.isEmpty ? Color.blue.opacity(0.5) : Color.blue)
-                                .foregroundColor(.white).cornerRadius(16)
-                        }
-                        .disabled(selectedFiles.isEmpty)
-                    }
-                }
-                
-                // MARK: Recently Converted Panel
-                if !goConvertedFiles.isEmpty {
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack {
-                            Label("Ready to Send", systemImage: "checkmark.circle.fill")
-                                .font(.headline).foregroundColor(.green)
-                            Spacer()
-                            Text("\(goConvertedFiles.count) file\(goConvertedFiles.count == 1 ? "" : "s")")
-                                .font(.caption).foregroundColor(.secondary)
-                        }
-                        .padding(.horizontal, 32)
-                        
-                        ForEach(goConvertedFiles) { pdf in
-                            HStack(spacing: 12) {
-                                Image(systemName: "doc.fill").font(.title2).foregroundStyle(.blue).frame(width: 40)
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(pdf.name).font(.subheadline).fontWeight(.medium).lineLimit(1)
-                                    Text(pdf.formattedSize).font(.caption).foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                Button {
-                                    pdfToRename = pdf
-                                    renameText = pdf.url.deletingPathExtension().lastPathComponent
-                                } label: {
-                                    Image(systemName: "pencil").foregroundColor(.secondary)
-                                        .padding(8).background(Color(.tertiarySystemBackground)).cornerRadius(8)
-                                }
-                                .buttonStyle(.plain)
-                                Button {
-                                    shareItems = [pdf.url]; showingShareSheet = true
-                                } label: {
-                                    Label("Send", systemImage: "paperplane.fill")
-                                        .font(.caption).fontWeight(.semibold)
-                                        .padding(.horizontal, 12).padding(.vertical, 6)
-                                        .background(Color.blue).foregroundColor(.white).cornerRadius(20)
-                                }
-                                .buttonStyle(.plain)
-                            }
-                            .padding(.vertical, 10).padding(.horizontal, 16)
-                            .background(Color(.secondarySystemBackground)).cornerRadius(12)
-                            .padding(.horizontal, 32)
-                        }
-                        
-                        if goConvertedFiles.count > 1 {
-                            VStack(spacing: 10) {
-                                Button {
-                                    shareItems = goConvertedFiles.map { $0.url }
-                                    showingShareSheet = true
-                                } label: {
-                                    Label("Share All \(goConvertedFiles.count) Files", systemImage: "square.and.arrow.up")
-                                        .font(.subheadline).fontWeight(.semibold)
-                                        .frame(maxWidth: .infinity).padding(.vertical, 12)
-                                        .background(Color.blue.opacity(0.12)).foregroundColor(.blue).cornerRadius(12)
-                                }
-                                Button { showingMergeSheet = true } label: {
-                                    Label("Merge & Send to Kindle", systemImage: "arrow.triangle.merge")
-                                        .font(.subheadline).fontWeight(.semibold)
-                                        .frame(maxWidth: .infinity).padding(.vertical, 12)
-                                        .background(Color.green).foregroundColor(.white).cornerRadius(12)
-                                }
-                            }
-                            .padding(.horizontal, 32)
-                        }
-                    }
-                    .padding(.vertical, 8)
-                }
-                
+
+                convertButton
+                if !goConvertedFiles.isEmpty { readyToSendPanel }
                 Spacer(minLength: 40)
             }
         }
-        .disabled(queueManager.isProcessing)
-        .overlay(
-            Group {
-                if queueManager.isProcessing, let activeItem = queueManager.activeItem {
-                    ImmersiveConversionOverlay(
-                        pdfName: activeItem.sourceURL.lastPathComponent,
-                        customProgress: queueManager.currentProgress,
-                        customMessage: queueManager.statusMessage
-                    )
-                    .transition(.opacity.animation(.easeInOut))
-                }
+        .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 80) }
+        .overlay {
+            if queueManager.isProcessing, let activeItem = queueManager.activeItem {
+                ImmersiveConversionOverlay(
+                    pdfName: activeItem.sourceURL.lastPathComponent,
+                    customProgress: queueManager.currentProgress,
+                    customMessage: queueManager.statusMessage
+                )
+                .transition(.opacity.animation(.easeInOut))
             }
-        )
+        }
         .sheet(isPresented: $showingShareSheet) { ShareSheet(activityItems: shareItems) }
         .sheet(isPresented: $showingMergeSheet) {
             GoQuickMergeSheet(
                 mergeOrder: Array(goConvertedFiles),
                 outputName: "Go Merge \(DateFormatter.localizedString(from: Date(), dateStyle: .short, timeStyle: .none))",
-                mangaMode: isTargetingManga
+                mangaMode: viewModel.isMangaMode
             ) { mergedURLs in
                 shareItems = mergedURLs
                 showingShareSheet = true
             }
             .environmentObject(conversionManager)
+        }
+        .sheet(isPresented: $viewModel.showingPreview) {
+            if let pdf = previewPDF {
+                PrecisionCanvasView(pdf: pdf, pageIndex: .constant(3), totalCount: pdf.pageCount, conversionManager: conversionManager)
+            }
+        }
+        .sheet(isPresented: $viewModel.showingCalibreGuide) {
+            CalibreGuideView()
+        }
+        .sheet(isPresented: $showingLibraryPicker) {
+            LibraryFilePickerView(selectedFiles: $selectedFiles)
+                .environmentObject(conversionManager)
         }
         .alert("Rename File", isPresented: Binding<Bool>(
             get: { pdfToRename != nil },
@@ -336,6 +230,421 @@ struct GoConvertView: View {
         )) {
             Button("OK", role: .cancel) { renameError = nil }
         } message: { Text(renameError ?? "An unknown error occurred.") }
+        .onAppear {
+            viewModel.isMangaMode = settingsManager.conversionSettings.mangaMode
+            viewModel.selectedPipeline = settingsManager.conversionSettings.outputPipeline
+        }
+        .onChange(of: selectedFiles) { _, files in
+            if let first = files.first {
+                let lowerName = first.lastPathComponent.lowercased()
+                if lowerName.contains("manga") || lowerName.contains("chapter") || lowerName.contains("ch.") || lowerName.contains("raw") {
+                    viewModel.isMangaMode = true
+                } else if lowerName.contains("issue") || lowerName.contains("comic") || lowerName.contains("marvel") || lowerName.contains("dc") {
+                    viewModel.isMangaMode = false
+                }
+                // ── Trigger device preview on file load ────────────────
+                previewVM.loadSourceImage(from: first)
+                previewVM.requestRender(settings: settingsManager.conversionSettings)
+            }
+        }
+        .onChange(of: settingsManager.conversionSettings) { _, newSettings in
+            previewVM.requestRender(settings: newSettings)
+        }
+    }
+
+    // MARK: - Drop Zone
+    @ViewBuilder
+    private var dropZone: some View {
+        ZStack {
+            Circle()
+                .fill(Theme.blue.opacity(0.15))
+                .frame(width: 150, height: 150)
+                .blur(radius: 40)
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .background(Color.inkSurfaceRaised.opacity(0.5).cornerRadius(24))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .stroke(
+                            LinearGradient(
+                                colors: [Theme.blue.opacity(0.4), Theme.blue.opacity(0.1)],
+                                startPoint: .topLeading, endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1
+                        )
+                )
+                .shadow(color: Theme.blue.opacity(0.15), radius: 20, y: 10)
+            VStack(spacing: 16) {
+                ZStack {
+                    Circle().fill(Theme.blue.opacity(0.1)).frame(width: 64, height: 64)
+                    Image(systemName: "square.and.arrow.down.on.square.fill")
+                        .font(.system(size: 28))
+                        .foregroundStyle(Theme.blue.gradient)
+                }
+                if selectedFiles.isEmpty {
+                    VStack(spacing: 12) {
+                        VStack(spacing: 4) {
+                            Text("No Files Selected")
+                                .font(.system(size: 18, weight: .bold))
+                                .foregroundStyle(Theme.text)
+                            Text("Import files or choose from Library")
+                                .font(.system(size: 14))
+                                .foregroundStyle(Theme.textSecondary)
+                        }
+                        HStack(spacing: 12) {
+                            Button {
+                                ImportCoordinator.present(type: .unified) { urls in processPickedFiles(urls) }
+                            } label: {
+                                Label("Browse Files", systemImage: "folder.badge.plus")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 8)
+                                    .background(Theme.blue)
+                                    .foregroundColor(.white)
+                                    .cornerRadius(10)
+                            }
+                            .buttonStyle(.plain)
+                            
+                            Button {
+                                showingLibraryPicker = true
+                            } label: {
+                                Label("Library", systemImage: "books.vertical.fill")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 8)
+                                    .background(Color.inkSurfaceRaised)
+                                    .foregroundColor(Theme.blue)
+                                    .cornerRadius(10)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 10)
+                                            .stroke(Theme.blue.opacity(0.3), lineWidth: 1)
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding(.top, 4)
+                    }
+                } else {
+                    VStack(spacing: 6) {
+                        Text("\(selectedFiles.count) File(s) Selected")
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundStyle(Theme.blue)
+                        VStack(spacing: 4) {
+                            ForEach(selectedFiles.prefix(3), id: \.self) { url in
+                                Text(url.lastPathComponent)
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundStyle(Theme.textSecondary)
+                                    .lineLimit(1)
+                                    .padding(.horizontal, 12).padding(.vertical, 4)
+                                    .background(Theme.blue.opacity(0.1))
+                                    .clipShape(Capsule())
+                            }
+                        }
+                        if selectedFiles.count > 3 {
+                            Text("+ \(selectedFiles.count - 3) more…")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundStyle(Theme.textTertiary)
+                        }
+                        
+                        HStack(spacing: 12) {
+                            Button {
+                                ImportCoordinator.present(type: .unified) { urls in processPickedFiles(urls) }
+                            } label: {
+                                Text("Add Files")
+                                    .font(.caption).bold()
+                                    .padding(.horizontal, 10).padding(.vertical, 6)
+                                    .background(Color.inkSurfaceRaised).cornerRadius(6)
+                            }
+                            .buttonStyle(.plain)
+                            
+                            Button {
+                                showingLibraryPicker = true
+                            } label: {
+                                Text("Add from Library")
+                                    .font(.caption).bold()
+                                    .padding(.horizontal, 10).padding(.vertical, 6)
+                                    .background(Color.inkSurfaceRaised).cornerRadius(6)
+                            }
+                            .buttonStyle(.plain)
+                            
+                            Button(role: .destructive) {
+                                selectedFiles.removeAll()
+                            } label: {
+                                Text("Clear")
+                                    .font(.caption).bold()
+                                    .foregroundColor(.red)
+                                    .padding(.horizontal, 10).padding(.vertical, 6)
+                                    .background(Color.red.opacity(0.1)).cornerRadius(6)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding(.top, 8)
+                    }
+                }
+            }
+            .padding(.vertical, 32)
+        }
+        .frame(maxWidth: .infinity, minHeight: 220)
+        .padding(.horizontal, 16)
+        .padding(.top, 16)
+    }
+
+    // MARK: - Settings Cards
+    @ViewBuilder
+    private var settingsCards: some View {
+        VStack(spacing: 16) {
+            // Source details
+            InkCard(header: "Source Details") {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Auto-Split")
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundColor(.inkTextSecondary)
+                    Picker("", selection: $settingsManager.conversionSettings.splitMode) {
+                        ForEach(FileSizeSplitMode.allCases) { mode in
+                            Text(mode.rawValue).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                }
+            }
+
+            // Output Format
+            InkCard(header: "Output Format") {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Target Format")
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundColor(.inkTextSecondary)
+                    Picker("", selection: $settingsManager.conversionSettings.outputFormat) {
+                        ForEach(OutputFormat.allCases) { format in
+                            Label(format.rawValue, systemImage: format.icon).tag(format)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .onChange(of: settingsManager.conversionSettings.outputFormat) { _, newFormat in
+                        if newFormat != .epub {
+                            viewModel.selectedPipeline = .standard
+                            viewModel.applyPipeline(.standard, to: &settingsManager.conversionSettings)
+                        }
+                    }
+                }
+                Divider().overlay(Color.inkBorderSubtle)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Image Quality")
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundColor(.inkTextSecondary)
+                    Picker("", selection: $settingsManager.conversionSettings.compressionQuality) {
+                        ForEach(CompressionPreset.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                }
+            }
+
+            // Hardware Optimisation
+            InkCard(header: "Hardware Optimisation") {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Target Device")
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundColor(.inkTextSecondary)
+                    Picker("", selection: $settingsManager.conversionSettings.targetDeviceProfile) {
+                        ForEach(TargetDeviceProfile.allCases) { device in
+                            Text(device.rawValue).tag(device)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .tint(.inkBlue)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(10)
+                    .background(Color.inkSurfaceRaised)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+                Divider().overlay(Color.inkBorderSubtle)
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("E-Ink High Contrast Filter")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(.inkTextPrimary)
+                        Text("Maximises readability on greyscale e-ink displays")
+                            .font(.system(size: 12))
+                            .foregroundColor(.inkTextSecondary)
+                    }
+                    Spacer()
+                    Toggle("", isOn: $settingsManager.conversionSettings.optimizeForDevice)
+                        .labelsHidden()
+                        .tint(.inkBlue)
+                }
+            }
+
+            // Export Pipeline
+            InkCard(header: "Conversion Mode") {
+                VStack(spacing: 10) {
+                    ForEach(OutputPipeline.allCases) { pipeline in
+                        let pdf = previewPDF ?? dummyPDF
+                        let isDisabled = viewModel.pipelineIsDisabled(pipeline, for: pdf, format: settingsManager.conversionSettings.outputFormat)
+                        Button(action: {
+                            if !isDisabled {
+                                viewModel.selectedPipeline = pipeline
+                                viewModel.applyPipeline(pipeline, to: &settingsManager.conversionSettings)
+                            }
+                        }) {
+                            PipelineCardView(
+                                pipeline: pipeline,
+                                isDisabled: isDisabled,
+                               isSelected: viewModel.selectedPipeline == pipeline,
+                                viewModel: viewModel,
+                                currentFormat: settingsManager.conversionSettings.outputFormat
+                            )
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                        .disabled(queueManager.isProcessing || isDisabled)
+                        .opacity(isDisabled || queueManager.isProcessing ? 0.55 : 1.0)
+                    }
+
+                    if viewModel.selectedPipeline == .proPanel {
+                        VStack(spacing: 8) {
+                            if previewPDF != nil {
+                                Button(action: { viewModel.showingPreview = true }) {
+                                    Label("Preview Panel Detection (Page 4)", systemImage: "eye")
+                                        .font(.system(size: 14))
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 10)
+                                        .background(Color.inkSurfaceRaised)
+                                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                                        .foregroundColor(.inkTextPrimary)
+                                }
+                                .buttonStyle(PlainButtonStyle())
+                            }
+                            Button(action: { viewModel.showingCalibreGuide = true }) {
+                                Label("How to Sideload to Kindle", systemImage: "questionmark.circle")
+                                    .font(.caption)
+                                    .foregroundColor(.inkBlue)
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                        }
+                        .padding(.top, 4)
+                    }
+                }
+            }
+
+            // Layout
+            InkCard(header: "Layout") {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Reading Direction")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(.inkTextPrimary)
+                        Text(viewModel.isMangaMode ? "Right to Left (Manga)" : "Left to Right (Western)")
+                            .font(.system(size: 12))
+                            .foregroundColor(.inkTextSecondary)
+                    }
+                    Spacer()
+                    Toggle("", isOn: $viewModel.isMangaMode)
+                        .labelsHidden()
+                        .tint(.inkBlue)
+                        .disabled(queueManager.isProcessing)
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+    }
+
+    // MARK: - Convert Button
+    @ViewBuilder
+    private var convertButton: some View {
+        Group {
+            if queueManager.isProcessing || queueManager.activeItem != nil {
+                VStack(spacing: 12) {
+                    Text("Queue Processing...")
+                        .font(.headline).foregroundColor(Color.inkTextSecondary)
+                    Button(role: .destructive) { queueManager.cancelAll() } label: {
+                        Text("Cancel Queue").bold()
+                            .frame(maxWidth: 200).padding(.vertical, 10)
+                            .background(Color.inkRed.opacity(0.15)).foregroundColor(.inkRed).cornerRadius(10)
+                    }
+                }
+                .padding(.horizontal, 16)
+            } else {
+                Button { startGoConversion() } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "bolt.fill")
+                        Text("Add to Conversion Queue")
+                            .font(.system(size: 16, weight: .semibold))
+                    }
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                    .background(selectedFiles.isEmpty ? Color.inkTextTertiary : Color.inkBlue)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .shadow(color: selectedFiles.isEmpty ? .clear : Color.inkBlue.opacity(0.3), radius: 10, y: 4)
+                    .animation(.easeInOut(duration: 0.2), value: selectedFiles.isEmpty)
+                }
+                .disabled(selectedFiles.isEmpty)
+                .padding(.horizontal, 16)
+            }
+        }
+    }
+
+    // MARK: - Ready To Send Panel
+    @ViewBuilder
+    private var readyToSendPanel: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("READY TO SEND")
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .foregroundColor(.inkTextSecondary)
+                Spacer()
+                Text("\(goConvertedFiles.count) file\(goConvertedFiles.count == 1 ? "" : "s")")
+                    .font(.caption).foregroundColor(.inkTextTertiary)
+            }
+            .padding(.horizontal, 20)
+            ForEach(goConvertedFiles) { pdf in
+                HStack(spacing: 12) {
+                    Image(systemName: "doc.fill").font(.title2).foregroundStyle(Theme.blue).frame(width: 32)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(pdf.name).font(.system(size: 15, weight: .medium)).lineLimit(1)
+                            .foregroundColor(Theme.text)
+                        Text(pdf.formattedSize).font(.caption).foregroundStyle(Theme.textSecondary)
+                    }
+                    Spacer()
+                    Button {
+                        pdfToRename = pdf
+                        renameText = pdf.url.deletingPathExtension().lastPathComponent
+                    } label: {
+                        Image(systemName: "pencil").foregroundColor(Theme.textSecondary)
+                            .padding(8).background(Theme.surfaceElevated).cornerRadius(8)
+                    }
+                    .buttonStyle(.plain)
+                    ShareLink(item: pdf.url) {
+                        Label("Send", systemImage: "paperplane.fill")
+                            .font(.caption).fontWeight(.semibold)
+                            .padding(.horizontal, 12).padding(.vertical, 8)
+                            .background(Theme.blue).foregroundColor(.white).cornerRadius(20)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.vertical, 12).padding(.horizontal, 16)
+                .background(Theme.surface).cornerRadius(12)
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.inkBorderSubtle, lineWidth: 0.5))
+                .padding(.horizontal, 16)
+            }
+            if goConvertedFiles.count > 1 {
+                VStack(spacing: 10) {
+                    ShareLink(items: goConvertedFiles.map { $0.url }) {
+                        Label("Share All \(goConvertedFiles.count) Files", systemImage: "square.and.arrow.up")
+                            .font(.subheadline).fontWeight(.semibold)
+                            .frame(maxWidth: .infinity).padding(.vertical, 14)
+                            .background(Theme.blue.opacity(0.12)).foregroundColor(Theme.blue).cornerRadius(12)
+                    }
+                    Button { showingMergeSheet = true } label: {
+                        Label("Merge & Send to Kindle", systemImage: "arrow.triangle.merge")
+                            .font(.subheadline).fontWeight(.semibold)
+                            .frame(maxWidth: .infinity).padding(.vertical, 14)
+                            .background(Theme.green).foregroundColor(.white).cornerRadius(12)
+                    }
+                }
+                .padding(.horizontal, 16).padding(.top, 4)
+            }
+        }
+        .padding(.vertical, 8)
     }
     
     // MARK: - Actions
@@ -366,22 +675,39 @@ struct GoConvertView: View {
         pdfToRename = nil
     }
     
+    private func processPickedFiles(_ urls: [URL]) {
+        for url in urls {
+            if !self.selectedFiles.contains(where: { $0.lastPathComponent == url.lastPathComponent }) {
+                self.selectedFiles.append(url)
+            }
+        }
+    }
+    
+    private func processPickedFolder(_ folderURL: URL) {
+        let isAccessing = folderURL.startAccessingSecurityScopedResource()
+        defer { if isAccessing { folderURL.stopAccessingSecurityScopedResource() } }
+        
+        var foundURLs: [URL] = []
+        let validExts = ["cbz", "cbr", "cb7", "cbt", "epub", "zip", "pdf"]
+        
+        if let enumerator = FileManager.default.enumerator(at: folderURL, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) {
+            for case let fileURL as URL in enumerator {
+                if validExts.contains(fileURL.pathExtension.lowercased()) {
+                    foundURLs.append(fileURL)
+                }
+            }
+        }
+        
+        DispatchQueue.main.async {
+            self.processPickedFiles(foundURLs)
+        }
+    }
+    
     private func startGoConversion() {
         guard !selectedFiles.isEmpty else { return }
-        var settingsForGo = conversionManager.conversionSettings
-        settingsForGo.mangaMode = isTargetingManga
-        settingsForGo.optimizeForDevice = true
-        settingsForGo.compressionQuality = .high
-        settingsForGo.outputFormat = .epub
-        settingsForGo.outputPipeline = .standard
-        settingsForGo.splitMode = .web
-        if useLiquidEInk {
-            settingsForGo.imageEnhancement.autoContrast = true
-            settingsForGo.imageEnhancement.sharpness = 0.5
-            settingsForGo.imageEnhancement.gamma = 0.8
-        } else {
-            settingsForGo.imageEnhancement = .init()
-        }
+        var settingsForGo = settingsManager.conversionSettings
+        settingsForGo.mangaMode = viewModel.isMangaMode
+        viewModel.applyPipeline(viewModel.selectedPipeline, to: &settingsForGo)
         Logger.shared.log("Go conversion queued: \(selectedFiles.count) file(s)", category: "GoUI")
         for file in selectedFiles { queueManager.enqueue(url: file, settings: settingsForGo, mode: .go) }
         selectedFiles.removeAll()
@@ -393,5 +719,132 @@ struct GoConvertView: View {
         formatter.unitsStyle = .positional
         formatter.zeroFormattingBehavior = .pad
         return formatter.string(from: interval) ?? "00:00"
+    }
+}
+
+// MARK: - LibraryFilePickerView: checklist list of library files
+struct LibraryFilePickerView: View {
+    @Environment(\.dismiss) var dismiss
+    @EnvironmentObject var conversionManager: ConversionManager
+    
+    @Binding var selectedFiles: [URL]
+    
+    @State private var searchText = ""
+    @State private var localSelection: Set<UUID> = []
+    
+    var body: some View {
+        NavigationStack {
+            List {
+                let filtered = conversionManager.convertedPDFs.filter { pdf in
+                    searchText.isEmpty ||
+                    pdf.name.localizedCaseInsensitiveContains(searchText) ||
+                    (pdf.metadata.series?.localizedCaseInsensitiveContains(searchText) == true)
+                }
+                
+                ForEach(filtered) { pdf in
+                    Button {
+                        if localSelection.contains(pdf.id) {
+                            localSelection.remove(pdf.id)
+                        } else {
+                            localSelection.insert(pdf.id)
+                        }
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: localSelection.contains(pdf.id) ? "checkmark.circle.fill" : "circle")
+                                .foregroundColor(localSelection.contains(pdf.id) ? .inkBlue : .inkTextSecondary)
+                                .font(.title3)
+                            
+                            CoverThumbnailView(pdf: pdf)
+                                .frame(width: 40, height: 56)
+                                .clipShape(RoundedRectangle(cornerRadius: 6))
+                            
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(pdf.name)
+                                    .font(.system(size: 15, weight: .medium))
+                                    .foregroundColor(.inkTextPrimary)
+                                    .lineLimit(1)
+                                
+                                HStack(spacing: 8) {
+                                    Text(pdf.formattedSize)
+                                        .font(.caption)
+                                        .foregroundColor(.inkTextSecondary)
+                                    
+                                    if !pdf.fileExtensionString.isEmpty {
+                                        Text(pdf.fileExtensionString.uppercased())
+                                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                            .padding(.horizontal, 4)
+                                            .padding(.vertical, 1)
+                                            .background(Color.inkSurfaceRaised)
+                                            .cornerRadius(3)
+                                            .foregroundColor(.inkTextSecondary)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .navigationTitle("Select Library Files")
+            .navigationBarTitleDisplayMode(.inline)
+            .searchable(text: $searchText, prompt: "Search files...")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Add (\(localSelection.count))") {
+                        for id in localSelection {
+                            if let pdf = conversionManager.convertedPDFs.first(where: { $0.id == id }) {
+                                if !selectedFiles.contains(pdf.url) {
+                                    selectedFiles.append(pdf.url)
+                                }
+                            }
+                        }
+                        dismiss()
+                    }
+                    .fontWeight(.bold)
+                    .disabled(localSelection.isEmpty)
+                }
+            }
+            .onAppear {
+                for url in selectedFiles {
+                    if let pdf = conversionManager.convertedPDFs.first(where: { $0.url == url }) {
+                        localSelection.insert(pdf.id)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - CoverThumbnailView: optimized thumbnail loader
+struct CoverThumbnailView: View {
+    let pdf: ConvertedPDF
+    @EnvironmentObject var conversionManager: ConversionManager
+    @State private var cover: UIImage? = nil
+    
+    var body: some View {
+        Group {
+            if let cached = conversionManager.thumbnailCache.object(forKey: pdf.id.uuidString as NSString) ?? cover {
+                Image(uiImage: cached)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+            } else {
+                ZStack {
+                    Color.inkSurfaceRaised
+                    Image(systemName: "doc.text.fill")
+                        .foregroundColor(.inkTextSecondary.opacity(0.5))
+                }
+            }
+        }
+        .task {
+            let key = pdf.id.uuidString as NSString
+            if let cached = conversionManager.thumbnailCache.object(forKey: key) {
+                self.cover = cached
+                return
+            }
+            await ThumbnailGenerationQueue.shared.enqueue(pdf, manager: conversionManager)
+        }
     }
 }

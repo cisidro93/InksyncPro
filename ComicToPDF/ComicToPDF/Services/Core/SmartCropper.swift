@@ -7,74 +7,38 @@ import Accelerate
 /// falling back to high-performance vImage pixel analysis if Vision doesn't find clear boundaries.
 struct SmartCropper {
     
-    /// Suggests a crop rectangle to remove margins.
+    /// Suggests a crop rectangle to remove margins using aggressive luminance detection.
     /// - Parameters:
     ///   - image: The source UIImage.
-    ///   - safetyPadding: Percentage of width/height to add back as padding to avoid clipping art.
-    /// - Returns: A CGRect in normalized coordinates (0-1) representing the crop, or nil if no crop needed.
-    static func suggestCrop(for image: UIImage, safetyPadding: CGFloat = 0.01) -> CGRect? {
+    ///   - safetyPadding: By default 0.0 for True Edge-to-Edge matching. Can be overridden.
+    /// - Returns: A tightly bound CGRect encapsulating only the detected ink.
+    static func suggestCrop(for image: UIImage, safetyPadding: CGFloat = 0.0) -> CGRect? {
         guard let cgImage = image.cgImage else { return nil }
         
-        // 1. Pro-Level Approach: Vision Document Segmentation
-        // This is the same ML model Apple uses to crop receipts and documents, excellent for finding 
-        // the true edge of a comic scan against a scanner bed or thick margin.
-        if let visionCrop = performVisionDocumentScan(cgImage: cgImage, safetyPadding: safetyPadding) {
-            // Only use the Vision crop if it actually removes a meaningful amount of border
-            if visionCrop.width < 0.98 || visionCrop.height < 0.98 {
-                return visionCrop
-            }
-        }
-        
-        // 2. Fallback Approach: vImage Edge Scanning
-        // If Vision doesn't see a "document in a background", we fall back to scanning 
-        // inwards for solid colors (white/black borders).
-        return performVImageInwardScan(cgImage: cgImage, safetyPadding: safetyPadding)
+        // 1. Primary Engine: High-Performance vImage Inward Scan
+        // Targets pixels with < 8% luminance deviation to bypass scanner texture and artifacts
+        // effectively stripping all external whitespace.
+        return performVImageInwardScan(cgImage: cgImage, safetyPadding: safetyPadding, sensitivity: 0.08)
     }
     
-    private static func performVisionDocumentScan(cgImage: CGImage, safetyPadding: CGFloat) -> CGRect? {
-        let requestHandler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+    // MARK: - Core High-Performance Inward Scan
+    
+    private static func performVImageInwardScan(cgImage: CGImage, safetyPadding: CGFloat, sensitivity: Float) -> CGRect? {
+        guard let workingImage = createLowResThumbnail(from: cgImage, maxDimension: 512) else { return nil }
+        guard workingImage.width > 10 && workingImage.height > 10 else { return nil }
         
-        if #available(iOS 15.0, *) {
-            let request = VNDetectDocumentSegmentationRequest()
-            do {
-                try requestHandler.perform([request])
-                if let result = request.results?.first {
-                    // Vision gives us a polygon of the document. We'll take its bounding box.
-                    // The bounding box is in normalized coordinates (0-1), bottom-left origin.
-                    // We must convert it to top-left origin for standard UIKit/CoreGraphics use
-                    var visionBox = result.boundingBox
-                    
-                    // Convert bottom-left origin to top-left origin
-                    visionBox.origin.y = 1.0 - visionBox.origin.y - visionBox.size.height
-                    
-                    // Add safety padding
-                    var finalBox = visionBox.insetBy(dx: -safetyPadding, dy: -safetyPadding)
-                    // Clamp to 0-1
-                    finalBox = finalBox.intersection(CGRect(x: 0, y: 0, width: 1, height: 1))
-                    
-                    return finalBox
-                }
-            } catch {
-                Logger.shared.log("SmartCropper: Vision document scan failed — \(error.localizedDescription)", category: "AI", type: .warning)
-            }
-        }
-        return nil
-    }
-    
-    // MARK: - Legacy High-Performance Inward Scan
-    
-    private static func performVImageInwardScan(cgImage: CGImage, safetyPadding: CGFloat, sensitivity: Float = 0.05) -> CGRect? {
         // We only care about luminance for margin detection usually (white/black borders)
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
         var format = vImage_CGImageFormat(
             bitsPerComponent: 8,
             bitsPerPixel: 32,
-            colorSpace: nil,
+            colorSpace: Unmanaged.passUnretained(colorSpace),
             bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue),
             version: 0, decode: nil, renderingIntent: .defaultIntent
         )
         
         var sourceBuffer = vImage_Buffer()
-        let error = vImageBuffer_InitWithCGImage(&sourceBuffer, &format, nil, cgImage, vImage_Flags(kvImageNoFlags))
+        let error = vImageBuffer_InitWithCGImage(&sourceBuffer, &format, nil, workingImage, vImage_Flags(kvImageNoFlags))
         guard error == kvImageNoError else { return nil }
         defer { free(sourceBuffer.data) }
         
@@ -89,7 +53,7 @@ struct SmartCropper {
         let tl = getPixelLuma(data: data, x: insetX, y: insetY, rowBytes: rowBytes)
         let tr = getPixelLuma(data: data, x: width-1-insetX, y: insetY, rowBytes: rowBytes)
         let bl = getPixelLuma(data: data, x: insetX, y: height-1-insetY, rowBytes: rowBytes)
-        let br = getPixelLuma(data: data, x: width-1-insetX, y: height-1-insetY, rowBytes: rowBytes)
+        _ = getPixelLuma(data: data, x: width-1-insetX, y: height-1-insetY, rowBytes: rowBytes)
         
         let threshold = Int(sensitivity * 255)
         var cropTop = 0
@@ -133,6 +97,30 @@ struct SmartCropper {
     }
     
     // MARK: - Pixel Helpers
+    
+    private static func createLowResThumbnail(from cgImage: CGImage, maxDimension: CGFloat) -> CGImage? {
+        let width = CGFloat(cgImage.width)
+        let height = CGFloat(cgImage.height)
+        
+        if width <= maxDimension && height <= maxDimension { return cgImage }
+        
+        let ratio = maxDimension / max(width, height)
+        let newWidth = Int(width * ratio)
+        let newHeight = Int(height * ratio)
+        
+        let colorSpace = cgImage.colorSpace ?? CGColorSpaceCreateDeviceRGB()
+        guard let context = CGContext(data: nil,
+                                      width: newWidth,
+                                      height: newHeight,
+                                      bitsPerComponent: 8,
+                                      bytesPerRow: 0,
+                                      space: colorSpace,
+                                      bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return cgImage }
+        
+        context.interpolationQuality = .low
+        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: newWidth, height: newHeight))
+        return context.makeImage()
+    }
     
     @inline(__always)
     private static func getPixelLuma(data: UnsafePointer<UInt8>, x: Int, y: Int, rowBytes: Int) -> Int {

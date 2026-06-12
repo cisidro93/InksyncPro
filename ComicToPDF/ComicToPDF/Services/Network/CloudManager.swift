@@ -5,6 +5,7 @@ import SwiftUI
 // MARK: - CLOUD MANAGER
 // ============================================================================
 
+@MainActor
 class CloudManager: ObservableObject {
     static let shared = CloudManager()
     @Published var isImporting = false
@@ -15,7 +16,7 @@ class CloudManager: ObservableObject {
     var isICloudAvailable: Bool { FileManager.default.ubiquityIdentityToken != nil }
     var iCloudContainerURL: URL? { FileManager.default.url(forUbiquityContainerIdentifier: nil)?.appendingPathComponent("Documents") }
     
-    func exportToICloud(pdf: ConvertedPDF, completion: @escaping (Result<URL, Error>) -> Void) {
+    func exportToICloud(pdf: ConvertedPDF, completion: @escaping @Sendable (Result<URL, Error>) -> Void) {
         guard let containerURL = iCloudContainerURL else { completion(.failure(CloudError.iCloudNotAvailable)); return }
         try? FileManager.default.createDirectory(at: containerURL, withIntermediateDirectories: true)
         let destinationURL = containerURL.appendingPathComponent(pdf.url.lastPathComponent)
@@ -31,7 +32,7 @@ class CloudManager: ObservableObject {
         }
     }
     
-    func exportMultipleToICloud(pdfs: [ConvertedPDF], progressHandler: @escaping (Double, String) -> Void, completion: @escaping (Result<[URL], Error>) -> Void) {
+    func exportMultipleToICloud(pdfs: [ConvertedPDF], progressHandler: @escaping @Sendable (Double, String) -> Void, completion: @escaping @Sendable (Result<[URL], Error>) -> Void) {
         guard let containerURL = iCloudContainerURL else { completion(.failure(CloudError.iCloudNotAvailable)); return }
         try? FileManager.default.createDirectory(at: containerURL, withIntermediateDirectories: true)
         DispatchQueue.global(qos: .userInitiated).async {

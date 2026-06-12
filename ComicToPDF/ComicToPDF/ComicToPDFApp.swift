@@ -1,21 +1,89 @@
 import SwiftUI
 import BackgroundTasks
+import SwiftData
+import CoreSpotlight
+
+class AppDelegate: NSObject, UIApplicationDelegate {
+    func application(_ application: UIApplication, supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask {
+        return OrientationLockManager.shared.lockedOrientation
+    }
+
+    // MARK: - Background URLSession (OPDSDownloadQueue)
+    // Required so OPDSDownloadQueue's background download session receives its
+    // completion handler when the system wakes the app post-download.
+    func application(
+        _ application: UIApplication,
+        handleEventsForBackgroundURLSession identifier: String,
+        completionHandler: @escaping () -> Void
+    ) {
+        if identifier == "com.inksyncpro.opds.dl" {
+            OPDSDownloadQueue.shared.handleBackgroundEvents(completionHandler: completionHandler)
+        } else {
+            completionHandler()
+        }
+    }
+}
 
 @main
 struct InksyncProApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @Environment(\.scenePhase) private var scenePhase
     
+    // ✅ Global Thread-Safe Model Container
+    static let sharedModelContainer: ModelContainer = {
+        let schema = Schema([
+            SDConvertedPDF.self,
+            SDPDFCollection.self,
+            SDRegisteredDevice.self,
+            SDAnnotation.self,
+            SDPageModel.self,
+            SDSeriesMemory.self,
+            SDManuscriptProject.self,
+            SDManuscriptDocument.self,
+            SDOPDSServer.self,
+            SDCharacterNode.self,
+            SDRelationship.self,
+            SDCharacterAppearance.self
+        ])
+        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false, cloudKitDatabase: .none)
+        
+        do {
+            let container = try ModelContainer(for: schema, configurations: [modelConfiguration])
+            return container
+        } catch {
+            print("Could not create ModelContainer: \(error)")
+            do {
+                 let container = try ModelContainer(for: schema, configurations: [ModelConfiguration(isStoredInMemoryOnly: true)])
+                 return container
+            } catch {
+                 fatalError("Could not create Fallback ModelContainer: \(error)")
+            }
+        }
+    }()
+    
     init() {
+        // 💥 ANNIHILATE GHOST DATA ON FRESH INSTALLS 💥
+        InstallGuardService.shared.executeGuard()
+        
         // Register Background Task for Auto-Sync
         BGTaskScheduler.shared.register(forTaskWithIdentifier: "com.antigravity.InksyncPro.autosync", using: nil) { task in
-            InksyncProApp.handleAppRefresh(task: task as! BGAppRefreshTask)
+            if let refreshTask = task as? BGAppRefreshTask {
+                InksyncProApp.handleAppRefresh(task: refreshTask)
+            } else {
+                task.setTaskCompleted(success: false)
+            }
         }
     }
     
     var body: some Scene {
         WindowGroup { 
             ContentView()
-                .environmentObject(ConversionManager())
+                // ✅ SwiftData Engine Attachment (Injected globally)
+                .modelContainer(InksyncProApp.sharedModelContainer)
+                .onAppear {
+                    // MigrationService is invoked inside ContentView.onAppear
+                    // where the SwiftData model context is available via @Environment.
+                }
                 .onChange(of: scenePhase) { _, newPhase in
                     switch newPhase {
                     case .background, .inactive:
@@ -25,6 +93,74 @@ struct InksyncProApp: App {
                     case .active:
                          SecurityManager.shared.handleAppForegrounding()
                     @unknown default: break
+                    }
+                }
+                // ✅ Phase 5: Apple Handoff (Reader State Sync)
+                .onContinueUserActivity("com.inksync.read") { userActivity in
+                    if let pdfIDString = userActivity.userInfo?["pdfID"] as? String,
+                       let pdfID = UUID(uuidString: pdfIDString),
+                       let pageIndex = userActivity.userInfo?["pageIndex"] as? Int {
+                        // We fire a Notification so the ModernLibraryView/Router can intercept it
+                        // and throw up the specific PDF automatically.
+                        NotificationCenter.default.post(
+                            name: .handoffRequested,
+                            object: nil,
+                            userInfo: ["pdfID": pdfID, "pageIndex": pageIndex]
+                        )
+                    }
+                }
+                // ✅ Spotlight integration deep-linking handlers
+                .onContinueUserActivity(CSSearchableItemActionType) { userActivity in
+                    guard let uniqueID = userActivity.userInfo?[CSSearchableItemActivityIdentifier] as? String else { return }
+                    if uniqueID.hasPrefix("book-") {
+                        let parts = uniqueID.components(separatedBy: "-page-")
+                        let pdfIDString = parts[0].replacingOccurrences(of: "book-", with: "")
+                        guard let pdfID = UUID(uuidString: pdfIDString) else { return }
+                        let pageIndex = parts.count > 1 ? (Int(parts[1]) ?? 0) : 0
+                        NotificationCenter.default.post(
+                            name: .handoffRequested,
+                            object: nil,
+                            userInfo: ["pdfID": pdfID, "pageIndex": pageIndex]
+                        )
+                    } else if uniqueID.hasPrefix("ann-") {
+                        let annIDString = uniqueID.replacingOccurrences(of: "ann-", with: "")
+                        guard let annotationID = UUID(uuidString: annIDString) else { return }
+                        Task { @MainActor in
+                            let annotations = AnnotationStore.shared.allAnnotations
+                            if let target = annotations.first(where: { $0.id == annotationID }) {
+                                NotificationCenter.default.post(
+                                    name: .handoffRequested,
+                                    object: nil,
+                                    userInfo: ["pdfID": target.pdfID, "pageIndex": target.pageIndex]
+                                )
+                            }
+                        }
+                    }
+                }
+                .onContinueUserActivity(SpotlightIndexer.openBookActivityType) { userActivity in
+                    if let pdfIDString = userActivity.userInfo?["pdfID"] as? String,
+                       let pdfID = UUID(uuidString: pdfIDString) {
+                        let pageIndex = userActivity.userInfo?["pageIndex"] as? Int ?? 0
+                        NotificationCenter.default.post(
+                            name: .handoffRequested,
+                            object: nil,
+                            userInfo: ["pdfID": pdfID, "pageIndex": pageIndex]
+                        )
+                    }
+                }
+                .onContinueUserActivity(SpotlightIndexer.openAnnotationActivityType) { userActivity in
+                    if let annotationIDString = userActivity.userInfo?["annotationID"] as? String,
+                       let annotationID = UUID(uuidString: annotationIDString) {
+                        Task { @MainActor in
+                            let annotations = AnnotationStore.shared.allAnnotations
+                            if let target = annotations.first(where: { $0.id == annotationID }) {
+                                NotificationCenter.default.post(
+                                    name: .handoffRequested,
+                                    object: nil,
+                                    userInfo: ["pdfID": target.pdfID, "pageIndex": target.pageIndex]
+                                )
+                            }
+                        }
                     }
                 }
         }

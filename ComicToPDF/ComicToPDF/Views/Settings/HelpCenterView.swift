@@ -2,8 +2,6 @@ import SwiftUI
 
 // MARK: - Help Center View
 struct HelpCenterView: View {
-    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
-    @State private var showingOnboarding = false
     @Environment(\.dismiss) private var dismiss
     
     var body: some View {
@@ -18,17 +16,6 @@ struct HelpCenterView: View {
                         iconColor: .orange,
                         title: "Quick Start Guide",
                         subtitle: "Get started in 5 minutes"
-                    )
-                }
-                
-                Button {
-                    showingOnboarding = true
-                } label: {
-                    HelpRow(
-                        icon: "play.circle.fill",
-                        iconColor: .blue,
-                        title: "Replay Welcome Tour",
-                        subtitle: "View the feature walkthrough again"
                     )
                 }
             } header: {
@@ -141,10 +128,10 @@ struct HelpCenterView: View {
                 Text("About")
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(Color.clear)
+        .listRowBackground(Color.inkSurface.opacity(0.4))
         .navigationTitle("Help Center")
-        .fullScreenCover(isPresented: $showingOnboarding) {
-            OnboardingView()
-        }
     }
 }
 
@@ -272,7 +259,7 @@ struct StepCard: View {
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(UIColor.secondarySystemGroupedBackground))
+        .background(Color.inkSurface.opacity(0.4))
         .cornerRadius(12)
     }
 }
@@ -371,7 +358,7 @@ struct FeatureContent: View {
             }
             .padding()
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(UIColor.secondarySystemGroupedBackground))
+            .background(Color.inkSurface.opacity(0.4))
             .cornerRadius(12)
         }
     }
@@ -411,6 +398,9 @@ struct FAQView: View {
                 answer: "The Panel Editor lets you preview and customize how panels are detected before conversion. Useful when automatic detection doesn't match your preferences."
             )
         }
+        .scrollContentBackground(.hidden)
+        .background(Color.clear)
+        .listRowBackground(Color.inkSurface.opacity(0.4))
         .navigationTitle("FAQ")
         .navigationBarTitleDisplayMode(.large)
     }
@@ -489,6 +479,9 @@ struct TroubleshootingView: View {
                 }
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(Color.clear)
+        .listRowBackground(Color.inkSurface.opacity(0.4))
         .navigationTitle("Troubleshooting")
         .navigationBarTitleDisplayMode(.large)
     }

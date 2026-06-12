@@ -3,6 +3,7 @@ import Combine
 
 /// A global, background-safe queue for processing massive files asynchronously.
 /// This prevents `@MainActor` from locking the UI during heavy E-Ink conversions.
+@MainActor
 class ConversionQueueManager: ObservableObject {
     static let shared = ConversionQueueManager()
     
@@ -58,7 +59,7 @@ class ConversionQueueManager: ObservableObject {
             self.completedGoSourceStems = savedStems
         }
         
-        progressSubscription = ConversionEngine.shared.progressSubject
+        progressSubscription = ConversionEngine.shared.progressSubject.subject
             .receive(on: DispatchQueue.main)
             .sink { [weak self] event in
                 self?.handleEngineEvent(event)
@@ -97,6 +98,9 @@ class ConversionQueueManager: ObservableObject {
         statusMessage = "Cancelled"
         pendingGoDisplayNames.removeAll()   // ✅ Clear pending Go file list
         stopTimer()
+        #if os(iOS)
+        UIApplication.shared.isIdleTimerDisabled = false
+        #endif
     }
     
     private func processNext() {
@@ -105,6 +109,10 @@ class ConversionQueueManager: ObservableObject {
             activeItem = nil
             statusMessage = "Queue complete."
             stopTimer()
+            
+            #if os(iOS)
+            UIApplication.shared.isIdleTimerDisabled = false
+            #endif
             
             // Tell the main manager to rescan the library when the queue finishes, passing the last item's mode.
             Task { @MainActor in
@@ -118,6 +126,10 @@ class ConversionQueueManager: ObservableObject {
         }
         
         isProcessing = true
+        #if os(iOS)
+        UIApplication.shared.isIdleTimerDisabled = true
+        #endif
+        
         let item = queue.removeFirst()
         // ✅ Track this item's mode so we can tag the library after the queue empties
         lastCompletedMode = item.mode
@@ -128,6 +140,28 @@ class ConversionQueueManager: ObservableObject {
         // Spawn detached background task to prevent ANY main thread locking
         processingTask = Task.detached(priority: .userInitiated) { [weak self] in
             guard let self = self else { return }
+            
+            #if os(iOS)
+            let bgTask = await MainActor.run {
+                var task = UIBackgroundTaskIdentifier.invalid
+                task = UIApplication.shared.beginBackgroundTask {
+                    Task { @MainActor in
+                        if task != .invalid {
+                            UIApplication.shared.endBackgroundTask(task)
+                        }
+                    }
+                }
+                return task
+            }
+            defer {
+                let task = bgTask
+                Task { @MainActor in
+                    if task != .invalid {
+                        UIApplication.shared.endBackgroundTask(task)
+                    }
+                }
+            }
+            #endif
             
             do {
                 _ = try await ConversionEngine.shared.process(url: item.sourceURL, settings: item.settings)
@@ -166,18 +200,24 @@ class ConversionQueueManager: ObservableObject {
     }
     
     private func handleEngineEvent(_ event: ConversionProgressEvent) {
+        let activeFileName = activeItem?.sourceURL.lastPathComponent
+        
         switch event {
         case .started(let file):
+            guard file.lastPathComponent == activeFileName else { return }
             Logger.shared.log("Queue: started \(file.lastPathComponent)", category: "Queue")
             self.statusMessage = "Processing \(file.lastPathComponent)..."
-        case .progress(_, let current, let total, let message):
+        case .progress(let file, let current, let total, let message):
+            guard file.lastPathComponent == activeFileName else { return }
             self.currentProgress = Double(current) / Double(total)
             self.statusMessage = message
         case .completed(let file, _):
+            guard file.lastPathComponent == activeFileName else { return }
             Logger.shared.log("Queue: completed \(file.lastPathComponent)", category: "Queue")
             self.statusMessage = "Finishing up..."
             self.completedItemsCount += 1
         case .failed(let file, let error):
+            guard file.lastPathComponent == activeFileName else { return }
             let msg = "Queue: FAILED \(file.lastPathComponent) — \(error.localizedDescription)"
             Logger.shared.log(msg, category: "Queue", type: .error)
             self.statusMessage = "Error: \(error.localizedDescription)"

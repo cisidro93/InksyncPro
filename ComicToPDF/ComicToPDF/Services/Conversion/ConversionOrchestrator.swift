@@ -1,0 +1,536 @@
+import Foundation
+import SwiftUI
+
+final class ConversionOrchestrator: Sendable {
+    static let shared = ConversionOrchestrator()
+    private init() {}
+    
+    func convertComic(_ pdf: ConvertedPDF, mangaMode: Bool? = nil, manager: ConversionManager) async {
+        #if os(iOS)
+        let bgTask = await MainActor.run {
+            UIApplication.shared.isIdleTimerDisabled = true
+            var task = UIBackgroundTaskIdentifier.invalid
+            task = UIApplication.shared.beginBackgroundTask {
+                Task { @MainActor in
+                    if task != .invalid {
+                        UIApplication.shared.endBackgroundTask(task)
+                        UIApplication.shared.isIdleTimerDisabled = false
+                    }
+                }
+            }
+            return task
+        }
+        defer {
+            let task = bgTask
+            Task { @MainActor in
+                if task != .invalid {
+                    UIApplication.shared.endBackgroundTask(task)
+                    UIApplication.shared.isIdleTimerDisabled = false
+                }
+            }
+        }
+        #endif
+        
+        await MainActor.run {
+            manager.isConverting = true; manager.conversionProgress = 0.0; manager.processingStatus = "Converting..."; manager.statusMessage = "Starting..."
+        }
+        let isMangaMode = await MainActor.run { mangaMode ?? pdf.metadata.isManga ?? AppSettingsManager.shared.conversionSettings.mangaMode }
+        var jobSettings = await MainActor.run { AppSettingsManager.shared.conversionSettings }
+        jobSettings.mangaMode = isMangaMode
+        
+        if pdf.contentType == .book {
+            jobSettings.mangaMode = false
+            jobSettings.enablePanelSplit = false
+            jobSettings.outputPipeline = .standard
+            jobSettings.splitWebtoon = false
+        }
+        
+        if let isWebtoon = pdf.metadata.isWebtoon, isWebtoon {
+            jobSettings.splitWebtoon = true
+            jobSettings.enablePanelSplit = false
+            jobSettings.outputPipeline = .standard
+        }
+        
+        var coverOverrideData: Data? = nil
+        if let url = await MainActor.run(body: { manager.getCoverURL(for: pdf) }) {
+            coverOverrideData = try? Data(contentsOf: url)
+        }
+        
+        do {
+            if jobSettings.outputFormat == .pdf {
+                let pName = pdf.name.replacingOccurrences(of: ".cbz", with: "").replacingOccurrences(of: ".zip", with: "") + "_Converted.pdf"
+                let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? URL(fileURLWithPath: NSTemporaryDirectory())
+                let outputURL = docDir.appendingPathComponent(pName)
+                let imageURLs = try await manager.extractImageURLs(from: pdf.url)
+                try PDFGenerator.generate(from: imageURLs, to: outputURL, mangaMode: jobSettings.mangaMode, chapters: pdf.chapters, settings: jobSettings, coverOverrideData: coverOverrideData) { progress in
+                    Task { @MainActor in manager.conversionProgress = progress; manager.processingStatus = "Converting \(Int(progress * 100))%" }
+                }
+                await MainActor.run { manager.isConverting = false; manager.conversionProgress = 1.0; manager.statusMessage = "✅ Conversion Complete!"; manager.scanLibrary() }
+                Logger.shared.log("Conversion Successful: \(pdf.name) -> PDF", category: "Converter")
+            } else if jobSettings.outputFormat == .cbz {
+                let fileManager = FileManager.default
+                let pName = pdf.name.replacingOccurrences(of: ".cbz", with: "").replacingOccurrences(of: ".pdf", with: "").replacingOccurrences(of: ".zip", with: "") + "_Converted.cbz"
+                let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? URL(fileURLWithPath: NSTemporaryDirectory())
+                let outputURL = docDir.appendingPathComponent(pName)
+                
+                await MainActor.run { manager.processingStatus = "Extracting Images..." }
+                let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+                try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
+                defer { try? fileManager.removeItem(at: tempDir) }
+                
+                let imageURLs = try await manager.extractImageURLs(from: pdf.url)
+                for (idx, url) in imageURLs.enumerated() {
+                    let ext = url.pathExtension.isEmpty ? "jpg" : url.pathExtension
+                    let dest = tempDir.appendingPathComponent(String(format: "page_%04d.%@", idx, ext))
+                    
+                    if idx == 0, let overrideData = coverOverrideData {
+                         try? overrideData.write(to: dest)
+                    } else {
+                         try fileManager.copyItem(at: url, to: dest)
+                    }
+                    
+                    let p = Double(idx) / Double(imageURLs.count)
+                    await MainActor.run { manager.conversionProgress = p; manager.processingStatus = "Packaging CBZ..." }
+                }
+                
+                if fileManager.fileExists(atPath: outputURL.path) { try fileManager.removeItem(at: outputURL) }
+                try await ZipUtilities.zipDirectory(tempDir, to: outputURL)
+                
+                await MainActor.run { manager.isConverting = false; manager.conversionProgress = 1.0; manager.statusMessage = "✅ Conversion Complete!"; manager.scanLibrary() }
+                Logger.shared.log("Conversion Successful: \(pdf.name) -> CBZ", category: "Converter")
+            } else if jobSettings.outputPipeline == .proPanel {
+                await MainActor.run { manager.processingStatus = "Loading Panel Data..." }
+                let combinedManifest = await manager.getCombinedManifest(for: pdf)
+                let pvConverter = PanelViewEPUBConverter()
+                let newURLs = try await pvConverter.convert(sourceURL: pdf.url, settings: jobSettings, panels: combinedManifest, sourceIsMangaPDF: false, coverOverrideData: coverOverrideData, customOutputName: pdf.name) { progress in
+                    Task { @MainActor in manager.conversionProgress = progress; manager.processingStatus = "Converting \(Int(progress * 100))%" }
+                }
+                for epubURL in newURLs { try? await manager.injectMetadata(into: epubURL, panels: combinedManifest, metadata: pdf.metadata) }
+                // 📦 Kindle size audit — alert if file will be too large for email delivery
+                if let firstEPUB = newURLs.first {
+                    await KindleSizeGuard.auditAndNotify(epubURL: firstEPUB, manager: manager)
+                }
+                await MainActor.run { manager.isConverting = false; manager.conversionProgress = 1.0; manager.statusMessage = "✅ Panel View EPUB Ready!"; manager.scanLibrary() }
+                Logger.shared.log("PanelView Conversion Successful: \(pdf.name)", category: "Converter")
+            } else {
+                let converter = CBZToEPUBConverter()
+                let newURLs = try await converter.convert(sourceURL: pdf.url, settings: jobSettings, manualManifest: nil, sourceIsMangaPDF: false, coverOverrideData: coverOverrideData, customOutputName: pdf.name) { progress in
+                    Task { @MainActor in manager.conversionProgress = progress; manager.processingStatus = "Converting \(Int(progress * 100))%" }
+                }
+                for epubURL in newURLs { try? await manager.injectMetadata(into: epubURL, panels: [:], metadata: pdf.metadata) }
+                // 📦 Kindle size audit — alert if file will be too large for email delivery
+                if let firstEPUB = newURLs.first {
+                    await KindleSizeGuard.auditAndNotify(epubURL: firstEPUB, manager: manager)
+                }
+                await MainActor.run { manager.isConverting = false; manager.conversionProgress = 1.0; manager.statusMessage = "✅ Conversion Complete!"; manager.scanLibrary() }
+            }
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            await MainActor.run { manager.statusMessage = nil }
+        } catch {
+            Logger.shared.log("Conversion Failed: \(error)", category: "Converter", type: .error)
+            await MainActor.run { manager.isConverting = false; manager.statusMessage = "Error: \(error.localizedDescription)" }
+        }
+    }
+    
+    func convertQueue(_ pdfs: [ConvertedPDF], manager: ConversionManager) async {
+        guard !pdfs.isEmpty else { return }
+        
+        #if os(iOS)
+        let bgTask = await MainActor.run {
+            UIApplication.shared.isIdleTimerDisabled = true
+            var task = UIBackgroundTaskIdentifier.invalid
+            task = UIApplication.shared.beginBackgroundTask {
+                Task { @MainActor in
+                    if task != .invalid {
+                        UIApplication.shared.endBackgroundTask(task)
+                        UIApplication.shared.isIdleTimerDisabled = false
+                    }
+                }
+            }
+            return task
+        }
+        defer {
+            let task = bgTask
+            Task { @MainActor in
+                if task != .invalid {
+                    UIApplication.shared.endBackgroundTask(task)
+                    UIApplication.shared.isIdleTimerDisabled = false
+                }
+            }
+        }
+        #endif
+        
+        var ledgerIDs: [UUID: UUID] = [:]
+        for pdf in pdfs {
+            let jid = await ConversionLedger.shared.enqueue(
+                fileID: pdf.id,
+                fileName: pdf.name,
+                outputFormat: await MainActor.run { AppSettingsManager.shared.conversionSettings.outputFormat.rawValue }
+            )
+            ledgerIDs[pdf.id] = jid
+        }
+
+        await MainActor.run { manager.isConverting = true }
+        
+        for (index, pdf) in pdfs.enumerated() {
+            if Task.isCancelled { break }
+            let currentNum = index + 1
+            let total = pdfs.count
+            let jobID = ledgerIDs[pdf.id]
+
+            if let jid = jobID { await ConversionLedger.shared.markStarted(jid) }
+            
+            await MainActor.run { manager.processingStatus = "Converting \(currentNum) of \(total)"; manager.statusMessage = "Processing \(pdf.name)..."; manager.conversionProgress = 0.0 }
+            
+            var jobSettings = await MainActor.run { AppSettingsManager.shared.conversionSettings }
+            if pdf.contentType == .book {
+                jobSettings.mangaMode = false; jobSettings.enablePanelSplit = false; jobSettings.outputPipeline = .standard; jobSettings.splitWebtoon = false
+            }
+            if let isWebtoon = pdf.metadata.isWebtoon, isWebtoon {
+                jobSettings.splitWebtoon = true; jobSettings.enablePanelSplit = false; jobSettings.outputPipeline = .standard
+            }
+            
+            var coverOverrideData: Data? = nil
+            if let url = await MainActor.run(body: { manager.getCoverURL(for: pdf) }) {
+                coverOverrideData = try? Data(contentsOf: url)
+            }
+            
+            do {
+                if jobSettings.outputFormat == .pdf {
+                    let pName = pdf.name.replacingOccurrences(of: ".cbz", with: "").replacingOccurrences(of: ".zip", with: "") + "_Converted.pdf"
+                    let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? URL(fileURLWithPath: NSTemporaryDirectory())
+                    let outputURL = docDir.appendingPathComponent(pName)
+                    let imageURLs = try await manager.extractImageURLs(from: pdf.url)
+                    try PDFGenerator.generate(from: imageURLs, to: outputURL, mangaMode: jobSettings.mangaMode, chapters: pdf.chapters, settings: jobSettings, coverOverrideData: coverOverrideData) { p in
+                        Task { @MainActor in manager.conversionProgress = p; manager.processingStatus = "Converting \(currentNum) of \(total) (\(Int(p * 100))%)" }
+                    }
+                    await MainActor.run { manager.scanLibrary() }
+                } else if jobSettings.outputFormat == .cbz {
+                    let fileManager = FileManager.default
+                    let pName = pdf.name.replacingOccurrences(of: ".cbz", with: "").replacingOccurrences(of: ".pdf", with: "").replacingOccurrences(of: ".zip", with: "") + "_Converted.cbz"
+                    let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? URL(fileURLWithPath: NSTemporaryDirectory())
+                    let outputURL = docDir.appendingPathComponent(pName)
+                    let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+                    try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
+                    defer { try? fileManager.removeItem(at: tempDir) }
+                    
+                    let imageURLs = try await manager.extractImageURLs(from: pdf.url)
+                    for (idx, url) in imageURLs.enumerated() {
+                        let ext = url.pathExtension.isEmpty ? "jpg" : url.pathExtension
+                        let dest = tempDir.appendingPathComponent(String(format: "page_%04d.%@", idx, ext))
+                        if idx == 0, let overrideData = coverOverrideData {
+                            try? overrideData.write(to: dest)
+                        } else {
+                            try fileManager.copyItem(at: url, to: dest)
+                        }
+                        let p = Double(idx) / Double(imageURLs.count)
+                        await MainActor.run { manager.conversionProgress = p; manager.processingStatus = "Converting \(currentNum) of \(total) (\(Int(p * 100))%)" }
+                    }
+                    if fileManager.fileExists(atPath: outputURL.path) { try fileManager.removeItem(at: outputURL) }
+                    try await ZipUtilities.zipDirectory(tempDir, to: outputURL)
+                    await MainActor.run { manager.scanLibrary() }
+                } else if jobSettings.outputPipeline == .proPanel {
+                    await MainActor.run { manager.processingStatus = "Reading panels for \(pdf.name)..." }
+                    let combinedManifest = await manager.getCombinedManifest(for: pdf)
+                    let pvConverter = PanelViewEPUBConverter()
+                    let newURLs = try await pvConverter.convert(sourceURL: pdf.url, settings: jobSettings, panels: combinedManifest, sourceIsMangaPDF: false, coverOverrideData: coverOverrideData, customOutputName: pdf.name) { p in
+                        Task { @MainActor in manager.conversionProgress = p; manager.processingStatus = "Converting \(currentNum) of \(total) (\(Int(p * 100))%)" }
+                    }
+                    for epubURL in newURLs { try? await manager.injectMetadata(into: epubURL, panels: combinedManifest, metadata: pdf.metadata) }
+                    await MainActor.run { manager.scanLibrary() }
+                } else {
+                    let converter = CBZToEPUBConverter()
+                    let newURLs = try await converter.convert(sourceURL: pdf.url, settings: jobSettings, manualManifest: nil, sourceIsMangaPDF: false, coverOverrideData: coverOverrideData, customOutputName: pdf.name) { p in
+                        Task { @MainActor in manager.conversionProgress = p; manager.processingStatus = "Converting \(currentNum) of \(total) (\(Int(p * 100))%)" }
+                    }
+                    for epubURL in newURLs { try? await manager.injectMetadata(into: epubURL, panels: [:], metadata: pdf.metadata) }
+                    await MainActor.run { manager.scanLibrary() }
+                }
+                if let jid = jobID { await ConversionLedger.shared.markSucceeded(jid) }
+            } catch {
+                if let jid = jobID { await ConversionLedger.shared.markFailed(jid, reason: error.localizedDescription) }
+                await MainActor.run { manager.statusMessage = "Error on \(pdf.name)" }
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+            }
+        }
+        await MainActor.run { manager.isConverting = false; manager.statusMessage = nil }
+    }
+    
+    func processLedgerQueue(manager: ConversionManager) async {
+        let queuedJobs = await ConversionLedger.shared.allJobs().filter { $0.status == .queued }
+        guard !queuedJobs.isEmpty else { return }
+        
+        let pdfsToConvert = await MainActor.run {
+            queuedJobs.compactMap { job in
+                manager.convertedPDFs.first(where: { $0.id == job.fileID })
+            }
+        }
+        
+        if !pdfsToConvert.isEmpty {
+            await convertQueue(pdfsToConvert, manager: manager)
+        }
+    }
+    
+    @discardableResult
+    func convertAndMerge(sourceFiles: [ConvertedPDF], outputName: String, mangaMode: Bool, overrideSeries: String? = nil, manager: ConversionManager) async -> [ConvertedPDF] {
+        guard !sourceFiles.isEmpty else { return [] }
+        
+        #if os(iOS)
+        let bgTask = await MainActor.run {
+            UIApplication.shared.isIdleTimerDisabled = true
+            var task = UIBackgroundTaskIdentifier.invalid
+            task = UIApplication.shared.beginBackgroundTask {
+                Task { @MainActor in
+                    if task != .invalid {
+                        UIApplication.shared.endBackgroundTask(task)
+                        UIApplication.shared.isIdleTimerDisabled = false
+                    }
+                }
+            }
+            return task
+        }
+        defer {
+            let task = bgTask
+            Task { @MainActor in
+                if task != .invalid {
+                    UIApplication.shared.endBackgroundTask(task)
+                    UIApplication.shared.isIdleTimerDisabled = false
+                }
+            }
+        }
+        #endif
+        
+        await MainActor.run { manager.isConverting = true }
+        var newMergedPDFs: [ConvertedPDF] = []
+        
+        let fileManager = FileManager.default
+        let docRoot = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
+        let documentsDir = docRoot.appendingPathComponent("Merged")
+        try? FileManager.default.createDirectory(at: documentsDir, withIntermediateDirectories: true)
+        var jobSettings = await MainActor.run { AppSettingsManager.shared.conversionSettings }
+        jobSettings.mangaMode = mangaMode
+        
+        do {
+            if jobSettings.outputFormat == .pdf || jobSettings.outputFormat == .cbz {
+                var batches: [[(url: URL, chapter: Chapter)]] = []
+                var currentBatch: [(url: URL, chapter: Chapter)] = []
+                var currentBatchSize: Int64 = 0
+                let sizeLimit = jobSettings.splitMode.limit
+                var firstCoverImageData: Data? = nil
+                
+                for (index, file) in sourceFiles.enumerated() {
+                    if Task.isCancelled { break }
+                    await MainActor.run { manager.processingStatus = "Step 1/2: Extracting \(index + 1) of \(sourceFiles.count)"; manager.statusMessage = "Extracting \(file.name)..."; manager.conversionProgress = Double(index) / Double(sourceFiles.count) }
+                    
+                    let fileSize = file.fileSize
+                    if sizeLimit != Int64.max && !currentBatch.isEmpty && (currentBatchSize + fileSize) > sizeLimit { batches.append(currentBatch); currentBatch = []; currentBatchSize = 0 }
+                    
+                    let images = try await manager.extractImageURLs(from: file.url)
+                    
+                    let chapterStartIndex = currentBatch.count
+                    let chapterTitle = file.name.replacingOccurrences(of: ".cbz", with: "").replacingOccurrences(of: ".zip", with: "").replacingOccurrences(of: ".pdf", with: "").replacingOccurrences(of: ".epub", with: "")
+                    let chapter = Chapter(title: chapterTitle, pageIndex: chapterStartIndex)
+                    
+                    if firstCoverImageData == nil {
+                        if let url = await MainActor.run(body: { manager.getCoverURL(for: file) }) {
+                            firstCoverImageData = try? Data(contentsOf: url)
+                        }
+                        if firstCoverImageData == nil, let firstImageURL = images.first { 
+                            firstCoverImageData = try? Data(contentsOf: firstImageURL) 
+                        }
+                    }
+                    for imageURL in images { currentBatch.append((url: imageURL, chapter: chapter)) }
+                    currentBatchSize += fileSize
+                }
+                
+                if !currentBatch.isEmpty { batches.append(currentBatch) }
+                guard !batches.isEmpty && !batches[0].isEmpty else { await MainActor.run { manager.isConverting = false }; return newMergedPDFs }
+                
+                let batchCount = batches.count
+                await MainActor.run { manager.processingStatus = "Step 2/2: Merging..."; manager.statusMessage = "Merging \(batchCount) parts..."; manager.conversionProgress = 0.5 }
+                let ext = jobSettings.outputFormat == .cbz ? ".cbz" : ".pdf"
+                
+                for (batchIndex, batch) in batches.enumerated() {
+                    let partSuffix = batches.count > 1 ? " (pt \(batchIndex + 1))" : ""
+                    let outputFilename = (outputName.isEmpty ? "Merged Collection" : outputName) + partSuffix + ext
+                    let finalOutputURL = documentsDir.appendingPathComponent(outputFilename)
+                    if fileManager.fileExists(atPath: finalOutputURL.path) { try fileManager.removeItem(at: finalOutputURL) }
+                    
+                    var batchImages = batch.map { $0.url }
+                    var mergedChapters: [Chapter] = []
+                    var seenChapters = Set<String>()
+                    for item in batch { if !seenChapters.contains(item.chapter.title) { mergedChapters.append(item.chapter); seenChapters.insert(item.chapter.title) } }
+                    
+                    if let coverData = firstCoverImageData, batches.count > 1 {
+                        let badgedCoverData = CoverGenerator.generateCover(from: coverData, partNumber: batchIndex + 1, totalParts: batches.count)
+                        let tempCoverURL = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".jpg")
+                        try? badgedCoverData.write(to: tempCoverURL)
+                        if !batchImages.isEmpty { batchImages[0] = tempCoverURL }
+                    }
+                    
+                    if jobSettings.outputFormat == .pdf {
+                        let totalBatches = batches.count
+                        let finalBatchImages = batchImages
+                        let finalMergedChapters = mergedChapters
+                        let settings = jobSettings
+                        let task = Task.detached {
+                            try PDFGenerator.generate(from: finalBatchImages, to: finalOutputURL, mangaMode: settings.mangaMode, chapters: finalMergedChapters, settings: settings) { progress in
+                                let baseProgress = Double(batchIndex) / Double(totalBatches)
+                                let currentPartProgress = progress / Double(totalBatches)
+                                Task { @MainActor in
+                                    TaskEngine.shared.conversionProgress = 0.5 + (0.5 * (baseProgress + currentPartProgress))
+                                }
+                            }
+                        }
+                        try await task.value
+                    } else {
+                        let finalBatchImages = batchImages
+                        let task = Task.detached {
+                            let fm = FileManager.default
+                            let tempDir = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+                            try fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
+                            defer { try? fm.removeItem(at: tempDir) }
+                            
+                            for (idx, url) in finalBatchImages.enumerated() {
+                                let pathExt = url.pathExtension.isEmpty ? "jpg" : url.pathExtension
+                                let dest = tempDir.appendingPathComponent(String(format: "page_%04d.%@", idx, pathExt))
+                                try fm.copyItem(at: url, to: dest)
+                            }
+                            try await ZipUtilities.zipDirectory(tempDir, to: finalOutputURL)
+                        }
+                        try await task.value
+                    }
+                    
+                    let finalFileSize = (try? finalOutputURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
+                    let inferredMode = sourceFiles.first?.addedByMode ?? .pro
+                    let outputPDF = ConvertedPDF(
+                        id: UUID(),
+                        name: outputFilename,
+                        url: finalOutputURL,
+                        pageCount: batch.count,
+                        fileSize: finalFileSize,
+                        metadata: PDFMetadata(title: outputFilename, series: overrideSeries, isManga: jobSettings.mangaMode),
+                        collectionId: sourceFiles.first?.collectionId,
+                        contentType: sourceFiles.first?.contentType ?? .comic,
+                        addedByMode: inferredMode
+                    )
+                    newMergedPDFs.append(outputPDF)
+                    await MainActor.run {
+                        manager.convertedPDFs.insert(outputPDF, at: 0)
+                        manager.saveLibrary()
+                    }
+                }
+                
+                await MainActor.run { manager.scanLibrary(); manager.statusMessage = "✅ Merge Complete!"; manager.processingStatus = ""; manager.conversionProgress = 1.0; manager.isConverting = false }
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                await MainActor.run { manager.statusMessage = nil }
+                return newMergedPDFs
+            }
+            
+            // EPUB Bulk Merge (Existing Pipeline but with limits)
+            var generatedBatches: [[URL]] = []
+            var currentEPUBBatch: [URL] = []
+            var currentEPUBBatchSize: Int64 = 0
+            let epubSizeLimit = jobSettings.splitMode.limit
+            var firstEPUBFileCoverData: Data? = nil
+            
+            for (index, file) in sourceFiles.enumerated() {
+                if Task.isCancelled { break }
+                let currentNum = index + 1
+                await MainActor.run { manager.processingStatus = "Step 1/2: Converting \(currentNum) of \(sourceFiles.count)"; manager.statusMessage = "Converting \(file.name)..."; manager.conversionProgress = 0.0 }
+                
+                let fileSize = file.fileSize
+                if epubSizeLimit != Int64.max && !currentEPUBBatch.isEmpty && (currentEPUBBatchSize + fileSize) > epubSizeLimit { generatedBatches.append(currentEPUBBatch); currentEPUBBatch = []; currentEPUBBatchSize = 0 }
+                
+                if firstEPUBFileCoverData == nil {
+                    if let url = await MainActor.run(body: { manager.getCoverURL(for: file) }) {
+                        firstEPUBFileCoverData = try? Data(contentsOf: url)
+                    }
+                    if firstEPUBFileCoverData == nil {
+                        if let images = try? await manager.extractImageURLs(from: file.url) {
+                            if let firstImage = images.first { firstEPUBFileCoverData = try? Data(contentsOf: firstImage) }
+                        }
+                    }
+                }
+                
+                await MainActor.run { manager.processingStatus = "Reading Source Panels..." }
+                let combinedManifest = await manager.getCombinedManifest(for: file)
+                let isMangaPDF = file.url.pathExtension.lowercased() == "pdf" && (file.metadata.isManga == true)
+                let resultingURLs: [URL]
+                
+                var currentCoverOverride: Data? = nil
+                if let url = await MainActor.run(body: { manager.getCoverURL(for: file) }) {
+                     currentCoverOverride = try? Data(contentsOf: url)
+                }
+                
+                if jobSettings.outputPipeline == .proPanel {
+                    let converter = PanelViewEPUBConverter()
+                    resultingURLs = try await converter.convert(sourceURL: file.url, settings: jobSettings, panels: combinedManifest, sourceIsMangaPDF: isMangaPDF, coverOverrideData: currentCoverOverride, customOutputName: file.name) { progress in
+                        Task { @MainActor in manager.conversionProgress = progress }
+                    }
+                } else {
+                    let converter = CBZToEPUBConverter()
+                    resultingURLs = try await converter.convert(sourceURL: file.url, settings: jobSettings, manualManifest: nil, sourceIsMangaPDF: isMangaPDF, coverOverrideData: currentCoverOverride, customOutputName: file.name) { progress in
+                        Task { @MainActor in manager.conversionProgress = progress }
+                    }
+                }
+                
+                currentEPUBBatch.append(contentsOf: resultingURLs)
+                currentEPUBBatchSize += fileSize
+                for epubURL in resultingURLs { try? await manager.injectMetadata(into: epubURL, panels: combinedManifest, metadata: file.metadata) }
+            }
+            
+            if !currentEPUBBatch.isEmpty { generatedBatches.append(currentEPUBBatch) }
+            guard !generatedBatches.isEmpty && !generatedBatches[0].isEmpty else { await MainActor.run { manager.isConverting = false }; return newMergedPDFs }
+            
+            let batchCount = generatedBatches.count
+            await MainActor.run { manager.processingStatus = "Step 2/2: Merging..."; manager.statusMessage = "Merging \(batchCount) EPUB parts..."; manager.conversionProgress = 0.5 }
+            let merger = EPUBMerger()
+            
+            for (batchIndex, batch) in generatedBatches.enumerated() {
+                let partSuffix = generatedBatches.count > 1 ? " (pt \(batchIndex + 1))" : ""
+                let outputFilename = (outputName.isEmpty ? "Merged Collection" : outputName) + partSuffix + ".epub"
+                let finalOutputURL = documentsDir.appendingPathComponent(outputFilename)
+                
+                var overrideCover: Data? = nil
+                if let baseCover = firstEPUBFileCoverData, generatedBatches.count > 1 { overrideCover = CoverGenerator.generateCover(from: baseCover, partNumber: batchIndex + 1, totalParts: generatedBatches.count) }
+                
+                try await merger.mergeEPUBs(sourceURLs: batch, outputURL: finalOutputURL, settings: jobSettings, overrideCoverData: overrideCover, sourceMetadata: sourceFiles.first?.metadata)
+                
+                let finalFileSize = (try? finalOutputURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
+                let outputURL = finalOutputURL
+                let totalPages = await Task.detached(priority: .background) { return PhysicalFileSystemRouter.getPageCountStatic(from: outputURL) }.value
+                let inferredMode = sourceFiles.first?.addedByMode ?? .pro
+                let outputPDF = ConvertedPDF(
+                    id: UUID(),
+                    name: outputFilename,
+                    url: finalOutputURL,
+                    pageCount: totalPages,
+                    fileSize: finalFileSize,
+                    metadata: PDFMetadata(title: outputFilename, series: overrideSeries, isManga: mangaMode),
+                    collectionId: sourceFiles.first?.collectionId,
+                    contentType: sourceFiles.first?.contentType ?? .comic,
+                    addedByMode: inferredMode
+                )
+                newMergedPDFs.append(outputPDF)
+                await MainActor.run {
+                    manager.convertedPDFs.insert(outputPDF, at: 0)
+                    manager.saveLibrary()
+                }
+                // 📦 Kindle size audit — warn if merged EPUB exceeds delivery limits
+                await KindleSizeGuard.auditAndNotify(epubURL: finalOutputURL, manager: manager)
+            }
+
+            await MainActor.run { manager.statusMessage = "Cleaning up..." }
+            for batch in generatedBatches { for url in batch { try? fileManager.removeItem(at: url) } }
+            
+            await MainActor.run { manager.scanLibrary(); manager.statusMessage = "✅ Merge Complete!"; manager.processingStatus = ""; manager.conversionProgress = 1.0; manager.isConverting = false }
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            await MainActor.run { manager.statusMessage = nil }
+            return newMergedPDFs
+        } catch {
+            await MainActor.run { manager.statusMessage = "Merge Failed: \(error.localizedDescription)"; manager.isConverting = false }
+            return newMergedPDFs
+        }
+    }
+}

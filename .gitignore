@@ -14,3 +14,27 @@ DerivedData/
 
 # CocoaPods
 Pods/
+"ComicToPDF/reference files/"
+*.cbz
+*.epub
+
+reference files/ipa_extracted/
+reference files/*.ipa
+
+# ============================================================
+# 🔐 CODE SIGNING — NEVER COMMIT THESE TO VERSION CONTROL
+# These files contain private keys and are stored locally only.
+# Re-add them manually before App Store submission (do NOT git add).
+# Backup location: ~/Documents/InksyncPro_Certs_BACKUP/
+# ============================================================
+*.p12
+*.key
+*.pem
+*.cer
+*.certSigningRequest
+*.mobileprovision
+*.provisionprofile
+ExportOptions.plist
+
+# Stale source dumps
+full_source_code.txt

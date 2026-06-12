@@ -49,11 +49,26 @@
     
     <key>NSFaceIDUsageDescription</key>
     <string>Authentication required to access the Private Vault.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>InkSync Pro requires microphone access to record voice dictation in your notebook and studios.</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>InkSync Pro uses speech recognition to transcribe your voice dictation into markdown text.</string>
     <key>NSLocalNetworkUsageDescription</key>
-    <string>Allow access to transfer files via WiFi</string>
+    <string>Inksync Pro uses your local Wi-Fi network to transfer comic and book files directly between your iPhone and iPad at full speed, without using iCloud or the internet.</string>
+    <!-- OPDS: Allow HTTP connections to local network servers (Kavita, Komga, Calibre).
+         NSAllowsLocalNetworking only relaxes ATS for .local hostnames and LAN IPs.
+         Internet traffic still requires HTTPS. -->
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsLocalNetworking</key>
+        <true/>
+    </dict>
     <key>NSBonjourServices</key>
     <array>
+        <string>_inksync._tcp</string>
+        <string>_inksync._tcp.</string>
         <string>_http._tcp</string>
+        <string>_http._tcp.</string>
     </array>
     
     <!-- FILE SHARING & DOCS -->
@@ -111,6 +126,40 @@
                 </array>
             </dict>
         </dict>
+        <!-- Library drag-and-drop payload: internal type used for series grouping gestures -->
+        <dict>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.data</string>
+            </array>
+            <key>UTTypeDescription</key>
+            <string>InksyncPro Library Drag Payload</string>
+            <key>UTTypeIconFiles</key>
+            <array/>
+            <key>UTTypeIdentifier</key>
+            <string>com.inksyncpro.library.dragpayload</string>
+            <key>UTTypeTagSpecification</key>
+            <dict/>
+        </dict>
     </array>
+
+    <!-- OAUTH CALLBACK URL SCHEMES -->
+    <!-- Registers inksyncpro:// so iOS routes Dropbox OAuth callbacks back into this app -->
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>com.antigravity.InksyncPro.oauth</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>inksyncpro</string>
+            </array>
+        </dict>
+    </array>
+    
+    <!-- EXPORT COMPLIANCE -->
+    <!-- Prevents automated App Store Connect warning since we only use standard HTTPS/system encryption -->
+    <key>ITSAppUsesNonExemptEncryption</key>
+    <false/>
 </dict>
 </plist>

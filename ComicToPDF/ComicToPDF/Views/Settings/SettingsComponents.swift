@@ -3,18 +3,22 @@ import SwiftUI
 // MARK: - AdvancedOptionsView
 struct AdvancedOptionsView: View {
     @EnvironmentObject var conversionManager: ConversionManager
+    @EnvironmentObject var settingsManager: AppSettingsManager
     
     var body: some View {
         Form {
             Section {
                 // Fixed header syntax:
-                Toggle(isOn: $conversionManager.conversionSettings.enablePanelSplit) {
+                Toggle(isOn: $settingsManager.conversionSettings.enablePanelSplit) {
                     Text("Enable Panel Split")
                 }
             } header: {
                 Text("Panel Processing")
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(Color.clear)
+        .listRowBackground(Color.inkSurface.opacity(0.4))
         .navigationTitle("Advanced Options")
     }
 }
@@ -22,23 +26,27 @@ struct AdvancedOptionsView: View {
 // MARK: - ConversionPresetsView
 struct ConversionPresetsView: View {
     @EnvironmentObject var conversionManager: ConversionManager
+    @EnvironmentObject var settingsManager: AppSettingsManager
     @State private var showingAddPreset = false
     
     var body: some View {
         List {
             // ✅ Fix: Use indices to create bindings safely
-            ForEach($conversionManager.conversionPresets) { $preset in
+            ForEach($settingsManager.conversionPresets) { $preset in
                 NavigationLink(destination: Text("Edit Preset: \(preset.name)")) {
                     Text(preset.name)
                 }
             }
             .onDelete { indexSet in
                 for index in indexSet {
-                    let preset = conversionManager.conversionPresets[index]
-                    conversionManager.deletePreset(preset)
+                    let preset = settingsManager.conversionPresets[index]
+                    settingsManager.deletePreset(preset)
                 }
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(Color.clear)
+        .listRowBackground(Color.inkSurface.opacity(0.4))
         .navigationTitle("Presets")
         .toolbar {
             Button { showingAddPreset = true } label: { Image(systemName: "plus") }
@@ -49,6 +57,7 @@ struct ConversionPresetsView: View {
 // MARK: - StorageManagerView
 struct StorageManagerView: View {
     @EnvironmentObject var conversionManager: ConversionManager
+    @EnvironmentObject var settingsManager: AppSettingsManager
     @State private var storageInfo: StorageInfo?
     
     var body: some View {
@@ -63,6 +72,9 @@ struct StorageManagerView: View {
                 Text("Loading...")
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(Color.clear)
+        .listRowBackground(Color.inkSurface.opacity(0.4))
         .onAppear {
             storageInfo = conversionManager.calculateStorageInfo()
         }
@@ -73,6 +85,7 @@ struct StorageManagerView: View {
 struct AutoOrganizeView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var conversionManager: ConversionManager
+    @EnvironmentObject var settingsManager: AppSettingsManager
     
     var body: some View {
         VStack(spacing: 20) {
@@ -107,15 +120,16 @@ struct AutoOrganizeView: View {
 // MARK: - SendHistoryView
 struct SendHistoryView: View {
     @EnvironmentObject var conversionManager: ConversionManager
+    @EnvironmentObject var settingsManager: AppSettingsManager
     
     var body: some View {
         List {
-            if conversionManager.sendHistory.isEmpty {
+            if settingsManager.sendHistory.isEmpty {
                 Text("No history yet.")
                     .foregroundColor(.secondary)
             } else {
                 // ✅ Fix: Direct iteration, no binding needed for display
-                ForEach(conversionManager.sendHistory) { pdf in
+                ForEach(settingsManager.sendHistory) { pdf in
                     HStack {
                         VStack(alignment: .leading) {
                             Text(pdf.name)
@@ -131,13 +145,16 @@ struct SendHistoryView: View {
                 }
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(Color.clear)
+        .listRowBackground(Color.inkSurface.opacity(0.4))
         .navigationTitle("Send History")
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button("Clear") {
-                    conversionManager.clearSendHistory()
+                    settingsManager.clearSendHistory()
                 }
-                .disabled(conversionManager.sendHistory.isEmpty)
+                .disabled(settingsManager.sendHistory.isEmpty)
             }
         }
     }

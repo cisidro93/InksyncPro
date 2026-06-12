@@ -284,7 +284,8 @@ struct SuccessCheckmarkView: View {
         .onAppear {
             withAnimation(.easeInOut(duration: 0.4)) { circleProgress = 1.0 }
             withAnimation(.spring(response: 0.4, dampingFraction: 0.6).delay(0.2)) { checkmarkScale = 1.0 }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 1_500_000_000) // 1.5 s
                 withAnimation(.easeOut(duration: 0.3)) { opacity = 0 }
             }
         }
@@ -299,21 +300,14 @@ struct BlurView: UIViewRepresentable {
 
 // MARK: - Splash Screen
 struct SplashScreenView: View {
-    // Track if user has completed onboarding (default: false = not seen yet)
-    @AppStorage("hasSeenOnboarding") private var hasSeenOnboarding = false
     @State private var isActive = false
     @State private var logoScale: CGFloat = 0.8
     @State private var logoOpacity: Double = 0
-    @State private var showOnboarding = false
     @EnvironmentObject var conversionManager: ConversionManager
     
     var body: some View {
         Group {
-            if showOnboarding {
-                // First Launch: Show Onboarding
-                OnboardingView()
-                    .environmentObject(conversionManager)
-            } else if isActive {
+            if isActive {
                 // Main App
                 ContentView()
             } else {
@@ -334,7 +328,7 @@ struct SplashScreenView: View {
                             .scaleEffect(logoScale)
                             .opacity(logoOpacity)
                         
-                        Text("InkSync Pro")
+                        Text("InksyncPro")
                             .font(.title)
                             .fontWeight(.bold)
                             .foregroundColor(.white)
@@ -347,29 +341,12 @@ struct SplashScreenView: View {
                         logoOpacity = 1.0
                     }
                     
-                    // Check if user has completed onboarding
-                    if !hasSeenOnboarding {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                            withAnimation(.easeInOut(duration: 0.3)) {
-                                showOnboarding = true
-                            }
-                        }
-                    } else {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                            withAnimation(.easeInOut(duration: 0.3)) {
-                                isActive = true
-                            }
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .seconds(1.5))
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            isActive = true
                         }
                     }
-                }
-            }
-        }
-        .onChange(of: hasSeenOnboarding) { _, completed in
-            // When onboarding is completed, go straight to main app
-            if completed {
-                withAnimation(.easeInOut(duration: 0.3)) {
-                    showOnboarding = false
-                    isActive = true
                 }
             }
         }

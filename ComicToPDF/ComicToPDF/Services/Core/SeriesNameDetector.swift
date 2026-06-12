@@ -27,20 +27,29 @@ struct SeriesNameDetector {
     /// Returns the best-guess series name and issue number for the given filename.
     static func detect(from filename: String) -> DetectionResult {
         let base = URL(fileURLWithPath: filename).deletingPathExtension().lastPathComponent
-        let cleaned = stripCommonArtifacts(from: base)
+        // Pass 1: Remove common noise prefixes/suffixes like "Digital", "HD", "(Webrip)"
+        var cleaned = stripCommonArtifacts(from: base)
+        cleaned = cleaned.replacingOccurrences(of: #"(?i)\s*\(?digital|webrip|hd|scan\)?\s*"#, with: " ", options: .regularExpression)
+                         .trimmingCharacters(in: .whitespaces)
 
         // --- Pass 1: Explicit keywords (highest confidence) ---
         let keywordPatterns: [(pattern: String, confidence: DetectionResult.Confidence)] = [
             // "One Piece Volume 01" / "v01" / "Vol. 1"
-            (#"^(.+?)\s+(?:v(?:ol(?:ume)?)?\.?\s*)(\d+)"#, .high),
+            (#"^(.+?)\s+(?:v(?:ol(?:ume)?)?\.?\s*)(\d+(?:\.\d+)?)"#, .high),
             // "Berserk Chapter 001" / "ch 01" / "Ch. 3"
-            (#"^(.+?)\s+(?:ch(?:apter)?\.?\s*)(\d+)"#, .high),
+            (#"^(.+?)\s+(?:ch(?:apter)?\.?\s*)(\d+(?:\.\d+)?)"#, .high),
+            // "Batman Issue 5" / "Book 3" / "Part 1"
+            (#"^(.+?)\s+(?:issue|book|part)\.?\s*(\d+)"#, .high),
+            // "Title (2024) 001" (Year in parens followed by number)
+            (#"^(.+?\s*\(\d{4}\))\s+(\d+)"#, .high),
             // "Title - 001" (dash separator)
-            (#"^(.+?)\s*-\s*(\d{2,4})$"#, .high),
+            (#"^(.+?)\s*-\s*(\d{1,4}\w?)$"#, .high),
             // "Title_001" (underscore separator)
-            (#"^(.+?)_(\d{2,4})$"#, .medium),
-            // "Title.001" or "Title.01" (dot separator, but only if very end)
-            (#"^(.+?)\.(\d{2,4})$"#, .medium),
+            (#"^(.+?)_(\d{1,4}\w?)$"#, .medium),
+            // "Title.001" or "Title.01" (dot separator)
+            (#"^(.+?)\.(\d{1,4})$"#, .medium),
+            // "Title #001" (Hash separator)
+            (#"^(.+?)\s*#\s*(\d{1,4})$"#, .high)
         ]
 
         for (pattern, confidence) in keywordPatterns {
@@ -54,10 +63,12 @@ struct SeriesNameDetector {
             return result
         }
 
-        // --- Pass 3: Return the whole cleaned string (low confidence) ---
+        // --- Pass 3: Return the whole cleaned string, keeping semantic numbers (low confidence) ---
+        // Instead of destroying digits (which ruins "Spider-Man 2099"), we just replace 
+        // programmatic delimiters like underscores and dots with spaces.
         let normalized = cleaned
-            .components(separatedBy: CharacterSet.letters.inverted.union(.decimalDigits))
-            .joined(separator: " ")
+            .replacingOccurrences(of: "_", with: " ")
+            .replacingOccurrences(of: ".", with: " ")
             .trimmingCharacters(in: .whitespaces)
 
         return DetectionResult(

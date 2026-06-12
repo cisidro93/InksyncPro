@@ -1,5 +1,0 @@
-PySide6
-qt-material
-img2pdf
-Pillow
-PySide2

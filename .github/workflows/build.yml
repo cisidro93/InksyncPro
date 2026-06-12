@@ -9,10 +9,36 @@ on:
 jobs:
   build:
     runs-on: macos-latest
+    permissions:
+      contents: write
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      # Redirect module cache to /tmp so it is NEVER cached between runs.
+      # This is the definitive fix for "mtime changed" SwiftShims errors.
+      CLANG_MODULE_CACHE_PATH: /tmp/clang-module-cache
+      SHORT_SHA: ""
 
     steps:
     - uses: actions/checkout@v4
-    
+      with:
+        fetch-depth: 0   # full history needed for accurate commit count
+
+    - name: Set build metadata
+      run: |
+        # Increment build number on every commit — prevents Signulous from
+        # serving a cached IPA when the filename hasn't changed.
+        BUILD_NUMBER=$(git rev-list --count HEAD)
+        SHORT_SHA=$(git rev-parse --short HEAD)
+        echo "BUILD_NUMBER=$BUILD_NUMBER" >> $GITHUB_ENV
+        echo "SHORT_SHA=$SHORT_SHA" >> $GITHUB_ENV
+        echo "Build number: $BUILD_NUMBER  SHA: $SHORT_SHA"
+
+    - name: Select Xcode
+      run: |
+        # Log the Xcode version for traceability
+        xcodebuild -version
+        sudo xcode-select -p
+
     - name: Install Tools
       run: |
         brew install swiftlint
@@ -25,9 +51,22 @@ jobs:
     - name: Debug Files
       run: ls -R
 
+    - name: Cache SPM Packages
+      uses: actions/cache@v4
+      with:
+        # Only cache resolved SPM source checkouts — never compiled .pcm or .o files
+        path: ComicToPDF/build/SourcePackages/checkouts
+        key: ${{ runner.os }}-spm-${{ hashFiles('ComicToPDF/project.yml') }}
+        restore-keys: |
+          ${{ runner.os }}-spm-
+
     - name: Generate Project
       run: |
         cd ComicToPDF
+        # Stamp the unique build number into Info.plist so Signulous
+        # treats every CI build as a distinct version.
+        /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" ComicToPDF/Info.plist
+        echo "Stamped CFBundleVersion = $BUILD_NUMBER"
         xcodegen generate
 
     - name: Build App
@@ -39,20 +78,50 @@ jobs:
                    -sdk iphoneos \
                    -configuration Release \
                    -derivedDataPath build \
-                   clean build \
+                   CLANG_MODULE_CACHE_PATH=/tmp/clang-module-cache \
+                   build \
                    CODE_SIGN_IDENTITY="" \
                    CODE_SIGNING_REQUIRED=NO \
-                   CODE_SIGNING_ALLOWED=NO
+                   CODE_SIGNING_ALLOWED=NO > build.log 2>&1
+
+    - name: Post build errors to commit
+      if: failure()
+      run: |
+        cd ComicToPDF
+        echo "=== XCODEBUILD ERROR LOG ==="
+        grep -i -n -C 3 "error:" build.log | head -n 100
+        
+        # Post error diagnostics as a commit comment
+        echo "### Build Failure Diagnostics" > raw_comment.txt
+        echo "" >> raw_comment.txt
+        echo "#### Compilation Errors:" >> raw_comment.txt
+        echo '```' >> raw_comment.txt
+        grep -i -n -C 3 "error:" build.log | head -n 100 >> raw_comment.txt
+        echo '```' >> raw_comment.txt
+        echo "" >> raw_comment.txt
+        echo "#### Trailing Log Output:" >> raw_comment.txt
+        echo '```' >> raw_comment.txt
+        tail -n 150 build.log >> raw_comment.txt
+        echo '```' >> raw_comment.txt
+        
+        jq -n --arg body "$(cat raw_comment.txt)" '{"body": $body}' > comment.json
+
+        curl -s -X POST \
+          -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          -H "Accept: application/vnd.github.v3+json" \
+          -d @comment.json \
+          "https://api.github.com/repos/${{ github.repository }}/commits/${{ github.sha }}/comments"
 
     - name: Package IPA
       run: |
         cd ComicToPDF
         mkdir Payload
         cp -r build/Build/Products/Release-iphoneos/InksyncPro.app Payload/
-        zip -r InksyncPro_Unsigned.ipa Payload
+        # Name the IPA with the SHA so Signulous sees a unique file each upload
+        zip -r InksyncPro_Unsigned_${{ env.SHORT_SHA }}.ipa Payload
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: InksyncPro_Unsigned_IPA
-        path: ComicToPDF/InksyncPro_Unsigned.ipa
+        name: InksyncPro_Unsigned_${{ env.SHORT_SHA }}
+        path: ComicToPDF/InksyncPro_Unsigned_${{ env.SHORT_SHA }}.ipa

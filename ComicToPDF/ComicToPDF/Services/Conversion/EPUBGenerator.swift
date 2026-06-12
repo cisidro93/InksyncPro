@@ -38,7 +38,9 @@ class EPUBGenerator {
 
     // MARK: - Public API
     
+    @available(*, deprecated, message: "Use URL-based `generateEPUB(from:outputName:)` to prevent OOM errors with large comic files")
     func generateEPUB(images: [UIImage], outputName: String, progress: @escaping (Double) -> Void) async throws -> URL {
+        Logger.shared.log("⚠️ WARNING: Using memory-heavy UIImage array variant of generateEPUB. Use URL stream instead.", category: "Memory", type: .warning)
         // 1. Setup Directory
         try? FileManager.default.removeItem(at: tempDirectory)
         try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
@@ -64,9 +66,10 @@ class EPUBGenerator {
         let totalImages = images.count
         
         for (index, image) in images.enumerated() {
-            let pageNumber = index + 1
-            
-            // Resize logic
+            try? autoreleasepool {
+                let pageNumber = index + 1
+                
+                // Resize logic
             let processedImage = resizeImageIfNeeded(image)
             
             // Compression
@@ -87,13 +90,16 @@ class EPUBGenerator {
             accumulatedImageManifestItems += "        <item id=\"image\(pageNumber)\" href=\"images/\(imageName)\" media-type=\"image/jpeg\"/>\n"
             
             // XHTML Page
+            let width = Int(processedImage.size.width)
+            let height = Int(processedImage.size.height)
             let xhtmlName = "page\(pageNumber).xhtml"
-            try createPageXHTML(pageNumber: pageNumber, imageName: imageName, xhtmlFileName: xhtmlName)
+            try createPageXHTML(pageNumber: pageNumber, imageName: imageName, xhtmlFileName: xhtmlName, width: width, height: height)
             
             accumulatedXhtmlManifestItems += "        <item id=\"page\(pageNumber)\" href=\"text/\(xhtmlName)\" media-type=\"application/xhtml+xml\"/>\n"
-            accumulatedSpineItems += "        <itemref idref=\"page\(pageNumber)\"/>\n"
-            
-            progress(Double(index + 1) / Double(totalImages) * 0.9)
+                accumulatedSpineItems += "        <itemref idref=\"page\(pageNumber)\"/>\n"
+                
+                progress(Double(index + 1) / Double(totalImages) * 0.9)
+            }
         }
         
         // 4. Generate Metadata (OPF/NCX)
@@ -137,17 +143,23 @@ class EPUBGenerator {
         
         // Streaming Process
         for (index, url) in imageURLs.enumerated() {
-            let pageNumber = index + 1
-            let imageName = "image\(pageNumber).jpg"
-            let imageDestURL = oebpsDir.appendingPathComponent("images/\(imageName)")
+            try? autoreleasepool {
+                let pageNumber = index + 1
+                let imageName = "image\(pageNumber).jpg"
+                let imageDestURL = oebpsDir.appendingPathComponent("images/\(imageName)")
             
             // Just copy the file if possible to save re-encoding time?
             // PageDeleteView implies we are editing, so we might want to preserve exact data.
             // But we typically enforce constraints.
             // Let's load and processed like normal to ensure consistency
             
+            var imgWidth = 1000
+            var imgHeight = 1500
+            
             if let image = UIImage(contentsOfFile: url.path) {
                 let processed = resizeImageIfNeeded(image)
+                imgWidth = Int(processed.size.width)
+                imgHeight = Int(processed.size.height)
                 if let data = processed.jpegData(compressionQuality: compressionQuality) {
                      try data.write(to: imageDestURL)
                 }
@@ -156,10 +168,11 @@ class EPUBGenerator {
             accumulatedImageManifestItems += "        <item id=\"image\(pageNumber)\" href=\"images/\(imageName)\" media-type=\"image/jpeg\"/>\n"
             
             let xhtmlName = "page\(pageNumber).xhtml"
-            try createPageXHTML(pageNumber: pageNumber, imageName: imageName, xhtmlFileName: xhtmlName)
+            try createPageXHTML(pageNumber: pageNumber, imageName: imageName, xhtmlFileName: xhtmlName, width: imgWidth, height: imgHeight)
             
-            accumulatedXhtmlManifestItems += "        <item id=\"page\(pageNumber)\" href=\"text/\(xhtmlName)\" media-type=\"application/xhtml+xml\"/>\n"
-            accumulatedSpineItems += "        <itemref idref=\"page\(pageNumber)\"/>\n"
+                accumulatedXhtmlManifestItems += "        <item id=\"page\(pageNumber)\" href=\"text/\(xhtmlName)\" media-type=\"application/xhtml+xml\"/>\n"
+                accumulatedSpineItems += "        <itemref idref=\"page\(pageNumber)\"/>\n"
+            }
         }
         
         try generateMetadataFiles()
@@ -173,104 +186,8 @@ class EPUBGenerator {
     
     // ... (Generate Content methods remain mostly same, just pass through)
 
-    private func createPageXHTML(pageNumber: Int, imageName: String, xhtmlFileName: String) throws {
-        // Generate Panels HTML if available
-        var panelsHTML = ""
-        var extraCSS = ""
-        
-        if let panels = panelData?[pageNumber], !panels.isEmpty {
-            // Amazon Region Magnification Style
-            // We need to define "targets" (the magnified view) and "sources" (the tap area)
-            // For simple Guided View, the target is usually a high-res crop, OR just a zoomed view of the main image.
-            // Modern Kindle 'Region Magnification' uses a DIV overlay that acts as the magnifier.
-            
-            extraCSS = """
-                .app-amzn-magnify {
-                    display: block;
-                    position: absolute;
-                    z-index: 10;
-                    text-decoration: none;
-                    background: transparent;
-                }
-                .panel-source {
-                    position: absolute;
-                    width: 100%;
-                    height: 100%;
-                    background: transparent;
-                }
-                .panel-target {
-                    position: absolute;
-                    z-index: 20;
-                    background: transparent;
-                }
-            """
-            
-            // Loop through panels and create overlay divs
-            for (index, panel) in panels.enumerated() {
-                let pIndex = index + 1
-                let rect = panel.boundingBox
-                
-                // Convert normalized rect (0-1) to percentages
-                // Vision origin is bottom-left, CSS is top-left
-                let top = String(format: "%.3f", (1.0 - rect.maxY) * 100) 
-                let left = String(format: "%.3f", rect.minX * 100)
-                let width = String(format: "%.3f", rect.width * 100)
-                let height = String(format: "%.3f", rect.height * 100)
-                
-                let targetId = "p\(pageNumber)-panel\(pIndex)-t"
-                let sourceId = "p\(pageNumber)-panel\(pIndex)-s"
-                let magnifyData = "{\"targetId\":\"\(targetId)\",\"sourceId\":\"\(sourceId)\",\"ordinal\":\(pIndex)}"
-                
-                // Negative margins to crop the target image to just the panel contents
-                let imgCssLeft = String(format: "%.3f%%", -(rect.minX / rect.width) * 100.0)
-                let imgCssTop = String(format: "%.3f%%", -((1.0 - rect.maxY) / rect.height) * 100.0)
-                let imgCssWidth = String(format: "%.3f%%", (1.0 / rect.width) * 100.0)
-                let imgCssHeight = String(format: "%.3f%%", (1.0 / rect.height) * 100.0)
-                
-                panelsHTML += """
-                <a class="app-amzn-magnify" data-app-amzn-magnify='\(magnifyData)' style="top: \(top)%; left: \(left)%; width: \(width)%; height: \(height)%;">
-                    <div id="\(sourceId)" class="panel-source"></div>
-                </a>
-                
-                <div id="\(targetId)" class="panel-target" style="display:none; overflow:hidden; top:\(top)%; left:\(left)%; width:\(width)%; height:\(height)%;">
-                    <img src="../images/\(imageName)" style="position:absolute; width:\(imgCssWidth); height:\(imgCssHeight); top:\(imgCssTop); left:\(imgCssLeft); max-width:none; max-height:none;" alt="zoomed panel" />
-                </div>
-                """
-            }
-        }
-
-        let xhtmlContent = """
-        <?xml version="1.0" encoding="UTF-8"?>
-        <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
-        <html xmlns="http://www.w3.org/1999/xhtml">
-        <head>
-            <title>Page \(pageNumber)</title>
-            <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
-            <style type="text/css">
-                body { margin: 0; padding: 0; background-color: black; }
-                .page { position: relative; width: 100vw; height: 100vh; overflow: hidden; margin: 0 auto; }
-                img.bg {
-                    width: 100%;
-                    height: 100%;
-                    object-fit: contain;
-                    display: block;
-                    position: absolute;
-                    top: 0;
-                    left: 0;
-                }
-                /* Region Magnification Overlays */
-                \(extraCSS)
-            </style>
-        </head>
-        <body>
-            <div class="page" id="img-container">
-                <img src="../images/\(imageName)" class="bg" alt="Page \(pageNumber)"/>
-                \(panelsHTML)
-            </div>
-        </body>
-        </html>
-        """
-        
+    private func createPageXHTML(pageNumber: Int, imageName: String, xhtmlFileName: String, width: Int, height: Int) throws {
+        let xhtmlContent = XHTMLGenerator.generateSVGWrappedXHTML(imageName: imageName, width: width, height: height)
         let pageURL = tempDirectory.appendingPathComponent("OEBPS/text/page\(pageNumber).xhtml")
         try xhtmlContent.write(to: pageURL, atomically: true, encoding: .utf8)
     }
@@ -313,38 +230,21 @@ class EPUBGenerator {
     }
     
     private func generateContentOPF() throws {
+        let titleBlock = metadata.title.isEmpty ? "Comic Book" : metadata.title
+        let hardenedMetadata = OPFGenerator.generateHardenedMetadata(title: titleBlock)
+        
         let contentOPF = """
         <?xml version="1.0" encoding="UTF-8"?>
-        <package version="3.0" xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookID" prefix="rendition: http://www.idpf.org/vocab/rendition/#">
-            <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">
-                <dc:identifier id="BookID">\(UUID().uuidString)</dc:identifier>
-                <dc:title>\(metadata.title.isEmpty ? "Comic Book" : metadata.title)</dc:title>
-                <dc:creator>\((metadata.author?.isEmpty ?? true) ? "Unknown" : metadata.author!)</dc:creator>
-                <dc:language>en</dc:language>
-                <dc:description>\((metadata.summary?.isEmpty ?? true) ? "Comic book converted from CBZ" : metadata.summary!)</dc:description>
-                <dc:publisher>\((metadata.publisher?.isEmpty ?? true) ? "Inksync Pro" : metadata.publisher!)</dc:publisher>
-                <dc:date>\(ISO8601DateFormatter().string(from: Date()))</dc:date>
-                <meta property="rendition:layout">pre-paginated</meta>
-                <meta property="rendition:orientation">auto</meta>
-                <meta property="rendition:spread">auto</meta>
-                <meta name="book-type" content="comic"/>
-                <meta name="RegionMagnification" content="true"/>
-                <meta name="cover" content="image1"/>
-                <meta name="original-resolution" content="1024x1536"/>
-                <meta name="orientation-lock" content="none"/>
-                <meta name="cdetype" content="pdoc"/>
-                <meta name="region-all-mag-adp" content="1"/>
-                <meta name="zero-gutter" content="true"/>
-                <meta name="zero-margin" content="true"/>
-                <meta name="ke-border-color" content="#000000"/>
-                <meta name="ke-border-width" content="0"/>
-            </metadata>
+        <package version="3.0" xmlns="http://www.idpf.org/2007/opf" unique-identifier="pub-id" prefix="rendition: http://www.idpf.org/vocab/rendition/#">
+        \(hardenedMetadata)
             <manifest>
+                <item id="css" href="style.css" media-type="text/css"/>
                 <item id="toc" href="text/toc.xhtml" media-type="application/xhtml+xml" properties="nav"/>
+                <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
         \(accumulatedImageManifestItems)
         \(accumulatedXhtmlManifestItems)
             </manifest>
-            <spine page-progression-direction="\(settings.readingDirection.rawValue)">
+            <spine toc="ncx" page-progression-direction="\(settings.readingDirection.rawValue)">
         \(accumulatedSpineItems)
             </spine>
         </package>
@@ -352,6 +252,16 @@ class EPUBGenerator {
         
         let contentURL = tempDirectory.appendingPathComponent("OEBPS/content.opf")
         try contentOPF.write(to: contentURL, atomically: true, encoding: String.Encoding.utf8)
+        
+        // 🚨 CRITICAL 5.19.3 FIX: Explicit global CSS to negate AWS padding overrides
+        let cssContent = """
+        @page { margin: 0; padding: 0; }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #000000; }
+        div { margin: 0; padding: 0; position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+        img { margin: 0; padding: 0; position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+        svg { margin: 0; padding: 0; display: block; width: 100%; height: 100%; }
+        """
+        try cssContent.write(to: tempDirectory.appendingPathComponent("OEBPS/style.css"), atomically: true, encoding: .utf8)
     }
     
     private func generateTocNCX() throws {
@@ -408,13 +318,23 @@ class EPUBGenerator {
         
         // 1. Mimetype (MUST be first and uncompressed)
         let mimetypeURL = tempDirectory.appendingPathComponent("mimetype")
+        let mimeHandle = try FileHandle(forReadingFrom: mimetypeURL)
         try archive.addEntry(with: "mimetype", type: .file, uncompressedSize: Int64(20), compressionMethod: .none) { position, size in
-            return try Data(contentsOf: mimetypeURL).subdata(in: 0..<Int(size))
+            if #available(iOS 13.4, *) {
+                try mimeHandle.seek(toOffset: UInt64(position))
+                return try mimeHandle.read(upToCount: Int(size)) ?? Data()
+            } else {
+                mimeHandle.seek(toFileOffset: UInt64(position))
+                return mimeHandle.readData(ofLength: Int(size))
+            }
         }
+        try? mimeHandle.close()
         
         // 2. Add remaining files (META-INF, OEBPS)
         let resourceKeys: [URLResourceKey] = [.isDirectoryKey, .fileSizeKey]
-        let enumerator = FileManager.default.enumerator(at: tempDirectory, includingPropertiesForKeys: resourceKeys)!
+        guard let enumerator = FileManager.default.enumerator(at: tempDirectory, includingPropertiesForKeys: resourceKeys) else {
+            throw NSError(domain: "EPUBGenerator", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to enumerate files"])
+        }
         
         for case let fileURL as URL in enumerator {
             let resourceValues = try fileURL.resourceValues(forKeys: Set(resourceKeys))
@@ -428,9 +348,17 @@ class EPUBGenerator {
             
             if !isDirectory {
                 let fileSize = UInt32(resourceValues.fileSize ?? 0)
+                let handle = try FileHandle(forReadingFrom: fileURL)
                 try archive.addEntry(with: path, type: .file, uncompressedSize: Int64(fileSize), compressionMethod: .deflate) { position, size in
-                    return try Data(contentsOf: fileURL).subdata(in: 0..<Int(size))
+                    if #available(iOS 13.4, *) {
+                        try handle.seek(toOffset: UInt64(position))
+                        return try handle.read(upToCount: Int(size)) ?? Data()
+                    } else {
+                        handle.seek(toFileOffset: UInt64(position))
+                        return handle.readData(ofLength: Int(size))
+                    }
                 }
+                try? handle.close()
             } else {
                  // Directories are implicit or added as 0-size entries in some zip implementations, 
                  // but ZIPFoundation typically handles file paths. We can skip explicit directory entries
@@ -494,7 +422,7 @@ class EPUBGenerator {
         let finalCanvas = canvasSize ?? size
         
         // Check for sanity
-        if finalCanvas.width > 5000 || finalCanvas.height > 5000 { return image }
+        if finalCanvas.width <= 0 || finalCanvas.height <= 0 || finalCanvas.width.isNaN || finalCanvas.height.isNaN || finalCanvas.width > 5000 || finalCanvas.height > 5000 { return image }
         
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1.0

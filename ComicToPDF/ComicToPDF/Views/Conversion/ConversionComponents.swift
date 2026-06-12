@@ -15,7 +15,7 @@ struct RenameSheetView: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Form {
                 Section {
                     TextField("Output file name", text: $newName)
@@ -194,7 +194,7 @@ struct BatchRenameView: View {
     @Environment(\.dismiss) var dismiss
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Form {
                 Section(header: Text("Rename Pattern")) {
                     TextField("Pattern (e.g., {series} #{issue})", text: $pattern)
@@ -255,7 +255,19 @@ struct BatchRenameView: View {
     }
     
     func performRename() {
-        // Implementation stub for now
+        var currentNumber = startNumber
+        for id in selectedFiles {
+            if let pdf = conversionManager.convertedPDFs.first(where: { $0.id == id }) {
+                var name = pattern
+                name = name.replacingOccurrences(of: "{series}", with: pdf.metadata.series ?? "Series")
+                name = name.replacingOccurrences(of: "{issue}", with: pdf.metadata.issueNumber ?? "\(currentNumber)")
+                name = name.replacingOccurrences(of: "{title}", with: pdf.metadata.title)
+                name = name.replacingOccurrences(of: "{author}", with: pdf.metadata.author ?? "Unknown")
+                
+                conversionManager.renamePDF(pdf, to: name)
+                currentNumber += 1
+            }
+        }
         dismiss()
     }
 }

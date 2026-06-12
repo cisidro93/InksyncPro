@@ -7,9 +7,9 @@ struct BatchMetadataEditorView: View {
     let selectedPDFs: [ConvertedPDF]
     
     // Form State (Only fields that will be applied to ALL selected files)
-    @State private var author: String = ""
-    @State private var publisher: String = ""
-    @State private var series: String = ""
+    @AppStorage("batchLastAuthor") private var author: String = ""
+    @AppStorage("batchLastPublisher") private var publisher: String = ""
+    @AppStorage("batchLastSeries") private var series: String = ""
     @State private var tags: [String] = []
     
     // Apply Toggles (User chooses which fields to actually overwrite)
@@ -26,6 +26,7 @@ struct BatchMetadataEditorView: View {
                         .font(.headline)
                         .foregroundColor(.secondary)
                 }
+                .listRowBackground(Color.inkSurface.opacity(0.4))
                 
                 Section(header: Text("Fields to Update"), footer: Text("Only fields with the toggle enabled will be applied to the selected files. Empty text fields will clear the data if applied.")) {
                     
@@ -50,6 +51,7 @@ struct BatchMetadataEditorView: View {
                             .foregroundColor(applyAuthor ? .primary : .secondary)
                     }
                 }
+                .listRowBackground(Color.inkSurface.opacity(0.4))
                 
                 Section(header: Text("Batch Tags")) {
                     Toggle("Apply these tags", isOn: $applyTags.animation())
@@ -58,7 +60,10 @@ struct BatchMetadataEditorView: View {
                         TagEditorView(tags: $tags)
                     }
                 }
+                .listRowBackground(Color.inkSurface.opacity(0.4))
             }
+            .scrollContentBackground(.hidden)
+            .background(Color.inkBackground.ignoresSafeArea())
             .navigationTitle("Batch Metadata")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

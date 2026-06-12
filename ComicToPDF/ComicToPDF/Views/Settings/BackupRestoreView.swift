@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 struct BackupRestoreView: View {
     @EnvironmentObject var conversionManager: ConversionManager
     @State private var showingExporter = false
-    @State private var showingImporter = false
+
     @State private var backupDocument: BackupDocument?
     @State private var importError: String?
     @State private var showingAlert = false
@@ -22,7 +22,13 @@ struct BackupRestoreView: View {
             }
             
             Section(header: Text("Restore")) {
-                Button(action: { showingImporter = true }) {
+                Button(action: { 
+                    ImportCoordinator.present(type: .json) { urls in
+                        if let first = urls.first {
+                            importBackup(from: first)
+                        }
+                    }
+                }) {
                     HStack {
                         Image(systemName: "square.and.arrow.down")
                         Text("Import Backup File")
@@ -33,25 +39,23 @@ struct BackupRestoreView: View {
             
             Section(footer: Text("Backups include your library index, collections, and settings. PDF files are not included in the backup file.")) {}
         }
+        .scrollContentBackground(.hidden)
+        .background(Color.clear)
+        .listRowBackground(Color.inkSurface.opacity(0.4))
         .navigationTitle("Backup & Restore")
         .fileExporter(isPresented: $showingExporter, document: backupDocument, contentType: .json, defaultFilename: "InksyncPro_Backup.json") { result in
-             switch result {
-             case .success:
-                 HapticManager.shared.notification(.success)
-             case .failure(let error):
-                 importError = error.localizedDescription
-                 showingAlert = true
-             }
-        }
-        .fileImporter(isPresented: $showingImporter, allowedContentTypes: [.item]) { result in
-            switch result {
-            case .success(let url):
-                importBackup(from: url)
-            case .failure(let error):
-                importError = error.localizedDescription
-                showingAlert = true
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 s — let exporter sheet dismiss
+                switch result {
+                case .success:
+                    HapticManager.shared.notification(.success)
+                case .failure(let error):
+                    importError = error.localizedDescription
+                    showingAlert = true
+                }
             }
         }
+
         .alert("Status", isPresented: $showingAlert) { Button("OK", role: .cancel) { } } message: { Text(importError ?? "Unknown error") }
         .overlay(Group { if showingSuccess { SuccessCheckmarkView() } })
     }
@@ -63,22 +67,44 @@ struct BackupRestoreView: View {
     }
     
     func importBackup(from url: URL) {
-        do {
-            guard url.startAccessingSecurityScopedResource() else { throw NSError(domain: "Permissions", code: 1, userInfo: [NSLocalizedDescriptionKey: "Permission denied"]) }
+        guard url.startAccessingSecurityScopedResource() else {
+            Task { @MainActor in
+                importError = "Permission denied to read backup file."
+                showingAlert = true
+            }
+            return
+        }
+        
+        Task.detached(priority: .userInitiated) {
             defer { url.stopAccessingSecurityScopedResource() }
             
-            let data = try Data(contentsOf: url)
-            let backup = try JSONDecoder().decode(BackupData.self, from: data)
-            
-            DispatchQueue.main.async {
-                conversionManager.restoreFromBackup(backup)
-                showingSuccess = true
-                HapticManager.shared.notification(.success)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2) { showingSuccess = false }
+            do {
+                var rawData: Data?
+                var coordError: NSError?
+                NSFileCoordinator().coordinate(readingItemAt: url, options: .withoutChanges, error: &coordError) { safeURL in
+                    rawData = try? Data(contentsOf: safeURL)
+                }
+                
+                guard let data = rawData else { throw CocoaError(.fileReadUnknown) }
+                let backup = try JSONDecoder().decode(BackupData.self, from: data)
+                
+                // Enforce 0.5s native modal teardown window
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                
+                await MainActor.run {
+                    self.conversionManager.restoreFromBackup(backup)
+                    self.showingSuccess = true
+                    HapticManager.shared.notification(.success)
+                }
+                try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 s auto-dismiss
+                await MainActor.run { self.showingSuccess = false }
+            } catch {
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                await MainActor.run {
+                    self.importError = "Import failed: \(error.localizedDescription)"
+                    self.showingAlert = true
+                }
             }
-        } catch {
-            importError = "Import failed: \(error.localizedDescription)"
-            showingAlert = true
         }
     }
 }

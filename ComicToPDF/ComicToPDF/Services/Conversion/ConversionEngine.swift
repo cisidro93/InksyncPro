@@ -10,6 +10,14 @@ enum ConversionProgressEvent {
     case failed(file: URL, error: Error)
 }
 
+/// Thread-safe wrapper for PassthroughSubject to allow Sendable conformance across actor boundaries
+final class SendableSubject<Output>: @unchecked Sendable {
+    let subject = PassthroughSubject<Output, Never>()
+    func send(_ value: Output) {
+        subject.send(value)
+    }
+}
+
 /// Secure Processing Core: High-performance file conversion engine
 /// Uses Swift Concurrency (Actors) for thread safety and performance
 actor ConversionEngine {
@@ -17,7 +25,7 @@ actor ConversionEngine {
     
     // Broadcast progress to listeners (likely the ViewModel/Manager)
     // Using PassthroughSubject so we can easily pump events to the UI
-    nonisolated let progressSubject = PassthroughSubject<ConversionProgressEvent, Never>()
+    nonisolated let progressSubject = SendableSubject<ConversionProgressEvent>()
     
     private init() {}
     
@@ -25,26 +33,38 @@ actor ConversionEngine {
     /// - Parameters:
     ///   - url: Source file URL
     ///   - settings: Conversion settings snapshot (Value Type for thread safety)
-    func process(url: URL, settings: ConversionSettings) async throws -> URL {
+    func process(url: URL, settings: ConversionSettings, customOutputName: String? = nil) async throws -> URL {
+        // ✅ PHASE 9: Unrestricted Execution
+        let backgroundTaskToken = await MainActor.run {
+            let box = BackgroundTaskBox()
+            let token = UIApplication.shared.beginBackgroundTask(withName: "EngineProcess_\(url.lastPathComponent)") {
+                UIApplication.shared.endBackgroundTask(box.token)
+            }
+            box.token = token
+            return token
+        }
+        
+        defer {
+            Task { @MainActor in
+                UIApplication.shared.endBackgroundTask(backgroundTaskToken)
+            }
+        }
+        
         progressSubject.send(.started(file: url))
         
         do {
             let resultURL: URL
             
-            // Determine Type & Route
-            // For now, we wrap the existing logic logic or re-implement parts of it.
-            // Since the user asked to "Architect" it, we assume we should call the heavy lifters.
+            // ✅ Linked Library: Wrap file access in BookmarkResolver for linked files
+            // Any URL passed here that is a security-scoped bookmark to an external drive
+            // will have its access held open for the duration of the conversion.
+            let accessing = url.startAccessingSecurityScopedResource()
+            defer { if accessing { url.stopAccessingSecurityScopedResource() } }
             
             if url.pathExtension.lowercased() == "pdf" {
-                // Delegate to existing logic, but instrumented
-                // NOTE: In a real refactor, logic from ConversionManager would move here.
-                // For this step, we will call the static helpers we built in Phase 1-4 or 
-                // shim the logic to demonstrate the Progressive Reporting.
-                
                 resultURL = try await convertPDF(url: url, settings: settings)
                 
             } else if url.pathExtension.lowercased() == "epub" {
-                // ✅ FAST PATH: If the input is already an EPUB (Book or Manga), just pass it through.
                 progressSubject.send(.progress(file: url, current: 50, total: 100, message: "Validating EPUB..."))
                 let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + "_" + url.lastPathComponent)
                 try FileManager.default.copyItem(at: url, to: tempURL)
@@ -52,13 +72,20 @@ actor ConversionEngine {
                 resultURL = tempURL
                 
             } else {
-                // Default CBZ flow
-                resultURL = try await convertArchive(url: url, settings: settings)
+                resultURL = try await convertArchive(url: url, settings: settings, customOutputName: customOutputName)
             }
             
             progressSubject.send(.completed(file: url, result: resultURL))
             return resultURL
             
+        } catch let bookmarkErr as BookmarkError {
+            let wrappedError = NSError(
+                domain: "ConversionEngine.DriveError",
+                code: 901,
+                userInfo: [NSLocalizedDescriptionKey: bookmarkErr.localizedDescription]
+            )
+            progressSubject.send(.failed(file: url, error: wrappedError))
+            throw wrappedError
         } catch {
             progressSubject.send(.failed(file: url, error: error))
             throw error
@@ -79,7 +106,7 @@ actor ConversionEngine {
     }
     
     // Internal Worker: Archive
-    private func convertArchive(url: URL, settings: ConversionSettings) async throws -> URL {
+    private func convertArchive(url: URL, settings: ConversionSettings, customOutputName: String? = nil) async throws -> URL {
         progressSubject.send(.progress(file: url, current: 0, total: 100, message: "Extracting Archive..."))
         
         // Simulate work or call CBZToEPUBConverter
@@ -90,17 +117,13 @@ actor ConversionEngine {
         // We'd need to modify CBZToEPUBConverter to accept a progress callback if we want real granular updates here.
         // For the "Architectural" prompt, I will demonstrate the pattern.
         
-        // Mocking granular updates for demonstration of the Engine's capability
-        for i in stride(from: 0, to: 100, by: 20) {
-            try await Task.sleep(nanoseconds: 200_000_000) // 0.2s simulation
-            progressSubject.send(.progress(file: url, current: i, total: 100, message: "Processing page \(i)..."))
-        }
-        
+
         let outputURLs = try await converter.convert(
             sourceURL: url,
             settings: settings,
             manualManifest: nil, // We could pass overrides here if we had them in settings
-            progress: { progress in
+            customOutputName: customOutputName,
+            progress: { @Sendable progress in
                 // Adapt closure to async stream/subject if needed, but for now just fire and forget or ignore
                 // Since this is inside an actor, we need to be careful.
                 // The convert method expects a closure (User provided: @escaping (Double) -> Void)
@@ -119,6 +142,22 @@ actor ConversionEngine {
 
     // MARK: - PDF Import Logic
     func performPDFImport(url: URL, destFolder: URL) async throws -> URL {
+        // ✅ PHASE 9: Unrestricted Execution
+        let backgroundTaskToken = await MainActor.run {
+            let box = BackgroundTaskBox()
+            let token = UIApplication.shared.beginBackgroundTask(withName: "EngineImport_\(url.lastPathComponent)") {
+                UIApplication.shared.endBackgroundTask(box.token)
+            }
+            box.token = token
+            return token
+        }
+        
+        defer {
+            Task { @MainActor in
+                UIApplication.shared.endBackgroundTask(backgroundTaskToken)
+            }
+        }
+        
         progressSubject.send(.started(file: url))
         
         let importer = PDFImporter()
@@ -134,6 +173,12 @@ actor ConversionEngine {
         let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try? fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
         
+        // Use a defer block to guarantee we ALWAYS clean out the massive JPEG extraction cache
+        // even if the loop throws an error on page 499 or the user cancels the import.
+        defer { 
+            try? fileManager.removeItem(at: tempDir) 
+        }
+        
         // Extract Pages
         for i in 0..<pageCount {
             if Task.isCancelled { throw CancellationError() }
@@ -147,12 +192,16 @@ actor ConversionEngine {
             // or high if we want quality. Let's use 150-200 for now or stick to default.
             // Using 300 might be slow on main thread, but here we are in a detached actor task.
             // Using autoreleasepool to manage memory
-            try autoreleasepool {
-                let image = try importer.extractPage(url: url, pageIndex: i, dpi: 200) 
-                let pageURL = tempDir.appendingPathComponent(String(format: "%03d.jpg", i))
-                if let data = image.jpegData(compressionQuality: 0.75) {
-                    try data.write(to: pageURL)
-                }
+            // UIImage.jpegData() is not thread-safe when the UIImage was rendered
+            // via PDFKit on a background thread. Hop to MainActor for the encode only,
+            // then write the raw Data bytes back on the background thread.
+            let pageURL = tempDir.appendingPathComponent(String(format: "%03d.jpg", i))
+            let image = try autoreleasepool { try importer.extractPage(url: url, pageIndex: i, dpi: 200) }
+            let jpegData: Data? = await MainActor.run {
+                autoreleasepool { image.jpegData(compressionQuality: 0.75) }
+            }
+            if let data = jpegData {
+                try data.write(to: pageURL)
             }
         }
         
@@ -163,8 +212,6 @@ actor ConversionEngine {
         // Use existing ZipUtilities helper
         try await ZipUtilities.zipDirectory(tempDir, to: cbzURL)
         
-        try? fileManager.removeItem(at: tempDir) // Cleanup
-        
         progressSubject.send(.completed(file: url, result: cbzURL))
         return cbzURL
     }
@@ -172,5 +219,24 @@ actor ConversionEngine {
     // MARK: - Private Helpers
     private func reportProgress(url: URL, progress: Double) {
         progressSubject.send(.progress(file: url, current: Int(progress * 100), total: 100, message: "Converting..."))
+    }
+}
+
+// MARK: - Thread-safe Background Task Token Container
+private final class BackgroundTaskBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _token: UIBackgroundTaskIdentifier = .invalid
+    
+    var token: UIBackgroundTaskIdentifier {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return _token
+        }
+        set {
+            lock.lock()
+            defer { lock.unlock() }
+            _token = newValue
+        }
     }
 }

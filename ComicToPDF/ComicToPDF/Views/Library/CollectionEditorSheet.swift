@@ -16,7 +16,7 @@ private struct CollectionGlassCard<Content: View>: View {
                     .foregroundColor(Theme.blue)
                 Text(title)
                     .font(.headline)
-                    .foregroundColor(.white)
+                    .foregroundColor(.primary)
             }
             .padding(.bottom, 4)
             
@@ -28,7 +28,7 @@ private struct CollectionGlassCard<Content: View>: View {
                 .fill(.ultraThinMaterial)
                 .overlay(
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                        .stroke(Color.primary.opacity(0.1), lineWidth: 1)
                 )
         )
     }
@@ -36,6 +36,7 @@ private struct CollectionGlassCard<Content: View>: View {
 
 struct CollectionEditorSheet: View {
     @Environment(\.dismiss) var dismiss
+    @EnvironmentObject var conversionManager: ConversionManager
     
     let isEditing: Bool
     let existingCollection: PDFCollection?
@@ -86,7 +87,7 @@ struct CollectionEditorSheet: View {
                         Text(name.isEmpty ? "New Collection" : name)
                             .font(.title2)
                             .fontWeight(.bold)
-                            .foregroundColor(.white)
+                            .foregroundColor(.primary)
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.bottom, 10)
@@ -97,14 +98,52 @@ struct CollectionEditorSheet: View {
                             .font(.headline)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 14)
-                            .background(Color.black.opacity(0.3))
+                            .background(Color.inkSurface)
                             .cornerRadius(10)
                             .overlay(
                                 RoundedRectangle(cornerRadius: 10)
-                                    .stroke(Color.white.opacity(0.05), lineWidth: 1)
-                            )
-                            .foregroundColor(.white)
+                                    .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+                             )
+                            .foregroundColor(.primary)
                             .tint(colorFromName(selectedColor))
+                    }
+                    
+                    // MARK: - Choose Existing Collection
+                    if !conversionManager.collections.isEmpty {
+                        CollectionGlassCard(title: "Choose Existing Collection", icon: "folder.badge.plus") {
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 12) {
+                                    ForEach(conversionManager.collections) { col in
+                                        Button {
+                                            withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                                                name = col.name
+                                                selectedIcon = col.icon
+                                                selectedColor = col.color
+                                            }
+                                        } label: {
+                                            HStack(spacing: 8) {
+                                                Image(systemName: col.icon)
+                                                    .foregroundColor(colorFromName(col.color))
+                                                Text(col.name)
+                                                    .font(.subheadline)
+                                                    .foregroundColor(.primary)
+                                            }
+                                            .padding(.horizontal, 12)
+                                            .padding(.vertical, 8)
+                                            .background(Color.inkSurface)
+                                            .cornerRadius(8)
+                                            .overlay(
+                                                RoundedRectangle(cornerRadius: 8)
+                                                    .stroke(name.lowercased() == col.name.lowercased() ? colorFromName(col.color) : Color.primary.opacity(0.08), lineWidth: 1)
+                                            )
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                                .padding(.vertical, 4)
+                                .padding(.horizontal, 2)
+                            }
+                        }
                     }
                     
                     // MARK: - Color Selection
@@ -149,7 +188,7 @@ struct CollectionEditorSheet: View {
                                     
                                     Image(systemName: icon)
                                         .font(.title)
-                                        .foregroundColor(selectedIcon == icon ? colorFromName(selectedColor) : .white.opacity(0.7))
+                                        .foregroundColor(selectedIcon == icon ? colorFromName(selectedColor) : .secondary)
                                         .frame(width: 56, height: 56)
                                 }
                                 .scaleEffect(selectedIcon == icon ? 1.05 : 1.0)
@@ -166,7 +205,7 @@ struct CollectionEditorSheet: View {
                 .padding(.horizontal, 20)
                 .padding(.vertical, 24)
             }
-            .background(Color.black.ignoresSafeArea())
+            .background(Color(UIColor.systemBackground).ignoresSafeArea())
             .navigationTitle(isEditing ? "Edit Collection" : "New Collection")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

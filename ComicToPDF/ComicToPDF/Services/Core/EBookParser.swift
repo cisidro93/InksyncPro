@@ -52,7 +52,7 @@ actor EBookParser {
             }
             
             let opfDir = (opfPath as NSString).deletingLastPathComponent
-            let metadata = try parseOPF(data: opfData, opfDir: opfDir)
+            let metadata = try self.parseOPF(data: opfData, opfDir: opfDir, archive: archive)
             
             Logger.shared.log("EBookParser: parsed \"\(metadata.title)\" — \(metadata.spineItems.count) spine items", category: "EBook")
             return metadata
@@ -72,7 +72,18 @@ actor EBookParser {
         let tempFileURL = tempDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension((href as NSString).pathExtension)
         
         do {
-            guard let entry = archive[href] else {
+            var targetEntry: Entry? = archive[href]
+            if targetEntry == nil {
+                let lowerHref = href.lowercased()
+                for e in archive {
+                    if e.path.lowercased().hasSuffix(lowerHref) {
+                        targetEntry = e
+                        break
+                    }
+                }
+            }
+            
+            guard let entry = targetEntry else {
                 Logger.shared.log("EBookParser: Cover entry not found at \(href) in \(url.lastPathComponent)", category: "EBook", type: .error)
                 return nil
             }
@@ -88,15 +99,24 @@ actor EBookParser {
     // MARK: - Private Helpers
     
     private func readOPFPath(from archive: Archive) throws -> String? {
-        guard let entry = archive["META-INF/container.xml"],
+        guard let entry = findEntry(named: "META-INF/container.xml", in: archive),
               let data = try? readEntry(entry: entry, in: archive) else { return nil }
         return parseContainerXML(data: data)
     }
     
     private func readEntry(at path: String, in archive: Archive) throws -> Data? {
         let trimmed = path.hasPrefix("/") ? String(path.dropFirst()) : path
-        guard let entry = archive[trimmed] else { return nil }
+        guard let entry = findEntry(named: trimmed, in: archive) else { return nil }
         return try readEntry(entry: entry, in: archive)
+    }
+    
+    private func findEntry(named path: String, in archive: Archive) -> Entry? {
+        if let exact = archive[path] { return exact }
+        let target = path.lowercased()
+        for entry in archive {
+            if entry.path.lowercased().hasSuffix(target) { return entry }
+        }
+        return nil
     }
     
     private func readEntry(entry: Entry, in archive: Archive) throws -> Data? {
@@ -110,19 +130,19 @@ actor EBookParser {
         return parser.firstAttributeValue(tag: "rootfile", attribute: "full-path")
     }
     
-    private func parseOPF(data: Data, opfDir: String) throws -> EBookMetadata {
+    private func parseOPF(data: Data, opfDir: String, archive: Archive) throws -> EBookMetadata {
         var metadata = EBookMetadata()
         let parser = MiniXMLParser(data: data)
         
         // Metadata fields
-        metadata.title       = parser.firstTextContent(tag: "dc:title") ?? ""
-        metadata.author      = parser.firstTextContent(tag: "dc:creator") ?? ""
-        metadata.publisher   = parser.firstTextContent(tag: "dc:publisher") ?? ""
-        metadata.language    = parser.firstTextContent(tag: "dc:language") ?? ""
-        metadata.description = parser.firstTextContent(tag: "dc:description") ?? ""
+        metadata.title       = parser.firstTextContent(tag: "title") ?? ""
+        metadata.author      = parser.firstTextContent(tag: "creator") ?? ""
+        metadata.publisher   = parser.firstTextContent(tag: "publisher") ?? ""
+        metadata.language    = parser.firstTextContent(tag: "language") ?? ""
+        metadata.description = parser.firstTextContent(tag: "description") ?? ""
         
-        // ISBN from dc:identifier
-        metadata.isbn = parser.allTextContents(tag: "dc:identifier")
+        // ISBN from dc:identifier or identifier
+        metadata.isbn = parser.allTextContents(tag: "identifier")
             .first { $0.hasPrefix("urn:isbn:") || $0.hasPrefix("ISBN") } ?? ""
         
         // Cover: look for <meta name="cover" content="itemId">
@@ -132,17 +152,107 @@ actor EBookParser {
             metadata.coverItem = parser.manifestHref(forId: coverItemId, opfDir: opfDir) ?? ""
         }
         
+        // 1. Locate and parse the Table of Contents (TOC) Map
+        var tocMap: [String: String] = [:]
+        var tocHref = parser.firstAttributeValue(tag: "item", attribute: "href", where: "properties", equals: "nav") // EPUB 3
+        if tocHref == nil {
+            if let ncxId = parser.firstAttributeValue(tag: "spine", attribute: "toc") { // EPUB 2
+                tocHref = parser.manifestHref(forId: ncxId, opfDir: "")
+            }
+        }
+        
+        if let href = tocHref {
+            let fullTocPath = opfDir.isEmpty ? href : "\(opfDir)/\(href)"
+            if let entry = findEntry(named: fullTocPath, in: archive),
+               let tocData = try? readEntry(entry: entry, in: archive) {
+                let tocParser = TOCParser(data: tocData)
+                tocParser.parse()
+                tocMap = tocParser.tocMap
+            }
+        }
+        
         // Spine items from <spine> → <itemref idref="...">
         let spineIds = parser.spineItemRefs()
         metadata.spineItems = spineIds.compactMap { idref in
-            guard let href = parser.manifestHref(forId: idref, opfDir: opfDir) else { return nil }
-            let label = URL(string: href)?.deletingPathExtension().lastPathComponent
+            guard let fullHref = parser.manifestHref(forId: idref, opfDir: opfDir) else { return nil }
+            
+            // Match the TOC href strictly locally as found in the OPF
+            let localHref = parser.manifestHref(forId: idref, opfDir: "") ?? ""
+            let baseHref = localHref.components(separatedBy: "#").first ?? localHref
+            
+            let label = tocMap[baseHref] ?? URL(string: fullHref)?.deletingPathExtension().lastPathComponent
                              .replacingOccurrences(of: "_", with: " ")
                              .capitalized ?? idref
-            return EBookMetadata.SpineItem(id: idref, href: href, label: label)
+                             
+            return EBookMetadata.SpineItem(id: idref, href: fullHref, label: label)
         }
         
         return metadata
+    }
+}
+
+// MARK: - TOCParser
+/// Extracts chapter titles by mapping `href` -> `title` from either an NCX or NAV document.
+private class TOCParser: NSObject, XMLParserDelegate {
+    private let data: Data
+    var tocMap: [String: String] = [:]
+    
+    private var currentText = ""
+    private var currentHref: String?
+    
+    private var inNavLabel = false
+    private var inNav = false
+    
+    init(data: Data) { self.data = data }
+    
+    func parse() {
+        let parser = XMLParser(data: data)
+        parser.delegate = self
+        parser.parse()
+    }
+    
+    func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?, qualifiedName qName: String?, attributes: [String: String]) {
+        let nodeName = elementName.contains(":") ? String(elementName.split(separator: ":").last ?? "") : elementName
+        let lower = nodeName.lowercased()
+        
+        currentText = ""
+        
+        if lower == "navmap" || lower == "nav" {
+            inNav = true
+        } else if lower == "navlabel" {
+            inNavLabel = true
+        } else if lower == "content", let src = attributes["src"] {
+            currentHref = src // EPUB 2 NCX
+        } else if lower == "a", let href = attributes["href"] {
+            currentHref = href // EPUB 3 NAV
+        }
+    }
+    
+    func parser(_ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?, qualifiedName qName: String?) {
+        let nodeName = elementName.contains(":") ? String(elementName.split(separator: ":").last ?? "") : elementName
+        let lower = nodeName.lowercased()
+        let trimmed = currentText.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        if lower == "navlabel" {
+            inNavLabel = false
+        } else if lower == "text" && inNavLabel {
+            if let href = currentHref, !trimmed.isEmpty {
+                let baseHref = href.components(separatedBy: "#").first ?? href
+                // Only write the first instance to avoid sub-chapter overwrites
+                if tocMap[baseHref] == nil { tocMap[baseHref] = trimmed }
+            }
+        } else if lower == "a" && inNav {
+            if let href = currentHref, !trimmed.isEmpty {
+                let baseHref = href.components(separatedBy: "#").first ?? href
+                if tocMap[baseHref] == nil { tocMap[baseHref] = trimmed }
+            }
+        } else if lower == "navmap" || lower == "nav" {
+            inNav = false
+        }
+    }
+    
+    func parser(_ parser: XMLParser, foundCharacters string: String) {
+        currentText += string
     }
 }
 
@@ -165,18 +275,21 @@ private class MiniXMLParser: NSObject, XMLParserDelegate {
     init(data: Data) { self.data = data }
     
     // MARK: - Query API
-    func firstTextContent(tag: String) -> String? { textByTag[tag]?.first(where: { !$0.isEmpty }) }
-    func allTextContents(tag: String) -> [String] { textByTag[tag] ?? [] }
+    func firstTextContent(tag: String) -> String? { _ = parse(); return textByTag[tag]?.first(where: { !$0.isEmpty }) }
+    func allTextContents(tag: String) -> [String] { _ = parse(); return textByTag[tag] ?? [] }
     
     func firstAttributeValue(tag: String, attribute: String) -> String? {
-        attributesByTag[tag]?.first.flatMap { $0[attribute] }
+        _ = parse()
+        return attributesByTag[tag]?.first.flatMap { $0[attribute] }
     }
     
     func firstAttributeValue(tag: String, attribute: String, where whereAttr: String, equals value: String) -> String? {
-        attributesByTag[tag]?.first(where: { $0[whereAttr] == value }).flatMap { $0[attribute] }
+        _ = parse()
+        return attributesByTag[tag]?.first(where: { $0[whereAttr] == value }).flatMap { $0[attribute] }
     }
     
     func manifestHref(forId id: String, opfDir: String) -> String? {
+        _ = parse()
         guard let item = manifestItems.first(where: { $0.id == id }) else { return nil }
         let joined = opfDir.isEmpty ? item.href : "\(opfDir)/\(item.href)"
         return joined
@@ -197,11 +310,12 @@ private class MiniXMLParser: NSObject, XMLParserDelegate {
     
     // MARK: - XMLParserDelegate
     func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?, qualifiedName qName: String?, attributes: [String: String]) {
-        tagStack.append(elementName)
+        let nodeName = elementName.contains(":") ? String(elementName.split(separator: ":").last ?? "") : elementName
+        tagStack.append(nodeName)
         currentText = ""
         
         // Accumulate all attribute dictionaries per tag name (lowercased)
-        let lower = elementName.lowercased()
+        let lower = nodeName.lowercased()
         attributesByTag[lower, default: []].append(attributes)
         
         // Capture manifest items
@@ -223,7 +337,8 @@ private class MiniXMLParser: NSObject, XMLParserDelegate {
     }
     
     func parser(_ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?, qualifiedName qName: String?) {
-        let lower = elementName.lowercased()
+        let nodeName = elementName.contains(":") ? String(elementName.split(separator: ":").last ?? "") : elementName
+        let lower = nodeName.lowercased()
         let trimmed = currentText.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty {
             textByTag[lower, default: []].append(trimmed)

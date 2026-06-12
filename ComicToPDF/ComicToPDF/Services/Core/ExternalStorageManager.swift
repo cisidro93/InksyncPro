@@ -8,6 +8,7 @@
 import UIKit
 import UniformTypeIdentifiers
 
+@MainActor
 class ExternalStorageManager: NSObject {
     
     static let shared = ExternalStorageManager()
@@ -131,7 +132,7 @@ class ExternalStorageManager: NSObject {
         }
         
         // Copy to app's documents directory
-        let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
         let destinationURL = documentsURL.appendingPathComponent(externalURL.lastPathComponent)
         
         // Remove existing file if present
@@ -171,19 +172,7 @@ extension ExternalStorageManager: UIDocumentPickerDelegate {
     func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
         Logger.shared.log("ExternalStorageManager: didPickDocumentsAt triggered with \(urls.count) URLs.", category: "System")
         
-        if let completion = importFolderCompletion {
-            // Folder import
-            guard let url = urls.first else {
-                Logger.shared.log("ExternalStorageManager: Warning - didPickDocumentsAt received empty URL array for Folder Import.", category: "System")
-                completion(nil)
-                importFolderCompletion = nil
-                return
-            }
-            Logger.shared.log("ExternalStorageManager: Successfully captured folder URL: \(url.lastPathComponent)", category: "System")
-            completion(url)
-            importFolderCompletion = nil
-            
-        } else if let completion = importCompletion {
+        if let completion = importCompletion {
             // Single file import
             guard let url = urls.first else {
                 completion(nil)

@@ -3,6 +3,7 @@ import SwiftUI
 struct BatchMergeReorderView: View {
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var conversionManager: ConversionManager
+    @EnvironmentObject var settingsManager: AppSettingsManager
     
 
     // Binding to parent state
@@ -18,7 +19,7 @@ struct BatchMergeReorderView: View {
     ]
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             VStack(spacing: 0) {
                 if isProcessing {
                     ImmersiveConversionOverlay(
@@ -28,15 +29,42 @@ struct BatchMergeReorderView: View {
                 } else {
                     // Header Form
                     Form {
-                        Section(header: Text("Output Name")) {
+                        Section {
                             TextField("Collection Name", text: $mergedName)
+                        } header: {
+                            Text("Output Name")
                         }
                         
-                        Section(header: Text("Settings")) {
+                        Section {
                             Toggle("Manga Mode (Right-to-Left)", isOn: $mangaMode)
+                            
+                            Picker("Target Device", selection: $settingsManager.conversionSettings.targetDeviceProfile) {
+                                ForEach(TargetDeviceProfile.allCases) { device in
+                                    Text(device.rawValue).tag(device)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            
+                            Toggle("E-Ink High Contrast Filter", isOn: $settingsManager.conversionSettings.optimizeForDevice)
+                            
+                            Toggle("Link Cover Page as Spread", isOn: $settingsManager.conversionSettings.linkCoverAsSpread)
+                            
+                            Picker("Image Quality", selection: $settingsManager.conversionSettings.compressionQuality) {
+                                ForEach(CompressionPreset.allCases, id: \.self) { preset in
+                                    Text(preset.rawValue).tag(preset)
+                                }
+                            }
+                            
+                            Picker("Smart File Splitting", selection: $settingsManager.conversionSettings.splitMode) {
+                                ForEach(FileSizeSplitMode.allCases) { mode in
+                                    Text(mode.rawValue).tag(mode)
+                                }
+                            }
+                        } header: {
+                            Text("Settings")
                         }
                     }
-                    .frame(height: 200) // Constrain form height
+                    .frame(height: 300) // Constrain form height
                     
                     Divider()
                     
@@ -109,9 +137,12 @@ struct BatchMergeReorderView: View {
         
         Task {
             // Call the manager to do the work
-            await conversionManager.convertAndMerge(sourceFiles: selectedFiles, outputName: mergedName, mangaMode: mangaMode)
+            let merged = await conversionManager.convertAndMerge(sourceFiles: selectedFiles, outputName: mergedName, mangaMode: mangaMode)
             
             await MainActor.run {
+                if let newBook = merged.first {
+                     NotificationCenter.default.post(name: Notification.Name("OpenMergedBook"), object: newBook)
+                }
                 isProcessing = false
                 dismiss()
             }

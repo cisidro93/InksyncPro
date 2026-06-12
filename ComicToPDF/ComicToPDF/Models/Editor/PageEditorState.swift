@@ -11,6 +11,9 @@ class PageEditorState: ObservableObject {
     @Published var canRedo: Bool = false
     @Published var isProcessing: Bool = false
     @Published var debugLog: [String] = [] // ✅ User Request: Error Log
+    /// Raw scan output retained for the developer overlay (confidence scores, method badges).
+    /// Parallel-indexed with pageModel.proposedPanels.
+    @Published var proposedCandidates: [PanelCandidate] = []
     
     private var undoManager: UndoManager
     

@@ -14,7 +14,7 @@ struct CustomGlassCard<Content: View>: View {
                     .foregroundColor(Theme.blue)
                 Text(title)
                     .font(.headline)
-                    .foregroundColor(.white)
+                    .foregroundColor(.primary)
             }
             .padding(.bottom, 4)
             
@@ -51,13 +51,13 @@ struct GlassTextField: View {
                 .keyboardType(keyboardType)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
-                .background(Color.black.opacity(0.3))
+                .background(Color.inkSurface)
                 .cornerRadius(10)
                 .overlay(
                     RoundedRectangle(cornerRadius: 10)
-                        .stroke(Color.white.opacity(0.05), lineWidth: 1)
+                        .stroke(Color.primary.opacity(0.08), lineWidth: 1)
                 )
-                .foregroundColor(.white)
+                .foregroundColor(.primary)
         }
     }
 }
@@ -90,12 +90,11 @@ struct AdvancedMetadataEditorView: View {
                     coreMetadataSection
                     organizationSection
                     tagsSection
-                    contentEditorHook
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 24)
             }
-            .background(Color.black.ignoresSafeArea())
+            .background(Color(UIColor.systemBackground).ignoresSafeArea())
             .navigationTitle("Edit Metadata")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -137,7 +136,7 @@ struct AdvancedMetadataEditorView: View {
                                 .scaledToFill()
                         } else {
                             Rectangle()
-                                .fill(Color.black.opacity(0.3))
+                                .fill(Color.inkSurface)
                                 .overlay(Image(systemName: "photo").font(.largeTitle).foregroundColor(Theme.textSecondary))
                         }
                     }
@@ -147,7 +146,7 @@ struct AdvancedMetadataEditorView: View {
                     .shadow(color: .black.opacity(0.4), radius: 10, y: 5)
                     .overlay(
                         RoundedRectangle(cornerRadius: 12)
-                            .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                            .stroke(Color.primary.opacity(0.1), lineWidth: 1)
                     )
                     
                     PhotosPicker(selection: $selectedPhotoItem, matching: .images, photoLibrary: .shared()) {
@@ -193,39 +192,9 @@ struct AdvancedMetadataEditorView: View {
         CustomGlassCard(title: "Tags", icon: "tag.fill") {
             TagEditorView(tags: $tags)
                 .padding()
-                .background(Color.black.opacity(0.3))
+                .background(Color.inkSurface)
                 .cornerRadius(10)
-                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.05), lineWidth: 1))
-        }
-    }
-    
-    @ViewBuilder
-    private var contentEditorHook: some View {
-        if pdf.url.pathExtension.lowercased() == "pdf" || pdf.contentType == .book {
-            CustomGlassCard(title: "Advanced Editing", icon: "scissors") {
-                NavigationLink(destination: getEditorView(for: pdf)) {
-                    HStack {
-                        Image(systemName: "slider.horizontal.3")
-                        Text("Edit Content (Modify Source Data)")
-                        Spacer()
-                        Image(systemName: "chevron.right").font(.caption)
-                    }
-                    .font(.headline)
-                    .foregroundColor(.white)
-                    .padding()
-                    .background(Theme.blue.opacity(0.8))
-                    .cornerRadius(10)
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func getEditorView(for pdf: ConvertedPDF) -> some View {
-        if pdf.contentType == .book {
-            EPUBContentEditorView(pdf: pdf, manager: conversionManager)
-        } else {
-            PDFContentEditorView(pdf: pdf, manager: conversionManager)
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.primary.opacity(0.08), lineWidth: 1))
         }
     }
     

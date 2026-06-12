@@ -4,6 +4,7 @@ import BackgroundTasks
 import UIKit
 
 /// Manages intelligent background synchronization for the "Inbox" folder in iCloud Drive.
+@MainActor
 class CloudSyncManager: ObservableObject {
     static let shared = CloudSyncManager()
     
@@ -73,15 +74,37 @@ class CloudSyncManager: ObservableObject {
         
         let finalSettings = autoSettings
         
-        // 3. Queue the files
+        // 3. Setup Archive Folder to prevent double-queuing
+        let archiveFolder = inbox.deletingLastPathComponent().appendingPathComponent("Archive", isDirectory: true)
+        if !FileManager.default.fileExists(atPath: archiveFolder.path) {
+            try? FileManager.default.createDirectory(at: archiveFolder, withIntermediateDirectories: true)
+        }
+        
         Logger.shared.log("CloudSync: \(filesToProcess.count) file(s) found in inbox — queuing", category: "Cloud")
         for file in filesToProcess {
-            // Check if we've already converted this exact URL (or move it to an "Archive" folder)
-            // For safety, let's just queue it. 
-            // In a pro app, we would move it to "processed" after.
+            let destinationURL = archiveFolder.appendingPathComponent(file.lastPathComponent)
             
-            await MainActor.run {
-                ConversionQueueManager.shared.enqueue(url: file, settings: finalSettings, mode: .go)
+            // 🚨 COMPETITOR FIX: Enforce NSFileCoordinator writing locks on iCloud ubiquitous artifacts to block sync tearing
+            let writeCoordinator = NSFileCoordinator()
+            var coordinateError: NSError?
+            
+            writeCoordinator.coordinate(writingItemAt: file, options: .forMoving, writingItemAt: destinationURL, options: .forReplacing, error: &coordinateError) { safeSource, safeDest in
+                do {
+                    if FileManager.default.fileExists(atPath: safeDest.path) {
+                        try FileManager.default.removeItem(at: safeDest)
+                    }
+                    try FileManager.default.moveItem(at: safeSource, to: safeDest)
+                    
+                    Task { @MainActor in
+                        ConversionQueueManager.shared.enqueue(url: safeDest, settings: finalSettings, mode: .go)
+                    }
+                } catch {
+                    Logger.shared.log("CloudSync: failed to archive \(safeSource.lastPathComponent) — \(error.localizedDescription)", category: "Cloud", type: .error)
+                }
+            }
+            
+            if let error = coordinateError {
+                Logger.shared.log("CloudSync: FileCoordinator refused lock for \(file.lastPathComponent) — \(error.localizedDescription)", category: "Cloud", type: .warning)
             }
         }
         

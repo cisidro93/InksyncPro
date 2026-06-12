@@ -2,6 +2,7 @@ import SwiftUI
 
 struct BatchSelectionDetailView: View {
     @EnvironmentObject var conversionManager: ConversionManager
+    @EnvironmentObject var settingsManager: AppSettingsManager
     var selectionCount: Int
     var onBatchEdit: () -> Void
     var onFetchMetadata: () -> Void
@@ -25,7 +26,7 @@ struct BatchSelectionDetailView: View {
             
             VStack(spacing: 16) {
                 // ✅ NEW: Expose Smart Cropping directly in the Batch UI
-                Toggle(isOn: $conversionManager.conversionSettings.trimMargins) {
+                Toggle(isOn: $settingsManager.conversionSettings.trimMargins) {
                     Label("Smart Border Trimming", systemImage: "crop")
                         .font(.headline)
                         .foregroundColor(.primary)
@@ -86,7 +87,7 @@ struct BatchSelectionDetailView: View {
                 Button {
                     onMerge()
                 } label: {
-                    Label("Convert & Merge", systemImage: "doc.on.doc.fill")
+                    Label("Convert & Merge", systemImage: "arrow.triangle.2.circlepath.doc")
                         .font(.headline)
                         .frame(maxWidth: 300)
                         .padding()

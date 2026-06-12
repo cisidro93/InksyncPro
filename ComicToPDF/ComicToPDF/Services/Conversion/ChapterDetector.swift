@@ -1,16 +1,16 @@
 import Foundation
 import UIKit
-import Vision
+@preconcurrency import Vision
 
 /// Detects chapter boundaries by scanning the top of each page using Apple Vision directly.
 /// No OCR dependency — uses VNRecognizeTextRequest inline for zero-overhead detection.
-class ChapterDetector {
+final class ChapterDetector: Sendable {
     
     static let shared = ChapterDetector()
     
     /// Detects chapters by scanning the top 30% of each page for heading patterns.
     /// Runs on a background task — never call from the main thread.
-    func detectChapters(in pdf: ConvertedPDF, languages: [String] = ["en-US"], onProgress: ((Double) -> Void)? = nil) async throws -> [Chapter] {
+    func detectChapters(in pdf: ConvertedPDF, languages: [String] = ["en-US"], onProgress: (@Sendable (Double) -> Void)? = nil) async throws -> [Chapter] {
         guard pdf.contentType == .book || pdf.contentType == .hybrid else { return [] }
         
         let result = try await ZipUtilities.extractComic(from: pdf.url)
@@ -45,20 +45,16 @@ class ChapterDetector {
             guard let croppedCG = cgImage.cropping(to: cropRect) else { continue }
             
             // Run Vision text recognition inline — no external dependency
-            let text = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<String, Error>) in
-                let request = VNRecognizeTextRequest { request, error in
-                    if let error = error { continuation.resume(throwing: error); return }
-                    let observations = request.results as? [VNRecognizedTextObservation] ?? []
-                    let joined = observations.compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n")
-                    continuation.resume(returning: joined)
-                }
-                request.recognitionLevel = .fast
-                request.usesLanguageCorrection = false
-                request.recognitionLanguages = languages
-                
-                let handler = VNImageRequestHandler(cgImage: croppedCG, options: [:])
-                do { try handler.perform([request]) } catch { continuation.resume(throwing: error) }
-            }
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = .fast
+            request.usesLanguageCorrection = false
+            request.recognitionLanguages = languages
+            
+            let handler = VNImageRequestHandler(cgImage: croppedCG, options: [:])
+            try handler.perform([request])
+            
+            let observations = request.results ?? []
+            let text = observations.compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n")
             
             let lines = text.components(separatedBy: .newlines)
             outerLoop: for line in lines.prefix(3) {

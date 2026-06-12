@@ -23,6 +23,9 @@ struct ComicInfoParser {
     /// Attempt to read and parse ComicInfo.xml from a CBZ archive.
     /// Returns `nil` if the archive has no ComicInfo.xml or if parsing fails.
     static func parse(from archiveURL: URL) -> ComicInfo? {
+        let ext = archiveURL.pathExtension.lowercased()
+        guard ["cbz", "zip"].contains(ext) else { return nil }
+
         guard let archive = try? Archive(url: archiveURL, accessMode: .read, pathEncoding: .utf8) else {
             Logger.shared.log("ComicInfoParser: Could not open archive \(archiveURL.lastPathComponent)", category: "Import", type: .error)
             return nil
@@ -99,8 +102,11 @@ private class ComicInfoXMLParser: NSObject, XMLParserDelegate {
         case "Year":         result.year = Int(value)
         case "Summary":      result.summary = value
         case "LanguageISO":  result.languageISO = value
-        case "Tags":         result.tags = value.components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
-        case "Manga":        result.manga = value.lowercased() == "yes" || value.lowercased() == "true"
+        case "Tags":         
+            result.tags = value.components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        case "Manga":        
+            let v = value.lowercased()
+            result.manga = v == "yes" || v == "true" || v.contains("righttoleft") || v == "1"
         default: break
         }
         currentText = ""
