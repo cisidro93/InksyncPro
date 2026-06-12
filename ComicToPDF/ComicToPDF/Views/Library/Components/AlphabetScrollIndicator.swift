@@ -136,7 +136,7 @@ enum LibraryPillKey: String, CaseIterable, Identifiable {
         case .smartList:     return "list.star"
         case .aiRename:      return "sparkles.tv"
         case .merge:         return "arrow.triangle.merge"
-        case .convertMerge:  return "doc.on.doc.fill"
+        case .convertMerge:  return "arrow.triangle.2.circlepath.doc"
         case .autoMatch:     return "wand.and.stars.inverse"
         case .reviewMissing: return "exclamationmark.triangle.fill"
         case .stats:         return "flame.fill"

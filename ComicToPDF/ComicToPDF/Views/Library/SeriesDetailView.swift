@@ -871,7 +871,7 @@ struct SeriesDetailView: View {
                         }) {
                             HStack {
                                 Text("Convert & Merge")
-                                Image(systemName: "doc.on.doc.fill")
+                                Image(systemName: "arrow.triangle.2.circlepath.doc")
                             }
                             .font(.subheadline.bold())
                             .foregroundColor(.white)

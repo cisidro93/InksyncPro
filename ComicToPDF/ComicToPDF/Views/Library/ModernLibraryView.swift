@@ -424,7 +424,7 @@ struct ModernLibraryView: View {
                                     conversionManager.appAlert = AppAlert(title: "Select Issues", message: "Select 2 or more issues from your library, then tap Convert & Merge again.")
                                 }
                             }) {
-                                Label("Convert & Merge", systemImage: "doc.on.doc.fill")
+                                Label("Convert & Merge", systemImage: "arrow.triangle.2.circlepath.doc")
                             }
                         }
                         
@@ -1475,7 +1475,7 @@ struct ModernLibraryView: View {
                     Button {
                         batchMergeItems = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
                         showingBatchMergeReorder = true
-                    } label: { Label("Convert & Merge", systemImage: "doc.on.doc.fill") }
+                    } label: { Label("Convert & Merge", systemImage: "arrow.triangle.2.circlepath.doc") }
                     
                     Button { AppRouter.shared.presentSheet(.merge) } label: { Label("Legacy PDF Merge", systemImage: "arrow.triangle.merge") }
                     Divider()
