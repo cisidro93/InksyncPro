@@ -1,12 +1,12 @@
 # InksyncPro Product Bible
 
-**Last Updated:** June 9, 2026
+**Last Updated:** June 12, 2026
 
 ---
 
 ## Product Vision
 
-InksyncPro is the premier, state-of-the-art iOS/iPadOS comic and manga reading platform. It is designed to bridge the gap between casual reading and professional, high-performance study and annotation. The application seamlessly integrates local, iCloud, and external storage (Dropbox, Google Drive) without sacrificing performance or aesthetics.
+InksyncPro is the premier, state-of-the-art iOS/iPadOS comic and manga reading platform. It is designed to bridge the gap between casual reading and professional, high-performance study and annotation. The application seamlessly integrates local, iCloud, and external storage (Dropbox) without sacrificing performance or aesthetics.
 
 The user experience philosophy: **the app should feel like a beautifully crafted home, not a distracted utilitarian tool.** Every surface, animation, and interaction must feel like it was designed for the modern age.
 
@@ -152,7 +152,7 @@ All import operations follow a strict sequence:
 
 - **Universal Conversion Engine:** Non-blocking background threads for all heavy extractions. `ConversionOrchestrator` manages job lifecycle.
 
-- **Linked External Drives:** Users can link Dropbox, Google Drive, or physical external SSDs. The `DriveMonitor` constantly syncs file changes.
+- **Linked External Drives:** Users can link Dropbox folders or physical external SSDs/folders via iOS security-scoped bookmarks. The DriveMonitor monitors connection and mounting changes.
 
 - **Streaming Architecture:** Remote files require a `resolveLocalURL` gate to safely cache and process without mutating the cloud source.
 
@@ -227,27 +227,65 @@ Before any EPUB output is delivered to the user, it must satisfy:
 
 ---
 
-## Inactive / Archived / Planned V2 Features
+## Inactive / Archived / Planned V2 Features (Old Functions Not in the App)
 
-The following features and their corresponding code/view files are currently moved to the `V2_Archive` directory and are not compiled or active in the current MVP build to maintain a clean footprint and avoid scope creep:
+The following features and their corresponding code/view files are currently moved to the `V2_Archive` directory (or are otherwise inactive/incomplete) and are not compiled or active in the current MVP build to maintain a clean footprint and avoid scope creep:
 
-### 1. Library Gamification & Engagement
+### 1. Incomplete Cloud Integrations
+* **Google Drive Provider:** [GoogleDriveProvider.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToZip/ComicToPDF/Services/Network/GoogleDriveProvider.swift) — Contains a prototype for OAuth 2.0 authorization which is not fully completed or compiled in the main application target.
 
-- **Badges & Streaks:** Visual indicators for series completion and consecutive daily reading streaks. Code files `GamificationManager.swift` and `GamificationDashboardView.swift` are located in `V2_Archive/`.
+### 2. Library Gamification & Engagement
+* **Badges & Streaks:** Visual indicators for series completion, trophies, and consecutive daily reading streaks.
+  * [GamificationManager.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/GamificationManager.swift)
+  * [GamificationDashboardView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/GamificationDashboardView.swift)
 
-### 2. Creative Work Area & Precision Editor
+### 3. Universe Metadata Graph
+* **Universe Graph:** A visual relationships interface exploring series, characters, and thematic links in the library.
+  * [UniverseGraphView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/UniverseGraphView.swift)
 
-- **Workspace Focus List:** A workspace view that displays only explicitly sent files for research/annotation, preventing library-wide editing clutter.
-- **Multi-Page Preview:** Dynamic previews in the Work Area leveraging `PageModelStore` to simulate panel flows.
-- **Precision Canvas:** High-fidelity cropping, splitting, PencilKit drawing, and page margin trimming tools. Code files `PrecisionCanvasView.swift`, `PencilKitDrawView.swift`, `AdvancedWorkspaceView.swift`, and other editor sheets/views are located in `V2_Archive/Editor/`.
+### 4. Precision Page Editor & Studio Canvas
+* **Creative Work Area / Focus List:** Workspace showing sent files specifically queued for annotation/research, avoiding main library clutter.
+* **Precision Canvas & Trimming:** High-fidelity cropping, splitting, margin adjustments, and page trimming.
+* **PencilKit Overlays:** Integrated Apple Pencil drawing/writing zones.
+* **Page Rearrangement & Panel Manipulation:** Tools to rotate, delete, insert, or reorder pages and inspect underlying panel coordinates.
+  * [PrecisionCanvasView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/PrecisionCanvasView.swift)
+  * [PencilKitDrawView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/PencilKitDrawView.swift)
+  * [AdvancedWorkspaceView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/AdvancedWorkspaceView.swift)
+  * [BookContentEditorView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/BookContentEditorView.swift)
+  * [EPUBContentEditorView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/EPUBContentEditorView.swift)
+  * [PDFContentEditorView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/PDFContentEditorView.swift)
+  * [TrimPagesView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/TrimPagesView.swift)
+  * [PageManagerView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/PageManagerView.swift)
+  * [PageManagerGridItem.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/PageManagerGridItem.swift)
+  * [PanelInspectorView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/PanelInspectorView.swift)
+  * [GuidedViewPreview.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/GuidedViewPreview.swift)
 
-### 3. Study Notes & Zettelkasten Graph
+### 5. Manuscript Outlining & Writing
+* **Manuscript Projects:** Kanban outlining cards, outlining board dashboards, draft manuscript compilation interfaces, and outlining corkboards.
+* **Daily Spaced-Repetition Reviews:** User reviews of notes and highlights.
+* **Device Rendering Simulator:** Simulating page rendering across Kindle and e-reader PPI targets inside the editor view.
+  * [EditorDashboardView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/EditorDashboardView.swift)
+  * [ManuscriptEditorWorkspace.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/ManuscriptEditorWorkspace.swift)
+  * [ManuscriptProjectsListView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/ManuscriptProjectsListView.swift)
+  * [WorkspaceComponents.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/WorkspaceComponents.swift)
+  * [CorkboardView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/Components/CorkboardView.swift)
+  * [DailyReviewView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/DailyReviewView.swift)
+  * [DevicePreviewEngine.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/DevicePreviewEngine.swift)
+  * [WorkAreaToolbar.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/WorkAreaToolbar.swift)
+  * [ExtractionViews.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/ExtractionViews.swift)
 
-- **Zettelkasten Hub:** A frosted-glass knowledge graph displaying annotation nodes, book sources, and tag groups. Features Multi-Indexed "By Topic" sorting, allowing highlights to appear under multiple themes, with collapsible headers and an alphabetical search index.
-- **Zettel Board:** A high-performance column-based Kanban outliner and review board to organize highlights and compile structured manuscript outlines.
-- **Annotation Export:** Exporting highlights, notes, and clipped panels to Obsidian-compliant Markdown.
-- **Interactive Page-Linking & Previews:** Subsystem using double-bracket links (e.g. `[[Page X]]`) with floating preview popups. Code files `GlobalZettelkastenHubView.swift`, `ZettelkastenGraphView.swift`, `ZettelkastenBoardView.swift`, `StudyNotebookView.swift`, and `ZettelkastenExporter.swift` are located in `V2_Archive/` and `V2_Archive/Editor/`.
-- **Intelligent Auto-Tagging:** Background NLP (Natural Language Processing) analyzing untagged highlights and extracting entities/keywords.
+### 6. Study Notes & Zettelkasten Knowledge Graph
+* **Zettelkasten Graph:** Frosted-glass graph visualization mapping highlight nodes, tags, and topics.
+* **Zettel Kanban Board:** High-performance Kanban column outliner to organize highlights and build outline cards.
+* **Study Notebook:** Hierarchical folders and organizer for highlights, tags, and topics.
+* **Obsidian-Compliant Markdown Exporter:** Headless export routines formatting highlights and panels to Obsidian syntax.
+* **Intelligent Auto-Tagging:** Background NLP analysis mapping extracted keywords.
+  * [GlobalZettelkastenHubView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/GlobalZettelkastenHubView.swift)
+  * [ZettelkastenGraphView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/ZettelkastenGraphView.swift)
+  * [ZettelkastenBoardView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/ZettelkastenBoardView.swift)
+  * [StudyNotebookView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/StudyNotebookView.swift)
+  * [ZettelkastenExporter.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/ZettelkastenExporter.swift)
+  * [SplitStudyWorkspace.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/SplitStudyWorkspace.swift)
 
 ---
 
