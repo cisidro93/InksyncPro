@@ -98,35 +98,54 @@ actor BookmarkResolver {
             if accessing { resolvedURL.stopAccessingSecurityScopedResource() }
         }
 
-        var coordinationError: NSError?
-        var coordinatedURL: URL = resolvedURL
+        return try await Task.detached(priority: .userInitiated) {
+            var coordinationError: NSError?
+            var result: T?
+            var opError: Error?
 
-        let coordinator = NSFileCoordinator()
-        coordinator.coordinate(readingItemAt: resolvedURL, options: [], error: &coordinationError) { safeURL in
-            coordinatedURL = safeURL
-        }
-        if let coordError = coordinationError {
-            throw BookmarkError.coordinationFailed(underlying: coordError)
-        }
+            let coordinator = NSFileCoordinator()
+            coordinator.coordinate(readingItemAt: resolvedURL, options: [], error: &coordinationError) { safeURL in
+                let semaphore = DispatchSemaphore(value: 0)
+                let operationTask = Task {
+                    do {
+                        return try await operation(safeURL)
+                    } catch {
+                        opError = error
+                        throw error
+                    }
+                }
+                
+                let watchdog = Task {
+                    try? await Task.sleep(for: timeout)
+                    operationTask.cancel()
+                }
+                
+                Task {
+                    do {
+                        result = try await operationTask.value
+                    } catch {
+                        opError = error
+                    }
+                    watchdog.cancel()
+                    semaphore.signal()
+                }
+                
+                let timeoutSeconds = Double(timeout.components.seconds) + Double(timeout.components.attoseconds) / 1e18
+                _ = semaphore.wait(timeout: .now() + timeoutSeconds)
+            }
 
-        let operationTask = Task { try await operation(coordinatedURL) }
-        let watchdog = Task {
-            try await Task.sleep(for: timeout)
-            operationTask.cancel()
-        }
-
-        do {
-            let result = try await operationTask.value
-            watchdog.cancel()
-            return result
-        } catch is CancellationError {
-            watchdog.cancel()
-            Logger.shared.log("BookmarkResolver.withAccess: operation TIMED OUT after \(timeout)", category: "BookmarkResolver", type: .error)
-            throw BookmarkError.timedOut
-        } catch {
-            watchdog.cancel()
-            throw error
-        }
+            if let coordError = coordinationError {
+                throw BookmarkError.coordinationFailed(underlying: coordError)
+            }
+            if let opError = opError {
+                throw opError
+            }
+            guard let finalResult = result else {
+                Logger.shared.log("BookmarkResolver.withAccess: operation TIMED OUT after \(timeout)", category: "BookmarkResolver", type: .error)
+                throw BookmarkError.timedOut
+            }
+            return finalResult
+        }.value
     }
 
     /// Coordinated write access — use for any mutation on external drive files.
@@ -141,35 +160,54 @@ actor BookmarkResolver {
             if accessing { resolvedURL.stopAccessingSecurityScopedResource() }
         }
 
-        var coordinationError: NSError?
-        var coordinatedURL: URL = resolvedURL
+        return try await Task.detached(priority: .userInitiated) {
+            var coordinationError: NSError?
+            var result: T?
+            var opError: Error?
 
-        let coordinator = NSFileCoordinator()
-        coordinator.coordinate(writingItemAt: resolvedURL, options: .forReplacing, error: &coordinationError) { safeURL in
-            coordinatedURL = safeURL
-        }
-        if let coordError = coordinationError {
-            throw BookmarkError.coordinationFailed(underlying: coordError)
-        }
+            let coordinator = NSFileCoordinator()
+            coordinator.coordinate(writingItemAt: resolvedURL, options: .forReplacing, error: &coordinationError) { safeURL in
+                let semaphore = DispatchSemaphore(value: 0)
+                let operationTask = Task {
+                    do {
+                        return try await operation(safeURL)
+                    } catch {
+                        opError = error
+                        throw error
+                    }
+                }
+                
+                let watchdog = Task {
+                    try? await Task.sleep(for: timeout)
+                    operationTask.cancel()
+                }
+                
+                Task {
+                    do {
+                        result = try await operationTask.value
+                    } catch {
+                        opError = error
+                    }
+                    watchdog.cancel()
+                    semaphore.signal()
+                }
+                
+                let timeoutSeconds = Double(timeout.components.seconds) + Double(timeout.components.attoseconds) / 1e18
+                _ = semaphore.wait(timeout: .now() + timeoutSeconds)
+            }
 
-        let operationTask = Task { try await operation(coordinatedURL) }
-        let watchdog = Task {
-            try await Task.sleep(for: timeout)
-            operationTask.cancel()
-        }
-
-        do {
-            let result = try await operationTask.value
-            watchdog.cancel()
-            return result
-        } catch is CancellationError {
-            watchdog.cancel()
-            Logger.shared.log("BookmarkResolver.withWriteAccess: write operation TIMED OUT after \(timeout)", category: "BookmarkResolver", type: .error)
-            throw BookmarkError.timedOut
-        } catch {
-            watchdog.cancel()
-            throw error
-        }
+            if let coordError = coordinationError {
+                throw BookmarkError.coordinationFailed(underlying: coordError)
+            }
+            if let opError = opError {
+                throw opError
+            }
+            guard let finalResult = result else {
+                Logger.shared.log("BookmarkResolver.withWriteAccess: write operation TIMED OUT after \(timeout)", category: "BookmarkResolver", type: .error)
+                throw BookmarkError.timedOut
+            }
+            return finalResult
+        }.value
     }
 
     // MARK: - Reachability

@@ -191,18 +191,22 @@ final class SpotlightIndexer {
             guard url.isFileURL, FileManager.default.fileExists(atPath: url.path) else { return }
             
             // Lock and load via PDFRenderActor or directly using CGPDFDocument/PDFDocument
-            // Since PDFDocument is thread-safe for reading text strings, we can load it here.
-            guard let doc = PDFDocument(url: url) else { return }
+            var doc: PDFDocument? = nil
+            ConcurrencyLocks.pdfLock.lock()
+            doc = PDFDocument(url: url)
+            ConcurrencyLocks.pdfLock.unlock()
+            
+            guard let pdfDoc = doc else { return }
             
             var items: [CSSearchableItem] = []
             
             // Limit indexing to the first 15 pages maximum.
             // Full-book OCR and text extraction on 200+ page comic books causes the CGPDFService
             // to cache every page and hit its Jetsam memory limit, resulting in silent OOM kills.
-            let maxPages = min(doc.pageCount, 15)
+            let maxPages = min(pdfDoc.pageCount, 15)
             
             for pageIndex in 0..<maxPages {
-                guard let page = doc.page(at: pageIndex) else { continue }
+                guard let page = pdfDoc.page(at: pageIndex) else { continue }
                 var pageText = page.string ?? ""
                 
                 // Scanned PDF/Comic fallback to Vision OCR

@@ -283,6 +283,7 @@ import SQLite3
 
 final class LibraryDB: @unchecked Sendable {
     private var handle: OpaquePointer?
+    private let lock = NSLock()
     private let path: String
 
     init(path: String) throws {
@@ -402,6 +403,9 @@ final class LibraryDB: @unchecked Sendable {
 
     @discardableResult
     func execute(_ sql: String, arguments: [Any] = []) throws -> [[String: Any]] {
+        lock.lock()
+        defer { lock.unlock() }
+        
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(handle, sql, -1, &stmt, nil) == SQLITE_OK else {
             throw NSError(domain: "LibraryDB", code: Int(sqlite3_errcode(handle)),

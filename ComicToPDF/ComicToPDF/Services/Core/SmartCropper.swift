@@ -28,10 +28,11 @@ struct SmartCropper {
         guard workingImage.width > 10 && workingImage.height > 10 else { return nil }
         
         // We only care about luminance for margin detection usually (white/black borders)
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
         var format = vImage_CGImageFormat(
             bitsPerComponent: 8,
             bitsPerPixel: 32,
-            colorSpace: Unmanaged.passRetained(CGColorSpaceCreateDeviceRGB()),
+            colorSpace: Unmanaged.passUnretained(colorSpace),
             bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue),
             version: 0, decode: nil, renderingIntent: .defaultIntent
         )

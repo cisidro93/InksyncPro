@@ -194,7 +194,8 @@ final class NarrationEngine: NSObject, ObservableObject {
     // MARK: - OCR (Vision)
 
     nonisolated private func performOCR(pageIndex: Int) async -> String {
-        guard let image = await MainActor.run(body: { self.imageProvider?(pageIndex) }),
+        let (image, isManga) = await MainActor.run(body: { (self.imageProvider?(pageIndex), self.isMangaMode) })
+        guard let image = image,
               let cgImage = image.cgImage else { return "" }
 
         return await withCheckedContinuation { continuation in
@@ -216,8 +217,12 @@ final class NarrationEngine: NSObject, ObservableObject {
                     let lhsRow = Int((1.0 - lhsBox.midY) / bandHeight)
                     let rhsRow = Int((1.0 - rhsBox.midY) / bandHeight)
                     if lhsRow != rhsRow { return lhsRow < rhsRow }
-                    // Same row band — sort by X (RTL for manga)
-                    return Task.isCancelled ? false : lhsBox.midX < rhsBox.midX
+                    // Same row band — sort by X (RTL for manga, LTR for standard)
+                    if isManga {
+                        return Task.isCancelled ? false : lhsBox.midX > rhsBox.midX
+                    } else {
+                        return Task.isCancelled ? false : lhsBox.midX < rhsBox.midX
+                    }
                 }
 
                 let lines = sorted.compactMap {

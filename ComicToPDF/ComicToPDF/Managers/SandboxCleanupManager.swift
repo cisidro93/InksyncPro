@@ -141,18 +141,9 @@ class SandboxCleanupManager: ObservableObject {
             options: .skipsHiddenFiles
         ) else { return [] }
 
-        // Build the set of active filenames from the library.
-        // ConversionManager is on MainActor — we dispatch to read it.
-        let activeFilenames: Set<String> = await MainActor.run {
-            // Access via NotificationCenter pattern since we don't hold a reference.
-            // For the initial implementation, we'll scan the last-saved library JSON.
-            let libraryURL = documentsDir.appendingPathComponent("library.json")
-            guard let data = try? Data(contentsOf: libraryURL),
-                  let pdfs = try? JSONDecoder().decode([ConvertedPDF].self, from: data) else {
-                return Set()
-            }
-            return Set(pdfs.map { $0.url.lastPathComponent })
-        }
+        // Build the set of active filenames from the library database.
+        let activePDFs = await LibraryDatabaseService.shared.load()
+        let activeFilenames = Set(activePDFs.map { $0.url.lastPathComponent })
 
         let comicExtensions: Set<String> = ["cbz", "cbr", "cb7", "epub", "zip"]
         return contents.compactMap { url -> CleanupItem? in

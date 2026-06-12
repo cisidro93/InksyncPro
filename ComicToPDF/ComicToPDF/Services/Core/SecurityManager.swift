@@ -45,6 +45,7 @@ class SecurityManager: ObservableObject {
             // This prevents hard crashes on simulators or devices with disabled FaceID.
             try await context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "Unlock your Comic Vault")
             self.isVaultLocked = false
+            self.shouldBlurContent = false
             return true
         } catch {
             Logger.shared.log("Vault Authentication failed: \(error.localizedDescription)", category: "System", type: .error)
@@ -63,12 +64,13 @@ class SecurityManager: ObservableObject {
         if isVaultEnabled {
             shouldBlurContent = true
             lockVault() // Auto-lock on exit
+            AppSettingsManager.shared.isVaultUnlocked = false
         }
     }
     
     /// Call when scene becomes active
     func handleAppForegrounding() {
-        shouldBlurContent = false
+        // Blur remains active until user successfully authenticates
     }
 }
 
