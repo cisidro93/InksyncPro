@@ -99,20 +99,14 @@ actor BookmarkResolver {
         }
 
         return try await Task.detached(priority: .userInitiated) {
+            let holder = CoordinatedResultHolder<T>()
             var coordinationError: NSError?
-            var result: T?
-            var opError: Error?
 
             let coordinator = NSFileCoordinator()
             coordinator.coordinate(readingItemAt: resolvedURL, options: [], error: &coordinationError) { safeURL in
                 let semaphore = DispatchSemaphore(value: 0)
                 let operationTask = Task {
-                    do {
-                        return try await operation(safeURL)
-                    } catch {
-                        opError = error
-                        throw error
-                    }
+                    return try await operation(safeURL)
                 }
                 
                 let watchdog = Task {
@@ -122,9 +116,9 @@ actor BookmarkResolver {
                 
                 Task {
                     do {
-                        result = try await operationTask.value
+                        holder.result = try await operationTask.value
                     } catch {
-                        opError = error
+                        holder.error = error
                     }
                     watchdog.cancel()
                     semaphore.signal()
@@ -137,10 +131,10 @@ actor BookmarkResolver {
             if let coordError = coordinationError {
                 throw BookmarkError.coordinationFailed(underlying: coordError)
             }
-            if let opError = opError {
+            if let opError = holder.error {
                 throw opError
             }
-            guard let finalResult = result else {
+            guard let finalResult = holder.result else {
                 Logger.shared.log("BookmarkResolver.withAccess: operation TIMED OUT after \(timeout)", category: "BookmarkResolver", type: .error)
                 throw BookmarkError.timedOut
             }
@@ -161,20 +155,14 @@ actor BookmarkResolver {
         }
 
         return try await Task.detached(priority: .userInitiated) {
+            let holder = CoordinatedResultHolder<T>()
             var coordinationError: NSError?
-            var result: T?
-            var opError: Error?
 
             let coordinator = NSFileCoordinator()
             coordinator.coordinate(writingItemAt: resolvedURL, options: .forReplacing, error: &coordinationError) { safeURL in
                 let semaphore = DispatchSemaphore(value: 0)
                 let operationTask = Task {
-                    do {
-                        return try await operation(safeURL)
-                    } catch {
-                        opError = error
-                        throw error
-                    }
+                    return try await operation(safeURL)
                 }
                 
                 let watchdog = Task {
@@ -184,9 +172,9 @@ actor BookmarkResolver {
                 
                 Task {
                     do {
-                        result = try await operationTask.value
+                        holder.result = try await operationTask.value
                     } catch {
-                        opError = error
+                        holder.error = error
                     }
                     watchdog.cancel()
                     semaphore.signal()
@@ -199,10 +187,10 @@ actor BookmarkResolver {
             if let coordError = coordinationError {
                 throw BookmarkError.coordinationFailed(underlying: coordError)
             }
-            if let opError = opError {
+            if let opError = holder.error {
                 throw opError
             }
-            guard let finalResult = result else {
+            guard let finalResult = holder.result else {
                 Logger.shared.log("BookmarkResolver.withWriteAccess: write operation TIMED OUT after \(timeout)", category: "BookmarkResolver", type: .error)
                 throw BookmarkError.timedOut
             }
@@ -253,6 +241,11 @@ actor BookmarkResolver {
         }
         return writable
     }
+}
+
+private final class CoordinatedResultHolder<T>: @unchecked Sendable {
+    var result: T?
+    var error: Error?
 }
 
 // MARK: - Notification Names
