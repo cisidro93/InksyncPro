@@ -15,7 +15,6 @@ struct ContentView: View {
     @StateObject private var wifiServer = WiFiServer()
     
     @State private var tabBarHidden = false
-    @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
     @State private var selectedPDF: ConvertedPDF?
     
     // Global Sheets
@@ -37,7 +36,6 @@ struct ContentView: View {
 
     // UI Mode
     @AppStorage("appUIMode") private var appUIMode: AppUIMode = .pro
-    @AppStorage("useSidebar") private var useSidebar = true
     @State private var showingSettingsInspector = false
 
 
