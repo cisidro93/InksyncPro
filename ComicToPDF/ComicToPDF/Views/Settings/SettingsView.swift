@@ -7,7 +7,6 @@ struct SettingsView: View {
 
     @AppStorage("fastBundleOmnibus") private var fastBundleOmnibus = false
     @AppStorage("appUIMode") private var appUIMode: AppUIMode = .pro
-    @AppStorage("useSidebar") private var useSidebar = true
     @AppStorage("essentialReaderMode") private var essentialReaderMode = false
     @AppStorage("isHapticsEnabled") private var isHapticsEnabled = true
     @AppStorage("backTapEnabled") private var backTapEnabled = false
@@ -232,10 +231,7 @@ struct SettingsView: View {
                 settingsIcon("book.fill", color: .purple)
                 Toggle("Default Manga Mode (RTL)", isOn: $settingsManager.conversionSettings.mangaMode)
             }
-            HStack {
-                settingsIcon("sidebar.left", color: .indigo)
-                Toggle("Use Sidebar Navigation (iPad)", isOn: $useSidebar)
-            }
+
             
 
 
