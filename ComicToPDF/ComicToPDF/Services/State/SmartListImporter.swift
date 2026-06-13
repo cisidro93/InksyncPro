@@ -452,6 +452,7 @@ final class SmartListImporter: Sendable {
         return lastRow.last ?? 0
     }
     
+    @MainActor
     private func getLibraryAliases(for name: String) -> Set<String> {
         var names = Set<String>()
         let cleanName = name.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)

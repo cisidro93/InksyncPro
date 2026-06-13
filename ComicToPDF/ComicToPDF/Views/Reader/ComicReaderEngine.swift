@@ -68,7 +68,7 @@ final class ComicImageCache: ObservableObject {
     // ── CBR/RAR path ──────────────────────────────────────────────────────────
     private var extractedCBRImageURLs: [URL] = []
     private var extractedCBRTempDir: URL? = nil
-    var isCBR: Bool = false
+    let isCBR: Bool
     
     // ✅ OPDS-style cloud page streaming
     private var cloudPageSource: CloudPageSource?
@@ -88,14 +88,17 @@ final class ComicImageCache: ObservableObject {
         let ext = pdf.url.pathExtension.lowercased()
         isPDF = (ext == "pdf")
         let isCBRFile = (ext == "cbr" || ext == "rar")
+        self.isCBR = isCBRFile
         
         NotificationCenter.default.addObserver(
             forName: UIApplication.didReceiveMemoryWarningNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.cache.removeAllObjects()
-            Logger.shared.log("ComicImageCache: Memory warning received. Cleared image cache.", category: "Memory", type: .warning)
+            Task { @MainActor in
+                self?.cache.removeAllObjects()
+                Logger.shared.log("ComicImageCache: Memory warning received. Cleared image cache.", category: "Memory", type: .warning)
+            }
         }
         
         NotificationCenter.default.addObserver(
@@ -103,32 +106,34 @@ final class ComicImageCache: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] notification in
-            guard let self = self else { return }
-            guard let userInfo = notification.userInfo,
-                  let pdfID = userInfo["pdfID"] as? UUID,
-                  let newURL = userInfo["newURL"] as? URL,
-                  pdfID == pdf.id else { return }
-            
-            Logger.shared.log("ComicImageCache: Active file renamed to \(newURL.lastPathComponent). Updating handles.", category: "Engine", type: .success)
-            
-            if let oldAccess = self.activelyAccessedURL {
-                oldAccess.stopAccessingSecurityScopedResource()
-                self.activelyAccessedURL = nil
-            }
-            
-            if case .linked = pdf.sourceMode {
-                let didAccess = newURL.startAccessingSecurityScopedResource()
-                if didAccess {
-                    self.activelyAccessedURL = newURL
+            Task { @MainActor in
+                guard let self = self else { return }
+                guard let userInfo = notification.userInfo,
+                      let pdfID = userInfo["pdfID"] as? UUID,
+                      let newURL = userInfo["newURL"] as? URL,
+                      pdfID == pdf.id else { return }
+                
+                Logger.shared.log("ComicImageCache: Active file renamed to \(newURL.lastPathComponent). Updating handles.", category: "Engine", type: .success)
+                
+                if let oldAccess = self.activelyAccessedURL {
+                    oldAccess.stopAccessingSecurityScopedResource()
+                    self.activelyAccessedURL = nil
                 }
-            }
-            
-            self.cbzURL = newURL
-            
-            if self.isPDF {
-                Task {
-                    await PDFRenderActor.shared.clear()
-                    _ = await PDFRenderActor.shared.loadDocument(at: newURL)
+                
+                if case .linked = pdf.sourceMode {
+                    let didAccess = newURL.startAccessingSecurityScopedResource()
+                    if didAccess {
+                        self.activelyAccessedURL = newURL
+                    }
+                }
+                
+                self.cbzURL = newURL
+                
+                if self.isPDF {
+                    Task {
+                        await PDFRenderActor.shared.clear()
+                        _ = await PDFRenderActor.shared.loadDocument(at: newURL)
+                    }
                 }
             }
         }
@@ -164,7 +169,6 @@ final class ComicImageCache: ObservableObject {
                 }
             }
         } else if isCBRFile {
-            self.isCBR = true
             Task.detached(priority: .userInitiated) { [weak self] in
                 guard let self else { return }
                 let resolvedURL: URL
@@ -461,7 +465,7 @@ final class ComicImageCache: ObservableObject {
         }
     }
 
-    private static func decodeImageData(_ data: Data, maxPixelSize: CGFloat) -> UIImage? {
+    private static nonisolated func decodeImageData(_ data: Data, maxPixelSize: CGFloat) -> UIImage? {
         return autoreleasepool {
             let sourceOptions: [CFString: Any] = [kCGImageSourceShouldCache: false]
             guard let source = CGImageSourceCreateWithData(data as CFData, sourceOptions as CFDictionary) else {

@@ -294,7 +294,8 @@ extension ConversionManager {
         }
         
         var titleBlock = ""
-        if let title = pdf.metadata.title.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
+        let title = pdf.metadata.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !title.isEmpty {
             let oldFilenameStem = pdf.url.deletingPathExtension().lastPathComponent
             if title != oldFilenameStem && title != pdf.name && title != (pdf.metadata.series ?? "") {
                 titleBlock = " - \(title)"

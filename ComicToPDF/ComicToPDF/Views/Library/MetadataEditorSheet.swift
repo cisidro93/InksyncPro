@@ -226,7 +226,7 @@ struct MetadataEditorSheet: View {
     
     func physicalRenameFile() async {
         do {
-            try conversionManager.safelyRenamePhysicalFile(pdf: pdf, newName: newSuggestedCacheName)
+            try await conversionManager.safelyRenamePhysicalFile(pdf: pdf, newName: newSuggestedCacheName)
             await MainActor.run {
                 saveChanges() // Save and dismiss
             }
