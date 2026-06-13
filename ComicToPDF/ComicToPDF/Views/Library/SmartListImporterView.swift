@@ -164,10 +164,9 @@ struct SmartListImporterView: View {
             
             if ext == "cbl" || ext == "xml" {
                 requests = try SmartListImporter.shared.parseCBL(from: selectedFile)
-            } else if ext == "csv" {
-                requests = try SmartListImporter.shared.parseCSVList(from: selectedFile, defaultSeriesName: cleanFilename)
             } else {
-                requests = try SmartListImporter.shared.parseTextList(from: selectedFile, defaultSeriesName: cleanFilename)
+                // parseCSVList will automatically fallback to parseTextList if columns.count == 1
+                requests = try SmartListImporter.shared.parseCSVList(from: selectedFile, defaultSeriesName: cleanFilename)
             }
             
             if requests.isEmpty {
