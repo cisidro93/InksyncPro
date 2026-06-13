@@ -164,6 +164,7 @@ class MigrationService {
                 for pdf in pdfs {
                     if let existing = pdfDict[pdf.id] {
                         if existing.name != pdf.name { existing.name = pdf.name }
+                        if existing.url != pdf.url { existing.url = pdf.url }
                         if existing.pageCount != pdf.pageCount { existing.pageCount = pdf.pageCount }
                         if existing.fileSize != pdf.fileSize { existing.fileSize = pdf.fileSize }
                         if existing.metadata != pdf.metadata { existing.metadata = pdf.metadata }

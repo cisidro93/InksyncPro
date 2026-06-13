@@ -56,6 +56,10 @@ struct SettingsView: View {
     @State private var isVerifyingMangaUpdates = false
     @State private var mangaUpdatesVerificationStatus: KeyStatus = .none
     
+    // Smart List Alias properties
+    @State private var aliasImportedTitle = ""
+    @State private var aliasLibraryTitle = ""
+    
     enum KeyStatus: Equatable {
         case none, verifying, success, invalid, localizedError(String)
         
@@ -757,7 +761,7 @@ struct SettingsView: View {
                     .foregroundColor(.secondary)
                 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("2. Click 'Create New Client' and set the Redirect URL to:")
+                    Text("2. Click 'Create New Client' and set the Homepage/Website URL to https://inksync.app and Redirect URL to:")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                     
@@ -827,6 +831,93 @@ struct SettingsView: View {
         }
     }
 
+    
+    @ViewBuilder
+    private var customAliasesSettings: some View {
+        DisclosureGroup {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Map alternate titles to match imported smart lists against your library titles (e.g. English vs Romanized/Japanese titles).")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                
+                let aliases = settingsManager.conversionSettings.customAliases
+                if !aliases.isEmpty {
+                    ForEach(Array(aliases.keys).sorted(), id: \.self) { importedName in
+                        if let libraryName = aliases[importedName] {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("If list contains: \"\(importedName)\"")
+                                        .font(.caption2).foregroundColor(.secondary)
+                                    Text("Match against library: \"\(libraryName)\"")
+                                        .font(.caption)
+                                }
+                                Spacer()
+                                Button(action: {
+                                    settingsManager.conversionSettings.customAliases.removeValue(forKey: importedName)
+                                    settingsManager.save()
+                                }) {
+                                    Image(systemName: "trash")
+                                        .foregroundColor(.red)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            .padding(.vertical, 4)
+                            Divider()
+                        }
+                    }
+                } else {
+                    Text("No custom aliases defined yet.")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                        .italic()
+                }
+                
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Add Title Alias Mapping:")
+                        .font(.caption).bold()
+                        .padding(.top, 4)
+                    
+                    TextField("Imported List Title (e.g., Witch Hat Atelier)", text: $aliasImportedTitle)
+                        .textFieldStyle(.roundedBorder)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                    
+                    TextField("Library Folder/Series Title (e.g., Tongari Boushi no Atelier)", text: $aliasLibraryTitle)
+                        .textFieldStyle(.roundedBorder)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                    
+                    Button(action: {
+                        let imported = aliasImportedTitle.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                        let library = aliasLibraryTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !imported.isEmpty && !library.isEmpty {
+                            settingsManager.conversionSettings.customAliases[imported] = library
+                            settingsManager.save()
+                            aliasImportedTitle = ""
+                            aliasLibraryTitle = ""
+                        }
+                    }) {
+                        Text("Add Alias Mapping")
+                            .font(.caption)
+                            .bold()
+                            .foregroundColor(.white)
+                            .padding(.vertical, 6)
+                            .padding(.horizontal, 16)
+                            .background((aliasImportedTitle.isEmpty || aliasLibraryTitle.isEmpty) ? Color.gray : Color.blue)
+                            .cornerRadius(6)
+                    }
+                    .disabled(aliasImportedTitle.isEmpty || aliasLibraryTitle.isEmpty)
+                    .buttonStyle(.plain)
+                }
+                .padding(.top, 6)
+            }
+            .padding(.bottom, 4)
+        } label: {
+            Label("Smart List Title Aliases", systemImage: "arrow.2.squarepath")
+                .font(.subheadline)
+        }
+    }
+
     @ViewBuilder
     private var mangaUpdatesSettings: some View {
         // MangaUpdates
@@ -867,6 +958,7 @@ struct SettingsView: View {
             comicVineSettings
             aniListSettings
             mangaUpdatesSettings
+            customAliasesSettings
 
             NavigationLink(destination: CloudConnectionSettingsView()) {
                 HStack {

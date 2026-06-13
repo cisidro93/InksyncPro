@@ -232,6 +232,7 @@ final class SmartListImporter: Sendable {
         return items
     }
     
+    @MainActor
     func resolveList(_ requests: [RequestedComicItem], against library: [ConvertedPDF]) -> [ResolvedEventItem] {
         var results: [ResolvedEventItem] = []
         
@@ -240,6 +241,8 @@ final class SmartListImporter: Sendable {
         
         for req in requests {
             let reqSeriesClean = normalizeString(req.series)
+            let reqAliases = getLibraryAliases(for: req.series)
+            let reqAliasesNormalized = reqAliases.map { advancedNormalize($0) }
             
             var bestMatch: ConvertedPDF? = nil
             var highestScore = 0
@@ -254,16 +257,56 @@ final class SmartListImporter: Sendable {
                 var score = 0
                 
                 // 1. Precise Series matches
+                var seriesMatched = false
+                var seriesPartiallyMatched = false
+                
                 if !pdfSeriesClean.isEmpty {
                     if reqSeriesClean == pdfSeriesClean { 
-                        score += 50
+                        seriesMatched = true
                     } else if reqSeriesClean.hasPrefix(pdfSeriesClean) || pdfSeriesClean.hasPrefix(reqSeriesClean) {
-                        score += 30
+                        seriesPartiallyMatched = true
+                    } else {
+                        // Check advanced normalize and aliases
+                        let normPdfSeries = advancedNormalize(pdf.metadata.series ?? "")
+                        for reqAlias in reqAliasesNormalized {
+                            if reqAlias == normPdfSeries {
+                                seriesMatched = true
+                                break
+                            } else if reqAlias.hasPrefix(normPdfSeries) || normPdfSeries.hasPrefix(reqAlias) {
+                                seriesPartiallyMatched = true
+                            } else {
+                                // Levenshtein Similarity check
+                                let maxLen = max(reqAlias.count, normPdfSeries.count)
+                                if maxLen > 3 {
+                                    let dist = levenshteinDistance(between: reqAlias, and: normPdfSeries)
+                                    let similarity = Double(maxLen - dist) / Double(maxLen)
+                                    if similarity >= 0.85 {
+                                        seriesPartiallyMatched = true
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
                 
-                if score < 50 && pdfNameClean.contains(reqSeriesClean) {
-                    score += 20
+                if seriesMatched {
+                    score += 50
+                } else if seriesPartiallyMatched {
+                    score += 30
+                }
+                
+                if score < 50 {
+                    let normPdfName = advancedNormalize(pdf.name)
+                    var nameMatched = false
+                    for reqAlias in reqAliasesNormalized {
+                        if normPdfName.contains(reqAlias) {
+                            nameMatched = true
+                            break
+                        }
+                    }
+                    if nameMatched || pdfNameClean.contains(reqSeriesClean) {
+                        score += 20
+                    }
                 }
                 
                 // Advanced Context: Volume Matches!
@@ -329,6 +372,145 @@ final class SmartListImporter: Sendable {
             .replacingOccurrences(of: "-", with: " ")
             .replacingOccurrences(of: "_", with: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    
+    private func normalizeUnits(_ str: String) -> String {
+        let pattern = "\\b(\\d+)\\s*(?:meters|meter|m)\\b"
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) else { return str }
+        let range = NSRange(str.startIndex..., in: str)
+        return regex.stringByReplacingMatches(in: str, options: [], range: range, withTemplate: "$1m")
+    }
+    
+    private func foldVowels(_ str: String) -> String {
+        var s = str.lowercased()
+        s = s.replacingOccurrences(of: "uu", with: "u")
+        s = s.replacingOccurrences(of: "ou", with: "o")
+        s = s.replacingOccurrences(of: "oo", with: "o")
+        s = s.replacingOccurrences(of: "ee", with: "e")
+        s = s.replacingOccurrences(of: "ii", with: "i")
+        s = s.replacingOccurrences(of: "aa", with: "a")
+        s = s.replacingOccurrences(of: "sh", with: "s")
+        s = s.replacingOccurrences(of: "ch", with: "c")
+        s = s.replacingOccurrences(of: "ts", with: "t")
+        return s
+    }
+    
+    private func stripParticles(_ str: String) -> String {
+        let particles = ["no", "gou", "go", "wa", "ga", "wo", "ni", "the", "of", "and", "in", "on", "at", "for", "with", "a", "an"]
+        let words = str.components(separatedBy: .whitespacesAndNewlines)
+        let filtered = words.filter { !particles.contains($0.lowercased()) }
+        return filtered.joined(separator: " ")
+    }
+    
+    private func wordsToDigits(_ str: String) -> String {
+        let dict = [
+            "one": "1", "two": "2", "three": "3", "four": "4", "five": "5",
+            "six": "6", "seven": "7", "eight": "8", "nine": "9", "ten": "10"
+        ]
+        var words = str.components(separatedBy: .whitespacesAndNewlines)
+        for i in 0..<words.count {
+            if let digit = dict[words[i].lowercased()] {
+                words[i] = digit
+            }
+        }
+        return words.joined(separator: " ")
+    }
+    
+    private func advancedNormalize(_ str: String) -> String {
+        var s = str.lowercased()
+        s = normalizeUnits(s)
+        s = wordsToDigits(s)
+        s = foldVowels(s)
+        s = stripParticles(s)
+        s = s.components(separatedBy: CharacterSet.alphanumerics.inverted)
+             .filter { !$0.isEmpty }
+             .joined(separator: "")
+        return s.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    
+    private func levenshteinDistance(between s1: String, and s2: String) -> Int {
+        if s1.isEmpty { return s2.count }
+        if s2.isEmpty { return s1.count }
+        
+        let chars1 = Array(s1)
+        let chars2 = Array(s2)
+        
+        var lastRow = [Int](0...s2.count)
+        
+        for i in 0..<chars1.count {
+            var currentRow = [0] + [Int](repeating: 0, count: s2.count)
+            currentRow[0] = i + 1
+            for j in 0..<chars2.count {
+                if chars1[i] == chars2[j] {
+                    currentRow[j + 1] = lastRow[j]
+                } else {
+                    currentRow[j + 1] = min(lastRow[j] + 1, lastRow[j + 1] + 1, currentRow[j] + 1)
+                }
+            }
+            lastRow = currentRow
+        }
+        return lastRow.last ?? 0
+    }
+    
+    private func getLibraryAliases(for name: String) -> Set<String> {
+        var names = Set<String>()
+        let cleanName = name.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        names.insert(cleanName)
+        
+        let builtinAliases = [
+            "witch hat atelier": ["tongari boushi no atelier", "tongari boushi no atorie", "tongariboushi no atelier"],
+            "tongari boushi no atelier": ["witch hat atelier", "atelier of witch hat"],
+            "tongari boushi no atorie": ["witch hat atelier", "atelier of witch hat"],
+            "demon slayer": ["kimetsu no yaiba"],
+            "kimetsu no yaiba": ["demon slayer"],
+            "attack on titan": ["shingeki no kyojin"],
+            "shingeki no kyojin": ["attack on titan"],
+            "my hero academia": ["boku no hero academia"],
+            "boku no hero academia": ["my hero academia"],
+            "the promised neverland": ["yakusoku no neverland"],
+            "yakusoku no neverland": ["the promised neverland"],
+            "fullmetal alchemist": ["hagane no renkinjutsushi"],
+            "hagane no renkinjutsushi": ["fullmetal alchemist"],
+            "frieren beyond journeys end": ["sousou no frieren", "sosou no frieren", "frieren: beyond journey's end"],
+            "sousou no frieren": ["frieren beyond journeys end", "frieren: beyond journey's end"],
+            "frieren: beyond journey's end": ["sousou no frieren", "sosou no frieren"],
+            "the apothecary diaries": ["kusuriya no hitorigoto"],
+            "kusuriya no hitorigoto": ["the apothecary diaries"],
+            "spice and wolf": ["ookami to koushinryou"],
+            "ookami to koushinryou": ["spice and wolf"],
+            "rising of the shield hero": ["tate no yuusha no nariagari"],
+            "tate no yuusha no nariagari": ["rising of the shield hero", "the rising of the shield hero"],
+            "that time i got reincarnated as a slime": ["tensei shitara slime datta ken", "tensura"],
+            "tensei shitara slime datta ken": ["that time i got reincarnated as a slime", "tensura"],
+            "kaguya sama love is war": ["kaguya sama wa kokurasetai", "kaguya-sama wa kokurasetai: tensai-tachi no renai zounousen"],
+            "kaguya sama wa kokurasetai": ["kaguya sama love is war", "kaguya-sama: love is war"],
+            "my dress up darling": ["sono bisque doll wa koi wo suru"],
+            "sono bisque doll wa koi wo suru": ["my dress up darling", "my dress-up darling"]
+        ]
+        
+        if let alternates = builtinAliases[cleanName] {
+            for alt in alternates {
+                names.insert(alt.lowercased().trimmingCharacters(in: .whitespacesAndNewlines))
+            }
+        }
+        for (key, values) in builtinAliases {
+            if values.contains(cleanName) {
+                names.insert(key.lowercased().trimmingCharacters(in: .whitespacesAndNewlines))
+            }
+        }
+        
+        // Custom user-defined aliases from Settings
+        let customAliases = AppSettingsManager.shared.conversionSettings.customAliases
+        if let mapped = customAliases[cleanName] {
+            names.insert(mapped.lowercased().trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+        for (key, val) in customAliases {
+            if val.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) == cleanName {
+                names.insert(key.lowercased().trimmingCharacters(in: .whitespacesAndNewlines))
+            }
+        }
+        
+        return names
     }
     
     // MARK: - CBL XML Parser

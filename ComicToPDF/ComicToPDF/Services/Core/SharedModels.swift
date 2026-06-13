@@ -583,6 +583,7 @@ struct ConversionSettings: Codable, Equatable, Sendable {
     var trimMargins: Bool = false
     var embedCharacterGlossary: Bool = true // ✅ NEW: Toggle to append glossary page for Kindle
     var linkCoverAsSpread: Bool = false // ✅ NEW: Pair Cover Page with Page 2 as a spread
+    var customAliases: [String: String] = [:]
 
 
     /// Returns `true` when the user has changed at least one meaningful conversion
@@ -750,6 +751,7 @@ struct ConversionSettings: Codable, Equatable, Sendable {
         case outputPipeline   // Canonical export mode
         case isGuidedView     // Legacy -- read-only for migration
         case comicVineAPIKey  // Legacy API key migration only
+        case customAliases
     }
     
     init() {}
@@ -803,6 +805,7 @@ struct ConversionSettings: Codable, Equatable, Sendable {
             KeychainHelper.standard.save(data, service: "com.antigravity.InksyncPro", account: "comicVineAPIKey")
         }
         
+        customAliases = (try? container.decodeIfPresent([String: String].self, forKey: .customAliases)) ?? [:]
     }
     
     func encode(to encoder: Encoder) throws {
@@ -836,6 +839,7 @@ struct ConversionSettings: Codable, Equatable, Sendable {
         try container.encode(deepFetchComicVineIssues, forKey: .deepFetchComicVineIssues)
         // comicVineAPIKey is intentionally not encoded (moved to Keychain)
         // isGuidedView is intentionally not encoded (computed from outputPipeline)
+        try container.encode(customAliases, forKey: .customAliases)
     }
 }
 
