@@ -8,19 +8,16 @@ struct MetadataHeuristics {
     ///
     /// - Parameter name: The original file name (e.g., "Batman_(2023)_#12.cbz")
     /// - Returns: A cleaned query string (e.g., "Batman")
+    /// Cleans the raw filename to yield a searchable Series/Volume name.
+    ///
+    /// - Parameter name: The original file name (e.g., "Batman_(2023)_#12.cbz")
+    /// - Returns: A cleaned query string (e.g., "Batman")
     static func cleanFilename(_ name: String) -> String {
-        var clean = URL(fileURLWithPath: name).deletingPathExtension().lastPathComponent
+        let detected = SeriesNameDetector.detect(from: name)
+        var clean = detected.seriesName
         
-        // Remove underscores and replacing them with spaces
-        clean = clean.replacingOccurrences(of: "_", with: " ")
-        
-        // Remove parenthesis content roughly (e.g. publication years "(2023)")
+        // Remove parenthesis content roughly (like year, if we want a clean series search)
         while let range = clean.range(of: "\\(.*?\\)", options: .regularExpression) {
-             clean.removeSubrange(range)
-        }
-        
-        // Remove bracket content roughly (e.g. groups "[Zone]")
-        while let range = clean.range(of: "\\[.*?\\]", options: .regularExpression) {
              clean.removeSubrange(range)
         }
         
@@ -29,8 +26,13 @@ struct MetadataHeuristics {
              clean.removeSubrange(range)
         }
         
-        // Return stripped query
-        return clean.trimmingCharacters(in: .whitespaces)
+        clean = clean.trimmingCharacters(in: .whitespacesAndNewlines)
+        while clean.hasSuffix("-") || clean.hasSuffix(":") || clean.hasSuffix(";") || clean.hasSuffix(",") {
+            clean.removeLast()
+            clean = clean.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        
+        return clean
     }
     
     /// Attempts to extract an issue number from the raw filename using regex.
@@ -38,18 +40,8 @@ struct MetadataHeuristics {
     /// - Parameter name: The original file name (e.g., "Batman_#12.cbz")
     /// - Returns: The extracted issue number as a String, if found.
     static func extractIssueNumber(from name: String) -> String? {
-        let pattern = "#?(\\d+)"
-        if let regex = try? NSRegularExpression(pattern: pattern) {
-            let nsString = name as NSString
-            let match = regex.firstMatch(in: name, range: NSRange(location: 0, length: nsString.length))
-            if let match = match {
-                let range = match.range(at: 1)
-                if range.location != NSNotFound {
-                    return nsString.substring(with: range)
-                }
-            }
-        }
-        return nil
+        let detected = SeriesNameDetector.detect(from: name)
+        return detected.issueNumberString
     }
     
     /// Intelligently routes manga vs western comics based on heuristic file names

@@ -30,10 +30,16 @@ enum SeriesNameParser {
             options: .regularExpression
         )
 
-        // Strip trailing volume/chapter/issue tags (e.g., "Batman Vol 1" -> "Batman")
-        // This ensures volume subfolders all group into the same base series name!
+        // Strip trailing volume/chapter/issue tags (multilingual)
         s = s.replacingOccurrences(
-            of: #"(?i)\s*(v|vol|volume|ch|chapter|issue|book|part)\.?\s*\d+(\.\d+)?\s*$"#,
+            of: #"(?i)\s*(v(?:ol(?:ume)?)?|t(?:ome|omo)?|band|bd|ch(?:apter)?|chap(?:itre)?|cap(?:[ií]tulo)?|kap(?:itel)?|issue|book|part|livre|partie|n[uú]mero|num|nº|n\.º|nummer|nr)\.?\s*\d+(?:\.\d+)?\s*$"#,
+            with: "",
+            options: .regularExpression
+        )
+
+        // Strip trailing CJK volume/chapter tags (e.g. "第12巻", "12話")
+        s = s.replacingOccurrences(
+            of: #"\s*(?:第\s*)?\d+(?:\.\d+)?\s*[巻卷話话]\s*$"#,
             with: "",
             options: .regularExpression
         )

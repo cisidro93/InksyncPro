@@ -792,23 +792,10 @@ struct MetadataSearchSheet: View {
     
     // MARK: - Helpers
     func cleanFilename(_ name: String) -> String {
-        var clean = URL(fileURLWithPath: name).deletingPathExtension().lastPathComponent
-        clean = clean.replacingOccurrences(of: "_", with: " ")
-        if let range = clean.range(of: "\\(.*?\\)", options: .regularExpression) {
-             clean.removeSubrange(range)
-        }
-        return clean.trimmingCharacters(in: .whitespaces)
+        return MetadataHeuristics.cleanFilename(name)
     }
     
     func extractIssueNumber(from name: String) -> String? {
-        let pattern = "#?(\\d+)"
-        let optRegex = try? NSRegularExpression(pattern: pattern)
-        if let regex = optRegex,
-           let match = regex.firstMatch(in: name, range: NSRange(name.startIndex..., in: name)) {
-            if let range = Range(match.range(at: 1), in: name) {
-                return String(name[range])
-            }
-        }
-        return nil
+        return MetadataHeuristics.extractIssueNumber(from: name)
     }
 }
