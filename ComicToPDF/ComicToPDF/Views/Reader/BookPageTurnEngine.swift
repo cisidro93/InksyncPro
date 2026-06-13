@@ -44,6 +44,7 @@ struct BookFlipGesture: View {
 
                 content(currentIndex)
                     .frame(width: geo.size.width, height: geo.size.height)
+                    .drawingGroup() // hardware accelerated rasterization for smooth 3D transforms
                     .rotation3DEffect(
                         .degrees(isAnimating ? 0 : rotation),
                         axis: (x: 0, y: 1, z: 0),
@@ -73,7 +74,6 @@ struct BookFlipGesture: View {
                     Color.clear
                         .contentShape(Rectangle())
                         .onTapGesture {
-                            guard !isAnimating else { return }
                             if isMangaRTL {
                                 if canFlipForward() { flipForward(width: geo.size.width) } else { onFlipPastEnd?() }
                             } else {
@@ -87,7 +87,6 @@ struct BookFlipGesture: View {
                     Color.clear
                         .contentShape(Rectangle())
                         .onTapGesture {
-                            guard !isAnimating else { return }
                             if isMangaRTL {
                                 if canFlipBack() { flipBack(width: geo.size.width) }
                             } else {
@@ -129,7 +128,6 @@ struct BookFlipGesture: View {
                     }
             )
             .onTapGesture { location in
-                guard !isAnimating else { return }
                 let zoneW = tapZoneWidth(totalWidth: geo.size.width)
                 if location.x < zoneW {
                     if isMangaRTL { 
@@ -159,30 +157,39 @@ struct BookFlipGesture: View {
 
     // MARK: - Flip Forward
     private func flipForward(width: CGFloat) {
-        guard !isAnimating, canFlipForward() else { return }
+        if isAnimating {
+            // Interrupt current flip and commit it instantly
+            flipTask?.cancel()
+            if canFlipForward() {
+                onFlipForward()
+            }
+            dragOffset = 0
+            isAnimating = false
+        }
+
+        guard canFlipForward() else { return }
         isAnimating = true
         HapticEngine.light()
-        // Cancel any lingering previous task before starting fresh
         flipTask?.cancel()
 
         // Phase 1 — peel the page offscreen
         let exitOffset: CGFloat = isMangaRTL ? width * 0.6 : -width * 0.6
-        withAnimation(.interactiveSpring(response: 0.28, dampingFraction: 0.78)) {
+        withAnimation(.interactiveSpring(response: 0.22, dampingFraction: 0.82)) {
             dragOffset = exitOffset
         }
 
         flipTask = Task { @MainActor in
             // Phase 2 — swap content while curl is offscreen
-            try? await Task.sleep(nanoseconds: 160_000_000)
+            try? await Task.sleep(nanoseconds: 120_000_000)
             guard !Task.isCancelled else { isAnimating = false; return }
             onFlipForward()
 
             // Phase 3 — bounce snap back to reveal new page
-            dragOffset = isMangaRTL ? -28 : 28
-            withAnimation(.spring(response: 0.22, dampingFraction: 0.88)) { dragOffset = 0 }
+            dragOffset = isMangaRTL ? -20 : 20
+            withAnimation(.spring(response: 0.18, dampingFraction: 0.9)) { dragOffset = 0 }
 
             // Phase 4 — unlock gate after settle
-            try? await Task.sleep(nanoseconds: 300_000_000)
+            try? await Task.sleep(nanoseconds: 180_000_000)
             guard !Task.isCancelled else { return }
             isAnimating = false
         }
@@ -190,25 +197,35 @@ struct BookFlipGesture: View {
 
     // MARK: - Flip Back
     private func flipBack(width: CGFloat) {
-        guard !isAnimating, canFlipBack() else { return }
+        if isAnimating {
+            // Interrupt current flip and commit it instantly
+            flipTask?.cancel()
+            if canFlipBack() {
+                onFlipBack()
+            }
+            dragOffset = 0
+            isAnimating = false
+        }
+
+        guard canFlipBack() else { return }
         isAnimating = true
         HapticEngine.light()
         flipTask?.cancel()
 
         let exitOffset: CGFloat = isMangaRTL ? -width * 0.6 : width * 0.6
-        withAnimation(.interactiveSpring(response: 0.28, dampingFraction: 0.78)) {
+        withAnimation(.interactiveSpring(response: 0.22, dampingFraction: 0.82)) {
             dragOffset = exitOffset
         }
 
         flipTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 160_000_000)
+            try? await Task.sleep(nanoseconds: 120_000_000)
             guard !Task.isCancelled else { isAnimating = false; return }
             onFlipBack()
 
-            dragOffset = isMangaRTL ? 28 : -28
-            withAnimation(.spring(response: 0.22, dampingFraction: 0.88)) { dragOffset = 0 }
+            dragOffset = isMangaRTL ? 20 : -20
+            withAnimation(.spring(response: 0.18, dampingFraction: 0.9)) { dragOffset = 0 }
 
-            try? await Task.sleep(nanoseconds: 300_000_000)
+            try? await Task.sleep(nanoseconds: 180_000_000)
             guard !Task.isCancelled else { return }
             isAnimating = false
         }
@@ -224,6 +241,7 @@ struct BookPager: View {
     let cache: ComicImageCache
     let readingMode: ComicReadingMode
     let activeFilterPreset: ReadingFilterPreset
+    let isMangaRTL: Bool
     var onChromeTap: () -> Void
     var onFlipPastEnd: (() -> Void)? = nil
 
@@ -263,10 +281,20 @@ struct BookPager: View {
 
     // ── Flat Slide (TabView / PageTabViewStyle) ────────────────────────
     private var slidePager: some View {
-        TabView(selection: $currentIndex) {
+        let selectionBinding = Binding<Int>(
+            get: {
+                isMangaRTL ? (totalPages - 1 - currentIndex) : currentIndex
+            },
+            set: { newValue in
+                currentIndex = isMangaRTL ? (totalPages - 1 - newValue) : newValue
+            }
+        )
+
+        return TabView(selection: selectionBinding) {
             ForEach(0..<totalPages, id: \.self) { idx in
+                let pageIndex = isMangaRTL ? (totalPages - 1 - idx) : idx
                 ComicPageView(
-                    index: idx,
+                    index: pageIndex,
                     cache: cache
                 )
                 .applyFilterPreset(activeFilterPreset)
@@ -297,13 +325,31 @@ struct BookPager: View {
             DragGesture(minimumDistance: 30)
                 .onEnded { val in
                     if val.translation.width < -30 {
-                        if currentIndex < totalPages - 1 {
-                            withAnimation(.easeInOut(duration: 0.28)) { currentIndex += 1 }
+                        // Swipe left: next in LTR, prev in RTL
+                        if isMangaRTL {
+                            if currentIndex > 0 {
+                                withAnimation(.easeInOut(duration: 0.28)) { currentIndex -= 1 }
+                            }
                         } else {
-                            onFlipPastEnd?()
+                            if currentIndex < totalPages - 1 {
+                                withAnimation(.easeInOut(duration: 0.28)) { currentIndex += 1 }
+                            } else {
+                                onFlipPastEnd?()
+                            }
                         }
-                    } else if val.translation.width > 30, currentIndex > 0 {
-                        withAnimation(.easeInOut(duration: 0.28)) { currentIndex -= 1 }
+                    } else if val.translation.width > 30 {
+                        // Swipe right: prev in LTR, next in RTL
+                        if isMangaRTL {
+                            if currentIndex < totalPages - 1 {
+                                withAnimation(.easeInOut(duration: 0.28)) { currentIndex += 1 }
+                            } else {
+                                onFlipPastEnd?()
+                            }
+                        } else {
+                            if currentIndex > 0 {
+                                withAnimation(.easeInOut(duration: 0.28)) { currentIndex -= 1 }
+                            }
+                        }
                     }
                 }
         )

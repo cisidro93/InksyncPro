@@ -320,43 +320,17 @@ struct ModernGridFileCell: View {
 
             // 1. Already in NSCache — instant return, zero I/O
             if let cached = conversionManager.thumbnailCache.object(forKey: key) {
-                self.localCover = cached; return
-            }
-
-            // 2. Cover file exists on disk — fast ImageIO downsampled read.
-            //    Bypasses the ThumbnailGenerationQueue actor chain entirely for the
-            //    common cold-start case. 300px is plenty for a 2-col grid cell.
-            let coverURL = conversionManager.getCoverURL(for: pdf)
-            if let url = coverURL, FileManager.default.fileExists(atPath: url.path) {
-                let image = await Task.detached(priority: .userInitiated) { () -> UIImage? in
-                    let srcOpts = [kCGImageSourceShouldCache: false] as CFDictionary
-                    guard let src = CGImageSourceCreateWithURL(url as CFURL, srcOpts) else { return nil }
-                    let downsampleOpts = [
-                        kCGImageSourceCreateThumbnailFromImageAlways: true,
-                        kCGImageSourceShouldCacheImmediately: true,
-                        kCGImageSourceCreateThumbnailWithTransform: true,
-                        kCGImageSourceThumbnailMaxPixelSize: 600   // grid cells never exceed ~200pt (Retina 3x = 600px)
-                    ] as CFDictionary
-                    guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, downsampleOpts) else { return nil }
-                    return UIImage(cgImage: cg)
-                }.value
-                if let image {
-                    conversionManager.thumbnailCache.setObject(image, forKey: key)
-                    self.localCover = image
-                }
+                self.localCover = cached
                 return
             }
 
-            // 3. No cover on disk yet — route to the capped generation queue.
-            //    This path fires only on first import or after a cache wipe.
-            await ThumbnailGenerationQueue.shared.enqueue(pdf, manager: conversionManager)
-
-            // 4. Cloud file with no cover yet.
-            //    CloudCoverExtractor is running in the background (fired from
-            //    PhysicalFileSystemRouter.backfillMissingThumbnails Pass 3).
-            //    When it finishes, it posts .cloudCoverReady → ConversionManager
-            //    updates thumbnailCache and calls objectWillChange.send() →
-            //    this View re-renders and the body picks up the cached image.
+            // 2. Load thumbnail asynchronously using non-blocking background logic
+            if let thumbnail = await conversionManager.loadCoverThumbnail(for: pdf) {
+                self.localCover = thumbnail
+            } else {
+                // 3. No cover on disk yet — route to the capped generation queue.
+                await ThumbnailGenerationQueue.shared.enqueue(pdf, manager: conversionManager)
+            }
         }
     }
 
@@ -502,12 +476,21 @@ struct ModernGridSeriesCell: View {
     @Environment(\.horizontalSizeClass) private var hSizeClass
 
     @State private var localCover: UIImage? = nil
-    // Cached progress — computed in .task, not in body to avoid per-render disk reads
-    @State private var cachedReadCount: Int = 0
-    @State private var cachedNewCount: Int = 0
     @State private var scale: CGFloat = 0.85
     @State private var opacity: Double = 0.0
     @State private var isHovered = false
+
+    private var cachedReadCount: Int {
+        group.issues.filter {
+            (ReaderProgressTracker.shared.progress(for: $0.id)?.completionFraction ?? 0.0) >= 0.95
+        }.count
+    }
+
+    private var cachedNewCount: Int {
+        group.issues.filter {
+            ReaderProgressTracker.shared.progress(for: $0.id) == nil
+        }.count
+    }
 
     @AppStorage("mangaBadgeColorHex") private var mangaBadgeColorHex = "#ff5a36"
     @AppStorage("comicBadgeColorHex") private var comicBadgeColorHex = "#3d6fff"
@@ -646,52 +629,24 @@ struct ModernGridSeriesCell: View {
         }
         // Throttled loader — gets the cover of the series' issue #1
         .task(id: group.id) {
-            // 1. Build progress map once — 1 read per issue instead of 2.
-            //    uniquingKeysWith: keeps first value, never crashes on duplicate IDs.
-            let progressMap = Dictionary(
-                group.issues.map { ($0.id, ReaderProgressTracker.shared.progress(for: $0.id)) },
-                uniquingKeysWith: { first, _ in first }
-            )
-            let readCount = progressMap.values.filter { ($0?.completionFraction ?? 0) >= 0.95 }.count
-            let newCount  = progressMap.values.filter { $0 == nil }.count
-
-
-            self.cachedReadCount = readCount
-            self.cachedNewCount = newCount
-
-            // 2. Load thumbnail
+            // Load thumbnail
             guard let issueID = group.coverIssueID,
-                  let pdf = conversionManager.convertedPDFs.first(where: { $0.id == issueID }) else { return }
+                  let pdf = group.issues.first(where: { $0.id == issueID }) ?? conversionManager.convertedPDFs.first(where: { $0.id == issueID }) else { return }
             let key = issueID.uuidString as NSString
             
-            // 2a. Already in cache
+            // 1. Already in NSCache — instant return, zero I/O
             if let cached = conversionManager.thumbnailCache.object(forKey: key) {
-                self.localCover = cached; return
-            }
-            
-            // 2b. Fast ImageIO direct disk read (bypasses ThumbnailGenerationQueue entirely)
-            if let coverURL = conversionManager.getCoverURL(for: pdf), FileManager.default.fileExists(atPath: coverURL.path) {
-                let image = await Task.detached(priority: .userInitiated) { () -> UIImage? in
-                    let srcOpts = [kCGImageSourceShouldCache: false] as CFDictionary
-                    guard let src = CGImageSourceCreateWithURL(coverURL as CFURL, srcOpts) else { return nil }
-                    let downsampleOpts = [
-                        kCGImageSourceCreateThumbnailFromImageAlways: true,
-                        kCGImageSourceShouldCacheImmediately: true,
-                        kCGImageSourceCreateThumbnailWithTransform: true,
-                        kCGImageSourceThumbnailMaxPixelSize: 600   // grid cells never exceed ~200pt (Retina 3x = 600px)
-                    ] as CFDictionary
-                    guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, downsampleOpts) else { return nil }
-                    return UIImage(cgImage: cg)
-                }.value
-                if let image {
-                    conversionManager.thumbnailCache.setObject(image, forKey: key)
-                    self.localCover = image
-                }
+                self.localCover = cached
                 return
             }
             
-            // 3. Fallback: Queue generation
-            await ThumbnailGenerationQueue.shared.enqueue(pdf, manager: conversionManager)
+            // 2. Load thumbnail asynchronously using non-blocking background logic
+            if let thumbnail = await conversionManager.loadCoverThumbnail(for: pdf) {
+                self.localCover = thumbnail
+            } else {
+                // 3. Fallback: Queue generation
+                await ThumbnailGenerationQueue.shared.enqueue(pdf, manager: conversionManager)
+            }
         }
     }
 

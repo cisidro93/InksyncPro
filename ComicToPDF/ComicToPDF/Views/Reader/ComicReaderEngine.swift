@@ -594,6 +594,7 @@ struct ComicReaderEngine: View {
                             cache: cache,
                             readingMode: readingMode,
                             activeFilterPreset: activeFilterPreset,
+                            isMangaRTL: isMangaComic,
                             onChromeTap: {
                                 withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                                     chromeVisible.toggle()
