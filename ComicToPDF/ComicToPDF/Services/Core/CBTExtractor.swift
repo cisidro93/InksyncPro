@@ -25,6 +25,10 @@ struct CBTExtractor {
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 let fm = FileManager.default
+                let stem = sourceURL.deletingPathExtension().lastPathComponent
+                let uniqueID = UUID().uuidString.prefix(8)
+                let tempDir = fm.temporaryDirectory
+                    .appendingPathComponent("cbt_\(stem)_\(uniqueID)")
                 do {
                     let secured = sourceURL.startAccessingSecurityScopedResource()
                     defer { if secured { sourceURL.stopAccessingSecurityScopedResource() } }
@@ -34,10 +38,6 @@ struct CBTExtractor {
                     // devices. For very large archives a streaming approach could be added later.
                     let archiveData = try Data(contentsOf: sourceURL, options: .mappedIfSafe)
 
-                    let stem = sourceURL.deletingPathExtension().lastPathComponent
-                    let uniqueID = UUID().uuidString.prefix(8)
-                    let tempDir = fm.temporaryDirectory
-                        .appendingPathComponent("cbt_\(stem)_\(uniqueID)")
                     try fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
 
                     let imageURLs = try parseTAR(data: archiveData, into: tempDir)
@@ -59,6 +59,7 @@ struct CBTExtractor {
                         "CBTExtractor failed: \(error.localizedDescription)",
                         category: "System", type: .error
                     )
+                    try? fm.removeItem(at: tempDir)
                     continuation.resume(throwing: error)
                 }
             }

@@ -319,6 +319,7 @@ class PanelViewEPUBConverter {
                 try fileManager.removeItem(at: outputURL)
             }
             try assembleEPUB(buildDir: buildDir, outputURL: outputURL, oebpsDir: oebpsDir, metaDir: metaDir, mimetypePath: mimetypePath)
+            PhysicalFileSystemRouter.excludeFromBackup(at: outputURL)
 
             outputURLs.append(outputURL)
             Logger.shared.log("PanelViewEPUBConverter: Produced \(outputName)", category: "PVConverter")

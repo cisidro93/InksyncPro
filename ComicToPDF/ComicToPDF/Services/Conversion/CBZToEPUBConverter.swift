@@ -519,6 +519,7 @@ struct CBZToEPUBConverter: Sendable {
 
         Logger.shared.log("About to analyze EPUB structure for: \(capturedOutputURL.lastPathComponent)", category: "Debug")
         Logger.shared.logEPUBStructure(at: capturedOutputURL)
+        PhysicalFileSystemRouter.excludeFromBackup(at: capturedOutputURL)
         Logger.shared.log("Stage 4 End: EPUB Packaged at \(capturedOutputURL.lastPathComponent)", category: "Converter")
         return capturedOutputURL
     }

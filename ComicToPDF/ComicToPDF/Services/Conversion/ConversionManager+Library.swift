@@ -107,6 +107,7 @@ extension ConversionManager {
                             at: tempExtractDir, withIntermediateDirectories: true)
                         _ = try EPUBImporter.extractImages(from: captured, to: tempExtractDir)
                         try await ZipUtilities.zipDirectory(tempExtractDir, to: cbzURL)
+                        PhysicalFileSystemRouter.excludeFromBackup(at: cbzURL)
                         // Trigger library scan so the new CBZ appears immediately
                         await MainActor.run {
                             self.scanLibrary()
@@ -148,6 +149,7 @@ extension ConversionManager {
                         do {
                             if FileManager.default.fileExists(atPath: dst.path) { try FileManager.default.removeItem(at: dst) }
                             try FileManager.default.copyItem(at: src, to: dst)
+                            PhysicalFileSystemRouter.excludeFromBackup(at: dst)
                         } catch {
                             Logger.shared.log("Failed to copy \(src.lastPathComponent): \(error.localizedDescription)", category: "Import", type: .error)
                         }

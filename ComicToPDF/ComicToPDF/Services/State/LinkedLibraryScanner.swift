@@ -468,6 +468,7 @@ final class LinkedLibraryScanner: ObservableObject {
                         try FileManager.default.removeItem(at: destURL)
                     }
                     try FileManager.default.copyItem(at: driveURL, to: destURL)
+                    PhysicalFileSystemRouter.excludeFromBackup(at: destURL)
 
                     await MainActor.run {
                         if let idx = manager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {

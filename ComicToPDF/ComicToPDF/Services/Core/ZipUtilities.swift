@@ -29,16 +29,14 @@ struct ZipUtilities {
         return try await withCheckedThrowingContinuation { continuation in
             // Use a raw background queue to guarantee isolation from the UI
             DispatchQueue.global(qos: .userInitiated).async {
+                let fileManager = FileManager.default
+                let filename = sourceURL.deletingPathExtension().lastPathComponent
+                let uniqueID = UUID().uuidString.prefix(8)
+                let tempDir = fileManager.temporaryDirectory.appendingPathComponent("extract_\(filename)_\(uniqueID)")
                 do {
-                    let fileManager = FileManager.default
-
                     // Security scope is managed by the CALLER — do not open it here.
                     // See doc comment on extractComic for the ownership contract.
 
-                    let filename = sourceURL.deletingPathExtension().lastPathComponent
-                    let uniqueID = UUID().uuidString.prefix(8)
-                    let tempDir = fileManager.temporaryDirectory.appendingPathComponent("extract_\(filename)_\(uniqueID)")
-                    
                     // 2. Create Target Directory
                     try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
                     
@@ -203,6 +201,7 @@ struct ZipUtilities {
                     
                 } catch {
                     Logger.shared.log("Crash/Error in ZipUtilities: \(error.localizedDescription)", category: "System", type: .error)
+                    try? fileManager.removeItem(at: tempDir)
                     continuation.resume(throwing: error)
                 }
             }

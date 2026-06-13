@@ -140,6 +140,7 @@ class ExportOrchestrator {
         if pdf.contentType == .book {
             do {
                 try fileManager.copyItem(at: localSourceURL, to: targetURL)
+                PhysicalFileSystemRouter.excludeFromBackup(at: targetURL)
                 Logger.shared.log("Book Export: Safe pass-through HQ for \(pdf.name)", category: "Export")
                 return targetURL
             } catch {
@@ -160,6 +161,7 @@ class ExportOrchestrator {
                 try PDFGenerator.generate(from: imageURLs, to: pdfURL, mangaMode: AppSettingsManager.shared.conversionSettings.mangaMode, chapters: pdf.chapters, settings: AppSettingsManager.shared.conversionSettings) { @Sendable progress in
                     Task { @MainActor in TaskEngine.shared.processingStatus = "Processing \(Int(progress * 100))%" }
                 }
+                PhysicalFileSystemRouter.excludeFromBackup(at: pdfURL)
                 return pdfURL
             } catch {
                 return nil
@@ -173,6 +175,7 @@ class ExportOrchestrator {
             let destURL = exportDir.appendingPathComponent(finalName)
             if fileManager.fileExists(atPath: destURL.path) { try fileManager.removeItem(at: destURL) }
             try fileManager.moveItem(at: finalEPUB, to: destURL)
+            PhysicalFileSystemRouter.excludeFromBackup(at: destURL)
             return destURL
         } catch {
             return nil

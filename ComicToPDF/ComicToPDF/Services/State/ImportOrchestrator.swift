@@ -87,6 +87,7 @@ actor ImportOrchestrator {
                     try autoreleasepool {
                         if fileManager.fileExists(atPath: destURL.path) { try fileManager.removeItem(at: destURL) }
                         try fileManager.copyItem(at: fileURL, to: destURL)
+                        PhysicalFileSystemRouter.excludeFromBackup(at: destURL)
                     }
                     
                     // FIX: read size from enumerator's pre-fetched resourceValues — saves one attributesOfItem syscall per file
@@ -265,6 +266,7 @@ actor ImportOrchestrator {
                         } else {
                             try fileManager.copyItem(at: url, to: destURL)
                         }
+                        PhysicalFileSystemRouter.excludeFromBackup(at: destURL)
                     }
                     
                     // Re-use incomingSize if known, otherwise fallback to destURL attribute
@@ -576,6 +578,7 @@ actor ImportOrchestrator {
                             try autoreleasepool {
                                 if fileManager.fileExists(atPath: destURL.path) { try fileManager.removeItem(at: destURL) }
                                 try fileManager.copyItem(at: fileURL, to: destURL)
+                                PhysicalFileSystemRouter.excludeFromBackup(at: destURL)
                             }
 
                             // FIX: read size from enumerator resource values — saves one attributesOfItem syscall per file
@@ -808,6 +811,7 @@ actor ImportOrchestrator {
                         try FileManager.default.removeItem(at: cbzURL)
                     }
                     try await ZipUtilities.zipDirectory(tempDir, to: cbzURL)
+                    PhysicalFileSystemRouter.excludeFromBackup(at: cbzURL)
                     
                     return (pageCount, firstPageData)
                 }

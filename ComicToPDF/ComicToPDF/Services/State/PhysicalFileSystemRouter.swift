@@ -422,6 +422,17 @@ class PhysicalFileSystemRouter {
     }
     
     // MARK: - Extracted Static Disk Helpers
+    nonisolated static func excludeFromBackup(at url: URL) {
+        var mutableURL = url
+        var resourceValues = URLResourceValues()
+        resourceValues.isExcludedFromBackup = true
+        do {
+            try mutableURL.setResourceValues(resourceValues)
+        } catch {
+            Logger.shared.log("Failed to exclude from backup at \(url.lastPathComponent): \(error.localizedDescription)", category: "FileSystem", type: .error)
+        }
+    }
+    
     nonisolated static func extractCoverImageStatic(from url: URL) -> UIImage? {
         let ext = url.pathExtension.lowercased()
         if ext == "pdf" {
