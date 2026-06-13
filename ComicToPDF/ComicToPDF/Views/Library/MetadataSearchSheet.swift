@@ -604,11 +604,33 @@ struct MetadataSearchSheet: View {
     
     func fetchAndSaveCover(_ urlString: String) async {
         guard let url = URL(string: urlString) else { return }
-        if let data = try? Data(contentsOf: url) {
-             await MainActor.run {
-                 conversionManager.saveCoverImage(data, for: pdf)
-                 conversionManager.saveLibrary()
-             }
+        
+        let result = await Task.detached(priority: .userInitiated) { () -> (URL, UUID)? in
+            guard let data = try? Data(contentsOf: url),
+                  let image = UIImage(data: data),
+                  let jpegData = image.jpegData(compressionQuality: 0.9) else { return nil }
+            
+            guard image.size.width > 20 && image.size.height > 20 else { return nil }
+            
+            let variantID = UUID()
+            let coversDir = await ConversionManager.getCoversDirectory()
+            let variantURL = coversDir.appendingPathComponent("\(variantID.uuidString).jpg")
+            do {
+                try jpegData.write(to: variantURL)
+                return (variantURL, variantID)
+            } catch {
+                return nil
+            }
+        }.value
+        
+        if let (variantURL, variantID) = result {
+            await MainActor.run {
+                if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                    conversionManager.convertedPDFs[idx].metadata.coverVariants[variantID] = variantURL
+                    conversionManager.convertedPDFs[idx].metadata.selectedCoverID = variantID
+                    conversionManager.saveLibrary()
+                }
+            }
         }
     }
     

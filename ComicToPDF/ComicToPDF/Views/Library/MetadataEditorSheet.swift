@@ -302,6 +302,37 @@ struct MetadataEditorSheet: View {
         }
     }
     
+    private func fetchAndApplyOnlineCover(urlString: String) async {
+        guard let url = URL(string: urlString) else { return }
+        
+        let result = await Task.detached(priority: .userInitiated) { () -> (URL, UUID)? in
+            guard let data = try? Data(contentsOf: url),
+                  let image = UIImage(data: data),
+                  let jpegData = image.jpegData(compressionQuality: 0.9) else { return nil }
+            
+            guard image.size.width > 20 && image.size.height > 20 else { return nil }
+            
+            let variantID = UUID()
+            let coversDir = await ConversionManager.getCoversDirectory()
+            let variantURL = coversDir.appendingPathComponent("\(variantID.uuidString).jpg")
+            do {
+                try jpegData.write(to: variantURL)
+                return (variantURL, variantID)
+            } catch {
+                return nil
+            }
+        }.value
+        
+        if let (variantURL, variantID) = result {
+            await MainActor.run {
+                pdf.metadata.coverVariants[variantID] = variantURL
+                pdf.metadata.selectedCoverID = variantID
+                editedMetadata.coverVariants[variantID] = variantURL
+                editedMetadata.selectedCoverID = variantID
+            }
+        }
+    }
+    
     func applyBookMetadata(_ book: GoogleBookItem) {
         showBookResults = false
         
@@ -334,18 +365,10 @@ struct MetadataEditorSheet: View {
         
         editedMetadata.tags.append("Google Books")
         
-        // Asynchronously download the high-res cover image without freezing the UI
         if let imageURLStr = info.imageLinks?.bestQualityURL ?? info.imageLinks?.thumbnail, let url = URL(string: imageURLStr.replacingOccurrences(of: "http://", with: "https://")) {
             Task {
-                if let (data, _) = try? await URLSession.shared.data(from: url) {
-                    await MainActor.run {
-                        conversionManager.saveCoverImage(data, for: pdf)
-                        conversionManager.saveLibrary() // Write changes to disk immediately
-                        saveChanges() 
-                    }
-                } else {
-                    await MainActor.run { saveChanges() }
-                }
+                await fetchAndApplyOnlineCover(urlString: url.absoluteString)
+                await MainActor.run { saveChanges() }
             }
         } else {
             saveChanges()
@@ -409,14 +432,9 @@ struct MetadataEditorSheet: View {
                         isSearching = false
                     }
                     
-                    if let imageURLStr = issue.image?.original_url ?? issue.image?.medium_url, let url = URL(string: imageURLStr) {
-                        if let (data, _) = try? await URLSession.shared.data(from: url) {
-                            await MainActor.run {
-                                conversionManager.saveCoverImage(data, for: pdf)
-                                conversionManager.saveLibrary()
-                                saveChanges()
-                            }
-                        } else {
+                    if let imageURLStr = issue.image?.original_url ?? issue.image?.medium_url {
+                        Task {
+                            await fetchAndApplyOnlineCover(urlString: imageURLStr)
                             await MainActor.run { saveChanges() }
                         }
                     } else {

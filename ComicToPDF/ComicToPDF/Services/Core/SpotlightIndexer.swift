@@ -27,22 +27,25 @@ final class SpotlightIndexer {
 
     /// Index the entire library — call after import or metadata changes.
     func indexLibrary(pdfs: [ConvertedPDF]) {
-        let tuples = pdfs.map { (id: $0.id, name: $0.name, series: $0.metadata.series, type: $0.contentType.rawValue) }
-        let items: [CSSearchableItem] = tuples.map { t in
-            let attrs = CSSearchableItemAttributeSet(contentType: .content)
-            attrs.title = t.name
-            attrs.contentDescription = t.series
-            attrs.keywords = [t.type]
-            attrs.identifier = t.id.uuidString
-            return CSSearchableItem(
-                uniqueIdentifier: "book-\(t.id.uuidString)",
-                domainIdentifier: "com.inksyncpro.library",
-                attributeSet: attrs
-            )
-        }
-        self.index.indexSearchableItems(items) { @Sendable error in
-            if let error = error {
-                Logger.shared.log("Spotlight: failed to index library — \(error)", category: "Spotlight", type: .error)
+        let localIndex = self.index
+        Task.detached(priority: .background) {
+            let tuples = pdfs.map { (id: $0.id, name: $0.name, series: $0.metadata.series, type: $0.contentType.rawValue) }
+            let items: [CSSearchableItem] = tuples.map { t in
+                let attrs = CSSearchableItemAttributeSet(contentType: .content)
+                attrs.title = t.name
+                attrs.contentDescription = t.series
+                attrs.keywords = [t.type]
+                attrs.identifier = t.id.uuidString
+                return CSSearchableItem(
+                    uniqueIdentifier: "book-\(t.id.uuidString)",
+                    domainIdentifier: "com.inksyncpro.library",
+                    attributeSet: attrs
+                )
+            }
+            localIndex.indexSearchableItems(items) { error in
+                if let error = error {
+                    Logger.shared.log("Spotlight: failed to index library — \(error)", category: "Spotlight", type: .error)
+                }
             }
         }
     }

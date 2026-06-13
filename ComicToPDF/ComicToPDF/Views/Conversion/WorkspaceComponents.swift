@@ -328,6 +328,7 @@ struct CoverStudioView: View {
     @State private var isFetching = false
     @State private var hasFetched = false
     @State private var fetchLimit = 10
+    @State private var remoteStageImage: UIImage? = nil
 
     
     var activeCoverURL: URL? { conversionManager.getCoverURL(for: livePDF) }
@@ -336,10 +337,6 @@ struct CoverStudioView: View {
         guard let url = previewCoverURL ?? activeCoverURL else { return nil }
         if url.isFileURL {
             return UIImage(contentsOfFile: url.path)
-        } else {
-            if let data = try? Data(contentsOf: url) {
-                return UIImage(data: data)
-            }
         }
         return nil
     }
@@ -373,6 +370,25 @@ struct CoverStudioView: View {
                     .frame(height: 360)
                     .cornerRadius(12)
                     .padding(10)
+            } else if let url = previewCoverURL ?? activeCoverURL, !url.isFileURL {
+                if let remoteImg = remoteStageImage {
+                    Image(uiImage: remoteImg)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(height: 360)
+                        .cornerRadius(12)
+                        .padding(10)
+                } else {
+                    ProgressView()
+                        .frame(height: 360)
+                        .task(id: url) {
+                            remoteStageImage = nil
+                            if let (data, _) = try? await URLSession.shared.data(from: url),
+                               let img = UIImage(data: data) {
+                                remoteStageImage = img
+                            }
+                        }
+                }
             } else {
                 VStack {
                     Image(systemName: "photo.artframe")

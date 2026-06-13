@@ -21,6 +21,8 @@ class PhysicalFileSystemRouter {
     static let shared = PhysicalFileSystemRouter()
     private init() {}
     
+    private var backfillTask: Task<Void, Never>?
+    
     // MARK: - Core File IO Storage
 
     nonisolated static func getCoversDirectory() -> URL {
@@ -95,30 +97,33 @@ class PhysicalFileSystemRouter {
     
     func saveCoverImage(_ data: Data, for pdf: ConvertedPDF, manager: ConversionManager) {
         guard let coverURL = getCoverURL(for: pdf) else { return }
-        try? data.write(to: coverURL)
+        let pdfID = pdf.id
         
-        let key = pdf.id.uuidString as NSString
-        var thumbnailCost: Int? = nil
-        var finalThumbnail: UIImage? = nil
-        
-        autoreleasepool {
-            if let image = UIImage(data: data) {
-                let thumbnail = image.preparingThumbnail(of: CGSize(width: 300, height: 450)) ?? image
-                finalThumbnail = thumbnail
-                // Pixel byte count approximation — accurate enough for NSCache pressure, zero CPU overhead.
-                thumbnailCost = Int(thumbnail.size.width * thumbnail.size.height * thumbnail.scale * thumbnail.scale * 4)
+        Task.detached(priority: .background) {
+            try? data.write(to: coverURL)
+            
+            let key = pdfID.uuidString as NSString
+            var thumbnailCost: Int? = nil
+            var finalThumbnail: UIImage? = nil
+            
+            autoreleasepool {
+                if let image = UIImage(data: data) {
+                    let thumbnail = image.preparingThumbnail(of: CGSize(width: 300, height: 450)) ?? image
+                    finalThumbnail = thumbnail
+                    thumbnailCost = Int(thumbnail.size.width * thumbnail.size.height * thumbnail.scale * thumbnail.scale * 4)
+                }
             }
-        }
-        
-        Task { @MainActor in
-            if let thumb = finalThumbnail, let cost = thumbnailCost {
-                manager.thumbnailCache.setObject(thumb, forKey: key, cost: cost)
-            }
-            if let index = manager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
-                manager.convertedPDFs[index].coverImageData = nil
-                // Route through the debounced subject so rapid backfill saves coalesce
-                // into one SwiftUI diff per 150ms window instead of one per cover write.
-                manager.thumbnailReadySubject.send()
+            
+            await MainActor.run {
+                if let thumb = finalThumbnail, let cost = thumbnailCost {
+                    manager.thumbnailCache.setObject(thumb, forKey: key, cost: cost)
+                }
+                if let index = manager.convertedPDFs.firstIndex(where: { $0.id == pdfID }) {
+                    manager.convertedPDFs[index].coverImageData = nil
+                    // Route through the debounced subject so rapid backfill saves coalesce
+                    // into one SwiftUI diff per 150ms window instead of one per cover write.
+                    manager.thumbnailReadySubject.send()
+                }
             }
         }
     }
@@ -236,18 +241,22 @@ class PhysicalFileSystemRouter {
     }
     
     func backfillMissingThumbnails(manager: ConversionManager) {
+        backfillTask?.cancel()
+        
         let allPDFs = manager.convertedPDFs
-
-        // Pass 1 — warm in-memory NSCache for covers that exist on disk but aren't cached.
-        // This is the "cold-start" fix: covers appear immediately on first library open.
-        Task(priority: .userInitiated) {
+        
+        backfillTask = Task(priority: .userInitiated) {
+            // Hop to Main Actor ONCE to filter pdfs that need warming
+            let pdfsToWarm = await MainActor.run { () -> [ConvertedPDF] in
+                allPDFs.filter { pdf in
+                    let key = pdf.id.uuidString as NSString
+                    return manager.thumbnailCache.object(forKey: key) == nil
+                }
+            }
+            
             var warmedAny = false
-            for pdf in allPDFs {
-                let key = pdf.id.uuidString as NSString
-                
-                // ✅ FIX: Safely check the cache on the MainActor
-                let isCached = await MainActor.run { manager.thumbnailCache.object(forKey: key) != nil }
-                guard !isCached else { continue }
+            for pdf in pdfsToWarm {
+                guard !Task.isCancelled else { return }
                 
                 guard let coverURL = getCoverURL(for: pdf),
                       FileManager.default.fileExists(atPath: coverURL.path) else { continue }
@@ -267,6 +276,7 @@ class PhysicalFileSystemRouter {
 
                 if let image {
                     await MainActor.run {
+                        let key = pdf.id.uuidString as NSString
                         manager.thumbnailCache.setObject(image, forKey: key)
                         warmedAny = true
                     }
