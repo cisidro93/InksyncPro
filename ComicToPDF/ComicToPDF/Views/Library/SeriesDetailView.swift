@@ -520,40 +520,40 @@ struct SeriesDetailView: View {
                     }
 
                     Menu {
-                        Picker("Sort By", selection: $sortOption) {
-                            ForEach(SeriesSortOption.allCases) { option in
-                                if option != .manual || isCollection {
+                        Group {
+                            Picker("Sort By", selection: $sortOption) {
+                                ForEach(SeriesSortOption.allCases.filter { $0 != .manual || isCollection }) { option in
                                     Text(option.rawValue).tag(option)
                                 }
                             }
-                        }
-                        
-                        if showVolumeGrouping && hasVolumeData {
+                            
+                            if showVolumeGrouping && hasVolumeData {
+                                Divider()
+                                
+                                Button {
+                                    withAnimation {
+                                        collapsedVolumes = Set(volumeGroups.map { $0.key })
+                                    }
+                                } label: {
+                                    Label("Collapse All Volumes", systemImage: "rectangle.compress.vertical")
+                                }
+                                
+                                Button {
+                                    withAnimation {
+                                        collapsedVolumes.removeAll()
+                                    }
+                                } label: {
+                                    Label("Expand All Volumes", systemImage: "rectangle.expand.vertical")
+                                }
+                            }
+                            
                             Divider()
                             
                             Button {
-                                withAnimation {
-                                    collapsedVolumes = Set(volumeGroups.map { $0.key })
-                                }
+                                exportSmartListTemplate()
                             } label: {
-                                Label("Collapse All Volumes", systemImage: "rectangle.compress.vertical")
+                                Label("Export as Smart List (.csv)", systemImage: "square.and.arrow.up")
                             }
-                            
-                            Button {
-                                withAnimation {
-                                    collapsedVolumes.removeAll()
-                                }
-                            } label: {
-                                Label("Expand All Volumes", systemImage: "rectangle.expand.vertical")
-                            }
-                        }
-                        
-                        Divider()
-                        
-                        Button {
-                            exportSmartListTemplate()
-                        } label: {
-                            Label("Export as Smart List (.csv)", systemImage: "square.and.arrow.up")
                         }
                     } label: {
                         Image(systemName: "arrow.up.arrow.down")
