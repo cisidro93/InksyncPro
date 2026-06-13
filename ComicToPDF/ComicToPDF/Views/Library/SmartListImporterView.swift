@@ -9,6 +9,7 @@ struct SmartListImporterView: View {
     @State private var errorMessage: String? = nil
     @State private var eventName: String = "Imported Event"
     @State private var pastedText: String = ""
+    @State private var showInventoryCopiedMessage: Bool = false
 
 
 
@@ -99,13 +100,28 @@ struct SmartListImporterView: View {
                                 .cornerRadius(8)
                                 .padding(.horizontal, 40)
                             
-                            // âœ… NEW: CSV Example Button
                             Button {
                                 pastedText = "ReadingOrder,SortOrder,Series,Issue,Volume,Label,Optional\nCivil War,1,Amazing Spider-Man,529,,Prelude,false\nCivil War,2,New Avengers,21,,Prelude,true\nCivil War,3,Civil War,1,,Main,false"
                             } label: {
                                 Label("Paste Example Reading Order Template", systemImage: "doc.on.clipboard")
                                     .font(.caption)
                                     .foregroundColor(.blue)
+                            }
+                            
+                            Button {
+                                copyLibraryInventoryToClipboard()
+                            } label: {
+                                Label("Copy Library Inventory for AI Generation", systemImage: "doc.on.clipboard.fill")
+                                    .font(.caption)
+                                    .foregroundColor(.purple)
+                            }
+                            .padding(.top, 4)
+                            
+                            if showInventoryCopiedMessage {
+                                Text("Library inventory copied to clipboard!")
+                                    .font(.caption2)
+                                    .foregroundColor(.purple)
+                                    .transition(.opacity)
                             }
                             
                             if !pastedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -233,6 +249,49 @@ struct SmartListImporterView: View {
             handleSmartListURL(tempURL)
         } catch {
             errorMessage = "Failed to process text."
+        }
+    }
+    
+    private func copyLibraryInventoryToClipboard() {
+        let pdfs = conversionManager.convertedPDFs
+        if pdfs.isEmpty {
+            UIPasteboard.general.string = "No items in library."
+            return
+        }
+        
+        var seriesGroups: [String: [String]] = [:]
+        for pdf in pdfs {
+            let seriesName = pdf.metadata.series ?? pdf.name.replacingOccurrences(of: ".\(pdf.url.pathExtension)", with: "")
+            let issue = pdf.metadata.issueNumber ?? "1"
+            seriesGroups[seriesName, default: []].append(issue)
+        }
+        
+        var lines: [String] = []
+        lines.append("--- INKSYNC PRO LIBRARY INVENTORY ---")
+        lines.append("Format: Series Name - [Issue Numbers]")
+        lines.append("")
+        
+        for (series, issues) in seriesGroups.sorted(by: { $0.key < $1.key }) {
+            let sortedIssues = issues.sorted { a, b in
+                if let na = Int(a), let nb = Int(b) {
+                    return na < nb
+                }
+                return a < b
+            }
+            let uniqueIssues = Array(NSOrderedSet(array: sortedIssues)) as? [String] ?? sortedIssues
+            lines.append("\(series) - Issues: \(uniqueIssues.joined(separator: ", "))")
+        }
+        
+        UIPasteboard.general.string = lines.joined(separator: "\n")
+        
+        withAnimation {
+            showInventoryCopiedMessage = true
+        }
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+            withAnimation {
+                showInventoryCopiedMessage = false
+            }
         }
     }
 }
