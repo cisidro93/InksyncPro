@@ -26,6 +26,13 @@ struct PrecisionCanvasView: View {
     @State private var currentDragRect: NormalizedRect?
     @State private var guideOpacity: Double = 0.0
     
+    private var isPreviewPresented: Binding<Bool> {
+        Binding(
+            get: { selectedTool == .preview },
+            set: { if !$0 { selectedTool = .edit } }
+        )
+    }
+    
     init(pdf: ConvertedPDF, pageIndex: Binding<Int>, totalCount: Int, conversionManager: ConversionManager) {
         self.pdf = pdf
         self._pageIndex = pageIndex
@@ -66,10 +73,7 @@ struct PrecisionCanvasView: View {
             selectedTool = .edit
             loadPage()
         }
-        .fullScreenCover(isPresented: Binding(
-            get: { selectedTool == .preview },
-            set: { if !$0 { selectedTool = .edit } }
-        )) {
+        .fullScreenCover(isPresented: isPreviewPresented) {
             previewDestination
         }
         .onDisappear {
@@ -167,46 +171,49 @@ struct PrecisionCanvasView: View {
     @ViewBuilder
     private var bottomBarItems: some View {
         Group {
-            Spacer()
-            Button(action: runScan) {
-                VStack(spacing: 4) { Image(systemName: "sparkles"); Text("Scan").font(.caption2) }
+            Group {
+                Spacer()
+                Button(action: runScan) {
+                    VStack(spacing: 4) { Image(systemName: "sparkles"); Text("Scan").font(.caption2) }
+                }
+                
+                Spacer()
+                
+                Button(action: { selectedTool = .edit }) {
+                    VStack(spacing: 4) { Image(systemName: "cursorarrow.rays"); Text("Edit").font(.caption2) }
+                }
+                .foregroundColor(selectedTool == .edit ? Theme.blue : .primary)
+                
+                Spacer()
+                
+                Button(action: { selectedTool = .knife }) {
+                    VStack(spacing: 4) { Image(systemName: "scissors"); Text("Split").font(.caption2) }
+                }
+                .foregroundColor(selectedTool == .knife ? Theme.blue : .primary)
             }
-            
-            Spacer()
-            
-            Button(action: { selectedTool = .edit }) {
-                VStack(spacing: 4) { Image(systemName: "cursorarrow.rays"); Text("Edit").font(.caption2) }
+            Group {
+                Spacer()
+                
+                Button(action: { selectedTool = .anchor }) {
+                    VStack(spacing: 4) { Image(systemName: "plus.square.dashed"); Text("Add").font(.caption2) }
+                }
+                .foregroundColor(selectedTool == .anchor ? Theme.blue : .primary)
+                
+                Spacer()
+                
+                Button(action: { selectedTool = .draw }) {
+                    VStack(spacing: 4) { Image(systemName: "pencil.tip"); Text("Draw").font(.caption2) }
+                }
+                .foregroundColor(selectedTool == .draw ? Theme.blue : .primary)
+                
+                Spacer()
+                
+                Button(action: { selectedTool = .preview }) {
+                    VStack(spacing: 4) { Image(systemName: "eye"); Text("Preview").font(.caption2) }
+                }
+                .foregroundColor(selectedTool == .preview ? Theme.blue : .primary)
+                Spacer()
             }
-            .foregroundColor(selectedTool == .edit ? Theme.blue : .primary)
-            
-            Spacer()
-            
-            Button(action: { selectedTool = .knife }) {
-                VStack(spacing: 4) { Image(systemName: "scissors"); Text("Split").font(.caption2) }
-            }
-            .foregroundColor(selectedTool == .knife ? Theme.blue : .primary)
-            
-            Spacer()
-            
-            Button(action: { selectedTool = .anchor }) {
-                VStack(spacing: 4) { Image(systemName: "plus.square.dashed"); Text("Add").font(.caption2) }
-            }
-            .foregroundColor(selectedTool == .anchor ? Theme.blue : .primary)
-            
-            Spacer()
-            
-            Button(action: { selectedTool = .draw }) {
-                VStack(spacing: 4) { Image(systemName: "pencil.tip"); Text("Draw").font(.caption2) }
-            }
-            .foregroundColor(selectedTool == .draw ? Theme.blue : .primary)
-            
-            Spacer()
-            
-            Button(action: { selectedTool = .preview }) {
-                VStack(spacing: 4) { Image(systemName: "eye"); Text("Preview").font(.caption2) }
-            }
-            .foregroundColor(selectedTool == .preview ? Theme.blue : .primary)
-            Spacer()
         }
     }
 
