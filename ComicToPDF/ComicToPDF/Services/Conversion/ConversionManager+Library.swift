@@ -318,6 +318,45 @@ extension ConversionManager {
     func updatePDFMetadata(_ pdf: ConvertedPDF, metadata: PDFMetadata) { if let idx = convertedPDFs.firstIndex(where: { $0.id == pdf.id }) { convertedPDFs[idx].metadata = metadata; saveLibrary() } }
 
     /// Physically renames the underlying .cbz, .epub, or .pdf on the iOS Storage and updates the database pointer.
+    func generateRenameFilename(pdf: ConvertedPDF, newSeriesName: String) -> String {
+        let cleanSeries = newSeriesName.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        var volumeBlock = ""
+        if let v = pdf.metadata.volume, !v.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            volumeBlock = " - v\(v.trimmingCharacters(in: .whitespacesAndNewlines))"
+        }
+        
+        var numberBlock = ""
+        let issue = pdf.metadata.issueNumber ?? MetadataHeuristics.extractIssueNumber(from: pdf.name)
+        if let numRaw = issue?.trimmingCharacters(in: .whitespacesAndNewlines), !numRaw.isEmpty {
+            if let intNum = Int(numRaw) {
+                numberBlock = String(format: " - c%03d", intNum)
+            } else {
+                numberBlock = " - c\(numRaw)"
+            }
+        }
+        
+        var titleBlock = ""
+        if let title = pdf.metadata.title.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
+            let oldFilenameStem = pdf.url.deletingPathExtension().lastPathComponent
+            if title != oldFilenameStem && title != pdf.name && title != (pdf.metadata.series ?? "") {
+                titleBlock = " - \(title)"
+            }
+        }
+        
+        var candidateName = "\(cleanSeries)\(volumeBlock)\(numberBlock)\(titleBlock)"
+        candidateName = candidateName.replacingOccurrences(of: "/", with: "-")
+                                     .replacingOccurrences(of: "\\", with: "-")
+                                     .replacingOccurrences(of: ":", with: "-")
+                                     .replacingOccurrences(of: "*", with: "")
+                                     .replacingOccurrences(of: "?", with: "")
+                                     .replacingOccurrences(of: "\"", with: "'")
+                                     .replacingOccurrences(of: "<", with: "(")
+                                     .replacingOccurrences(of: ">", with: ")")
+                                     .replacingOccurrences(of: "|", with: "-")
+        return candidateName.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     func safelyRenamePhysicalFile(pdf: ConvertedPDF, newName: String) throws {
         try PhysicalFileSystemRouter.shared.safelyRenamePhysicalFile(pdf: pdf, newName: newName, manager: self)
     }

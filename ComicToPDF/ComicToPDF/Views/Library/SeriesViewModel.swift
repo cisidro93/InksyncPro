@@ -36,6 +36,8 @@ class SeriesViewModel: ObservableObject {
         for pdf in target.issues {
             if let idx = manager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
                 manager.convertedPDFs[idx].metadata.series = newName
+                let newFilename = manager.generateRenameFilename(pdf: manager.convertedPDFs[idx], newSeriesName: newName)
+                try? manager.safelyRenamePhysicalFile(pdf: manager.convertedPDFs[idx], newName: newFilename)
             }
         }
         manager.saveLibrary()
