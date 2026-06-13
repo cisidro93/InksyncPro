@@ -68,12 +68,11 @@ class LibraryViewModel: ObservableObject {
         // Snapshot linked drives so the background task doesn't capture @MainActor state.
         let linkedDrives = AppSettingsManager.shared.linkedDrives
 
-        rebuilTask = Task<Void, Never>.detached(priority: .background) { [weak self] in
-            guard let self = self else { return }
+        rebuilTask = Task.detached(priority: .background) { [weak self] in
             guard !Task.isCancelled else { return }
 
             // Perform sorting on the background thread
-            let sortedPDFs = self.sortPDFs(pdfsSnapshot, sortOption: sortOption)
+            let sortedPDFs = LibraryViewModel.sortPDFs(pdfsSnapshot, sortOption: sortOption)
 
             var groups: [String: SeriesGroup] = [:]
             var singles: [ConvertedPDF] = []
@@ -94,7 +93,7 @@ class LibraryViewModel: ObservableObject {
             }
 
             // ✅ PHASE 2: Ensure all child collections of the current folder exist, even if empty
-            for collection in collections where collection.parentId == folderID {
+            for collection in collectionsSnapshot where collection.parentId == folderID {
                 let colKey = "col_\(collection.id.uuidString)"
                 groups[colKey] = SeriesGroup(id: collection.id.uuidString, title: collection.name, coverIssueID: collection.explicitCoverFileID, count: 0, issues: [])
             }
@@ -184,7 +183,7 @@ class LibraryViewModel: ObservableObject {
             }
             
             // Post-Process Collections to apply manual sorting
-            for collection in collections {
+            for collection in collectionsSnapshot {
                 let colKey = "col_\(collection.id.uuidString)"
                 if var group = groups[colKey], let manualOrder = collection.manualSortOrder, !manualOrder.isEmpty {
                     // Create a lookup dictionary for fast indexing
@@ -405,7 +404,7 @@ class LibraryViewModel: ObservableObject {
     }
     
     // Additional Logic Handlers...
-    nonisolated func sortPDFs(_ pdfs: [ConvertedPDF], sortOption: ModernLibraryView.SortOption) -> [ConvertedPDF] {
+    static nonisolated func sortPDFs(_ pdfs: [ConvertedPDF], sortOption: ModernLibraryView.SortOption) -> [ConvertedPDF] {
         switch sortOption {
         case .dateAdded: return pdfs.reversed() // Returns newest imported first, which places it natively at index 0 and top-left.
         case .name: return pdfs.sorted {

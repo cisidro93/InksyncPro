@@ -846,7 +846,7 @@ struct ModernLibraryView: View {
                     viewModel.handleDetailAction(action: .read, for: next, conversionManager: conversionManager)
                 }
             }
-        case .driveFolder(let entry):
+        case .driveFolder:
             break
         }
     }
