@@ -39,6 +39,168 @@ final class SmartListImporter: Sendable {
         return parseCBLString(xmlString)
     }
     
+    private func detectColumnMapping(rows: [[String]]) -> [String: Int] {
+        var mapping: [String: Int] = [:]
+        guard let firstRow = rows.first else { return mapping }
+        let colCount = firstRow.count
+        if colCount == 0 { return mapping }
+        
+        var scoresForSeries = [Int](repeating: 0, count: colCount)
+        var scoresForIssue = [Int](repeating: 0, count: colCount)
+        var scoresForVolume = [Int](repeating: 0, count: colCount)
+        var scoresForOptional = [Int](repeating: 0, count: colCount)
+        var scoresForLabel = [Int](repeating: 0, count: colCount)
+        
+        let sampleCount = min(rows.count, 20)
+        let sampleRows = Array(rows.prefix(sampleCount))
+        
+        for colIdx in 0..<colCount {
+            var numericCount = 0
+            var rangeCount = 0
+            var volumeKeywordCount = 0
+            var booleanCount = 0
+            var textCount = 0
+            var labelKeywordCount = 0
+            var emptyCount = 0
+            
+            for row in sampleRows {
+                guard colIdx < row.count else { continue }
+                let val = row[colIdx].trimmingCharacters(in: .whitespaces).lowercased()
+                if val.isEmpty {
+                    emptyCount += 1
+                    continue
+                }
+                
+                // 1. Check boolean
+                if ["true", "false", "yes", "no"].contains(val) {
+                    booleanCount += 1
+                }
+                
+                // 2. Check range pattern (e.g. 1-5, 10-15)
+                let rangePattern = "^[0-9]+\\s*(?:-|to)\\s*[0-9]+$"
+                if val.range(of: rangePattern, options: .regularExpression) != nil {
+                    rangeCount += 1
+                }
+                
+                // 3. Check numeric (e.g. 2, 10, #3)
+                let numericPattern = "^#?[0-9]+(?:\\.[0-9]+)?$"
+                if val.range(of: numericPattern, options: .regularExpression) != nil {
+                    numericCount += 1
+                }
+                
+                // 4. Check volume keywords
+                if val.contains("vol") || val.hasPrefix("v") {
+                    volumeKeywordCount += 1
+                }
+                
+                // 5. Check label keywords
+                if ["main", "prelude", "collection", "tie-in", "tiein", "optional"].contains(val) {
+                    labelKeywordCount += 1
+                }
+                
+                // 6. Text count
+                if !val.isEmpty {
+                    textCount += 1
+                }
+            }
+            
+            let validSamples = sampleRows.count - emptyCount
+            if validSamples > 0 {
+                // Scoring
+                if booleanCount == validSamples {
+                    scoresForOptional[colIdx] += 100
+                } else if booleanCount > 0 {
+                    scoresForOptional[colIdx] += 50
+                }
+                
+                if rangeCount > 0 {
+                    scoresForIssue[colIdx] += 120
+                }
+                if numericCount == validSamples {
+                    scoresForIssue[colIdx] += 80
+                } else if numericCount > 0 {
+                    scoresForIssue[colIdx] += 40
+                }
+                
+                if volumeKeywordCount > 0 {
+                    scoresForVolume[colIdx] += 100
+                }
+                
+                if labelKeywordCount > 0 {
+                    scoresForLabel[colIdx] += 80
+                }
+                
+                // Series scoring
+                let avgLength = sampleRows.compactMap { colIdx < $0.count ? Double($0[colIdx].count) : nil }.reduce(0, +) / Double(validSamples)
+                if avgLength > 3 && numericCount == 0 && booleanCount == 0 {
+                    scoresForSeries[colIdx] += 60
+                }
+            }
+        }
+        
+        var assignedCols = Set<Int>()
+        
+        // 1. Assign Optional
+        if let bestOpt = (0..<colCount).filter({ !assignedCols.contains($0) }).max(by: { scoresForOptional[$0] < scoresForOptional[$1] }),
+           scoresForOptional[bestOpt] >= 50 {
+            mapping["optional"] = bestOpt
+            assignedCols.insert(bestOpt)
+        }
+        
+        // 2. Assign Issue
+        if let bestIssue = (0..<colCount).filter({ !assignedCols.contains($0) }).max(by: { scoresForIssue[$0] < scoresForIssue[$1] }),
+           scoresForIssue[bestIssue] >= 40 {
+            mapping["issue"] = bestIssue
+            assignedCols.insert(bestIssue)
+        }
+        
+        // 3. Assign Volume
+        if let bestVol = (0..<colCount).filter({ !assignedCols.contains($0) }).max(by: { scoresForVolume[$0] < scoresForVolume[$1] }),
+           scoresForVolume[bestVol] >= 50 {
+            mapping["volume"] = bestVol
+            assignedCols.insert(bestVol)
+        }
+        
+        // 4. Assign Series
+        if let bestSeries = (0..<colCount).filter({ !assignedCols.contains($0) }).max(by: { scoresForSeries[$0] < scoresForSeries[$1] }),
+           scoresForSeries[bestSeries] > 0 {
+            mapping["series"] = bestSeries
+            assignedCols.insert(bestSeries)
+        } else if let firstRemaining = (0..<colCount).first(where: { !assignedCols.contains($0) }) {
+            mapping["series"] = firstRemaining
+            assignedCols.insert(firstRemaining)
+        }
+        
+        // 5. Assign Label
+        if let bestLabel = (0..<colCount).filter({ !assignedCols.contains($0) }).max(by: { scoresForLabel[$0] < scoresForLabel[$1] }),
+           scoresForLabel[bestLabel] > 0 {
+            mapping["label"] = bestLabel
+            assignedCols.insert(bestLabel)
+        } else if let firstRemaining = (0..<colCount).first(where: { !assignedCols.contains($0) }) {
+            mapping["label"] = firstRemaining
+            assignedCols.insert(firstRemaining)
+        }
+        
+        // Fallback standard order mapping if autodetection is incomplete
+        if mapping["series"] == nil {
+            mapping["series"] = 0
+        }
+        if mapping["issue"] == nil && colCount > 1 {
+            mapping["issue"] = 1
+        }
+        if mapping["volume"] == nil && colCount > 2 {
+            mapping["volume"] = 2
+        }
+        if mapping["label"] == nil && colCount > 3 {
+            mapping["label"] = 3
+        }
+        if mapping["optional"] == nil && colCount > 4 {
+            mapping["optional"] = 4
+        }
+        
+        return mapping
+    }
+    
     // MARK: - CSV AI Table Parser
     func parseCSVList(from url: URL, defaultSeriesName: String) throws -> [RequestedComicItem] {
         guard let text = try? readStringResiliently(from: url) else {
@@ -47,84 +209,166 @@ final class SmartListImporter: Sendable {
         
         var items: [RequestedComicItem] = []
         let lines = text.components(separatedBy: .newlines)
+        
+        var allRows: [[String]] = []
+        for line in lines {
+            let row = line.trimmingCharacters(in: .whitespaces)
+            if row.isEmpty { continue }
+            let columns = parseCSVRow(row)
+            allRows.append(columns)
+        }
+        
+        guard !allRows.isEmpty else { return [] }
+        
         var headers: [String] = []
         var hasHeaders = false
         
-        for (idx, line) in lines.enumerated() {
-            let row = line.trimmingCharacters(in: .whitespaces)
-            if row.isEmpty { continue }
-            
-            // Quote-aware CSV tokenizer (handles commas inside quoted fields)
-            let columns = parseCSVRow(row)
-            
-            if idx == 0 {
-                let testHeaders = columns.map { $0.lowercased().trimmingCharacters(in: .whitespaces) }
-                if testHeaders.contains(where: { $0.contains("chapter") || $0.contains("start") || $0.contains("end") || $0.contains("issue") || $0.contains("series") || $0.contains("title") || $0.contains("reading") || $0.contains("sort") }) {
-                    headers = testHeaders
-                    hasHeaders = true
-                    continue
-                } else {
-                    // No recognizable headers: fallback to basic text processing below
-                    break
-                }
-            }
-            
-            var volInfo: String? = nil
-            var startChap: Int? = nil
-            var endChap: Int? = nil
-            var parsedSeries: String? = nil
-            var parsedIssue: String? = nil
-            
-            var parsedReadingOrder: String? = nil
-            var parsedSortOrder: Int? = nil
-            var parsedLabel: String? = nil
-            var parsedOptional: Bool? = nil
-            
-            for (colIdx, value) in columns.enumerated() {
-                guard colIdx < headers.count else { continue }
-                let header = headers[colIdx]
-                let cleanVal = value.trimmingCharacters(in: .whitespaces)
-                
-                if header.contains("series") || header == "title" || header == "book" || header.contains("name") {
-                    parsedSeries = cleanVal
-                } else if header == "issue" || header.contains("issue") || header == "number" || header == "#" {
-                    parsedIssue = cleanVal
-                } else if header.contains("volume") || header.contains("vol") {
-                    volInfo = cleanVal
-                } else if header == "start_chapter" || header == "chapter" || header == "start" {
-                    startChap = Int(cleanVal)
-                } else if header == "end_chapter" || header == "end" {
-                    endChap = Int(cleanVal)
-                } else if header == "readingorder" || header.contains("reading") || header == "event" {
-                    parsedReadingOrder = cleanVal
-                } else if header == "sortorder" || header == "order" || header == "sort" {
-                    parsedSortOrder = Int(cleanVal)
-                } else if header == "label" || header == "category" || header == "type" {
-                    parsedLabel = cleanVal
-                } else if header == "optional" {
-                    let optStr = cleanVal.lowercased()
-                    if optStr == "true" || optStr == "1" || optStr == "yes" { parsedOptional = true }
-                    else if optStr == "false" || optStr == "0" || optStr == "no" { parsedOptional = false }
-                }
-            }
-            
-            if let series = parsedSeries ?? (defaultSeriesName.isEmpty ? nil : defaultSeriesName) {
-                if let issue = parsedIssue {
-                    items.append(RequestedComicItem(series: series, issueNumber: issue, volume: volInfo, readingOrder: parsedReadingOrder, sortOrder: parsedSortOrder, label: parsedLabel, isOptional: parsedOptional, originalText: row))
-                } else if let start = startChap {
-                    let end = endChap ?? start
-                    for chap in start...end {
-                        items.append(RequestedComicItem(series: series, issueNumber: "\(chap)", volume: volInfo, readingOrder: parsedReadingOrder, sortOrder: parsedSortOrder, label: parsedLabel, isOptional: parsedOptional, originalText: "Vol \(volInfo ?? "?"), Ch \(chap)"))
-                    }
-                } else {
-                    items.append(RequestedComicItem(series: series, issueNumber: nil, volume: volInfo, readingOrder: parsedReadingOrder, sortOrder: parsedSortOrder, label: parsedLabel, isOptional: parsedOptional, originalText: row))
-                }
-            }
+        let firstRow = allRows[0]
+        let testHeaders = firstRow.map { $0.lowercased().trimmingCharacters(in: .whitespaces) }
+        let headerKeywords = ["chapter", "start", "end", "issue", "series", "title", "reading", "sort", "book", "volume", "vol"]
+        if testHeaders.contains(where: { h in headerKeywords.contains(where: { h.contains($0) }) }) {
+            headers = testHeaders
+            hasHeaders = true
         }
         
-        // If CSV has no recognizable table headers, evaluate it as an explicit newline text document
-        if !hasHeaders && items.isEmpty {
-            return try parseTextList(from: url, defaultSeriesName: defaultSeriesName)
+        if hasHeaders {
+            for rowColumns in allRows.dropFirst() {
+                var volInfo: String? = nil
+                var startChap: Int? = nil
+                var endChap: Int? = nil
+                var parsedSeries: String? = nil
+                var parsedIssue: String? = nil
+                
+                var parsedReadingOrder: String? = nil
+                var parsedSortOrder: Int? = nil
+                var parsedLabel: String? = nil
+                var parsedOptional: Bool? = nil
+                
+                for (colIdx, value) in rowColumns.enumerated() {
+                    guard colIdx < headers.count else { continue }
+                    let header = headers[colIdx]
+                    let cleanVal = value.trimmingCharacters(in: .whitespaces)
+                    
+                    if header.contains("series") || header == "title" || header == "book" || header.contains("name") {
+                        parsedSeries = cleanVal
+                    } else if header == "issue" || header.contains("issue") || header == "number" || header == "#" {
+                        parsedIssue = cleanVal
+                    } else if header.contains("volume") || header.contains("vol") {
+                        volInfo = cleanVal
+                    } else if header == "start_chapter" || header == "chapter" || header == "start" {
+                        startChap = Int(cleanVal)
+                    } else if header == "end_chapter" || header == "end" {
+                        endChap = Int(cleanVal)
+                    } else if header == "readingorder" || header.contains("reading") || header == "event" {
+                        parsedReadingOrder = cleanVal
+                    } else if header == "sortorder" || header == "order" || header == "sort" {
+                        parsedSortOrder = Int(cleanVal)
+                    } else if header == "label" || header.contains("label") || header == "category" || header == "type" {
+                        parsedLabel = cleanVal
+                    } else if header == "optional" {
+                        let optStr = cleanVal.lowercased()
+                        if optStr == "true" || optStr == "1" || optStr == "yes" { parsedOptional = true }
+                        else if optStr == "false" || optStr == "0" || optStr == "no" { parsedOptional = false }
+                    }
+                }
+                
+                let rowText = rowColumns.joined(separator: ",")
+                if let series = parsedSeries ?? (defaultSeriesName.isEmpty ? nil : defaultSeriesName) {
+                    if let issue = parsedIssue {
+                        let lowerIssue = issue.lowercased()
+                        if lowerIssue.contains("-") || lowerIssue.contains("to") {
+                            let pattern = "([0-9]+)\\s*(?:-|to)\\s*([0-9]+)"
+                            if let rangeRange = issue.range(of: pattern, options: .regularExpression) {
+                                let match = String(issue[rangeRange])
+                                let numbers = match.components(separatedBy: CharacterSet.decimalDigits.inverted).filter { !$0.isEmpty }
+                                if numbers.count == 2, let start = Int(numbers[0]), let end = Int(numbers[1]), start <= end {
+                                    for chap in start...end {
+                                        items.append(RequestedComicItem(series: series, issueNumber: "\(chap)", volume: volInfo, readingOrder: parsedReadingOrder, sortOrder: parsedSortOrder, label: parsedLabel, isOptional: parsedOptional, originalText: "Range Expanded: \(chap) from \(rowText)"))
+                                    }
+                                    continue
+                                }
+                            }
+                        }
+                        
+                        items.append(RequestedComicItem(series: series, issueNumber: issue, volume: volInfo, readingOrder: parsedReadingOrder, sortOrder: parsedSortOrder, label: parsedLabel, isOptional: parsedOptional, originalText: rowText))
+                    } else if let start = startChap {
+                        let end = endChap ?? start
+                        for chap in start...end {
+                            items.append(RequestedComicItem(series: series, issueNumber: "\(chap)", volume: volInfo, readingOrder: parsedReadingOrder, sortOrder: parsedSortOrder, label: parsedLabel, isOptional: parsedOptional, originalText: "Range Expanded: \(chap) from \(rowText)"))
+                        }
+                    } else {
+                        items.append(RequestedComicItem(series: series, issueNumber: nil, volume: volInfo, readingOrder: parsedReadingOrder, sortOrder: parsedSortOrder, label: parsedLabel, isOptional: parsedOptional, originalText: rowText))
+                    }
+                }
+            }
+        } else {
+            // Check if there are multiple columns in any row
+            let hasMultipleColumns = allRows.contains(where: { $0.count > 1 })
+            if hasMultipleColumns {
+                let mapping = detectColumnMapping(rows: allRows)
+                
+                for rowColumns in allRows {
+                    var volInfo: String? = nil
+                    var startChap: Int? = nil
+                    var endChap: Int? = nil
+                    var parsedSeries: String? = nil
+                    var parsedIssue: String? = nil
+                    
+                    var parsedReadingOrder: String? = nil
+                    var parsedSortOrder: Int? = nil
+                    var parsedLabel: String? = nil
+                    var parsedOptional: Bool? = nil
+                    
+                    if let seriesIdx = mapping["series"], seriesIdx < rowColumns.count {
+                        parsedSeries = rowColumns[seriesIdx].trimmingCharacters(in: .whitespaces)
+                    }
+                    if let issueIdx = mapping["issue"], issueIdx < rowColumns.count {
+                        let rawIssue = rowColumns[issueIdx].trimmingCharacters(in: .whitespaces)
+                        let lowerIssue = rawIssue.lowercased()
+                        if lowerIssue.contains("-") || lowerIssue.contains("to") {
+                            let pattern = "([0-9]+)\\s*(?:-|to)\\s*([0-9]+)"
+                            if let rangeRange = rawIssue.range(of: pattern, options: .regularExpression) {
+                                let match = String(rawIssue[rangeRange])
+                                let numbers = match.components(separatedBy: CharacterSet.decimalDigits.inverted).filter { !$0.isEmpty }
+                                if numbers.count == 2, let start = Int(numbers[0]), let end = Int(numbers[1]), start <= end {
+                                    startChap = start
+                                    endChap = end
+                                }
+                            }
+                        }
+                        if startChap == nil {
+                            parsedIssue = rawIssue
+                        }
+                    }
+                    if let volIdx = mapping["volume"], volIdx < rowColumns.count {
+                        volInfo = rowColumns[volIdx].trimmingCharacters(in: .whitespaces)
+                    }
+                    if let labelIdx = mapping["label"], labelIdx < rowColumns.count {
+                        parsedLabel = rowColumns[labelIdx].trimmingCharacters(in: .whitespaces)
+                    }
+                    if let optIdx = mapping["optional"], optIdx < rowColumns.count {
+                        let optStr = rowColumns[optIdx].trimmingCharacters(in: .whitespaces).lowercased()
+                        if optStr == "true" || optStr == "1" || optStr == "yes" { parsedOptional = true }
+                        else if optStr == "false" || optStr == "0" || optStr == "no" { parsedOptional = false }
+                    }
+                    
+                    let rowText = rowColumns.joined(separator: ",")
+                    if let series = parsedSeries ?? (defaultSeriesName.isEmpty ? nil : defaultSeriesName) {
+                        if let issue = parsedIssue {
+                            items.append(RequestedComicItem(series: series, issueNumber: issue, volume: volInfo, readingOrder: parsedReadingOrder, sortOrder: parsedSortOrder, label: parsedLabel, isOptional: parsedOptional, originalText: rowText))
+                        } else if let start = startChap {
+                            let end = endChap ?? start
+                            for chap in start...end {
+                                items.append(RequestedComicItem(series: series, issueNumber: "\(chap)", volume: volInfo, readingOrder: parsedReadingOrder, sortOrder: parsedSortOrder, label: parsedLabel, isOptional: parsedOptional, originalText: "Range Expanded: \(chap) from \(rowText)"))
+                            }
+                        } else {
+                            items.append(RequestedComicItem(series: series, issueNumber: nil, volume: volInfo, readingOrder: parsedReadingOrder, sortOrder: parsedSortOrder, label: parsedLabel, isOptional: parsedOptional, originalText: rowText))
+                        }
+                    }
+                }
+            } else {
+                return try parseTextList(from: url, defaultSeriesName: defaultSeriesName)
+            }
         }
         
         return items
@@ -165,27 +409,29 @@ final class SmartListImporter: Sendable {
             
             let lowerRow = row.lowercased()
             // Smart AI Range Extraction (e.g., "Ch. 1-7")
-            if lowerRow.contains("ch.") || lowerRow.contains("chapter") || lowerRow.contains("issues") || lowerRow.contains("ch ") {
-                let pattern = "([0-9]+)\\s*(?:-|to)\\s*([0-9]+)"
-                if let rangeRange = row.range(of: pattern, options: .regularExpression) {
-                    let match = String(row[rangeRange])
-                    let numbers = match.components(separatedBy: CharacterSet.decimalDigits.inverted).filter { !$0.isEmpty }
-                    
-                    if numbers.count == 2, let start = Int(numbers[0]), let end = Int(numbers[1]), start <= end {
+            let hasChapterKeyword = lowerRow.contains("ch.") || lowerRow.contains("chapter") || lowerRow.contains("issues") || lowerRow.range(of: "\\bch\\b", options: .regularExpression) != nil
+            
+            let rangePattern = "\\b([0-9]+)\\s*(?:-|to)\\s*([0-9]+)\\b"
+            if let rangeRange = row.range(of: rangePattern, options: .regularExpression) {
+                let match = String(row[rangeRange])
+                let numbers = match.components(separatedBy: CharacterSet.decimalDigits.inverted).filter { !$0.isEmpty }
+                
+                if numbers.count == 2, let start = Int(numbers[0]), let end = Int(numbers[1]), start <= end {
+                    if hasChapterKeyword || !row.contains(",") {
                         for c in start...end {
                             items.append(RequestedComicItem(series: currentSeriesContext, issueNumber: "\(c)", volume: currentVolumeContext, originalText: "Range Expanded: \(c) from \(row)"))
                         }
                         continue
                     }
-                } else {
-                    let singlePattern = "(?:ch\\.|chapter|issue)\\s*#?\\s*([0-9]+)"
-                    if let singleRange = lowerRow.range(of: singlePattern, options: .regularExpression) {
-                        let match = String(lowerRow[singleRange])
-                        let numbers = match.components(separatedBy: CharacterSet.decimalDigits.inverted).filter { !$0.isEmpty }
-                        if let first = numbers.first {
-                            items.append(RequestedComicItem(series: currentSeriesContext, issueNumber: first, volume: currentVolumeContext, originalText: row))
-                            continue
-                        }
+                }
+            } else {
+                let singlePattern = "\\b(?:ch\\.?|chapter|issue)\\s*#?\\s*([0-9]+)\\b"
+                if let singleRange = lowerRow.range(of: singlePattern, options: .regularExpression) {
+                    let match = String(lowerRow[singleRange])
+                    let numbers = match.components(separatedBy: CharacterSet.decimalDigits.inverted).filter { !$0.isEmpty }
+                    if let first = numbers.first {
+                        items.append(RequestedComicItem(series: currentSeriesContext, issueNumber: first, volume: currentVolumeContext, originalText: row))
+                        continue
                     }
                 }
             }
