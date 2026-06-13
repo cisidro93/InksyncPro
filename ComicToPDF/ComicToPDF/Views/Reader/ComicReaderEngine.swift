@@ -106,11 +106,13 @@ final class ComicImageCache: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] notification in
+            let pdfID = notification.userInfo?["pdfID"] as? UUID
+            let newURL = notification.userInfo?["newURL"] as? URL
+            
             Task { @MainActor in
                 guard let self = self else { return }
-                guard let userInfo = notification.userInfo,
-                      let pdfID = userInfo["pdfID"] as? UUID,
-                      let newURL = userInfo["newURL"] as? URL,
+                guard let pdfID = pdfID,
+                      let newURL = newURL,
                       pdfID == pdf.id else { return }
                 
                 Logger.shared.log("ComicImageCache: Active file renamed to \(newURL.lastPathComponent). Updating handles.", category: "Engine", type: .success)
