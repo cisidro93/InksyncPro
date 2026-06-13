@@ -68,7 +68,7 @@ class LibraryViewModel: ObservableObject {
         // Snapshot linked drives so the background task doesn't capture @MainActor state.
         let linkedDrives = AppSettingsManager.shared.linkedDrives
 
-        rebuilTask = Task.detached(priority: .background) { [weak self] in
+        rebuilTask = Task.detached(priority: .background) { [weak self] () async -> Void in
             guard !Task.isCancelled else { return }
 
             // Perform sorting and grouping on the background thread using helper

@@ -333,7 +333,7 @@ final class ComicImageCache: ObservableObject {
                 }
             } else {
                 await MainActor.run { [weak self] in
-                    self?.fetchingQueue.remove(index)
+                    _ = self?.fetchingQueue.remove(index)
                 }
             }
         }
