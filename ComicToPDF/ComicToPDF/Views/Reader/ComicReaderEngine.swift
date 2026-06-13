@@ -527,6 +527,10 @@ struct ComicReaderEngine: View {
     @State private var chromeIdleTask: Task<Void, Never>? = nil
     @FocusState private var isReaderFocused: Bool
     
+    var isMangaComic: Bool {
+        pdf.metadata.isManga == true || pdf.contentType == .manga
+    }
+    
     init(pdf: ConvertedPDF, onDismiss: @escaping () -> Void, allBooks: [ConvertedPDF] = []) {
         self.pdf = pdf
         self.onDismiss = onDismiss
