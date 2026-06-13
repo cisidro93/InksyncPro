@@ -3,6 +3,10 @@ import ZIPFoundation
 import PDFKit
 import ImageIO
 
+extension Notification.Name {
+    static let comicImageCacheImageLoaded = Notification.Name("InksyncPro.ComicImageCache.imageLoaded")
+}
+
 extension View {
     @ViewBuilder
     func applyFilterPreset(_ preset: ReadingFilterPreset) -> some View {
@@ -46,7 +50,8 @@ enum ComicReadingMode: String, CaseIterable, Codable {
     case pageFade         // Crossfade between pages
 }
 
-final class ComicImageCache: ObservableObject, @unchecked Sendable {
+@MainActor
+final class ComicImageCache: ObservableObject {
     private var cache = NSCache<NSNumber, UIImage>()
     private var accessQueue: [Int] = []
     private var fetchingQueue: Set<Int> = [] // Track pending extractions
@@ -57,20 +62,12 @@ final class ComicImageCache: ObservableObject, @unchecked Sendable {
     private let prefetchLimit: Int // Configurable read-ahead page buffer
     
     // For CBZ extraction — store URL, NOT a shared Archive.
-    // ZIPFoundation Archive is NOT thread-safe: concurrent Task.detached extractions
-    // on the same Archive instance corrupt each other's reads, causing wrong pages
-    // to appear in the reader. Each extraction opens its own fresh file handle.
     private var cbzURL: URL?
     private var entries: [ZIPFoundation.Entry] = []
 
     // ── CBR/RAR path ──────────────────────────────────────────────────────────
-    // CBRExtractor fully extracts all images to a temp directory on open.
-    // extractedCBRImageURLs holds the sorted, flat list of extracted image files.
-    // ZIPFoundation is never used for CBR — it would throw on RAR magic bytes.
     private var extractedCBRImageURLs: [URL] = []
-    // Temp dir owned by this cache instance; deleted in deinit.
     private var extractedCBRTempDir: URL? = nil
-    /// True when this cache is backed by pre-extracted CBR images instead of a ZIP.
     var isCBR: Bool = false
     
     // ✅ OPDS-style cloud page streaming
@@ -78,12 +75,9 @@ final class ComicImageCache: ObservableObject, @unchecked Sendable {
     
     @Published var isLoading = true
     @Published var loadError: String? = nil   // Non-nil = show error view with exit button
-    @Published var cacheUpdatedTick = 0
     var pageCount: Int = 0
     let isPDF: Bool
     let isStream: Bool
-    /// Holds the URL whose security scope is currently active for linked CBZ files.
-    /// Released in `deinit` when the reader is dismissed.
     var activelyAccessedURL: URL?
     
     init(pdf: ConvertedPDF, prefetchLimit: Int = 2) {
@@ -104,14 +98,46 @@ final class ComicImageCache: ObservableObject, @unchecked Sendable {
             Logger.shared.log("ComicImageCache: Memory warning received. Cleared image cache.", category: "Memory", type: .warning)
         }
         
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("InksyncPro.fileDidRename"),
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let self = self else { return }
+            guard let userInfo = notification.userInfo,
+                  let pdfID = userInfo["pdfID"] as? UUID,
+                  let newURL = userInfo["newURL"] as? URL,
+                  pdfID == pdf.id else { return }
+            
+            Logger.shared.log("ComicImageCache: Active file renamed to \(newURL.lastPathComponent). Updating handles.", category: "Engine", type: .success)
+            
+            if let oldAccess = self.activelyAccessedURL {
+                oldAccess.stopAccessingSecurityScopedResource()
+                self.activelyAccessedURL = nil
+            }
+            
+            if case .linked = pdf.sourceMode {
+                let didAccess = newURL.startAccessingSecurityScopedResource()
+                if didAccess {
+                    self.activelyAccessedURL = newURL
+                }
+            }
+            
+            self.cbzURL = newURL
+            
+            if self.isPDF {
+                Task {
+                    await PDFRenderActor.shared.clear()
+                    _ = await PDFRenderActor.shared.loadDocument(at: newURL)
+                }
+            }
+        }
+        
         if isStream {
-            // Cloud stream placeholder — pageCount will be set via setupCloudSource
             self.pageCount = 0
             self.isLoading = true
         } else if isPDF {
             Task.detached(priority: .userInitiated) { [weak self] in
-                // Linked Library: resolve and access the security-scoped URL.
-                // PDFDocument reads data lazily on draw, so we hold onto the access scope until deinit.
                 let resolvedURL: URL
                 var accessedURL: URL? = nil
                 if case .linked(let bm) = pdf.sourceMode,
@@ -127,9 +153,7 @@ final class ComicImageCache: ObservableObject, @unchecked Sendable {
                 
                 if let accessed = accessedURL {
                     if let self = self {
-                        await MainActor.run {
-                            self.activelyAccessedURL = accessed
-                        }
+                        await MainActor.run { self.activelyAccessedURL = accessed }
                     } else {
                         accessed.stopAccessingSecurityScopedResource()
                     }
@@ -140,11 +164,6 @@ final class ComicImageCache: ObservableObject, @unchecked Sendable {
                 }
             }
         } else if isCBRFile {
-            // ── CBR / RAR path ────────────────────────────────────────────────
-            // ZIPFoundation cannot open RAR archives — it throws on the RAR magic bytes
-            // and crashes if the guard is not explicit. Use CBRExtractor (libunrar) instead.
-            // We fully extract to a temp directory once on open, then serve images by index.
-            // This is faster than per-page random-access extraction on RAR5 compressed archives.
             self.isCBR = true
             Task.detached(priority: .userInitiated) { [weak self] in
                 guard let self else { return }
@@ -159,12 +178,9 @@ final class ComicImageCache: ObservableObject, @unchecked Sendable {
                     resolvedURL = pdf.url
                 }
                 do {
-                    // CBRExtractor.extract returns (tempDir, sortedImageURLs)
                     let (tempDir, imageURLs) = try await CBRExtractor.extract(from: resolvedURL)
                     if let accessed = accessedURL {
-                        await MainActor.run {
-                            self.activelyAccessedURL = accessed
-                        }
+                        await MainActor.run { self.activelyAccessedURL = accessed }
                     }
                     await MainActor.run {
                         self.extractedCBRTempDir = tempDir
@@ -176,24 +192,15 @@ final class ComicImageCache: ObservableObject, @unchecked Sendable {
                         }
                     }
                 } catch {
-                    if let accessed = accessedURL {
-                        accessed.stopAccessingSecurityScopedResource()
-                    }
-                    Logger.shared.log(
-                        "ComicImageCache: CBR extraction failed for '\(pdf.name)': \(error.localizedDescription)",
-                        category: "Engine", type: .error
-                    )
+                    if let accessed = accessedURL { accessed.stopAccessingSecurityScopedResource() }
                     await MainActor.run {
-                        self.loadError = "Could not open this CBR/RAR file. It may be encrypted, corrupted, or use an unsupported RAR version.\n\n\(error.localizedDescription)"
+                        self.loadError = "Could not open this CBR/RAR file.\n\n\(error.localizedDescription)"
                         self.isLoading = false
                     }
                 }
             }
         } else {
             Task.detached(priority: .userInitiated) { [weak self] in
-                // Linked Library: for CBZ, we need the security scope live for the entire
-                // reader session since images are extracted lazily page-by-page on demand.
-                // Store the URL so we can stop access in deinit.
                 let resolvedURL: URL
                 var accessedURL: URL? = nil
                 if case .linked(let bm) = pdf.sourceMode,
@@ -205,12 +212,9 @@ final class ComicImageCache: ObservableObject, @unchecked Sendable {
                     resolvedURL = pdf.url
                 }
                 guard let archive = try? Archive(url: resolvedURL, accessMode: .read, pathEncoding: .utf8) else {
-                    if let accessed = accessedURL {
-                        accessed.stopAccessingSecurityScopedResource()
-                    }
-                    Logger.shared.log("Failed to open CBZ Archive at \(resolvedURL.lastPathComponent)", category: "ComicImageCache", type: .error)
+                    if let accessed = accessedURL { accessed.stopAccessingSecurityScopedResource() }
                     await MainActor.run { [weak self] in
-                        self?.loadError = "Could not open the comic archive. The file may be corrupted, password-protected, or in an unsupported format."
+                        self?.loadError = "Could not open the comic archive."
                         self?.isLoading = false
                     }
                     return
@@ -220,27 +224,20 @@ final class ComicImageCache: ObservableObject, @unchecked Sendable {
                 let sortedEntries = archive.filter { entry in
                     let path = entry.path
                     let name = (path as NSString).lastPathComponent
-                    // Skip macOS system artefacts
-                    guard !path.contains("__MACOSX"),
-                          !name.hasPrefix("._"),
-                          name != ".DS_Store",
-                          !path.hasSuffix("/") else { return false }
-                    // Allow all recognised image extensions
+                    guard !path.contains("__MACOSX"), !name.hasPrefix("._"), name != ".DS_Store", !path.hasSuffix("/") else { return false }
                     let ext = (name as NSString).pathExtension.lowercased()
                     return imageExtensions.contains(ext)
                 }.sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
                 
                 if let accessed = accessedURL {
                     if let self = self {
-                        await MainActor.run {
-                            self.activelyAccessedURL = accessed
-                        }
+                        await MainActor.run { self.activelyAccessedURL = accessed }
                     } else {
                         accessed.stopAccessingSecurityScopedResource()
                     }
                 }
                 await MainActor.run { [weak self] in
-                    self?.cbzURL = resolvedURL   // URL for per-extraction Archive instances
+                    self?.cbzURL = resolvedURL
                     self?.entries = sortedEntries
                     self?.pageCount = sortedEntries.count
                     self?.isLoading = false
@@ -249,70 +246,45 @@ final class ComicImageCache: ObservableObject, @unchecked Sendable {
         }
     }
     
-    /// Stop security-scoped access and clean up CBR temp dir when the cache is released.
     deinit {
         activelyAccessedURL?.stopAccessingSecurityScopedResource()
         if isPDF {
-            Task {
-                await PDFRenderActor.shared.clear()
-            }
+            Task { await PDFRenderActor.shared.clear() }
         }
-        // CBR: clean up the temp extraction directory so the ~50-300MB of extracted
-        // images don't persist in the tmp directory after the reader is dismissed.
         if let tempDir = extractedCBRTempDir {
             try? FileManager.default.removeItem(at: tempDir)
         }
         if !isPDF && !isStream && !isCBR {
-            Task {
-                await ArchiveManager.shared.clearCache()
-            }
+            Task { await ArchiveManager.shared.clearCache() }
         }
     }
     
-    // MARK: - Cloud Page Source Setup
-
-    /// Called by the reader after CloudStreamCoordinator resolves the manifest.
-    /// Replaces the placeholder isLoading=true state with real page data.
-    @MainActor
     func setupCloudSource(_ source: CloudPageSource) {
         self.cloudPageSource = source
         self.pageCount = source.pageCount
         self.isLoading = false
-        Logger.shared.log("ComicImageCache: Cloud source set — \(source.pageCount) pages", category: "Engine")
     }
-
-    // MARK: - Fetching
 
     func getImage(at index: Int) -> UIImage? {
         guard index >= 0 && index < pageCount else { return nil }
         
-        // 1. Check Memory Cache
         if let cachedImage = cache.object(forKey: NSNumber(value: index)) {
-            updateLRU(index)
+            updateLRUOnMain(index)
             return cachedImage
         }
         
-        // 2. Prevent redundant fetching
         if fetchingQueue.contains(index) { return nil }
         
         if isStream && cloudPageSource != nil {
             fetchCloudPageImage(at: index)
-        } else if isStream {
-            // Source not yet set — will redraw when setupCloudSource is called
-            return nil
-        } else {
-            // ✅ PROFESSIONAL ASYNC STREAMING (Eliminates UI Stutter/Main Thread lockups)
+        } else if !isStream {
             fetchLocalImageAsync(at: index)
         }
         
-        // Prefetch surrounding pages (Prefetch window ±2)
         prefetchSurrounding(index: index)
-        
-        return nil // Always return heavily operations asynchronously. UI uses a ProgressView block.
+        return nil
     }
     
-    /// Peeks into the memory cache to retrieve the image size without mutating state or triggering background fetches.
-    /// This is safe to call during SwiftUI view evaluation.
     func peekImageSize(at index: Int) -> CGSize? {
         guard index >= 0 && index < pageCount else { return nil }
         return cache.object(forKey: NSNumber(value: index))?.size
@@ -320,61 +292,79 @@ final class ComicImageCache: ObservableObject, @unchecked Sendable {
     
     private func fetchLocalImageAsync(at index: Int) {
         fetchingQueue.insert(index)
+        
+        let isPDF = self.isPDF
+        let isCBR = self.isCBR
+        let cbzURL = self.cbzURL
+        let extractedCBRImageURLs = self.extractedCBRImageURLs
+        let entryPath: String? = (index < entries.count) ? entries[index].path : nil
+        let bounds = UIScreen.main.bounds
+        let scale = UIScreen.main.scale
+        
         Task.detached(priority: .userInitiated) { [weak self] in
             guard let self = self else { return }
-            // Capture archive state needed on background context
-            let img = await self.extractOrRenderImage(at: index)
+            
+            let img = await ComicImageCache.extractOrRenderImageBackground(
+                at: index,
+                isPDF: isPDF,
+                isCBR: isCBR,
+                cbzURL: cbzURL,
+                extractedCBRImageURLs: extractedCBRImageURLs,
+                entryPath: entryPath,
+                bounds: bounds,
+                scale: scale
+            )
+            
             if let img {
-                self.cache.setObject(img, forKey: NSNumber(value: index))
                 await MainActor.run { [weak self] in
-                    self?.fetchingQueue.remove(index)
-                    self?.updateLRUOnMain(index)
-                    self?.cacheUpdatedTick += 1 // Force UI redraw to pop the newly loaded image
+                    guard let self = self else { return }
+                    self.cache.setObject(img, forKey: NSNumber(value: index))
+                    self.fetchingQueue.remove(index)
+                    self.updateLRUOnMain(index)
+                    NotificationCenter.default.post(
+                        name: .comicImageCacheImageLoaded,
+                        object: self,
+                        userInfo: ["index": index]
+                    )
                 }
             } else {
-                _ = await MainActor.run { [weak self] in
+                await MainActor.run { [weak self] in
                     self?.fetchingQueue.remove(index)
                 }
             }
         }
     }
     
-    /// Must be called only from the main actor. Renamed from updateLRU to make isolation explicit.
     private func updateLRUOnMain(_ index: Int) {
         if let pos = accessQueue.firstIndex(of: index) {
             accessQueue.remove(at: pos)
         }
         accessQueue.append(index)
 
-        // Evict if over maxCacheSize
         while accessQueue.count > maxCacheSize {
             let evictIndex = accessQueue.removeFirst()
             cache.removeObject(forKey: NSNumber(value: evictIndex))
         }
     }
-
-    /// Legacy call-site bridge — ensures LRU updates always reach the main actor.
-    private func updateLRU(_ index: Int) {
-        Task { @MainActor [weak self] in self?.updateLRUOnMain(index) }
-    }
     
-    private func extractOrRenderImage(at index: Int) async -> UIImage? {
+    private static func extractOrRenderImageBackground(
+        at index: Int,
+        isPDF: Bool,
+        isCBR: Bool,
+        cbzURL: URL?,
+        extractedCBRImageURLs: [URL],
+        entryPath: String?,
+        bounds: CGRect,
+        scale: CGFloat
+    ) async -> UIImage? {
         if isPDF {
-            let scale = await MainActor.run { UIScreen.main.scale } * 1.5
-            return await PDFRenderActor.shared.renderPage(at: index, scale: scale)
+            return await PDFRenderActor.shared.renderPage(at: index, scale: scale * 1.5)
         } else if isCBR {
-            // CBR: images are fully extracted to disk on open.
-            // Read directly from the extracted file URL — no Archive overhead, no per-page
-            // RAR decompression stall. Thread-safe: each call reads an independent file.
             guard index < extractedCBRImageURLs.count else { return nil }
             let imageURL = extractedCBRImageURLs[index]
-            let (bounds, scale) = await MainActor.run {
-                (UIScreen.main.bounds, UIScreen.main.scale)
-            }
             return autoreleasepool {
                 let srcOpts: [CFString: Any] = [kCGImageSourceShouldCache: false]
                 guard let source = CGImageSourceCreateWithURL(imageURL as CFURL, srcOpts as CFDictionary) else {
-                    // Fallback: raw Data read
                     return UIImage(data: (try? Data(contentsOf: imageURL)) ?? Data())
                 }
                 let maxPixelSize = max(bounds.width, bounds.height) * scale
@@ -390,21 +380,13 @@ final class ComicImageCache: ObservableObject, @unchecked Sendable {
                 return UIImage(cgImage: cgImage)
             }
         } else {
-            // Open via shared ArchiveManager to serialize calls and reuse file handles.
-            guard let url = cbzURL, index < entries.count else { return nil }
-            let entry = entries[index]
-            let (bounds, scale) = await MainActor.run {
-                (UIScreen.main.bounds, UIScreen.main.scale)
-            }
+            guard let url = cbzURL, let path = entryPath else { return nil }
             do {
-                let data = try await ArchiveManager.shared.extractEntry(from: url, path: entry.path)
+                let data = try await ArchiveManager.shared.extractEntry(from: url, path: path)
                 return autoreleasepool {
-                    // Extremely safe downsampling to prevent OOM on 4K CBZ images (ImageIO trick)
-                    let options: [CFString: Any] = [
-                        kCGImageSourceShouldCache: false
-                    ]
+                    let options: [CFString: Any] = [kCGImageSourceShouldCache: false]
                     guard let imageSource = CGImageSourceCreateWithData(data as CFData, options as CFDictionary) else {
-                        return UIImage(data: data) // Fallback
+                        return UIImage(data: data)
                     }
                     
                     let maxPixelSize = max(bounds.width, bounds.height) * scale
@@ -416,13 +398,12 @@ final class ComicImageCache: ObservableObject, @unchecked Sendable {
                     ]
                     
                     guard let downsampledImage = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, downsampleOptions as CFDictionary) else {
-                        return UIImage(data: data) // Fallback
+                        return UIImage(data: data)
                     }
                     
                     return UIImage(cgImage: downsampledImage)
                 }
             } catch {
-                Logger.shared.log("CBZ page \(index) extraction error: \(error.localizedDescription)", category: "ComicImageCache", type: .error)
                 return nil
             }
         }
@@ -448,32 +429,38 @@ final class ComicImageCache: ObservableObject, @unchecked Sendable {
         let entry = source.pages[index]
         let manifest = source.manifest
 
+        let bounds = UIScreen.main.bounds
+        let scale = UIScreen.main.scale
+        let maxPixelSize = max(bounds.width, bounds.height) * scale
+
         Task.detached(priority: .userInitiated) { [weak self] in
             guard let self else { return }
             do {
                 let data = try await ZipCentralDirectory.fetchEntryData(entry: entry, manifest: manifest)
-                let maxPixelSize = await Self.targetMaxPixelSize()
                 guard let image = Self.decodeImageData(data, maxPixelSize: maxPixelSize) else {
                     await MainActor.run { [weak self] in _ = self?.fetchingQueue.remove(index) }
                     return
                 }
-                self.cache.setObject(image, forKey: NSNumber(value: index))
+                
                 await MainActor.run { [weak self] in
-                    self?.fetchingQueue.remove(index)
-                    self?.updateLRUOnMain(index)
-                    self?.cacheUpdatedTick += 1
+                    guard let self = self else { return }
+                    self.cache.setObject(image, forKey: NSNumber(value: index))
+                    self.fetchingQueue.remove(index)
+                    self.updateLRUOnMain(index)
+                    NotificationCenter.default.post(
+                        name: .comicImageCacheImageLoaded,
+                        object: self,
+                        userInfo: ["index": index]
+                    )
                 }
             } catch {
                 await MainActor.run { [weak self] in
                     self?.fetchingQueue.remove(index)
-                    Logger.shared.log("ComicImageCache: Page \(index) fetch failed: \(error.localizedDescription)",
-                                      category: "Engine", type: .error)
                 }
             }
         }
     }
 
-    /// Decode raw image data with downsampling to avoid OOM on 4K images.
     private static func decodeImageData(_ data: Data, maxPixelSize: CGFloat) -> UIImage? {
         return autoreleasepool {
             let sourceOptions: [CFString: Any] = [kCGImageSourceShouldCache: false]
@@ -490,12 +477,6 @@ final class ComicImageCache: ObservableObject, @unchecked Sendable {
                 return UIImage(data: data)
             }
             return UIImage(cgImage: cgImage)
-        }
-    }
-
-    private static func targetMaxPixelSize() async -> CGFloat {
-        await MainActor.run {
-            max(UIScreen.main.bounds.width, UIScreen.main.bounds.height) * UIScreen.main.scale
         }
     }
 }
@@ -794,11 +775,11 @@ struct ComicReaderEngine: View {
             ForEach(0..<cache.pageCount, id: \.self) { index in
                 let panelsForPage = PageModelStore.shared.legacyVisionPanels(for: pdf.id, pageIndex: index)
                 ComicGuidedPageView(
-                    image: cache.getImage(at: index),
+                    index: index,
+                    cache: cache,
                     panels: panelsForPage,
                     masterIndex: $currentIndex,
                     totalPages: cache.pageCount,
-                    forceRedrawTick: cache.cacheUpdatedTick,
                     onTapChrome: { chromeVisible.toggle() }
                 )
                 .applyFilterPreset(activeFilterPreset)
@@ -1200,41 +1181,53 @@ struct ComicReaderEngine: View {
 
 struct WebtoonImageCell: View {
     let index: Int
-    @ObservedObject var cache: ComicImageCache
+    let cache: ComicImageCache
     let activeFilterPreset: ReadingFilterPreset
     let onAppearAction: () -> Void
 
+    @State private var image: UIImage? = nil
+
     var body: some View {
-        if let image = cache.getImage(at: index) {
-            Image(uiImage: image)
-                .resizable()
-                .applyFilterPreset(activeFilterPreset)
-                // .fit ensures the full panel width is never clipped — critical for
-                // webtoon panels that are taller than the screen width.
-                .aspectRatio(contentMode: .fit)
-                .frame(maxWidth: .infinity)
-                .onAppear { onAppearAction() }
-        } else {
-            ZStack {
-                Color.black.frame(height: 500)
-                ProgressView().progressViewStyle(CircularProgressViewStyle(tint: .white.opacity(0.5)))
+        Group {
+            if let image = image {
+                Image(uiImage: image)
+                    .resizable()
+                    .applyFilterPreset(activeFilterPreset)
+                    // .fit ensures the full panel width is never clipped — critical for
+                    // webtoon panels that are taller than the screen width.
+                    .aspectRatio(contentMode: .fit)
+                    .frame(maxWidth: .infinity)
+                    .onAppear { onAppearAction() }
+            } else {
+                ZStack {
+                    Color.black.frame(height: 500)
+                    ProgressView().progressViewStyle(CircularProgressViewStyle(tint: .white.opacity(0.5)))
+                }
+                .onAppear {
+                    image = cache.getImage(at: index) // Force trigger fetch
+                    onAppearAction()
+                }
             }
-            .onAppear {
-                _ = cache.getImage(at: index) // Force trigger fetch
-                onAppearAction()
-            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .comicImageCacheImageLoaded)) { notification in
+            guard let userInfo = notification.userInfo,
+                  let loadedIndex = userInfo["index"] as? Int,
+                  loadedIndex == index else { return }
+            image = cache.getImage(at: index)
         }
     }
 }
 
 // Wrap Image to support pinch-to-zoom (Basic implementation)
 struct ComicPageView: View {
-    let image: UIImage?
-    let forceRedrawTick: Int?
+    let index: Int
+    let cache: ComicImageCache
     /// Callbacks wired from BookFlipGesture / BookPager for context menu actions.
     var onSaveToPhotos: (() -> Void)? = nil
     var onShare: (() -> Void)? = nil
     var onBookmark: (() -> Void)? = nil
+    
+    @State private var image: UIImage? = nil
     @State private var currentScale: CGFloat = 1.0
     @State private var offset: CGSize = .zero
     @State private var shareItem: UIImage? = nil
@@ -1259,57 +1252,58 @@ struct ComicPageView: View {
     }
 
     var body: some View {
-        if let image = image {
-            GeometryReader { geo in
-                let rendered = renderSize(for: image, in: geo.size)
+        Group {
+            if let image = image {
+                GeometryReader { geo in
+                    let rendered = renderSize(for: image, in: geo.size)
 
-                ZStack {
-                    Color.black.ignoresSafeArea()
+                    ZStack {
+                        Color.black.ignoresSafeArea()
 
-                    Image(uiImage: image)
-                        .resizable()
-                        .frame(width: rendered.width, height: rendered.height)
-                        .scaleEffect(currentScale)
-                        .offset(offset)
-                        .position(x: geo.size.width / 2, y: geo.size.height / 2)
-                        .gesture(
-                            SimultaneousGesture(
-                                MagnificationGesture()
-                                    .onChanged { val in currentScale = max(1.0, val) }
-                                    .onEnded   { _ in
-                                        withAnimation(.spring()) {
-                                            currentScale = 1.0
-                                            offset = .zero
+                        Image(uiImage: image)
+                            .resizable()
+                            .frame(width: rendered.width, height: rendered.height)
+                            .scaleEffect(currentScale)
+                            .offset(offset)
+                            .position(x: geo.size.width / 2, y: geo.size.height / 2)
+                            .gesture(
+                                SimultaneousGesture(
+                                    MagnificationGesture()
+                                        .onChanged { val in currentScale = max(1.0, val) }
+                                        .onEnded   { _ in
+                                            withAnimation(.spring()) {
+                                                currentScale = 1.0
+                                                offset = .zero
+                                            }
+                                        },
+                                    DragGesture()
+                                        .onChanged { val in
+                                            if currentScale > 1.0 { offset = val.translation }
                                         }
-                                    },
-                                DragGesture()
-                                    .onChanged { val in
-                                        if currentScale > 1.0 { offset = val.translation }
-                                    }
-                                    .onEnded { _ in
-                                        if currentScale <= 1.0 {
-                                            withAnimation(.spring()) { offset = .zero }
+                                        .onEnded { _ in
+                                            if currentScale <= 1.0 {
+                                                withAnimation(.spring()) { offset = .zero }
+                                            }
                                         }
-                                    }
+                                )
                             )
-                        )
-                        .onTapGesture(count: 2) { loc in
-                            withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
-                                if currentScale > 1.0 {
-                                    currentScale = 1.0
-                                    offset = .zero
-                                } else {
-                                    currentScale = 2.5
-                                    let centerX = geo.size.width / 2
-                                    let centerY = geo.size.height / 2
-                                    // Calculate offset to bring the tapped point to the center of the screen
-                                    let dx = (centerX - loc.x) * (currentScale - 1)
-                                    let dy = (centerY - loc.y) * (currentScale - 1)
-                                    offset = CGSize(width: dx, height: dy)
+                            .onTapGesture(count: 2) { loc in
+                                withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
+                                    if currentScale > 1.0 {
+                                        currentScale = 1.0
+                                        offset = .zero
+                                    } else {
+                                        currentScale = 2.5
+                                        let centerX = geo.size.width / 2
+                                        let centerY = geo.size.height / 2
+                                        // Calculate offset to bring the tapped point to the center of the screen
+                                        let dx = (centerX - loc.x) * (currentScale - 1)
+                                        let dy = (centerY - loc.y) * (currentScale - 1)
+                                        offset = CGSize(width: dx, height: dy)
+                                    }
                                 }
                             }
-                        }
-                }
+                    }
                     // Phase 4A: long-press context menu (Save / Share / Bookmark)
                     .contextMenu {
                         if let onSaveToPhotos {
@@ -1346,27 +1340,38 @@ struct ComicPageView: View {
                                 .presentationDetents([.medium, .large])
                         }
                     }
+                }
+            } else {
+                ZStack {
+                    Color.black
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: .white.opacity(0.5)))
+                        .scaleEffect(1.5)
+                }
+                .onAppear {
+                    image = cache.getImage(at: index)
+                }
             }
-        } else {
-            ZStack {
-                Color.black
-                ProgressView()
-                    .progressViewStyle(CircularProgressViewStyle(tint: .white.opacity(0.5)))
-                    .scaleEffect(1.5)
-            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .comicImageCacheImageLoaded)) { notification in
+            guard let userInfo = notification.userInfo,
+                  let loadedIndex = userInfo["index"] as? Int,
+                  loadedIndex == index else { return }
+            image = cache.getImage(at: index)
         }
     }
 }
 
 // MARK: - Guided View Component
 struct ComicGuidedPageView: View {
-    let image: UIImage?
+    let index: Int
+    let cache: ComicImageCache
     let panels: [PanelExtractor.Panel]
     @Binding var masterIndex: Int
     let totalPages: Int
-    let forceRedrawTick: Int?
     var onTapChrome: () -> Void
     
+    @State private var image: UIImage? = nil
     @State private var currentPanelIndex: Int = -1 // -1 means Zoomed Out
     
     var body: some View {
@@ -1439,10 +1444,14 @@ struct ComicGuidedPageView: View {
                         Color.black
                         ProgressView().progressViewStyle(CircularProgressViewStyle(tint: .white.opacity(0.5)))
                     }
+                    .onAppear {
+                        image = cache.getImage(at: index)
+                    }
                 }
             }
         }
         .onAppear {
+            image = cache.getImage(at: index)
             currentPanelIndex = -1 // Start zoomed out
             // Auto-advance pages with no panels when in guided mode
             if panels.isEmpty && masterIndex < totalPages - 1 {
@@ -1451,6 +1460,12 @@ struct ComicGuidedPageView: View {
                     // (don't skip if panels haven't loaded yet)
                 }
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .comicImageCacheImageLoaded)) { notification in
+            guard let userInfo = notification.userInfo,
+                  let loadedIndex = userInfo["index"] as? Int,
+                  loadedIndex == index else { return }
+            image = cache.getImage(at: index)
         }
     }
     

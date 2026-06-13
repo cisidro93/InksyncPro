@@ -463,52 +463,12 @@ struct SeriesDetailView: View {
         }
     }
 
-    @ViewBuilder
-    private var toolbarMenuContent: some View {
-        Picker("Sort By", selection: $sortOption) {
-            ForEach(SeriesSortOption.allCases) { option in
-                if option != .manual || isCollection {
-                    Text(option.rawValue).tag(option)
-                }
-            }
-        }
-        
-        if showVolumeGrouping && hasVolumeData {
-            Divider()
-            
-            Button {
-                withAnimation {
-                    collapsedVolumes = Set(volumeGroups.map { $0.key })
-                }
-            } label: {
-                Label("Collapse All Volumes", systemImage: "rectangle.compress.vertical")
-            }
-            
-            Button {
-                withAnimation {
-                    collapsedVolumes.removeAll()
-                }
-            } label: {
-                Label("Expand All Volumes", systemImage: "rectangle.expand.vertical")
-            }
-        }
-        
-        Divider()
-        
-        // Feature 5: Smart List Template Export
-        Button {
-            exportSmartListTemplate()
-        } label: {
-            Label("Export as Smart List (.csv)", systemImage: "square.and.arrow.up")
-        }
-    }
-
     @ToolbarContentBuilder
     private var listViewToolbar: some ToolbarContent {
         ToolbarItem(placement: .navigationBarTrailing) {
             HStack(spacing: 16) {
                 if isSelectionMode {
-                    Button(action: {
+                    Button {
                         withAnimation {
                             if selection.count == localIssues.count {
                                 selection.removeAll()
@@ -516,19 +476,19 @@ struct SeriesDetailView: View {
                                 selection = Set(localIssues.map { $0.id })
                             }
                         }
-                    }) {
+                    } label: {
                         Text(selection.count == localIssues.count ? "Deselect All" : "Select All")
                     }
                 }
                 
-                Button(action: {
+                Button {
                     let generator = UIImpactFeedbackGenerator(style: .medium)
                     generator.impactOccurred()
                     withAnimation {
                         isSelectionMode.toggle()
                         selection.removeAll()
                     }
-                }) {
+                } label: {
                     Text(isSelectionMode ? "Cancel" : "Select")
                         .bold(isSelectionMode)
                 }
@@ -560,7 +520,41 @@ struct SeriesDetailView: View {
                     }
 
                     Menu {
-                        toolbarMenuContent
+                        Picker("Sort By", selection: $sortOption) {
+                            ForEach(SeriesSortOption.allCases) { option in
+                                if option != .manual || isCollection {
+                                    Text(option.rawValue).tag(option)
+                                }
+                            }
+                        }
+                        
+                        if showVolumeGrouping && hasVolumeData {
+                            Divider()
+                            
+                            Button {
+                                withAnimation {
+                                    collapsedVolumes = Set(volumeGroups.map { $0.key })
+                                }
+                            } label: {
+                                Label("Collapse All Volumes", systemImage: "rectangle.compress.vertical")
+                            }
+                            
+                            Button {
+                                withAnimation {
+                                    collapsedVolumes.removeAll()
+                                }
+                            } label: {
+                                Label("Expand All Volumes", systemImage: "rectangle.expand.vertical")
+                            }
+                        }
+                        
+                        Divider()
+                        
+                        Button {
+                            exportSmartListTemplate()
+                        } label: {
+                            Label("Export as Smart List (.csv)", systemImage: "square.and.arrow.up")
+                        }
                     } label: {
                         Image(systemName: "arrow.up.arrow.down")
                     }
@@ -978,15 +972,10 @@ struct SeriesDetailView: View {
                     conversionManager.collections[colIdx].name = newName
                 }
                 
-                for pdf in freshIssues {
-                    if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
-                        conversionManager.convertedPDFs[idx].metadata.series = newName
-                        let newFilename = conversionManager.generateRenameFilename(pdf: conversionManager.convertedPDFs[idx], newSeriesName: newName)
-                        try? conversionManager.safelyRenamePhysicalFile(pdf: conversionManager.convertedPDFs[idx], newName: newFilename)
-                    }
+                Task {
+                    await conversionManager.safelyRenameSeries(issues: freshIssues, newSeriesName: newName)
+                    dismiss()
                 }
-                conversionManager.saveLibrary()
-                dismiss()
             }
             Button("Cancel", role: .cancel) { }
         } message: {

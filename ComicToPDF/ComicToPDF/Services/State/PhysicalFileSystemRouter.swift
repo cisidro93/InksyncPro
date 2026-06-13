@@ -382,21 +382,46 @@ class PhysicalFileSystemRouter {
     }
     
     // MARK: - Native Thread-Safe Physical OS Interactions
-    func safelyRenamePhysicalFile(pdf: ConvertedPDF, newName: String, manager: ConversionManager) throws {
+    func safelyRenamePhysicalFile(pdf: ConvertedPDF, newName: String, manager: ConversionManager, saveAfter: Bool = true) async throws {
         guard let idx = manager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) else {
             throw NSError(domain: "Database", code: 404, userInfo: [NSLocalizedDescriptionKey: "File not found within internal database loop."])
         }
         
+        // Close any active handles/locks on this file before attempting rename
+        await ArchiveManager.shared.clearCache()
+        
         let fileManager = FileManager.default
-        let currentURL = pdf.url
+        var currentURL = pdf.url
+        
+        // Acquire security-scoped resource access if linked external file
+        var needsStopAccess = false
+        if case .linked(let bm) = pdf.sourceMode {
+            if let resolved = try? BookmarkResolver.shared.resolve(bm) {
+                needsStopAccess = resolved.startAccessingSecurityScopedResource()
+                currentURL = resolved
+            }
+        }
+        
+        defer {
+            if needsStopAccess {
+                currentURL.stopAccessingSecurityScopedResource()
+            }
+        }
+        
         guard fileManager.fileExists(atPath: currentURL.path) else {
-            throw NSError(domain: "FileSystem", code: 404, userInfo: [NSLocalizedDescriptionKey: "The physical file no longer exists at original path."])
+            throw NSError(domain: "FileSystem", code: 404, userInfo: [NSLocalizedDescriptionKey: "The physical file no longer exists at path: \(currentURL.path)"])
         }
         
         let pathExtension = currentURL.pathExtension
         let cleanName = newName.replacingOccurrences(of: "/", with: "-")
                                .replacingOccurrences(of: "\\", with: "-")
                                .replacingOccurrences(of: ":", with: "-")
+                               .replacingOccurrences(of: "*", with: "")
+                               .replacingOccurrences(of: "?", with: "")
+                               .replacingOccurrences(of: "\"", with: "'")
+                               .replacingOccurrences(of: "<", with: "(")
+                               .replacingOccurrences(of: ">", with: ")")
+                               .replacingOccurrences(of: "|", with: "-")
         
         let targetDirectory = currentURL.deletingLastPathComponent()
         var newURL = targetDirectory.appendingPathComponent("\(cleanName).\(pathExtension)")
@@ -411,13 +436,169 @@ class PhysicalFileSystemRouter {
         do {
             try fileManager.moveItem(at: currentURL, to: newURL)
         } catch {
-            Logger.shared.log("Move Failure: \(error)", category: "FileSystem", type: .error)
+            Logger.shared.log("Move Failure from \(currentURL.path) to \(newURL.path): \(error)", category: "FileSystem", type: .error)
             throw error
         }
         
-        // ✅ PERF: @MainActor class — direct assignment, no dispatch needed
+        // Regenerate bookmark for new URL if it's a linked file
+        if case .linked = pdf.sourceMode {
+            let accessingNew = newURL.startAccessingSecurityScopedResource()
+            do {
+                let newBookmark = try newURL.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
+                manager.convertedPDFs[idx].sourceMode = .linked(bookmarkData: newBookmark)
+            } catch {
+                Logger.shared.log("Failed to create new bookmark after rename: \(error.localizedDescription)", category: "FileSystem", type: .error)
+            }
+            if accessingNew {
+                newURL.stopAccessingSecurityScopedResource()
+            }
+        }
+        
+        // Update database record in-memory
         manager.convertedPDFs[idx].url = newURL
         manager.convertedPDFs[idx].name = newURL.lastPathComponent
+        
+        if saveAfter {
+            manager.saveLibrary()
+        }
+        
+        // Broadcast file rename to active reader sessions
+        NotificationCenter.default.post(
+            name: Notification.Name("InksyncPro.fileDidRename"),
+            object: nil,
+            userInfo: ["pdfID": pdf.id, "newURL": newURL]
+        )
+    }
+
+    func safelyRenameSeries(issues: [ConvertedPDF], newSeriesName: String, manager: ConversionManager) async throws {
+        let cleanSeriesName = newSeriesName.trimmingCharacters(in: .whitespacesAndNewlines)
+                                           .replacingOccurrences(of: "/", with: "-")
+                                           .replacingOccurrences(of: "\\", with: "-")
+                                           .replacingOccurrences(of: ":", with: "-")
+                                           .replacingOccurrences(of: "*", with: "")
+                                           .replacingOccurrences(of: "?", with: "")
+                                           .replacingOccurrences(of: "\"", with: "'")
+                                           .replacingOccurrences(of: "<", with: "(")
+                                           .replacingOccurrences(of: ">", with: ")")
+                                           .replacingOccurrences(of: "|", with: "-")
+        
+        guard !cleanSeriesName.isEmpty else { return }
+
+        // Find database indices of all issues in the target group
+        var dbIndices: [Int] = []
+        for issue in issues {
+            if let idx = manager.convertedPDFs.firstIndex(where: { $0.id == issue.id }) {
+                dbIndices.append(idx)
+            }
+        }
+        
+        guard !dbIndices.isEmpty else { return }
+        
+        let fileManager = FileManager.default
+        let pdfURLs = dbIndices.map { manager.convertedPDFs[$0].url }
+        let parentURLs = pdfURLs.map { $0.deletingLastPathComponent() }
+        let uniqueParents = Set(parentURLs)
+        
+        var folderRenamed = false
+        var oldFolderURL: URL? = nil
+        var newFolderURL: URL? = nil
+        
+        // 1. If all files share a common parent subfolder, attempt directory rename first
+        if uniqueParents.count == 1, let commonParent = uniqueParents.first {
+            let docDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first
+            let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            let inboxDir = appSupport?.appendingPathComponent("InksyncVault/Inbox", isDirectory: true)
+            let tmpDir = URL(fileURLWithPath: NSTemporaryDirectory())
+            
+            let isRoot = commonParent.path == docDir?.path ||
+                         commonParent.path == inboxDir?.path ||
+                         commonParent.path == tmpDir.path ||
+                         commonParent.path == docDir?.deletingLastPathComponent().path
+            
+            if !isRoot {
+                oldFolderURL = commonParent
+                let containerDir = commonParent.deletingLastPathComponent()
+                var targetFolderURL = containerDir.appendingPathComponent(cleanSeriesName, isDirectory: true)
+                
+                // Keep target folder unique
+                var counter = 2
+                while fileManager.fileExists(atPath: targetFolderURL.path) {
+                    targetFolderURL = containerDir.appendingPathComponent("\(cleanSeriesName)_v\(counter)", isDirectory: true)
+                    counter += 1
+                }
+                
+                newFolderURL = targetFolderURL
+                
+                // Clear cached open handles before renaming directory
+                await ArchiveManager.shared.clearCache()
+                await PDFRenderActor.shared.clear()
+                
+                var folderNeedsStopAccess = false
+                let firstPDF = manager.convertedPDFs[dbIndices[0]]
+                
+                // Start access for security scoped parent if linked
+                if case .linked(let bm) = firstPDF.sourceMode {
+                    if let resolvedFile = try? BookmarkResolver.shared.resolve(bm) {
+                        folderNeedsStopAccess = resolvedFile.startAccessingSecurityScopedResource()
+                    }
+                }
+                
+                do {
+                    try fileManager.moveItem(at: commonParent, to: targetFolderURL)
+                    folderRenamed = true
+                    Logger.shared.log("Folder Renamed successfully: \(commonParent.lastPathComponent) -> \(targetFolderURL.lastPathComponent)", category: "FileSystem", type: .success)
+                } catch {
+                    Logger.shared.log("Folder Rename Failed: \(error.localizedDescription). Will fallback to renaming files inside old folder.", category: "FileSystem", type: .warning)
+                }
+                
+                if folderNeedsStopAccess {
+                    if let resolvedFile = try? BookmarkResolver.shared.resolve(firstPDF.driveBookmarkData ?? Data()) {
+                        resolvedFile.stopAccessingSecurityScopedResource()
+                    }
+                }
+            }
+        }
+        
+        // 2. Update URLs of all library items matching the old parent path prefix (cascading rename)
+        if folderRenamed, let oldFolder = oldFolderURL, let newFolder = newFolderURL {
+            for i in 0..<manager.convertedPDFs.count {
+                let pdfURL = manager.convertedPDFs[i].url
+                if pdfURL.path.hasPrefix(oldFolder.path) {
+                    let relativePath = String(pdfURL.path.dropFirst(oldFolder.path.count))
+                    let resolvedNewURL = newFolder.appendingPathComponent(relativePath)
+                    
+                    manager.convertedPDFs[i].url = resolvedNewURL
+                    manager.convertedPDFs[i].metadata.series = cleanSeriesName
+                    
+                    // Re-register bookmark if linked
+                    if case .linked = manager.convertedPDFs[i].sourceMode {
+                        let accessing = resolvedNewURL.startAccessingSecurityScopedResource()
+                        if let newBM = try? resolvedNewURL.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil) {
+                            manager.convertedPDFs[i].sourceMode = .linked(bookmarkData: newBM)
+                        }
+                        if accessing { resolvedNewURL.stopAccessingSecurityScopedResource() }
+                    }
+                }
+            }
+        }
+        
+        // 3. Rename individual files within the parent folder
+        for idx in dbIndices {
+            manager.convertedPDFs[idx].metadata.series = cleanSeriesName
+            let pdf = manager.convertedPDFs[idx]
+            let newFilename = manager.generateRenameFilename(pdf: pdf, newSeriesName: cleanSeriesName)
+            
+            do {
+                try await safelyRenamePhysicalFile(pdf: pdf, newName: newFilename, manager: manager, saveAfter: false)
+            } catch {
+                Logger.shared.log("File rename failed for \(pdf.name): \(error.localizedDescription). Falling back to logical rename.", category: "FileSystem", type: .warning)
+                // Fallback logical rename: update database name & extension only
+                let ext = pdf.url.pathExtension
+                let finalName = newFilename.isEmpty ? pdf.name : "\(newFilename).\(ext)"
+                manager.convertedPDFs[idx].name = finalName
+            }
+        }
+        
         manager.saveLibrary()
     }
     

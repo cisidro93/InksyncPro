@@ -1108,6 +1108,30 @@ enum PageCoordinateSystem: String, Codable, Equatable, Hashable {
     // Linked Library Support
     var sourceModeData: Data?
 
+    @Transient private var cachedSourceMode: SourceMode? = nil
+    @Transient private var lastDecodedData: Data? = nil
+
+    var sourceMode: SourceMode {
+        get {
+            guard let data = sourceModeData else { return .local }
+            if let cached = cachedSourceMode, lastDecodedData == data {
+                return cached
+            }
+            if let decoded = try? JSONDecoder().decode(SourceMode.self, from: data) {
+                cachedSourceMode = decoded
+                lastDecodedData = data
+                return decoded
+            }
+            return .local
+        }
+        set {
+            if let encoded = try? JSONEncoder().encode(newValue) {
+                sourceModeData = encoded
+                cachedSourceMode = newValue
+                lastDecodedData = encoded
+            }
+        }
+    }
     
     // Unified Reader Properties
     var documentSubtype: DocumentSubtype
@@ -1146,8 +1170,10 @@ enum PageCoordinateSystem: String, Codable, Equatable, Hashable {
         self.documentSubtype = .unknown
         self.isOnDevice = false
         self.lastTransferFailed = false
+        self.cachedSourceMode = sourceMode
         if let encoded = try? JSONEncoder().encode(sourceMode) {
             self.sourceModeData = encoded
+            self.lastDecodedData = encoded
         }
     }
     
@@ -1166,9 +1192,7 @@ enum PageCoordinateSystem: String, Codable, Equatable, Hashable {
         pdf.lastModified = self.lastModified
         pdf.panelConfidenceScore = self.panelConfidenceScore
         
-        if let data = self.sourceModeData, let decoded = try? JSONDecoder().decode(SourceMode.self, from: data) {
-            pdf.sourceMode = decoded
-        }
+        pdf.sourceMode = self.sourceMode
         
         return pdf
     }

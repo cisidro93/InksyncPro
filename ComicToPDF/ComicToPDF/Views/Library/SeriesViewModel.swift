@@ -33,15 +33,10 @@ class SeriesViewModel: ObservableObject {
         guard !newName.isEmpty, newName != target.title else {
             renameTarget = nil; return
         }
-        for pdf in target.issues {
-            if let idx = manager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
-                manager.convertedPDFs[idx].metadata.series = newName
-                let newFilename = manager.generateRenameFilename(pdf: manager.convertedPDFs[idx], newSeriesName: newName)
-                try? manager.safelyRenamePhysicalFile(pdf: manager.convertedPDFs[idx], newName: newFilename)
-            }
+        Task {
+            await manager.safelyRenameSeries(issues: target.issues, newSeriesName: newName)
+            renameTarget = nil
         }
-        manager.saveLibrary()
-        renameTarget = nil
     }
 
     private func groupPDFs(_ pdfs: [ConvertedPDF]) {

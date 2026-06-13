@@ -245,8 +245,8 @@ struct BookPager: View {
             content: { idx in
                 AnyView(
                     ComicPageView(
-                        image: cache.getImage(at: idx),
-                        forceRedrawTick: cache.cacheUpdatedTick
+                        index: idx,
+                        cache: cache
                     )
                     .applyFilterPreset(activeFilterPreset)
                 )
@@ -266,8 +266,8 @@ struct BookPager: View {
         TabView(selection: $currentIndex) {
             ForEach(0..<totalPages, id: \.self) { idx in
                 ComicPageView(
-                    image: cache.getImage(at: idx),
-                    forceRedrawTick: cache.cacheUpdatedTick
+                    index: idx,
+                    cache: cache
                 )
                 .applyFilterPreset(activeFilterPreset)
                 .tag(idx)
@@ -283,8 +283,8 @@ struct BookPager: View {
     private var fadePager: some View {
         ZStack {
             ComicPageView(
-                image: cache.getImage(at: currentIndex),
-                forceRedrawTick: cache.cacheUpdatedTick
+                index: currentIndex,
+                cache: cache
             )
             .applyFilterPreset(activeFilterPreset)
             .id(currentIndex) // forces view replacement on change → triggers transition
@@ -326,8 +326,10 @@ struct TwoUpBookPager: View {
     var onFlipPastEnd: (() -> Void)? = nil
 
     @State private var spreadIdx: Int = 0
+    @State private var forceUpdateTick: Int = 0
 
     private var spreads: [[Int]] {
+        _ = forceUpdateTick
         var allSpreads: [[Int]] = []
         guard cache.pageCount > 0 else { return [[0]] }
         
@@ -390,8 +392,8 @@ struct TwoUpBookPager: View {
         .onChange(of: currentIndex) { _, newVal in
             updateSpreadIdx(from: newVal)
         }
-        .onChange(of: cache.cacheUpdatedTick) { _, _ in
-            // Re-align spreadIdx if image load changed the spread map
+        .onReceive(NotificationCenter.default.publisher(for: .comicImageCacheImageLoaded)) { _ in
+            forceUpdateTick += 1
             updateSpreadIdx(from: currentIndex)
         }
     }
@@ -404,28 +406,28 @@ struct TwoUpBookPager: View {
         GeometryReader { geo in
             if pages.count == 1 && isLandscapePage(pages[0]) {
                 // Native landscape — fills the full frame solo
-                pageSlot(pages[0])
+                TwoUpPageCell(index: pages[0], cache: cache, activeFilterPreset: activeFilterPreset)
                     .frame(width: geo.size.width, height: geo.size.height)
             } else if isMangaRTL {
                 // Manga RTL: higher page number (right panel) on left of screen
                 HStack(spacing: 0) {
                     if pages.count == 2 {
-                        pageSlot(pages[1])
+                        TwoUpPageCell(index: pages[1], cache: cache, activeFilterPreset: activeFilterPreset)
                             .frame(width: geo.size.width / 2, height: geo.size.height)
                     } else {
                         Color.black
                             .frame(width: geo.size.width / 2, height: geo.size.height)
                     }
-                    pageSlot(pages[0])
+                    TwoUpPageCell(index: pages[0], cache: cache, activeFilterPreset: activeFilterPreset)
                         .frame(width: geo.size.width / 2, height: geo.size.height)
                 }
             } else {
                 // Standard LTR two-page spread
                 HStack(spacing: 0) {
-                    pageSlot(pages[0])
+                    TwoUpPageCell(index: pages[0], cache: cache, activeFilterPreset: activeFilterPreset)
                         .frame(width: geo.size.width / 2, height: geo.size.height)
                     if pages.count == 2 {
-                        pageSlot(pages[1])
+                        TwoUpPageCell(index: pages[1], cache: cache, activeFilterPreset: activeFilterPreset)
                             .frame(width: geo.size.width / 2, height: geo.size.height)
                     } else {
                         Color.black
@@ -435,20 +437,21 @@ struct TwoUpBookPager: View {
             }
         }
         .id("spread_\(pages.first ?? 0)")
-        // Observe cache ticks WITHOUT rebuilding the full spread view:
-        // opacity stays 1 always; this merely gives SwiftUI a value to watch
-        // so that individual pageSlot views redraw in place.
-        .animation(.easeIn(duration: 0.18), value: cache.cacheUpdatedTick)
     }
+}
 
-    @ViewBuilder
-    private func pageSlot(_ index: Int) -> some View {
-        // Use ZStack + opacity transition so the loaded image fades in over
-        // the black placeholder — eliminates the hard white/black flash.
+struct TwoUpPageCell: View {
+    let index: Int
+    let cache: ComicImageCache
+    let activeFilterPreset: ReadingFilterPreset
+    
+    @State private var image: UIImage? = nil
+    
+    var body: some View {
         ZStack {
             Color.black
-            if let img = cache.getImage(at: index) {
-                Image(uiImage: img)
+            if let image = image {
+                Image(uiImage: image)
                     .resizable()
                     .applyFilterPreset(activeFilterPreset)
                     .aspectRatio(contentMode: .fit)
@@ -460,9 +463,16 @@ struct TwoUpBookPager: View {
                     .transition(.opacity)
             }
         }
-        // cacheUpdatedTick is @Published on MainActor — safe to use as animation
-        // trigger. Avoids calling cache.getImage() during SwiftUI's diffing phase
-        // which can race with background prefetch mutations on NSCache.
-        .animation(.easeIn(duration: 0.18), value: cache.cacheUpdatedTick)
+        .onAppear {
+            image = cache.getImage(at: index)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .comicImageCacheImageLoaded)) { notification in
+            guard let userInfo = notification.userInfo,
+                  let loadedIndex = userInfo["index"] as? Int,
+                  loadedIndex == index else { return }
+            withAnimation(.easeIn(duration: 0.18)) {
+                image = cache.getImage(at: index)
+            }
+        }
     }
 }

@@ -4,6 +4,7 @@ import Combine
 @MainActor
 class LibraryViewModel: ObservableObject {
     @Published var cachedLibraryItems: [LibraryListItem] = []
+    private var cachedLibraryItemIDs: [UUID] = []
     @Published var searchText: String = ""
 
     // Search Debouncing
@@ -59,23 +60,27 @@ class LibraryViewModel: ObservableObject {
         rebuilTask?.cancel()
 
         let currentSearchText = debouncedSearchText
-        let sortedPDFs = sortPDFs(pdfs, sortOption: sortOption)
         let folderID = self.currentFolderID
         let filter = self.filterState
         let shelf = self.contentShelf
+        let collectionsSnapshot = collections
+        let pdfsSnapshot = pdfs
         // Snapshot linked drives so the background task doesn't capture @MainActor state.
         let linkedDrives = AppSettingsManager.shared.linkedDrives
 
         rebuilTask = Task.detached(priority: .background) { [weak self] in
-            guard let self else { return }
+            guard let self = self else { return }
             guard !Task.isCancelled else { return }
+
+            // Perform sorting on the background thread
+            let sortedPDFs = self.sortPDFs(pdfsSnapshot, sortOption: sortOption)
 
             var groups: [String: SeriesGroup] = [:]
             var singles: [ConvertedPDF] = []
             var firstAppearanceIndex: [String: Int] = [:]
 
             // O(1) lookup dict — replaces the O(N×M) collections.first(where:) scan inside the hot loop below.
-            let collectionByID: [UUID: PDFCollection] = Dictionary(uniqueKeysWithValues: collections.map { ($0.id, $0) })
+            let collectionByID: [UUID: PDFCollection] = Dictionary(uniqueKeysWithValues: collectionsSnapshot.map { ($0.id, $0) })
 
             // ── LARGE DRIVE CARDS ───────────────────────────────────────────────
             // Drives above the file-count threshold surface as a single DriveFolder
@@ -292,15 +297,16 @@ class LibraryViewModel: ObservableObject {
             // Single atomic publish — no two-phase chunked delivery, which caused a
             // visible flash where items disappeared then reappeared on every shelf switch.
             // The background Task already isolates CPU work; the main-thread publish is O(1).
+            let newIDs = finalItems.map(\.id)
+
             Task { @MainActor in
                 guard !Task.isCancelled else { return }
 
                 // ID-equality guard: skip the SwiftUI diff entirely when nothing changed.
                 // This absorbs spurious SwiftData onChange events (e.g. reading-progress
                 // writes) that don't actually change what's visible in the library grid.
-                let newIDs = finalItems.map(\.id)
-                let oldIDs = self.cachedLibraryItems.map(\.id)
-                guard newIDs != oldIDs else { return }
+                guard newIDs != self.cachedLibraryItemIDs else { return }
+                self.cachedLibraryItemIDs = newIDs
 
                 withAnimation(.easeOut(duration: 0.18)) {
                     self.cachedLibraryItems = finalItems
@@ -399,7 +405,7 @@ class LibraryViewModel: ObservableObject {
     }
     
     // Additional Logic Handlers...
-    func sortPDFs(_ pdfs: [ConvertedPDF], sortOption: ModernLibraryView.SortOption) -> [ConvertedPDF] {
+    nonisolated func sortPDFs(_ pdfs: [ConvertedPDF], sortOption: ModernLibraryView.SortOption) -> [ConvertedPDF] {
         switch sortOption {
         case .dateAdded: return pdfs.reversed() // Returns newest imported first, which places it natively at index 0 and top-left.
         case .name: return pdfs.sorted {

@@ -530,15 +530,10 @@ struct ModernLibraryView: View {
                         conversionManager.collections[colIdx].name = newName
                     }
                     
-                    for pdf in group.issues {
-                        if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
-                            conversionManager.convertedPDFs[idx].metadata.series = newName
-                            let newFilename = conversionManager.generateRenameFilename(pdf: conversionManager.convertedPDFs[idx], newSeriesName: newName)
-                            try? conversionManager.safelyRenamePhysicalFile(pdf: conversionManager.convertedPDFs[idx], newName: newFilename)
-                        }
+                    Task {
+                        await conversionManager.safelyRenameSeries(issues: group.issues, newSeriesName: newName)
+                        listRenameGroup = nil
                     }
-                    conversionManager.saveLibrary()
-                    listRenameGroup = nil
                 }
                 Button("Cancel", role: .cancel) { listRenameGroup = nil }
             } message: {

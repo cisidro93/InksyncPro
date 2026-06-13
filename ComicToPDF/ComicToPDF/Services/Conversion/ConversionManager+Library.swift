@@ -237,58 +237,15 @@ extension ConversionManager {
         let cleanName = newName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanName.isEmpty, cleanName != pdf.name else { return }
 
-        let fileManager = FileManager.default
-        let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
-
-        // Always preserve the original file extension. If the user typed a name
-        // without extension (common UI pattern) we re-attach it; if they included
-        // a different extension we respect it. This prevents the file losing its
-        // .cbz/.epub/.pdf suffix, which would break format detection, comic parsers,
-        // and cover extraction on subsequent loads.
-        let originalExt = pdf.url.pathExtension
-        let nameHasExtension = !URL(fileURLWithPath: cleanName).pathExtension.isEmpty
-        let finalName: String
-        if nameHasExtension {
-            finalName = cleanName
-        } else if !originalExt.isEmpty {
-            finalName = cleanName + "." + originalExt
-        } else {
-            finalName = cleanName
-        }
-
-        let newURL = docDir.appendingPathComponent(finalName)
-
-        if fileManager.fileExists(atPath: newURL.path) {
-            Logger.shared.log("Rename failed: File '\(finalName)' already exists", category: "Library")
-            return
-        }
-
-        do {
-            try fileManager.moveItem(at: pdf.url, to: newURL)
-
-            if let idx = convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
-                let updatedPDF = ConvertedPDF(
-                    id: pdf.id,
-                    name: cleanName,
-                    url: newURL,
-                    pageCount: pdf.pageCount,
-                    fileSize: pdf.fileSize,
-                    metadata: pdf.metadata,
-                    collectionId: pdf.collectionId,
-                    isFavorite: pdf.isFavorite,
-                    coverImageData: pdf.coverImageData,
-                    contentHash: pdf.contentHash
-                )
-                convertedPDFs[idx] = updatedPDF
-
-                // UUID is immutable — the thumbnail cache key is unaffected by a rename.
-                // No cache migration is needed.
-
-                saveLibrary()
-                objectWillChange.send()
+        Task {
+            do {
+                try await safelyRenamePhysicalFile(pdf: pdf, newName: cleanName)
+                await MainActor.run {
+                    objectWillChange.send()
+                }
+            } catch {
+                Logger.shared.log("renamePDF failed: \(error.localizedDescription)", category: "Library", type: .error)
             }
-        } catch {
-            Logger.shared.log("Rename Error: \(error)", category: "Library")
         }
     }
 
@@ -357,8 +314,19 @@ extension ConversionManager {
         return candidateName.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    func safelyRenamePhysicalFile(pdf: ConvertedPDF, newName: String) throws {
-        try PhysicalFileSystemRouter.shared.safelyRenamePhysicalFile(pdf: pdf, newName: newName, manager: self)
+    func safelyRenamePhysicalFile(pdf: ConvertedPDF, newName: String) async throws {
+        try await PhysicalFileSystemRouter.shared.safelyRenamePhysicalFile(pdf: pdf, newName: newName, manager: self)
+    }
+
+    func safelyRenameSeries(issues: [ConvertedPDF], newSeriesName: String) async {
+        do {
+            try await PhysicalFileSystemRouter.shared.safelyRenameSeries(issues: issues, newSeriesName: newSeriesName, manager: self)
+            await MainActor.run {
+                objectWillChange.send()
+            }
+        } catch {
+            Logger.shared.log("safelyRenameSeries failed: \(error.localizedDescription)", category: "Library", type: .error)
+        }
     }
 
     func extractSmartPanels(from url: URL) async throws -> [Int: [PanelExtractor.Panel]]? {
