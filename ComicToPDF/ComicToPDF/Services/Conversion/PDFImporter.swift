@@ -7,102 +7,92 @@ struct PDFImporter: Sendable {
     
     /// Get total page count
     func getPageCount(url: URL) -> Int {
-        return ConcurrencyLocks.pdfLock.withLock {
-            guard let pdf = PDFDocument(url: url) else { return 0 }
-            return pdf.pageCount
-        }
+        guard let pdf = PDFDocument(url: url) else { return 0 }
+        return pdf.pageCount
     }
     
     /// Extract a single page as an image (Memory Safe)
     func extractPage(url: URL, pageIndex: Int, dpi: CGFloat = 300) throws -> UIImage {
         // use autoreleasepool block in caller if doing tight loop
-        return try ConcurrencyLocks.pdfLock.withLock {
-            guard let pdf = PDFDocument(url: url) else { throw ImportError.invalidPDF }
-            guard let page = pdf.page(at: pageIndex) else { throw ImportError.pageNotFound }
-            return renderPage(page, dpi: dpi)
-        }
+        guard let pdf = PDFDocument(url: url) else { throw ImportError.invalidPDF }
+        guard let page = pdf.page(at: pageIndex) else { throw ImportError.pageNotFound }
+        return renderPage(page, dpi: dpi)
     }
     
     /// Legacy: Import all (WARNING: High Memory Usage)
     func importPDF(url: URL, dpi: CGFloat = 300, compressionQuality: CompressionPreset = .balanced) async throws -> [UIImage] {
-        return try ConcurrencyLocks.pdfLock.withLock {
-            guard let pdf = PDFDocument(url: url) else { throw ImportError.invalidPDF }
-            let pageCount = pdf.pageCount
-            guard pageCount > 0 else { throw ImportError.emptyPDF }
-            
-            var extractedImages: [UIImage] = []
-            
-            for pageIndex in 0..<pageCount {
-                if let page = pdf.page(at: pageIndex) {
-                    let image = renderPage(page, dpi: dpi)
-                    extractedImages.append(image)
-                }
+        guard let pdf = PDFDocument(url: url) else { throw ImportError.invalidPDF }
+        let pageCount = pdf.pageCount
+        guard pageCount > 0 else { throw ImportError.emptyPDF }
+        
+        var extractedImages: [UIImage] = []
+        
+        for pageIndex in 0..<pageCount {
+            if let page = pdf.page(at: pageIndex) {
+                let image = renderPage(page, dpi: dpi)
+                extractedImages.append(image)
             }
-            return extractedImages
         }
+        return extractedImages
     }
     
     /// Extract single page thumbnail for preview
     func extractPageThumbnail(url: URL, pageIndex: Int, maxSize: CGSize = CGSize(width: 400, height: 600)) async throws -> UIImage? {
-        return ConcurrencyLocks.pdfLock.withLock {
-            guard let pdf = PDFDocument(url: url),
-                  pageIndex < pdf.pageCount,
-                  let page = pdf.page(at: pageIndex) else {
-                return nil
-            }
+        guard let pdf = PDFDocument(url: url),
+              pageIndex < pdf.pageCount,
+              let page = pdf.page(at: pageIndex) else {
+            return nil
+        }
+        
+        var pageBounds = page.bounds(for: .mediaBox)
+        if pageBounds.width <= 0 || pageBounds.height <= 0 || pageBounds.width.isNaN || pageBounds.height.isNaN {
+            pageBounds = CGRect(x: 0, y: 0, width: 400, height: 600) // Safe fallback
+        }
+        let scale = min(maxSize.width / pageBounds.width, maxSize.height / pageBounds.height)
+        let scaledSize = CGSize(width: pageBounds.width * scale, height: pageBounds.height * scale)
+        guard scaledSize.width > 0 && scaledSize.height > 0 && !scaledSize.width.isNaN && !scaledSize.height.isNaN else {
+            return nil
+        }
+        
+        let renderer = UIGraphicsImageRenderer(size: scaledSize)
+        return renderer.image { context in
+            UIColor.white.setFill()
+            context.fill(CGRect(origin: .zero, size: scaledSize))
             
-            var pageBounds = page.bounds(for: .mediaBox)
-            if pageBounds.width <= 0 || pageBounds.height <= 0 || pageBounds.width.isNaN || pageBounds.height.isNaN {
-                pageBounds = CGRect(x: 0, y: 0, width: 400, height: 600) // Safe fallback
-            }
-            let scale = min(maxSize.width / pageBounds.width, maxSize.height / pageBounds.height)
-            let scaledSize = CGSize(width: pageBounds.width * scale, height: pageBounds.height * scale)
-            guard scaledSize.width > 0 && scaledSize.height > 0 && !scaledSize.width.isNaN && !scaledSize.height.isNaN else {
-                return nil
-            }
+            context.cgContext.translateBy(x: 0, y: scaledSize.height)
+            context.cgContext.scaleBy(x: scale, y: -scale)
             
-            let renderer = UIGraphicsImageRenderer(size: scaledSize)
-            return renderer.image { context in
-                UIColor.white.setFill()
-                context.fill(CGRect(origin: .zero, size: scaledSize))
-                
-                context.cgContext.translateBy(x: 0, y: scaledSize.height)
-                context.cgContext.scaleBy(x: scale, y: -scale)
-                
-                page.draw(with: .mediaBox, to: context.cgContext)
-            }
+            page.draw(with: .mediaBox, to: context.cgContext)
         }
     }
     
     /// Detect if PDF has text layer (for books vs scanned images)
     func hasTextContent(url: URL, samplePageCount: Int = 5) -> Bool {
-        return ConcurrencyLocks.pdfLock.withLock {
-            guard let pdf = PDFDocument(url: url) else {
-                return false
-            }
-            
-            let pagesToCheck = min(samplePageCount, pdf.pageCount)
-            var textFound = false
-            
-            for pageIndex in 0..<pagesToCheck {
-                guard let page = pdf.page(at: pageIndex),
-                      let text = page.string,
-                      !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                    continue
-                }
-                
-                // Check if text contains actual words (not just OCR artifacts)
-                let words = text.components(separatedBy: .whitespacesAndNewlines)
-                    .filter { $0.count > 2 }
-                
-                if words.count > 10 {
-                    textFound = true
-                    break
-                }
-            }
-            
-            return textFound
+        guard let pdf = PDFDocument(url: url) else {
+            return false
         }
+        
+        let pagesToCheck = min(samplePageCount, pdf.pageCount)
+        var textFound = false
+        
+        for pageIndex in 0..<pagesToCheck {
+            guard let page = pdf.page(at: pageIndex),
+                  let text = page.string,
+                  !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                continue
+            }
+            
+            // Check if text contains actual words (not just OCR artifacts)
+            let words = text.components(separatedBy: .whitespacesAndNewlines)
+                .filter { $0.count > 2 }
+            
+            if words.count > 10 {
+                textFound = true
+                break
+            }
+        }
+        
+        return textFound
     }
     
     // MARK: - Private Helpers

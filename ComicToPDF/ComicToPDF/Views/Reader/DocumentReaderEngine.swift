@@ -131,9 +131,7 @@ struct DocumentReaderEngine: View {
                 resolvedURL = pdf.url
             }
 
-            let doc = ConcurrencyLocks.pdfLock.withLock {
-                PDFDocument(url: resolvedURL)
-            }
+            let doc = PDFDocument(url: resolvedURL)
             self.accessedURL = accessed
             pdfDocument = doc
             if let saved = ReaderProgressTracker.shared.progress(for: pdf.id) {

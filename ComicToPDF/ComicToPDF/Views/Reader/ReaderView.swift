@@ -137,7 +137,7 @@ struct ReaderView: View {
                 // KOReader Casual Comforts Overlay
                 edgeSwipeOverlay(in: geo)
                 
-                // Manga Binge-Mode HUD
+                // Series Binge-Mode HUD
                 if showBingePrompt, let nextVol = nextVolumeToRead {
                     bingeModeOverlay(nextVol: nextVol)
                 }
@@ -583,27 +583,25 @@ struct ReaderView: View {
             let docURL = fileURL
             Task { @MainActor in
                 let img = await Task.detached(priority: .userInitiated) { () -> UIImage? in
-                    return ConcurrencyLocks.pdfLock.withLock {
-                        guard let doc = PDFDocument(url: docURL),
-                              let page = doc.page(at: pageIdx) else { return nil }
+                    guard let doc = PDFDocument(url: docURL),
+                          let page = doc.page(at: pageIdx) else { return nil }
+                    
+                    let pageBounds = page.bounds(for: .mediaBox)
+                    guard pageBounds.width > 0 && pageBounds.height > 0 && !pageBounds.width.isNaN && !pageBounds.height.isNaN else { return nil }
+                    let size = CGSize(width: 1024, height: 1408)
+                    let scale = min(size.width / pageBounds.width, size.height / pageBounds.height)
+                    let scaledSize = CGSize(width: pageBounds.width * scale, height: pageBounds.height * scale)
+                    guard scaledSize.width > 0 && scaledSize.height > 0 && !scaledSize.width.isNaN && !scaledSize.height.isNaN else { return nil }
+                    
+                    let renderer = UIGraphicsImageRenderer(size: scaledSize)
+                    return renderer.image { context in
+                        UIColor.white.setFill()
+                        context.fill(CGRect(origin: .zero, size: scaledSize))
                         
-                        let pageBounds = page.bounds(for: .mediaBox)
-                        guard pageBounds.width > 0 && pageBounds.height > 0 && !pageBounds.width.isNaN && !pageBounds.height.isNaN else { return nil }
-                        let size = CGSize(width: 1024, height: 1408)
-                        let scale = min(size.width / pageBounds.width, size.height / pageBounds.height)
-                        let scaledSize = CGSize(width: pageBounds.width * scale, height: pageBounds.height * scale)
-                        guard scaledSize.width > 0 && scaledSize.height > 0 && !scaledSize.width.isNaN && !scaledSize.height.isNaN else { return nil }
+                        context.cgContext.translateBy(x: 0, y: scaledSize.height)
+                        context.cgContext.scaleBy(x: scale, y: -scale)
                         
-                        let renderer = UIGraphicsImageRenderer(size: scaledSize)
-                        return renderer.image { context in
-                            UIColor.white.setFill()
-                            context.fill(CGRect(origin: .zero, size: scaledSize))
-                            
-                            context.cgContext.translateBy(x: 0, y: scaledSize.height)
-                            context.cgContext.scaleBy(x: scale, y: -scale)
-                            
-                            page.draw(with: .mediaBox, to: context.cgContext)
-                        }
+                        page.draw(with: .mediaBox, to: context.cgContext)
                     }
                 }.value
                 if let img {
@@ -934,7 +932,7 @@ struct ReaderView: View {
         if currentPageIndex < pages.count - 1 {
             currentPageIndex += 1
         } else {
-            // Trigger Manga Binge-Mode auto-continuation
+            // Trigger Series Binge-Mode auto-continuation (supports Books, Comics, and Manga)
             if let nextVol = getNextVolume() {
                 self.nextVolumeToRead = nextVol
                 withAnimation(.spring()) { self.showBingePrompt = true }
@@ -948,7 +946,7 @@ struct ReaderView: View {
         }
     }
     
-    // MARK: - Manga Binge-Mode Pipeline
+    // MARK: - Series Binge-Mode Pipeline
     
     private func getNextVolume() -> ConvertedPDF? {
         guard let current = pdf, let series = current.metadata.series else { return nil }
@@ -1375,12 +1373,12 @@ struct PDFKitView: UIViewRepresentable {
         )
 
         context.coordinator.loadTask = Task.detached(priority: .userInitiated) {
-            let (document, pageCount) = ConcurrencyLocks.pdfLock.withLock { () -> (PDFDocument?, Int) in
+            let (document, pageCount): (PDFDocument?, Int) = {
                 if let doc = PDFDocument(url: url) {
                     return (doc, doc.pageCount)
                 }
                 return (nil, 0)
-            }
+            }()
             if let document = document {
                 if Task.isCancelled { return }
                 await MainActor.run {

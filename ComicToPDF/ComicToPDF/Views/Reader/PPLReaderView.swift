@@ -335,6 +335,7 @@ struct PPLReaderView: View {
     private func swipeAndPanGesture(geo: GeometryProxy) -> some Gesture {
         DragGesture(minimumDistance: 8)
             .onChanged { val in
+                guard !isCommittingSwipe else { return }
                 momentumTask?.cancel()
                 if scale > 1.0 {
                     // Rubber-band resistance at pan boundaries
@@ -366,6 +367,7 @@ struct PPLReaderView: View {
                 }
             }
             .onEnded { val in
+                guard !isCommittingSwipe else { return }
                 if scale > 1.0 {
                     commitPan(val: val, geo: geo)
                 } else {
@@ -470,6 +472,7 @@ struct PPLReaderView: View {
     // MARK: - Tap Handling
 
     private func handleDoubleTap(at location: CGPoint, geo: GeometryProxy) {
+        guard !isCommittingSwipe else { return }
         if scale > 1.0 {
             withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                 scale = 1.0
@@ -501,6 +504,7 @@ struct PPLReaderView: View {
     }
 
     private func handleSingleTap(at location: CGPoint, geo: GeometryProxy) {
+        guard !isCommittingSwipe else { return }
         guard scale <= 1.0 || isZoomLockEnabled || isGuidedReadingActive else { return }
         let w = geo.size.width
         let isLandscape = geo.size.width > geo.size.height

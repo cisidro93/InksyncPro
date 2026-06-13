@@ -433,50 +433,48 @@ class PhysicalFileSystemRouter {
             }
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }
             
-            return ConcurrencyLocks.pdfLock.withLock {
-                guard let document = PDFDocument(url: url) else { return nil }
+            guard let document = PDFDocument(url: url) else { return nil }
+            
+            let drawPage: (PDFPage) -> UIImage? = { page in
+                let pageBounds = page.bounds(for: .mediaBox)
+                guard pageBounds.width > 0 && pageBounds.height > 0 && !pageBounds.width.isNaN && !pageBounds.height.isNaN else { return nil }
+                let size = CGSize(width: 300, height: 450)
+                let scale = min(size.width / pageBounds.width, size.height / pageBounds.height)
+                let scaledSize = CGSize(width: pageBounds.width * scale, height: pageBounds.height * scale)
+                guard scaledSize.width > 0 && scaledSize.height > 0 && !scaledSize.width.isNaN && !scaledSize.height.isNaN else { return nil }
                 
-                let drawPage: (PDFPage) -> UIImage? = { page in
-                    let pageBounds = page.bounds(for: .mediaBox)
-                    guard pageBounds.width > 0 && pageBounds.height > 0 && !pageBounds.width.isNaN && !pageBounds.height.isNaN else { return nil }
-                    let size = CGSize(width: 300, height: 450)
-                    let scale = min(size.width / pageBounds.width, size.height / pageBounds.height)
-                    let scaledSize = CGSize(width: pageBounds.width * scale, height: pageBounds.height * scale)
-                    guard scaledSize.width > 0 && scaledSize.height > 0 && !scaledSize.width.isNaN && !scaledSize.height.isNaN else { return nil }
+                let renderer = UIGraphicsImageRenderer(size: scaledSize)
+                return renderer.image { context in
+                    UIColor.white.setFill()
+                    context.fill(CGRect(origin: .zero, size: scaledSize))
                     
-                    let renderer = UIGraphicsImageRenderer(size: scaledSize)
-                    return renderer.image { context in
-                        UIColor.white.setFill()
-                        context.fill(CGRect(origin: .zero, size: scaledSize))
-                        
-                        context.cgContext.translateBy(x: 0, y: scaledSize.height)
-                        context.cgContext.scaleBy(x: scale, y: -scale)
-                        
-                        page.draw(with: .mediaBox, to: context.cgContext)
-                    }
+                    context.cgContext.translateBy(x: 0, y: scaledSize.height)
+                    context.cgContext.scaleBy(x: scale, y: -scale)
+                    
+                    page.draw(with: .mediaBox, to: context.cgContext)
                 }
-                
-                // Try up to the first 5 pages to find a portrait cover
-                var firstSpreadImage: UIImage? = nil
-                for i in 0..<min(document.pageCount, 5) {
-                    if let page = document.page(at: i) {
-                        let bounds = page.bounds(for: .mediaBox)
-                        // Skip landscape (two-page spread)
-                        if bounds.width > bounds.height && document.pageCount > 1 {
-                            if firstSpreadImage == nil { firstSpreadImage = drawPage(page) }
-                            continue
-                        }
-                        if let portrait = drawPage(page) { return portrait }
-                    }
-                }
-                
-                // Fallback to the first spread, or page 0 if nothing else worked
-                if let fallback = firstSpreadImage { return fallback }
-                if let page = document.page(at: 0) {
-                    return drawPage(page)
-                }
-                return nil
             }
+            
+            // Try up to the first 5 pages to find a portrait cover
+            var firstSpreadImage: UIImage? = nil
+            for i in 0..<min(document.pageCount, 5) {
+                if let page = document.page(at: i) {
+                    let bounds = page.bounds(for: .mediaBox)
+                    // Skip landscape (two-page spread)
+                    if bounds.width > bounds.height && document.pageCount > 1 {
+                        if firstSpreadImage == nil { firstSpreadImage = drawPage(page) }
+                        continue
+                    }
+                    if let portrait = drawPage(page) { return portrait }
+                }
+            }
+            
+            // Fallback to the first spread, or page 0 if nothing else worked
+            if let fallback = firstSpreadImage { return fallback }
+            if let page = document.page(at: 0) {
+                return drawPage(page)
+            }
+            return nil
         }
 
         if ["cbz", "zip", "epub"].contains(ext) {
@@ -652,9 +650,7 @@ class PhysicalFileSystemRouter {
             let accessing = url.startAccessingSecurityScopedResource()
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }
             
-            return ConcurrencyLocks.pdfLock.withLock {
-                return PDFDocument(url: url)?.pageCount ?? 0
-            }
+            return PDFDocument(url: url)?.pageCount ?? 0
         }
 
         if ["cbz", "zip", "epub"].contains(ext) {
@@ -713,28 +709,26 @@ class PhysicalFileSystemRouter {
             let accessing = url.startAccessingSecurityScopedResource()
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }
             
-            return ConcurrencyLocks.pdfLock.withLock {
-                guard let document = PDFDocument(url: url) else { return nil }
-                guard pageIndex >= 0 && pageIndex < document.pageCount else { return nil }
-                guard let page = document.page(at: pageIndex) else { return nil }
+            guard let document = PDFDocument(url: url) else { return nil }
+            guard pageIndex >= 0 && pageIndex < document.pageCount else { return nil }
+            guard let page = document.page(at: pageIndex) else { return nil }
+            
+            let pageBounds = page.bounds(for: .mediaBox)
+            guard pageBounds.width > 0 && pageBounds.height > 0 && !pageBounds.width.isNaN && !pageBounds.height.isNaN else { return nil }
+            let size = CGSize(width: 400, height: 560)
+            let scale = min(size.width / pageBounds.width, size.height / pageBounds.height)
+            let scaledSize = CGSize(width: pageBounds.width * scale, height: pageBounds.height * scale)
+            guard scaledSize.width > 0 && scaledSize.height > 0 && !scaledSize.width.isNaN && !scaledSize.height.isNaN else { return nil }
+            
+            let renderer = UIGraphicsImageRenderer(size: scaledSize)
+            return renderer.image { context in
+                UIColor.white.setFill()
+                context.fill(CGRect(origin: .zero, size: scaledSize))
                 
-                let pageBounds = page.bounds(for: .mediaBox)
-                guard pageBounds.width > 0 && pageBounds.height > 0 && !pageBounds.width.isNaN && !pageBounds.height.isNaN else { return nil }
-                let size = CGSize(width: 400, height: 560)
-                let scale = min(size.width / pageBounds.width, size.height / pageBounds.height)
-                let scaledSize = CGSize(width: pageBounds.width * scale, height: pageBounds.height * scale)
-                guard scaledSize.width > 0 && scaledSize.height > 0 && !scaledSize.width.isNaN && !scaledSize.height.isNaN else { return nil }
+                context.cgContext.translateBy(x: 0, y: scaledSize.height)
+                context.cgContext.scaleBy(x: scale, y: -scale)
                 
-                let renderer = UIGraphicsImageRenderer(size: scaledSize)
-                return renderer.image { context in
-                    UIColor.white.setFill()
-                    context.fill(CGRect(origin: .zero, size: scaledSize))
-                    
-                    context.cgContext.translateBy(x: 0, y: scaledSize.height)
-                    context.cgContext.scaleBy(x: scale, y: -scale)
-                    
-                    page.draw(with: .mediaBox, to: context.cgContext)
-                }
+                page.draw(with: .mediaBox, to: context.cgContext)
             }
         }
 
