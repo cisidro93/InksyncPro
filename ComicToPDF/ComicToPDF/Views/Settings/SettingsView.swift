@@ -50,6 +50,7 @@ struct SettingsView: View {
     // AniList API key verification state
     @State private var isVerifyingAniList = false
     @State private var aniListVerificationStatus: KeyStatus = .none
+    @State private var aniListClientID = ""
     
     // MangaUpdates verification state
     @State private var isVerifyingMangaUpdates = false
@@ -745,35 +746,78 @@ struct SettingsView: View {
         }
         
         DisclosureGroup {
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 10) {
                 Text("How to get your personal token:")
                     .font(.caption).bold()
                     .foregroundColor(.primary)
                     .padding(.top, 4)
-                Text("1. Log in to anilist.co and navigate to Settings → Developer")
+                
+                Text("1. Log in to anilist.co and navigate to Settings → Developer.")
                     .font(.caption2)
                     .foregroundColor(.secondary)
-                Text("2. Click 'Create New Client' and set the Redirect URL to:")
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("2. Click 'Create New Client' and set the Redirect URL to:")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    
+                    HStack {
+                        Text("https://anilist.co/api/v2/oauth/pin")
+                            .font(.caption2)
+                            .foregroundColor(.cyan)
+                            .monospaced()
+                        Spacer()
+                        Button(action: {
+                            UIPasteboard.general.string = "https://anilist.co/api/v2/oauth/pin"
+                        }) {
+                            Label("Copy", systemImage: "doc.on.doc")
+                                .font(.caption2)
+                                .foregroundColor(.blue)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(6)
+                    .background(Color.black.opacity(0.2))
+                    .cornerRadius(6)
+                }
+                
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("3. Paste your Client ID below to generate the authorization link:")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    
+                    TextField("Enter Client ID here", text: $aniListClientID)
+                        .textFieldStyle(.roundedBorder)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                        .padding(.vertical, 2)
+                    
+                    Button(action: {
+                        let clientID = aniListClientID.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if let url = URL(string: "https://anilist.co/api/v2/oauth/authorize?client_id=\(clientID)&response_type=token") {
+                            UIApplication.shared.open(url)
+                        }
+                    }) {
+                        Text("Generate & Open Auth Link")
+                            .font(.caption)
+                            .bold()
+                            .foregroundColor(.white)
+                            .padding(.vertical, 8)
+                            .padding(.horizontal, 16)
+                            .background(aniListClientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Color.gray : Color.blue)
+                            .cornerRadius(8)
+                    }
+                    .disabled(aniListClientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .buttonStyle(.plain)
+                }
+                
+                Text("4. Authorize and copy the long token displayed in your browser (NOT the Client Secret), and paste it in the Token field above.")
                     .font(.caption2)
                     .foregroundColor(.secondary)
-                Text("   https://anilist.co/api/v2/oauth/pin")
-                    .font(.caption2)
-                    .foregroundColor(.cyan)
-                    .monospaced()
-                Text("3. Save, copy the Client ID, and open this URL in your web browser (replace {CLIENT_ID} with your copied Client ID):")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-                Text("   https://anilist.co/api/v2/oauth/authorize?client_id={CLIENT_ID}&response_type=token")
-                    .font(.caption2)
-                    .foregroundColor(.cyan)
-                    .monospaced()
-                Text("4. Authorize and copy the long token displayed in the browser (NOT the Client Secret), and paste it in the field above.")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
+                
                 Link("Open AniList Developer Page ↗", destination: URL(string: "https://anilist.co/settings/developer") ?? URL(fileURLWithPath: "/"))
                     .font(.caption2)
                     .foregroundColor(.blue)
-                    .padding(.top, 2)
             }
             .padding(.bottom, 4)
         } label: {
