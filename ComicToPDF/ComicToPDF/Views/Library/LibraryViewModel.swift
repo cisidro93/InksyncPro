@@ -4,7 +4,7 @@ import Combine
 @MainActor
 class LibraryViewModel: ObservableObject {
     @Published var cachedLibraryItems: [LibraryListItem] = []
-    private var cachedLibraryItemIDs: [UUID] = []
+    private var cachedLibraryItemIDs: [String] = []
     @Published var searchText: String = ""
 
     // Search Debouncing
