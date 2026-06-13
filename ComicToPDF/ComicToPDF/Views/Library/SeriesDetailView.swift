@@ -167,6 +167,10 @@ struct SeriesDetailView: View {
         localIssues.contains { $0.metadata.volume?.isEmpty == false }
     }
     
+    var availableSortOptions: [SeriesSortOption] {
+        SeriesSortOption.allCases.filter { $0 != .manual || isCollection }
+    }
+    
     /// Detected missing issues in the series
     var missingIssues: [String] {
         MissingIssueDetector.detectGaps(in: localIssues)
@@ -520,40 +524,38 @@ struct SeriesDetailView: View {
                     }
 
                     Menu {
-                        Group {
-                            Picker("Sort By", selection: $sortOption) {
-                                ForEach(SeriesSortOption.allCases.filter { $0 != .manual || isCollection }) { option in
-                                    Text(option.rawValue).tag(option)
-                                }
+                        Picker("Sort By", selection: $sortOption) {
+                            ForEach(availableSortOptions) { option in
+                                Text(option.rawValue).tag(option)
                             }
-                            
-                            if showVolumeGrouping && hasVolumeData {
-                                Divider()
-                                
-                                Button {
-                                    withAnimation {
-                                        collapsedVolumes = Set(volumeGroups.map { $0.key })
-                                    }
-                                } label: {
-                                    Label("Collapse All Volumes", systemImage: "rectangle.compress.vertical")
-                                }
-                                
-                                Button {
-                                    withAnimation {
-                                        collapsedVolumes.removeAll()
-                                    }
-                                } label: {
-                                    Label("Expand All Volumes", systemImage: "rectangle.expand.vertical")
-                                }
-                            }
-                            
+                        }
+                        
+                        if showVolumeGrouping && hasVolumeData {
                             Divider()
                             
                             Button {
-                                exportSmartListTemplate()
+                                withAnimation {
+                                    collapsedVolumes = Set(volumeGroups.map { $0.key })
+                                }
                             } label: {
-                                Label("Export as Smart List (.csv)", systemImage: "square.and.arrow.up")
+                                Label("Collapse All Volumes", systemImage: "rectangle.compress.vertical")
                             }
+                            
+                            Button {
+                                withAnimation {
+                                    collapsedVolumes.removeAll()
+                                }
+                            } label: {
+                                Label("Expand All Volumes", systemImage: "rectangle.expand.vertical")
+                            }
+                        }
+                        
+                        Divider()
+                        
+                        Button {
+                            exportSmartListTemplate()
+                        } label: {
+                            Label("Export as Smart List (.csv)", systemImage: "square.and.arrow.up")
                         }
                     } label: {
                         Image(systemName: "arrow.up.arrow.down")
