@@ -113,7 +113,7 @@ class LibraryViewModel: ObservableObject {
         currentSearchText: String,
         filter: LibraryFilterState,
         shelf: ContentShelf,
-        linkedDrives: [LinkedDriveEntry]
+        linkedDrives: [AppSettingsManager.LinkedDriveEntry]
     ) -> [LibraryListItem] {
         guard !Task.isCancelled else { return [] }
 
