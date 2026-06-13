@@ -56,7 +56,8 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
                 UTType(filenameExtension: "epub") ?? .epub,
                 UTType(filenameExtension: "cbz") ?? .zip,
                 UTType(filenameExtension: "cbr") ?? .archive,
-                UTType(filenameExtension: "cb7") ?? .archive
+                UTType(filenameExtension: "cb7") ?? .archive,
+                UTType(filenameExtension: "cbt") ?? .archive
             ].compactMap { $0 }
         }
 
@@ -106,7 +107,7 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
 
             // --- Parallel Staging: Phase 1 enumerate, Phase 2 concurrent copy ---
             let fm = FileManager.default
-            let allowedExts: Set<String> = ["cbz", "cbr", "cb7", "epub", "zip", "pdf"]
+            let allowedExts: Set<String> = ["pdf", "epub", "cbz", "cbr", "cb7", "cbt", "zip"]
 
             let stagingDir = fm.temporaryDirectory.appendingPathComponent("InksyncStaging_\(UUID().uuidString)")
             try? fm.createDirectory(at: stagingDir, withIntermediateDirectories: true)

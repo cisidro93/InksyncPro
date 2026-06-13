@@ -74,7 +74,7 @@ actor ImportOrchestrator {
                       let isDirectory = resourceValues.isDirectory, !isDirectory else { continue }
                 
                 let ext = fileURL.pathExtension.lowercased()
-                guard ["cbz", "zip", "epub"].contains(ext) else { continue }
+                guard ["pdf", "epub", "cbz", "cbr", "cb7", "cbt", "zip"].contains(ext) else { continue }
                 
                 let fileName = fileURL.lastPathComponent
                 let destURL = documentsDir.appendingPathComponent(fileName)
@@ -566,7 +566,7 @@ actor ImportOrchestrator {
                               let isDirectory = resourceValues.isDirectory, !isDirectory else { continue }
                         
                         let ext = fileURL.pathExtension.lowercased()
-                        guard ["cbz", "zip", "epub"].contains(ext) else { continue }
+                        guard ["pdf", "epub", "cbz", "cbr", "cb7", "cbt", "zip"].contains(ext) else { continue }
                         
                         let fileName = fileURL.lastPathComponent
                         let destURL = documentsDir.appendingPathComponent(fileName)

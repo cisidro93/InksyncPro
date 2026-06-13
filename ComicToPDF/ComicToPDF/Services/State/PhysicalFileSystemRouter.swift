@@ -833,6 +833,10 @@ class PhysicalFileSystemRouter {
             }
         }
 
+        if ext == "cbt" || ext == "tar" {
+            return CBTExtractor.extractFirstImage(from: url)
+        }
+
         return nil
     }
     
@@ -890,6 +894,10 @@ class PhysicalFileSystemRouter {
                     return 0
                 }
             }
+        }
+
+        if ext == "cbt" || ext == "tar" {
+            return CBTExtractor.getPageCount(from: url)
         }
 
         return 0

@@ -85,7 +85,7 @@ class SandboxCleanupManager: ObservableObject {
         ) else { return [] }
 
         let oneHourAgo = Date().addingTimeInterval(-3600)
-        let comicExtensions: Set<String> = ["cbz", "cbr", "cb7", "zip", "pdf", "epub"]
+        let comicExtensions: Set<String> = ["pdf", "epub", "cbz", "cbr", "cb7", "cbt", "zip"]
 
         return contents.compactMap { url -> CleanupItem? in
             guard comicExtensions.contains(url.pathExtension.lowercased()),
@@ -114,7 +114,7 @@ class SandboxCleanupManager: ObservableObject {
             options: .skipsHiddenFiles
         ) else { return [] }
 
-        let comicExtensions: Set<String> = ["cbz", "cbr", "cb7", "zip"]
+        let comicExtensions: Set<String> = ["pdf", "epub", "cbz", "cbr", "cb7", "cbt", "zip"]
         return contents.compactMap { url -> CleanupItem? in
             guard comicExtensions.contains(url.pathExtension.lowercased()),
                   let attrs = try? url.resourceValues(forKeys: [.fileSizeKey]),
@@ -145,7 +145,7 @@ class SandboxCleanupManager: ObservableObject {
         let activePDFs = await LibraryDatabaseService.shared.load()
         let activeFilenames = Set(activePDFs.map { $0.url.lastPathComponent })
 
-        let comicExtensions: Set<String> = ["cbz", "cbr", "cb7", "epub", "zip"]
+        let comicExtensions: Set<String> = ["pdf", "epub", "cbz", "cbr", "cb7", "cbt", "zip"]
         return contents.compactMap { url -> CleanupItem? in
             let filename = url.lastPathComponent
             guard comicExtensions.contains(url.pathExtension.lowercased()),

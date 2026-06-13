@@ -214,7 +214,7 @@ class SyncCoordinator: ObservableObject {
             // Security: only accept known document extensions to prevent a rogue peer
             // from writing arbitrary files into the app's Documents directory.
             let ext = (filename as NSString).pathExtension.lowercased()
-            let allowedExtensions: Set<String> = ["pdf", "epub", "cbz", "cbr", "cbt", "cb7"]
+            let allowedExtensions: Set<String> = ["pdf", "epub", "cbz", "cbr", "cbt", "cb7", "zip"]
             guard allowedExtensions.contains(ext) else {
                 Logger.shared.log("P2P blocked disallowed file type: \(filename)", category: "Network", type: .warning)
                 continue
