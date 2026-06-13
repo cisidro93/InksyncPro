@@ -299,6 +299,7 @@ class LibraryViewModel: ObservableObject {
             let newIDs = finalItems.map(\.id)
 
             Task { @MainActor in
+                guard let self = self else { return }
                 guard !Task.isCancelled else { return }
 
                 // ID-equality guard: skip the SwiftUI diff entirely when nothing changed.
