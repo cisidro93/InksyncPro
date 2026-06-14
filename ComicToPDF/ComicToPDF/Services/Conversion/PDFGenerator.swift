@@ -29,12 +29,31 @@ struct PDFGenerator: Sendable {
         
         let sourceImages = mangaMode ? images.reversed() : images
         
+        // Determine the standard page size by finding the most common image size
+        let fallbackTargetSize = settings.targetDeviceProfile.resolution ?? CGSize(width: 1200, height: 1800)
+        var standardSize = fallbackTargetSize
+        var sizeCounts: [CGSize: Int] = [:]
+        
+        for imgURL in sourceImages.prefix(15) {
+            autoreleasepool {
+                if let img = UIImage(contentsOfFile: imgURL.path) {
+                    let roundedSize = CGSize(width: round(img.size.width), height: round(img.size.height))
+                    sizeCounts[roundedSize, default: 0] += 1
+                }
+            }
+        }
+        
+        if let mostCommon = sizeCounts.max(by: { $0.value < $1.value })?.key {
+            standardSize = mostCommon
+        } else if let firstURL = sourceImages.first, let firstImg = UIImage(contentsOfFile: firstURL.path) {
+            standardSize = firstImg.size
+        }
+        
         // Format is initialized, but bounds will be set per-page dynamically
         let format = UIGraphicsPDFRendererFormat()
         let renderer = UIGraphicsPDFRenderer(bounds: .zero, format: format)
         
         var hasValidChapters = false
-        let fallbackTargetSize = settings.targetDeviceProfile.resolution ?? CGSize(width: 1200, height: 1800)
         var tocLinks: [(rect: CGRect, targetPage: Int)] = []
         
         try renderer.writePDF(to: outputURL) { context in
@@ -59,7 +78,25 @@ struct PDFGenerator: Sendable {
                         isOddPage: index % 2 == 0
                     )
                     
-                    let targetSize = optimizedImage.size
+                    let imgSize = optimizedImage.size
+                    let isLandscape = imgSize.width > imgSize.height
+                    let standardIsLandscape = standardSize.width > standardSize.height
+                    
+                    let targetSize: CGSize
+                    if isLandscape && !standardIsLandscape {
+                        // Double page spread: scale width proportional to height
+                        let scaleHeight = standardSize.height
+                        let scaleWidth = scaleHeight * (imgSize.width / imgSize.height)
+                        targetSize = CGSize(width: scaleWidth, height: scaleHeight)
+                    } else if !isLandscape && standardIsLandscape {
+                        // Standard is landscape, but page is portrait: scale height proportional to width
+                        let scaleWidth = standardSize.width
+                        let scaleHeight = scaleWidth * (imgSize.height / imgSize.width)
+                        targetSize = CGSize(width: scaleWidth, height: scaleHeight)
+                    } else {
+                        targetSize = standardSize
+                    }
+                    
                     let pageRect = CGRect(origin: .zero, size: targetSize)
                     
                     context.beginPage(withBounds: pageRect, pageInfo: [:])
@@ -71,7 +108,6 @@ struct PDFGenerator: Sendable {
                     }
                     
                     // Aspect Fit Calculation
-                    let imgSize = optimizedImage.size
                     let hRatio = targetSize.width / imgSize.width
                     let vRatio = targetSize.height / imgSize.height
                     let scale = min(hRatio, vRatio)
