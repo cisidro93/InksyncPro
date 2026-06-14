@@ -65,10 +65,10 @@ final class ComicImageCache: ObservableObject {
     private var cbzURL: URL?
     private var entries: [ZIPFoundation.Entry] = []
 
-    // ── CBR/RAR path ──────────────────────────────────────────────────────────
-    private var extractedCBRImageURLs: [URL] = []
-    private var extractedCBRTempDir: URL? = nil
-    let isCBR: Bool
+    // ── Pre-extracted archive path (CBR/RAR/CBT/TAR) ──────────────────────────
+    private var extractedImageURLs: [URL] = []
+    private var extractedTempDir: URL? = nil
+    let isPreExtracted: Bool
     
     // ✅ OPDS-style cloud page streaming
     private var cloudPageSource: CloudPageSource?
@@ -88,7 +88,8 @@ final class ComicImageCache: ObservableObject {
         let ext = pdf.url.pathExtension.lowercased()
         isPDF = (ext == "pdf")
         let isCBRFile = (ext == "cbr" || ext == "rar")
-        self.isCBR = isCBRFile
+        let isCBTFile = (ext == "cbt" || ext == "tar")
+        self.isPreExtracted = isCBRFile || isCBTFile
         
         NotificationCenter.default.addObserver(
             forName: UIApplication.didReceiveMemoryWarningNotification,
@@ -170,7 +171,7 @@ final class ComicImageCache: ObservableObject {
                     self?.isLoading = false
                 }
             }
-        } else if isCBRFile {
+        } else if isPreExtracted {
             Task.detached(priority: .userInitiated) { [weak self] in
                 guard let self else { return }
                 let resolvedURL: URL
@@ -184,23 +185,32 @@ final class ComicImageCache: ObservableObject {
                     resolvedURL = pdf.url
                 }
                 do {
-                    let (tempDir, imageURLs) = try await CBRExtractor.extract(from: resolvedURL)
+                    let ext = resolvedURL.pathExtension.lowercased()
+                    let isCBT = ["cbt", "tar"].contains(ext)
+                    
+                    let (tempDir, imageURLs): (URL, [URL])
+                    if isCBT {
+                        (tempDir, imageURLs) = try await CBTExtractor.extract(from: resolvedURL)
+                    } else {
+                        (tempDir, imageURLs) = try await CBRExtractor.extract(from: resolvedURL)
+                    }
+                    
                     if let accessed = accessedURL {
                         await MainActor.run { self.activelyAccessedURL = accessed }
                     }
                     await MainActor.run {
-                        self.extractedCBRTempDir = tempDir
-                        self.extractedCBRImageURLs = imageURLs
+                        self.extractedTempDir = tempDir
+                        self.extractedImageURLs = imageURLs
                         self.pageCount = imageURLs.count
                         self.isLoading = false
                         if imageURLs.isEmpty {
-                            self.loadError = "The CBR/RAR archive contained no readable images."
+                            self.loadError = "The archive contained no readable images."
                         }
                     }
                 } catch {
                     if let accessed = accessedURL { accessed.stopAccessingSecurityScopedResource() }
                     await MainActor.run {
-                        self.loadError = "Could not open this CBR/RAR file.\n\n\(error.localizedDescription)"
+                        self.loadError = "Could not open this file.\n\n\(error.localizedDescription)"
                         self.isLoading = false
                     }
                 }
@@ -257,10 +267,10 @@ final class ComicImageCache: ObservableObject {
         if isPDF {
             Task { await PDFRenderActor.shared.clear() }
         }
-        if let tempDir = extractedCBRTempDir {
+        if let tempDir = extractedTempDir {
             try? FileManager.default.removeItem(at: tempDir)
         }
-        if !isPDF && !isStream && !isCBR {
+        if !isPDF && !isStream && !isPreExtracted {
             Task { await ArchiveManager.shared.clearCache() }
         }
     }
@@ -300,9 +310,9 @@ final class ComicImageCache: ObservableObject {
         fetchingQueue.insert(index)
         
         let isPDF = self.isPDF
-        let isCBR = self.isCBR
+        let isPreExtracted = self.isPreExtracted
         let cbzURL = self.cbzURL
-        let extractedCBRImageURLs = self.extractedCBRImageURLs
+        let extractedImageURLs = self.extractedImageURLs
         let entryPath: String? = (index < entries.count) ? entries[index].path : nil
         let bounds = UIScreen.main.bounds
         let scale = UIScreen.main.scale
@@ -313,9 +323,9 @@ final class ComicImageCache: ObservableObject {
             let img = await ComicImageCache.extractOrRenderImageBackground(
                 at: index,
                 isPDF: isPDF,
-                isCBR: isCBR,
+                isPreExtracted: isPreExtracted,
                 cbzURL: cbzURL,
-                extractedCBRImageURLs: extractedCBRImageURLs,
+                extractedImageURLs: extractedImageURLs,
                 entryPath: entryPath,
                 bounds: bounds,
                 scale: scale
@@ -356,18 +366,18 @@ final class ComicImageCache: ObservableObject {
     private static func extractOrRenderImageBackground(
         at index: Int,
         isPDF: Bool,
-        isCBR: Bool,
+        isPreExtracted: Bool,
         cbzURL: URL?,
-        extractedCBRImageURLs: [URL],
+        extractedImageURLs: [URL],
         entryPath: String?,
         bounds: CGRect,
         scale: CGFloat
     ) async -> UIImage? {
         if isPDF {
             return await PDFRenderActor.shared.renderPage(at: index, scale: scale * 1.5)
-        } else if isCBR {
-            guard index < extractedCBRImageURLs.count else { return nil }
-            let imageURL = extractedCBRImageURLs[index]
+        } else if isPreExtracted {
+            guard index < extractedImageURLs.count else { return nil }
+            let imageURL = extractedImageURLs[index]
             return autoreleasepool {
                 let srcOpts: [CFString: Any] = [kCGImageSourceShouldCache: false]
                 guard let source = CGImageSourceCreateWithURL(imageURL as CFURL, srcOpts as CFDictionary) else {
@@ -1364,6 +1374,7 @@ struct ComicPageView: View {
                 }
             }
         }
+        .id(index)
         .onReceive(NotificationCenter.default.publisher(for: .comicImageCacheImageLoaded)) { notification in
             guard let userInfo = notification.userInfo,
                   let loadedIndex = userInfo["index"] as? Int,

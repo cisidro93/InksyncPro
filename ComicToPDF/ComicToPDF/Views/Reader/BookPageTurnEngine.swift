@@ -30,11 +30,20 @@ struct BookFlipGesture: View {
         hSizeClass == .regular ? totalWidth * 0.15 : totalWidth / 3.0
     }
 
+    private var backgroundIndex: Int {
+        let isForward = isMangaRTL ? (dragOffset > 0) : (dragOffset < 0)
+        if isForward {
+            return canFlipForward() ? currentIndex + 1 : currentIndex
+        } else {
+            return canFlipBack() ? currentIndex - 1 : currentIndex
+        }
+    }
+
     var body: some View {
         GeometryReader { geo in
             ZStack {
-                // ── Background: previous spread (renders beneath the curl) ──
-                content(max(0, currentIndex - 1))
+                // ── Background: correct page (renders beneath the curl) ──
+                content(backgroundIndex)
                     .frame(width: geo.size.width, height: geo.size.height)
                     .zIndex(0)
 
@@ -67,35 +76,6 @@ struct BookFlipGesture: View {
                         .allowsHitTesting(false)
                     )
                     .zIndex(1)
-
-                // ── Instant Tap Zones Overlay ──
-                let zoneW = tapZoneWidth(totalWidth: geo.size.width)
-                HStack(spacing: 0) {
-                    Color.clear
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            if isMangaRTL {
-                                if canFlipForward() { flipForward(width: geo.size.width) } else { onFlipPastEnd?() }
-                            } else {
-                                if canFlipBack() { flipBack(width: geo.size.width) }
-                            }
-                        }
-                        .frame(width: zoneW)
-                    
-                    Spacer()
-                    
-                    Color.clear
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            if isMangaRTL {
-                                if canFlipBack() { flipBack(width: geo.size.width) }
-                            } else {
-                                if canFlipForward() { flipForward(width: geo.size.width) } else { onFlipPastEnd?() }
-                            }
-                        }
-                        .frame(width: zoneW)
-                }
-                .zIndex(2)
             }
             .contentShape(Rectangle())
             .gesture(
@@ -165,6 +145,7 @@ struct BookFlipGesture: View {
             }
             dragOffset = 0
             isAnimating = false
+            return
         }
 
         guard canFlipForward() else { return }
@@ -205,6 +186,7 @@ struct BookFlipGesture: View {
             }
             dragOffset = 0
             isAnimating = false
+            return
         }
 
         guard canFlipBack() else { return }
@@ -509,6 +491,7 @@ struct TwoUpPageCell: View {
                     .transition(.opacity)
             }
         }
+        .id(index)
         .onAppear {
             image = cache.getImage(at: index)
         }
