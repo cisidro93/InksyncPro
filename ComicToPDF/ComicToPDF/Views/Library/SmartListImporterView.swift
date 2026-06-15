@@ -254,31 +254,31 @@ struct SmartListImporterView: View {
     
     private func copyLibraryInventoryToClipboard() {
         let pdfs = conversionManager.convertedPDFs
+        
+        let inventoryText: String
         if pdfs.isEmpty {
-            UIPasteboard.general.string = "No items in library."
-            return
-        }
-        
-        var seriesGroups: [String: [String]] = [:]
-        for pdf in pdfs {
-            let seriesName = pdf.metadata.series ?? pdf.name.replacingOccurrences(of: ".\(pdf.url.pathExtension)", with: "")
-            let issue = pdf.metadata.issueNumber ?? "1"
-            seriesGroups[seriesName, default: []].append(issue)
-        }
-        
-        var inventoryLines: [String] = []
-        for (series, issues) in seriesGroups.sorted(by: { $0.key < $1.key }) {
-            let sortedIssues = issues.sorted { a, b in
-                if let na = Int(a), let nb = Int(b) {
-                    return na < nb
-                }
-                return a < b
+            inventoryText = "(No items in library. Import files first!)"
+        } else {
+            var seriesGroups: [String: [String]] = [:]
+            for pdf in pdfs {
+                let seriesName = pdf.metadata.series ?? pdf.name.replacingOccurrences(of: ".\(pdf.url.pathExtension)", with: "")
+                let issue = pdf.metadata.issueNumber ?? "1"
+                seriesGroups[seriesName, default: []].append(issue)
             }
-            let uniqueIssues = Array(NSOrderedSet(array: sortedIssues)) as? [String] ?? sortedIssues
-            inventoryLines.append("- \(series) (Issues: \(uniqueIssues.joined(separator: ", ")))")
+            
+            var inventoryLines: [String] = []
+            for (series, issues) in seriesGroups.sorted(by: { $0.key < $1.key }) {
+                let sortedIssues = issues.sorted { a, b in
+                    if let na = Int(a), let nb = Int(b) {
+                        return na < nb
+                    }
+                    return a < b
+                }
+                let uniqueIssues = Array(NSOrderedSet(array: sortedIssues)) as? [String] ?? sortedIssues
+                inventoryLines.append("- \(series) (Issues: \(uniqueIssues.joined(separator: ", ")))")
+            }
+            inventoryText = inventoryLines.joined(separator: "\n")
         }
-        
-        let inventoryText = inventoryLines.joined(separator: "\n")
         
         let aiPrompt = """
         You are an expert comic book reading order organizer for Inksync Pro.

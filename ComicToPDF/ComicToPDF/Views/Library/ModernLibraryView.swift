@@ -113,6 +113,10 @@ struct ModernLibraryView: View {
             return seriesEmpty || authorEmpty || titleEmpty
         }.count
         MetadataMatchService.shared.rebuildClusters(pdfs: cachedVisiblePDFs)
+        
+        // Propagate updates to ConversionManager to keep background components (like SmartList resolution) in sync
+        conversionManager.convertedPDFs = mapped
+        conversionManager.collections = cachedCollections
     }
 
     private var currentFolder: PDFCollection? {
