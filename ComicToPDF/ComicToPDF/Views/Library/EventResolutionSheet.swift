@@ -291,11 +291,11 @@ struct EventResolutionSheet: View {
         isProcessing = true
         
         for seriesName in distinctSeriesInList {
-            let normalizedName = seriesName.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+            let normalizedName = SmartListImporter.shared.normalizeString(seriesName)
             
             let targetCollection: PDFCollection
             if let existing = conversionManager.collections.first(where: {
-                $0.name.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) == normalizedName
+                SmartListImporter.shared.normalizeString($0.name) == normalizedName
             }) {
                 targetCollection = existing
             } else {
@@ -309,7 +309,9 @@ struct EventResolutionSheet: View {
                 conversionManager.collections.append(newCol)
                 
                 for i in conversionManager.convertedPDFs.indices {
-                    if conversionManager.convertedPDFs[i].metadata.series?.lowercased() == normalizedName,
+                    let pdfSeries = conversionManager.convertedPDFs[i].metadata.series ?? ""
+                    let pdfNameClean = SmartListImporter.shared.normalizeString(conversionManager.convertedPDFs[i].name)
+                    if SmartListImporter.shared.normalizeString(pdfSeries) == normalizedName || pdfNameClean.contains(normalizedName),
                        conversionManager.convertedPDFs[i].collectionId == nil {
                         conversionManager.convertedPDFs[i].collectionId = newCol.id
                     }
@@ -330,11 +332,13 @@ struct EventResolutionSheet: View {
         var volumeBuckets: [String: [(ConvertedPDF, ResolvedEventItem)]] = [:]
         var noVolume: [(ConvertedPDF, ResolvedEventItem)] = []
         
+        let normalizedFilter = seriesFilter.map { SmartListImporter.shared.normalizeString($0) }
+        
         for item in resolvedItems {
             if case .matched(let pdf) = item.resolution {
-                if let filter = seriesFilter {
-                    guard item.request.series.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) ==
-                          filter.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) else { continue }
+                if let normFilter = normalizedFilter {
+                    let reqSeriesNorm = SmartListImporter.shared.normalizeString(item.request.series)
+                    guard reqSeriesNorm == normFilter else { continue }
                 }
                 if let vol = item.request.volume, !vol.isEmpty {
                     volumeBuckets[vol, default: []].append((pdf, item))
@@ -353,9 +357,13 @@ struct EventResolutionSheet: View {
             parent = newParent
         }
         
-        for (pdf, _) in noVolume {
+        for (pdf, item) in noVolume {
             if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
                 conversionManager.convertedPDFs[idx].collectionId = parent.id
+                // Set series metadata if missing or clean up to canonical name
+                if (conversionManager.convertedPDFs[idx].metadata.series ?? "").isEmpty {
+                    conversionManager.convertedPDFs[idx].metadata.series = item.request.series
+                }
             }
         }
         
@@ -366,10 +374,14 @@ struct EventResolutionSheet: View {
         for vol in sortedVolumes {
             guard let entries = volumeBuckets[vol] else { continue }
             
-            for (pdf, _) in entries {
+            for (pdf, item) in entries {
                 if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
                     conversionManager.convertedPDFs[idx].collectionId = parent.id
                     conversionManager.convertedPDFs[idx].metadata.volume = vol
+                    // Set series metadata if missing or clean up to canonical name
+                    if (conversionManager.convertedPDFs[idx].metadata.series ?? "").isEmpty {
+                        conversionManager.convertedPDFs[idx].metadata.series = item.request.series
+                    }
                 }
             }
         }

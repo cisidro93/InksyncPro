@@ -657,7 +657,7 @@ final class SmartListImporter: Sendable {
         return results
     }
     
-    private func normalizeString(_ str: String) -> String {
+    func normalizeString(_ str: String) -> String {
         var s = str.lowercased()
             .replacingOccurrences(of: "-", with: " ")
             .replacingOccurrences(of: "_", with: " ")
