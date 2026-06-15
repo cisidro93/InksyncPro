@@ -6,6 +6,13 @@ struct SmartListImporterView: View {
     @EnvironmentObject var conversionManager: ConversionManager
     
     @State private var resolvedItems: [ResolvedEventItem]? = nil
+    enum ListType: String, CaseIterable, Identifiable {
+        case crossover = "Crossover Event"
+        case volumes = "Series Volumes"
+        var id: String { rawValue }
+    }
+    
+    @State private var listType: ListType = .crossover
     @State private var errorMessage: String? = nil
     @State private var eventName: String = ""
     @State private var pastedText: String = ""
@@ -34,6 +41,14 @@ struct SmartListImporterView: View {
                                     .foregroundColor(Color(.secondaryLabel))
                                     .padding(.horizontal)
                             }
+                            
+                            Picker("List Type", selection: $listType) {
+                                ForEach(ListType.allCases) { type in
+                                    Text(type.rawValue).tag(type)
+                                }
+                            }
+                            .pickerStyle(.segmented)
+                            .padding(.horizontal, 40)
                             
                             VStack(alignment: .leading, spacing: 12) {
                                 Text("Supported Formats:")
@@ -81,19 +96,21 @@ struct SmartListImporterView: View {
                             }
                             .padding(.horizontal, 40)
                             
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("Target Crossover or Event Name")
-                                    .font(.subheadline)
-                                    .fontWeight(.medium)
-                                
-                                TextField("e.g. Civil War, Dark Web, Spider-Verse", text: $eventName)
-                                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                                
-                                Text("Type the name of the reading event you want the AI to generate.")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
+                            if listType == .crossover {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text("Target Crossover or Event Name")
+                                        .font(.subheadline)
+                                        .fontWeight(.medium)
+                                    
+                                    TextField("e.g. Civil War, Dark Web, Spider-Verse", text: $eventName)
+                                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                                    
+                                    Text("Type the name of the reading event you want the AI to generate.")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                                .padding(.horizontal, 40)
                             }
-                            .padding(.horizontal, 40)
                             
                             
                             Text("Or paste your list directly:")
@@ -305,38 +322,74 @@ struct SmartListImporterView: View {
             inventoryText = inventoryLines.joined(separator: "\n")
         }
         
-        let targetEvent = eventName.isEmpty || eventName == "Imported Event" ? "Dark Web (or suggest the best fit crossover for these issues)" : eventName
-        
-        let aiPrompt = """
-        You are an expert comic book reading order organizer for Inksync Pro.
-        The user wants to generate a custom, properly-sequenced reading order or smart list for a specific crossover event or series run.
-        
-        Your task is to organize a reading list using ONLY the series/issues actually present in the user's library inventory below.
-        
-        Output format: A clean CSV table with the exact header below. Do not include markdown code block syntax (like ```csv), commentary, explanation, or conversational intro/outro text. Start directly with the header row.
-        
-        --- TARGET SCHEMA ---
-        Series,Issue,Volume,Label,Optional
-        
-        --- FIELD DEFINITIONS ---
-        - Series (String): Name of the comic book series (must match or closely relate to a series in the inventory).
-        - Issue (String or Int): The specific issue number (e.g. 5) or range of issues (e.g. 1-7).
-        - Volume (String, optional): The collection volume name if matched as a volume or compendium file (e.g. 'Vol 1' or 'Compendium 1').
-        - Label (String): Category of the comic in the event. Must be one of: 'Main', 'Tie-In', 'Prelude', or 'Collection'.
-        - Optional (Boolean): 'true' if the issue can be skipped, 'false' if it's main reading.
-        
-        --- FEW-SHOT EXAMPLE OUTPUT ---
-        Series,Issue,Volume,Label,Optional
-        Dark Web: X-Men,1-3,Vol 1,Main,false
-        Dragon Ball,1-7,Vol 1,Collection,false
-        TMNT: The Last Ronin,1-5,Vol 1,Collection,false
-        
-        --- CURRENT USER REQUEST ---
-        Please create a reading order event for: "\(targetEvent)"
-        
-        --- USER LIBRARY INVENTORY ---
-        \(inventoryText)
-        """
+        let aiPrompt: String
+        switch listType {
+        case .crossover:
+            let targetEvent = eventName.isEmpty || eventName == "Imported Event" ? "Dark Web (or suggest the best fit crossover for these issues)" : eventName
+            aiPrompt = """
+            You are an expert comic book reading order organizer for Inksync Pro.
+            The user wants to generate a custom, properly-sequenced reading order or smart list for a specific crossover event or series run.
+            
+            Your task is to organize a reading list using ONLY the series/issues actually present in the user's library inventory below.
+            
+            Output format: A clean CSV table with the exact header below. Do not include markdown code block syntax (like ```csv), commentary, explanation, or conversational intro/outro text. Start directly with the header row.
+            
+            --- TARGET SCHEMA ---
+            Series,Issue,Volume,Label,Optional
+            
+            --- FIELD DEFINITIONS ---
+            - Series (String): Name of the comic book series (must match or closely relate to a series in the inventory).
+            - Issue (String or Int): The specific issue number (e.g. 5) or range of issues (e.g. 1-7).
+            - Volume (String, optional): The collection volume name if matched as a volume or compendium file (e.g. 'Vol 1' or 'Compendium 1').
+            - Label (String): Category of the comic in the event. Must be one of: 'Main', 'Tie-In', 'Prelude', or 'Collection'.
+            - Optional (Boolean): 'true' if the issue can be skipped, 'false' if it's main reading.
+            
+            --- FEW-SHOT EXAMPLE OUTPUT ---
+            Series,Issue,Volume,Label,Optional
+            Dark Web: X-Men,1-3,Vol 1,Main,false
+            Dragon Ball,1-7,Vol 1,Collection,false
+            TMNT: The Last Ronin,1-5,Vol 1,Collection,false
+            
+            --- CURRENT USER REQUEST ---
+            Please create a reading order event for: "\(targetEvent)"
+            
+            --- USER LIBRARY INVENTORY ---
+            \(inventoryText)
+            """
+            
+        case .volumes:
+            aiPrompt = """
+            You are an expert comic book library organizer for Inksync Pro.
+            The user wants to group the issues in their library into logical volumes, compendiums, or collections.
+            
+            Your task is to analyze the user's library inventory below and, for each series present, organize the issues into logical chronological Volumes (e.g. Vol 1, Vol 2, Compendium 1) based on official publication standards or issue number ranges.
+            
+            Output format: A clean CSV table with the exact header below. Do not include markdown code block syntax (like ```csv), commentary, explanation, or conversational intro/outro text. Start directly with the header row.
+            
+            --- TARGET SCHEMA ---
+            Series,Issue,Volume,Label,Optional
+            
+            --- FIELD DEFINITIONS ---
+            - Series (String): Name of the comic book series (must match exactly one of the series names in the user's inventory).
+            - Issue (String or Int): The issue number (e.g. 5) or range of issues (e.g. 1-12) grouped into this volume.
+            - Volume (String): The volume name (e.g. 'Vol 1', 'Vol 2', or 'Compendium 1').
+            - Label (String): Set to 'Collection' for volume groups.
+            - Optional (Boolean): 'false'.
+            
+            --- FEW-SHOT EXAMPLE OUTPUT ---
+            Series,Issue,Volume,Label,Optional
+            Initial D,1-10,Vol 01,Collection,false
+            Initial D,11-20,Vol 02,Collection,false
+            Invincible,1-47,Compendium 1,Collection,false
+            Invincible,48-96,Compendium 2,Collection,false
+            
+            --- CURRENT USER REQUEST ---
+            Please organize the following library series into volume collections. Group issues chronologically by volume.
+            
+            --- USER LIBRARY INVENTORY ---
+            \(inventoryText)
+            """
+        }
         
         UIPasteboard.general.string = aiPrompt
         HapticEngine.success()
