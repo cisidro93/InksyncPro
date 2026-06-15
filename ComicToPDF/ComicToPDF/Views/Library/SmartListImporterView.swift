@@ -30,199 +30,385 @@ struct SmartListImporterView: View {
 
 
     var body: some View {
-            Group {
-                if let items = resolvedItems {
-                    EventResolutionSheet(eventName: eventName, resolvedItems: items)
-                } else {
-                    NavigationStack {
-                        ScrollView {
-                            VStack(spacing: 24) {
-                            Group {
-                                Image(systemName: "list.star")
-                                    .font(.system(size: 60))
-                                    .foregroundColor(.purple)
+        Group {
+            if let items = resolvedItems {
+                EventResolutionSheet(eventName: eventName, resolvedItems: items)
+            } else {
+                NavigationStack {
+                    ScrollView {
+                        VStack(spacing: 28) {
+                            // ── HEADER SECTION ───────────────────────────────────────
+                            VStack(spacing: 12) {
+                                ZStack {
+                                    Circle()
+                                        .fill(Color.purple.opacity(0.12))
+                                        .frame(width: 90, height: 90)
+                                    
+                                    Image(systemName: "sparkles.rectangle.stack")
+                                        .font(.system(size: 44, weight: .semibold))
+                                        .foregroundStyle(
+                                            LinearGradient(
+                                                colors: [.purple, .blue],
+                                                startPoint: .topLeading,
+                                                endPoint: .bottomTrailing
+                                            )
+                                        )
+                                }
+                                .padding(.top, 8)
                                 
                                 Text("Smart Reading Lists")
-                                    .font(.title).bold()
+                                    .font(.title2)
+                                    .fontWeight(.bold)
+                                    .foregroundColor(.primary)
                                 
-                                Text("Import a .cbl (Comic Book List) or a basic .CSV text list of issues to automatically generate a properly-sequenced custom reading event from your local library.")
-                                    .multilineTextAlignment(.center)
-                                    .foregroundColor(Color(.secondaryLabel))
-                                    .padding(.horizontal)
-                            }
-                            
-                            Picker("List Type", selection: $listType) {
-                                ForEach(ListType.allCases) { type in
-                                    Text(type.rawValue).tag(type)
-                                }
-                            }
-                            .pickerStyle(.segmented)
-                            .padding(.horizontal, 40)
-                            
-                            HStack {
-                                Text("AI Output Format")
+                                Text("Organize cross-series crossover events or slice series runs into volumes. Let Inksync Pro parse XML, CSV, JSON, or plain text outputs from AI models.")
                                     .font(.subheadline)
-                                    .fontWeight(.medium)
-                                Spacer()
-                                Picker("AI Output Format", selection: $outputFormat) {
-                                    ForEach(OutputFormat.allCases) { format in
-                                        Text(format.rawValue).tag(format)
+                                    .foregroundColor(Color(.secondaryLabel))
+                                    .multilineTextAlignment(.center)
+                                    .padding(.horizontal, 24)
+                                    .lineSpacing(4)
+                            }
+                            .padding(.top, 10)
+                            
+                            // ── LIST TYPE SEGMENTED CONTROL ──────────────────────────
+                            VStack(spacing: 8) {
+                                Picker("List Type", selection: $listType) {
+                                    ForEach(ListType.allCases) { type in
+                                        Text(type.rawValue).tag(type)
                                     }
                                 }
-                                .pickerStyle(.menu)
+                                .pickerStyle(.segmented)
+                                .onChange(of: listType) { _ in
+                                    // HapticEngine.selection()
+                                }
                             }
-                            .padding(.horizontal, 40)
+                            .padding(.horizontal, 24)
                             
-                            VStack(alignment: .leading, spacing: 12) {
-                                Text("Supported Formats:")
-                                    .font(.headline)
-                                Label("ComicRack .cbl Files", systemImage: "xmark.curlybrace")
-                                Label("Comma Separated Values (.csv)", systemImage: "tablecells")
-                                Label("Plain Text Lists (.txt)", systemImage: "doc.plaintext")
-                            }
-                            .padding()
-                            .background(Color(.secondarySystemBackground))
-                            .cornerRadius(12)
-                            
-                            HStack(spacing: 16) {
-                                Button(action: {
-                                    ImportCoordinator.present(type: .smartList) { urls in
-                                        if let url = urls.first {
-                                            handleSmartListURL(url)
-                                        }
+                            // ── EVENT CONFIGURATION CARD ─────────────────────────────
+                            VStack(spacing: 20) {
+                                if listType == .crossover {
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        Text("Event / Crossover Name")
+                                            .font(.caption)
+                                            .fontWeight(.bold)
+                                            .foregroundColor(.purple)
+                                            .textCase(.uppercase)
+                                        
+                                        TextField("e.g. Civil War, Dark Web, Spider-Verse", text: $eventName)
+                                            .font(.body)
+                                            .padding(.vertical, 4)
+                                        
+                                        Divider()
+                                        
+                                        Text("The name for the playlist folder and generated metadata.")
+                                            .font(.caption2)
+                                            .foregroundColor(.secondary)
                                     }
-                                }) {
-                                    Label("Import CSV/CBL File", systemImage: "tablecells")
-                                        .font(.headline)
-                                        .padding(.horizontal, 16).padding(.vertical, 12)
-                                        .frame(maxWidth: .infinity)
-                                        .background(Color(.systemBlue).opacity(0.15))
-                                        .foregroundColor(Color(.systemBlue))
-                                        .cornerRadius(12)
+                                    .transition(.opacity.combined(with: .move(edge: .top)))
                                 }
                                 
+                                VStack(alignment: .leading, spacing: 8) {
+                                    HStack {
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text("AI Prompt Target Format")
+                                                .font(.caption)
+                                                .fontWeight(.bold)
+                                                .foregroundColor(.purple)
+                                                .textCase(.uppercase)
+                                            
+                                            Text("The layout structure requested from the AI.")
+                                                .font(.caption2)
+                                                .foregroundColor(.secondary)
+                                        }
+                                        Spacer()
+                                        Picker("Format", selection: $outputFormat) {
+                                            ForEach(OutputFormat.allCases) { format in
+                                                Text(format.rawValue).tag(format)
+                                            }
+                                        }
+                                        .pickerStyle(.menu)
+                                        .tint(.purple)
+                                        .onChange(of: outputFormat) { _ in
+                                            // HapticEngine.selection()
+                                        }
+                                    }
+                                }
+                            }
+                            .padding(20)
+                            .background(Color(.secondarySystemGroupedBackground))
+                            .cornerRadius(16)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 16)
+                                    .stroke(Color(.separator), lineWidth: 0.5)
+                            )
+                            .shadow(color: Color.black.opacity(0.04), radius: 6, x: 0, y: 3)
+                            .padding(.horizontal, 24)
+                            
+                            // ── AI GENERATION & FILE ACTIONS CARD ────────────────────
+                            VStack(spacing: 20) {
+                                // Subcard 1: AI Clipboard Copy
                                 Button(action: {
+                                    copyLibraryInventoryToClipboard()
+                                }) {
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        HStack {
+                                            Label("Copy Library Inventory & AI Prompt", systemImage: "doc.on.clipboard.fill")
+                                                .font(.system(size: 15, weight: .bold))
+                                                .foregroundColor(.purple)
+                                            Spacer()
+                                            Image(systemName: "chevron.right")
+                                                .font(.caption)
+                                                .foregroundColor(.purple)
+                                        }
+                                        
+                                        Text("Generates a comprehensive system prompt enclosing your library inventory. Paste this directly into ChatGPT, Claude, Gemini, or other models to generate the list.")
+                                            .font(.caption)
+                                            .foregroundColor(Color(.secondaryLabel))
+                                            .lineSpacing(3)
+                                            .multilineTextAlignment(.leading)
+                                    }
+                                    .padding(16)
+                                    .background(Color.purple.opacity(0.08))
+                                    .cornerRadius(12)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 12)
+                                            .stroke(Color.purple.opacity(0.2), lineWidth: 1)
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                                
+                                // Subcard 2: Document Picker Import
+                                Button(action: {
+                                    // HapticEngine.light()
                                     ImportCoordinator.present(type: .smartList) { urls in
                                         if let url = urls.first {
                                             handleSmartListURL(url)
                                         }
                                     }
                                 }) {
-                                    Label("Import Text File", systemImage: "doc.plaintext")
-                                        .font(.headline)
-                                        .padding(.horizontal, 16).padding(.vertical, 12)
-                                        .frame(maxWidth: .infinity)
-                                        .background(Color(.systemGreen).opacity(0.15))
-                                        .foregroundColor(Color(.systemGreen))
-                                        .cornerRadius(12)
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        HStack {
+                                            Label("Import Smart List Document File", systemImage: "folder.badge.plus")
+                                                .font(.system(size: 15, weight: .bold))
+                                                .foregroundColor(.blue)
+                                            Spacer()
+                                            Image(systemName: "arrow.up.doc")
+                                                .font(.caption)
+                                                .foregroundColor(.blue)
+                                        }
+                                        
+                                        Text("Directly load a ComicRack .cbl file, standard .csv sheet, raw .txt list, or structured JSON file from the iOS Files app.")
+                                            .font(.caption)
+                                            .foregroundColor(Color(.secondaryLabel))
+                                            .lineSpacing(3)
+                                            .multilineTextAlignment(.leading)
+                                    }
+                                    .padding(16)
+                                    .background(Color.blue.opacity(0.08))
+                                    .cornerRadius(12)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 12)
+                                            .stroke(Color.blue.opacity(0.2), lineWidth: 1)
+                                    )
                                 }
+                                .buttonStyle(.plain)
                             }
-                            .padding(.horizontal, 40)
+                            .padding(20)
+                            .background(Color(.secondarySystemGroupedBackground))
+                            .cornerRadius(16)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 16)
+                                    .stroke(Color(.separator), lineWidth: 0.5)
+                            )
+                            .shadow(color: Color.black.opacity(0.04), radius: 6, x: 0, y: 3)
+                            .padding(.horizontal, 24)
                             
-                            if listType == .crossover {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    Text("Target Crossover or Event Name")
-                                        .font(.subheadline)
-                                        .fontWeight(.medium)
+                            // ── PASTED INPUT & RESOLUTION SECTION ────────────────────
+                            VStack(spacing: 16) {
+                                VStack(alignment: .leading, spacing: 10) {
+                                    HStack {
+                                        Label("Paste Generated AI Response", systemImage: "doc.text.magnifyingglass")
+                                            .font(.subheadline)
+                                            .fontWeight(.bold)
+                                            .foregroundColor(.primary)
+                                        Spacer()
+                                        
+                                        Button {
+                                            pastedText = "ReadingOrder,SortOrder,Series,Issue,Volume,Label,Optional\nCivil War,1,Amazing Spider-Man,529,,Prelude,false\nCivil War,2,New Avengers,21,,Prelude,true\nCivil War,3,Civil War,1,,Main,false"
+                                            // HapticEngine.light()
+                                        } label: {
+                                            Text("Use Template")
+                                                .font(.caption)
+                                                .fontWeight(.bold)
+                                                .foregroundColor(.purple)
+                                        }
+                                    }
                                     
-                                    TextField("e.g. Civil War, Dark Web, Spider-Verse", text: $eventName)
-                                        .textFieldStyle(RoundedBorderTextFieldStyle())
-                                    
-                                    Text("Type the name of the reading event you want the AI to generate.")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
+                                    ZStack(alignment: .topLeading) {
+                                        TextEditor(text: $pastedText)
+                                            .font(.system(size: 13, design: .monospaced))
+                                            .autocorrectionDisabled(true)
+                                            .textInputAutocapitalization(.never)
+                                            .scrollContentBackground(.hidden)
+                                            .frame(minHeight: 140, maxHeight: 240)
+                                            .padding(12)
+                                            .background(Color(.tertiarySystemBackground))
+                                            .cornerRadius(12)
+                                            .overlay(
+                                                RoundedRectangle(cornerRadius: 12)
+                                                    .stroke(Color(.separator), lineWidth: 0.5)
+                                            )
+                                        
+                                        if pastedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                            Text("Paste the CSV, Markdown, JSON, or Plain Text list here...")
+                                                .font(.system(size: 13))
+                                                .foregroundColor(Color(.placeholderText))
+                                                .padding(.horizontal, 16)
+                                                .padding(.vertical, 20)
+                                                .allowsHitTesting(false)
+                                        }
+                                    }
                                 }
-                                .padding(.horizontal, 40)
-                            }
-                            
-                            
-                            Text("Or paste your list directly:")
-                                .font(.subheadline)
-                                .foregroundColor(Color(.secondaryLabel))
-                            
-                            TextEditor(text: $pastedText)
-                                .font(.system(size: 13, design: .monospaced))
-                                .autocorrectionDisabled(true)
-                                .textInputAutocapitalization(.never)
-                                .frame(minHeight: 150, maxHeight: 350)
-                                .padding(8)
-                                .background(Color(.secondarySystemBackground))
-                                .cornerRadius(8)
-                                .padding(.horizontal, 40)
-                            
-                            Button {
-                                pastedText = "ReadingOrder,SortOrder,Series,Issue,Volume,Label,Optional\nCivil War,1,Amazing Spider-Man,529,,Prelude,false\nCivil War,2,New Avengers,21,,Prelude,true\nCivil War,3,Civil War,1,,Main,false"
-                            } label: {
-                                Label("Paste Example Reading Order Template", systemImage: "doc.on.clipboard")
-                                    .font(.caption)
-                                    .foregroundColor(.blue)
-                            }
-                            
-                            Button {
-                                copyLibraryInventoryToClipboard()
-                            } label: {
-                                Label("Copy Library Inventory for AI Generation", systemImage: "doc.on.clipboard.fill")
-                                    .font(.caption)
-                                    .foregroundColor(.purple)
-                            }
-                            .padding(.top, 4)
-
-                            
-                            if !pastedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                Button {
-                                    handlePastedText()
-                                } label: {
-                                    Label("Parse Pasted List", systemImage: "doc.text.magnifyingglass")
+                                
+                                if !pastedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                    Button {
+                                        // HapticEngine.success()
+                                        handlePastedText()
+                                    } label: {
+                                        HStack {
+                                            Image(systemName: "play.fill")
+                                            Text("Parse & Resolve Pasted List")
+                                                .fontWeight(.bold)
+                                        }
                                         .font(.headline)
                                         .foregroundColor(.white)
-                                        .padding()
+                                        .padding(.vertical, 14)
                                         .frame(maxWidth: .infinity)
-                                        .background(Color.green)
+                                        .background(
+                                            LinearGradient(
+                                                colors: [.green, Color(.systemGreen).opacity(0.85)],
+                                                startPoint: .topLeading,
+                                                endPoint: .bottomTrailing
+                                            )
+                                        )
                                         .cornerRadius(12)
-                                        .padding(.horizontal, 40)
+                                        .shadow(color: Color.green.opacity(0.3), radius: 8, x: 0, y: 4)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .transition(.scale.combined(with: .opacity))
                                 }
                             }
+                            .padding(20)
+                            .background(Color(.secondarySystemGroupedBackground))
+                            .cornerRadius(16)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 16)
+                                    .stroke(Color(.separator), lineWidth: 0.5)
+                            )
+                            .shadow(color: Color.black.opacity(0.04), radius: 6, x: 0, y: 3)
+                            .padding(.horizontal, 24)
                             
                             if let err = errorMessage {
-                                Text(err)
-                                    .foregroundColor(.red)
+                                HStack(spacing: 8) {
+                                    Image(systemName: "exclamationmark.triangle.fill")
+                                        .foregroundColor(.red)
+                                    Text(err)
+                                        .font(.caption)
+                                        .foregroundColor(.red)
+                                        .multilineTextAlignment(.leading)
+                                }
+                                .padding(.vertical, 8)
+                                .padding(.horizontal, 16)
+                                .background(Color.red.opacity(0.08))
+                                .cornerRadius(8)
+                                .padding(.horizontal, 24)
+                                .transition(.opacity)
+                            }
+                            
+                            // ── FORMAT INFO SECTION ──────────────────────────────────
+                            VStack(alignment: .leading, spacing: 14) {
+                                Text("Supported AI Formats")
                                     .font(.caption)
-                                    .multilineTextAlignment(.center)
-                                    .padding(.horizontal)
+                                    .fontWeight(.bold)
+                                    .foregroundColor(.secondary)
+                                    .textCase(.uppercase)
+                                
+                                Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 12) {
+                                    GridRow {
+                                        Label("CSV Table", systemImage: "tablecells.fill")
+                                            .foregroundColor(.purple)
+                                        Text("Standard columns split by commas.")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                    GridRow {
+                                        Label("Markdown", systemImage: "doc.text.fill")
+                                            .foregroundColor(.purple)
+                                        Text("Piped table syntax generated by LLMs.")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                    GridRow {
+                                        Label("JSON Array", systemImage: "curlybraces")
+                                            .foregroundColor(.purple)
+                                        Text("Structured dictionary matching Inksync schema.")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                    GridRow {
+                                        Label("Plain Text", systemImage: "doc.plaintext.fill")
+                                            .foregroundColor(.purple)
+                                        Text("Key-value lines (e.g. Series: X, Issue: Y).")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
                             }
+                            .padding(20)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color(.secondarySystemGroupedBackground).opacity(0.5))
+                            .cornerRadius(16)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 16)
+                                    .stroke(Color(.separator), lineWidth: 0.5)
+                            )
+                            .padding(.horizontal, 24)
+                            .padding(.bottom, 24)
                         }
-                        .padding(.vertical)
                     }
+                    .navigationTitle("")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .background(Color(.systemGroupedBackground))
                     .toolbar {
-                            ToolbarItem(placement: .cancellationAction) {
-                                Button("Cancel") { dismiss() }
-                            }
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Cancel") { dismiss() }
                         }
                     }
-                }
-            }
-            .overlay(alignment: .bottom) {
-                if showInventoryCopiedMessage {
-                    HStack(spacing: 10) {
-                        Image(systemName: "doc.on.clipboard.fill")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(.white)
-                        Text("Prompt & Inventory Copied")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundColor(.white)
-                    }
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 16)
-                    .background(
-                        RoundedRectangle(cornerRadius: 32)
-                            .fill(Color.purple.opacity(0.95))
-                            .shadow(color: Color.black.opacity(0.25), radius: 10, x: 0, y: 5)
-                    )
-                    .padding(.bottom, 50)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
         }
+        .overlay(alignment: .bottom) {
+            if showInventoryCopiedMessage {
+                HStack(spacing: 12) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundColor(.green)
+                    Text("Prompt & Inventory Copied")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(.white)
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 14)
+                .background(
+                    Capsule()
+                        .fill(Color(.darkGray).opacity(0.95))
+                        .shadow(color: Color.black.opacity(0.3), radius: 10, x: 0, y: 5)
+                )
+                .padding(.bottom, 40)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+    }
         
     private func handleSmartListURL(_ selectedFile: URL) {
         do {
