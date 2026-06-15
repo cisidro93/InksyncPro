@@ -551,16 +551,50 @@ final class SmartListImporter: Sendable {
                         }
                     }
                     if nameMatched || pdfNameClean.contains(reqSeriesClean) {
-                        score += 20
+                        score += 50
                     }
                 }
                 
                 // Advanced Context: Volume Matches!
                 if let reqVol = req.volume, !reqVol.isEmpty {
-                    if let pdfVol = pdf.metadata.volume, pdfVol == reqVol {
-                        score += 30
-                    } else if pdfNameClean.contains("v\(reqVol)") || pdfNameClean.contains("vol \(reqVol)") || pdfNameClean.contains("volume \(reqVol)") || pdfNameClean.contains("v0\(reqVol)") {
-                        score += 30
+                    let cleanReqVol = reqVol.lowercased().trimmingCharacters(in: .whitespaces)
+                    let cleanPdfVol = (pdf.metadata.volume ?? "").lowercased().trimmingCharacters(in: .whitespaces)
+                    
+                    if !cleanPdfVol.isEmpty && cleanPdfVol == cleanReqVol {
+                        score += 50
+                    } else {
+                        let pdfNameLower = pdfNameClean.lowercased()
+                        let cleanVolNum = cleanReqVol.filter { $0.isNumber }
+                        if !cleanVolNum.isEmpty {
+                            var possibleVolNums = Set<String>()
+                            possibleVolNums.insert(cleanVolNum)
+                            if let intVal = Int(cleanVolNum) {
+                                possibleVolNums.insert("\(intVal)")
+                                possibleVolNums.insert(String(format: "%02d", intVal))
+                                possibleVolNums.insert(String(format: "%03d", intVal))
+                            }
+                            
+                            var volMatched = false
+                            for num in possibleVolNums {
+                                if pdfNameLower.contains("vol \(num)") ||
+                                   pdfNameLower.contains("volume \(num)") ||
+                                   pdfNameLower.contains("v\(num)") ||
+                                   pdfNameLower.contains("v0\(num)") ||
+                                   pdfNameLower.contains("compendium \(num)") ||
+                                   pdfNameLower.contains("omnibus \(num)") {
+                                    volMatched = true
+                                    break
+                                }
+                            }
+                            if volMatched {
+                                score += 50
+                            }
+                        } else {
+                            // Non-numeric volume matching (e.g. "Special", "Prelude")
+                            if pdfNameLower.contains(cleanReqVol) {
+                                score += 50
+                            }
+                        }
                     }
                 }
                 
@@ -590,7 +624,17 @@ final class SmartListImporter: Sendable {
                 if score >= 100 {
                     bestMatch = pdf
                     exactMatchFound = true
-                    assignedPDFIds.insert(pdf.id)
+                    
+                    let isVolumeFile = (pdf.metadata.volume != nil && !pdf.metadata.volume!.isEmpty) ||
+                                       pdf.name.lowercased().contains("vol") ||
+                                       pdf.name.lowercased().contains("volume") ||
+                                       pdf.name.lowercased().contains("compendium") ||
+                                       pdf.name.lowercased().contains("omnibus") ||
+                                       pdf.name.lowercased().range(of: "(?:^|\\s|[^a-zA-Z])v\\s*[0-9]+", options: .regularExpression) != nil
+                    
+                    if !isVolumeFile {
+                        assignedPDFIds.insert(pdf.id)
+                    }
                     break
                 }
                 
@@ -614,10 +658,18 @@ final class SmartListImporter: Sendable {
     }
     
     private func normalizeString(_ str: String) -> String {
-        return str.lowercased()
+        var s = str.lowercased()
             .replacingOccurrences(of: "-", with: " ")
             .replacingOccurrences(of: "_", with: " ")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: ".", with: " ")
+            .replacingOccurrences(of: ":", with: " ")
+            .replacingOccurrences(of: ",", with: " ")
+            .replacingOccurrences(of: "!", with: " ")
+            .replacingOccurrences(of: "?", with: " ")
+        while s.contains("  ") {
+            s = s.replacingOccurrences(of: "  ", with: " ")
+        }
+        return s.trimmingCharacters(in: .whitespacesAndNewlines)
     }
     
     private func normalizeUnits(_ str: String) -> String {
