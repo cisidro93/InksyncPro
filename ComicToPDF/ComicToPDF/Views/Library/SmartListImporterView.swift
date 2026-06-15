@@ -26,8 +26,7 @@ struct SmartListImporterView: View {
     @State private var eventName: String = ""
     @State private var pastedText: String = ""
     @State private var showInventoryCopiedMessage: Bool = false
-
-
+    @State private var isResolving: Bool = false
 
     var body: some View {
         Group {
@@ -412,6 +411,29 @@ struct SmartListImporterView: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
+        .overlay {
+            if isResolving {
+                ZStack {
+                    Color.black.opacity(0.4)
+                        .ignoresSafeArea()
+                    
+                    VStack(spacing: 16) {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .inkViolet))
+                            .scaleEffect(1.5)
+                        
+                        Text("Resolving Library Matches...")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.white)
+                    }
+                    .padding(28)
+                    .background(Color.inkSurface)
+                    .cornerRadius(16)
+                    .shadow(color: Color.black.opacity(0.2), radius: 10, x: 0, y: 5)
+                }
+                .transition(.opacity)
+            }
+        }
     }
         
     private func handleSmartListURL(_ selectedFile: URL) {
@@ -445,49 +467,53 @@ struct SmartListImporterView: View {
                 return
             }
             
-            // Perform resolution against local library
-            let resolutions = SmartListImporter.shared.resolveList(requests, against: conversionManager.convertedPDFs)
+            // Perform resolution against local library asynchronously
+            isResolving = true
+            let customAliases = AppSettingsManager.shared.conversionSettings.customAliases
+            let pdfs = conversionManager.convertedPDFs
             
-            let matchedPDFs = resolutions.compactMap { item -> ConvertedPDF? in
-                if case .matched(let pdf) = item.resolution { return pdf }
-                if case .suggested(let pdf) = item.resolution { return pdf }
-                return nil
-            }
-            
-            // ── Smart Series Affinity Detection ─────────────────────────────────────
-            // If the parser found an explicit ReadingOrder name, use it
-            if let explicitEventName = requests.first(where: { $0.readingOrder != nil })?.readingOrder, !explicitEventName.isEmpty {
-                eventName = explicitEventName
-            }
-            // Analyze matched items to detect if the list references a single existing
-            // series collection. If 70%+ of matched files share one collection, this
-            // is a "series volume breakdown" not a crossover event — auto-bind to it.
-            else if !matchedPDFs.isEmpty {
-                var collectionVotes: [UUID: (count: Int, name: String)] = [:]
-                for pdf in matchedPDFs {
-                    if let colId = pdf.collectionId,
-                       let col = conversionManager.collections.first(where: { $0.id == colId }) {
-                        let existing = collectionVotes[colId] ?? (count: 0, name: col.name)
-                        collectionVotes[colId] = (count: existing.count + 1, name: col.name)
-                    }
-                }
+            Task {
+                let resolutions = await SmartListImporter.shared.resolveList(requests, against: pdfs, customAliases: customAliases)
                 
-                // Find dominant collection
-                if let dominant = collectionVotes.max(by: { $0.value.count < $1.value.count }) {
-                    let affinityRatio = Double(dominant.value.count) / Double(matchedPDFs.count)
-                    if affinityRatio >= 0.7 {
-                        // This list references an existing series — bind to it
-                        eventName = dominant.value.name
+                await MainActor.run {
+                    self.isResolving = false
+                    
+                    let matchedPDFs = resolutions.compactMap { item -> ConvertedPDF? in
+                        if case .matched(let pdf) = item.resolution { return pdf }
+                        if case .suggested(let pdf) = item.resolution { return pdf }
+                        return nil
+                    }
+                    
+                    // ── Smart Series Affinity Detection ─────────────────────────────────────
+                    if let explicitEventName = requests.first(where: { $0.readingOrder != nil })?.readingOrder, !explicitEventName.isEmpty {
+                        eventName = explicitEventName
+                    } else if !matchedPDFs.isEmpty {
+                        var collectionVotes: [UUID: (count: Int, name: String)] = [:]
+                        for pdf in matchedPDFs {
+                            if let colId = pdf.collectionId,
+                               let col = conversionManager.collections.first(where: { $0.id == colId }) {
+                                let existing = collectionVotes[colId] ?? (count: 0, name: col.name)
+                                collectionVotes[colId] = (count: existing.count + 1, name: col.name)
+                            }
+                        }
+                        
+                        if let dominant = collectionVotes.max(by: { $0.value.count < $1.value.count }) {
+                            let affinityRatio = Double(dominant.value.count) / Double(matchedPDFs.count)
+                            if affinityRatio >= 0.7 {
+                                eventName = dominant.value.name
+                            }
+                        }
+                    }
+                    
+                    withAnimation {
+                        self.resolvedItems = resolutions
                     }
                 }
-            }
-            
-            withAnimation {
-                self.resolvedItems = resolutions
             }
             
         } catch {
             errorMessage = error.localizedDescription
+            isResolving = false
         }
     }
     
@@ -505,38 +531,47 @@ struct SmartListImporterView: View {
             return
         }
         
-        // Perform resolution against local library
-        let resolutions = SmartListImporter.shared.resolveList(requests, against: conversionManager.convertedPDFs)
+        isResolving = true
+        let customAliases = AppSettingsManager.shared.conversionSettings.customAliases
+        let pdfs = conversionManager.convertedPDFs
         
-        let matchedPDFs = resolutions.compactMap { item -> ConvertedPDF? in
-            if case .matched(let pdf) = item.resolution { return pdf }
-            if case .suggested(let pdf) = item.resolution { return pdf }
-            return nil
-        }
-        
-        // ── Smart Series Affinity Detection ─────────────────────────────────────
-        if let explicitEventName = requests.first(where: { $0.readingOrder != nil })?.readingOrder, !explicitEventName.isEmpty {
-            eventName = explicitEventName
-        } else if !matchedPDFs.isEmpty {
-            var collectionVotes: [UUID: (count: Int, name: String)] = [:]
-            for pdf in matchedPDFs {
-                if let colId = pdf.collectionId,
-                   let col = conversionManager.collections.first(where: { $0.id == colId }) {
-                    let existing = collectionVotes[colId] ?? (count: 0, name: col.name)
-                    collectionVotes[colId] = (count: existing.count + 1, name: col.name)
-                }
-            }
+        Task {
+            let resolutions = await SmartListImporter.shared.resolveList(requests, against: pdfs, customAliases: customAliases)
             
-            if let dominant = collectionVotes.max(by: { $0.value.count < $1.value.count }) {
-                let affinityRatio = Double(dominant.value.count) / Double(matchedPDFs.count)
-                if affinityRatio >= 0.7 {
-                    eventName = dominant.value.name
+            await MainActor.run {
+                self.isResolving = false
+                
+                let matchedPDFs = resolutions.compactMap { item -> ConvertedPDF? in
+                    if case .matched(let pdf) = item.resolution { return pdf }
+                    if case .suggested(let pdf) = item.resolution { return pdf }
+                    return nil
+                }
+                
+                // ── Smart Series Affinity Detection ─────────────────────────────────────
+                if let explicitEventName = requests.first(where: { $0.readingOrder != nil })?.readingOrder, !explicitEventName.isEmpty {
+                    eventName = explicitEventName
+                } else if !matchedPDFs.isEmpty {
+                    var collectionVotes: [UUID: (count: Int, name: String)] = [:]
+                    for pdf in matchedPDFs {
+                        if let colId = pdf.collectionId,
+                           let col = conversionManager.collections.first(where: { $0.id == colId }) {
+                            let existing = collectionVotes[colId] ?? (count: 0, name: col.name)
+                            collectionVotes[colId] = (count: existing.count + 1, name: col.name)
+                        }
+                    }
+                    
+                    if let dominant = collectionVotes.max(by: { $0.value.count < $1.value.count }) {
+                        let affinityRatio = Double(dominant.value.count) / Double(matchedPDFs.count)
+                        if affinityRatio >= 0.7 {
+                            eventName = dominant.value.name
+                        }
+                    }
+                }
+                
+                withAnimation {
+                    self.resolvedItems = resolutions
                 }
             }
-        }
-        
-        withAnimation {
-            self.resolvedItems = resolutions
         }
     }
     
@@ -719,7 +754,9 @@ struct SmartListImporterView: View {
             You are an expert comic book reading order organizer for Inksync Pro.
             The user wants to generate a custom, properly-sequenced reading order or smart list for a specific crossover event or series run.
             
-            Your task is to organize a reading list using ONLY the series/issues actually present in the user's library inventory below.
+            Using your extensive real-world knowledge of official comic book publishing histories, event checklists, and reading guides:
+            1. Generate the complete, official real-world reading order for the requested event/crossover.
+            2. Cross-reference the user's library inventory below to match series names correctly, but include ALL issues in the official order (even if they are missing from the user's inventory) so the user can see what they are missing.
             
             \(crossoverInstructions)
             
@@ -735,7 +772,9 @@ struct SmartListImporterView: View {
             You are an expert comic book library organizer for Inksync Pro.
             The user wants to group the issues in their library into logical volumes, compendiums, or collections.
             
-            Your task is to analyze the user's library inventory below and, for each series present, organize the issues into logical chronological Volumes (e.g. Vol 1, Vol 2, Compendium 1) based on official publication standards or issue number ranges.
+            Using official real-world publishing chronology, trade paperback (TPB) structures, and volume releases:
+            1. Group the issues in the library below into logical, official chronological Volumes or Collections based on official publishing standards (e.g. Vol 1, Vol 2, Compendium 1).
+            2. Ensure volume numbers and issue spans match real-world publications.
             
             \(volumesInstructions)
             

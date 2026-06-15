@@ -1,6 +1,6 @@
 import Foundation
 
-struct RequestedComicItem: Identifiable, Hashable {
+struct RequestedComicItem: Identifiable, Hashable, Sendable {
     let id = UUID()
     var series: String
     var issueNumber: String?
@@ -16,13 +16,13 @@ struct RequestedComicItem: Identifiable, Hashable {
     var originalText: String
 }
 
-enum ResolutionCategory {
+enum ResolutionCategory: Sendable {
     case matched(ConvertedPDF)
     case suggested(ConvertedPDF)
     case missing
 }
 
-struct ResolvedEventItem: Identifiable {
+struct ResolvedEventItem: Identifiable, Sendable {
     let id = UUID()
     let request: RequestedComicItem
     var resolution: ResolutionCategory
@@ -30,6 +30,43 @@ struct ResolvedEventItem: Identifiable {
 
 final class SmartListImporter: Sendable {
     static let shared = SmartListImporter()
+    
+    // Precompiled regex patterns to avoid recompilation in loops
+    private static let unitsRegex = try? NSRegularExpression(pattern: "\\b(\\d+)\\s*(?:meters|meter|m)\\b", options: .caseInsensitive)
+    private static let volPatternRegex = try? NSRegularExpression(pattern: "(?:^|\\s|[^a-zA-Z])v\\s*[0-9]+", options: .caseInsensitive)
+    
+    private static func isVolumePattern(_ str: String) -> Bool {
+        guard let regex = volPatternRegex else { return false }
+        let range = NSRange(str.startIndex..., in: str)
+        return regex.firstMatch(in: str, options: [], range: range) != nil
+    }
+    
+    private struct PrepPDF {
+        let pdf: ConvertedPDF
+        let id: UUID
+        let seriesClean: String
+        let nameClean: String
+        let normSeries: String
+        let normName: String
+        let cleanVolume: String
+        let issue: String
+        let isVolumeFile: Bool
+        let issueBoundaryName: String
+    }
+    
+    private struct PrepRequest {
+        let request: RequestedComicItem
+        let seriesClean: String
+        let aliasesNormalized: [String]
+        let cleanVolume: String
+        let cleanVolNum: String
+        let possibleVolNums: Set<String>
+        let issue: String
+        let paddedIssue1: String
+        let paddedIssue2: String
+        let paddedIssue3: String
+        let paddedIssue4: String
+    }
     
     /// Parses a standard .cbl XML file and extracts the reading order
     func parseCBL(from url: URL) throws -> [RequestedComicItem] {
@@ -478,110 +515,174 @@ final class SmartListImporter: Sendable {
         return items
     }
     
-    @MainActor
-    func resolveList(_ requests: [RequestedComicItem], against library: [ConvertedPDF]) -> [ResolvedEventItem] {
-        var results: [ResolvedEventItem] = []
-        
-        // Track which PDFs have already been assigned to prevent duplicate assignment
-        var assignedPDFIds = Set<UUID>()
-        
-        for req in requests {
-            let reqSeriesClean = normalizeString(req.series)
-            let reqAliases = getLibraryAliases(for: req.series)
-            let reqAliasesNormalized = reqAliases.map { advancedNormalize($0) }
+    func resolveList(
+        _ requests: [RequestedComicItem],
+        against library: [ConvertedPDF],
+        customAliases: [String: String]
+    ) async -> [ResolvedEventItem] {
+        return await Task.detached(priority: .userInitiated) {
+            var results: [ResolvedEventItem] = []
             
-            var bestMatch: ConvertedPDF? = nil
-            var highestScore = 0
-            var exactMatchFound = false
+            // 1. Pre-normalize library PDFs
+            let preppedPDFs = library.map { pdf -> PrepPDF in
+                let seriesClean = self.normalizeString(pdf.metadata.series ?? "")
+                let nameClean = self.normalizeString(pdf.name)
+                let normSeries = self.advancedNormalize(pdf.metadata.series ?? "")
+                let normName = self.advancedNormalize(pdf.name)
+                let cleanVolume = (pdf.metadata.volume ?? "").lowercased().trimmingCharacters(in: .whitespaces)
+                let issue = pdf.metadata.issueNumber ?? ""
+                
+                let isVolumeFile = (pdf.metadata.volume != nil && !pdf.metadata.volume!.isEmpty) ||
+                                   pdf.name.lowercased().contains("vol") ||
+                                   pdf.name.lowercased().contains("volume") ||
+                                   pdf.name.lowercased().contains("compendium") ||
+                                   pdf.name.lowercased().contains("omnibus") ||
+                                   Self.isVolumePattern(pdf.name.lowercased())
+                
+                let issueBoundaryName = " \(nameClean.replacingOccurrences(of: ".", with: " ").replacingOccurrences(of: "-", with: " ")) "
+                
+                return PrepPDF(
+                    pdf: pdf,
+                    id: pdf.id,
+                    seriesClean: seriesClean,
+                    nameClean: nameClean,
+                    normSeries: normSeries,
+                    normName: normName,
+                    cleanVolume: cleanVolume,
+                    issue: issue,
+                    isVolumeFile: isVolumeFile,
+                    issueBoundaryName: issueBoundaryName
+                )
+            }
             
-            for pdf in library {
-                if assignedPDFIds.contains(pdf.id) { continue }
+            // 2. Pre-normalize requests
+            let preppedRequests = requests.map { req -> PrepRequest in
+                let reqSeriesClean = self.normalizeString(req.series)
+                let reqAliases = self.getLibraryAliases(for: req.series, customAliases: customAliases)
+                let reqAliasesNormalized = reqAliases.map { self.advancedNormalize($0) }
                 
-                let pdfSeriesClean = normalizeString(pdf.metadata.series ?? "")
-                let pdfNameClean = normalizeString(pdf.name)
+                let cleanVolume = req.volume?.lowercased().trimmingCharacters(in: .whitespaces) ?? ""
+                let cleanVolNum = cleanVolume.filter { $0.isNumber }
                 
-                var score = 0
+                var possibleVolNums = Set<String>()
+                if !cleanVolNum.isEmpty {
+                    possibleVolNums.insert(cleanVolNum)
+                    if let intVal = Int(cleanVolNum) {
+                        possibleVolNums.insert("\(intVal)")
+                        possibleVolNums.insert(String(format: "%02d", intVal))
+                        possibleVolNums.insert(String(format: "%03d", intVal))
+                    }
+                }
                 
-                // 1. Precise Series matches
-                var seriesMatched = false
-                var seriesPartiallyMatched = false
+                let reqIssue = req.issueNumber ?? ""
+                let paddedIssue1 = " \(reqIssue) "
+                let paddedIssue2 = " #\(reqIssue) "
+                let paddedIssue3 = " issue \(reqIssue) "
+                let paddedIssue4 = " ch \(reqIssue) "
                 
-                if !pdfSeriesClean.isEmpty {
-                    if reqSeriesClean == pdfSeriesClean { 
-                        seriesMatched = true
-                    } else if reqSeriesClean.hasPrefix(pdfSeriesClean) || pdfSeriesClean.hasPrefix(reqSeriesClean) {
-                        seriesPartiallyMatched = true
-                    } else {
-                        // Check advanced normalize and aliases
-                        let normPdfSeries = advancedNormalize(pdf.metadata.series ?? "")
-                        for reqAlias in reqAliasesNormalized {
-                            if reqAlias == normPdfSeries {
-                                seriesMatched = true
-                                break
-                            } else if reqAlias.hasPrefix(normPdfSeries) || normPdfSeries.hasPrefix(reqAlias) {
-                                seriesPartiallyMatched = true
-                            } else {
-                                // Levenshtein Similarity check
-                                let maxLen = max(reqAlias.count, normPdfSeries.count)
-                                if maxLen > 3 {
-                                    let dist = levenshteinDistance(between: reqAlias, and: normPdfSeries)
-                                    let similarity = Double(maxLen - dist) / Double(maxLen)
-                                    if similarity >= 0.85 {
-                                        seriesPartiallyMatched = true
+                return PrepRequest(
+                    request: req,
+                    seriesClean: reqSeriesClean,
+                    aliasesNormalized: reqAliasesNormalized,
+                    cleanVolume: cleanVolume,
+                    cleanVolNum: cleanVolNum,
+                    possibleVolNums: possibleVolNums,
+                    issue: reqIssue,
+                    paddedIssue1: paddedIssue1,
+                    paddedIssue2: paddedIssue2,
+                    paddedIssue3: paddedIssue3,
+                    paddedIssue4: paddedIssue4
+                )
+            }
+            
+            // Track assigned PDFs to avoid duplicate assignments
+            var assignedPDFIds = Set<UUID>()
+            
+            for preppedReq in preppedRequests {
+                let reqSeriesClean = preppedReq.seriesClean
+                let reqAliasesNormalized = preppedReq.aliasesNormalized
+                let cleanReqVol = preppedReq.cleanVolume
+                let cleanVolNum = preppedReq.cleanVolNum
+                let possibleVolNums = preppedReq.possibleVolNums
+                let reqIssue = preppedReq.issue
+                
+                var bestMatch: ConvertedPDF? = nil
+                var highestScore = 0
+                var exactMatchFound = false
+                
+                for pdf in preppedPDFs {
+                    if assignedPDFIds.contains(pdf.id) { continue }
+                    
+                    var score = 0
+                    
+                    // 1. Precise Series matches
+                    var seriesMatched = false
+                    var seriesPartiallyMatched = false
+                    
+                    if !pdf.seriesClean.isEmpty {
+                        if reqSeriesClean == pdf.seriesClean {
+                            seriesMatched = true
+                        } else if reqSeriesClean.hasPrefix(pdf.seriesClean) || pdf.seriesClean.hasPrefix(reqSeriesClean) {
+                            seriesPartiallyMatched = true
+                        } else {
+                            // Check advanced normalize and aliases
+                            for reqAlias in reqAliasesNormalized {
+                                if reqAlias == pdf.normSeries {
+                                    seriesMatched = true
+                                    break
+                                } else if reqAlias.hasPrefix(pdf.normSeries) || pdf.normSeries.hasPrefix(reqAlias) {
+                                    seriesPartiallyMatched = true
+                                } else {
+                                    // Levenshtein Similarity check
+                                    let maxLen = max(reqAlias.count, pdf.normSeries.count)
+                                    if maxLen > 3 {
+                                        // Short-circuit: only run Levenshtein if length difference is small enough to allow 0.85 similarity
+                                        let lenDiff = abs(reqAlias.count - pdf.normSeries.count)
+                                        if Double(lenDiff) <= Double(maxLen) * 0.15 {
+                                            let dist = self.levenshteinDistance(between: reqAlias, and: pdf.normSeries)
+                                            let similarity = Double(maxLen - dist) / Double(maxLen)
+                                            if similarity >= 0.85 {
+                                                seriesPartiallyMatched = true
+                                            }
+                                        }
                                     }
                                 }
                             }
                         }
                     }
-                }
-                
-                if seriesMatched {
-                    score += 50
-                } else if seriesPartiallyMatched {
-                    score += 30
-                }
-                
-                if score < 50 {
-                    let normPdfName = advancedNormalize(pdf.name)
-                    var nameMatched = false
-                    for reqAlias in reqAliasesNormalized {
-                        if normPdfName.contains(reqAlias) {
-                            nameMatched = true
-                            break
+                    
+                    if seriesMatched {
+                        score += 50
+                    } else if seriesPartiallyMatched {
+                        score += 30
+                    }
+                    
+                    if score < 50 {
+                        var nameMatched = false
+                        for reqAlias in reqAliasesNormalized {
+                            if pdf.normName.contains(reqAlias) {
+                                nameMatched = true
+                                break
+                            }
+                        }
+                        if nameMatched || pdf.nameClean.contains(reqSeriesClean) {
+                            score += 50
                         }
                     }
-                    if nameMatched || pdfNameClean.contains(reqSeriesClean) {
-                        score += 50
-                    }
-                }
-                
-                // Advanced Context: Volume Matches!
-                if let reqVol = req.volume, !reqVol.isEmpty {
-                    let cleanReqVol = reqVol.lowercased().trimmingCharacters(in: .whitespaces)
-                    let cleanPdfVol = (pdf.metadata.volume ?? "").lowercased().trimmingCharacters(in: .whitespaces)
                     
-                    if !cleanPdfVol.isEmpty && cleanPdfVol == cleanReqVol {
-                        score += 50
-                    } else {
-                        let pdfNameLower = pdfNameClean.lowercased()
-                        let cleanVolNum = cleanReqVol.filter { $0.isNumber }
-                        if !cleanVolNum.isEmpty {
-                            var possibleVolNums = Set<String>()
-                            possibleVolNums.insert(cleanVolNum)
-                            if let intVal = Int(cleanVolNum) {
-                                possibleVolNums.insert("\(intVal)")
-                                possibleVolNums.insert(String(format: "%02d", intVal))
-                                possibleVolNums.insert(String(format: "%03d", intVal))
-                            }
-                            
+                    // Advanced Context: Volume Matches!
+                    if !cleanReqVol.isEmpty {
+                        if !pdf.cleanVolume.isEmpty && pdf.cleanVolume == cleanReqVol {
+                            score += 50
+                        } else if !cleanVolNum.isEmpty {
                             var volMatched = false
                             for num in possibleVolNums {
-                                if pdfNameLower.contains("vol \(num)") ||
-                                   pdfNameLower.contains("volume \(num)") ||
-                                   pdfNameLower.contains("v\(num)") ||
-                                   pdfNameLower.contains("v0\(num)") ||
-                                   pdfNameLower.contains("compendium \(num)") ||
-                                   pdfNameLower.contains("omnibus \(num)") {
+                                if pdf.nameClean.contains("vol \(num)") ||
+                                   pdf.nameClean.contains("volume \(num)") ||
+                                   pdf.nameClean.contains("v\(num)") ||
+                                   pdf.nameClean.contains("v0\(num)") ||
+                                   pdf.nameClean.contains("compendium \(num)") ||
+                                   pdf.nameClean.contains("omnibus \(num)") {
                                     volMatched = true
                                     break
                                 }
@@ -590,71 +691,59 @@ final class SmartListImporter: Sendable {
                                 score += 50
                             }
                         } else {
-                            // Non-numeric volume matching (e.g. "Special", "Prelude")
-                            if pdfNameLower.contains(cleanReqVol) {
+                            if pdf.nameClean.contains(cleanReqVol) {
                                 score += 50
                             }
                         }
                     }
-                }
-                
-                // 2. Strict Issue Number Matching
-                if let reqIssue = req.issueNumber, !reqIssue.isEmpty {
-                    let pdfIssue = pdf.metadata.issueNumber ?? ""
-                    if reqIssue == pdfIssue {
-                        score += 50
-                    } else {
-                        // Word-boundary testing to prevent "1" matching "10"
-                        let paddedName = " \(pdfNameClean.replacingOccurrences(of: ".", with: " ").replacingOccurrences(of: "-", with: " ")) "
-                        let paddedIssue1 = " \(reqIssue) "
-                        let paddedIssue2 = " #\(reqIssue) "
-                        let paddedIssue3 = " issue \(reqIssue) "
-                        let paddedIssue4 = " ch \(reqIssue) "
-                        
-                        if paddedName.contains(paddedIssue1) || paddedName.contains(paddedIssue2) || paddedName.contains(paddedIssue3) || paddedName.contains(paddedIssue4) {
-                            score += 40
-                        } else if !pdfIssue.isEmpty {
-                            // Heavy Penalty for wrong issue number inside matched series
-                            score -= 60
+                    
+                    // 2. Strict Issue Number Matching
+                    if !reqIssue.isEmpty {
+                        let pdfIssue = pdf.issue
+                        if reqIssue == pdfIssue {
+                            score += 50
+                        } else {
+                            // Word-boundary testing to prevent "1" matching "10"
+                            if pdf.issueBoundaryName.contains(preppedReq.paddedIssue1) ||
+                               pdf.issueBoundaryName.contains(preppedReq.paddedIssue2) ||
+                               pdf.issueBoundaryName.contains(preppedReq.paddedIssue3) ||
+                               pdf.issueBoundaryName.contains(preppedReq.paddedIssue4) {
+                                score += 40
+                            } else if !pdfIssue.isEmpty {
+                                // Heavy Penalty for wrong issue number inside matched series
+                                score -= 60
+                            }
                         }
                     }
-                }
-                
-                // Perfect hit threshold
-                if score >= 100 {
-                    bestMatch = pdf
-                    exactMatchFound = true
                     
-                    let isVolumeFile = (pdf.metadata.volume != nil && !pdf.metadata.volume!.isEmpty) ||
-                                       pdf.name.lowercased().contains("vol") ||
-                                       pdf.name.lowercased().contains("volume") ||
-                                       pdf.name.lowercased().contains("compendium") ||
-                                       pdf.name.lowercased().contains("omnibus") ||
-                                       pdf.name.lowercased().range(of: "(?:^|\\s|[^a-zA-Z])v\\s*[0-9]+", options: .regularExpression) != nil
-                    
-                    if !isVolumeFile {
-                        assignedPDFIds.insert(pdf.id)
+                    // Perfect hit threshold
+                    if score >= 100 {
+                        bestMatch = pdf.pdf
+                        exactMatchFound = true
+                        
+                        if !pdf.isVolumeFile {
+                            assignedPDFIds.insert(pdf.id)
+                        }
+                        break
                     }
-                    break
+                    
+                    if score > highestScore {
+                        highestScore = score
+                        bestMatch = pdf.pdf
+                    }
                 }
                 
-                if score > highestScore {
-                    highestScore = score
-                    bestMatch = pdf
+                if exactMatchFound, let pdf = bestMatch {
+                    results.append(ResolvedEventItem(request: preppedReq.request, resolution: .matched(pdf)))
+                } else if highestScore >= 40, let pdf = bestMatch {
+                    results.append(ResolvedEventItem(request: preppedReq.request, resolution: .suggested(pdf)))
+                } else {
+                    results.append(ResolvedEventItem(request: preppedReq.request, resolution: .missing))
                 }
             }
             
-            if exactMatchFound, let pdf = bestMatch {
-                results.append(ResolvedEventItem(request: req, resolution: .matched(pdf)))
-            } else if highestScore >= 40, let pdf = bestMatch {
-                // Above threshold but not perfect -> Suggestion
-                results.append(ResolvedEventItem(request: req, resolution: .suggested(pdf)))
-            } else {
-                results.append(ResolvedEventItem(request: req, resolution: .missing))
-            }
-        }
-        
-        return results
+            return results
+        }.value
     }
     
     func normalizeString(_ str: String) -> String {
@@ -673,8 +762,7 @@ final class SmartListImporter: Sendable {
     }
     
     private func normalizeUnits(_ str: String) -> String {
-        let pattern = "\\b(\\d+)\\s*(?:meters|meter|m)\\b"
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) else { return str }
+        guard let regex = Self.unitsRegex else { return str }
         let range = NSRange(str.startIndex..., in: str)
         return regex.stringByReplacingMatches(in: str, options: [], range: range, withTemplate: "$1m")
     }
@@ -750,8 +838,7 @@ final class SmartListImporter: Sendable {
         return lastRow.last ?? 0
     }
     
-    @MainActor
-    private func getLibraryAliases(for name: String) -> Set<String> {
+    private func getLibraryAliases(for name: String, customAliases: [String: String]) -> Set<String> {
         var names = Set<String>()
         let cleanName = name.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
         names.insert(cleanName)
@@ -798,8 +885,7 @@ final class SmartListImporter: Sendable {
             }
         }
         
-        // Custom user-defined aliases from Settings
-        let customAliases = AppSettingsManager.shared.conversionSettings.customAliases
+        // Custom user-defined aliases from Settings Passed In
         if let mapped = customAliases[cleanName] {
             names.insert(mapped.lowercased().trimmingCharacters(in: .whitespacesAndNewlines))
         }
