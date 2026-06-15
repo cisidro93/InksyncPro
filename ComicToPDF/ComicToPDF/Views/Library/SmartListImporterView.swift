@@ -7,7 +7,7 @@ struct SmartListImporterView: View {
     
     @State private var resolvedItems: [ResolvedEventItem]? = nil
     @State private var errorMessage: String? = nil
-    @State private var eventName: String = "Imported Event"
+    @State private var eventName: String = ""
     @State private var pastedText: String = ""
     @State private var showInventoryCopiedMessage: Bool = false
 
@@ -81,9 +81,19 @@ struct SmartListImporterView: View {
                             }
                             .padding(.horizontal, 40)
                             
-                            TextField("Event Name", text: $eventName)
-                                .textFieldStyle(RoundedBorderTextFieldStyle())
-                                .padding(.horizontal, 40)
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Target Crossover or Event Name")
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                
+                                TextField("e.g. Civil War, Dark Web, Spider-Verse", text: $eventName)
+                                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                                
+                                Text("Type the name of the reading event you want the AI to generate.")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            .padding(.horizontal, 40)
                             
                             
                             Text("Or paste your list directly:")
@@ -116,13 +126,7 @@ struct SmartListImporterView: View {
                                     .foregroundColor(.purple)
                             }
                             .padding(.top, 4)
-                            
-                            if showInventoryCopiedMessage {
-                                Text("AI Prompt & Library Inventory copied to clipboard!")
-                                    .font(.caption2)
-                                    .foregroundColor(.purple)
-                                    .transition(.opacity)
-                            }
+
                             
                             if !pastedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                                 Button {
@@ -155,6 +159,27 @@ struct SmartListImporterView: View {
                             }
                         }
                     }
+                }
+            }
+            .overlay(alignment: .bottom) {
+                if showInventoryCopiedMessage {
+                    HStack(spacing: 10) {
+                        Image(systemName: "doc.on.clipboard.fill")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.white)
+                        Text("Prompt & Inventory Copied")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(.white)
+                    }
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 16)
+                    .background(
+                        RoundedRectangle(cornerRadius: 32)
+                            .fill(Color.purple.opacity(0.95))
+                            .shadow(color: Color.black.opacity(0.25), radius: 10, x: 0, y: 5)
+                    )
+                    .padding(.bottom, 50)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
         }
@@ -280,6 +305,8 @@ struct SmartListImporterView: View {
             inventoryText = inventoryLines.joined(separator: "\n")
         }
         
+        let targetEvent = eventName.isEmpty || eventName == "Imported Event" ? "Dark Web (or suggest the best fit crossover for these issues)" : eventName
+        
         let aiPrompt = """
         You are an expert comic book reading order organizer for Inksync Pro.
         The user wants to generate a custom, properly-sequenced reading order or smart list for a specific crossover event or series run.
@@ -305,13 +332,14 @@ struct SmartListImporterView: View {
         TMNT: The Last Ronin,1-5,Vol 1,Collection,false
         
         --- CURRENT USER REQUEST ---
-        Please create a reading order event for: [INSERT YOUR DESIRED EVENT OR RUN HERE, E.g. "Dark Web" or "Invincible Compendiums"]
+        Please create a reading order event for: "\(targetEvent)"
         
         --- USER LIBRARY INVENTORY ---
         \(inventoryText)
         """
         
         UIPasteboard.general.string = aiPrompt
+        HapticEngine.success()
         
         withAnimation {
             showInventoryCopiedMessage = true
