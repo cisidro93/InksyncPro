@@ -32,19 +32,24 @@ struct PDFGenerator: Sendable {
         // Determine the standard page size by finding the most common image size
         let fallbackTargetSize = settings.targetDeviceProfile.resolution ?? CGSize(width: 1200, height: 1800)
         var standardSize = fallbackTargetSize
-        var sizeCounts: [CGSize: Int] = [:]
+        var sizeCounts: [String: Int] = [:]
         
         for imgURL in sourceImages.prefix(15) {
             autoreleasepool {
                 if let img = UIImage(contentsOfFile: imgURL.path) {
-                    let roundedSize = CGSize(width: round(img.size.width), height: round(img.size.height))
-                    sizeCounts[roundedSize, default: 0] += 1
+                    let w = round(img.size.width)
+                    let h = round(img.size.height)
+                    let key = "\(w),\(h)"
+                    sizeCounts[key, default: 0] += 1
                 }
             }
         }
         
-        if let mostCommon = sizeCounts.max(by: { $0.value < $1.value })?.key {
-            standardSize = mostCommon
+        if let mostCommonKey = sizeCounts.max(by: { $0.value < $1.value })?.key {
+            let comps = mostCommonKey.components(separatedBy: ",")
+            if comps.count == 2, let w = Double(comps[0]), let h = Double(comps[1]) {
+                standardSize = CGSize(width: w, height: h)
+            }
         } else if let firstURL = sourceImages.first, let firstImg = UIImage(contentsOfFile: firstURL.path) {
             standardSize = firstImg.size
         }
