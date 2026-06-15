@@ -41,14 +41,14 @@ struct SmartListImporterView: View {
                             VStack(spacing: 12) {
                                 ZStack {
                                     Circle()
-                                        .fill(Color.purple.opacity(0.12))
+                                        .fill(Color.inkViolet.opacity(0.12))
                                         .frame(width: 90, height: 90)
                                     
                                     Image(systemName: "sparkles.rectangle.stack")
                                         .font(.system(size: 44, weight: .semibold))
                                         .foregroundStyle(
                                             LinearGradient(
-                                                colors: [.purple, .blue],
+                                                colors: [.inkViolet, .inkBlue],
                                                 startPoint: .topLeading,
                                                 endPoint: .bottomTrailing
                                             )
@@ -59,11 +59,11 @@ struct SmartListImporterView: View {
                                 Text("Smart Reading Lists")
                                     .font(.title2)
                                     .fontWeight(.bold)
-                                    .foregroundColor(.primary)
+                                    .foregroundColor(.inkTextPrimary)
                                 
                                 Text("Organize cross-series crossover events or slice series runs into volumes. Let Inksync Pro parse XML, CSV, JSON, or plain text outputs from AI models.")
                                     .font(.subheadline)
-                                    .foregroundColor(Color(.secondaryLabel))
+                                    .foregroundColor(.inkTextSecondary)
                                     .multilineTextAlignment(.center)
                                     .padding(.horizontal, 24)
                                     .lineSpacing(4)
@@ -79,7 +79,7 @@ struct SmartListImporterView: View {
                                 }
                                 .pickerStyle(.segmented)
                                 .onChange(of: listType) { _ in
-                                    // HapticEngine.selection()
+                                    HapticEngine.selection()
                                 }
                             }
                             .padding(.horizontal, 24)
@@ -91,18 +91,20 @@ struct SmartListImporterView: View {
                                         Text("Event / Crossover Name")
                                             .font(.caption)
                                             .fontWeight(.bold)
-                                            .foregroundColor(.purple)
+                                            .foregroundColor(.inkViolet)
                                             .textCase(.uppercase)
                                         
                                         TextField("e.g. Civil War, Dark Web, Spider-Verse", text: $eventName)
                                             .font(.body)
+                                            .foregroundColor(.inkTextPrimary)
                                             .padding(.vertical, 4)
                                         
                                         Divider()
+                                            .background(Color.inkBorderSubtle)
                                         
                                         Text("The name for the playlist folder and generated metadata.")
                                             .font(.caption2)
-                                            .foregroundColor(.secondary)
+                                            .foregroundColor(.inkTextSecondary)
                                     }
                                     .transition(.opacity.combined(with: .move(edge: .top)))
                                 }
@@ -113,12 +115,12 @@ struct SmartListImporterView: View {
                                             Text("AI Prompt Target Format")
                                                 .font(.caption)
                                                 .fontWeight(.bold)
-                                                .foregroundColor(.purple)
+                                                .foregroundColor(.inkViolet)
                                                 .textCase(.uppercase)
                                             
                                             Text("The layout structure requested from the AI.")
                                                 .font(.caption2)
-                                                .foregroundColor(.secondary)
+                                                .foregroundColor(.inkTextSecondary)
                                         }
                                         Spacer()
                                         Picker("Format", selection: $outputFormat) {
@@ -127,19 +129,19 @@ struct SmartListImporterView: View {
                                             }
                                         }
                                         .pickerStyle(.menu)
-                                        .tint(.purple)
+                                        .tint(.inkViolet)
                                         .onChange(of: outputFormat) { _ in
-                                            // HapticEngine.selection()
+                                            HapticEngine.selection()
                                         }
                                     }
                                 }
                             }
                             .padding(20)
-                            .background(Color(.secondarySystemGroupedBackground))
+                            .background(Color.inkSurface)
                             .cornerRadius(16)
                             .overlay(
                                 RoundedRectangle(cornerRadius: 16)
-                                    .stroke(Color(.separator), lineWidth: 0.5)
+                                    .stroke(Color.inkBorderSubtle, lineWidth: 1)
                             )
                             .shadow(color: Color.black.opacity(0.04), radius: 6, x: 0, y: 3)
                             .padding(.horizontal, 24)
@@ -154,32 +156,32 @@ struct SmartListImporterView: View {
                                         HStack {
                                             Label("Copy Library Inventory & AI Prompt", systemImage: "doc.on.clipboard.fill")
                                                 .font(.system(size: 15, weight: .bold))
-                                                .foregroundColor(.purple)
+                                                .foregroundColor(.inkViolet)
                                             Spacer()
                                             Image(systemName: "chevron.right")
                                                 .font(.caption)
-                                                .foregroundColor(.purple)
+                                                .foregroundColor(.inkViolet)
                                         }
                                         
                                         Text("Generates a comprehensive system prompt enclosing your library inventory. Paste this directly into ChatGPT, Claude, Gemini, or other models to generate the list.")
                                             .font(.caption)
-                                            .foregroundColor(Color(.secondaryLabel))
+                                            .foregroundColor(.inkTextSecondary)
                                             .lineSpacing(3)
                                             .multilineTextAlignment(.leading)
                                     }
                                     .padding(16)
-                                    .background(Color.purple.opacity(0.08))
+                                    .background(Color.inkViolet.opacity(0.08))
                                     .cornerRadius(12)
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 12)
-                                            .stroke(Color.purple.opacity(0.2), lineWidth: 1)
+                                            .stroke(Color.inkViolet.opacity(0.2), lineWidth: 1)
                                     )
                                 }
                                 .buttonStyle(.plain)
                                 
                                 // Subcard 2: Document Picker Import
                                 Button(action: {
-                                    // HapticEngine.light()
+                                    HapticEngine.light()
                                     ImportCoordinator.present(type: .smartList) { urls in
                                         if let url = urls.first {
                                             handleSmartListURL(url)
@@ -190,35 +192,35 @@ struct SmartListImporterView: View {
                                         HStack {
                                             Label("Import Smart List Document File", systemImage: "folder.badge.plus")
                                                 .font(.system(size: 15, weight: .bold))
-                                                .foregroundColor(.blue)
+                                                .foregroundColor(.inkBlue)
                                             Spacer()
                                             Image(systemName: "arrow.up.doc")
                                                 .font(.caption)
-                                                .foregroundColor(.blue)
+                                                .foregroundColor(.inkBlue)
                                         }
                                         
                                         Text("Directly load a ComicRack .cbl file, standard .csv sheet, raw .txt list, or structured JSON file from the iOS Files app.")
                                             .font(.caption)
-                                            .foregroundColor(Color(.secondaryLabel))
+                                            .foregroundColor(.inkTextSecondary)
                                             .lineSpacing(3)
                                             .multilineTextAlignment(.leading)
                                     }
                                     .padding(16)
-                                    .background(Color.blue.opacity(0.08))
+                                    .background(Color.inkBlue.opacity(0.08))
                                     .cornerRadius(12)
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 12)
-                                            .stroke(Color.blue.opacity(0.2), lineWidth: 1)
+                                            .stroke(Color.inkBlue.opacity(0.2), lineWidth: 1)
                                     )
                                 }
                                 .buttonStyle(.plain)
                             }
                             .padding(20)
-                            .background(Color(.secondarySystemGroupedBackground))
+                            .background(Color.inkSurface)
                             .cornerRadius(16)
                             .overlay(
                                 RoundedRectangle(cornerRadius: 16)
-                                    .stroke(Color(.separator), lineWidth: 0.5)
+                                    .stroke(Color.inkBorderSubtle, lineWidth: 1)
                             )
                             .shadow(color: Color.black.opacity(0.04), radius: 6, x: 0, y: 3)
                             .padding(.horizontal, 24)
@@ -230,39 +232,40 @@ struct SmartListImporterView: View {
                                         Label("Paste Generated AI Response", systemImage: "doc.text.magnifyingglass")
                                             .font(.subheadline)
                                             .fontWeight(.bold)
-                                            .foregroundColor(.primary)
+                                            .foregroundColor(.inkTextPrimary)
                                         Spacer()
                                         
                                         Button {
                                             pastedText = "ReadingOrder,SortOrder,Series,Issue,Volume,Label,Optional\nCivil War,1,Amazing Spider-Man,529,,Prelude,false\nCivil War,2,New Avengers,21,,Prelude,true\nCivil War,3,Civil War,1,,Main,false"
-                                            // HapticEngine.light()
+                                            HapticEngine.light()
                                         } label: {
                                             Text("Use Template")
                                                 .font(.caption)
                                                 .fontWeight(.bold)
-                                                .foregroundColor(.purple)
+                                                .foregroundColor(.inkViolet)
                                         }
                                     }
                                     
                                     ZStack(alignment: .topLeading) {
                                         TextEditor(text: $pastedText)
                                             .font(.system(size: 13, design: .monospaced))
+                                            .foregroundColor(.inkTextPrimary)
                                             .autocorrectionDisabled(true)
                                             .textInputAutocapitalization(.never)
                                             .scrollContentBackground(.hidden)
                                             .frame(minHeight: 140, maxHeight: 240)
                                             .padding(12)
-                                            .background(Color(.tertiarySystemBackground))
+                                            .background(Color.inkSurfaceRaised)
                                             .cornerRadius(12)
                                             .overlay(
                                                 RoundedRectangle(cornerRadius: 12)
-                                                    .stroke(Color(.separator), lineWidth: 0.5)
+                                                    .stroke(Color.inkBorderSubtle, lineWidth: 1)
                                             )
                                         
                                         if pastedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                                             Text("Paste the CSV, Markdown, JSON, or Plain Text list here...")
                                                 .font(.system(size: 13))
-                                                .foregroundColor(Color(.placeholderText))
+                                                .foregroundColor(.inkTextSecondary)
                                                 .padding(.horizontal, 16)
                                                 .padding(.vertical, 20)
                                                 .allowsHitTesting(false)
@@ -272,7 +275,7 @@ struct SmartListImporterView: View {
                                 
                                 if !pastedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                                     Button {
-                                        // HapticEngine.success()
+                                        HapticEngine.success()
                                         handlePastedText()
                                     } label: {
                                         HStack {
@@ -286,24 +289,24 @@ struct SmartListImporterView: View {
                                         .frame(maxWidth: .infinity)
                                         .background(
                                             LinearGradient(
-                                                colors: [.green, Color(.systemGreen).opacity(0.85)],
+                                                colors: [.inkGreen, Color.inkGreen.opacity(0.85)],
                                                 startPoint: .topLeading,
                                                 endPoint: .bottomTrailing
                                             )
                                         )
                                         .cornerRadius(12)
-                                        .shadow(color: Color.green.opacity(0.3), radius: 8, x: 0, y: 4)
+                                        .shadow(color: Color.inkGreen.opacity(0.3), radius: 8, x: 0, y: 4)
                                     }
                                     .buttonStyle(.plain)
                                     .transition(.scale.combined(with: .opacity))
                                 }
                             }
                             .padding(20)
-                            .background(Color(.secondarySystemGroupedBackground))
+                            .background(Color.inkSurface)
                             .cornerRadius(16)
                             .overlay(
                                 RoundedRectangle(cornerRadius: 16)
-                                    .stroke(Color(.separator), lineWidth: 0.5)
+                                    .stroke(Color.inkBorderSubtle, lineWidth: 1)
                             )
                             .shadow(color: Color.black.opacity(0.04), radius: 6, x: 0, y: 3)
                             .padding(.horizontal, 24)
@@ -311,15 +314,15 @@ struct SmartListImporterView: View {
                             if let err = errorMessage {
                                 HStack(spacing: 8) {
                                     Image(systemName: "exclamationmark.triangle.fill")
-                                        .foregroundColor(.red)
+                                        .foregroundColor(.inkRed)
                                     Text(err)
                                         .font(.caption)
-                                        .foregroundColor(.red)
+                                        .foregroundColor(.inkRed)
                                         .multilineTextAlignment(.leading)
                                 }
                                 .padding(.vertical, 8)
                                 .padding(.horizontal, 16)
-                                .background(Color.red.opacity(0.08))
+                                .background(Color.inkRed.opacity(0.08))
                                 .cornerRadius(8)
                                 .padding(.horizontal, 24)
                                 .transition(.opacity)
@@ -330,47 +333,47 @@ struct SmartListImporterView: View {
                                 Text("Supported AI Formats")
                                     .font(.caption)
                                     .fontWeight(.bold)
-                                    .foregroundColor(.secondary)
+                                    .foregroundColor(.inkTextSecondary)
                                     .textCase(.uppercase)
                                 
                                 Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 12) {
                                     GridRow {
                                         Label("CSV Table", systemImage: "tablecells.fill")
-                                            .foregroundColor(.purple)
+                                            .foregroundColor(.inkViolet)
                                         Text("Standard columns split by commas.")
                                             .font(.caption)
-                                            .foregroundColor(.secondary)
+                                            .foregroundColor(.inkTextSecondary)
                                     }
                                     GridRow {
                                         Label("Markdown", systemImage: "doc.text.fill")
-                                            .foregroundColor(.purple)
+                                            .foregroundColor(.inkViolet)
                                         Text("Piped table syntax generated by LLMs.")
                                             .font(.caption)
-                                            .foregroundColor(.secondary)
+                                            .foregroundColor(.inkTextSecondary)
                                     }
                                     GridRow {
                                         Label("JSON Array", systemImage: "curlybraces")
-                                            .foregroundColor(.purple)
+                                            .foregroundColor(.inkViolet)
                                         Text("Structured dictionary matching Inksync schema.")
                                             .font(.caption)
-                                            .foregroundColor(.secondary)
+                                            .foregroundColor(.inkTextSecondary)
                                     }
                                     GridRow {
                                         Label("Plain Text", systemImage: "doc.plaintext.fill")
-                                            .foregroundColor(.purple)
+                                            .foregroundColor(.inkViolet)
                                         Text("Key-value lines (e.g. Series: X, Issue: Y).")
                                             .font(.caption)
-                                            .foregroundColor(.secondary)
+                                            .foregroundColor(.inkTextSecondary)
                                     }
                                 }
                             }
                             .padding(20)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Color(.secondarySystemGroupedBackground).opacity(0.5))
+                            .background(Color.inkSurface.opacity(0.5))
                             .cornerRadius(16)
                             .overlay(
                                 RoundedRectangle(cornerRadius: 16)
-                                    .stroke(Color(.separator), lineWidth: 0.5)
+                                    .stroke(Color.inkBorderSubtle, lineWidth: 1)
                             )
                             .padding(.horizontal, 24)
                             .padding(.bottom, 24)
@@ -378,10 +381,11 @@ struct SmartListImporterView: View {
                     }
                     .navigationTitle("")
                     .navigationBarTitleDisplayMode(.inline)
-                    .background(Color(.systemGroupedBackground))
+                    .background(Color.inkBackground)
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) {
                             Button("Cancel") { dismiss() }
+                                .foregroundColor(.inkTextSecondary)
                         }
                     }
                 }
@@ -392,7 +396,7 @@ struct SmartListImporterView: View {
                 HStack(spacing: 12) {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 18, weight: .bold))
-                        .foregroundColor(.green)
+                        .foregroundColor(.inkGreen)
                     Text("Prompt & Inventory Copied")
                         .font(.system(size: 14, weight: .bold))
                         .foregroundColor(.white)
@@ -401,7 +405,7 @@ struct SmartListImporterView: View {
                 .padding(.vertical, 14)
                 .background(
                     Capsule()
-                        .fill(Color(.darkGray).opacity(0.95))
+                        .fill(Color.inkBackground.opacity(0.95))
                         .shadow(color: Color.black.opacity(0.3), radius: 10, x: 0, y: 5)
                 )
                 .padding(.bottom, 40)
