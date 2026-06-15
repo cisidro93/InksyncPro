@@ -894,4 +894,253 @@ final class SmartListImporter: Sendable {
             throw error
         }
     }
+    
+    // MARK: - Pasted Text Parser Router (JSON / Markdown Table / Key-Value / Plain Text Autodetect)
+    func parsePastedText(_ text: String, defaultSeriesName: String) -> [RequestedComicItem] {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        // 1. Try JSON detection
+        if trimmed.hasPrefix("[") || trimmed.hasPrefix("{") || trimmed.contains("\"Series\"") || trimmed.contains("\"series\"") {
+            if let items = parseJSONList(from: text) {
+                return items
+            }
+        }
+        
+        // 2. Try Markdown Table detection
+        if trimmed.contains("|") {
+            if let items = parseMarkdownTable(from: text) {
+                return items
+            }
+        }
+        
+        // 3. Try line-by-line Key-Value or CSV parsing
+        var items: [RequestedComicItem] = []
+        let lines = text.components(separatedBy: .newlines)
+        
+        var isKeyValueStyle = false
+        for line in lines.prefix(5) {
+            let tr = line.trimmingCharacters(in: .whitespaces)
+            if tr.contains("series:") && tr.contains("issue:") {
+                isKeyValueStyle = true
+                break
+            }
+        }
+        
+        if isKeyValueStyle {
+            for line in lines {
+                let tr = line.trimmingCharacters(in: .whitespaces)
+                if tr.isEmpty || tr.hasPrefix("//") { continue }
+                if let item = parseKeyValueTextLine(tr) {
+                    items.append(item)
+                }
+            }
+            if !items.isEmpty {
+                return items
+            }
+        }
+        
+        // 4. Default to standard CSV parsing (which auto-falls back to standard Text list)
+        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("temp_paste.csv")
+        do {
+            try text.write(to: tempURL, atomically: true, encoding: .utf8)
+            return try parseCSVList(from: tempURL, defaultSeriesName: defaultSeriesName)
+        } catch {
+            return (try? parseTextList(from: tempURL, defaultSeriesName: defaultSeriesName)) ?? []
+        }
+    }
+    
+    private func parseJSONList(from text: String) -> [RequestedComicItem]? {
+        var cleanText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let startIdx = cleanText.firstIndex(of: "["),
+           let endIdx = cleanText.lastIndex(of: "]"),
+           startIdx < endIdx {
+            cleanText = String(cleanText[startIdx...endIdx])
+        } else if let startIdx = cleanText.firstIndex(of: "{"),
+                  let endIdx = cleanText.lastIndex(of: "}"),
+                  startIdx < endIdx {
+            cleanText = "[\(String(cleanText[startIdx...endIdx]))]"
+        }
+        
+        guard let cleanData = cleanText.data(using: .utf8),
+              let jsonArray = try? JSONSerialization.jsonObject(with: cleanData, options: []) as? [[String: Any]] else {
+            return nil
+        }
+        
+        var items: [RequestedComicItem] = []
+        for dict in jsonArray {
+            guard let series = dict["Series"] as? String ?? dict["series"] as? String else { continue }
+            
+            let issueObj = dict["Issue"] ?? dict["issue"] ?? dict["number"] ?? dict["Number"]
+            let issue = issueObj.map { "\($0)" }
+            
+            let volumeObj = dict["Volume"] ?? dict["volume"] ?? dict["vol"] ?? dict["Vol"]
+            let volume = volumeObj.map { "\($0)" }
+            
+            let label = (dict["Label"] as? String ?? dict["label"] as? String ?? dict["category"] as? String)
+            
+            let optionalObj = dict["Optional"] ?? dict["optional"]
+            var isOptional: Bool? = nil
+            if let b = optionalObj as? Bool {
+                isOptional = b
+            } else if let s = optionalObj as? String {
+                let sl = s.lowercased()
+                isOptional = sl == "true" || sl == "1" || sl == "yes"
+            } else if let i = optionalObj as? Int {
+                isOptional = i == 1
+            }
+            
+            let originalText = "JSON: Series=\(series), Issue=\(issue ?? ""), Vol=\(volume ?? "")"
+            
+            if let rangeStr = issue, (rangeStr.contains("-") || rangeStr.contains("to")) {
+                let pattern = "([0-9]+)\\s*(?:-|to)\\s*([0-9]+)"
+                if let rangeRange = rangeStr.range(of: pattern, options: .regularExpression) {
+                    let match = String(rangeStr[rangeRange])
+                    let numbers = match.components(separatedBy: CharacterSet.decimalDigits.inverted).filter { !$0.isEmpty }
+                    if numbers.count == 2, let start = Int(numbers[0]), let end = Int(numbers[1]), start <= end {
+                        for chap in start...end {
+                            items.append(RequestedComicItem(series: series, issueNumber: "\(chap)", volume: volume, label: label, isOptional: isOptional, originalText: "Range Expanded: \(chap) from \(originalText)"))
+                        }
+                        continue
+                    }
+                }
+            }
+            
+            items.append(RequestedComicItem(series: series, issueNumber: issue, volume: volume, label: label, isOptional: isOptional, originalText: originalText))
+        }
+        return items
+    }
+    
+    private func parseMarkdownTable(from text: String) -> [RequestedComicItem]? {
+        let lines = text.components(separatedBy: .newlines)
+        var tableLines: [String] = []
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("|") && trimmed.hasSuffix("|") {
+                tableLines.append(trimmed)
+            }
+        }
+        
+        guard tableLines.count >= 2 else { return nil }
+        
+        var rows: [[String]] = []
+        for line in tableLines {
+            let cols = line.components(separatedBy: "|")
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+            let cleanCols = Array(cols.dropFirst().dropLast())
+            
+            if cleanCols.contains(where: { $0.contains("---") || $0.contains("===") }) {
+                continue
+            }
+            rows.append(cleanCols)
+        }
+        
+        guard !rows.isEmpty else { return nil }
+        
+        let headers = rows[0].map { $0.lowercased() }
+        
+        var items: [RequestedComicItem] = []
+        for rowColumns in rows.dropFirst() {
+            var volInfo: String? = nil
+            var parsedSeries: String? = nil
+            var parsedIssue: String? = nil
+            var parsedLabel: String? = nil
+            var parsedOptional: Bool? = nil
+            
+            for (colIdx, value) in rowColumns.enumerated() {
+                guard colIdx < headers.count else { continue }
+                let header = headers[colIdx]
+                
+                if header.contains("series") || header == "title" || header == "book" {
+                    parsedSeries = value
+                } else if header == "issue" || header.contains("issue") || header == "#" {
+                    parsedIssue = value
+                } else if header.contains("volume") || header.contains("vol") {
+                    volInfo = value
+                } else if header == "label" || header.contains("label") || header == "category" {
+                    parsedLabel = value
+                } else if header == "optional" {
+                    let optStr = value.lowercased()
+                    if optStr == "true" || optStr == "1" || optStr == "yes" { parsedOptional = true }
+                    else if optStr == "false" || optStr == "0" || optStr == "no" { parsedOptional = false }
+                }
+            }
+            
+            let rowText = rowColumns.joined(separator: " | ")
+            if let series = parsedSeries {
+                if let issue = parsedIssue {
+                    let lowerIssue = issue.lowercased()
+                    if lowerIssue.contains("-") || lowerIssue.contains("to") {
+                        let pattern = "([0-9]+)\\s*(?:-|to)\\s*([0-9]+)"
+                        if let rangeRange = issue.range(of: pattern, options: .regularExpression) {
+                            let match = String(issue[rangeRange])
+                            let numbers = match.components(separatedBy: CharacterSet.decimalDigits.inverted).filter { !$0.isEmpty }
+                            if numbers.count == 2, let start = Int(numbers[0]), let end = Int(numbers[1]), start <= end {
+                                for chap in start...end {
+                                    items.append(RequestedComicItem(series: series, issueNumber: "\(chap)", volume: volInfo, label: parsedLabel, isOptional: parsedOptional, originalText: "Range Expanded: \(chap) from \(rowText)"))
+                                }
+                                continue
+                            }
+                        }
+                    }
+                    items.append(RequestedComicItem(series: series, issueNumber: issue, volume: volInfo, label: parsedLabel, isOptional: parsedOptional, originalText: rowText))
+                } else {
+                    items.append(RequestedComicItem(series: series, issueNumber: nil, volume: volInfo, label: parsedLabel, isOptional: parsedOptional, originalText: rowText))
+                }
+            }
+        }
+        return items
+    }
+    
+    private func parseKeyValueTextLine(_ line: String) -> RequestedComicItem? {
+        var cleanLine = line.trimmingCharacters(in: .whitespaces)
+        // Strip common list prefixes
+        if cleanLine.hasPrefix("- ") || cleanLine.hasPrefix("* ") || cleanLine.hasPrefix("+ ") {
+            cleanLine = String(cleanLine.dropFirst(2)).trimmingCharacters(in: .whitespaces)
+        } else {
+            let pattern = "^[0-9]+\\.\\s+"
+            if let range = cleanLine.range(of: pattern, options: .regularExpression) {
+                cleanLine = String(cleanLine[range.upperBound...]).trimmingCharacters(in: .whitespaces)
+            }
+        }
+        
+        let parts = cleanLine.components(separatedBy: ",")
+        var dict: [String: String] = [:]
+        for part in parts {
+            let kv = part.components(separatedBy: ":")
+            if kv.count >= 2 {
+                let key = kv[0].trimmingCharacters(in: .whitespaces).lowercased()
+                let value = kv.dropFirst().joined(separator: ":").trimmingCharacters(in: .whitespaces)
+                dict[key] = value
+            }
+        }
+        
+        var seriesName = dict["series"]
+        if seriesName == nil {
+            if let key = dict.keys.first(where: { $0.contains("series") }) {
+                seriesName = dict[key]
+            }
+        }
+        
+        guard var series = seriesName else { return nil }
+        if series.hasPrefix("- ") || series.hasPrefix("* ") {
+            series = String(series.dropFirst(2))
+        }
+        
+        var issue = dict["issue"] ?? dict["number"] ?? dict["#"]
+        if issue == nil {
+            if let key = dict.keys.first(where: { $0.contains("issue") }) {
+                issue = dict[key]
+            }
+        }
+        
+        let volume = dict["volume"] ?? dict["vol"]
+        let label = dict["label"] ?? dict["category"]
+        
+        var isOptional: Bool? = nil
+        if let optStr = dict["optional"]?.lowercased() {
+            isOptional = optStr == "true" || optStr == "1" || optStr == "yes"
+        }
+        
+        return RequestedComicItem(series: series, issueNumber: issue, volume: volume, label: label, isOptional: isOptional, originalText: line)
+    }
 }

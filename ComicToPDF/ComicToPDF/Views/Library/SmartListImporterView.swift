@@ -12,7 +12,16 @@ struct SmartListImporterView: View {
         var id: String { rawValue }
     }
     
+    enum OutputFormat: String, CaseIterable, Identifiable {
+        case csv = "CSV Table"
+        case markdown = "Markdown Table"
+        case json = "JSON Array"
+        case txt = "Plain Text List"
+        var id: String { rawValue }
+    }
+    
     @State private var listType: ListType = .crossover
+    @State private var outputFormat: OutputFormat = .csv
     @State private var errorMessage: String? = nil
     @State private var eventName: String = ""
     @State private var pastedText: String = ""
@@ -48,6 +57,20 @@ struct SmartListImporterView: View {
                                 }
                             }
                             .pickerStyle(.segmented)
+                            .padding(.horizontal, 40)
+                            
+                            HStack {
+                                Text("AI Output Format")
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                Spacer()
+                                Picker("AI Output Format", selection: $outputFormat) {
+                                    ForEach(OutputFormat.allCases) { format in
+                                        Text(format.rawValue).tag(format)
+                                    }
+                                }
+                                .pickerStyle(.menu)
+                            }
                             .padding(.horizontal, 40)
                             
                             VStack(alignment: .leading, spacing: 12) {
@@ -285,12 +308,45 @@ struct SmartListImporterView: View {
         let safeName = eventName.isEmpty || eventName == "Imported Event" ? "Pasted Event" : eventName
         self.eventName = safeName // make sure UI reflects this
         
-        do {
-            let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("\(safeName).csv")
-            try clean.write(to: tempURL, atomically: true, encoding: .utf8)
-            handleSmartListURL(tempURL)
-        } catch {
-            errorMessage = "Failed to process text."
+        let requests = SmartListImporter.shared.parsePastedText(clean, defaultSeriesName: safeName)
+        
+        if requests.isEmpty {
+            errorMessage = "No recognizable comic list entries found in the pasted content."
+            return
+        }
+        
+        // Perform resolution against local library
+        let resolutions = SmartListImporter.shared.resolveList(requests, against: conversionManager.convertedPDFs)
+        
+        let matchedPDFs = resolutions.compactMap { item -> ConvertedPDF? in
+            if case .matched(let pdf) = item.resolution { return pdf }
+            if case .suggested(let pdf) = item.resolution { return pdf }
+            return nil
+        }
+        
+        // ── Smart Series Affinity Detection ─────────────────────────────────────
+        if let explicitEventName = requests.first(where: { $0.readingOrder != nil })?.readingOrder, !explicitEventName.isEmpty {
+            eventName = explicitEventName
+        } else if !matchedPDFs.isEmpty {
+            var collectionVotes: [UUID: (count: Int, name: String)] = [:]
+            for pdf in matchedPDFs {
+                if let colId = pdf.collectionId,
+                   let col = conversionManager.collections.first(where: { $0.id == colId }) {
+                    let existing = collectionVotes[colId] ?? (count: 0, name: col.name)
+                    collectionVotes[colId] = (count: existing.count + 1, name: col.name)
+                }
+            }
+            
+            if let dominant = collectionVotes.max(by: { $0.value.count < $1.value.count }) {
+                let affinityRatio = Double(dominant.value.count) / Double(matchedPDFs.count)
+                if affinityRatio >= 0.7 {
+                    eventName = dominant.value.name
+                }
+            }
+        }
+        
+        withAnimation {
+            self.resolvedItems = resolutions
         }
     }
     
@@ -322,6 +378,149 @@ struct SmartListImporterView: View {
             inventoryText = inventoryLines.joined(separator: "\n")
         }
         
+        let crossoverInstructions: String
+        let volumesInstructions: String
+        
+        switch outputFormat {
+        case .csv:
+            crossoverInstructions = """
+            Output format: A clean CSV table with the exact header below. Do not include markdown code block syntax (like ```csv), commentary, explanation, or conversational intro/outro text. Start directly with the header row.
+            
+            --- TARGET SCHEMA ---
+            Series,Issue,Volume,Label,Optional
+            
+            --- FEW-SHOT EXAMPLE OUTPUT ---
+            Series,Issue,Volume,Label,Optional
+            Dark Web: X-Men,1-3,Vol 1,Main,false
+            Dragon Ball,1-7,Vol 1,Collection,false
+            """
+            
+            volumesInstructions = """
+            Output format: A clean CSV table with the exact header below. Do not include markdown code block syntax (like ```csv), commentary, explanation, or conversational intro/outro text. Start directly with the header row.
+            
+            --- TARGET SCHEMA ---
+            Series,Issue,Volume,Label,Optional
+            
+            --- FEW-SHOT EXAMPLE OUTPUT ---
+            Series,Issue,Volume,Label,Optional
+            Initial D,1-10,Vol 01,Collection,false
+            Initial D,11-20,Vol 02,Collection,false
+            Invincible,1-47,Compendium 1,Collection,false
+            """
+            
+        case .markdown:
+            crossoverInstructions = """
+            Output format: A clean Markdown table with the exact columns below. Do not include commentary, explanation, or conversational intro/outro text. Start directly with the table.
+            
+            --- TARGET SCHEMA ---
+            | Series | Issue | Volume | Label | Optional |
+            | :--- | :--- | :--- | :--- | :--- |
+            
+            --- FEW-SHOT EXAMPLE OUTPUT ---
+            | Series | Issue | Volume | Label | Optional |
+            | :--- | :--- | :--- | :--- | :--- |
+            | Dark Web: X-Men | 1-3 | Vol 1 | Main | false |
+            | Dragon Ball | 1-7 | Vol 1 | Collection | false |
+            """
+            
+            volumesInstructions = """
+            Output format: A clean Markdown table with the exact columns below. Do not include commentary, explanation, or conversational intro/outro text. Start directly with the table.
+            
+            --- TARGET SCHEMA ---
+            | Series | Issue | Volume | Label | Optional |
+            | :--- | :--- | :--- | :--- | :--- |
+            
+            --- FEW-SHOT EXAMPLE OUTPUT ---
+            | Series | Issue | Volume | Label | Optional |
+            | :--- | :--- | :--- | :--- | :--- |
+            | Initial D | 1-10 | Vol 01 | Collection | false |
+            | Initial D | 11-20 | Vol 02 | Collection | false |
+            | Invincible | 1-47 | Compendium 1 | Collection | false |
+            """
+            
+        case .json:
+            crossoverInstructions = """
+            Output format: A clean JSON array of objects with the exact keys below. Do not include markdown code block syntax (like ```json), commentary, explanation, or conversational intro/outro text. Start directly with the opening bracket `[`.
+            
+            --- TARGET SCHEMA KEYS ---
+            - Series (String)
+            - Issue (String or Int)
+            - Volume (String)
+            - Label (String)
+            - Optional (Boolean)
+            
+            --- FEW-SHOT EXAMPLE OUTPUT ---
+            [
+              {
+                "Series": "Dark Web: X-Men",
+                "Issue": "1-3",
+                "Volume": "Vol 1",
+                "Label": "Main",
+                "Optional": false
+              },
+              {
+                "Series": "Dragon Ball",
+                "Issue": "1-7",
+                "Volume": "Vol 1",
+                "Label": "Collection",
+                "Optional": false
+              }
+            ]
+            """
+            
+            volumesInstructions = """
+            Output format: A clean JSON array of objects with the exact keys below. Do not include markdown code block syntax (like ```json), commentary, explanation, or conversational intro/outro text. Start directly with the opening bracket `[`.
+            
+            --- TARGET SCHEMA KEYS ---
+            - Series (String)
+            - Issue (String or Int)
+            - Volume (String)
+            - Label (String)
+            - Optional (Boolean)
+            
+            --- FEW-SHOT EXAMPLE OUTPUT ---
+            [
+              {
+                "Series": "Initial D",
+                "Issue": "1-10",
+                "Volume": "Vol 01",
+                "Label": "Collection",
+                "Optional": false
+              },
+              {
+                "Series": "Initial D",
+                "Issue": "11-20",
+                "Volume": "Vol 02",
+                "Label": "Collection",
+                "Optional": false
+              }
+            ]
+            """
+            
+        case .txt:
+            crossoverInstructions = """
+            Output format: A clean plain text list of key-value lines with the exact format below. Do not include commentary, explanation, or conversational intro/outro text.
+            
+            --- TARGET FORMAT ---
+            - Series: [Series Name], Issue: [Issue Number], Volume: [Volume Name], Label: [Label Name], Optional: [Boolean]
+            
+            --- FEW-SHOT EXAMPLE OUTPUT ---
+            - Series: Dark Web: X-Men, Issue: 1-3, Volume: Vol 1, Label: Main, Optional: false
+            - Series: Dragon Ball, Issue: 1-7, Volume: Vol 1, Label: Collection, Optional: false
+            """
+            
+            volumesInstructions = """
+            Output format: A clean plain text list of key-value lines with the exact format below. Do not include commentary, explanation, or conversational intro/outro text.
+            
+            --- TARGET FORMAT ---
+            - Series: [Series Name], Issue: [Issue Number], Volume: [Volume Name], Label: [Label Name], Optional: [Boolean]
+            
+            --- FEW-SHOT EXAMPLE OUTPUT ---
+            - Series: Initial D, Issue: 1-10, Volume: Vol 01, Label: Collection, Optional: false
+            - Series: Initial D, Issue: 11-20, Volume: Vol 02, Label: Collection, Optional: false
+            """
+        }
+        
         let aiPrompt: String
         switch listType {
         case .crossover:
@@ -332,23 +531,7 @@ struct SmartListImporterView: View {
             
             Your task is to organize a reading list using ONLY the series/issues actually present in the user's library inventory below.
             
-            Output format: A clean CSV table with the exact header below. Do not include markdown code block syntax (like ```csv), commentary, explanation, or conversational intro/outro text. Start directly with the header row.
-            
-            --- TARGET SCHEMA ---
-            Series,Issue,Volume,Label,Optional
-            
-            --- FIELD DEFINITIONS ---
-            - Series (String): Name of the comic book series (must match or closely relate to a series in the inventory).
-            - Issue (String or Int): The specific issue number (e.g. 5) or range of issues (e.g. 1-7).
-            - Volume (String, optional): The collection volume name if matched as a volume or compendium file (e.g. 'Vol 1' or 'Compendium 1').
-            - Label (String): Category of the comic in the event. Must be one of: 'Main', 'Tie-In', 'Prelude', or 'Collection'.
-            - Optional (Boolean): 'true' if the issue can be skipped, 'false' if it's main reading.
-            
-            --- FEW-SHOT EXAMPLE OUTPUT ---
-            Series,Issue,Volume,Label,Optional
-            Dark Web: X-Men,1-3,Vol 1,Main,false
-            Dragon Ball,1-7,Vol 1,Collection,false
-            TMNT: The Last Ronin,1-5,Vol 1,Collection,false
+            \(crossoverInstructions)
             
             --- CURRENT USER REQUEST ---
             Please create a reading order event for: "\(targetEvent)"
@@ -364,24 +547,7 @@ struct SmartListImporterView: View {
             
             Your task is to analyze the user's library inventory below and, for each series present, organize the issues into logical chronological Volumes (e.g. Vol 1, Vol 2, Compendium 1) based on official publication standards or issue number ranges.
             
-            Output format: A clean CSV table with the exact header below. Do not include markdown code block syntax (like ```csv), commentary, explanation, or conversational intro/outro text. Start directly with the header row.
-            
-            --- TARGET SCHEMA ---
-            Series,Issue,Volume,Label,Optional
-            
-            --- FIELD DEFINITIONS ---
-            - Series (String): Name of the comic book series (must match exactly one of the series names in the user's inventory).
-            - Issue (String or Int): The issue number (e.g. 5) or range of issues (e.g. 1-12) grouped into this volume.
-            - Volume (String): The volume name (e.g. 'Vol 1', 'Vol 2', or 'Compendium 1').
-            - Label (String): Set to 'Collection' for volume groups.
-            - Optional (Boolean): 'false'.
-            
-            --- FEW-SHOT EXAMPLE OUTPUT ---
-            Series,Issue,Volume,Label,Optional
-            Initial D,1-10,Vol 01,Collection,false
-            Initial D,11-20,Vol 02,Collection,false
-            Invincible,1-47,Compendium 1,Collection,false
-            Invincible,48-96,Compendium 2,Collection,false
+            \(volumesInstructions)
             
             --- CURRENT USER REQUEST ---
             Please organize the following library series into volume collections. Group issues chronologically by volume.
