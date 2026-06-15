@@ -118,7 +118,7 @@ struct SmartListImporterView: View {
                             .padding(.top, 4)
                             
                             if showInventoryCopiedMessage {
-                                Text("Library inventory copied to clipboard!")
+                                Text("AI Prompt & Library Inventory copied to clipboard!")
                                     .font(.caption2)
                                     .foregroundColor(.purple)
                                     .transition(.opacity)
@@ -266,11 +266,7 @@ struct SmartListImporterView: View {
             seriesGroups[seriesName, default: []].append(issue)
         }
         
-        var lines: [String] = []
-        lines.append("--- INKSYNC PRO LIBRARY INVENTORY ---")
-        lines.append("Format: Series Name - [Issue Numbers]")
-        lines.append("")
-        
+        var inventoryLines: [String] = []
         for (series, issues) in seriesGroups.sorted(by: { $0.key < $1.key }) {
             let sortedIssues = issues.sorted { a, b in
                 if let na = Int(a), let nb = Int(b) {
@@ -279,10 +275,43 @@ struct SmartListImporterView: View {
                 return a < b
             }
             let uniqueIssues = Array(NSOrderedSet(array: sortedIssues)) as? [String] ?? sortedIssues
-            lines.append("\(series) - Issues: \(uniqueIssues.joined(separator: ", "))")
+            inventoryLines.append("- \(series) (Issues: \(uniqueIssues.joined(separator: ", ")))")
         }
         
-        UIPasteboard.general.string = lines.joined(separator: "\n")
+        let inventoryText = inventoryLines.joined(separator: "\n")
+        
+        let aiPrompt = """
+        You are an expert comic book reading order organizer for Inksync Pro.
+        The user wants to generate a custom, properly-sequenced reading order or smart list for a specific crossover event or series run.
+        
+        Your task is to organize a reading list using ONLY the series/issues actually present in the user's library inventory below.
+        
+        Output format: A clean CSV table with the exact header below. Do not include markdown code block syntax (like ```csv), commentary, explanation, or conversational intro/outro text. Start directly with the header row.
+        
+        --- TARGET SCHEMA ---
+        Series,Issue,Volume,Label,Optional
+        
+        --- FIELD DEFINITIONS ---
+        - Series (String): Name of the comic book series (must match or closely relate to a series in the inventory).
+        - Issue (String or Int): The specific issue number (e.g. 5) or range of issues (e.g. 1-7).
+        - Volume (String, optional): The collection volume name if matched as a volume or compendium file (e.g. 'Vol 1' or 'Compendium 1').
+        - Label (String): Category of the comic in the event. Must be one of: 'Main', 'Tie-In', 'Prelude', or 'Collection'.
+        - Optional (Boolean): 'true' if the issue can be skipped, 'false' if it's main reading.
+        
+        --- FEW-SHOT EXAMPLE OUTPUT ---
+        Series,Issue,Volume,Label,Optional
+        Dark Web: X-Men,1-3,Vol 1,Main,false
+        Dragon Ball,1-7,Vol 1,Collection,false
+        TMNT: The Last Ronin,1-5,Vol 1,Collection,false
+        
+        --- CURRENT USER REQUEST ---
+        Please create a reading order event for: [INSERT YOUR DESIRED EVENT OR RUN HERE, E.g. "Dark Web" or "Invincible Compendiums"]
+        
+        --- USER LIBRARY INVENTORY ---
+        \(inventoryText)
+        """
+        
+        UIPasteboard.general.string = aiPrompt
         
         withAnimation {
             showInventoryCopiedMessage = true
