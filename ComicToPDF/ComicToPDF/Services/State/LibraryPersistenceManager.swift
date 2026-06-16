@@ -32,6 +32,7 @@ class LibraryPersistenceManager {
             // PERF D-M2: Only sync SwiftData when the library structure changed.
             if isStructural {
                 try? await LibraryRepository.shared.sync(pdfs: syncPDFs, collections: syncCols)
+                await LibraryDatabaseService.shared.save(syncPDFs)
             }
         }
     }
@@ -43,6 +44,7 @@ class LibraryPersistenceManager {
         let syncCols = manager.collections
         Task.detached(priority: .background) {
             try? await LibraryRepository.shared.sync(pdfs: syncPDFs, collections: syncCols)
+            await LibraryDatabaseService.shared.save(syncPDFs)
         }
     }
     

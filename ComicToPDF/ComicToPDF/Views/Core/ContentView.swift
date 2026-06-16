@@ -131,11 +131,15 @@ struct ContentView: View {
             PageModelStore.shared.initialize(with: modelContext)
             
             Task { @MainActor in
+                await LibraryDatabaseService.shared.bootstrap()
+                
                 MigrationService.shared.migrateLegacyDataIfNeeded(context: modelContext)
                 let _ = MigrationService.shared.performSmartGrouping(context: modelContext)
                 
                 // Always fetch the latest SwiftData on startup to ensure conversionManager matches the DB.
                 await LibraryService.shared.loadLibrary()
+                
+                conversionManager.scanLibrary()
                 
                 await SandboxCleanupManager.shared.passiveScan()
             }

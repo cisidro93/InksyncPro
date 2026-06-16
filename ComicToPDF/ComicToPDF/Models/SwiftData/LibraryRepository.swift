@@ -42,21 +42,62 @@ actor LibraryModelActor {
                 }
             }
             
-            // 3. Try re-anchoring by filename across all sandbox roots
-            let filename = doc.url.lastPathComponent
+            // 3. Try smart relative re-anchoring (preserves subdirectory structure)
+            let oldPath = doc.url.path
             var foundReanchor = false
-            for root in possibleRoots {
-                let checkURL = root.appendingPathComponent(filename)
-                if fileManager.fileExists(atPath: checkURL.path) {
-                    doc.url = checkURL
-                    didUpdate = true
-                    validDocs.append(doc)
-                    foundReanchor = true
-                    break
+            var checkURL: URL?
+            
+            if let docRange = oldPath.range(of: "/Documents/") {
+                let relPath = String(oldPath[docRange.upperBound...])
+                if let docsRoot = docsRoot {
+                    let testURL = docsRoot.appendingPathComponent(relPath)
+                    if fileManager.fileExists(atPath: testURL.path) {
+                        checkURL = testURL
+                        foundReanchor = true
+                    }
                 }
             }
             
+            if !foundReanchor, let appSupport = appSupport {
+                if let inboxRange = oldPath.range(of: "/InksyncVault/Inbox/") {
+                    let relPath = String(oldPath[inboxRange.upperBound...])
+                    let testURL = appSupport.appendingPathComponent("InksyncVault/Inbox").appendingPathComponent(relPath)
+                    if fileManager.fileExists(atPath: testURL.path) {
+                        checkURL = testURL
+                        foundReanchor = true
+                    }
+                }
+                
+                if !foundReanchor, let vaultRange = oldPath.range(of: "/InksyncVault/") {
+                    let relPath = String(oldPath[vaultRange.upperBound...])
+                    if !relPath.hasPrefix("Inbox/") {
+                        let testURL = appSupport.appendingPathComponent("InksyncVault").appendingPathComponent(relPath)
+                        if fileManager.fileExists(atPath: testURL.path) {
+                            checkURL = testURL
+                            foundReanchor = true
+                        }
+                    }
+                }
+            }
+            
+            // 4. Fallback: Try re-anchoring by filename only across all sandbox roots
             if !foundReanchor {
+                let filename = doc.url.lastPathComponent
+                for root in possibleRoots {
+                    let testURL = root.appendingPathComponent(filename)
+                    if fileManager.fileExists(atPath: testURL.path) {
+                        checkURL = testURL
+                        foundReanchor = true
+                        break
+                    }
+                }
+            }
+            
+            if foundReanchor, let finalURL = checkURL {
+                doc.url = finalURL
+                didUpdate = true
+                validDocs.append(doc)
+            } else {
                 // File genuinely missing — mark as ghost and delete
                 ghostIDs.insert(doc.id)
                 modelContext.delete(doc)
