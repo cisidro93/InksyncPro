@@ -1,23 +1,23 @@
 import Foundation
 
 /// Cleanly tokenizes filename strings into Series, Volume, Issue/Chapter, and Title components.
-public struct DeterministicFilenameParser {
+struct DeterministicFilenameParser {
     
-    public struct ParsedTokens {
-        public let seriesName: String
-        public let volume: String?
-        public let issueNumber: String?
-        public let title: String?
+    struct ParsedTokens {
+        let seriesName: String
+        let volume: String?
+        let issueNumber: String?
+        let title: String?
     }
     
     /// Parses a filename to extract structured components based on delimiters and prefixes.
     /// Supports the canonical format: `[SeriesName] - v[Volume] - c[IssueNumber] - [Title].[ext]`
     /// as well as standard fallback patterns.
-    public static func parse(filename: String) -> ParsedTokens {
+    static func parse(filename: String) -> ParsedTokens {
         let base = URL(fileURLWithPath: filename).deletingPathExtension().lastPathComponent
         
         // Strip leading brackets (e.g. scanlation group prefixes like "[MangaStream]")
-        var cleaned = base.replacingOccurrences(of: #"^\[.*?\]\s*"#, with: "", options: .regularExpression)
+        let cleaned = base.replacingOccurrences(of: #"^\[.*?\]\s*"#, with: "", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         
         // Split by the canonical " - " separator

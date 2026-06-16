@@ -3,10 +3,11 @@ import SwiftData
 
 /// A Swift 6 ModelActor executing database operations on a thread-isolated background context.
 @ModelActor
-public actor LibraryModelActor {
+actor LibraryModelActor {
     
     /// Fetches all documents, re-anchors sandboxed paths, and prunes orphaned metadata (annotations, collections, memories).
-    public func fetchAllDocuments() throws -> [SDConvertedPDF] {
+    /// Returns Sendable ConvertedPDF structs to safely cross the actor boundary.
+    func fetchAllDocuments() throws -> [ConvertedPDF] {
         let descriptor = FetchDescriptor<SDConvertedPDF>()
         let documents = try modelContext.fetch(descriptor)
         
@@ -105,17 +106,18 @@ public actor LibraryModelActor {
             UserDefaults.standard.set(currentSandboxPath, forKey: "lastSandboxDocumentsPath")
         }
         
-        return validDocs
+        return validDocs.map { $0.toDTO() }
     }
     
-    /// Fetches all collection series shells.
-    public func fetchAllCollections() throws -> [SDPDFCollection] {
+    /// Fetches all collection series shells as Sendable DTO structs.
+    func fetchAllCollections() throws -> [PDFCollection] {
         let descriptor = FetchDescriptor<SDPDFCollection>()
-        return try modelContext.fetch(descriptor)
+        let cols = try modelContext.fetch(descriptor)
+        return cols.map { $0.toDTO() }
     }
     
     /// Fast batch insert path for newly imported PDF records.
-    public func batchInsertPDFs(newPDFs: [ConvertedPDF]) throws {
+    func batchInsertPDFs(newPDFs: [ConvertedPDF]) throws {
         let descriptor = FetchDescriptor<SDConvertedPDF>()
         let existingIDs = Set((try? modelContext.fetch(descriptor))?.map { $0.id } ?? [])
         
@@ -140,7 +142,7 @@ public actor LibraryModelActor {
     }
     
     /// Synchronizes files and collections to SwiftData, pruning deleted records.
-    public func syncToSwiftData(pdfs: [ConvertedPDF], collections: [PDFCollection]) throws {
+    func syncToSwiftData(pdfs: [ConvertedPDF], collections: [PDFCollection]) throws {
         // 1. Sync Collections
         let existingCols = try modelContext.fetch(FetchDescriptor<SDPDFCollection>())
         let colDict = Dictionary(grouping: existingCols, by: { $0.id }).compactMapValues { $0.first }
@@ -211,34 +213,31 @@ public actor LibraryModelActor {
 }
 
 /// The main application coordinator for library database management.
-public final class LibraryRepository: ObservableObject {
-    public static let shared = LibraryRepository(container: InksyncProApp.sharedModelContainer)
+final class LibraryRepository: Sendable {
+    static let shared = LibraryRepository(container: InksyncProApp.sharedModelContainer)
     
     private let modelContainer: ModelContainer
     private let actor: LibraryModelActor
     
-    public init(container: ModelContainer) {
+    init(container: ModelContainer) {
         self.modelContainer = container
         self.actor = LibraryModelActor(modelContainer: container)
     }
     
     /// Asynchronously fetches all library items and collections from SwiftData background context.
-    public func loadLibrary() async throws -> ([ConvertedPDF], [PDFCollection]) {
-        let sdDocs = try await actor.fetchAllDocuments()
-        let sdCols = try await actor.fetchAllCollections()
-        
-        let pdfs = sdDocs.map { $0.toDTO() }
-        let cols = sdCols.map { $0.toDTO() }
+    func loadLibrary() async throws -> ([ConvertedPDF], [PDFCollection]) {
+        let pdfs = try await actor.fetchAllDocuments()
+        let cols = try await actor.fetchAllCollections()
         return (pdfs, cols)
     }
     
     /// Runs direct background batch insertion for newly imported items.
-    public func batchInsert(newPDFs: [ConvertedPDF]) async throws {
+    func batchInsert(newPDFs: [ConvertedPDF]) async throws {
         try await actor.batchInsertPDFs(newPDFs: newPDFs)
     }
     
     /// Synchronizes both collections and files on a background model context.
-    public func sync(pdfs: [ConvertedPDF], collections: [PDFCollection]) async throws {
+    func sync(pdfs: [ConvertedPDF], collections: [PDFCollection]) async throws {
         try await actor.syncToSwiftData(pdfs: pdfs, collections: collections)
     }
 }

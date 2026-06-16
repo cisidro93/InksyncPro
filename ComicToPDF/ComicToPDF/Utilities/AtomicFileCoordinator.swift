@@ -60,7 +60,7 @@ public final class AtomicFileCoordinator {
         // 5. Stage 3: Replace file atomically
         do {
             if fileManager.fileExists(atPath: destination.path) {
-                _ = try fileManager.replaceItemAt(destination, withItemAt: tempDestination, options: .withoutBackup)
+                _ = try fileManager.replaceItemAt(destination, withItemAt: tempDestination, options: [])
             } else {
                 try fileManager.moveItem(at: tempDestination, to: destination)
             }
