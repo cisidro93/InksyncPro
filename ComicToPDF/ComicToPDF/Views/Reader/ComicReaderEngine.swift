@@ -280,7 +280,6 @@ final class ComicImageCache: ObservableObject {
         self.pageCount = source.pageCount
         self.isLoading = false
     }
-
     func getImage(at index: Int) -> UIImage? {
         guard index >= 0 && index < pageCount else { return nil }
         
@@ -292,9 +291,9 @@ final class ComicImageCache: ObservableObject {
         if fetchingQueue.contains(index) { return nil }
         
         if isStream && cloudPageSource != nil {
-            fetchCloudPageImage(at: index)
+            fetchCloudPageImage(at: index, priority: .userInitiated)
         } else if !isStream {
-            fetchLocalImageAsync(at: index)
+            fetchLocalImageAsync(at: index, priority: .userInitiated)
         }
         
         prefetchSurrounding(index: index)
@@ -306,7 +305,7 @@ final class ComicImageCache: ObservableObject {
         return cache.object(forKey: NSNumber(value: index))?.size
     }
     
-    private func fetchLocalImageAsync(at index: Int) {
+    private func fetchLocalImageAsync(at index: Int, priority: TaskPriority = .userInitiated) {
         fetchingQueue.insert(index)
         
         let isPDF = self.isPDF
@@ -317,7 +316,7 @@ final class ComicImageCache: ObservableObject {
         let bounds = UIScreen.main.bounds
         let scale = UIScreen.main.scale
         
-        Task.detached(priority: .userInitiated) { [weak self] in
+        Task.detached(priority: priority) { [weak self] in
             guard let self = self else { return }
             
             let img = await ComicImageCache.extractOrRenderImageBackground(
@@ -431,15 +430,15 @@ final class ComicImageCache: ObservableObject {
             if i == index { continue }
             if self.cache.object(forKey: NSNumber(value: i)) == nil && !self.fetchingQueue.contains(i) {
                 if isStream {
-                    fetchCloudPageImage(at: i)
+                    fetchCloudPageImage(at: i, priority: .utility)
                 } else {
-                    fetchLocalImageAsync(at: i)
+                    fetchLocalImageAsync(at: i, priority: .utility)
                 }
             }
         }
     }
 
-    private func fetchCloudPageImage(at index: Int) {
+    private func fetchCloudPageImage(at index: Int, priority: TaskPriority = .userInitiated) {
         guard let source = cloudPageSource, index < source.pages.count else { return }
         fetchingQueue.insert(index)
         let entry = source.pages[index]
@@ -449,7 +448,7 @@ final class ComicImageCache: ObservableObject {
         let scale = UIScreen.main.scale
         let maxPixelSize = max(bounds.width, bounds.height) * scale
 
-        Task.detached(priority: .userInitiated) { [weak self] in
+        Task.detached(priority: priority) { [weak self] in
             guard let self else { return }
             do {
                 let data = try await ZipCentralDirectory.fetchEntryData(entry: entry, manifest: manifest)

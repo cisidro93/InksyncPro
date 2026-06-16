@@ -6,20 +6,7 @@ import Combine
 import ImageIO
 import ZIPFoundation
 
-// MARK: - CancellationFlag
-// Thread-safe class-boxed cancellation flag.
-// Using a final class (reference type) means both DispatchQueue.async blocks and
-// @Sendable onCancel closures can safely capture and mutate state — Swift 6 strict
-// concurrency allows class references to cross isolation boundaries because only
-// one caller holds the reference at a time, enforced by the internal NSLock.
-private final class CancellationFlag: @unchecked Sendable {
-    private let lock = NSLock()
-    private var _cancelled = false
 
-    var isCancelled: Bool { lock.withLock { _cancelled } }
-
-    func cancel() { lock.withLock { _cancelled = true } }
-}
 
 // ============================================================================
 // SpreadPair
@@ -77,14 +64,7 @@ final class CGImageBox {
 //   lead indices so renderPage(at:nil) task slots are never allocated.
 // ============================================================================
 
-// File-private global — must live outside the @MainActor class so it is
-// nonisolated and accessible from nonisolated static functions (executeRender).
-// Swift 6: static stored properties on @MainActor types are @MainActor-isolated
-// and cannot be read from nonisolated contexts.
-private let _pageBufferArchiveQueue = DispatchQueue(
-    label: "com.inksyncpro.pagebuffer.archive",
-    qos: .userInitiated
-)
+
 
 @MainActor
 class PageBufferManager: ObservableObject {
@@ -570,9 +550,8 @@ class PageBufferManager: ObservableObject {
         return result
     }
 
-    // Issue 2 fix: static nonisolated function, but all ZIP reads are serialised
-    // through PageBufferManager.archiveQueue — a serial DispatchQueue that ensures
-    // only one ZIPFoundation extract() call runs at a time on the same archive file.
+    // Issue 2 fix: static nonisolated function, leveraging ArchiveManager.shared actor
+    // to serialize ZIP file reads safely while allowing parallel image decoding.
     nonisolated private static func executeRender(
         url: URL,
         index: Int,
@@ -586,50 +565,24 @@ class PageBufferManager: ObservableObject {
         if let archiveURL, index < zipEntryPaths.count {
             let entryPath = zipEntryPaths[index]
 
-            // Issue 2 fix: serialise ZIP reads through the archive queue.
-            //
-            // Bug 3 fix: Task.isCancelled is always false inside a DispatchQueue.async block
-            // because GCD blocks have no Swift Task context. Use withTaskCancellationHandler
-            // to atomically signal an NSLock-protected flag when the Task is cancelled, then
-            // read that flag inside the GCD block instead.
-            // Swift 6 fix: replace NSLock + var + nested-func with a class-boxed flag.
-            // Class references are always Sendable by capture, so both the DispatchQueue.async
-            // block and the @Sendable onCancel closure can safely call methods on it.
-            let cancelFlag = CancellationFlag()
-
-            let cgImage: CGImage? = await withTaskCancellationHandler {
-                await withCheckedContinuation { continuation in
-                    _pageBufferArchiveQueue.async {
-                        var result: CGImage? = nil
-                        autoreleasepool {
-                            guard !cancelFlag.isCancelled else { return }
-                            do {
-                                let archive = try Archive(url: archiveURL, accessMode: .read)
-                                guard let entry = archive[entryPath] else { return }
-                                var data = Data()
-                                data.reserveCapacity(Int(entry.uncompressedSize))
-                                _ = try archive.extract(entry, bufferSize: 262144) { data.append($0) }
-                                guard !cancelFlag.isCancelled else { return }
-
-                                if let source = CGImageSourceCreateWithData(data as CFData, nil) {
-                                    result = Self.decodeFromSource(source, maxPixelSize: maxPixelSize)
-                                }
-                            } catch {
-                                Logger.shared.log(
-                                    "ZIP decode failed for \(entryPath): \(error.localizedDescription)",
-                                    category: "Engine", type: .error
-                                )
-                            }
-                        }
-                        continuation.resume(returning: result)
-                    }
+            do {
+                let data = try await ArchiveManager.shared.extractEntry(from: archiveURL, path: entryPath)
+                guard !Task.isCancelled else { return nil }
+                
+                let cgImage = autoreleasepool { () -> CGImage? in
+                    guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+                    return Self.decodeFromSource(source, maxPixelSize: maxPixelSize)
                 }
-            } onCancel: {
-                cancelFlag.cancel()
+                
+                guard let image = cgImage, !Task.isCancelled else { return nil }
+                return isAutoCropEnabled ? autoCropMargins(from: image) : image
+            } catch {
+                Logger.shared.log(
+                    "ZIP decode failed for \(entryPath): \(error.localizedDescription)",
+                    category: "Engine", type: .error
+                )
+                return nil
             }
-
-            guard let image = cgImage, !Task.isCancelled else { return nil }
-            return isAutoCropEnabled ? autoCropMargins(from: image) : image
         }
 
         guard !Task.isCancelled else { return nil }
