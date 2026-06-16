@@ -130,37 +130,68 @@ class SandboxCleanupManager: ObservableObject {
     }
 
     private func scanOrphanedConverted() async -> [CleanupItem] {
-        // Scans Documents/ for comic files that have no matching library entry.
-        // A file is "orphaned" if no ConvertedPDF record references its filename.
+        // Scans Documents/ recursively for comic files that have no matching library entry.
+        // A file is "orphaned" if no ConvertedPDF record references its relative path.
         let documentsDir = FileManager.default
             .urls(for: .documentDirectory, in: .userDomainMask)[0]
 
-        guard let contents = try? FileManager.default.contentsOfDirectory(
+        let keys: [URLResourceKey] = [.fileSizeKey, .isDirectoryKey]
+        guard let enumerator = FileManager.default.enumerator(
             at: documentsDir,
-            includingPropertiesForKeys: [.fileSizeKey],
-            options: .skipsHiddenFiles
+            includingPropertiesForKeys: keys,
+            options: [.skipsHiddenFiles]
         ) else { return [] }
 
-        // Build the set of active filenames from the library database.
+        // Build the set of active relative paths from the library database.
         let activePDFs = await LibraryDatabaseService.shared.load()
-        let activeFilenames = Set(activePDFs.map { $0.url.lastPathComponent })
+        let activeRelativePaths = Set(activePDFs.map { pdf -> String in
+            let path = pdf.url.path
+            if let range = path.range(of: "/Documents/") {
+                return "Documents/" + String(path[range.upperBound...])
+            }
+            if let range = path.range(of: "/InksyncVault/Inbox/") {
+                return "Inbox/" + String(path[range.upperBound...])
+            }
+            return pdf.url.lastPathComponent
+        })
 
         let comicExtensions: Set<String> = ["pdf", "epub", "cbz", "cbr", "cb7", "cbt", "zip"]
-        return contents.compactMap { url -> CleanupItem? in
+        var orphanedItems: [CleanupItem] = []
+
+        while let url = enumerator.nextObject() as? URL {
+            let path = url.path
+            
+            // Skip the SourceCache subdirectory as it has its own cleanup category
+            if path.contains("/SourceCache/") {
+                continue
+            }
+
+            guard let attrs = try? url.resourceValues(forKeys: [.fileSizeKey, .isDirectoryKey]),
+                  let isDir = attrs.isDirectory, !isDir,
+                  comicExtensions.contains(url.pathExtension.lowercased())
+            else { continue }
+
             let filename = url.lastPathComponent
-            guard comicExtensions.contains(url.pathExtension.lowercased()),
-                  !activeFilenames.contains(filename),
-                  filename != "Welcome.cbz",  // Don't flag the welcome file
-                  let attrs = try? url.resourceValues(forKeys: [.fileSizeKey]),
-                  let size = attrs.fileSize
-            else { return nil }
-            return CleanupItem(
-                url: url,
-                displayName: url.deletingPathExtension().lastPathComponent,
-                fileSizeBytes: Int64(size),
-                category: .orphanedConverted
-            )
+            guard filename != "Welcome.cbz" else { continue }
+
+            let relPath: String
+            if let range = path.range(of: "/Documents/") {
+                relPath = "Documents/" + String(path[range.upperBound...])
+            } else {
+                relPath = filename
+            }
+
+            if !activeRelativePaths.contains(relPath), let size = attrs.fileSize {
+                orphanedItems.append(CleanupItem(
+                    url: url,
+                    displayName: url.deletingPathExtension().lastPathComponent,
+                    fileSizeBytes: Int64(size),
+                    category: .orphanedConverted
+                ))
+            }
         }
+
+        return orphanedItems
     }
 
     // MARK: - Deletion (explicit user action only)
