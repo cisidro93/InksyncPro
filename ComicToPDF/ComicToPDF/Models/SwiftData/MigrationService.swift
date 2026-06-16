@@ -74,48 +74,80 @@ class MigrationService {
     // Automatically takes an array of unassigned documents and creates InkContainers 
     // for series matching known syntax (e.g. "Batman Vol. 1", "Batman Vol. 2")
     func performSmartGrouping(context: ModelContext) -> Int {
+        return Self.performSmartGroupingInternal(context: context)
+    }
+
+    nonisolated static func performSmartGroupingInternal(context: ModelContext) -> Int {
         // Fetch all documents and filter in memory to dodge `#Predicate` translation limitations on optional arrays
         let fetchDescriptor = FetchDescriptor<SDConvertedPDF>()
         guard let allDocs = try? context.fetch(fetchDescriptor) else { return 0 }
         let orphans = allDocs.filter { $0.collectionId == nil }
         
-        var groupedByName: [String: [SDConvertedPDF]] = [:]
+        struct GroupInfo {
+            let displayName: String
+            var docs: [SDConvertedPDF]
+        }
+        var groupedByName: [String: GroupInfo] = [:] // key: normalized (lowercased) series name
         
         for doc in orphans {
-            // Priority 1: Use Explicit Metadata Series
-            if let explicitSeries = doc.metadata.series, !explicitSeries.isEmpty {
-                groupedByName[explicitSeries, default: []].append(doc)
-                continue
+            let rawSeriesName = (doc.metadata.series?.isEmpty == false) ? doc.metadata.series! : MetadataHeuristics.cleanFilename(doc.name)
+            let seriesName = SeriesNameParser.cleanFolderName(rawSeriesName).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !seriesName.isEmpty else { continue }
+            
+            let normalizedKey = seriesName.lowercased()
+            if var info = groupedByName[normalizedKey] {
+                info.docs.append(doc)
+                groupedByName[normalizedKey] = info
+            } else {
+                groupedByName[normalizedKey] = GroupInfo(displayName: seriesName, docs: [doc])
             }
-            
-            // Priority 2: Use file regex stripping issue numbers
-            let seriesBaseName = doc.name.replacingOccurrences(of: #"(?i)(\svol(\.|ume)?\s*\d+|\sissue\s*\d+|\s#\d+|\s-\s\d+).*"#, with: "", options: String.CompareOptions.regularExpression).trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
-            
-            groupedByName[seriesBaseName, default: []].append(doc)
+        }
+        
+        // Fetch all collections to do case-insensitive lookup
+        let colsDescriptor = FetchDescriptor<SDPDFCollection>()
+        guard let existingCols = try? context.fetch(colsDescriptor) else { return 0 }
+        
+        // Map lowercase name to collection object
+        var colMap: [String: SDPDFCollection] = [:]
+        for col in existingCols {
+            let key = col.name.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+            if !key.isEmpty {
+                colMap[key] = col
+            }
         }
         
         var generatedCount = 0
         var assignedCount = 0
         
-        for (seriesName, docs) in groupedByName {
-            // Only group if there are at least 2 matching items
-            if docs.count > 1 {
-                // Check if container already exists
-                let namePredicate = #Predicate<SDPDFCollection> { $0.name == seriesName }
-                var existingContainer: SDPDFCollection?
-                if let fetchRes = try? context.fetch(FetchDescriptor(predicate: namePredicate)), let match = fetchRes.first {
-                    existingContainer = match
-                }
+        for (normalizedKey, groupInfo) in groupedByName {
+            let docs = groupInfo.docs
+            let displayName = groupInfo.displayName
+            
+            let existingContainer = colMap[normalizedKey]
+            
+            // Group if:
+            // 1. A collection with this name already exists.
+            // 2. OR, there are at least 2 matching items.
+            if existingContainer != nil || docs.count > 1 {
+                let container = existingContainer ?? SDPDFCollection(
+                    id: UUID(),
+                    name: displayName,
+                    icon: "folder",
+                    color: "blue",
+                    creationDate: Date(),
+                    explicitCoverFileID: nil
+                )
                 
-                let container = existingContainer ?? SDPDFCollection(id: UUID(), name: seriesName, icon: "folder", color: "blue", creationDate: Date(), explicitCoverFileID: nil)
                 if existingContainer == nil {
                     context.insert(container)
+                    colMap[normalizedKey] = container // prevent duplicates in the same loop
                     generatedCount += 1
                 }
                 
                 for doc in docs {
                     if doc.collectionId != container.id {
                         doc.collectionId = container.id
+                        doc.metadata.series = container.name
                         assignedCount += 1
                     }
                 }

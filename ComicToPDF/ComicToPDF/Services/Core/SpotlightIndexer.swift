@@ -42,7 +42,7 @@ final class SpotlightIndexer {
                     attributeSet: attrs
                 )
             }
-            localIndex.indexSearchableItems(items) { error in
+            localIndex.indexSearchableItems(items) { @Sendable error in
                 if let error = error {
                     Logger.shared.log("Spotlight: failed to index library — \(error)", category: "Spotlight", type: .error)
                 }

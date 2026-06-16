@@ -251,6 +251,11 @@ actor LibraryModelActor {
         
         try modelContext.save()
     }
+    
+    /// Triggers smart grouping dynamically on the background database context.
+    func performSmartGrouping() throws -> Int {
+        return MigrationService.performSmartGroupingInternal(context: modelContext)
+    }
 }
 
 /// The main application coordinator for library database management.
@@ -280,5 +285,10 @@ final class LibraryRepository: Sendable {
     /// Synchronizes both collections and files on a background model context.
     func sync(pdfs: [ConvertedPDF], collections: [PDFCollection]) async throws {
         try await actor.syncToSwiftData(pdfs: pdfs, collections: collections)
+    }
+    
+    /// Runs smart grouping on the thread-isolated background actor context.
+    func performSmartGrouping() async throws -> Int {
+        try await actor.performSmartGrouping()
     }
 }

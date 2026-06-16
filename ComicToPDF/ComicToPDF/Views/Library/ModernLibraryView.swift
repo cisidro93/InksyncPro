@@ -103,9 +103,24 @@ struct ModernLibraryView: View {
     @State private var cachedReviewCount: Int = 0
 
     private func rebuildNativeCache() {
-        let mapped = swiftDataPDFs.map { $0.toDTO() }
+        let mapped: [ConvertedPDF]
+        let mappedCols: [PDFCollection]
+        
+        if ImportMonitorManager.shared.isImporting {
+            mapped = conversionManager.convertedPDFs
+            mappedCols = conversionManager.collections
+        } else {
+            mapped = swiftDataPDFs.map { $0.toDTO() }
+            mappedCols = swiftDataCollections.map { $0.toDTO() }
+            
+            // Propagate updates to ConversionManager to keep background components (like SmartList resolution) in sync
+            conversionManager.convertedPDFs = mapped
+            conversionManager.collections = mappedCols
+        }
+        
         cachedVisiblePDFs = settingsManager.isVaultUnlocked ? mapped : mapped.filter { !$0.isPrivate }
-        cachedCollections = swiftDataCollections.map { $0.toDTO() }
+        cachedCollections = mappedCols
+        
         cachedReviewCount = mapped.filter { pdf in
             let seriesEmpty = pdf.metadata.series?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true
             let authorEmpty = pdf.metadata.author?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true
@@ -113,10 +128,6 @@ struct ModernLibraryView: View {
             return seriesEmpty || authorEmpty || titleEmpty
         }.count
         MetadataMatchService.shared.rebuildClusters(pdfs: cachedVisiblePDFs)
-        
-        // Propagate updates to ConversionManager to keep background components (like SmartList resolution) in sync
-        conversionManager.convertedPDFs = mapped
-        conversionManager.collections = cachedCollections
     }
 
     private var currentFolder: PDFCollection? {
@@ -473,6 +484,10 @@ struct ModernLibraryView: View {
             // Raw SwiftData row changes: send through the debounced publisher
             // instead of calling updateLibraryItemsCache directly.
             .onChange(of: swiftDataPDFs) { viewModel.notifySwiftDataChanged() }
+            .onChange(of: ImportMonitorManager.shared.isImporting) { _, _ in
+                rebuildNativeCache()
+                viewModel.updateLibraryItemsCache(pdfs: cachedVisiblePDFs, collections: cachedCollections, sortOption: sortOption)
+            }
             // All other triggers are low-frequency and user-initiated — rebuild immediately.
             .onChange(of: sortOption) {
                 rebuildNativeCache()

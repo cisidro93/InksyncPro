@@ -177,6 +177,7 @@ actor ImportOrchestrator {
             manager.saveLibrary()
             manager.backfillMissingThumbnails()
         }
+        await LibraryService.shared.runSmartGrouping()
     }
     
     func importFilesAsSeries(urls: [URL], manager: ConversionManager, overrides: [URL: PDFMetadata] = [:]) async -> [ConvertedPDF] {
@@ -317,8 +318,14 @@ actor ImportOrchestrator {
                     } else if let meta = overrideMeta {
                         smartDisplayName = meta.title
                         smartMetadata = meta
-                    } else {
-                        smartMetadata.series = validParentFolder
+                    }
+                    
+                    // Fallback to smart filename extraction if series is still missing/empty
+                    if smartMetadata.series == nil || smartMetadata.series?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == true {
+                        let parsedSeries = SeriesNameParser.cleanFolderName(MetadataHeuristics.cleanFilename(fileName))
+                        if !parsedSeries.isEmpty {
+                            smartMetadata.series = parsedSeries
+                        }
                     }
 
                     // Apply manga flag and any fields not covered by the XML display layer
@@ -409,7 +416,9 @@ actor ImportOrchestrator {
         var clusters: [String: [ConvertedPDF]] = [:]
         
         for pdf in importedPDFs {
-            let seriesName = (pdf.metadata.series?.isEmpty == false) ? pdf.metadata.series! : "Ungrouped"
+            let rawSeries = pdf.metadata.series ?? ""
+            let cleanedSeries = SeriesNameParser.cleanFolderName(rawSeries).trimmingCharacters(in: .whitespacesAndNewlines)
+            let seriesName = cleanedSeries.isEmpty ? "Ungrouped" : cleanedSeries
             clusters[seriesName, default: []].append(pdf)
         }
         
@@ -418,9 +427,22 @@ actor ImportOrchestrator {
             var allImported: [ConvertedPDF] = []
             
             for (series, var clusterPDFs) in finalClusters {
-                if clusterPDFs.count > 1 && series != "Ungrouped" {
+                guard series != "Ungrouped" && !series.isEmpty else {
+                    allImported.append(contentsOf: clusterPDFs)
+                    continue
+                }
+                
+                // Case-insensitive, whitespace-trimmed lookup in manager.collections
+                let existingCol = manager.collections.first(where: {
+                    $0.name.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) == series.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+                })
+                
+                // Group if:
+                // 1. A collection with this name already exists.
+                // 2. OR, there are at least 2 matching items.
+                if existingCol != nil || clusterPDFs.count > 1 {
                     let targetCollection: PDFCollection
-                    if let existing = manager.collections.first(where: { $0.name == series }), !series.isEmpty {
+                    if let existing = existingCol {
                         targetCollection = existing
                     } else {
                         let newCol = PDFCollection(id: UUID(), name: series, icon: "books.vertical", color: "orange", creationDate: Date())
@@ -430,7 +452,7 @@ actor ImportOrchestrator {
                     
                     for i in 0..<clusterPDFs.count {
                         clusterPDFs[i].collectionId = targetCollection.id
-                        clusterPDFs[i].metadata.series = series
+                        clusterPDFs[i].metadata.series = targetCollection.name
                     }
                 }
                 allImported.append(contentsOf: clusterPDFs)
@@ -447,8 +469,8 @@ actor ImportOrchestrator {
             return allImported
         }
         
-        // Fast-path SwiftData insert for ONLY the new records, now with collectionId and series metadata fully assigned.
-        try? await LibraryRepository.shared.batchInsert(newPDFs: finalImportedPDFs)
+        // Run unified smart grouping in the background (persists and groups files)
+        await LibraryService.shared.runSmartGrouping()
 
         // ✅ Import History: log each successfully imported file
         for pdf in finalImportedPDFs {
@@ -463,12 +485,17 @@ actor ImportOrchestrator {
     func finalizeSeriesImport(pdfs: [ConvertedPDF], seriesName: String, manager: ConversionManager) async {
         await MainActor.run {
             let targetCollection: PDFCollection
-            if let existing = manager.collections.first(where: { $0.name == seriesName }), !seriesName.isEmpty {
-                targetCollection = existing
-            } else if !seriesName.isEmpty {
-                let newCol = PDFCollection(id: UUID(), name: seriesName, icon: "books.vertical", color: "orange", creationDate: Date())
-                manager.collections.append(newCol)
-                targetCollection = newCol
+            let cleanedSeries = SeriesNameParser.cleanFolderName(seriesName).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !cleanedSeries.isEmpty {
+                if let existing = manager.collections.first(where: {
+                    $0.name.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) == cleanedSeries.lowercased()
+                }) {
+                    targetCollection = existing
+                } else {
+                    let newCol = PDFCollection(id: UUID(), name: cleanedSeries, icon: "books.vertical", color: "orange", creationDate: Date())
+                    manager.collections.append(newCol)
+                    targetCollection = newCol
+                }
             } else {
                 for pdf in pdfs {
                     manager.convertedPDFs.removeAll(where: { $0.url.lastPathComponent == pdf.url.lastPathComponent })
@@ -480,7 +507,7 @@ actor ImportOrchestrator {
 
             for var pdf in pdfs {
                 pdf.collectionId = targetCollection.id
-                pdf.metadata.series = seriesName
+                pdf.metadata.series = targetCollection.name
                 manager.convertedPDFs.removeAll(where: { $0.url.lastPathComponent == pdf.url.lastPathComponent })
                 manager.convertedPDFs.append(pdf)
                 // ✅ PERF: saveLibrary() removed from inside loop.
@@ -493,17 +520,22 @@ actor ImportOrchestrator {
     nonisolated func assignToSeries(_ pdf: ConvertedPDF, seriesName: String, manager: ConversionManager) {
         Task { @MainActor in
             let targetCollection: PDFCollection
-            if let existing = manager.collections.first(where: { $0.name == seriesName }) {
+            let cleanedSeries = SeriesNameParser.cleanFolderName(seriesName).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !cleanedSeries.isEmpty else { return }
+            
+            if let existing = manager.collections.first(where: {
+                $0.name.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) == cleanedSeries.lowercased()
+            }) {
                 targetCollection = existing
             } else {
-                let newCol = PDFCollection(id: UUID(), name: seriesName, icon: "books.vertical", color: "orange", creationDate: Date())
+                let newCol = PDFCollection(id: UUID(), name: cleanedSeries, icon: "books.vertical", color: "orange", creationDate: Date())
                 manager.collections.append(newCol)
                 targetCollection = newCol
             }
             
             if let index = manager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
                 manager.convertedPDFs[index].collectionId = targetCollection.id
-                manager.convertedPDFs[index].metadata.series = seriesName
+                manager.convertedPDFs[index].metadata.series = targetCollection.name
             }
             manager.saveLibrary()
         }
@@ -673,12 +705,20 @@ actor ImportOrchestrator {
         await MainActor.run {
             for var newPdf in newPDFs {
                 if let seriesName = newPdf.metadata.series, !seriesName.isEmpty {
-                    if let existingCol = manager.collections.first(where: { $0.name == seriesName }) {
-                        newPdf.collectionId = existingCol.id
-                    } else {
-                        let newCol = PDFCollection(id: UUID(), name: seriesName, icon: "folder", color: "blue", creationDate: Date())
-                        manager.collections.append(newCol)
-                        newPdf.collectionId = newCol.id
+                    let cleanedSeries = SeriesNameParser.cleanFolderName(seriesName).trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !cleanedSeries.isEmpty {
+                        let targetCol: PDFCollection
+                        if let existingCol = manager.collections.first(where: {
+                            $0.name.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) == cleanedSeries.lowercased()
+                        }) {
+                            targetCol = existingCol
+                        } else {
+                            let newCol = PDFCollection(id: UUID(), name: cleanedSeries, icon: "folder", color: "blue", creationDate: Date())
+                            manager.collections.append(newCol)
+                            targetCol = newCol
+                        }
+                        newPdf.collectionId = targetCol.id
+                        newPdf.metadata.series = targetCol.name
                     }
                 }
                 manager.convertedPDFs.removeAll(where: { $0.url.lastPathComponent == newPdf.url.lastPathComponent })
@@ -687,7 +727,7 @@ actor ImportOrchestrator {
             manager.saveLibrary()
             manager.backfillMissingThumbnails()
         }
-
+        await LibraryService.shared.runSmartGrouping()
     }
     
     nonisolated func detectContentType(from url: URL, mangaMode: Bool) -> ContentType {

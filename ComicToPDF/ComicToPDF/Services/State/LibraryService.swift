@@ -42,6 +42,29 @@ final class LibraryService: ObservableObject {
         }
     }
     
+    /// Runs background smart grouping on SwiftData, then reloads the items to update the UI.
+    func runSmartGrouping() async {
+        do {
+            // 1. Sync current memory state to background DB
+            let pdfsToSync = items
+            let colsToSync = collections
+            try await LibraryRepository.shared.sync(pdfs: pdfsToSync, collections: colsToSync)
+            
+            // 2. Perform background smart grouping
+            _ = try await LibraryRepository.shared.performSmartGrouping()
+            
+            // 3. Rollback main context to force SwiftData @Query to reload from SQLite
+            await MainActor.run {
+                InksyncProApp.sharedModelContainer.mainContext.rollback()
+            }
+            
+            // 4. Reload from SwiftData to memory to update UI
+            await loadLibrary()
+        } catch {
+            Logger.shared.log("LibraryService: smart grouping failed: \(error.localizedDescription)", category: "Library", type: .error)
+        }
+    }
+    
     /// Post-import helper to notify that the library changed.
     func notifyImportCompleted() {
         NotificationCenter.default.post(name: .libraryNeedsRescan, object: nil)
