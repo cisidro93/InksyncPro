@@ -318,6 +318,11 @@ actor ImportOrchestrator {
                     } else if let meta = overrideMeta {
                         smartDisplayName = meta.title
                         smartMetadata = meta
+                        if smartMetadata.series == nil || smartMetadata.series?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == true {
+                            smartMetadata.series = validParentFolder
+                        }
+                    } else {
+                        smartMetadata.series = validParentFolder
                     }
                     
                     // Fallback to smart filename extraction if series is still missing/empty
