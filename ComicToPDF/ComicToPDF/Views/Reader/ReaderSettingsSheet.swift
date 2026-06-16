@@ -10,7 +10,6 @@ struct ReaderSettingsSheet: View {
     @Binding var isVerticalScroll: Bool
 
     // Layout
-    @Binding var isDoublePageMode: Bool
     @Binding var autoLandscapeDualPage: Bool
 
     // Image Enhancement

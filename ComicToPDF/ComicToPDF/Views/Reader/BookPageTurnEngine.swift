@@ -53,7 +53,7 @@ struct BookFlipGesture: View {
 
                 content(currentIndex)
                     .frame(width: geo.size.width, height: geo.size.height)
-                    .drawingGroup() // hardware accelerated rasterization for smooth 3D transforms
+                    .id("curl-front-\(currentIndex)")
                     .rotation3DEffect(
                         .degrees(isAnimating ? 0 : rotation),
                         axis: (x: 0, y: 1, z: 0),

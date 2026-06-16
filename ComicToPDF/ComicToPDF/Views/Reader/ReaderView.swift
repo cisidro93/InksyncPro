@@ -31,7 +31,6 @@ struct ReaderView: View {
 
     // Advanced Reader Features
     @AppStorage("isVerticalScroll") private var isVerticalScroll = false
-    @AppStorage("isDoublePageMode") private var isDoublePageMode = false
     @AppStorage("autoLandscapeDualPage") private var autoLandscapeDualPage = true
     @State private var isDrawingMode = false
     @State private var canvasView = PKCanvasView()
@@ -305,7 +304,7 @@ struct ReaderView: View {
                 Button("Go") {
                     if let n = Int(jumpToPageText), n >= 1, n <= pages.count {
                         let rawIndex = n - 1
-                        let isDual = (isDoublePageMode || autoLandscapeDualPage) && geo.size.width > geo.size.height
+                        let isDual = autoLandscapeDualPage && geo.size.width > geo.size.height
                         currentPageIndex = isDual
                             ? PageBufferManager.canonicalLeadIndex(for: rawIndex, isMangaMode: isMangaMode)
                             : rawIndex
@@ -329,7 +328,6 @@ struct ReaderView: View {
                 ReaderSettingsSheet(
                     isMangaMode: $isMangaMode,
                     isVerticalScroll: $isVerticalScroll,
-                    isDoublePageMode: $isDoublePageMode,
                     autoLandscapeDualPage: $autoLandscapeDualPage,
                     autoContrastLevel: $autoContrastLevel,
                     smartSharpen: $smartSharpen,
@@ -370,7 +368,7 @@ struct ReaderView: View {
         if !isLoading && errorMessage == nil {
             let pageText: String = {
                 if pages.isEmpty { return "" }
-                let isDual = (isDoublePageMode || autoLandscapeDualPage) && geo.size.width > geo.size.height
+                let isDual = autoLandscapeDualPage && geo.size.width > geo.size.height
                 if isDual && currentPageIndex > 0 {
                     let lead = PageBufferManager.canonicalLeadIndex(for: currentPageIndex, isMangaMode: isMangaMode)
                     let right = min(lead + 1, pages.count - 1)
@@ -393,7 +391,7 @@ struct ReaderView: View {
                     get: { pages.isEmpty ? 0 : Double(currentPageIndex) / Double(max(1, pages.count - 1)) },
                     set: { val in
                         let raw = Int((val * Double(max(1, pages.count - 1))).rounded())
-                        let isDual = isDoublePageMode || (autoLandscapeDualPage && geo.size.width > geo.size.height)
+                        let isDual = autoLandscapeDualPage && geo.size.width > geo.size.height
                         let snapped = isDual
                             ? PageBufferManager.canonicalLeadIndex(for: raw, isMangaMode: isMangaMode)
                             : raw
@@ -468,8 +466,8 @@ struct ReaderView: View {
                             if fileURL.pathExtension.lowercased() != "pdf" {
                                 if !pages.isEmpty {
                                     // ⚠️  Do NOT pass isDoublePageOverride here.
-                                    // PPLReaderView already reads @AppStorage("isDoublePageMode")
-                                    // internally. Passing it as a prop AND having the internal
+                                     // PPLReaderView already reads @AppStorage("autoLandscapeDualPage")
+                                     // internally. Passing it as a prop AND having the internal
                                     // observer both fire setupBuffer on toggle creates a race:
                                     // two concurrent setupDirectArchive() calls clear and repopulate
                                     // currentImage at the same time → MetalCanvasView GPU crash.
@@ -494,7 +492,7 @@ struct ReaderView: View {
                                     totalPages: $pages,
                                     isVerticalScroll: isVerticalScroll,
                                     isMangaMode: isMangaMode,
-                                    isDoublePageMode: isDoublePageMode || (autoLandscapeDualPage && geo.size.width > geo.size.height),
+                                    isDoublePageMode: autoLandscapeDualPage && geo.size.width > geo.size.height,
                                     loadedDocument: $loadedPDFDocument,
                                     onSingleTap: {
                                         withAnimation(.easeInOut(duration: 0.2)) { isToolbarVisible.toggle() }
@@ -549,7 +547,7 @@ struct ReaderView: View {
                 if !isVerticalScroll && !pages.isEmpty && !isLoading && !isToolbarVisible {
                     VStack {
                         Spacer()
-                        let isDual = (isDoublePageMode || autoLandscapeDualPage) && geo.size.width > geo.size.height
+                        let isDual = autoLandscapeDualPage && geo.size.width > geo.size.height
                         let pillText: String = {
                             if isDual && currentPageIndex > 0 {
                                 let lead = PageBufferManager.canonicalLeadIndex(for: currentPageIndex, isMangaMode: isMangaMode)
