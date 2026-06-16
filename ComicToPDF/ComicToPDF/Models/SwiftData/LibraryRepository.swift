@@ -1,0 +1,244 @@
+import Foundation
+import SwiftData
+
+/// A Swift 6 ModelActor executing database operations on a thread-isolated background context.
+@ModelActor
+public actor LibraryModelActor {
+    
+    /// Fetches all documents, re-anchors sandboxed paths, and prunes orphaned metadata (annotations, collections, memories).
+    public func fetchAllDocuments() throws -> [SDConvertedPDF] {
+        let descriptor = FetchDescriptor<SDConvertedPDF>()
+        let documents = try modelContext.fetch(descriptor)
+        
+        let fileManager = FileManager.default
+        let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+        let docsRoot = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first
+        
+        let vaultRoot = appSupport?.appendingPathComponent("InksyncVault", isDirectory: true)
+        let inboxRoot = appSupport?.appendingPathComponent("InksyncVault/Inbox", isDirectory: true)
+        let possibleRoots = [vaultRoot, inboxRoot, docsRoot].compactMap { $0 }
+        
+        var didUpdate = false
+        var validDocs: [SDConvertedPDF] = []
+        var ghostIDs: Set<UUID> = []
+        
+        let currentSandboxPath = appSupport?.path ?? ""
+        let lastSandboxPath = UserDefaults.standard.string(forKey: "lastSandboxDocumentsPath")
+        let isNewSandbox = !currentSandboxPath.isEmpty && lastSandboxPath != currentSandboxPath
+        
+        for doc in documents {
+            // 1. If physical file exists, path is already correct
+            if fileManager.fileExists(atPath: doc.url.path) {
+                validDocs.append(doc)
+                continue
+            }
+            
+            // 2. Ignore re-anchoring for external/linked files
+            if let data = doc.sourceModeData, let mode = try? JSONDecoder().decode(SourceMode.self, from: data) {
+                if mode.isLinked || mode.isCloud {
+                    validDocs.append(doc)
+                    continue
+                }
+            }
+            
+            // 3. Try re-anchoring by filename across all sandbox roots
+            let filename = doc.url.lastPathComponent
+            var foundReanchor = false
+            for root in possibleRoots {
+                let checkURL = root.appendingPathComponent(filename)
+                if fileManager.fileExists(atPath: checkURL.path) {
+                    doc.url = checkURL
+                    didUpdate = true
+                    validDocs.append(doc)
+                    foundReanchor = true
+                    break
+                }
+            }
+            
+            if !foundReanchor {
+                // File genuinely missing — mark as ghost and delete
+                ghostIDs.insert(doc.id)
+                modelContext.delete(doc)
+                didUpdate = true
+            }
+        }
+        
+        // ── Cascade-delete annotations that belonged to ghost books ────────
+        if !ghostIDs.isEmpty {
+            let annotations = (try? modelContext.fetch(FetchDescriptor<SDAnnotation>())) ?? []
+            for annotation in annotations {
+                if ghostIDs.contains(annotation.pdfID) {
+                    modelContext.delete(annotation)
+                }
+            }
+        }
+        
+        // ── Prune orphaned SDPDFCollection series shells ─────────────────────
+        let sdCols = try modelContext.fetch(FetchDescriptor<SDPDFCollection>())
+        let survivingCollectionIDs = Set(validDocs.compactMap { $0.collectionId })
+        var validCols: [SDPDFCollection] = []
+        for col in sdCols {
+            if survivingCollectionIDs.contains(col.id) {
+                validCols.append(col)
+            } else {
+                modelContext.delete(col)
+                didUpdate = true
+            }
+        }
+        
+        // ── Prune orphaned SDSeriesMemory records ─────────────────────────
+        let liveSeriesNames = Set(validCols.map { $0.name.lowercased().trimmingCharacters(in: .whitespaces) })
+        let allSeriesMemory = (try? modelContext.fetch(FetchDescriptor<SDSeriesMemory>())) ?? []
+        for memory in allSeriesMemory {
+            let normalised = memory.seriesNameNormalized.lowercased().trimmingCharacters(in: .whitespaces)
+            if !liveSeriesNames.contains(normalised) {
+                modelContext.delete(memory)
+                didUpdate = true
+            }
+        }
+        
+        if didUpdate {
+            try? modelContext.save()
+        }
+        
+        if isNewSandbox {
+            UserDefaults.standard.set(currentSandboxPath, forKey: "lastSandboxDocumentsPath")
+        }
+        
+        return validDocs
+    }
+    
+    /// Fetches all collection series shells.
+    public func fetchAllCollections() throws -> [SDPDFCollection] {
+        let descriptor = FetchDescriptor<SDPDFCollection>()
+        return try modelContext.fetch(descriptor)
+    }
+    
+    /// Fast batch insert path for newly imported PDF records.
+    public func batchInsertPDFs(newPDFs: [ConvertedPDF]) throws {
+        let descriptor = FetchDescriptor<SDConvertedPDF>()
+        let existingIDs = Set((try? modelContext.fetch(descriptor))?.map { $0.id } ?? [])
+        
+        var inserted = 0
+        for pdf in newPDFs where !existingIDs.contains(pdf.id) {
+            let doc = SDConvertedPDF(
+                id: pdf.id, name: pdf.name, url: pdf.url,
+                pageCount: pdf.pageCount, fileSize: pdf.fileSize,
+                metadata: pdf.metadata, collectionId: pdf.collectionId,
+                isFavorite: pdf.isFavorite, isPrivate: pdf.isPrivate,
+                coverImageData: nil,
+                contentType: pdf.contentType, chapters: pdf.chapters,
+                addedByMode: pdf.addedByMode, sourceMode: pdf.sourceMode
+            )
+            modelContext.insert(doc)
+            inserted += 1
+        }
+        
+        if inserted > 0 {
+            try modelContext.save()
+        }
+    }
+    
+    /// Synchronizes files and collections to SwiftData, pruning deleted records.
+    public func syncToSwiftData(pdfs: [ConvertedPDF], collections: [PDFCollection]) throws {
+        // 1. Sync Collections
+        let existingCols = try modelContext.fetch(FetchDescriptor<SDPDFCollection>())
+        let colDict = Dictionary(grouping: existingCols, by: { $0.id }).compactMapValues { $0.first }
+        
+        for col in collections {
+            if let existing = colDict[col.id] {
+                existing.name = col.name
+                existing.icon = col.icon
+                existing.color = col.color
+                existing.explicitCoverFileID = col.explicitCoverFileID
+            } else {
+                let newCol = SDPDFCollection(
+                    id: col.id, name: col.name, icon: col.icon,
+                    color: col.color, creationDate: col.creationDate,
+                    explicitCoverFileID: col.explicitCoverFileID
+                )
+                modelContext.insert(newCol)
+            }
+        }
+        
+        // 2. Sync PDFs
+        let existingPDFs = try modelContext.fetch(FetchDescriptor<SDConvertedPDF>())
+        let pdfDict = Dictionary(grouping: existingPDFs, by: { $0.id }).compactMapValues { $0.first }
+        
+        for pdf in pdfs {
+            if let existing = pdfDict[pdf.id] {
+                if existing.name != pdf.name { existing.name = pdf.name }
+                if existing.url != pdf.url { existing.url = pdf.url }
+                if existing.pageCount != pdf.pageCount { existing.pageCount = pdf.pageCount }
+                if existing.fileSize != pdf.fileSize { existing.fileSize = pdf.fileSize }
+                if existing.metadata != pdf.metadata { existing.metadata = pdf.metadata }
+                if existing.collectionId != pdf.collectionId { existing.collectionId = pdf.collectionId }
+                if existing.isFavorite != pdf.isFavorite { existing.isFavorite = pdf.isFavorite }
+                if existing.isPrivate != pdf.isPrivate { existing.isPrivate = pdf.isPrivate }
+                if existing.contentType != pdf.contentType { existing.contentType = pdf.contentType }
+                if existing.addedByMode != pdf.addedByMode { existing.addedByMode = pdf.addedByMode }
+                if let encoded = try? JSONEncoder().encode(pdf.sourceMode), existing.sourceModeData != encoded {
+                    existing.sourceModeData = encoded
+                }
+            } else {
+                let doc = SDConvertedPDF(
+                    id: pdf.id, name: pdf.name, url: pdf.url,
+                    pageCount: pdf.pageCount, fileSize: pdf.fileSize,
+                    metadata: pdf.metadata, collectionId: pdf.collectionId,
+                    isFavorite: pdf.isFavorite, isPrivate: pdf.isPrivate,
+                    coverImageData: pdf.coverImageData, contentType: pdf.contentType,
+                    chapters: pdf.chapters, addedByMode: pdf.addedByMode,
+                    sourceMode: pdf.sourceMode
+                )
+                modelContext.insert(doc)
+            }
+        }
+        
+        // 3. Prune deleted PDFs
+        let validPDFIDs = Set(pdfs.map { $0.id })
+        for existing in existingPDFs where !validPDFIDs.contains(existing.id) {
+            modelContext.delete(existing)
+        }
+        
+        // 4. Prune deleted collections
+        let validColIDs = Set(collections.map { $0.id })
+        for existingCol in existingCols where !validColIDs.contains(existingCol.id) {
+            modelContext.delete(existingCol)
+        }
+        
+        try modelContext.save()
+    }
+}
+
+/// The main application coordinator for library database management.
+public final class LibraryRepository: ObservableObject {
+    public static let shared = LibraryRepository(container: InksyncProApp.sharedModelContainer)
+    
+    private let modelContainer: ModelContainer
+    private let actor: LibraryModelActor
+    
+    public init(container: ModelContainer) {
+        self.modelContainer = container
+        self.actor = LibraryModelActor(modelContainer: container)
+    }
+    
+    /// Asynchronously fetches all library items and collections from SwiftData background context.
+    public func loadLibrary() async throws -> ([ConvertedPDF], [PDFCollection]) {
+        let sdDocs = try await actor.fetchAllDocuments()
+        let sdCols = try await actor.fetchAllCollections()
+        
+        let pdfs = sdDocs.map { $0.toDTO() }
+        let cols = sdCols.map { $0.toDTO() }
+        return (pdfs, cols)
+    }
+    
+    /// Runs direct background batch insertion for newly imported items.
+    public func batchInsert(newPDFs: [ConvertedPDF]) async throws {
+        try await actor.batchInsertPDFs(newPDFs: newPDFs)
+    }
+    
+    /// Synchronizes both collections and files on a background model context.
+    public func sync(pdfs: [ConvertedPDF], collections: [PDFCollection]) async throws {
+        try await actor.syncToSwiftData(pdfs: pdfs, collections: collections)
+    }
+}

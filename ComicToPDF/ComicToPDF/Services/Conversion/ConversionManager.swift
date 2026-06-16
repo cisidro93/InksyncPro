@@ -5,8 +5,14 @@ import Combine
 
 @MainActor
 class ConversionManager: ObservableObject {
-    @Published var convertedPDFs: [ConvertedPDF] = []
-    @Published var collections: [PDFCollection] = []
+    var convertedPDFs: [ConvertedPDF] {
+        get { LibraryService.shared.items }
+        set { LibraryService.shared.items = newValue }
+    }
+    var collections: [PDFCollection] {
+        get { LibraryService.shared.collections }
+        set { LibraryService.shared.collections = newValue }
+    }
     // MARK: - App Config Shifted to AppSettingsManager
     
     // MARK: - Series Grouping Prompt (Layer 3)
@@ -129,10 +135,13 @@ class ConversionManager: ObservableObject {
                 self?.objectWillChange.send()
             }
 
-        // PERF M2: Rebuild visible/pro caches whenever the library array changes.
-        librarySubscription = $convertedPDFs
+        // PERF M2: Rebuild visible/pro caches and relay when library arrays change.
+        librarySubscription = Publishers.CombineLatest(LibraryService.shared.$items, LibraryService.shared.$collections)
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in self?.rebuildVisiblePDFs() }
+            .sink { [weak self] _ in
+                self?.rebuildVisiblePDFs()
+                self?.objectWillChange.send()
+            }
 
         // ── Cloud Cover Ready: wire CloudCoverExtractor → thumbnailCache ──────
         // CloudCoverExtractor writes covers to disk but has no reference to

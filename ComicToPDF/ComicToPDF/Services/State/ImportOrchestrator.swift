@@ -258,14 +258,8 @@ actor ImportOrchestrator {
 
                 do {
                     try autoreleasepool {
-                        if fileManager.fileExists(atPath: destURL.path) { try fileManager.removeItem(at: destURL) }
-                        
-                        // Aggressive APFS Inode Optimization (Move instead of Copy for Staged Items)
-                        if url.path.contains("InksyncStaging_") {
-                            try fileManager.moveItem(at: url, to: destURL)
-                        } else {
-                            try fileManager.copyItem(at: url, to: destURL)
-                        }
+                        let useMove = url.path.contains("InksyncStaging_")
+                        try AtomicFileCoordinator.importFile(from: url, to: destURL, useMoveIfStaged: useMove)
                         PhysicalFileSystemRouter.excludeFromBackup(at: destURL)
                     }
                     
@@ -454,7 +448,7 @@ actor ImportOrchestrator {
         }
         
         // Fast-path SwiftData insert for ONLY the new records, now with collectionId and series metadata fully assigned.
-        await MigrationService.shared.batchInsertToSwiftData(newPDFs: finalImportedPDFs)
+        try? await LibraryRepository.shared.batchInsert(newPDFs: finalImportedPDFs)
 
         // ✅ Import History: log each successfully imported file
         for pdf in finalImportedPDFs {

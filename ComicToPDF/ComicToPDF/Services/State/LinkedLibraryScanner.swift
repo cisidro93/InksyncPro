@@ -364,7 +364,7 @@ final class LinkedLibraryScanner: ObservableObject {
             }
 
             do {
-                try FileManager.default.copyItem(at: sourceURL, to: destURL)
+                try AtomicFileCoordinator.importFile(from: sourceURL, to: destURL, useMoveIfStaged: false)
                 savedCount += 1
             } catch {
                 Logger.shared.log("saveFilesToDrive: copy failed for '\(pdf.name)': \(error.localizedDescription)", category: "Drive", type: .warning)
@@ -398,14 +398,9 @@ final class LinkedLibraryScanner: ObservableObject {
 
             let destURL = targetFolderURL.appendingPathComponent(pdf.url.lastPathComponent)
             do {
-                try FileManager.default.copyItem(at: pdf.url, to: destURL)
-                guard FileManager.default.fileExists(atPath: destURL.path) else {
-                    Logger.shared.log("LinkedLibraryScanner: Copy verification failed for \(pdf.name) — skipping", category: "Drive", type: .warning)
-                    continue
-                }
+                try AtomicFileCoordinator.importFile(from: pdf.url, to: destURL, useMoveIfStaged: false)
                 copiedPairs.append((pdf.url, destURL, pdf.id))
             } catch {
-                try? FileManager.default.removeItem(at: destURL)
                 Logger.shared.log("LinkedLibraryScanner: Offload copy failed for \(pdf.name): \(error.localizedDescription)", category: "Drive", type: .warning)
             }
         }
@@ -464,10 +459,7 @@ final class LinkedLibraryScanner: ObservableObject {
             do {
                 try await BookmarkResolver.shared.withAccess(bookmarkData) { driveURL in
                     let destURL = vault.appendingPathComponent(driveURL.lastPathComponent)
-                    if FileManager.default.fileExists(atPath: destURL.path) {
-                        try FileManager.default.removeItem(at: destURL)
-                    }
-                    try FileManager.default.copyItem(at: driveURL, to: destURL)
+                    try AtomicFileCoordinator.importFile(from: driveURL, to: destURL, useMoveIfStaged: false)
                     PhysicalFileSystemRouter.excludeFromBackup(at: destURL)
 
                     await MainActor.run {
