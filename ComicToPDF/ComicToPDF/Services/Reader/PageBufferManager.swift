@@ -607,7 +607,8 @@ class PageBufferManager: ObservableObject {
                                 let archive = try Archive(url: archiveURL, accessMode: .read)
                                 guard let entry = archive[entryPath] else { return }
                                 var data = Data()
-                                _ = try archive.extract(entry) { data.append($0) }
+                                data.reserveCapacity(Int(entry.uncompressedSize))
+                                _ = try archive.extract(entry, bufferSize: 262144) { data.append($0) }
                                 guard !cancelFlag.isCancelled else { return }
 
                                 if let source = CGImageSourceCreateWithData(data as CFData, nil) {

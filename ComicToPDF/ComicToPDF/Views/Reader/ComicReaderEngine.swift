@@ -374,7 +374,7 @@ final class ComicImageCache: ObservableObject {
         scale: CGFloat
     ) async -> UIImage? {
         if isPDF {
-            return await PDFRenderActor.shared.renderPage(at: index, scale: scale * 1.5)
+            return await PDFRenderActor.shared.renderPage(at: index, scale: scale)
         } else if isPreExtracted {
             guard index < extractedImageURLs.count else { return nil }
             let imageURL = extractedImageURLs[index]
@@ -787,6 +787,12 @@ struct ComicReaderEngine: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("Reader_PrevPage"))) { _ in
             prevPage()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .comicImageCacheImageLoaded)) { notification in
+            guard let userInfo = notification.userInfo,
+                  let loadedIndex = userInfo["index"] as? Int,
+                  loadedIndex == currentIndex else { return }
+            extractAmbientColor(for: currentIndex)
         }
     } // closes GeometryReader
 } // end body

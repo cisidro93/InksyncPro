@@ -19,7 +19,8 @@ public actor ArchiveManager {
             throw NSError(domain: "ArchiveManager", code: 404, userInfo: [NSLocalizedDescriptionKey: "Entry not found in archive: \(path)"])
         }
         var data = Data()
-        _ = try archive.extract(entry, bufferSize: 32768) { chunk in
+        data.reserveCapacity(Int(entry.uncompressedSize))
+        _ = try archive.extract(entry, bufferSize: 262144) { chunk in
             data.append(chunk)
         }
         return data
