@@ -44,17 +44,22 @@ struct MetadataHeuristics {
         return detected.issueNumberString
     }
     
-    /// Intelligently routes manga vs western comics based on heuristic file names
+    /// Intelligently routes manga vs western comics based on heuristic file names and path structures
     static func detectAsymmetricContentType(url: URL) -> ContentType {
         let ext = url.pathExtension.lowercased()
         if ext == "pdf" || ext == "epub" { return .book }
         
-        // Scanlation signatures
+        let pathLower = url.path.lowercased()
         let nameLower = url.lastPathComponent.lowercased()
         let parentLower = url.deletingLastPathComponent().lastPathComponent.lowercased()
-        let mangaKeywords = ["[raw]", "[ch.", "ch.", "manhwa", "manhua", "manga", "scanlation", "oneshot", "doujin"]
         
-        if mangaKeywords.contains(where: { nameLower.contains($0) || parentLower.contains($0) }) {
+        // Scanlation/Manga signatures
+        let mangaKeywords = ["[raw]", "[ch.", "ch.", "manhwa", "manhua", "manga", "scanlation", "oneshot", "doujin", "tankobon", "volume", "chapter", "shonen", "shoujo", "seinen", "josei"]
+        
+        if mangaKeywords.contains(where: { nameLower.contains($0) || parentLower.contains($0) }) ||
+           pathLower.contains("/manga/") ||
+           pathLower.contains("/manga") ||
+           url.pathComponents.map({ $0.lowercased() }).contains("manga") {
             return .manga
         }
         

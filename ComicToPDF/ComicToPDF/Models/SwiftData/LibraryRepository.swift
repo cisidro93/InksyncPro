@@ -124,6 +124,51 @@ actor LibraryModelActor {
                 didUpdate = true
             }
         }
+
+        // ── One-time self-healing pass for series names and content type classification ──
+        for doc in validDocs {
+            // 1. Strip leading sequential prefixes from series name
+            if let series = doc.metadata.series, !series.isEmpty {
+                let cleaned = series.replacingOccurrences(of: #"^(?:0\d+|\d{1,2})[\s_.-]+(?=[a-zA-Z])"#, with: "", options: .regularExpression)
+                                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                if cleaned != series {
+                    doc.metadata.series = cleaned
+                    didUpdate = true
+                }
+            }
+            
+            // 2. Heal content type: if it's a comic but matches manga signatures, re-classify
+            let currentType = doc.contentType
+            var inferredType = currentType
+            
+            let urlPath = doc.url.path.lowercased()
+            let filename = doc.url.lastPathComponent.lowercased()
+            let mangaKeywords = ["[raw]", "[ch.", "ch.", "manhwa", "manhua", "manga", "scanlation", "oneshot", "doujin", "tankobon", "volume", "chapter", "shonen", "shoujo", "seinen", "josei"]
+            
+            let isMangaMetadata = doc.metadata.isManga ?? false
+            let hasMangaInPath = urlPath.contains("/manga/") || urlPath.contains("/manga") || doc.url.pathComponents.map({ $0.lowercased() }).contains("manga")
+            let hasMangaInFilename = mangaKeywords.contains(where: { filename.contains($0) })
+            
+            if isMangaMetadata || hasMangaInPath || hasMangaInFilename {
+                inferredType = .manga
+            }
+            
+            if inferredType != currentType {
+                doc.contentType = inferredType
+                didUpdate = true
+            }
+        }
+        
+        // Strip sequential prefixes from existing collection names
+        for col in sdCols {
+            let name = col.name
+            let cleaned = name.replacingOccurrences(of: #"^(?:0\d+|\d{1,2})[\s_.-]+(?=[a-zA-Z])"#, with: "", options: .regularExpression)
+                              .trimmingCharacters(in: .whitespacesAndNewlines)
+            if cleaned != name {
+                col.name = cleaned
+                didUpdate = true
+            }
+        }
         
         // ── Prune orphaned SDPDFCollection series shells ─────────────────────
         let survivingCollectionIDs = Set(validDocs.compactMap { $0.collectionId })

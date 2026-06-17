@@ -72,32 +72,30 @@ actor LibraryScanner {
 
                 let fileSize = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
 
-                // Infer content type from extension:
-                // • EPUB → always a book (e-reader format)
-                // • PDF  → book by default (most PDFs are documents/books, not comics)
-                // • CBZ/CBR/CBT/ZIP → comic (these are the canonical comic archive formats)
-                let inferredContentType: ContentType
-                if fileURL.path.contains("/Merged/") {
-                    if filename.localizedCaseInsensitiveContains("manga") {
-                        inferredContentType = .manga
-                    } else {
-                        inferredContentType = .comic
-                    }
-                } else {
-                    switch ext {
-                    case "epub", "pdf":
-                        inferredContentType = .book
-                    case "cbz", "cbr", "cbt", "zip":
-                        inferredContentType = .comic
-                    default:
-                        inferredContentType = .comic
+                let inferredContentType = MetadataHeuristics.detectAsymmetricContentType(url: fileURL)
+
+                let parentName = fileURL.deletingLastPathComponent().lastPathComponent
+                let invalidParents = ["documents", "inbox", "tmp", "caches", "file provider storage", "downloads", "inksyncstaging_", "folder_spider_", "folderspider_"]
+                var seriesName: String? = nil
+                if !invalidParents.contains(where: { parentName.lowercased().hasPrefix($0) }) && parentName.count > 2 && UUID(uuidString: parentName) == nil {
+                    seriesName = parentName
+                }
+
+                var metadata = PDFMetadata(title: filename)
+                metadata.series = seriesName
+                
+                // Fallback to smart filename extraction if series is still missing/empty
+                if metadata.series == nil || metadata.series?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == true {
+                    let parsedSeries = SeriesNameParser.cleanFolderName(MetadataHeuristics.cleanFilename(filename))
+                    if !parsedSeries.isEmpty {
+                        metadata.series = parsedSeries
                     }
                 }
 
                 var newPDF = ConvertedPDF(
                     name: filename, url: fileURL,
                     pageCount: 0, fileSize: fileSize,
-                    metadata: PDFMetadata(title: filename),
+                    metadata: metadata,
                     contentType: inferredContentType
                 )
                 newPDF.addedByMode = addedByMode ?? .pro

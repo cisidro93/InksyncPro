@@ -98,7 +98,7 @@ actor ImportOrchestrator {
                     var smartMetadata = PDFMetadata(title: fileName)
                     smartMetadata.series = seriesName
                     
-                    let cType = MetadataHeuristics.detectAsymmetricContentType(url: destURL)
+                    let cType = MetadataHeuristics.detectAsymmetricContentType(url: fileURL)
                     
                     // FIX: Single ZIP open — previously called fetchNonDestructiveMetadata AND
                     // ComicInfoParser.parse separately, each re-opening the archive.
@@ -155,7 +155,7 @@ actor ImportOrchestrator {
                         pageCount: 0,
                         fileSize: size,
                         metadata: smartMetadata,
-                        contentType: cType
+                        contentType: (smartMetadata.isManga ?? false) ? .manga : cType
                     )
                     if pdf.contentType == .hybrid || pdf.contentType == .book {
                         pdf.documentSubtype = await self.detectDocumentSubtype(url: destURL, fileSize: size)
@@ -273,7 +273,7 @@ actor ImportOrchestrator {
                         size = (destAttrs?[.size] as? Int64) ?? 0
                     }
 
-                    let cType = MetadataHeuristics.detectAsymmetricContentType(url: destURL)
+                    let cType = MetadataHeuristics.detectAsymmetricContentType(url: url)
 
                     var smartDisplayName = fileName
                     var smartMetadata = PDFMetadata(title: fileName)
@@ -359,7 +359,7 @@ actor ImportOrchestrator {
                         pageCount: 0,
                         fileSize: size,
                         metadata: smartMetadata,
-                        contentType: cType
+                        contentType: (smartMetadata.isManga ?? false) ? .manga : cType
                     )
                     if pdf.contentType == .hybrid || pdf.contentType == .book {
                         pdf.documentSubtype = await self.detectDocumentSubtype(url: destURL, fileSize: size)
@@ -659,7 +659,7 @@ actor ImportOrchestrator {
                                 }
                             }
                             
-                            let cType = MetadataHeuristics.detectAsymmetricContentType(url: destURL)
+                            let cType = MetadataHeuristics.detectAsymmetricContentType(url: fileURL)
                             
                             let pdfID = UUID()
                             // Cover extraction intentionally deferred: extracting covers inline for
@@ -674,7 +674,7 @@ actor ImportOrchestrator {
                                 pageCount: 0,
                                 fileSize: size,
                                 metadata: metadata,
-                                contentType: cType
+                                contentType: (metadata.isManga ?? false) ? .manga : cType
                             )
                             if pdf.contentType == .hybrid || pdf.contentType == .book {
                                 pdf.documentSubtype = await self.detectDocumentSubtype(url: destURL, fileSize: size)

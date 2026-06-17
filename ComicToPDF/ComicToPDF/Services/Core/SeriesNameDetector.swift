@@ -33,6 +33,10 @@ struct SeriesNameDetector {
         cleaned = cleaned.replacingOccurrences(of: #"(?i)\s*\(?digital|webrip|hd|scan\)?\s*"#, with: " ", options: .regularExpression)
                          .trimmingCharacters(in: .whitespaces)
 
+        // Strip leading sequential/ordering prefixes like "01 ", "002 - ", "3. "
+        cleaned = cleaned.replacingOccurrences(of: #"^(?:0\d+|\d{1,2})[\s_.-]+(?=[a-zA-Z])"#, with: "", options: .regularExpression)
+                         .trimmingCharacters(in: .whitespaces)
+
         // --- Pass 1: Explicit keywords (highest confidence) ---
         let keywordPatterns: [(pattern: String, confidence: DetectionResult.Confidence)] = [
             // Multilingual Volume patterns (v/vol/volume/tome/tomo/band/bd)
