@@ -92,11 +92,46 @@ actor LibraryScanner {
                     }
                 }
 
+                var finalContentType = inferredContentType
+                let isArchive = ["cbz", "zip"].contains(ext)
+                if isArchive {
+                    if let parsedInfo = ComicInfoParser.parse(from: fileURL) {
+                        metadata.isManga = parsedInfo.manga
+                        if parsedInfo.manga {
+                            finalContentType = .manga
+                        }
+                        if let parsedSeries = parsedInfo.series, !parsedSeries.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            metadata.series = parsedSeries
+                        }
+                        if let parsedTitle = parsedInfo.title, !parsedTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            metadata.title = parsedTitle
+                        }
+                        if let parsedNum = parsedInfo.number {
+                            metadata.issueNumber = parsedNum
+                        }
+                        if let parsedVolume = parsedInfo.volume {
+                            metadata.volume = String(parsedVolume)
+                        }
+                        if let writer = parsedInfo.writer {
+                            metadata.writer = writer
+                        }
+                        if let publisher = parsedInfo.publisher {
+                            metadata.publisher = publisher
+                        }
+                        if let summary = parsedInfo.summary {
+                            metadata.summary = summary
+                        }
+                        for tag in parsedInfo.tags {
+                            if !metadata.tags.contains(tag) { metadata.tags.append(tag) }
+                        }
+                    }
+                }
+
                 var newPDF = ConvertedPDF(
                     name: filename, url: fileURL,
                     pageCount: 0, fileSize: fileSize,
                     metadata: metadata,
-                    contentType: inferredContentType
+                    contentType: finalContentType
                 )
                 newPDF.addedByMode = addedByMode ?? .pro
                 newPDFs.append(newPDF)
@@ -110,6 +145,7 @@ actor LibraryScanner {
                 Logger.shared.log("Library Scanned: Found \(finalNewPDFs.count) new files (mode: \(addedByMode?.rawValue ?? "Pro"))", category: "Library")
                 manager.saveLibrary()
             }
+            await LibraryService.shared.runSmartGrouping()
         }
 
         // ── Cover + page-count backfill ──────────────────────────────────────

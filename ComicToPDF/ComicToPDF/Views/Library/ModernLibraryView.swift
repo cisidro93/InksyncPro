@@ -12,9 +12,6 @@ struct ModernLibraryView: View {
     @StateObject private var viewModel = LibraryViewModel()
     @ObservedObject private var ledger = ConversionLedger.shared
     
-    @Query(sort: \SDConvertedPDF.lastModified, order: .reverse) private var swiftDataPDFs: [SDConvertedPDF]
-    @Query private var swiftDataCollections: [SDPDFCollection]
-    
     @Binding var selectedPDF: ConvertedPDF?
     @Binding var isBatchMode: Bool
     @Binding var multiSelection: Set<UUID>
@@ -103,20 +100,8 @@ struct ModernLibraryView: View {
     @State private var cachedReviewCount: Int = 0
 
     private func rebuildNativeCache() {
-        let mapped: [ConvertedPDF]
-        let mappedCols: [PDFCollection]
-        
-        if ImportMonitorManager.shared.isImporting {
-            mapped = conversionManager.convertedPDFs
-            mappedCols = conversionManager.collections
-        } else {
-            mapped = swiftDataPDFs.map { $0.toDTO() }
-            mappedCols = swiftDataCollections.map { $0.toDTO() }
-            
-            // Propagate updates to ConversionManager to keep background components (like SmartList resolution) in sync
-            conversionManager.convertedPDFs = mapped
-            conversionManager.collections = mappedCols
-        }
+        let mapped = conversionManager.convertedPDFs
+        let mappedCols = conversionManager.collections
         
         cachedVisiblePDFs = settingsManager.isVaultUnlocked ? mapped : mapped.filter { !$0.isPrivate }
         cachedCollections = mappedCols
@@ -152,7 +137,7 @@ struct ModernLibraryView: View {
             // PERF D-C1 boot fix: seed the cache before the view fully renders
             // so notification-based lookups (Resume, Handoff) fire correctly even
             // if onAppear hasn't run yet (e.g. app launch via Spotlight/widget).
-            .task(id: swiftDataPDFs.count) {
+            .task(id: conversionManager.convertedPDFs.count) {
                 if cachedVisiblePDFs.isEmpty { rebuildNativeCache() }
             }
             .focusable()
@@ -479,12 +464,12 @@ struct ModernLibraryView: View {
                 isLibraryFocused = true
 
                 // PERF D-C1: debounce absorbs page-turn bursts; rebuilds DTO map once per 250ms
-                viewModel.swiftDataCancellable = viewModel.swiftDataDidChange
+                viewModel.swiftDataCancellable = conversionManager.objectWillChange
                     .debounce(for: .milliseconds(250), scheduler: RunLoop.main)
-                    .sink { [weak viewModel] in
-                        guard let vm = viewModel else { return }
+                    .sink { [weak self] _ in
+                        guard let self = self else { return }
                         self.rebuildNativeCache()
-                        vm.updateLibraryItemsCache(pdfs: self.cachedVisiblePDFs, collections: self.cachedCollections, sortOption: self.sortOption)
+                        self.viewModel.updateLibraryItemsCache(pdfs: self.cachedVisiblePDFs, collections: self.cachedCollections, sortOption: self.sortOption)
                     }
             }
             .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
@@ -493,9 +478,6 @@ struct ModernLibraryView: View {
                     isLandscape = size.width > size.height
                 }
             }
-            // Raw SwiftData row changes: send through the debounced publisher
-            // instead of calling updateLibraryItemsCache directly.
-            .onChange(of: swiftDataPDFs) { viewModel.notifySwiftDataChanged() }
             .onChange(of: settingsManager.isVaultUnlocked) {
                 rebuildNativeCache()
                 viewModel.updateLibraryItemsCache(pdfs: cachedVisiblePDFs, collections: cachedCollections, sortOption: sortOption)
@@ -506,10 +488,6 @@ struct ModernLibraryView: View {
             }
             // All other triggers are low-frequency and user-initiated — rebuild immediately.
             .onChange(of: sortOption) {
-                rebuildNativeCache()
-                viewModel.updateLibraryItemsCache(pdfs: cachedVisiblePDFs, collections: cachedCollections, sortOption: sortOption)
-            }
-            .onChange(of: swiftDataCollections) {
                 rebuildNativeCache()
                 viewModel.updateLibraryItemsCache(pdfs: cachedVisiblePDFs, collections: cachedCollections, sortOption: sortOption)
             }

@@ -4,6 +4,7 @@ import SwiftUI
 import PDFKit
 import ZIPFoundation
 import Unrar
+import Vision
 
 private let _globalCoversDirectory: URL = {
     let fileManager = FileManager.default
@@ -624,6 +625,54 @@ class PhysicalFileSystemRouter {
         }
     }
     
+    // MARK: - Disclaimer / Warning Image Filter
+    
+    nonisolated static func isDisclaimerFilename(_ path: String) -> Bool {
+        let filename = (path as NSString).lastPathComponent.lowercased()
+        let keywords = [
+            "credit", "disclaimer", "warning", "scanlation", "copyright",
+            "piracy", "pirate", "notice", "please_read", "pleaseread",
+            "read_first", "readfirst", "illegal"
+        ]
+        for keyword in keywords {
+            if filename.contains(keyword) {
+                return true
+            }
+        }
+        return false
+    }
+    
+    nonisolated static func containsDisclaimerText(in image: UIImage) -> Bool {
+        guard let cgImage = image.cgImage else { return false }
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .fast
+        request.usesLanguageCorrection = false
+        
+        let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+        do {
+            try handler.perform([request])
+            guard let observations = request.results else { return false }
+            
+            let keywords = [
+                "pirat", "illegal", "scanlation", "disclaimer", "not for sale",
+                "free translation", "support the official", "paid for this", "scammed"
+            ]
+            
+            for observation in observations {
+                guard let topCandidate = observation.topCandidates(1).first else { continue }
+                let text = topCandidate.string.lowercased()
+                for keyword in keywords {
+                    if text.contains(keyword) {
+                        return true
+                    }
+                }
+            }
+        } catch {
+            Logger.shared.log("[Disclaimer Detector] Vision OCR Error: \(error.localizedDescription)", category: "AI", type: .error)
+        }
+        return false
+    }
+    
     nonisolated static func extractCoverImageStatic(from url: URL) -> UIImage? {
         let ext = url.pathExtension.lowercased()
         if ext == "pdf" {
@@ -667,7 +716,13 @@ class PhysicalFileSystemRouter {
                         if firstSpreadImage == nil { firstSpreadImage = drawPage(page) }
                         continue
                     }
-                    if let portrait = drawPage(page) { return portrait }
+                    if let portrait = drawPage(page) {
+                        if PhysicalFileSystemRouter.containsDisclaimerText(in: portrait) {
+                            Logger.shared.log("[Disclaimer Detector] Skipping PDF page \(i) due to disclaimer/warning text.", category: "FileSystem", type: .warning)
+                            continue
+                        }
+                        return portrait
+                    }
                 }
             }
             
@@ -737,10 +792,12 @@ class PhysicalFileSystemRouter {
                 imageEntries.sort { $0.0.localizedStandardCompare($1.0) == .orderedAscending }
 
                 var firstSpreadImage: UIImage? = nil
-                for (_, entry) in imageEntries.prefix(6) {
-                    // Safe cancellation check inside a synchronous nonisolated func:
-                    // Task.isCancelled can only be called from async context; using
-                    // withUnsafeCurrentTask avoids a Swift runtime crash.
+                for (path, entry) in imageEntries.prefix(6) {
+                    if PhysicalFileSystemRouter.isDisclaimerFilename(path) {
+                        Logger.shared.log("[Disclaimer Detector] Skipping ZIP entry '\(path)' due to disclaimer filename.", category: "FileSystem", type: .warning)
+                        continue
+                    }
+                    
                     var cancelled = false
                     withUnsafeCurrentTask { cancelled = $0?.isCancelled ?? false }
                     if cancelled { return nil }
@@ -771,6 +828,10 @@ class PhysicalFileSystemRouter {
                     }
                     
                     if let img = image {
+                        if PhysicalFileSystemRouter.containsDisclaimerText(in: img) {
+                            Logger.shared.log("[Disclaimer Detector] Skipping ZIP entry '\(entry.path)' due to disclaimer/warning text content.", category: "FileSystem", type: .warning)
+                            continue
+                        }
                         if img.size.width > img.size.height {
                             if firstSpreadImage == nil { firstSpreadImage = img }
                             continue
@@ -806,6 +867,11 @@ class PhysicalFileSystemRouter {
 
                     var firstSpread: UIImage? = nil
                     for entry in sorted.prefix(6) {
+                        if PhysicalFileSystemRouter.isDisclaimerFilename(entry.fileName) {
+                            Logger.shared.log("[Disclaimer Detector] Skipping CBR entry '\(entry.fileName)' due to disclaimer filename.", category: "FileSystem", type: .warning)
+                            continue
+                        }
+
                         let image = autoreleasepool { () -> UIImage? in
                             do {
                                 let data = try archive.extract(entry)
@@ -829,6 +895,10 @@ class PhysicalFileSystemRouter {
                             }
                         }
                         guard let img = image else { continue }
+                        if PhysicalFileSystemRouter.containsDisclaimerText(in: img) {
+                            Logger.shared.log("[Disclaimer Detector] Skipping CBR entry '\(entry.fileName)' due to disclaimer/warning text content.", category: "FileSystem", type: .warning)
+                            continue
+                        }
                         if img.size.width > img.size.height {
                             if firstSpread == nil { firstSpread = img }
                             continue

@@ -65,7 +65,7 @@ extension ConversionManager {
         // PDF and EPUB each launch their own async Task (handles security scope internally).
         // Generic archives (CBZ/CBR/ZIP) are staged for parallel copy below — we do NOT open
         // their security scope here because the defer would fire before withTaskGroup runs.
-        var copyJobs: [(source: URL, dest: URL)] = []
+        var archiveURLs: [URL] = []
         for url in filesToProcess {
             let ext = url.pathExtension.lowercased()
 
@@ -75,7 +75,10 @@ extension ConversionManager {
                     let accessing = captured.startAccessingSecurityScopedResource()
                     defer { if accessing { captured.stopAccessingSecurityScopedResource() } }
                     do {
-                        let _ = try await ConversionEngine.shared.performPDFImport(url: captured, destFolder: documentsDir)
+                        _ = try await ConversionEngine.shared.performPDFImport(url: captured, destFolder: documentsDir)
+                        await MainActor.run {
+                            self.scanLibrary()
+                        }
                     } catch {
                         Logger.shared.log("Engine Import Failed: \(error)", category: "Import", type: .error)
                         await MainActor.run { self.appAlert = AppAlert(title: "Import Failed", message: error.localizedDescription) }
@@ -129,38 +132,19 @@ extension ConversionManager {
                 continue
             }
 
-            // Generic archive (CBZ/CBR/ZIP) — stage for concurrent copy.
-            // Security scope is opened INSIDE the task group task below, not here.
-            copyJobs.append((source: url, dest: documentsDir.appendingPathComponent(url.lastPathComponent)))
-        }
-
-        // Phase 3: Parallel copy — up to 8 concurrent APFS copy streams.
-        // Security scope is opened and closed inside each task so the entitlement is held
-        // for the full duration of the copy operation and no longer.
-        if !copyJobs.isEmpty {
-            await withTaskGroup(of: Void.self) { group in
-                var inFlight = 0
-                for job in copyJobs {
-                    if inFlight >= 8 { await group.next(); inFlight -= 1 }
-                    let src = job.source, dst = job.dest
-                    group.addTask {
-                        let accessing = src.startAccessingSecurityScopedResource()
-                        defer { if accessing { src.stopAccessingSecurityScopedResource() } }
-                        do {
-                            if FileManager.default.fileExists(atPath: dst.path) { try FileManager.default.removeItem(at: dst) }
-                            try FileManager.default.copyItem(at: src, to: dst)
-                            PhysicalFileSystemRouter.excludeFromBackup(at: dst)
-                        } catch {
-                            Logger.shared.log("Failed to copy \(src.lastPathComponent): \(error.localizedDescription)", category: "Import", type: .error)
-                        }
-                    }
-                    inFlight += 1
-                }
-                for await _ in group {}
+            // Generic archive (CBZ/CBR/ZIP) — stage for concurrent import
+            if ["cbz", "cbr", "cb7", "cbt", "zip"].contains(ext) {
+                archiveURLs.append(url)
             }
         }
 
-        scanLibrary()
+        // Run the archive imports concurrently via the orchestrator
+        if !archiveURLs.isEmpty {
+            let capturedArchives = archiveURLs
+            Task {
+                _ = await ImportOrchestrator.shared.importFilesAsSeries(urls: capturedArchives, manager: self)
+            }
+        }
     }
     
     // MARK: - Orchestrator Façade Connectors

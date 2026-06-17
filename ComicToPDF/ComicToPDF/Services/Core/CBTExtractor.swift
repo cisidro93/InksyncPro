@@ -130,6 +130,11 @@ struct CBTExtractor {
                 continue
             }
 
+            if PhysicalFileSystemRouter.isDisclaimerFilename(flatName) {
+                offset = newOffset
+                continue
+            }
+
             let ext = (flatName as NSString).pathExtension.lowercased()
             let dataStart = offset + blockSize
             let dataEnd = dataStart + fileSize
@@ -137,6 +142,10 @@ struct CBTExtractor {
             if imageExtensions.contains(ext), dataEnd <= archiveData.count {
                 let fileData = archiveData[dataStart ..< dataEnd]
                 if let image = UIImage(data: fileData) {
+                    if PhysicalFileSystemRouter.containsDisclaimerText(in: image) {
+                        offset = newOffset
+                        continue
+                    }
                     return image
                 }
             }

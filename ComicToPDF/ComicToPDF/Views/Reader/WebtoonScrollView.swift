@@ -106,6 +106,15 @@ struct WebtoonScrollView: UIViewRepresentable {
         private var metadataTask: Task<Void, Never>?
         private var hasReportedEnd = false
 
+        // Local cache for processed Webtoon images to guarantee fluid scrolling.
+        // NSCache is safe on memory pressure and scales countLimit automatically.
+        private let imageCache: NSCache<NSNumber, UIImage> = {
+            let c = NSCache<NSNumber, UIImage>()
+            c.countLimit = 8
+            c.name = "com.inksyncpro.webtoon.imagecache"
+            return c
+        }()
+
         init(_ parent: WebtoonScrollView) { self.parentView = parent }
 
         // MARK: - Populate
@@ -140,22 +149,39 @@ struct WebtoonScrollView: UIViewRepresentable {
                 if index < 2 { loadImage(at: index, url: url, into: iv) }
             }
             
-            // Fast aspect ratio metadata extraction
-            // Run sequentially to prevent thread explosion (OOM)
+            // Fast aspect ratio metadata extraction running concurrently in a TaskGroup
+            // Batch updates are coalesced on the MainActor in a single layout pass.
             metadataTask?.cancel()
             metadataTask = Task { @MainActor [weak self] in
-                for (index, url) in pages.enumerated() {
-                    guard !Task.isCancelled else { break }
-                    let ratio = await Self.fetchRatio(for: url)
-                    guard let self = self, index < self.imageViews.count else { return }
-                    if let ratio = ratio {
-                        let iv = self.imageViews[index]
-                        if let superview = iv.superview {
-                            for constraint in superview.constraints where constraint.firstAttribute == .height && constraint.relation == .equal {
-                                constraint.isActive = false
-                            }
-                            superview.heightAnchor.constraint(equalTo: superview.widthAnchor, multiplier: ratio).isActive = true
+                guard let self = self else { return }
+                
+                let ratios = await withTaskGroup(of: (Int, CGFloat?).self) { group in
+                    for (index, url) in pages.enumerated() {
+                        group.addTask {
+                            let ratio = await Self.fetchRatio(for: url)
+                            return (index, ratio)
                         }
+                    }
+                    var results = [Int: CGFloat]()
+                    for await (index, ratio) in group {
+                        if let ratio = ratio {
+                            results[index] = ratio
+                        }
+                    }
+                    return results
+                }
+                
+                guard !Task.isCancelled else { return }
+                
+                // Batch-apply constraints to prevent layout churn during scrolling
+                for (index, ratio) in ratios {
+                    guard index < self.imageViews.count else { continue }
+                    let iv = self.imageViews[index]
+                    if let superview = iv.superview {
+                        for constraint in superview.constraints where constraint.firstAttribute == .height && constraint.relation == .equal {
+                            constraint.isActive = false
+                        }
+                        superview.heightAnchor.constraint(equalTo: superview.widthAnchor, multiplier: ratio).isActive = true
                     }
                 }
             }
@@ -173,8 +199,15 @@ struct WebtoonScrollView: UIViewRepresentable {
         }
 
         private func loadImage(at index: Int, url: URL, into iv: UIImageView) {
+            // Memory Cache check for zero-latency image reuse
+            if let cached = imageCache.object(forKey: NSNumber(value: index)) {
+                iv.image = cached
+                return
+            }
+            
             guard loadTasks[index] == nil else { return }
-            loadTasks[index] = Task.detached(priority: .userInitiated) {
+            loadTasks[index] = Task.detached(priority: .userInitiated) { [weak self] in
+                guard let self = self else { return }
                 let optData = try? Data(contentsOf: url)
                 guard let data = optData,
                       let img  = UIImage(data: data) else { return }
@@ -191,10 +224,12 @@ struct WebtoonScrollView: UIViewRepresentable {
                 )
 
                 // Check cancellation BEFORE the await so the guard can actually fire.
-                // Task.isCancelled inside MainActor.run is always false because the
-                // cooperative check is not re-evaluated inside a synchronous block.
                 guard !Task.isCancelled else { return }
-                await MainActor.run { iv.image = processed }
+                await MainActor.run { [weak self] in
+                    guard let self = self else { return }
+                    self.imageCache.setObject(processed, forKey: NSNumber(value: index))
+                    iv.image = processed
+                }
             }
         }
 
@@ -207,6 +242,7 @@ struct WebtoonScrollView: UIViewRepresentable {
             metadataTask = nil
             for task in loadTasks.values { task.cancel() }
             loadTasks.removeAll()
+            imageCache.removeAllObjects()
         }
 
         private func unloadImage(at index: Int) {
@@ -222,10 +258,12 @@ struct WebtoonScrollView: UIViewRepresentable {
             let midY = sv.contentOffset.y + sv.bounds.height / 2
 
             // Find which image view straddles the midpoint
+            // Uses ph.frame directly (O(1) float math) in the scroll coordinate space,
+            // avoiding heavy layout queries like ph.convert to prevent scrolling jitter.
             for iv in imageViews {
                 guard let ph = iv.superview else { continue }
-                let frame = ph.convert(ph.bounds, to: sv)
-                if frame.contains(CGPoint(x: 0, y: midY)) {
+                let frame = ph.frame
+                if frame.minY <= midY && frame.maxY >= midY {
                     let idx = iv.tag
                     if idx != parentView.currentPageIndex {
                         DispatchQueue.main.async { self.parentView.currentPageIndex = idx }
