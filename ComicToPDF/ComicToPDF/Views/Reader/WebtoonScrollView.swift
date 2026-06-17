@@ -149,27 +149,27 @@ struct WebtoonScrollView: UIViewRepresentable {
                 if index < 2 { loadImage(at: index, url: url, into: iv) }
             }
             
-            // Fast aspect ratio metadata extraction running concurrently in a TaskGroup
+            // Fast aspect ratio metadata extraction running sequentially in a single detached task
+            // to avoid Swift 6 type-inference compiler crashes.
             // Batch updates are coalesced on the MainActor in a single layout pass.
             metadataTask?.cancel()
             metadataTask = Task { @MainActor [weak self] in
                 guard let self = self else { return }
                 
-                let ratios = await withTaskGroup(of: (Int, CGFloat?).self) { group in
-                    for (index, url) in pages.enumerated() {
-                        group.addTask {
-                            let ratio = await Self.fetchRatio(for: url)
-                            return (index, ratio)
-                        }
-                    }
+                let ratios = await Task.detached(priority: .userInitiated) { () -> [Int: CGFloat] in
                     var results = [Int: CGFloat]()
-                    for await (index, ratio) in group {
-                        if let ratio = ratio {
-                            results[index] = ratio
+                    for (index, url) in pages.enumerated() {
+                        guard !Task.isCancelled else { break }
+                        if let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+                           let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any],
+                           let width = properties[kCGImagePropertyPixelWidth as String] as? CGFloat,
+                           let height = properties[kCGImagePropertyPixelHeight as String] as? CGFloat,
+                           width > 0 {
+                            results[index] = height / width
                         }
                     }
                     return results
-                }
+                }.value
                 
                 guard !Task.isCancelled else { return }
                 
@@ -185,17 +185,6 @@ struct WebtoonScrollView: UIViewRepresentable {
                     }
                 }
             }
-        }
-
-        nonisolated private static func fetchRatio(for url: URL) async -> CGFloat? {
-            return await Task.detached(priority: .utility) {
-                guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-                      let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any],
-                      let width = properties[kCGImagePropertyPixelWidth as String] as? CGFloat,
-                      let height = properties[kCGImagePropertyPixelHeight as String] as? CGFloat,
-                      width > 0 else { return nil }
-                return height / width
-            }.value
         }
 
         private func loadImage(at index: Int, url: URL, into iv: UIImageView) {
