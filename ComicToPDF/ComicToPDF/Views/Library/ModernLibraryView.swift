@@ -462,15 +462,6 @@ struct ModernLibraryView: View {
                 let size = UIScreen.main.bounds.size
                 isLandscape = size.width > size.height
                 isLibraryFocused = true
-
-                // PERF D-C1: debounce absorbs page-turn bursts; rebuilds DTO map once per 250ms
-                viewModel.swiftDataCancellable = conversionManager.objectWillChange
-                    .debounce(for: .milliseconds(250), scheduler: RunLoop.main)
-                    .sink { [weak self] _ in
-                        guard let self = self else { return }
-                        self.rebuildNativeCache()
-                        self.viewModel.updateLibraryItemsCache(pdfs: self.cachedVisiblePDFs, collections: self.cachedCollections, sortOption: self.sortOption)
-                    }
             }
             .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
                 let size = UIScreen.main.bounds.size
@@ -520,6 +511,10 @@ struct ModernLibraryView: View {
             }
             .sheet(item: $router.activeSheet) { item in
                 destinationSheet(for: item)
+            }
+            .onReceive(conversionManager.objectWillChange.debounce(for: .milliseconds(250), scheduler: RunLoop.main)) { _ in
+                rebuildNativeCache()
+                viewModel.updateLibraryItemsCache(pdfs: cachedVisiblePDFs, collections: cachedCollections, sortOption: sortOption)
             }
     }
 
