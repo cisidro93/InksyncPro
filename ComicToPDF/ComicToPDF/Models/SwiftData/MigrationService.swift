@@ -81,7 +81,16 @@ class MigrationService {
         // Fetch all documents and filter in memory to dodge `#Predicate` translation limitations on optional arrays
         let fetchDescriptor = FetchDescriptor<SDConvertedPDF>()
         guard let allDocs = try? context.fetch(fetchDescriptor) else { return 0 }
-        let orphans = allDocs.filter { $0.collectionId == nil }
+        
+        // Fetch all collections to do case-insensitive lookup and find existing IDs
+        let colsDescriptor = FetchDescriptor<SDPDFCollection>()
+        guard let existingCols = try? context.fetch(colsDescriptor) else { return 0 }
+        let existingColIDs = Set(existingCols.map { $0.id })
+        
+        let orphans = allDocs.filter { doc in
+            guard let cid = doc.collectionId else { return true }
+            return !existingColIDs.contains(cid)
+        }
         
         struct GroupInfo {
             let displayName: String
@@ -102,10 +111,6 @@ class MigrationService {
                 groupedByName[normalizedKey] = GroupInfo(displayName: seriesName, docs: [doc])
             }
         }
-        
-        // Fetch all collections to do case-insensitive lookup
-        let colsDescriptor = FetchDescriptor<SDPDFCollection>()
-        guard let existingCols = try? context.fetch(colsDescriptor) else { return 0 }
         
         // Map lowercase name to collection object
         var colMap: [String: SDPDFCollection] = [:]

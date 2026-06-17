@@ -183,11 +183,11 @@ class LibraryViewModel: ObservableObject {
                 // Show only files sourced from cloud providers
                 guard case .cloud = pdf.sourceMode else { continue }
             }
-
+            let isOrphan = pdf.collectionId == nil || collectionByID[pdf.collectionId!] == nil
             var inAnyGroup = false
             
             // 1. Process standard Publisher Series (Only at Root)
-            if folderID == nil, let seriesName = pdf.metadata.series, !seriesName.isEmpty, pdf.collectionId == nil {
+            if folderID == nil, let seriesName = pdf.metadata.series, !seriesName.isEmpty, isOrphan {
                 let seriesKey = "series_\(seriesName)"
                 if firstAppearanceIndex[seriesKey] == nil { firstAppearanceIndex[seriesKey] = index }
                 
@@ -223,7 +223,7 @@ class LibraryViewModel: ObservableObject {
             }
             
             // 3. Fallback to Singles if not in ANY group, and we are at the correct level
-            if !inAnyGroup && pdf.collectionId == folderID {
+            if !inAnyGroup && (isOrphan ? folderID == nil : pdf.collectionId == folderID) {
                 let singleKey = "single_\(pdf.id)"
                 if firstAppearanceIndex[singleKey] == nil { firstAppearanceIndex[singleKey] = index }
                 singles.append(pdf)

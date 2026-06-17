@@ -115,8 +115,17 @@ actor LibraryModelActor {
             }
         }
         
-        // ── Prune orphaned SDPDFCollection series shells ─────────────────────
+        // ── Clean up invalid collection IDs pointing to non-existent collections ──
         let sdCols = try modelContext.fetch(FetchDescriptor<SDPDFCollection>())
+        let existingColIDs = Set(sdCols.map { $0.id })
+        for doc in validDocs {
+            if let cid = doc.collectionId, !existingColIDs.contains(cid) {
+                doc.collectionId = nil
+                didUpdate = true
+            }
+        }
+        
+        // ── Prune orphaned SDPDFCollection series shells ─────────────────────
         let survivingCollectionIDs = Set(validDocs.compactMap { $0.collectionId })
         var validCols: [SDPDFCollection] = []
         for col in sdCols {
