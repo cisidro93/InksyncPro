@@ -135,6 +135,18 @@ struct ModernLibraryView: View {
         return conversionManager.collections.first(where: { $0.id == id })
     }
 
+    private var listIdentifier: Int {
+        var hasher = Hasher()
+        hasher.combine(sortOption)
+        hasher.combine(tapAction)
+        hasher.combine(viewModel.currentFolderID)
+        hasher.combine(viewModel.cachedLibraryItems.count)
+        for item in viewModel.cachedLibraryItems {
+            hasher.combine(item.id)
+        }
+        return hasher.finalize()
+    }
+
     var body: some View {
         shellWithNotifications
             // PERF D-C1 boot fix: seed the cache before the view fully renders
@@ -484,6 +496,10 @@ struct ModernLibraryView: View {
             // Raw SwiftData row changes: send through the debounced publisher
             // instead of calling updateLibraryItemsCache directly.
             .onChange(of: swiftDataPDFs) { viewModel.notifySwiftDataChanged() }
+            .onChange(of: settingsManager.isVaultUnlocked) {
+                rebuildNativeCache()
+                viewModel.updateLibraryItemsCache(pdfs: cachedVisiblePDFs, collections: cachedCollections, sortOption: sortOption)
+            }
             .onChange(of: ImportMonitorManager.shared.isImporting) { _, _ in
                 rebuildNativeCache()
                 viewModel.updateLibraryItemsCache(pdfs: cachedVisiblePDFs, collections: cachedCollections, sortOption: sortOption)
@@ -1008,6 +1024,7 @@ struct ModernLibraryView: View {
                     isScrolledPastHeader: $isScrolledPastHeader,
                     highlightedItemID: highlightedItemID
                 )
+                .id(listIdentifier)
             } else {
                 LibraryGridView(
                     items: viewModel.cachedLibraryItems,
@@ -1024,6 +1041,7 @@ struct ModernLibraryView: View {
                     isScrolledPastHeader: $isScrolledPastHeader,
                     highlightedItemID: highlightedItemID
                 )
+                .id(listIdentifier)
             }
         }
     }

@@ -69,9 +69,12 @@ struct SeriesDetailView: View {
     @State private var pendingRenameSeriesName = ""
 
     var freshIssues: [ConvertedPDF] {
+        let allPDFs = conversionManager.convertedPDFs
+        let visiblePDFs = settingsManager.isVaultUnlocked ? allPDFs : allPDFs.filter { !$0.isPrivate }
+        
         if let folderUUID = UUID(uuidString: series.id) {
             // It's a custom Collection folder
-            let sorted = conversionManager.convertedPDFs.filter { $0.collectionId == folderUUID }
+            let sorted = visiblePDFs.filter { $0.collectionId == folderUUID }
             if let collection = conversionManager.collections.first(where: { $0.id == folderUUID }),
                let manualOrder = collection.manualSortOrder, !manualOrder.isEmpty {
                 let orderDict = Dictionary(uniqueKeysWithValues: manualOrder.enumerated().map { ($0.element, $0.offset) })
@@ -87,7 +90,7 @@ struct SeriesDetailView: View {
             return sorted
         } else {
             // It's a publisher series
-            return conversionManager.convertedPDFs.filter { $0.metadata.series == series.title }
+            return visiblePDFs.filter { $0.metadata.series == series.title }
         }
     }
 
@@ -228,6 +231,7 @@ struct SeriesDetailView: View {
         .onChange(of: sortOption) { localIssues = sortedIssues }
         .onChange(of: conversionManager.convertedPDFs) { localIssues = sortedIssues }
         .onChange(of: conversionManager.collections) { localIssues = sortedIssues }
+        .onChange(of: settingsManager.isVaultUnlocked) { localIssues = sortedIssues }
     }
     
     private func listView(scrollProxy: ScrollViewProxy) -> some View {

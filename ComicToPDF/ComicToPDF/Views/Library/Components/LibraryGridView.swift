@@ -6,6 +6,11 @@ import UniformTypeIdentifiers
 
 // MARK: - LibraryGridView
 
+struct GridRowItem: Identifiable {
+    let id: String
+    let items: [LibraryListItem]
+}
+
 struct LibraryGridView: View {
     @EnvironmentObject var conversionManager: ConversionManager
     @Environment(\.horizontalSizeClass) private var hSizeClass
@@ -39,8 +44,12 @@ struct LibraryGridView: View {
     // Drop-result confirmation sheet
     @State private var pendingDropInfo: DropResolutionInfo? = nil
 
-    private var rows: [[LibraryListItem]] {
-        chunkedItems(items)
+    private var rows: [GridRowItem] {
+        let chunked = chunkedItems(items)
+        return chunked.map { chunk in
+            let combinedID = chunk.map(\.id).joined(separator: "_")
+            return GridRowItem(id: combinedID, items: chunk)
+        }
     }
 
     private var inProgress: [ConvertedPDF] {
@@ -140,21 +149,19 @@ struct LibraryGridView: View {
 
                             // Recently Added banner removed to declutter workspace
 
-                            let chunks = rows
+                            let rowItems = rows
                             LazyVStack(spacing: 24) {
-                                ForEach(0..<chunks.count, id: \.self) { chunkIndex in
-                                    let rowItems = chunks[chunkIndex]
-                                    
+                                ForEach(rowItems) { row in
                                     VStack(spacing: 8) {
                                         HStack(alignment: .bottom, spacing: colSpacing) {
-                                            ForEach(rowItems) { item in
+                                            ForEach(row.items) { item in
                                                 cellFor(item)
                                                     .id(item.id)
                                                     .frame(maxWidth: .infinity)
                                             }
                                             
-                                            if rowItems.count < colCount {
-                                                ForEach(0..<(colCount - rowItems.count), id: \.self) { _ in
+                                            if row.items.count < colCount {
+                                                ForEach(0..<(colCount - row.items.count), id: \.self) { _ in
                                                     Spacer()
                                                         .frame(maxWidth: .infinity)
                                                 }

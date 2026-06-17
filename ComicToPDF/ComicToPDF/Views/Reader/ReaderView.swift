@@ -948,7 +948,8 @@ struct ReaderView: View {
     
     private func getNextVolume() -> ConvertedPDF? {
         guard let current = pdf, let series = current.metadata.series else { return nil }
-        let seriesItems = conversionManager.convertedPDFs.filter { $0.metadata.series == series && $0.id != current.id && !$0.isPrivate }
+        let isVaultUnlocked = AppSettingsManager.shared.isVaultUnlocked
+        let seriesItems = conversionManager.convertedPDFs.filter { $0.metadata.series == series && $0.id != current.id && (isVaultUnlocked ? true : !$0.isPrivate) }
         
         let sorted = seriesItems.sorted { a, b in
             let aNum = Double(a.metadata.issueNumber ?? a.metadata.volume ?? "0") ?? 0

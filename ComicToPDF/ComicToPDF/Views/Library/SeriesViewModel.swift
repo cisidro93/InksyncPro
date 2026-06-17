@@ -19,7 +19,7 @@ class SeriesViewModel: ObservableObject {
         Publishers.CombineLatest(LibraryService.shared.$items, AppSettingsManager.shared.$isVaultUnlocked)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] pdfs, isUnlocked in 
-                let visible = pdfs.filter { $0.isPrivate == isUnlocked }
+                let visible = isUnlocked ? pdfs : pdfs.filter { !$0.isPrivate }
                 self?.groupPDFs(visible) 
             }
             .store(in: &cancellables)

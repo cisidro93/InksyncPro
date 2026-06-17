@@ -135,13 +135,17 @@ class ConversionManager: ObservableObject {
                 self?.objectWillChange.send()
             }
 
-        // PERF M2: Rebuild visible/pro caches and relay when library arrays change.
-        librarySubscription = Publishers.CombineLatest(LibraryService.shared.$items, LibraryService.shared.$collections)
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                self?.rebuildVisiblePDFs()
-                self?.objectWillChange.send()
-            }
+        // PERF M2: Rebuild visible/pro caches and relay when library arrays or vault state change.
+        librarySubscription = Publishers.CombineLatest3(
+            LibraryService.shared.$items,
+            LibraryService.shared.$collections,
+            AppSettingsManager.shared.$isVaultUnlocked
+        )
+        .receive(on: DispatchQueue.main)
+        .sink { [weak self] _, _, _ in
+            self?.rebuildVisiblePDFs()
+            self?.objectWillChange.send()
+        }
 
         // ── Cloud Cover Ready: wire CloudCoverExtractor → thumbnailCache ──────
         // CloudCoverExtractor writes covers to disk but has no reference to
