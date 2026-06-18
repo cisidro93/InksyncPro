@@ -527,49 +527,53 @@ struct SeriesDetailView: View {
                         }
                     }
 
-                    Menu {
-                        Picker("Sort By", selection: $sortOption) {
-                            ForEach(availableSortOptions) { option in
-                                Text(option.rawValue).tag(option)
-                            }
-                        }
-                        
-                        if showVolumeGrouping && hasVolumeData {
-                            Divider()
-                            
-                            Button {
-                                withAnimation {
-                                    collapsedVolumes = Set(volumeGroups.map { $0.key })
-                                }
-                            } label: {
-                                Label("Collapse All Volumes", systemImage: "rectangle.compress.vertical")
-                            }
-                            
-                            Button {
-                                withAnimation {
-                                    collapsedVolumes.removeAll()
-                                }
-                            } label: {
-                                Label("Expand All Volumes", systemImage: "rectangle.expand.vertical")
-                            }
-                        }
-                        
-                        Divider()
-                        
-                        Button {
-                            exportSmartListTemplate()
-                        } label: {
-                            Label("Export as Smart List (.csv)", systemImage: "square.and.arrow.up")
-                        }
-                    } label: {
-                        Image(systemName: "arrow.up.arrow.down")
-                    }
+                    sortAndFilterMenu
                     
                     if isCollection {
                         EditButton()
                     }
                 }
             }
+        }
+    }
+
+    private var sortAndFilterMenu: some View {
+        SwiftUI.Menu {
+            Picker("Sort By", selection: $sortOption) {
+                ForEach(availableSortOptions) { option in
+                    Text(option.rawValue).tag(option)
+                }
+            }
+            
+            if showVolumeGrouping && hasVolumeData {
+                Divider()
+                
+                Button {
+                    withAnimation {
+                        collapsedVolumes = Set(volumeGroups.map { $0.key })
+                    }
+                } label: {
+                    Label("Collapse All Volumes", systemImage: "rectangle.compress.vertical")
+                }
+                
+                Button {
+                    withAnimation {
+                        collapsedVolumes.removeAll()
+                    }
+                } label: {
+                    Label("Expand All Volumes", systemImage: "rectangle.expand.vertical")
+                }
+            }
+            
+            Divider()
+            
+            Button {
+                exportSmartListTemplate()
+            } label: {
+                Label("Export as Smart List (.csv)", systemImage: "square.and.arrow.up")
+            }
+        } label: {
+            Image(systemName: "arrow.up.arrow.down")
         }
     }
 
