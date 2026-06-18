@@ -47,11 +47,10 @@ class SandboxCleanupManager: ObservableObject {
     // MARK: - Passive Scan (app launch, no deletion)
 
     func passiveScan() async {
-        let total = await Task.detached(priority: .background) { [weak self] in
-            guard let self = self else { return Int64(0) }
-            let temp = await self.scanTempDirectory()
-            let cache = await self.scanSourceCache()
-            let orphaned = await self.scanOrphanedConverted()
+        let total = await Task.detached(priority: .background) {
+            let temp = await Self.scanTempDirectory()
+            let cache = await Self.scanSourceCache()
+            let orphaned = await Self.scanOrphanedConverted()
             return (temp + cache + orphaned).reduce(Int64(0)) { $0 + $1.fileSizeBytes }
         }.value
 
@@ -64,11 +63,10 @@ class SandboxCleanupManager: ObservableObject {
         isScanning = true
         scanResults = [:]
 
-        let resultTuple = await Task.detached(priority: .userInitiated) { [weak self] in
-            guard let self = self else { return ([:], Int64(0)) }
-            let temp = await self.scanTempDirectory()
-            let cache = await self.scanSourceCache()
-            let orphaned = await self.scanOrphanedConverted()
+        let resultTuple = await Task.detached(priority: .userInitiated) {
+            let temp = await Self.scanTempDirectory()
+            let cache = await Self.scanSourceCache()
+            let orphaned = await Self.scanOrphanedConverted()
 
             var results: [CleanupCategory: [CleanupItem]] = [:]
             if !temp.isEmpty     { results[.orphanedTemp] = temp }
@@ -86,7 +84,7 @@ class SandboxCleanupManager: ObservableObject {
 
     // MARK: - Scanners
 
-    nonisolated private func scanTempDirectory() async -> [CleanupItem] {
+    private static func scanTempDirectory() async -> [CleanupItem] {
         let tmp = FileManager.default.temporaryDirectory
         guard let contents = try? FileManager.default.contentsOfDirectory(
             at: tmp,
@@ -113,7 +111,7 @@ class SandboxCleanupManager: ObservableObject {
         }
     }
 
-    nonisolated private func scanSourceCache() async -> [CleanupItem] {
+    private static func scanSourceCache() async -> [CleanupItem] {
         let cacheDir = FileManager.default
             .urls(for: .documentDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("SourceCache")
@@ -139,9 +137,7 @@ class SandboxCleanupManager: ObservableObject {
         }
     }
 
-    nonisolated private func scanOrphanedConverted() async -> [CleanupItem] {
-        // Scans Documents/ recursively for comic files that have no matching library entry.
-        // A file is "orphaned" if no ConvertedPDF record references its relative path.
+    private static func scanOrphanedConverted() async -> [CleanupItem] {
         let documentsDir = FileManager.default
             .urls(for: .documentDirectory, in: .userDomainMask)[0]
 
@@ -152,7 +148,6 @@ class SandboxCleanupManager: ObservableObject {
             options: [.skipsHiddenFiles]
         ) else { return [] }
 
-        // Build the set of active relative paths from the library database.
         let activePDFs = await LibraryDatabaseService.shared.load()
         let activeRelativePaths = Set(activePDFs.map { pdf -> String in
             let path = pdf.url.path
@@ -171,7 +166,6 @@ class SandboxCleanupManager: ObservableObject {
         while let url = enumerator.nextObject() as? URL {
             let path = url.path
             
-            // Skip the SourceCache subdirectory as it has its own cleanup category
             if path.contains("/SourceCache/") {
                 continue
             }
