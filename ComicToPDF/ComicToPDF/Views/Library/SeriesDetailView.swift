@@ -1319,8 +1319,7 @@ struct SeriesDetailView: View {
     }
     
     @ViewBuilder
-    private func contextMenuContent(_ pdf: ConvertedPDF) -> some View {
-        // --- PRIMARY ACTIONS ---
+    private func primaryContextMenuItems(_ pdf: ConvertedPDF) -> some View {
         Button {
             pdfToRead = pdf
         } label: { Label("Read / Preview", systemImage: "book.pages") }
@@ -1346,11 +1345,11 @@ struct SeriesDetailView: View {
                 systemImage: isPinned ? "pin.slash" : "pin"
             )
         }
-        
-        Divider()
-        
-        // --- ORGANIZE SUBMENU ---
-        Menu {
+    }
+
+    @ViewBuilder
+    private func organizeSubmenu(_ pdf: ConvertedPDF) -> some View {
+        SwiftUI.Menu {
             Button {
                 renameText = pdf.name
                 pdfToRename = pdf
@@ -1369,9 +1368,11 @@ struct SeriesDetailView: View {
         } label: {
             Label("Organize", systemImage: "folder.badge.gearshape")
         }
-        
-        // --- CLOUD & SYNC SUBMENU ---
-        Menu {
+    }
+
+    @ViewBuilder
+    private func cloudSubmenu(_ pdf: ConvertedPDF) -> some View {
+        SwiftUI.Menu {
             if case .cloud = pdf.sourceMode {
                 let settingsReady = AppSettingsManager.shared.conversionSettings.isConfigured
                 Button {
@@ -1392,18 +1393,22 @@ struct SeriesDetailView: View {
         } label: {
             Label("Cloud & Sync", systemImage: "icloud")
         }
-        
-        // --- EXPORT SUBMENU ---
-        Menu {
+    }
+
+    @ViewBuilder
+    private func exportSubmenu(_ pdf: ConvertedPDF) -> some View {
+        SwiftUI.Menu {
             Button {
                 pdfToExport = pdf
             } label: { Label("Export Options", systemImage: "square.and.arrow.up") }
         } label: {
             Label("Export", systemImage: "square.and.arrow.up")
         }
-        
-        // --- METADATA & PRECISION TOOLS ---
-        Menu {
+    }
+
+    @ViewBuilder
+    private func toolsSubmenu(_ pdf: ConvertedPDF) -> some View {
+        SwiftUI.Menu {
             Button {
                 pdfToSearchMetadata = pdf
             } label: { Label("Fetch Metadata", systemImage: "magnifyingglass") }
@@ -1414,11 +1419,11 @@ struct SeriesDetailView: View {
         } label: {
             Label("Metadata & Tools", systemImage: "slider.horizontal.3")
         }
-        
-        Divider()
-        
-        // --- VAULT & PROGRESS ---
-        Menu {
+    }
+
+    @ViewBuilder
+    private func statusSubmenu(_ pdf: ConvertedPDF) -> some View {
+        SwiftUI.Menu {
             Button {
                 ReaderProgressTracker.shared.markComplete(pdfID: pdf.id)
                 if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
@@ -1450,6 +1455,22 @@ struct SeriesDetailView: View {
         } label: {
             Label("Status & Vault", systemImage: "checkmark.shield")
         }
+    }
+
+    @ViewBuilder
+    private func contextMenuContent(_ pdf: ConvertedPDF) -> some View {
+        primaryContextMenuItems(pdf)
+        
+        Divider()
+        
+        organizeSubmenu(pdf)
+        cloudSubmenu(pdf)
+        exportSubmenu(pdf)
+        toolsSubmenu(pdf)
+        
+        Divider()
+        
+        statusSubmenu(pdf)
         
         Button(role: .destructive) { pdfToDelete = pdf } label: { Label("Delete", systemImage: "trash") }
     }
