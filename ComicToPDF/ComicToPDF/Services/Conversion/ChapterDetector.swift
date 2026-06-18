@@ -13,7 +13,23 @@ final class ChapterDetector: Sendable {
     func detectChapters(in pdf: ConvertedPDF, languages: [String] = ["en-US"], onProgress: (@Sendable (Double) -> Void)? = nil) async throws -> [Chapter] {
         guard pdf.contentType == .book || pdf.contentType == .hybrid else { return [] }
         
-        let result = try await ZipUtilities.extractComic(from: pdf.url)
+        // Resolve security-scoped URL for linked drive files before extraction
+        let sourceURL: URL
+        var didAccess = false
+        if case .linked(let bm) = pdf.sourceMode,
+           let resolved = try? await BookmarkResolver.shared.resolve(bm) {
+            didAccess = resolved.startAccessingSecurityScopedResource()
+            sourceURL = resolved
+        } else {
+            didAccess = pdf.url.startAccessingSecurityScopedResource()
+            sourceURL = pdf.url
+        }
+        
+        defer {
+            if didAccess { sourceURL.stopAccessingSecurityScopedResource() }
+        }
+        
+        let result = try await ZipUtilities.extractComic(from: sourceURL)
         let tempDir = result.workingDir
         let imageURLs = result.imageURLs
         defer { try? FileManager.default.removeItem(at: tempDir) }

@@ -49,7 +49,6 @@ struct ZipUtilities {
                             throw NSError(domain: "ZipError", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to load PDF document"])
                         }
                         let pageCount = document.pageCount
-                        var images: [UIImage] = []
                         for i in 0..<pageCount {
                             try autoreleasepool {
                                 if let page = document.page(at: i) {
@@ -66,18 +65,12 @@ struct ZipUtilities {
                                         ctx.cgContext.scaleBy(x: 1.0, y: -1.0)
                                         page.draw(with: .mediaBox, to: ctx.cgContext)
                                     }
-                                    images.append(image)
-                                }
-                            }
-                        }
-                        
-                        for (i, image) in images.enumerated() {
-                            try autoreleasepool {
-                                let pageName = String(format: "%04d.jpg", i)
-                                let fileURL = tempDir.appendingPathComponent(pageName)
-                                if let data = image.jpegData(compressionQuality: 0.9) {
-                                    try data.write(to: fileURL)
-                                    extractedFiles.append(fileURL)
+                                    let pageName = String(format: "%04d.jpg", i)
+                                    let fileURL = tempDir.appendingPathComponent(pageName)
+                                    if let data = image.jpegData(compressionQuality: 0.9) {
+                                        try data.write(to: fileURL)
+                                        extractedFiles.append(fileURL)
+                                    }
                                 }
                             }
                         }

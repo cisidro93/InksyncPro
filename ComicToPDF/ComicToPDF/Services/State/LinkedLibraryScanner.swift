@@ -489,23 +489,56 @@ final class LinkedLibraryScanner: ObservableObject {
     ) async {
         guard let manager = conversionManager else { return }
 
-        var newPDFs: [ConvertedPDF] = []
+        // Fetch existing paths on MainActor to avoid data races
+        let existingPaths = Set(manager.convertedPDFs.filter { $0.isLinked }.map { $0.url.path })
 
-        for fileURL in files {
-            let fileAttrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path)
-            guard let attrs = fileAttrs,
-                  let fileSize = attrs[.size] as? Int64
-            else { continue }
+        // Process files on a userInitiated detached background task
+        var newPDFs = await Task.detached(priority: .userInitiated) { () -> [ConvertedPDF] in
+            var tempPDFs: [ConvertedPDF] = []
+            for fileURL in files {
+                // Deduplicate check
+                if existingPaths.contains(fileURL.path) { continue }
 
-            // ✅ iOS CORRECT: Per-file bookmarks use options: []
-            guard let bookmark = try? fileURL.bookmarkData(
-                options: [],
-                includingResourceValuesForKeys: nil,
-                relativeTo: nil
-            ) else { continue }
+                let fileAttrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path)
+                guard let attrs = fileAttrs,
+                      let fileSize = attrs[.size] as? Int64
+                else { continue }
 
-            await buildAndAppend(pdf: &newPDFs, fileURL: fileURL, fileSize: fileSize, bookmark: bookmark, manager: manager)
-        }
+                // Per-file bookmarks use options: []
+                guard let bookmark = try? fileURL.bookmarkData(
+                    options: [],
+                    includingResourceValuesForKeys: nil,
+                    relativeTo: nil
+                ) else { continue }
+
+                let stem = fileURL.deletingPathExtension().lastPathComponent
+                var metadata = PDFMetadata(title: stem)
+                if let parsed = ComicInfoParser.parse(from: fileURL) {
+                    metadata.title = parsed.title ?? stem
+                    metadata.series = parsed.series ?? SeriesNameDetector.detect(from: fileURL.lastPathComponent).seriesName
+                    metadata.issueNumber = parsed.number
+                    metadata.volume = parsed.volume.map { String($0) }
+                    metadata.publisher = parsed.publisher
+                    metadata.summary = parsed.summary
+                    metadata.writer = parsed.writer
+                    metadata.isManga = parsed.manga ? true : nil
+                    metadata.tags = parsed.tags
+                } else {
+                    metadata.series = SeriesNameDetector.detect(from: fileURL.lastPathComponent).seriesName
+                }
+
+                var pdf = ConvertedPDF(
+                    name: stem,
+                    url: fileURL,
+                    pageCount: 0,
+                    fileSize: fileSize,
+                    metadata: metadata
+                )
+                pdf.sourceMode = .linked(bookmarkData: bookmark)
+                tempPDFs.append(pdf)
+            }
+            return tempPDFs
+        }.value
 
         guard !newPDFs.isEmpty else { return }
 
@@ -554,44 +587,6 @@ final class LinkedLibraryScanner: ObservableObject {
 
         manager.convertedPDFs.append(contentsOf: newPDFs)
         manager.saveLibrary()
-    }
-
-    private func buildAndAppend(
-        pdf newPDFs: inout [ConvertedPDF],
-        fileURL: URL,
-        fileSize: Int64,
-        bookmark: Data,
-        manager: ConversionManager
-    ) async {
-        if manager.convertedPDFs.contains(where: { $0.url.path == fileURL.path && $0.isLinked }) {
-            return
-        }
-
-        let stem = fileURL.deletingPathExtension().lastPathComponent
-        var metadata = PDFMetadata(title: stem)
-        if let parsed = ComicInfoParser.parse(from: fileURL) {
-            metadata.title = parsed.title ?? stem
-            metadata.series = parsed.series ?? SeriesNameDetector.detect(from: fileURL.lastPathComponent).seriesName
-            metadata.issueNumber = parsed.number
-            metadata.volume = parsed.volume.map { String($0) }
-            metadata.publisher = parsed.publisher
-            metadata.summary = parsed.summary
-            metadata.writer = parsed.writer
-            metadata.isManga = parsed.manga ? true : nil
-            metadata.tags = parsed.tags
-        } else {
-            metadata.series = SeriesNameDetector.detect(from: fileURL.lastPathComponent).seriesName
-        }
-
-        var pdf = ConvertedPDF(
-            name: stem,
-            url: fileURL,
-            pageCount: 0,
-            fileSize: fileSize,
-            metadata: metadata
-        )
-        pdf.sourceMode = .linked(bookmarkData: bookmark)
-        newPDFs.append(pdf)
     }
 
     @objc private func handleStaleBookmark(_ notification: Notification) {

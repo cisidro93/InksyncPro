@@ -10,6 +10,7 @@ struct PrecisionCanvasView: View {
     let pdf: ConvertedPDF
     @Binding var pageIndex: Int
     let totalCount: Int
+    let shouldEndSessionOnDisappear: Bool
     
     @StateObject private var editorState: PageEditorState
     @State private var pageImage: UIImage?
@@ -34,10 +35,11 @@ struct PrecisionCanvasView: View {
         )
     }
     
-    init(pdf: ConvertedPDF, pageIndex: Binding<Int>, totalCount: Int, conversionManager: ConversionManager) {
+    init(pdf: ConvertedPDF, pageIndex: Binding<Int>, totalCount: Int, conversionManager: ConversionManager, shouldEndSessionOnDisappear: Bool = true) {
         self.pdf = pdf
         self._pageIndex = pageIndex
         self.totalCount = totalCount
+        self.shouldEndSessionOnDisappear = shouldEndSessionOnDisappear
         
         let initialModel = PageModelStore.shared.getPageModel(for: pdf.id, pageIndex: pageIndex.wrappedValue)
         let undoManager = UndoManager()
@@ -85,7 +87,9 @@ struct PrecisionCanvasView: View {
             // ✅ Auto-save changes when leaving the page
             PageModelStore.shared.savePageModel(editorState.pageModel, for: pdf.id)
             // ✅ Clean up temporary files when closing editor
-            conversionManager.endSession()
+            if shouldEndSessionOnDisappear {
+                conversionManager.endSession()
+            }
         }
         .onChange(of: activeSnapGuides) { _, newValue in
             if !newValue.isEmpty {

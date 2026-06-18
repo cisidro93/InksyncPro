@@ -25,52 +25,60 @@ struct SeriesNameDetector {
         }
     }
 
+    // Precompiled regular expressions for speed
+    private static let noiseRegex = try! NSRegularExpression(pattern: #"\s*\(?digital|webrip|hd|scan\)?\s*"#, options: [.caseInsensitive])
+    private static let orderingPrefixRegex = try! NSRegularExpression(pattern: #"^(?:0\d+|\d{1,2})[\s_.-]+(?=[a-zA-Z])"#, options: [])
+    
+    private static let groupBracketsRegex = try! NSRegularExpression(pattern: #"^\[.*?\]\s*"#, options: [])
+    private static let trailingHashBracketsRegex = try! NSRegularExpression(pattern: #"\s*\[[\da-fA-F]{4,}\]$"#, options: [])
+    private static let trailingHashParensRegex = try! NSRegularExpression(pattern: #"\s*\([\da-fA-F]{4,}\)$"#, options: [])
+
+    private static let trailingDigitsRegex = try! NSRegularExpression(pattern: #"^(.+?)\s+(\d{1,4})$"#, options: [])
+    private static let bracketContentRegex = try! NSRegularExpression(pattern: #"\[.*?\]"#, options: [])
+    private static let nonYearParensRegex = try! NSRegularExpression(pattern: #"\((?!\d{4}\))[^\)]*\)"#, options: [])
+
+    private static let compiledKeywordPatterns: [(NSRegularExpression, DetectionResult.Confidence)] = {
+        let patterns: [(String, DetectionResult.Confidence)] = [
+            (#"^(.+?)[\s_.-]+(?:(?:v(?:ol(?:ume)?)?|t(?:ome|omo)?|band|bd)\.?\s*)(\d+(?:\.\d+)?)"#, .high),
+            (#"^(.+?)[\s_.-]+(?:(?:ch(?:apter)?|chap(?:itre)?|cap(?:[ií]tulo)?|kap(?:itel)?)\.?\s*)(\d+(?:\.\d+)?)"#, .high),
+            (#"^(.+?)[\s_.-]+(?:(?:issue|book|part|livre|partie|n[uú]mero|num|nº|n\.º|nummer|nr)\.?\s*)(\d+(?:\.\d+)?)"#, .high),
+            (#"^(.+?)[\s_.-]*(?:第\s*)?(\d+(?:\.\d+)?)\s*[巻卷話话]"#, .high),
+            (#"^(.+?\s*\(\d{4}\))\s+(\d+)"#, .high),
+            (#"^(.+?)\s*-\s*(\d{1,4}\w?)$"#, .high),
+            (#"^(.+?)_(\d{1,4}\w?)$"#, .medium),
+            (#"^(.+?)\.(\d{1,4})$"#, .medium),
+            (#"^(.+?)\s*#\s*(\d{1,4})$"#, .high)
+        ]
+        return patterns.compactMap { pattern, confidence in
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return nil }
+            return (regex, confidence)
+        }
+    }()
+
     /// Returns the best-guess series name and issue number for the given filename.
     static func detect(from filename: String) -> DetectionResult {
         let base = URL(fileURLWithPath: filename).deletingPathExtension().lastPathComponent
         // Pass 1: Remove common noise prefixes/suffixes like "Digital", "HD", "(Webrip)"
         var cleaned = stripCommonArtifacts(from: base)
-        cleaned = cleaned.replacingOccurrences(of: #"(?i)\s*\(?digital|webrip|hd|scan\)?\s*"#, with: " ", options: .regularExpression)
-                         .trimmingCharacters(in: .whitespaces)
+        
+        let range1 = NSRange(cleaned.startIndex..., in: cleaned)
+        cleaned = noiseRegex.stringByReplacingMatches(in: cleaned, options: [], range: range1, withTemplate: " ")
+            .trimmingCharacters(in: .whitespaces)
 
         // Strip leading sequential/ordering prefixes like "01 ", "002 - ", "3. "
-        cleaned = cleaned.replacingOccurrences(of: #"^(?:0\d+|\d{1,2})[\s_.-]+(?=[a-zA-Z])"#, with: "", options: .regularExpression)
-                         .trimmingCharacters(in: .whitespaces)
+        let range2 = NSRange(cleaned.startIndex..., in: cleaned)
+        cleaned = orderingPrefixRegex.stringByReplacingMatches(in: cleaned, options: [], range: range2, withTemplate: "")
+            .trimmingCharacters(in: .whitespaces)
 
         // --- Pass 1: Explicit keywords (highest confidence) ---
-        let keywordPatterns: [(pattern: String, confidence: DetectionResult.Confidence)] = [
-            // Multilingual Volume patterns (v/vol/volume/tome/tomo/band/bd)
-            (#"^(.+?)[\s_.-]+(?:(?:v(?:ol(?:ume)?)?|t(?:ome|omo)?|band|bd)\.?\s*)(\d+(?:\.\d+)?)"#, .high),
-            
-            // Multilingual Chapter patterns (ch/chapter/chapitre/capitulo/capítulo/kapitel)
-            (#"^(.+?)[\s_.-]+(?:(?:ch(?:apter)?|chap(?:itre)?|cap(?:[ií]tulo)?|kap(?:itel)?)\.?\s*)(\d+(?:\.\d+)?)"#, .high),
-            
-            // Multilingual Issue/Part/Number patterns (issue/book/part/livre/partie/numero/número/num/nº/n.º/nummer/nr)
-            (#"^(.+?)[\s_.-]+(?:(?:issue|book|part|livre|partie|n[uú]mero|num|nº|n\.º|nummer|nr)\.?\s*)(\d+(?:\.\d+)?)"#, .high),
-            
-            // CJK volumes and chapters: e.g. "ワンピース第12巻", "ワンピース 12巻", "ワンピース_12話"
-            (#"^(.+?)[\s_.-]*(?:第\s*)?(\d+(?:\.\d+)?)\s*[巻卷話话]"#, .high),
-            
-            // "Title (2024) 001" (Year in parens followed by number)
-            (#"^(.+?\s*\(\d{4}\))\s+(\d+)"#, .high),
-            // "Title - 001" (dash separator)
-            (#"^(.+?)\s*-\s*(\d{1,4}\w?)$"#, .high),
-            // "Title_001" (underscore separator)
-            (#"^(.+?)_(\d{1,4}\w?)$"#, .medium),
-            // "Title.001" or "Title.01" (dot separator)
-            (#"^(.+?)\.(\d{1,4})$"#, .medium),
-            // "Title #001" (Hash separator)
-            (#"^(.+?)\s*#\s*(\d{1,4})$"#, .high)
-        ]
-
-        for (pattern, confidence) in keywordPatterns {
-            if let result = match(cleaned, pattern: pattern, confidence: confidence) {
+        for (regex, confidence) in compiledKeywordPatterns {
+            if let result = match(cleaned, regex: regex, confidence: confidence) {
                 return result
             }
         }
 
         // --- Pass 2: Trailing number with whitespace (medium confidence) ---
-        if let result = match(cleaned, pattern: #"^(.+?)\s+(\d{1,4})$"#, confidence: .medium) {
+        if let result = match(cleaned, regex: trailingDigitsRegex, confidence: .medium) {
             return result
         }
 
@@ -96,18 +104,24 @@ struct SeriesNameDetector {
     /// e.g. "[MangaStream] One Piece - 001 [A3F2B1]" → "One Piece - 001"
     private static func stripCommonArtifacts(from string: String) -> String {
         var result = string
+        
         // Remove leading [Group] brackets
-        result = result.replacingOccurrences(of: #"^\[.*?\]\s*"#, with: "", options: .regularExpression)
+        let range1 = NSRange(result.startIndex..., in: result)
+        result = groupBracketsRegex.stringByReplacingMatches(in: result, options: [], range: range1, withTemplate: "")
+        
         // Remove trailing [hash] brackets
-        result = result.replacingOccurrences(of: #"\s*\[[\da-fA-F]{4,}\]$"#, with: "", options: .regularExpression)
+        let range2 = NSRange(result.startIndex..., in: result)
+        result = trailingHashBracketsRegex.stringByReplacingMatches(in: result, options: [], range: range2, withTemplate: "")
+        
         // Remove trailing (hash) parens
-        result = result.replacingOccurrences(of: #"\s*\([\da-fA-F]{4,}\)$"#, with: "", options: .regularExpression)
+        let range3 = NSRange(result.startIndex..., in: result)
+        result = trailingHashParensRegex.stringByReplacingMatches(in: result, options: [], range: range3, withTemplate: "")
+        
         return result.trimmingCharacters(in: .whitespaces)
     }
 
-    private static func match(_ string: String, pattern: String, confidence: DetectionResult.Confidence) -> DetectionResult? {
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]),
-              let match = regex.firstMatch(in: string, range: NSRange(string.startIndex..., in: string)),
+    private static func match(_ string: String, regex: NSRegularExpression, confidence: DetectionResult.Confidence) -> DetectionResult? {
+        guard let match = regex.firstMatch(in: string, range: NSRange(string.startIndex..., in: string)),
               match.numberOfRanges >= 2 else { return nil }
 
         guard let seriesRange = Range(match.range(at: 1), in: string) else { return nil }
@@ -117,11 +131,13 @@ struct SeriesNameDetector {
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
         // Remove bracket content from series name (e.g. "[FR]", "[RAW]")
-        seriesName = seriesName.replacingOccurrences(of: #"\[.*?\]"#, with: "", options: .regularExpression)
+        let range1 = NSRange(seriesName.startIndex..., in: seriesName)
+        seriesName = bracketContentRegex.stringByReplacingMatches(in: seriesName, options: [], range: range1, withTemplate: "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
         // Remove non-year parentheses content (e.g., "(FR)", "(Digital)")
-        seriesName = seriesName.replacingOccurrences(of: #"\((?!\d{4}\))[^\)]*\)"#, with: "", options: .regularExpression)
+        let range2 = NSRange(seriesName.startIndex..., in: seriesName)
+        seriesName = nonYearParensRegex.stringByReplacingMatches(in: seriesName, options: [], range: range2, withTemplate: "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
         // Trim trailing dashes, colons, semicolons, and commas that are separators
