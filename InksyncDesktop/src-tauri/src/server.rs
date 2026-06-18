@@ -2,7 +2,7 @@ use axum::{
     routing::get,
     Router,
     extract::{ws::{WebSocket, WebSocketUpgrade, Message}, State},
-    response::{IntoResponse, Response},
+    response::IntoResponse,
     Json,
 };
 use std::net::SocketAddr;
@@ -60,14 +60,14 @@ async fn serve_opds(State(_state): State<Arc<ServerState>>) -> impl IntoResponse
   </entry>
 </feed>"#;
 
-    Response::builder()
-        .header("Content-Type", "application/atom+xml;charset=utf-8")
-        .body(xml.to_string())
-        .unwrap()
+    (
+        [(axum::http::header::CONTENT_TYPE, "application/atom+xml;charset=utf-8")],
+        xml.to_string(),
+    )
 }
 
 async fn ws_handler(ws: WebSocketUpgrade, State(state): State<Arc<ServerState>>) -> impl IntoResponse {
-    ws.on_upgrade(|socket| handle_socket(socket, state))
+    ws.on_upgrade(move |socket| handle_socket(socket, state))
 }
 
 async fn handle_socket(mut socket: WebSocket, _state: Arc<ServerState>) {
