@@ -1,7 +1,7 @@
 import Foundation
 import SwiftUI
 
-struct CleanupItem: Identifiable {
+struct CleanupItem: Identifiable, Sendable {
     let id = UUID()
     let url: URL
     let displayName: String
@@ -9,7 +9,7 @@ struct CleanupItem: Identifiable {
     let category: CleanupCategory
 }
 
-enum CleanupCategory: String, CaseIterable {
+enum CleanupCategory: String, CaseIterable, Sendable {
     case orphanedTemp       = "Orphaned Temp Files"
     case sourceCache        = "Source Cache Copies"
     case orphanedConverted  = "Converted Files (No Library Entry)"
@@ -47,10 +47,14 @@ class SandboxCleanupManager: ObservableObject {
     // MARK: - Passive Scan (app launch, no deletion)
 
     func passiveScan() async {
-        let temp = await scanTempDirectory()
-        let cache = await scanSourceCache()
-        let orphaned = await scanOrphanedConverted()
-        let total = (temp + cache + orphaned).reduce(Int64(0)) { $0 + $1.fileSizeBytes }
+        let total = await Task.detached(priority: .background) { [weak self] in
+            guard let self = self else { return Int64(0) }
+            let temp = await self.scanTempDirectory()
+            let cache = await self.scanSourceCache()
+            let orphaned = await self.scanOrphanedConverted()
+            return (temp + cache + orphaned).reduce(Int64(0)) { $0 + $1.fileSizeBytes }
+        }.value
+
         passiveReclaimableBytes = total
     }
 
@@ -60,23 +64,29 @@ class SandboxCleanupManager: ObservableObject {
         isScanning = true
         scanResults = [:]
 
-        let temp = await scanTempDirectory()
-        let cache = await scanSourceCache()
-        let orphaned = await scanOrphanedConverted()
+        let resultTuple = await Task.detached(priority: .userInitiated) { [weak self] in
+            guard let self = self else { return ([:], Int64(0)) }
+            let temp = await self.scanTempDirectory()
+            let cache = await self.scanSourceCache()
+            let orphaned = await self.scanOrphanedConverted()
 
-        var results: [CleanupCategory: [CleanupItem]] = [:]
-        if !temp.isEmpty     { results[.orphanedTemp] = temp }
-        if !cache.isEmpty    { results[.sourceCache] = cache }
-        if !orphaned.isEmpty { results[.orphanedConverted] = orphaned }
+            var results: [CleanupCategory: [CleanupItem]] = [:]
+            if !temp.isEmpty     { results[.orphanedTemp] = temp }
+            if !cache.isEmpty    { results[.sourceCache] = cache }
+            if !orphaned.isEmpty { results[.orphanedConverted] = orphaned }
 
-        scanResults = results
-        totalReclaimableBytes = (temp + cache + orphaned).reduce(Int64(0)) { $0 + $1.fileSizeBytes }
+            let total = (temp + cache + orphaned).reduce(Int64(0)) { $0 + $1.fileSizeBytes }
+            return (results, total)
+        }.value
+
+        scanResults = resultTuple.0
+        totalReclaimableBytes = resultTuple.1
         isScanning = false
     }
 
     // MARK: - Scanners
 
-    private func scanTempDirectory() async -> [CleanupItem] {
+    nonisolated private func scanTempDirectory() async -> [CleanupItem] {
         let tmp = FileManager.default.temporaryDirectory
         guard let contents = try? FileManager.default.contentsOfDirectory(
             at: tmp,
@@ -103,7 +113,7 @@ class SandboxCleanupManager: ObservableObject {
         }
     }
 
-    private func scanSourceCache() async -> [CleanupItem] {
+    nonisolated private func scanSourceCache() async -> [CleanupItem] {
         let cacheDir = FileManager.default
             .urls(for: .documentDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("SourceCache")
@@ -129,7 +139,7 @@ class SandboxCleanupManager: ObservableObject {
         }
     }
 
-    private func scanOrphanedConverted() async -> [CleanupItem] {
+    nonisolated private func scanOrphanedConverted() async -> [CleanupItem] {
         // Scans Documents/ recursively for comic files that have no matching library entry.
         // A file is "orphaned" if no ConvertedPDF record references its relative path.
         let documentsDir = FileManager.default
@@ -197,21 +207,27 @@ class SandboxCleanupManager: ObservableObject {
     // MARK: - Deletion (explicit user action only)
 
     func delete(_ items: [CleanupItem]) async -> Int {
-        var deleted = 0
-        for item in items {
-            do {
-                try FileManager.default.removeItem(at: item.url)
-                deleted += 1
-            } catch {
-                Logger.shared.log(
-                    "Cleanup delete failed for \(item.displayName): \(error)",
-                    category: "Cleanup", type: .error
-                )
+        isScanning = true
+        
+        let deletedCount = await Task.detached(priority: .userInitiated) {
+            var deleted = 0
+            for item in items {
+                do {
+                    try FileManager.default.removeItem(at: item.url)
+                    deleted += 1
+                } catch {
+                    Logger.shared.log(
+                        "Cleanup delete failed for \(item.displayName): \(error)",
+                        category: "Cleanup", type: .error
+                    )
+                }
             }
-        }
+            return deleted
+        }.value
+
         await scanForCleanup()
         passiveReclaimableBytes = totalReclaimableBytes
-        return deleted
+        return deletedCount
     }
 
     func formattedSize(_ bytes: Int64) -> String {
