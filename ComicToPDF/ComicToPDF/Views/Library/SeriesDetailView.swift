@@ -802,275 +802,292 @@ struct SeriesDetailView: View {
         }
     }
     var body: some View {
-        mainContent
-        .fullScreenCover(item: $pdfToRead) { pdf in
-            UnifiedReaderView(pdf: pdf)
-        }
-        .safeAreaInset(edge: .bottom) {
-            if isSelectionMode {
-                VStack(spacing: 0) {
-                    Divider().background(Color.white.opacity(0.1))
+        let view = mainContent
+            .fullScreenCover(item: $pdfToRead) { pdf in
+                UnifiedReaderView(pdf: pdf)
+            }
+            .safeAreaInset(edge: .bottom) {
+                bottomActionBar
+            }
+            .overlay {
+                quickVolumeJumpOverlay
+            }
+            .onChange(of: showingMergeConfig) { _, newValue in
+                if newValue {
+                    mergeSessionID = UUID()
+                }
+            }
+            .onChange(of: showBatchMetadataEditor) { _, newValue in
+                if newValue {
+                    metadataSessionID = UUID()
+                }
+            }
+        
+        let viewWithSheets = applySheets(view)
+        let viewWithAlerts = applyAlerts(viewWithSheets)
+        
+        return viewWithAlerts
+            .task(id: series.id) { await loadHeaderCover() }
+    }
+
+    @ViewBuilder
+    private var bottomActionBar: some View {
+        if isSelectionMode {
+            VStack(spacing: 0) {
+                Divider().background(Color.white.opacity(0.1))
+                
+                HStack(spacing: 16) {
+                    Button(action: {
+                        let generator = UIImpactFeedbackGenerator(style: .medium)
+                        generator.impactOccurred()
+                        showBatchMetadataEditor = true
+                    }) {
+                        HStack {
+                            Image(systemName: "sparkles")
+                            Text("Intelligent Metadata")
+                        }
+                        .font(.subheadline.bold())
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                        .background(alignment: .center) {
+                            if selection.isEmpty {
+                                Color.gray.opacity(0.3)
+                            } else {
+                                LinearGradient(colors: [Theme.blue, Theme.blue.opacity(0.8)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                            }
+                        }
+                        .clipShape(Capsule())
+                        .shadow(color: selection.isEmpty ? .clear : Theme.blue.opacity(0.3), radius: 5, y: 3)
+                    }
+                    .disabled(selection.isEmpty)
                     
-                    HStack(spacing: 16) {
-                        Button(action: {
-                            let generator = UIImpactFeedbackGenerator(style: .medium)
-                            generator.impactOccurred()
-                            showBatchMetadataEditor = true
-                        }) {
-                            HStack {
-                                Image(systemName: "sparkles")
-                                Text("Intelligent Metadata")
-                            }
-                            .font(.subheadline.bold())
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 12)
-                            .background(alignment: .center) {
-                                if selection.isEmpty {
-                                    Color.gray.opacity(0.3)
-                                } else {
-                                    LinearGradient(colors: [Theme.blue, Theme.blue.opacity(0.8)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                                }
-                            }
-                            .clipShape(Capsule())
-                            .shadow(color: selection.isEmpty ? .clear : Theme.blue.opacity(0.3), radius: 5, y: 3)
-                        }
-                        .disabled(selection.isEmpty)
+                    Spacer()
+                    
+                    VStack(spacing: 2) {
+                        Text("\(selection.count) Selected")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(.secondary)
                         
-                        Spacer()
-                        
-                        VStack(spacing: 2) {
-                            Text("\(selection.count) Selected")
-                                .font(.system(size: 12, weight: .bold))
-                                .foregroundColor(.secondary)
+                        HStack(spacing: 12) {
+                            Button {
+                                showBatchVolumeAssignment = true
+                            } label: {
+                                Text("Assign Volume")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundColor(selection.isEmpty ? .gray : Theme.orange)
+                            }
+                            .disabled(selection.isEmpty)
                             
-                            HStack(spacing: 12) {
-                                Button {
-                                    showBatchVolumeAssignment = true
-                                } label: {
-                                    Text("Assign Volume")
-                                        .font(.system(size: 10, weight: .semibold))
-                                        .foregroundColor(selection.isEmpty ? .gray : Theme.orange)
-                                }
-                                .disabled(selection.isEmpty)
-                                
-                                Button {
-                                    showingBatchSeriesAssignment = true
-                                } label: {
-                                    Text("Move to Series")
-                                        .font(.system(size: 10, weight: .semibold))
-                                        .foregroundColor(selection.isEmpty ? .gray : Theme.orange)
-                                }
-                                .disabled(selection.isEmpty)
+                            Button {
+                                showingBatchSeriesAssignment = true
+                            } label: {
+                                Text("Move to Series")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundColor(selection.isEmpty ? .gray : Theme.orange)
                             }
+                            .disabled(selection.isEmpty)
                         }
-                        
-                        Spacer()
-                        
-                        Button(action: {
-                            let generator = UIImpactFeedbackGenerator(style: .medium)
-                            generator.impactOccurred()
-                            mergeConfigSuggestedName = "\(series.title) Omnibus"
-                            showingMergeConfig = true
-                        }) {
-                            HStack {
-                                Text("Convert & Merge")
-                                Image(systemName: "arrow.triangle.2.circlepath.doc")
-                            }
-                            .font(.subheadline.bold())
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 12)
-                            .background(alignment: .center) {
-                                if selection.count < 2 {
-                                    Color.gray.opacity(0.3)
-                                } else {
-                                    LinearGradient(colors: [Color.purple, Color.purple.opacity(0.8)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                                }
-                            }
-                            .clipShape(Capsule())
-                            .shadow(color: selection.count < 2 ? .clear : Color.purple.opacity(0.3), radius: 5, y: 3)
-                        }
-                        .disabled(selection.count < 2)
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 16)
-                    .background(
-                        Rectangle()
-                            .fill(.ultraThinMaterial)
-                            .ignoresSafeArea(edges: .bottom)
-                            .shadow(color: .black.opacity(0.2), radius: 10, y: -5)
-                    )
+                    
+                    Spacer()
+                    
+                    Button(action: {
+                        let generator = UIImpactFeedbackGenerator(style: .medium)
+                        generator.impactOccurred()
+                        mergeConfigSuggestedName = "\(series.title) Omnibus"
+                        showingMergeConfig = true
+                    }) {
+                        HStack {
+                            Text("Convert & Merge")
+                            Image(systemName: "arrow.triangle.2.circlepath.doc")
+                        }
+                        .font(.subheadline.bold())
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                        .background(alignment: .center) {
+                            if selection.count < 2 {
+                                Color.gray.opacity(0.3)
+                            } else {
+                                LinearGradient(colors: [Color.purple, Color.purple.opacity(0.8)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                            }
+                        }
+                        .clipShape(Capsule())
+                        .shadow(color: selection.count < 2 ? .clear : Color.purple.opacity(0.3), radius: 5, y: 3)
+                    }
+                    .disabled(selection.count < 2)
                 }
-                .transition(.move(edge: .bottom))
+                .padding(.horizontal, 20)
+                .padding(.vertical, 16)
+                .background(
+                    Rectangle()
+                        .fill(.ultraThinMaterial)
+                        .ignoresSafeArea(edges: .bottom)
+                        .shadow(color: .black.opacity(0.2), radius: 10, y: -5)
+                )
+            }
+            .transition(.move(edge: .bottom))
+        }
+    }
+
+    @ViewBuilder
+    private var quickVolumeJumpOverlay: some View {
+        if showVolumeGrouping && hasVolumeData && volumeGroups.count > 4 {
+            QuickVolumeJumpOverlay(volumeGroups: volumeGroups) { volKey in
+                jumpToVolume = volKey
             }
         }
-        .sheet(isPresented: $showingMergeConfig) {
-            LazyView {
-                SeriesMergeConfigurationView(sourceFiles: freshIssues.filter { selection.contains($0.id) }, suggestedName: mergeConfigSuggestedName)
-                    .id(mergeSessionID)
-                    .environmentObject(conversionManager)
-                    .environmentObject(settingsManager)
+    }
+
+    private func applySheets<Content: View>(_ content: Content) -> some View {
+        content
+            .sheet(isPresented: $showingMergeConfig) {
+                LazyView {
+                    SeriesMergeConfigurationView(sourceFiles: freshIssues.filter { selection.contains($0.id) }, suggestedName: mergeConfigSuggestedName)
+                        .id(mergeSessionID)
+                        .environmentObject(conversionManager)
+                        .environmentObject(settingsManager)
+                }
             }
-        }
-        .sheet(isPresented: $showBatchMetadataEditor) {
-            LazyView {
-                BatchMetadataEditorView(selectedPDFs: freshIssues.filter { selection.contains($0.id) })
-                    .id(metadataSessionID)
+            .sheet(isPresented: $showBatchMetadataEditor) {
+                LazyView {
+                    BatchMetadataEditorView(selectedPDFs: freshIssues.filter { selection.contains($0.id) })
+                        .id(metadataSessionID)
+                }
             }
-        }
-        .sheet(item: $pdfToExport) { pdf in
-            DualExportView(pdf: pdf)
-        }
-        .sheet(item: $pdfToSearchMetadata) { pdf in
-            MetadataSearchSheet(pdf: pdf)
-        }
-        // ✅ Fix: pdfToDetails now correctly presents MediaDetailSheet in all non-nav-stack contexts.
-        .sheet(item: $pdfToDetails) { pdf in
-            MediaDetailSheet(pdf: pdf) { action in
-                handleMediaDetailAction(action, for: pdf)
+            .sheet(item: $pdfToExport) { pdf in
+                DualExportView(pdf: pdf)
             }
-            .environmentObject(conversionManager)
-        }
-        .sheet(isPresented: $showBatchVolumeAssignment) {
-            BatchVolumeAssignmentSheet(selectedIDs: selection)
+            .sheet(item: $pdfToSearchMetadata) { pdf in
+                MetadataSearchSheet(pdf: pdf)
+            }
+            .sheet(item: $pdfToDetails) { pdf in
+                MediaDetailSheet(pdf: pdf) { action in
+                    handleMediaDetailAction(action, for: pdf)
+                }
                 .environmentObject(conversionManager)
-        }
-        .sheet(isPresented: $showingBatchSeriesAssignment) {
-            CollectionEditorSheet { name, icon, color in
-                let cleanName = name.trimmingCharacters(in: .whitespaces)
-                if !cleanName.isEmpty {
-                    let selectedFiles = freshIssues.filter { selection.contains($0.id) }
-                    for pdf in selectedFiles {
-                        conversionManager.assignToSeries(pdf, seriesName: cleanName)
-                    }
-                    conversionManager.createCollection(name: cleanName, icon: icon, color: color)
-                    isSelectionMode = false
-                    selection.removeAll()
-                }
             }
-            .environmentObject(conversionManager)
-        }
-        .overlay {
-            if showVolumeGrouping && hasVolumeData && volumeGroups.count > 4 {
-                QuickVolumeJumpOverlay(volumeGroups: volumeGroups) { volKey in
-                    jumpToVolume = volKey
-                }
+            .sheet(isPresented: $showBatchVolumeAssignment) {
+                BatchVolumeAssignmentSheet(selectedIDs: selection)
+                    .environmentObject(conversionManager)
             }
-        }
-        .alert("Rename File", isPresented: Binding(
-            get: { pdfToRename != nil },
-            set: { if !$0 { pdfToRename = nil } }
-        )) {
-            TextField("New Name", text: $renameText)
-            Button("Cancel", role: .cancel) { }
-            Button("Rename") {
-                if let pdf = pdfToRename {
-                    conversionManager.renamePDF(pdf, to: renameText)
-                }
-            }
-        }
-        .alert(isCollection ? "Rename Folder" : "Rename Series", isPresented: $showingRenameSeriesAlert) {
-            TextField(isCollection ? "Folder Name" : "Series Name", text: $pendingRenameSeriesName)
-                .autocorrectionDisabled()
-            Button("Rename") {
-                let newName = pendingRenameSeriesName.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !newName.isEmpty, newName != series.title else { return }
-                
-                if let collectionUUID = UUID(uuidString: series.id),
-                   let colIdx = conversionManager.collections.firstIndex(where: { $0.id == collectionUUID }) {
-                    conversionManager.collections[colIdx].name = newName
-                }
-                
-                Task {
-                    await conversionManager.safelyRenameSeries(issues: freshIssues, newSeriesName: newName)
-                    dismiss()
-                }
-            }
-            Button("Cancel", role: .cancel) { }
-        } message: {
-            Text(isCollection ? "This will rename the folder." : "This will rename all \(series.count) issues in this series.")
-        }
-        .alert("Add to Series", isPresented: Binding(
-            get: { pdfToAssignSeries != nil },
-            set: { if !$0 { pdfToAssignSeries = nil } }
-        )) {
-            TextField("Series Name", text: $assignSeriesText)
-            Button("Cancel", role: .cancel) { pdfToAssignSeries = nil }
-            Button("Assign") {
-                if let pdf = pdfToAssignSeries {
-                    let name = assignSeriesText.trimmingCharacters(in: .whitespaces)
-                    if !name.isEmpty {
-                        conversionManager.assignToSeries(pdf, seriesName: name)
+            .sheet(isPresented: $showingBatchSeriesAssignment) {
+                CollectionEditorSheet { name, icon, color in
+                    let cleanName = name.trimmingCharacters(in: .whitespaces)
+                    if !cleanName.isEmpty {
+                        let selectedFiles = freshIssues.filter { selection.contains($0.id) }
+                        for pdf in selectedFiles {
+                            conversionManager.assignToSeries(pdf, seriesName: cleanName)
+                        }
+                        conversionManager.createCollection(name: cleanName, icon: icon, color: color)
+                        isSelectionMode = false
+                        selection.removeAll()
                     }
                 }
-                pdfToAssignSeries = nil
+                .environmentObject(conversionManager)
             }
-        } message: {
-            Text("Enter the series name to group this file into a collection.")
-        }
-        .alert("Automate Omnibus Builds?", isPresented: $showingOmnibusPrompt) {
-            Button("Enable Fast Bundle") {
-                fastBundleOmnibus = true
-                
-                // Route them directly to background queue
-                if let pending = pendingConfigSelection {
-                    let files = freshIssues.filter { pending.contains($0.id) }
-                    conversionManager.enqueueOmnibus(name: "\(series.title) Omnibus", sourceFiles: files)
+    }
+
+    private func applyAlerts<Content: View>(_ content: Content) -> some View {
+        content
+            .alert("Rename File", isPresented: Binding(
+                get: { pdfToRename != nil },
+                set: { if !$0 { pdfToRename = nil } }
+            )) {
+                TextField("New Name", text: $renameText)
+                Button("Cancel", role: .cancel) { }
+                Button("Rename") {
+                    if let pdf = pdfToRename {
+                        conversionManager.renamePDF(pdf, to: renameText)
+                    }
                 }
-                pendingConfigSelection = nil
             }
-            Button("Keep Showing Control Sheet") {
-                // If they deny, trigger the sheet
-                if let pending = pendingConfigSelection {
-                    selection = pending
-                    showingMergeConfig = true
+            .alert(isCollection ? "Rename Folder" : "Rename Series", isPresented: $showingRenameSeriesAlert) {
+                TextField(isCollection ? "Folder Name" : "Series Name", text: $pendingRenameSeriesName)
+                    .autocorrectionDisabled()
+                Button("Rename") {
+                    let newName = pendingRenameSeriesName.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !newName.isEmpty, newName != series.title else { return }
+                    
+                    if let collectionUUID = UUID(uuidString: series.id),
+                       let colIdx = conversionManager.collections.firstIndex(where: { $0.id == collectionUUID }) {
+                        conversionManager.collections[colIdx].name = newName
+                    }
+                    
+                    Task {
+                        await conversionManager.safelyRenameSeries(issues: freshIssues, newSeriesName: newName)
+                        dismiss()
+                    }
                 }
-                pendingConfigSelection = nil
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text(isCollection ? "This will rename the folder." : "This will rename all \(series.count) issues in this series.")
             }
-        } message: {
-            Text("You've built 3 omnibuses manually. Would you like to enable 'Fast Bundle Mode' to automatically skip the configuration sheet and instantly queue omnibuses in the background using your saved settings?")
-        }
-        // QoL: Delete confirmation with Move to Trash option
-        .alert("Delete File", isPresented: Binding(
-            get: { pdfToDelete != nil },
-            set: { if !$0 { pdfToDelete = nil } }
-        )) {
-            Button("Move to Trash", role: .destructive) {
-                if let pdf = pdfToDelete {
-                    // Move file to system trash instead of permanent delete
-                    if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
-                        let fileURL = pdf.url
-                        conversionManager.convertedPDFs.remove(at: idx)
-                        conversionManager.saveLibrary()
-                        Task.detached(priority: .background) {
-                            try? FileManager.default.trashItem(at: fileURL, resultingItemURL: nil)
+            .alert("Add to Series", isPresented: Binding(
+                get: { pdfToAssignSeries != nil },
+                set: { if !$0 { pdfToAssignSeries = nil } }
+            )) {
+                TextField("Series Name", text: $assignSeriesText)
+                Button("Cancel", role: .cancel) { pdfToAssignSeries = nil }
+                Button("Assign") {
+                    if let pdf = pdfToAssignSeries {
+                        let name = assignSeriesText.trimmingCharacters(in: .whitespaces)
+                        if !name.isEmpty {
+                            conversionManager.assignToSeries(pdf, seriesName: name)
                         }
                     }
+                    pdfToAssignSeries = nil
                 }
-                pdfToDelete = nil
+            } message: {
+                Text("Enter the series name to group this file into a collection.")
             }
-            Button("Delete Permanently", role: .destructive) {
-                if let pdf = pdfToDelete {
-                    conversionManager.deletePDF(pdf)
+            .alert("Automate Omnibus Builds?", isPresented: $showingOmnibusPrompt) {
+                Button("Enable Fast Bundle") {
+                    fastBundleOmnibus = true
+                    if let pending = pendingConfigSelection {
+                        let files = freshIssues.filter { pending.contains($0.id) }
+                        conversionManager.enqueueOmnibus(name: "\(series.title) Omnibus", sourceFiles: files)
+                    }
+                    pendingConfigSelection = nil
                 }
-                pdfToDelete = nil
+                Button("Keep Showing Control Sheet") {
+                    if let pending = pendingConfigSelection {
+                        selection = pending
+                        showingMergeConfig = true
+                    }
+                    pendingConfigSelection = nil
+                }
+            } message: {
+                Text("You've built 3 omnibuses manually. Would you like to enable 'Fast Bundle Mode' to automatically skip the configuration sheet and instantly queue omnibuses in the background using your saved settings?")
             }
-            Button("Cancel", role: .cancel) { pdfToDelete = nil }
-        } message: {
-            Text("\"\(pdfToDelete?.name ?? "this file")\" will be removed. Move to Trash allows recovery via the Files app.")
-        }
-        .onChange(of: showingMergeConfig) { _, newValue in
-            if newValue {
-                mergeSessionID = UUID()
+            .alert("Delete File", isPresented: Binding(
+                get: { pdfToDelete != nil },
+                set: { if !$0 { pdfToDelete = nil } }
+            )) {
+                Button("Move to Trash", role: .destructive) {
+                    if let pdf = pdfToDelete {
+                        if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                            let fileURL = pdf.url
+                            conversionManager.convertedPDFs.remove(at: idx)
+                            conversionManager.saveLibrary()
+                            Task.detached(priority: .background) {
+                                try? FileManager.default.trashItem(at: fileURL, resultingItemURL: nil)
+                            }
+                        }
+                    }
+                    pdfToDelete = nil
+                }
+                Button("Delete Permanently", role: .destructive) {
+                    if let pdf = pdfToDelete {
+                        conversionManager.deletePDF(pdf)
+                    }
+                    pdfToDelete = nil
+                }
+                Button("Cancel", role: .cancel) { pdfToDelete = nil }
+            } message: {
+                Text("\"\(pdfToDelete?.name ?? "this file")\" will be removed. Move to Trash allows recovery via the Files app.")
             }
-        }
-        .onChange(of: showBatchMetadataEditor) { _, newValue in
-            if newValue {
-                metadataSessionID = UUID()
-            }
-        }
-        .task(id: series.id) { await loadHeaderCover() }
     }
     
     // MARK: - Issue Row (Shared by flat + volume grouped views)
