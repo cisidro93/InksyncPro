@@ -261,7 +261,7 @@ struct AdvancedWorkspaceView: View {
                 // Reload the canvas whenever the active file changes
                 viewModel.cleanup()
                 selectedPages.removeAll()
-                await viewModel.loadPages(from: livePDF)
+                await viewModel.loadPages(from: livePDF, conversionManager: conversionManager)
             }
         }
     }

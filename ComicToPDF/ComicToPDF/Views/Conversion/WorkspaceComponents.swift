@@ -212,7 +212,7 @@ struct WorkspaceToolPalette: View {
             try await conversionManager.deletePages(from: pdf, pageIndices: selectedPages)
             selectedPages.removeAll()
             viewModel.cleanup()
-            await viewModel.loadPages(from: pdf)
+            await viewModel.loadPages(from: pdf, conversionManager: conversionManager)
         } catch {
              viewModel.errorMessage = "Delete failed: \(error.localizedDescription)"
              viewModel.isLoading = false
