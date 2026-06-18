@@ -54,7 +54,27 @@ enum ComicReadingMode: String, CaseIterable, Codable {
 final class ComicImageCache: ObservableObject {
     private var cache = NSCache<NSNumber, UIImage>()
     private var accessQueue: [Int] = []
+    private let fetchingQueueLock = NSLock()
     private var fetchingQueue: Set<Int> = [] // Track pending extractions
+    
+    private func isFetching(_ index: Int) -> Bool {
+        fetchingQueueLock.lock()
+        defer { fetchingQueueLock.unlock() }
+        return fetchingQueue.contains(index)
+    }
+    
+    private func startFetching(_ index: Int) {
+        fetchingQueueLock.lock()
+        fetchingQueue.insert(index)
+        fetchingQueueLock.unlock()
+    }
+    
+    private func stopFetching(_ index: Int) {
+        fetchingQueueLock.lock()
+        fetchingQueue.remove(index)
+        fetchingQueueLock.unlock()
+    }
+    
     private var maxCacheSize: Int {
         let usage = MemoryMonitor.reportMemoryUsage()
         return usage > 300.0 ? 3 : 7 // Dynamic Memory Cache scaling
@@ -288,7 +308,7 @@ final class ComicImageCache: ObservableObject {
             return cachedImage
         }
         
-        if fetchingQueue.contains(index) { return nil }
+        if isFetching(index) { return nil }
         
         if isStream && cloudPageSource != nil {
             fetchCloudPageImage(at: index, priority: .userInitiated)
@@ -306,7 +326,7 @@ final class ComicImageCache: ObservableObject {
     }
     
     private func fetchLocalImageAsync(at index: Int, priority: TaskPriority = .userInitiated) {
-        fetchingQueue.insert(index)
+        startFetching(index)
         
         let isPDF = self.isPDF
         let isPreExtracted = self.isPreExtracted
@@ -334,7 +354,7 @@ final class ComicImageCache: ObservableObject {
                 await MainActor.run { [weak self] in
                     guard let self = self else { return }
                     self.cache.setObject(img, forKey: NSNumber(value: index))
-                    self.fetchingQueue.remove(index)
+                    self.stopFetching(index)
                     self.updateLRUOnMain(index)
                     NotificationCenter.default.post(
                         name: .comicImageCacheImageLoaded,
@@ -344,7 +364,7 @@ final class ComicImageCache: ObservableObject {
                 }
             } else {
                 await MainActor.run { [weak self] in
-                    _ = self?.fetchingQueue.remove(index)
+                    self?.stopFetching(index)
                 }
             }
         }
@@ -428,7 +448,7 @@ final class ComicImageCache: ObservableObject {
         let range = max(0, index - prefetchLimit)...min(pageCount - 1, index + prefetchLimit)
         for i in range {
             if i == index { continue }
-            if self.cache.object(forKey: NSNumber(value: i)) == nil && !self.fetchingQueue.contains(i) {
+            if self.cache.object(forKey: NSNumber(value: i)) == nil && !self.isFetching(i) {
                 if isStream {
                     fetchCloudPageImage(at: i, priority: .utility)
                 } else {
@@ -440,7 +460,7 @@ final class ComicImageCache: ObservableObject {
 
     private func fetchCloudPageImage(at index: Int, priority: TaskPriority = .userInitiated) {
         guard let source = cloudPageSource, index < source.pages.count else { return }
-        fetchingQueue.insert(index)
+        startFetching(index)
         let entry = source.pages[index]
         let manifest = source.manifest
 
@@ -453,14 +473,14 @@ final class ComicImageCache: ObservableObject {
             do {
                 let data = try await ZipCentralDirectory.fetchEntryData(entry: entry, manifest: manifest)
                 guard let image = Self.decodeImageData(data, maxPixelSize: maxPixelSize) else {
-                    await MainActor.run { [weak self] in _ = self?.fetchingQueue.remove(index) }
+                    await MainActor.run { [weak self] in self?.stopFetching(index) }
                     return
                 }
                 
                 await MainActor.run { [weak self] in
                     guard let self = self else { return }
                     self.cache.setObject(image, forKey: NSNumber(value: index))
-                    self.fetchingQueue.remove(index)
+                    self.stopFetching(index)
                     self.updateLRUOnMain(index)
                     NotificationCenter.default.post(
                         name: .comicImageCacheImageLoaded,
@@ -470,7 +490,7 @@ final class ComicImageCache: ObservableObject {
                 }
             } catch {
                 await MainActor.run { [weak self] in
-                    _ = self?.fetchingQueue.remove(index)
+                    self?.stopFetching(index)
                 }
             }
         }
