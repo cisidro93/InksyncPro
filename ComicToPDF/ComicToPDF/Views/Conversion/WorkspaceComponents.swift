@@ -9,7 +9,7 @@ struct WorkspaceCanvasView: View {
     @ObservedObject var viewModel: PageEditorViewModel
     @Binding var selectedPages: Set<Int>
     
-    @State private var pageToEdit: Int?
+    @Binding var pageToEdit: Int?
     @State private var draggedItem: GridPageItem?
     
     // Scale features
@@ -124,6 +124,7 @@ struct WorkspaceToolPalette: View {
     let pdf: ConvertedPDF
     @ObservedObject var viewModel: PageEditorViewModel
     @Binding var selectedPages: Set<Int>
+    @Binding var pageToEdit: Int?
     
     var body: some View {
         HStack(spacing: 20) {
@@ -148,10 +149,8 @@ struct WorkspaceToolPalette: View {
                 let index = selectedPages.first ?? 0
                 
                 Button(action: {
-                    // Navigate strictly through AdvancedWorkspaceView binding. 
-                    // To do this properly, we'd need pageToEdit bound up from Canvas.
-                    // For now, let's keep it simple or hook it into a notification.
-                    // Given the constraint, we will rely on internal logic.
+                    self.pageToEdit = index
+                    selectedPages.removeAll() // Clear selection on enter
                 }) {
                     Label("Precision Tools", systemImage: "paintbrush.pointed")
                 }

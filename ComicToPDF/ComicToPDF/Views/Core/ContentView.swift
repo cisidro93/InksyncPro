@@ -82,14 +82,16 @@ struct ContentView: View {
             }
             
             // iPad Progress Panel Overlay
-            VStack {
-                Spacer()
-                HStack {
+            if sizeClass == .regular {
+                VStack {
                     Spacer()
-                    iPadProgressPanel
-                        .frame(width: 320)
-                        .padding(.trailing, 24)
-                        .padding(.bottom, 100) // Above OmniDock
+                    HStack {
+                        Spacer()
+                        iPadProgressPanel
+                            .frame(width: 320)
+                            .padding(.trailing, 24)
+                            .padding(.bottom, 100) // Above OmniDock
+                    }
                 }
             }
         }

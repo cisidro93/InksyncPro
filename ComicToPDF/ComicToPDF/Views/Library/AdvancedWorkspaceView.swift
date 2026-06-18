@@ -10,6 +10,7 @@ struct AdvancedWorkspaceView: View {
 
     @StateObject private var viewModel = PageEditorViewModel()
     @State private var selectedPages: Set<Int> = []
+    @State private var pageToEdit: Int? = nil
 
     // UI Architecture State
     @State private var showingInspector: Bool = false
@@ -158,7 +159,8 @@ struct AdvancedWorkspaceView: View {
                         WorkspaceCanvasView(
                             pdf: livePDF,
                             viewModel: viewModel,
-                            selectedPages: $selectedPages
+                            selectedPages: $selectedPages,
+                            pageToEdit: $pageToEdit
                         )
                         .environmentObject(conversionManager)
                         .padding(.trailing, showingInspector ? 320 : 0) // Leave room for inspector on iPad
@@ -167,7 +169,8 @@ struct AdvancedWorkspaceView: View {
                         WorkspaceToolPalette(
                             pdf: livePDF,
                             viewModel: viewModel,
-                            selectedPages: $selectedPages
+                            selectedPages: $selectedPages,
+                            pageToEdit: $pageToEdit
                         )
                         .environmentObject(conversionManager)
                         .padding(.bottom, 30)

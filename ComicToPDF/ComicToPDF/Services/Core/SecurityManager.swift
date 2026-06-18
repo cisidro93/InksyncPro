@@ -39,17 +39,44 @@ class SecurityManager: ObservableObject {
     /// Attempt to unlock the vault using Device Authentication (FaceID/TouchID -> Passcode fallback)
     func authenticate() async -> Bool {
         let context = LAContext()
+        var error: NSError?
         
-        do {
-            // .deviceOwnerAuthentication natively tries Biometrics first, then automatically falls back to Passcode.
-            // This prevents hard crashes on simulators or devices with disabled FaceID.
-            try await context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "Unlock your Comic Vault")
-            self.isVaultLocked = false
-            self.shouldBlurContent = false
-            return true
-        } catch {
-            Logger.shared.log("Vault Authentication failed: \(error.localizedDescription)", category: "System", type: .error)
-            return false
+        if context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error) {
+            do {
+                // Strictly evaluate using biometrics first (prevents immediate passcode/PIN fallback)
+                try await context.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: "Unlock your Comic Vault")
+                self.isVaultLocked = false
+                self.shouldBlurContent = false
+                return true
+            } catch let authError as NSError {
+                // If biometrics are locked out, fall back to passcode (PIN)
+                if authError.domain == LAErrorDomain && authError.code == LAError.biometryLockout.rawValue {
+                    Logger.shared.log("Biometrics locked out. Falling back to passcode.", category: "System", type: .warning)
+                    do {
+                        try await context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "Unlock your Comic Vault")
+                        self.isVaultLocked = false
+                        self.shouldBlurContent = false
+                        return true
+                    } catch let passcodeError {
+                        Logger.shared.log("Vault Passcode Authentication failed: \(passcodeError.localizedDescription)", category: "System", type: .error)
+                        return false
+                    }
+                }
+                Logger.shared.log("Vault Biometric Authentication failed: \(authError.localizedDescription)", category: "System", type: .error)
+                return false
+            }
+        } else {
+            // Biometrics are not enrolled or not supported (e.g. simulator without Face ID set up).
+            // Fall back to device owner passcode.
+            do {
+                try await context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "Unlock your Comic Vault")
+                self.isVaultLocked = false
+                self.shouldBlurContent = false
+                return true
+            } catch let fallbackError {
+                Logger.shared.log("Vault Authentication failed: \(fallbackError.localizedDescription)", category: "System", type: .error)
+                return false
+            }
         }
     }
     

@@ -71,6 +71,17 @@ class PageBufferManager: ObservableObject {
     static let shared = PageBufferManager()
     private init() {
         Logger.shared.log("PageBufferManager: init", category: "Engine")
+        // Dynamically set imageCache countLimit based on performance class
+        let perfClass = ProcessInfo.processInfo.performanceClass
+        switch perfClass {
+        case .low:
+            imageCache.countLimit = 8
+        case .medium:
+            imageCache.countLimit = 16
+        case .high:
+            imageCache.countLimit = 32
+        }
+        Logger.shared.log("PageBufferManager: cache limit configured to \(imageCache.countLimit)", category: "Engine")
     }
     deinit {
         Logger.shared.log("PageBufferManager: deinit", category: "Engine")
@@ -319,7 +330,8 @@ class PageBufferManager: ObservableObject {
                 if !Task.isCancelled, self.generation == gen { self.nextImage = nImage }
                 let pImage = await renderPage(at: pageIndex - 1, bounds: bounds)
                 if !Task.isCancelled, self.generation == gen { self.prevImage = pImage }
-            } else {
+            } else if perfClass == .medium {
+                // Parallel fetch adjacent
                 async let next = renderPage(at: pageIndex + 1, bounds: bounds)
                 async let prev = renderPage(at: pageIndex - 1, bounds: bounds)
                 let (nImage, pImage) = await (next, prev)
@@ -327,6 +339,30 @@ class PageBufferManager: ObservableObject {
                     self.nextImage = nImage
                     self.prevImage = pImage
                 }
+                
+                // Preload further ahead (+2, +3) in background to warm cache
+                guard !Task.isCancelled, self.generation == gen else { return }
+                async let p2 = renderPage(at: pageIndex + 2, bounds: bounds)
+                async let p3 = renderPage(at: pageIndex + 3, bounds: bounds)
+                _ = await (p2, p3)
+            } else { // .high
+                // Parallel fetch adjacent
+                async let next = renderPage(at: pageIndex + 1, bounds: bounds)
+                async let prev = renderPage(at: pageIndex - 1, bounds: bounds)
+                let (nImage, pImage) = await (next, prev)
+                if !Task.isCancelled, self.generation == gen {
+                    self.nextImage = nImage
+                    self.prevImage = pImage
+                }
+                
+                // Preload further ahead (+2, +3, +4, +5) and backward (-2)
+                guard !Task.isCancelled, self.generation == gen else { return }
+                async let p2 = renderPage(at: pageIndex + 2, bounds: bounds)
+                async let p3 = renderPage(at: pageIndex + 3, bounds: bounds)
+                async let p4 = renderPage(at: pageIndex + 4, bounds: bounds)
+                async let p5 = renderPage(at: pageIndex + 5, bounds: bounds)
+                async let prev2 = renderPage(at: pageIndex - 2, bounds: bounds)
+                _ = await (p2, p3, p4, p5, prev2)
             }
 
             emitNearingEndIfNeeded(at: pageIndex)
@@ -446,7 +482,7 @@ class PageBufferManager: ObservableObject {
                     self.prevSpread = SpreadPair(leftIndex: prevPair.leftIndex, rightIndex: prevPair.rightIndex, leftImage: pL, rightImage: pR)
                     self.prevImage = pL ?? pR
                 }
-            } else {
+            } else if perfClass == .medium {
                 if hasNext {
                     async let nextL = renderPage(at: nextPair.leftIndex,  bounds: pageBounds)
                     async let nextR = renderPage(at: nextPair.rightIndex, bounds: pageBounds)
@@ -467,6 +503,53 @@ class PageBufferManager: ObservableObject {
                         self.prevImage  = pL ?? pR
                     }
                 }
+                
+                // Preload spread +4 in background to warm cache
+                guard !Task.isCancelled, self.generation == gen else { return }
+                let spread4 = buildSpreadPair(leadIndex: leadIndex + 4, totalPages: totalPages, isMangaMode: isMangaMode)
+                if spread4.leftIndex != nil || spread4.rightIndex != nil {
+                    async let s4L = renderPage(at: spread4.leftIndex, bounds: pageBounds)
+                    async let s4R = renderPage(at: spread4.rightIndex, bounds: pageBounds)
+                    _ = await (s4L, s4R)
+                }
+            } else { // .high
+                if hasNext {
+                    async let nextL = renderPage(at: nextPair.leftIndex,  bounds: pageBounds)
+                    async let nextR = renderPage(at: nextPair.rightIndex, bounds: pageBounds)
+                    let nL = await nextL; self.decodeProgress = progress()
+                    let nR = await nextR; self.decodeProgress = progress()
+                    if !Task.isCancelled, self.generation == gen {
+                        self.nextSpread = SpreadPair(leftIndex: nextPair.leftIndex, rightIndex: nextPair.rightIndex, leftImage: nL, rightImage: nR)
+                        self.nextImage  = nL ?? nR
+                    }
+                }
+                if hasPrev {
+                    async let prevL = renderPage(at: prevPair.leftIndex,  bounds: pageBounds)
+                    async let prevR = renderPage(at: prevPair.rightIndex, bounds: pageBounds)
+                    let pL = await prevL; self.decodeProgress = progress()
+                    let pR = await prevR; self.decodeProgress = progress()
+                    if !Task.isCancelled, self.generation == gen {
+                        self.prevSpread = SpreadPair(leftIndex: prevPair.leftIndex, rightIndex: prevPair.rightIndex, leftImage: pL, rightImage: pR)
+                        self.prevImage  = pL ?? pR
+                    }
+                }
+                
+                // Preload spreads +4, +6, +8 and previous spread -4 in background
+                guard !Task.isCancelled, self.generation == gen else { return }
+                let spread4 = buildSpreadPair(leadIndex: leadIndex + 4, totalPages: totalPages, isMangaMode: isMangaMode)
+                let spread6 = buildSpreadPair(leadIndex: leadIndex + 6, totalPages: totalPages, isMangaMode: isMangaMode)
+                let spread8 = buildSpreadPair(leadIndex: leadIndex + 8, totalPages: totalPages, isMangaMode: isMangaMode)
+                let spreadPrev4 = buildSpreadPair(leadIndex: leadIndex - 4, totalPages: totalPages, isMangaMode: isMangaMode)
+                
+                async let s4L = renderPage(at: spread4.leftIndex, bounds: pageBounds)
+                async let s4R = renderPage(at: spread4.rightIndex, bounds: pageBounds)
+                async let s6L = renderPage(at: spread6.leftIndex, bounds: pageBounds)
+                async let s6R = renderPage(at: spread6.rightIndex, bounds: pageBounds)
+                async let s8L = renderPage(at: spread8.leftIndex, bounds: pageBounds)
+                async let s8R = renderPage(at: spread8.rightIndex, bounds: pageBounds)
+                async let sp4L = renderPage(at: spreadPrev4.leftIndex, bounds: pageBounds)
+                async let sp4R = renderPage(at: spreadPrev4.rightIndex, bounds: pageBounds)
+                _ = await (s4L, s4R, s6L, s6R, s8L, s8R, sp4L, sp4R)
             }
 
             self.decodeProgress = 1.0
