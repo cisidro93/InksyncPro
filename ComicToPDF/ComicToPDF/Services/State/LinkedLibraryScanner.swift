@@ -56,37 +56,30 @@ final class LinkedLibraryScanner: ObservableObject {
 
     /// Register a folder on an external drive or cloud provider.
     /// Files are never copied — only referenced via persistent bookmarks.
-    func linkDrive(folderURL: URL, displayName: String? = nil) async throws -> AppSettingsManager.LinkedDriveEntry {
-        let accessing = folderURL.startAccessingSecurityScopedResource()
-        defer { if accessing { folderURL.stopAccessingSecurityScopedResource() } }
+    func linkDrive(folderURL: URL, bookmarkData: Data, displayName: String? = nil) async throws -> AppSettingsManager.LinkedDriveEntry {
+        var isStale = false
+        let resolvedURL = try URL(
+            resolvingBookmarkData: bookmarkData,
+            options: .withoutUI,
+            relativeTo: nil,
+            bookmarkDataIsStale: &isStale
+        )
 
-        scanStatus = "Creating bookmark…"
-
-        // ✅ iOS CORRECT: Use options: [] for bookmark creation.
-        // .withSecurityScope is macOS App Sandbox only — it does not exist on iOS.
-        // The document picker's security grant is captured into the bookmark data
-        // automatically when the URL originates from UIDocumentPickerViewController.
-        let bookmarkData: Data
-        do {
-            bookmarkData = try folderURL.bookmarkData(
-                options: [],
-                includingResourceValuesForKeys: [.isUbiquitousItemKey],
-                relativeTo: nil
-            )
-        } catch {
-            Logger.shared.log("LinkedLibraryScanner: Bookmark creation failed: \(error.localizedDescription)", category: "Drive", type: .error)
-            throw error
-        }
+        let accessing = resolvedURL.startAccessingSecurityScopedResource()
+        defer { if accessing { resolvedURL.stopAccessingSecurityScopedResource() } }
 
         // Probe write capability while access is still active
-        let isReadOnly = !FileManager.default.isWritableFile(atPath: folderURL.path)
+        let isReadOnly = !FileManager.default.isWritableFile(atPath: resolvedURL.path)
 
         // Move disk I/O off the MainActor
         scanStatus = "Scanning folder…"
         let exts = supportedExtensions
-        let files: [URL] = await Task.detached(priority: .userInitiated) {
+        let files: [URL] = await Task.detached(priority: .userInitiated) { [resolvedURL] in
+            let accessingDetached = resolvedURL.startAccessingSecurityScopedResource()
+            defer { if accessingDetached { resolvedURL.stopAccessingSecurityScopedResource() } }
+
             guard let enumerator = FileManager.default.enumerator(
-                at: folderURL,
+                at: resolvedURL,
                 includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey],
                 options: [.skipsHiddenFiles]
             ) else { return [] }
@@ -96,10 +89,10 @@ final class LinkedLibraryScanner: ObservableObject {
         }.value
 
         scanStatus = "Found \(files.count) file\(files.count == 1 ? "" : "s") — registering…"
-        Logger.shared.log("LinkedLibraryScanner: Scanned \(files.count) files in '\(folderURL.lastPathComponent)'", category: "Drive")
+        Logger.shared.log("LinkedLibraryScanner: Scanned \(files.count) files in '\(resolvedURL.lastPathComponent)'", category: "Drive")
 
         let entry = AppSettingsManager.LinkedDriveEntry(
-            displayName: displayName ?? folderURL.lastPathComponent,
+            displayName: displayName ?? resolvedURL.lastPathComponent,
             volumeBookmarkData: bookmarkData,
             lastSeenDate: Date(),
             lastSyncedDate: Date(),
@@ -113,7 +106,7 @@ final class LinkedLibraryScanner: ObservableObject {
         // Drives with ≤500 files register each file individually (original behavior).
         let isLargeDrive = files.count > Self.largeDriveThreshold
         if !isLargeDrive {
-            await registerFiles(files, driveEntry: entry, rootURL: folderURL)
+            await registerFiles(files, driveEntry: entry, rootURL: resolvedURL)
         } else {
             Logger.shared.log(
                 "LinkedLibraryScanner: Large drive detected (\(files.count) files > \(Self.largeDriveThreshold) threshold). Registering as DriveFolder card — browse via LinkedDriveBrowserView.",
@@ -172,7 +165,10 @@ final class LinkedLibraryScanner: ObservableObject {
         }
 
         let exts = supportedExtensions
-        let foundFiles: [URL] = await Task.detached(priority: .userInitiated) { [exts] in
+        let foundFiles: [URL] = await Task.detached(priority: .userInitiated) { [exts, url] in
+            let accessingDetached = url.startAccessingSecurityScopedResource()
+            defer { if accessingDetached { url.stopAccessingSecurityScopedResource() } }
+
             guard let enumerator = FileManager.default.enumerator(
                 at: url,
                 includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey],
@@ -239,19 +235,9 @@ final class LinkedLibraryScanner: ObservableObject {
     // MARK: - Re-link Drive
 
     /// Re-establishes the bookmark for a disconnected drive without wiping library records.
-    func relinkDrive(_ entry: AppSettingsManager.LinkedDriveEntry, newFolderURL: URL) async throws {
-        let accessing = newFolderURL.startAccessingSecurityScopedResource()
-        defer { if accessing { newFolderURL.stopAccessingSecurityScopedResource() } }
-
-        // ✅ iOS CORRECT: options: [] for bookmark creation
-        let newBookmark = try newFolderURL.bookmarkData(
-            options: [],
-            includingResourceValuesForKeys: [.isUbiquitousItemKey],
-            relativeTo: nil
-        )
-
+    func relinkDrive(_ entry: AppSettingsManager.LinkedDriveEntry, newFolderURL: URL, newBookmarkData: Data) async throws {
         var updated = entry
-        updated.volumeBookmarkData = newBookmark
+        updated.volumeBookmarkData = newBookmarkData
         updated.lastSeenDate = Date()
         updated.displayName = newFolderURL.lastPathComponent
         AppSettingsManager.shared.updateLinkedDrive(updated)

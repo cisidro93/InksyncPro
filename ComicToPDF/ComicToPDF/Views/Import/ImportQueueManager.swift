@@ -48,6 +48,7 @@ class ImportQueueManager: ObservableObject {
     /// (3) chapter-key fast check, (4) SHA-256 hash check vs library.
     func stageWithDuplicateCheck(_ incomingURLs: [URL]) async -> StageResult {
         let currentSnapshot = stagedURLs
+        let libraryFilenames = Set(LibraryService.shared.items.map { $0.url.lastPathComponent })
 
         // 2. Fast pre-filters (no file I/O)
         let existingFilenames = Set(currentSnapshot.map { $0.lastPathComponent })
@@ -58,7 +59,7 @@ class ImportQueueManager: ObservableObject {
         })
 
         // Move the heavy loop off the main thread
-        let result = await Task.detached(priority: .userInitiated) { () -> (toStage: [URL], dupes: [URL]) in
+        let result = await Task.detached(priority: .userInitiated) { [libraryFilenames] () -> (toStage: [URL], dupes: [URL]) in
             var seenPaths = Set<String>()
             let dedupedIncoming = incomingURLs.filter { seenPaths.insert($0.path).inserted }
 
@@ -69,7 +70,7 @@ class ImportQueueManager: ObservableObject {
                 let filename = url.lastPathComponent
                 let seriesFolder = url.deletingLastPathComponent().lastPathComponent
 
-                if existingFilenames.contains(filename) {
+                if existingFilenames.contains(filename) || libraryFilenames.contains(filename) {
                     dupes.append(url); continue
                 }
 
