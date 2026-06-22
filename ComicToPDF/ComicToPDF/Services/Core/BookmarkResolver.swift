@@ -55,7 +55,7 @@ actor BookmarkResolver {
         do {
             let url = try URL(
                 resolvingBookmarkData: bookmarkData,
-                options: [.withoutUI, .withSecurityScope],
+                options: .withoutUI,
                 relativeTo: nil,
                 bookmarkDataIsStale: &isStale
             )

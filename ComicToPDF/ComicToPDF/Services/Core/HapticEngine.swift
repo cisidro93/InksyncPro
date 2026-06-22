@@ -4,7 +4,7 @@ import UIKit
 /// All methods are safe to call from any thread.
 enum HapticEngine {
 
-    private static var cachedIsEnabled: Bool = {
+    private static let cachedIsEnabled: Bool = {
         updateCache()
         NotificationCenter.default.addObserver(
             forName: UserDefaults.didChangeNotification,
@@ -16,7 +16,7 @@ enum HapticEngine {
         return _cachedIsEnabled
     }()
 
-    private static var _cachedIsEnabled = true
+    nonisolated(unsafe) private static var _cachedIsEnabled = true
 
     private static func updateCache() {
         let essential = UserDefaults.standard.bool(forKey: "essentialReaderMode")
