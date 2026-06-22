@@ -22,6 +22,7 @@ struct PPLReaderView: View {
     var onCenterTap: () -> Void
 
     @ObservedObject private var bufferManager = PageBufferManager.shared
+    @EnvironmentObject var settingsManager: AppSettingsManager
 
     // ── Zoom / pan state ──────────────────────────────────────────────────────
     @State private var scale: CGFloat = 1.0
@@ -163,9 +164,9 @@ struct PPLReaderView: View {
             .offset(x: offset.width + dragOffset.width,
                     y: offset.height + dragOffset.height)
         }
-        // If drawing mode is on, we let PKCanvasView handle gestures and disable reader zoom/pan
-        .gesture(isDrawingMode ? nil : zoomGesture(geo: geo))
-        .simultaneousGesture(isDrawingMode ? nil : swipeAndPanGesture(geo: geo))
+        // If drawing mode is on, we let PKCanvasView handle gestures and disable reader zoom/pan (unless Pencil-Only is active)
+        .gesture((isDrawingMode && !settingsManager.conversionSettings.pencilOnlyDrawing) ? nil : zoomGesture(geo: geo))
+        .simultaneousGesture((isDrawingMode && !settingsManager.conversionSettings.pencilOnlyDrawing) ? nil : swipeAndPanGesture(geo: geo))
         .onTapGesture(count: 2) { loc in handleDoubleTap(at: loc, geo: geo) }
         .onTapGesture              { loc in handleSingleTap(at: loc, geo: geo) }
         .overlay(alignment: .bottom) {

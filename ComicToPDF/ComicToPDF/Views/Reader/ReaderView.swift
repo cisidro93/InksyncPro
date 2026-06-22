@@ -18,6 +18,7 @@ struct ReaderView: View {
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var conversionManager: ConversionManager
     @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject var settingsManager: AppSettingsManager
     
     @AppStorage("isMangaMode") private var isMangaMode = false
     @State private var isPanelViewEnabled = true
@@ -508,6 +509,7 @@ struct ReaderView: View {
                                     CanvasInkBearingView(
                                         canvasView: $canvasView,
                                         isDrawingMode: isDrawingMode,
+                                        pencilOnly: settingsManager.conversionSettings.pencilOnlyDrawing,
                                         onDrawingSaved: { drawing in
                                             // Item 8 — delegated to helper to keep comicReaderContent type-checkable
                                             saveInkAnnotation(drawing)

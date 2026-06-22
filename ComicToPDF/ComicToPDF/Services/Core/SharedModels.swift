@@ -584,6 +584,7 @@ struct ConversionSettings: Codable, Equatable, Sendable {
     var embedCharacterGlossary: Bool = true // ✅ NEW: Toggle to append glossary page for Kindle
     var linkCoverAsSpread: Bool = false // ✅ NEW: Pair Cover Page with Page 2 as a spread
     var customAliases: [String: String] = [:]
+    var pencilOnlyDrawing: Bool = false
 
 
     /// Returns `true` when the user has changed at least one meaningful conversion
@@ -752,6 +753,7 @@ struct ConversionSettings: Codable, Equatable, Sendable {
         case isGuidedView     // Legacy -- read-only for migration
         case comicVineAPIKey  // Legacy API key migration only
         case customAliases
+        case pencilOnlyDrawing
     }
     
     init() {}
@@ -806,6 +808,7 @@ struct ConversionSettings: Codable, Equatable, Sendable {
         }
         
         customAliases = (try? container.decodeIfPresent([String: String].self, forKey: .customAliases)) ?? [:]
+        pencilOnlyDrawing = (try? container.decodeIfPresent(Bool.self, forKey: .pencilOnlyDrawing)) ?? false
     }
     
     func encode(to encoder: Encoder) throws {
@@ -840,6 +843,7 @@ struct ConversionSettings: Codable, Equatable, Sendable {
         // comicVineAPIKey is intentionally not encoded (moved to Keychain)
         // isGuidedView is intentionally not encoded (computed from outputPipeline)
         try container.encode(customAliases, forKey: .customAliases)
+        try container.encode(pencilOnlyDrawing, forKey: .pencilOnlyDrawing)
     }
 }
 

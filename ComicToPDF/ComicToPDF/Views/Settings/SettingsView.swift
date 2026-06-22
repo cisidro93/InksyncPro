@@ -35,6 +35,18 @@ struct SettingsView: View {
     @State private var customPresetName = "Custom Base"
     @Environment(\.dismiss) var dismiss
 
+    enum FocusableField: Hashable {
+        case kindleEmail
+        case comicVineAPIKey
+        case aniListAPIToken
+        case aniListClientID
+        case mangaUpdatesUsername
+        case mangaUpdatesPassword
+        case aliasImportedTitle
+        case aliasLibraryTitle
+    }
+    @FocusState private var focusedField: FocusableField?
+
     @State private var showingAIExport = false
     @State private var aiExportDocument: JSONFileDocument?
     @State private var showingAIFeedbackAlert = false
@@ -169,6 +181,19 @@ struct SettingsView: View {
         .background(Color.inkBackground.ignoresSafeArea())
         .listRowBackground(Color.inkSurface.opacity(0.4))
         .navigationTitle("Preferences")
+        .background(
+            Group {
+                Button("") {
+                    dismiss()
+                }
+                .keyboardShortcut("w", modifiers: .command)
+                Button("") {
+                    dismiss()
+                }
+                .keyboardShortcut(.cancelAction)
+            }
+            .opacity(0)
+        )
         .onChange(of: settingsManager.conversionSettings) {
             settingsManager.save()
         }
@@ -316,6 +341,10 @@ struct SettingsView: View {
                 settingsIcon("hand.tap.fill", color: .orange)
                 Toggle("Back Tap Navigation", isOn: $backTapEnabled)
             }
+            HStack {
+                settingsIcon("applepencil.and.scribble", color: .orange)
+                Toggle("Apple Pencil Drawing Only", isOn: $settingsManager.conversionSettings.pencilOnlyDrawing)
+            }
         }
     }
 
@@ -328,6 +357,10 @@ struct SettingsView: View {
                     .keyboardType(.emailAddress)
                     .autocapitalization(.none)
                     .disableAutocorrection(true)
+                    .focused($focusedField, equals: .kindleEmail)
+                    .onSubmit {
+                        focusedField = nil
+                    }
             }
         }
     }
@@ -675,6 +708,10 @@ struct SettingsView: View {
                     .textContentType(.password)
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
+                    .focused($focusedField, equals: .comicVineAPIKey)
+                    .onSubmit {
+                        verifyAPIKey()
+                    }
             }
             Text("To comply with ComicVine's commercial guidelines, please enter your free personal API key for metadata lookups.")
                 .font(.caption2)
@@ -731,6 +768,10 @@ struct SettingsView: View {
                     .textContentType(.password)
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
+                    .focused($focusedField, equals: .aniListAPIToken)
+                    .onSubmit {
+                        focusedField = .aniListClientID
+                    }
             }
             Text("Enter a personal developer token to authenticate requests and increase rate limits on AniList.")
                 .font(.caption2)
@@ -795,6 +836,10 @@ struct SettingsView: View {
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
                         .padding(.vertical, 2)
+                        .focused($focusedField, equals: .aniListClientID)
+                        .onSubmit {
+                            focusedField = nil
+                        }
                     
                     Button(action: {
                         let clientID = aniListClientID.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -881,11 +926,29 @@ struct SettingsView: View {
                         .textFieldStyle(.roundedBorder)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
+                        .focused($focusedField, equals: .aliasImportedTitle)
+                        .onSubmit {
+                            focusedField = .aliasLibraryTitle
+                        }
                     
                     TextField("Library Folder/Series Title (e.g., Tongari Boushi no Atelier)", text: $aliasLibraryTitle)
                         .textFieldStyle(.roundedBorder)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
+                        .focused($focusedField, equals: .aliasLibraryTitle)
+                        .onSubmit {
+                            let imported = aliasImportedTitle.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                            let library = aliasLibraryTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+                            if !imported.isEmpty && !library.isEmpty {
+                                settingsManager.conversionSettings.customAliases[imported] = library
+                                settingsManager.save()
+                                aliasImportedTitle = ""
+                                aliasLibraryTitle = ""
+                                focusedField = .aliasImportedTitle
+                            } else {
+                                focusedField = nil
+                            }
+                        }
                     
                     Button(action: {
                         let imported = aliasImportedTitle.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -928,10 +991,18 @@ struct SettingsView: View {
                     TextField("MangaUpdates Username (Optional)", text: $settingsManager.conversionSettings.mangaUpdatesUsername)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
+                        .focused($focusedField, equals: .mangaUpdatesUsername)
+                        .onSubmit {
+                            focusedField = .mangaUpdatesPassword
+                        }
                     SecureField("MangaUpdates Password (Optional)", text: $settingsManager.conversionSettings.mangaUpdatesPassword)
                         .textContentType(.password)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
+                        .focused($focusedField, equals: .mangaUpdatesPassword)
+                        .onSubmit {
+                            verifyMangaUpdatesCredentials()
+                        }
                 }
             }
             Text("Log in to MangaUpdates to search and fetch series details using your personal account profile.")
