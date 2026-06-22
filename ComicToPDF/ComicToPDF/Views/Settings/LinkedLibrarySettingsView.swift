@@ -1,5 +1,6 @@
 import SwiftUI
 
+@MainActor
 struct LinkedLibrarySettingsView: View {
     @EnvironmentObject var conversionManager: ConversionManager
     @ObservedObject var appSettings = AppSettingsManager.shared
