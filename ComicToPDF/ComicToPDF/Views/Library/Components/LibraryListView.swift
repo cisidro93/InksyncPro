@@ -381,6 +381,7 @@ struct LibraryListView: View {
                 } label: {
                     ModernSeriesRow(group: group, isSelected: group.issues.allSatisfy { multiSelection.contains($0.id) }, isBatch: true)
                 }
+                .buttonStyle(TactileButtonStyle())
             } else {
                 if let folderUUID = UUID(uuidString: group.id) {
                     Button {
@@ -390,6 +391,7 @@ struct LibraryListView: View {
                     } label: {
                         ModernSeriesRow(group: group, isSelected: false, isBatch: false)
                     }
+                    .buttonStyle(TactileButtonStyle())
                     .contextMenu {
                         Button {
                             if let next = nextUnread(in: group) {
@@ -429,6 +431,7 @@ struct LibraryListView: View {
                     NavigationLink(destination: LazyView { SeriesDetailView(series: group, selectedPDF: $selectedPDF, useNavigationStack: useNavigationStack) }) {
                         ModernSeriesRow(group: group, isSelected: false, isBatch: false)
                     }
+                    .buttonStyle(TactileButtonStyle())
                     .contextMenu {
                         Button {
                             if let next = nextUnread(in: group) {
@@ -538,6 +541,7 @@ struct LibraryListView: View {
                  } label: {
                      ModernFileRow(pdf: pdf, isSelected: multiSelection.contains(pdf.id), isBatch: true)
                   }
+                  .buttonStyle(TactileButtonStyle())
              } else {
                  Button {
                      if case .cloud = pdf.sourceMode {
@@ -558,6 +562,7 @@ struct LibraryListView: View {
                  } label: {
                      ModernFileRow(pdf: pdf, isSelected: false, isBatch: false)
                  }
+                 .buttonStyle(TactileButtonStyle())
                  .tag(pdf)
                  .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                      Button {
@@ -648,6 +653,7 @@ struct LibraryListView: View {
             }
             .padding(.vertical, 2)
         }
+        .buttonStyle(TactileButtonStyle())
         .disabled(!isConnected)
         .listRowBackground(Color.inkSurface.opacity(0.4))
         .listRowSeparatorTint(Color(UIColor.separator))

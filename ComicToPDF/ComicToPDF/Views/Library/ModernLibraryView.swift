@@ -161,14 +161,14 @@ struct ModernLibraryView: View {
                 
                 if press.key == .escape {
                     if isSearchActive {
-                        withAnimation {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                             viewModel.searchText = ""
                             isSearchActive = false
                         }
                         return .handled
                     }
                     if isBatchMode {
-                        withAnimation {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                             isBatchMode = false
                             multiSelection.removeAll()
                         }
@@ -344,10 +344,18 @@ struct ModernLibraryView: View {
                         Divider()
                         
                         // View Options
-                        Button(action: { viewStyle = viewStyle == .grid ? .list : .grid }) {
+                        Button(action: {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                viewStyle = viewStyle == .grid ? .list : .grid
+                            }
+                        }) {
                             Label(viewStyle == .grid ? "Switch to List View" : "Switch to Grid View", systemImage: viewStyle == .grid ? "list.bullet" : "square.grid.2x2")
                         }
-                        Button(action: { withAnimation { isBatchMode.toggle() } }) {
+                        Button(action: {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                isBatchMode.toggle()
+                            }
+                        }) {
                             Label(isBatchMode ? "Exit Batch Mode" : "Enter Batch Mode", systemImage: "checkmark.circle")
                         }
                         Button(action: handleVaultToggle) {
@@ -593,7 +601,7 @@ struct ModernLibraryView: View {
                             }
                         }
                         Button("Cancel") {
-                            withAnimation(.spring) {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                                 viewModel.searchText = ""
                                 isSearchActive = false
                             }
@@ -775,11 +783,15 @@ struct ModernLibraryView: View {
 
     private func handleVaultToggle() {
         if settingsManager.isVaultUnlocked {
-            withAnimation { settingsManager.isVaultUnlocked = false }
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { settingsManager.isVaultUnlocked = false }
         } else {
             Task {
                 if await SecurityManager.shared.authenticate() {
-                    await MainActor.run { withAnimation { settingsManager.isVaultUnlocked = true } }
+                    await MainActor.run {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                            settingsManager.isVaultUnlocked = true
+                        }
+                    }
                 }
             }
         }

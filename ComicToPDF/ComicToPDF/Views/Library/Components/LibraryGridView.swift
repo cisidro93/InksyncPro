@@ -11,6 +11,7 @@ struct GridRowItem: Identifiable {
     let items: [LibraryListItem]
 }
 
+@MainActor
 struct LibraryGridView: View {
     @EnvironmentObject var conversionManager: ConversionManager
     @Environment(\.horizontalSizeClass) private var hSizeClass
@@ -265,7 +266,7 @@ struct LibraryGridView: View {
                 } label: {
                     ModernGridSeriesCell(group: group, isSelected: group.issues.allSatisfy { multiSelection.contains($0.id) }, isBatch: true)
                 }
-                .buttonStyle(PlainButtonStyle())
+                .buttonStyle(TactileButtonStyle())
             } else {
                 if let folderUUID = UUID(uuidString: group.id) {
                     // It's a custom Collection folder — drill down natively
@@ -276,7 +277,7 @@ struct LibraryGridView: View {
                     } label: {
                         ModernGridSeriesCell(group: group, isSelected: false, isBatch: false)
                     }
-                    .buttonStyle(PlainButtonStyle())
+                    .buttonStyle(TactileButtonStyle())
                     .contextMenu {
                         // Standard Series context actions...
                         Button {
@@ -316,7 +317,7 @@ struct LibraryGridView: View {
                     NavigationLink(destination: LazyView { SeriesDetailView(series: group, selectedPDF: $selectedPDF, useNavigationStack: useNavigationStack) }) {
                         ModernGridSeriesCell(group: group, isSelected: false, isBatch: false)
                     }
-                    .buttonStyle(PlainButtonStyle())
+                    .buttonStyle(TactileButtonStyle())
                     .contextMenu {
                         Button {
                             if let next = nextUnread(in: group) {
@@ -411,7 +412,7 @@ struct LibraryGridView: View {
                 } label: {
                     ModernGridFileCell(pdf: pdf, isSelected: multiSelection.contains(pdf.id), isBatch: true)
                 }
-                .buttonStyle(CellButtonStyle())
+                .buttonStyle(TactileButtonStyle())
             } else {
                 // ── Cloud files: always open the detail sheet regardless of tapAction.
                 // Cloud-sourced files cannot be read locally — they need Download & Convert first.
@@ -425,7 +426,7 @@ struct LibraryGridView: View {
                     } label: {
                         ModernGridFileCell(pdf: pdf, isSelected: false, isBatch: false)
                     }
-                    .buttonStyle(CellButtonStyle())
+                    .buttonStyle(TactileButtonStyle())
                     .contextMenu {
                         if hSizeClass == .compact {
                             Button {
@@ -459,7 +460,7 @@ struct LibraryGridView: View {
                     } label: {
                         ModernGridFileCell(pdf: pdf, isSelected: false, isBatch: false)
                     }
-                    .buttonStyle(CellButtonStyle())
+                    .buttonStyle(TactileButtonStyle())
                     .contextMenu {
                         if hSizeClass == .compact {
                             Button {
@@ -581,7 +582,7 @@ struct LibraryGridView: View {
                 .padding(12)
             }
         }
-        .buttonStyle(PlainButtonStyle())
+        .buttonStyle(TactileButtonStyle())
         .disabled(!isConnected)
         .opacity(isConnected ? 1.0 : 0.55)
         .contextMenu {
