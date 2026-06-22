@@ -60,7 +60,7 @@ final class LinkedLibraryScanner: ObservableObject {
         var isStale = false
         let resolvedURL = try URL(
             resolvingBookmarkData: bookmarkData,
-            options: .withoutUI,
+            options: [.withoutUI, .withSecurityScope],
             relativeTo: nil,
             bookmarkDataIsStale: &isStale
         )
@@ -143,7 +143,7 @@ final class LinkedLibraryScanner: ObservableObject {
         var isStale = false
         guard let url = try? URL(
             resolvingBookmarkData: entry.volumeBookmarkData,
-            options: .withoutUI,
+            options: [.withoutUI, .withSecurityScope],
             relativeTo: nil,
             bookmarkDataIsStale: &isStale
         ) else {
@@ -191,7 +191,7 @@ final class LinkedLibraryScanner: ObservableObject {
             var fileIsStale = false
             if let resolved = try? URL(
                 resolvingBookmarkData: bm,
-                options: .withoutUI,
+                options: [.withoutUI, .withSecurityScope],
                 relativeTo: nil,
                 bookmarkDataIsStale: &fileIsStale
             ) {
@@ -266,7 +266,7 @@ final class LinkedLibraryScanner: ObservableObject {
                 var rootPath: String? = nil
                 if let rootURL = try? URL(
                     resolvingBookmarkData: volumeData,
-                    options: .withoutUI,
+                    options: [.withoutUI, .withSecurityScope],
                     relativeTo: nil,
                     bookmarkDataIsStale: &isStale
                 ) {
@@ -278,7 +278,7 @@ final class LinkedLibraryScanner: ObservableObject {
                         var fileIsStale = false
                         if let resolved = try? URL(
                             resolvingBookmarkData: bm,
-                            options: .withoutUI,
+                            options: [.withoutUI, .withSecurityScope],
                             relativeTo: nil,
                             bookmarkDataIsStale: &fileIsStale
                         ) {
@@ -402,7 +402,7 @@ final class LinkedLibraryScanner: ObservableObject {
         for pair in copiedPairs {
             // ✅ iOS CORRECT: options: [] for per-file bookmark creation
             guard let bookmark = try? pair.driveURL.bookmarkData(
-                options: [],
+                options: .withSecurityScope,
                 includingResourceValuesForKeys: nil,
                 relativeTo: nil
             ) else {
@@ -492,7 +492,7 @@ final class LinkedLibraryScanner: ObservableObject {
 
                 // Per-file bookmarks use options: []
                 guard let bookmark = try? fileURL.bookmarkData(
-                    options: [],
+                    options: .withSecurityScope,
                     includingResourceValuesForKeys: nil,
                     relativeTo: nil
                 ) else { continue }
@@ -549,7 +549,7 @@ final class LinkedLibraryScanner: ObservableObject {
                             var isStale = false
                             if let resolvedURL = try? URL(
                                 resolvingBookmarkData: bookmark,
-                                options: .withoutUI,
+                                options: [.withoutUI, .withSecurityScope],
                                 relativeTo: nil,
                                 bookmarkDataIsStale: &isStale
                             ) {
@@ -587,11 +587,11 @@ final class LinkedLibraryScanner: ObservableObject {
                 var isStale = false
                 if let staleURL = try? URL(
                     resolvingBookmarkData: staleData,
-                    options: .withoutUI,
+                    options: [.withoutUI, .withSecurityScope],
                     relativeTo: nil,
                     bookmarkDataIsStale: &isStale
                 ), let freshBookmark = try? staleURL.bookmarkData(
-                    options: [],
+                    options: .withSecurityScope,
                     includingResourceValuesForKeys: nil,
                     relativeTo: nil
                 ) {
