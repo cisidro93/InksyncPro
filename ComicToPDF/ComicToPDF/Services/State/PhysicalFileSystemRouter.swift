@@ -643,34 +643,36 @@ class PhysicalFileSystemRouter {
     }
     
     nonisolated static func containsDisclaimerText(in image: UIImage) -> Bool {
-        guard let cgImage = image.cgImage else { return false }
-        let request = VNRecognizeTextRequest()
-        request.recognitionLevel = .fast
-        request.usesLanguageCorrection = false
-        
-        let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
-        do {
-            try handler.perform([request])
-            guard let observations = request.results else { return false }
+        autoreleasepool {
+            guard let cgImage = image.cgImage else { return false }
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = .fast
+            request.usesLanguageCorrection = false
             
-            let keywords = [
-                "pirat", "illegal", "scanlation", "disclaimer", "not for sale",
-                "free translation", "support the official", "paid for this", "scammed"
-            ]
-            
-            for observation in observations {
-                guard let topCandidate = observation.topCandidates(1).first else { continue }
-                let text = topCandidate.string.lowercased()
-                for keyword in keywords {
-                    if text.contains(keyword) {
-                        return true
+            let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+            do {
+                try handler.perform([request])
+                guard let observations = request.results else { return false }
+                
+                let keywords = [
+                    "pirat", "illegal", "scanlation", "disclaimer", "not for sale",
+                    "free translation", "support the official", "paid for this", "scammed"
+                ]
+                
+                for observation in observations {
+                    guard let topCandidate = observation.topCandidates(1).first else { continue }
+                    let text = topCandidate.string.lowercased()
+                    for keyword in keywords {
+                        if text.contains(keyword) {
+                            return true
+                        }
                     }
                 }
+            } catch {
+                Logger.shared.log("[Disclaimer Detector] Vision OCR Error: \(error.localizedDescription)", category: "AI", type: .error)
             }
-        } catch {
-            Logger.shared.log("[Disclaimer Detector] Vision OCR Error: \(error.localizedDescription)", category: "AI", type: .error)
+            return false
         }
-        return false
     }
     
     nonisolated static func extractCoverImageStatic(from url: URL) -> UIImage? {
@@ -684,54 +686,68 @@ class PhysicalFileSystemRouter {
             }
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }
             
-            guard let document = PDFDocument(url: url) else { return nil }
-            
-            let drawPage: (PDFPage) -> UIImage? = { page in
-                let pageBounds = page.bounds(for: .mediaBox)
-                guard pageBounds.width > 0 && pageBounds.height > 0 && !pageBounds.width.isNaN && !pageBounds.height.isNaN else { return nil }
-                let size = CGSize(width: 300, height: 450)
-                let scale = min(size.width / pageBounds.width, size.height / pageBounds.height)
-                let scaledSize = CGSize(width: pageBounds.width * scale, height: pageBounds.height * scale)
-                guard scaledSize.width > 0 && scaledSize.height > 0 && !scaledSize.width.isNaN && !scaledSize.height.isNaN else { return nil }
+            return autoreleasepool { () -> UIImage? in
+                guard let document = PDFDocument(url: url) else { return nil }
                 
-                let renderer = UIGraphicsImageRenderer(size: scaledSize)
-                return renderer.image { context in
-                    UIColor.white.setFill()
-                    context.fill(CGRect(origin: .zero, size: scaledSize))
+                let drawPage: (PDFPage) -> UIImage? = { page in
+                    let pageBounds = page.bounds(for: .mediaBox)
+                    guard pageBounds.width > 0 && pageBounds.height > 0 && !pageBounds.width.isNaN && !pageBounds.height.isNaN else { return nil }
+                    let size = CGSize(width: 300, height: 450)
+                    let scale = min(size.width / pageBounds.width, size.height / pageBounds.height)
+                    let scaledSize = CGSize(width: pageBounds.width * scale, height: pageBounds.height * scale)
+                    guard scaledSize.width > 0 && scaledSize.height > 0 && !scaledSize.width.isNaN && !scaledSize.height.isNaN else { return nil }
                     
-                    context.cgContext.translateBy(x: 0, y: scaledSize.height)
-                    context.cgContext.scaleBy(x: scale, y: -scale)
-                    
-                    page.draw(with: .mediaBox, to: context.cgContext)
-                }
-            }
-            
-            // Try up to the first 5 pages to find a portrait cover
-            var firstSpreadImage: UIImage? = nil
-            for i in 0..<min(document.pageCount, 5) {
-                if let page = document.page(at: i) {
-                    let bounds = page.bounds(for: .mediaBox)
-                    // Skip landscape (two-page spread)
-                    if bounds.width > bounds.height && document.pageCount > 1 {
-                        if firstSpreadImage == nil { firstSpreadImage = drawPage(page) }
-                        continue
+                    let renderer = UIGraphicsImageRenderer(size: scaledSize)
+                    return renderer.image { context in
+                        UIColor.white.setFill()
+                        context.fill(CGRect(origin: .zero, size: scaledSize))
+                        
+                        context.cgContext.translateBy(x: 0, y: scaledSize.height)
+                        context.cgContext.scaleBy(x: scale, y: -scale)
+                        
+                        page.draw(with: .mediaBox, to: context.cgContext)
                     }
-                    if let portrait = drawPage(page) {
-                        if PhysicalFileSystemRouter.containsDisclaimerText(in: portrait) {
-                            Logger.shared.log("[Disclaimer Detector] Skipping PDF page \(i) due to disclaimer/warning text.", category: "FileSystem", type: .warning)
-                            continue
+                }
+                
+                // Try up to the first 5 pages to find a portrait cover
+                var firstSpreadImage: UIImage? = nil
+                for i in 0..<min(document.pageCount, 5) {
+                    let pageImage = autoreleasepool { () -> UIImage? in
+                        guard let page = document.page(at: i) else { return nil }
+                        let bounds = page.bounds(for: .mediaBox)
+                        // Skip landscape (two-page spread)
+                        if bounds.width > bounds.height && document.pageCount > 1 {
+                            return drawPage(page)
                         }
-                        return portrait
+                        if let portrait = drawPage(page) {
+                            if PhysicalFileSystemRouter.containsDisclaimerText(in: portrait) {
+                                Logger.shared.log("[Disclaimer Detector] Skipping PDF page \(i) due to disclaimer/warning text.", category: "FileSystem", type: .warning)
+                                return nil
+                            }
+                            return portrait
+                        }
+                        return nil
+                    }
+                    
+                    if let img = pageImage {
+                        if let page = document.page(at: i) {
+                            let bounds = page.bounds(for: .mediaBox)
+                            if bounds.width > bounds.height && document.pageCount > 1 {
+                                if firstSpreadImage == nil { firstSpreadImage = img }
+                            } else {
+                                return img
+                            }
+                        }
                     }
                 }
+                
+                // Fallback to the first spread, or page 0 if nothing else worked
+                if let fallback = firstSpreadImage { return fallback }
+                if let page = document.page(at: 0) {
+                    return drawPage(page)
+                }
+                return nil
             }
-            
-            // Fallback to the first spread, or page 0 if nothing else worked
-            if let fallback = firstSpreadImage { return fallback }
-            if let page = document.page(at: 0) {
-                return drawPage(page)
-            }
-            return nil
         }
 
         if ["cbz", "zip", "epub"].contains(ext) {
@@ -818,7 +834,12 @@ class PhysicalFileSystemRouter {
                             ] as CFDictionary
                             
                             if let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, downsampleOpts) {
-                                return UIImage(cgImage: cg)
+                                let img = UIImage(cgImage: cg)
+                                if PhysicalFileSystemRouter.containsDisclaimerText(in: img) {
+                                    Logger.shared.log("[Disclaimer Detector] Skipping ZIP entry '\(entry.path)' due to disclaimer/warning text content.", category: "FileSystem", type: .warning)
+                                    return nil
+                                }
+                                return img
                             }
                             return nil
                         } catch {
@@ -828,10 +849,6 @@ class PhysicalFileSystemRouter {
                     }
                     
                     if let img = image {
-                        if PhysicalFileSystemRouter.containsDisclaimerText(in: img) {
-                            Logger.shared.log("[Disclaimer Detector] Skipping ZIP entry '\(entry.path)' due to disclaimer/warning text content.", category: "FileSystem", type: .warning)
-                            continue
-                        }
                         if img.size.width > img.size.height {
                             if firstSpreadImage == nil { firstSpreadImage = img }
                             continue
@@ -887,7 +904,12 @@ class PhysicalFileSystemRouter {
                                 ] as CFDictionary
                                 
                                 if let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, downsampleOpts) {
-                                    return UIImage(cgImage: cg)
+                                    let img = UIImage(cgImage: cg)
+                                    if PhysicalFileSystemRouter.containsDisclaimerText(in: img) {
+                                        Logger.shared.log("[Disclaimer Detector] Skipping CBR entry '\(entry.fileName)' due to disclaimer/warning text content.", category: "FileSystem", type: .warning)
+                                        return nil
+                                    }
+                                    return img
                                 }
                                 return nil
                             } catch {
@@ -895,10 +917,6 @@ class PhysicalFileSystemRouter {
                             }
                         }
                         guard let img = image else { continue }
-                        if PhysicalFileSystemRouter.containsDisclaimerText(in: img) {
-                            Logger.shared.log("[Disclaimer Detector] Skipping CBR entry '\(entry.fileName)' due to disclaimer/warning text content.", category: "FileSystem", type: .warning)
-                            continue
-                        }
                         if img.size.width > img.size.height {
                             if firstSpread == nil { firstSpread = img }
                             continue

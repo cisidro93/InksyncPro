@@ -141,12 +141,15 @@ struct CBTExtractor {
 
             if imageExtensions.contains(ext), dataEnd <= archiveData.count {
                 let fileData = archiveData[dataStart ..< dataEnd]
-                if let image = UIImage(data: fileData) {
-                    if PhysicalFileSystemRouter.containsDisclaimerText(in: image) {
-                        offset = newOffset
-                        continue
+                let image = autoreleasepool { () -> UIImage? in
+                    guard let img = UIImage(data: fileData) else { return nil }
+                    if PhysicalFileSystemRouter.containsDisclaimerText(in: img) {
+                        return nil
                     }
-                    return image
+                    return img
+                }
+                if let img = image {
+                    return img
                 }
             }
 
