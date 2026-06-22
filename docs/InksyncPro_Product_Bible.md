@@ -18,7 +18,7 @@ The user experience philosophy: **the app should feel like a beautifully crafted
 
 2. **Robust Data Integrity & Sentinel Security:** Cloud-first, non-destructive architecture with strict lifecycle management. Features an `InstallGuardService` utilizing a non-synced Sentinel file (`.inksync_install_sentinel_v1`) stored in the local `Application Support` directory to accurately detect clean installations versus app updates. Wipes ghost files synced by iCloud in the public `Documents` directory upon fresh installs, avoiding Vault-based copy mechanisms that cause storage bloat and compiler debt.
 
-3. **High-Performance Architecture:** Swift 6 concurrency compliance, background-threaded extraction, and robust memory management preventing OOM crashes. The conversion pipeline utilizes `O(1)` memory disk streaming for massive `.cbz` payloads to bypass `JetsamEvent` kills. The reader uses `CGImageSourceCreateThumbnailAtIndex` for professional image downsampling during the I/O read phase, a custom LRU `NSCache` with `maxCacheSize = 7` to restrict the memory footprint to ~15MB, and asynchronous prefetching tasks (`±2` pages around the active page) to ensure seamless reading performance.
+3. **High-Performance Architecture (App-Wide 60fps Target):** Swift 6 concurrency compliance, background-threaded extraction, and robust memory management preventing OOM crashes. To deliver a fluid, uncompromising user experience, the entire application strictly targets a minimum of 60fps (and native ProMotion 120fps on compatible hardware) across all interfaces—including library grid scrolling, search fields, sheet transitions, and reader views. This is achieved by moving all heavy disk/network operations completely off the main thread. The conversion pipeline utilizes `O(1)` memory disk streaming for massive `.cbz` payloads to bypass `JetsamEvent` kills. The reader uses `CGImageSourceCreateThumbnailAtIndex` for professional image downsampling during the I/O read phase, a custom LRU `NSCache` with `maxCacheSize = 7` to restrict the memory footprint to ~15MB, and asynchronous prefetching tasks (`±2` pages around the active page) to ensure seamless reading performance.
 
 4. **Crash-Free Import & Conversion Pipeline:** Every import operation opens security-scoped resource access explicitly before touching user-selected files. Heavy I/O (ZIP packaging, RAR extraction) is always moved off the Swift cooperative thread pool via `DispatchQueue.global` + `withCheckedThrowingContinuation`. All temporary directories are strictly cleaned up with `defer` regardless of outcome, preventing SSD bloat and subsequent I/O failures.
 
@@ -287,6 +287,428 @@ The following features and their corresponding code/view files are currently mov
   * [ZettelkastenExporter.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/ZettelkastenExporter.swift)
   * [SplitStudyWorkspace.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/SplitStudyWorkspace.swift)
 
+
+---
+
+## Architectural Risk Mitigation & Advanced Specifications
+
+To support complex library management, robust offline-first sync operations, and secure debug reporting, InksyncPro implements clean, localized on-device services. Below are the engineering specifications, state machines, and Swift pseudo-code detailing these core features.
+
+### 1. Metadata Reconciliation & Conflict Resolution (`MetadataIntelligence`)
+
+The `MetadataIntelligence` actor resolves conflicts between manual local metadata overrides (user changes) and background remote API updates (e.g., ComicVine/MangaDex). To prevent data loss, manually edited fields are protected by a tracking system.
+
+```mermaid
+graph TD
+    A[Incoming Remote API Metadata] --> B{Field modified by user?}
+    B -- Yes (Field in userModifiedFields) --> C[Discard remote value for field / Keep User value]
+    B -- No --> D[Apply remote value to field]
+    C --> E[Store discarded remote value in shadowRemoteValues]
+    D --> F[Write updated field to SwiftData]
+    E --> F
+```
+
+#### Swift Implementation Specifications:
+```swift
+import Foundation
+import SwiftData
+
+@Model
+final class ComicMetadata {
+    var title: String
+    var writer: String
+    var penciller: String
+    var publisher: String
+    var userModifiedFields: Set<String> = []
+    var shadowRemoteValues: [String: String] = [:] // Stores superseded remote values for audit/rollback
+    
+    init(title: String, writer: String, penciller: String, publisher: String) {
+        self.title = title
+        self.writer = writer
+        self.penciller = penciller
+        self.publisher = publisher
+    }
+}
+
+actor MetadataIntelligence {
+    static let shared = MetadataIntelligence()
+    
+    /// Reconciles incoming remote payload against persistent metadata.
+    /// Runs on a background actor thread to prevent UI blocks.
+    func reconcile(metadata: ComicMetadata, with remotePayload: [String: String]) {
+        for (field, value) in remotePayload {
+            if metadata.userModifiedFields.contains(field) {
+                // User manual override takes absolute precedence. Preserve user choice,
+                // and store the remote value under shadows for reference or manual rollback.
+                metadata.shadowRemoteValues[field] = value
+            } else {
+                // Safe to apply remote metadata
+                switch field {
+                case "title": metadata.title = value
+                case "writer": metadata.writer = value
+                case "penciller": metadata.penciller = value
+                case "publisher": metadata.publisher = value
+                default: break
+                }
+            }
+        }
+    }
+}
+```
+
+---
+
+### 2. Orphaned Content & Relinking Logic (`LinkedLibraryScanner` & `BookmarkResolver`)
+
+When users shift root directories on external SSDs or cloud drives, absolute paths change (causing file-not-found errors). The system uses relative path indexing coupled with security-scoped bookmark resolution to automatically heal shifted libraries.
+
+```mermaid
+graph TD
+    A[Resolve LinkedFolderRoot via security-scoped Bookmark] --> B{Resolution Success?}
+    B -- Yes --> C{Root path changed?}
+    C -- Yes --> D[Update LinkedFolderRoot lastKnownURL]
+    C -- No --> E[Keep existing lastKnownURL]
+    B -- No --> F[Mark LinkedFolderRoot and child assets as .orphaned]
+    D --> G[Resolve absolute child paths dynamically: rootURL + relativePath]
+    E --> G
+    F --> H[Present UI Relink prompt to user]
+```
+
+#### Swift Implementation Specifications:
+```swift
+import Foundation
+import SwiftData
+
+@Model
+final class LinkedFolderRoot {
+    var id: UUID
+    var bookmarkData: Data
+    var lastKnownURL: URL
+    var isOrphaned: Bool = false
+    
+    init(id: UUID, bookmarkData: Data, lastKnownURL: URL) {
+        self.id = id
+        self.bookmarkData = bookmarkData
+        self.lastKnownURL = lastKnownURL
+    }
+}
+
+@Model
+final class LibraryAsset {
+    var id: UUID
+    var relativePath: String // Path relative to LinkedFolderRoot
+    var rootFolderID: UUID
+    
+    init(id: UUID, relativePath: String, rootFolderID: UUID) {
+        self.id = id
+        self.relativePath = relativePath
+        self.rootFolderID = rootFolderID
+    }
+}
+
+actor BookmarkResolver {
+    static let shared = BookmarkResolver()
+    
+    /// Resolves root folder and checks if mount path shifted.
+    /// Updates root path, healing relative child URLs.
+    func resolveRoot(_ root: LinkedFolderRoot) throws -> URL {
+        var isStale = false
+        let resolvedURL = try URL(
+            resolvingBookmarkData: root.bookmarkData,
+            options: [.withoutUI, .withSecurityScope],
+            relativeTo: nil,
+            bookmarkDataIsStale: &isStale
+        )
+        
+        guard resolvedURL.startAccessingSecurityScopedResource() else {
+            throw NSError(domain: "BookmarkResolver", code: 403, userInfo: [NSLocalizedDescriptionKey: "Security scope denied"])
+        }
+        
+        defer {
+            resolvedURL.stopAccessingSecurityScopedResource()
+        }
+        
+        if isStale || resolvedURL != root.lastKnownURL {
+            root.lastKnownURL = resolvedURL
+            root.isOrphaned = false
+        }
+        
+        return resolvedURL
+    }
+}
+```
+
+---
+
+### 3. DRM-Aware UI/UX (`ImportOrchestrator`)
+
+To prevent silent conversion failures, the `ImportOrchestrator` runs a lightweight signature inspection middleware on files during the import queue. If DRM encryption is detected, the import halts and provides descriptive feedback.
+
+```mermaid
+graph TD
+    A[Add file to ImportQueue] --> B[Run DRM Check Middleware]
+    B --> C{DRM detected?}
+    C -- Yes --> D[Throw ImportEror.drmProtected]
+    C -- No --> E[Proceed to background extraction pipeline]
+    D --> F[Trigger @MainActor UI error warning card]
+```
+
+#### Swift Implementation Specifications:
+```swift
+import Foundation
+import PDFKit
+
+enum DRMCheckResult {
+    case clean
+    case drmProtected(format: String)
+}
+
+actor DRMDetector {
+    /// Zero-dependency signature inspection of files.
+    func inspect(fileURL: URL) async -> DRMCheckResult {
+        let fileExtension = fileURL.pathExtension.lowercased()
+        
+        switch fileExtension {
+        case "epub":
+            // Check for DRM XML signatures inside EPUB zip structure
+            return checkEPUBEncryption(at: fileURL)
+        case "pdf":
+            // Check PDF metadata dictionary / isEncrypted flags
+            if let doc = CGPDFDocument(fileURL as CFURL), doc.isEncrypted {
+                return .drmProtected(format: "PDF")
+            }
+            return .clean
+        case "cbz", "zip":
+            // Inspect zip general-purpose flags for entry encryption
+            return checkZipEncryption(at: fileURL)
+        default:
+            return .clean
+        }
+    }
+    
+    private func checkEPUBEncryption(at url: URL) -> DRMCheckResult {
+        // Reads EPUB ZIP entries to search for "META-INF/encryption.xml" or "META-INF/rights.xml"
+        return .clean 
+    }
+    
+    private func checkZipEncryption(at url: URL) -> DRMCheckResult {
+        // Reads raw ZIP headers to detect encryption flags
+        return .clean
+    }
+}
+```
+
+---
+
+### 4. Zettelkasten Graph Scaling (`ZettelkastenGraphView`)
+
+As the knowledge graph scales to thousands of notes and tags, a full physics simulation stalls rendering. The system implements Viewport Frustum Culling and Distance-Based Ego-Graph Expansion to maintain responsive 60fps graph performance. To achieve optimal device performance and clean UI/UX layout stability, the graph layout forces are auto-calculated on a background actor thread within the active viewport, while also supporting manual user pinning to anchor specific nodes and prevent layout shifts.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Idle
+    Idle --> NodeSelected : User selects Note
+    NodeSelected --> FilterEgoGraph : Restrict graph depth (d <= 2)
+    FilterEgoGraph --> ViewportCheck : Calculate visible area (frustum)
+    ViewportCheck --> CullNodes : Exclude non-visible nodes
+    CullNodes --> RunPhysicsLayout : Apply force simulation (active nodes only)
+    RunPhysicsLayout --> UserPinning : User pins specific nodes manually
+    UserPinning --> Idle : Anchor pinned node coordinate / bypass forces
+```
+
+#### Swift Implementation Specifications:
+```swift
+import SwiftUI
+
+struct GraphNode: Identifiable, Hashable {
+    let id: UUID
+    var label: String
+    var position: CGPoint
+    var isPinned: Bool = false
+    var pinnedPosition: CGPoint? = nil // Locked user coordinate
+}
+
+struct GraphEdge: Identifiable {
+    let id: UUID
+    let sourceID: UUID
+    let targetID: UUID
+}
+
+class ZettelGraphEngine: ObservableObject {
+    @Published var activeNodes: [GraphNode] = []
+    @Published var activeEdges: [GraphEdge] = []
+    
+    /// Prunes graph data and isolates simulation to selected node proximity.
+    /// Runs layout computations strictly on background thread.
+    func computeEgoGraph(focusedNodeID: UUID, allNodes: [GraphNode], allEdges: [GraphEdge], viewport: CGRect) async {
+        // 1. Ego-Graph Expansion: Filter nodes within d <= 2 from focus node
+        let localNodeIDs = getProximityNodeIDs(from: focusedNodeID, edges: allEdges, maxDepth: 2)
+        
+        // 2. Frustum Spatial Culling: Retain nodes close to visible viewport
+        let culledNodes = allNodes.filter { node in
+            localNodeIDs.contains(node.id) && viewport.insetBy(dx: -100, dy: -100).contains(node.position)
+        }
+        
+        // 3. Compute forces only on active cluster
+        let updatedNodes = await runSimulationForces(for: culledNodes, edges: allEdges)
+        
+        await MainActor.run {
+            self.activeNodes = updatedNodes
+            self.activeEdges = allEdges.filter { edge in
+                localNodeIDs.contains(edge.sourceID) && localNodeIDs.contains(edge.targetID)
+            }
+        }
+    }
+    
+    private func getProximityNodeIDs(from focusID: UUID, edges: [GraphEdge], maxDepth: Int) -> Set<UUID> {
+        var visited = Set<UUID>([focusID])
+        var currentQueue = [focusID]
+        
+        for _ in 0..<maxDepth {
+            var nextQueue: [UUID] = []
+            for nodeID in currentQueue {
+                let neighbors = edges.compactMap { edge -> UUID? in
+                    if edge.sourceID == nodeID { return edge.targetID }
+                    if edge.targetID == nodeID { return edge.sourceID }
+                    return nil
+                }
+                for neighbor in neighbors {
+                    if !visited.contains(neighbor) {
+                        visited.insert(neighbor)
+                        nextQueue.append(neighbor)
+                    }
+                }
+            }
+            currentQueue = nextQueue
+        }
+        return visited
+    }
+    
+    private func runSimulationForces(for nodes: [GraphNode], edges: [GraphEdge]) async -> [GraphNode] {
+        // Run Verlet integration force computations, bypassing coordinate shifts
+        // for nodes where node.isPinned is true to lock their position to pinnedPosition.
+        return nodes
+    }
+}
+```
+
+---
+
+### 5. Offline-First Sync Strategy (`OfflineVerificationService`)
+
+To ensure robust reading experiences away from active network zones, the `OfflineVerificationService` manages full-series local caching, and the UI provides clear caching badges to represent local availability.
+
+```mermaid
+graph TD
+    A[CloudAwareLoadingView] --> B{Determine CacheState}
+    B -- .cloudOnly --> C[Display Cloud Icon / Download Button]
+    B -- .downloading --> D[Display Frosted Progress Bar]
+    B -- .cachedLocal --> E[Display Green Active Check badge]
+    B -- .localOnly --> F[Display Local Disk Icon]
+    C --> G[User clicks Download]
+    G --> H[Queue files in OfflineVerificationService]
+```
+
+#### Swift Implementation Specifications:
+```swift
+import Foundation
+
+enum CacheState: Codable, Equatable {
+    case localOnly
+    case cloudOnly
+    case downloading(progress: Double)
+    case cachedLocal
+}
+
+actor OfflineVerificationService {
+    static let shared = OfflineVerificationService()
+    private var downloadQueue: [UUID: Task<Void, Error>] = [:]
+    
+    /// Checks local directory accessibility for a cloud asset.
+    func checkAvailability(assetID: UUID, localURL: URL, remoteURL: URL) -> CacheState {
+        if FileManager.default.fileExists(atPath: localURL.path) {
+            return .cachedLocal
+        } else if downloadQueue[assetID] != nil {
+            return .downloading(progress: 0.5) // Query actual bytes for progress
+        } else {
+            return .cloudOnly
+        }
+    }
+    
+    /// Trigger background download of remote assets for offline cache.
+    func cacheForOffline(assetID: UUID, remoteURL: URL, destinationURL: URL) {
+        let task = Task.detached(priority: .background) {
+            let (tempURL, _) = try await URLSession.shared.download(from: remoteURL)
+            // Atomically write downloaded file into offline application sandbox
+            try FileManager.default.moveItem(at: tempURL, to: destinationURL)
+        }
+        downloadQueue[assetID] = task
+    }
+}
+```
+
+---
+
+### 6. Support Diagnostics (`DiagnosticPackager`)
+
+When users experience layout issues, the Diagnostic Engine gathers diagnostic logs. To safeguard user security, a localized diagnostic protocol strips Personal Identifiable Information (PII) before packaging debug files, while preserving critical metadata.
+
+```mermaid
+graph TD
+    A[User triggers Bug Report] --> B[Read Logger & DB snapshots]
+    B --> C[Scrub home directory paths /Users/username]
+    C --> D[Filter out API keys, tokens, and custom URL schemas]
+    D --> E[Preserve library metadata & book titles intact to aid matching triage]
+    E --> F[Compress debug text & schema into .zip archive]
+    F --> G[Pass to UIActivityViewController Share Pane]
+```
+
+#### Swift Implementation Specifications:
+```swift
+import Foundation
+
+actor DiagnosticPackager {
+    /// Scrubs and bundles diagnostic logs into a zip.
+    /// Runs off the main cooperative pool via Task.detached.
+    func packageDiagnostics(logURL: URL, dbSchemaURL: URL) async throws -> URL {
+        let logContent = try String(contentsOf: logURL, encoding: .utf8)
+        
+        // 1. Scrub User Paths
+        let usernamePattern = "/Users/[^/]+"
+        let scrubbedPaths = logContent.replacingOccurrences(
+            of: usernamePattern,
+            with: "/Users/[REDACTED_USER]",
+            options: .regularExpression
+        )
+        
+        // 2. Strip API credentials and passwords
+        let credentialPattern = "(?i)(api_key|token|password|auth_token|client_id)\\s*[:=]\\s*\"[^\"]+\""
+        let scrubbedCredentials = scrubbedPaths.replacingOccurrences(
+            of: credentialPattern,
+            with: "$1: \"[REDACTED_SECRET]\"",
+            options: .regularExpression
+        )
+        
+        // 3. Preserve book titles, series, and unique database identifiers
+        // keeping them intact to assist developers in troubleshooting catalog matching mismatches.
+        
+        // Write to temporary clean log file
+        let cleanLogURL = FileManager.default.temporaryDirectory.appendingPathComponent("clean_system.log")
+        try scrubbedCredentials.write(to: cleanLogURL, atomically: true, encoding: .utf8)
+        
+        // Bundle clean log and schema layout metadata into zip package
+        let zipPackageURL = FileManager.default.temporaryDirectory.appendingPathComponent("InksyncPro-Debug-\(UUID().uuidString).zip")
+        try createZipPackage(sources: [cleanLogURL, dbSchemaURL], destination: zipPackageURL)
+        
+        return zipPackageURL
+    }
+    
+    private func createZipPackage(sources: [URL], destination: URL) throws {
+        // ZipArchive packaging logic using ZIPFoundation
+    }
+}
+```
+
 ---
 
 ## Known Limitations & Future Work
@@ -295,3 +717,4 @@ The following features and their corresponding code/view files are currently mov
 - **NSCache warm-on-launch**: When a cover image already exists on disk, the `NSCache` should be pre-warmed on app launch rather than waiting for the first library scroll.
 - **Dead code audit**: Follow each line of code to identify and remove unreachable paths.
 - **Library UX (iPad):** The main library page needs a premium, non-utilitarian redesign for iPadOS that makes full use of the large canvas.
+
