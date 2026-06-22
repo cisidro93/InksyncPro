@@ -77,7 +77,7 @@ struct SmartListImporterView: View {
                                     }
                                 }
                                 .pickerStyle(.segmented)
-                                .onChange(of: listType) { _ in
+                                .onChange(of: listType) {
                                     HapticEngine.selection()
                                 }
                             }
@@ -129,7 +129,7 @@ struct SmartListImporterView: View {
                                         }
                                         .pickerStyle(.menu)
                                         .tint(.inkViolet)
-                                        .onChange(of: outputFormat) { _ in
+                                        .onChange(of: outputFormat) {
                                             HapticEngine.selection()
                                         }
                                     }

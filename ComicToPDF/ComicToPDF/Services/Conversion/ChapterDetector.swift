@@ -17,7 +17,7 @@ final class ChapterDetector: Sendable {
         let sourceURL: URL
         var didAccess = false
         if case .linked(let bm) = pdf.sourceMode,
-           let resolved = try? await BookmarkResolver.shared.resolve(bm) {
+           let resolved = try? BookmarkResolver.shared.resolve(bm) {
             didAccess = resolved.startAccessingSecurityScopedResource()
             sourceURL = resolved
         } else {

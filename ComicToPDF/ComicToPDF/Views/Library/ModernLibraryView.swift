@@ -1394,7 +1394,7 @@ struct ModernLibraryView: View {
                                 do {
                                     try await LinkedLibraryScanner.shared.offloadToExternalDrive(
                                         files: items,
-                                        targetFolderURL: targetURL
+                                        targetFolderURL: targetURL.url
                                     ) { progress, status in
                                         DispatchQueue.main.async {
                                             self.transferProgress = progress

@@ -351,8 +351,8 @@ final class SmartListImporter: Sendable {
                     var parsedSeries: String? = nil
                     var parsedIssue: String? = nil
                     
-                    var parsedReadingOrder: String? = nil
-                    var parsedSortOrder: Int? = nil
+                    let parsedReadingOrder: String? = nil
+                    let parsedSortOrder: Int? = nil
                     var parsedLabel: String? = nil
                     var parsedOptional: Bool? = nil
                     
