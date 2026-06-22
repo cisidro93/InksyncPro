@@ -18,6 +18,8 @@ struct MetadataSearchSheet: View {
     }
     
     @State private var query = ""
+    @FocusState private var isSearchFieldFocused: Bool
+
     @State private var selectedProvider: MetadataProvider = .comicVine
     @State private var comicResults: [ComicVineVolume] = []
     @State private var bookResults: [GoogleBookItem] = []
@@ -34,6 +36,7 @@ struct MetadataSearchSheet: View {
                 HStack {
                     TextField((selectedProvider == .aniList || selectedProvider == .mangaUpdates) ? "Manga Name (e.g. Naruto)" : "Series Name (e.g. Saga)", text: $query)
                         .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .focused($isSearchFieldFocused)
                         .onSubmit { performSearch() }
                     
                     Button(action: performSearch) {
@@ -219,9 +222,19 @@ struct MetadataSearchSheet: View {
             }
             .background(Color.inkBackground.ignoresSafeArea())
             .navigationTitle("Find Series")
+            .background(
+                Group {
+                    Button("") { dismiss() }
+                        .keyboardShortcut("w", modifiers: .command)
+                    Button("") { dismiss() }
+                        .keyboardShortcut(.cancelAction)
+                }
+                .opacity(0)
+            )
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) { Button("Cancel") { dismiss() } }
             }
+
             .alert("Search Error", isPresented: $showingErrorAlert, presenting: errorMessage) { _ in
                 Button("OK", role: .cancel) { }
             } message: { msg in
@@ -239,7 +252,10 @@ struct MetadataSearchSheet: View {
                 } else {
                     selectedProvider = .comicVine
                 }
+                
+                isSearchFieldFocused = true
             }
+
         }
     }
     

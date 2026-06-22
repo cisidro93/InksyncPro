@@ -29,6 +29,18 @@ struct MetadataEditorSheet: View {
     
     @State private var errorMessage: String?
     
+    enum FocusableField: Hashable {
+        case title
+        case series
+        case volume
+        case issueNumber
+        case writer
+        case penciller
+        case publisher
+        case publicationDate
+    }
+    @FocusState private var focusedField: FocusableField?
+    
     // Date Formatter
     private var dateFormatter: DateFormatter {
         let formatter = DateFormatter()
@@ -60,6 +72,19 @@ struct MetadataEditorSheet: View {
                 systemSection()
             }
             .navigationTitle("Edit Metadata")
+            .background(
+                Group {
+                    Button("") { dismiss() }
+                        .keyboardShortcut("w", modifiers: .command)
+                    Button("") { dismiss() }
+                        .keyboardShortcut(.cancelAction)
+                }
+                .opacity(0)
+            )
+            .onAppear {
+                focusedField = .title
+            }
+
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -133,9 +158,17 @@ struct MetadataEditorSheet: View {
     private func coreInfoSection() -> some View {
         Section(header: Text("Core Info")) {
             TextField("Title", text: $editedMetadata.title)
+                .focused($focusedField, equals: .title)
+                .onSubmit { focusedField = .series }
             TextField("Series", text: $editedMetadata.series.bound)
+                .focused($focusedField, equals: .series)
+                .onSubmit { focusedField = .volume }
             TextField("Volume", text: $editedMetadata.volume.bound)
+                .focused($focusedField, equals: .volume)
+                .onSubmit { focusedField = .issueNumber }
             TextField("Issue #", text: $editedMetadata.issueNumber.bound)
+                .focused($focusedField, equals: .issueNumber)
+                .onSubmit { focusedField = .writer }
         }
     }
     
@@ -143,8 +176,14 @@ struct MetadataEditorSheet: View {
     private func creditsSection() -> some View {
         Section(header: Text("Credits")) {
             TextField("Writer", text: $editedMetadata.writer.bound)
+                .focused($focusedField, equals: .writer)
+                .onSubmit { focusedField = .penciller }
             TextField("Penciller", text: $editedMetadata.penciller.bound)
+                .focused($focusedField, equals: .penciller)
+                .onSubmit { focusedField = .publisher }
             TextField("Publisher", text: $editedMetadata.publisher.bound)
+                .focused($focusedField, equals: .publisher)
+                .onSubmit { focusedField = .publicationDate }
             TextField("Publication Date (YYYY-MM-DD)", text: Binding(
                 get: {
                     if let date = editedMetadata.publicationDate { return dateFormatter.string(from: date) }
@@ -155,6 +194,11 @@ struct MetadataEditorSheet: View {
                     else if newValue.isEmpty { editedMetadata.publicationDate = nil }
                 }
             ))
+            .focused($focusedField, equals: .publicationDate)
+            .onSubmit {
+                focusedField = nil
+                saveChanges()
+            }
         }
     }
     
