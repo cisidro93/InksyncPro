@@ -803,7 +803,7 @@ class MomentumAnimator: NSObject {
         
         let dl = CADisplayLink(target: self, selector: #selector(tick(_:)))
         if #available(iOS 15.0, *) {
-            dl.preferredFrameRateRange = CAFrameRateRange(minimum: 60, preferred: 120, maximum: 120)
+            dl.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
         }
         dl.add(to: .main, forMode: .common)
         self.displayLink = dl
