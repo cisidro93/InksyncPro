@@ -54,7 +54,10 @@ struct PDFImporter: Sendable {
             return nil
         }
         
-        let renderer = UIGraphicsImageRenderer(size: scaledSize)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1.0
+        format.preferredRange = .standard // Forces standard sRGB color space
+        let renderer = UIGraphicsImageRenderer(size: scaledSize, format: format)
         return renderer.image { context in
             UIColor.white.setFill()
             context.fill(CGRect(origin: .zero, size: scaledSize))
@@ -113,7 +116,10 @@ struct PDFImporter: Sendable {
             scaledSize = CGSize(width: 612 * scale, height: 792 * scale)
         }
         
-        let renderer = UIGraphicsImageRenderer(size: scaledSize)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1.0
+        format.preferredRange = .standard // Forces standard sRGB color space
+        let renderer = UIGraphicsImageRenderer(size: scaledSize, format: format)
         return renderer.image { context in
             // White background
             UIColor.white.setFill()

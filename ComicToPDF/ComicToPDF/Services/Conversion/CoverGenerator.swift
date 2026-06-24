@@ -23,6 +23,7 @@ class CoverGenerator {
         }
         let format = UIGraphicsImageRendererFormat()
         format.scale = originalImage.scale
+        format.preferredRange = .standard // Forces sRGB instead of device-dependent P3 to avoid Kindle E999
         
         let renderer = UIGraphicsImageRenderer(size: size, format: format)
         

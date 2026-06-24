@@ -426,6 +426,7 @@ class EPUBGenerator {
         
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1.0
+        format.preferredRange = .standard // Forces standard sRGB color space
         format.opaque = true // No alpha channel = smaller file
         
         let renderer = UIGraphicsImageRenderer(size: finalCanvas, format: format)

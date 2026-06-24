@@ -122,7 +122,10 @@ final class EInkOptimizer: @unchecked Sendable {
     /// Bakes image orientation into pixel buffers
     private func fixOrientation(of image: UIImage) -> UIImage? {
         if image.imageOrientation == .up { return image }
-        let renderer = UIGraphicsImageRenderer(size: image.size)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = image.scale
+        format.preferredRange = .standard // Forces standard sRGB color space
+        let renderer = UIGraphicsImageRenderer(size: image.size, format: format)
         return renderer.image { _ in image.draw(at: .zero) }
     }
     
@@ -211,6 +214,7 @@ final class EInkOptimizer: @unchecked Sendable {
         
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1.0
+        format.preferredRange = .standard // Forces standard sRGB color space
         
         var drawX: CGFloat = 0
         

@@ -29,7 +29,7 @@ struct PPLReaderView: View {
     @State private var lastScale: CGFloat = 1.0
     @State private var offset: CGSize = .zero
     @State private var dragOffset: CGSize = .zero
-    @State private var momentumTask: Task<Void, Never>?
+    @State private var momentumAnimator = MomentumAnimator()
 
     // ── Live swipe peel state ─────────────────────────────────────────────────
     @State private var swipeDragX: CGFloat = 0
@@ -337,7 +337,7 @@ struct PPLReaderView: View {
         DragGesture(minimumDistance: 8)
             .onChanged { val in
                 guard !isCommittingSwipe else { return }
-                momentumTask?.cancel()
+                momentumAnimator.stop()
                 if scale > 1.0 {
                     // Rubber-band resistance at pan boundaries
                     let maxOffsetX = geo.size.width * (scale - 1) / 2
@@ -448,17 +448,14 @@ struct PPLReaderView: View {
         let vel = val.velocity
         guard abs(vel.width) > 30 || abs(vel.height) > 30 else { return }
 
-        momentumTask = Task { @MainActor in
-            var vx = vel.width  * 0.012
-            var vy = vel.height * 0.012
-            repeat {
-                try? await Task.sleep(nanoseconds: 16_000_000) // ~60 fps
-                guard !Task.isCancelled else { return }
-                vx *= 0.90; vy *= 0.90
-                offset.width  = max(-geo.size.width  * (scale - 1), min(geo.size.width  * (scale - 1), offset.width  + vx))
-                offset.height = max(-geo.size.height * (scale - 1), min(geo.size.height * (scale - 1), offset.height + vy))
-                updatePPL(in: geo.size)
-            } while abs(vx) > 0.5 || abs(vy) > 0.5
+        momentumAnimator.start(
+            velocity: vel,
+            currentOffset: offset,
+            scale: scale,
+            geoSize: geo.size
+        ) { newOffset in
+            offset = newOffset
+            updatePPL(in: geo.size)
         }
     }
 
@@ -675,8 +672,7 @@ struct PPLReaderView: View {
         guard size.width > 0, size.height > 0 else { return }
         // Cancel any in-flight momentum or swipe-commit task so stale geometry
         // can't mutate state after the screen has already rotated.
-        momentumTask?.cancel()
-        momentumTask = nil
+        momentumAnimator.stop()
         isCommittingSwipe = false
         withAnimation(.easeOut(duration: 0.15)) {
             scale = 1.0
@@ -776,6 +772,60 @@ struct PPLReaderView: View {
                     withAnimation(.easeInOut(duration: 0.25)) { bufferManager.lockedRect = guidedPanels[lastIdx] }
                 }
             }
+    }
+}
+
+// ── Momentum Animator Class ──────────────────────────────────────────────────
+@MainActor
+class MomentumAnimator: NSObject {
+    private var displayLink: CADisplayLink?
+    private var vx: CGFloat = 0
+    private var vy: CGFloat = 0
+    private var scale: CGFloat = 1.0
+    private var geoSize: CGSize = .zero
+    
+    var offsetWidth: CGFloat = 0
+    var offsetHeight: CGFloat = 0
+    
+    var onTick: ((CGSize) -> Void)?
+    
+    func start(velocity: CGSize, currentOffset: CGSize, scale: CGFloat, geoSize: CGSize, onTick: @escaping (CGSize) -> Void) {
+        stop()
+        
+        self.vx = velocity.width * 0.012
+        self.vy = velocity.height * 0.012
+        self.offsetWidth = currentOffset.width
+        self.offsetHeight = currentOffset.height
+        self.scale = scale
+        self.geoSize = geoSize
+        self.onTick = onTick
+        
+        let dl = CADisplayLink(target: self, selector: #selector(tick(_:)))
+        if #available(iOS 15.0, *) {
+            dl.preferredFrameRateRange = CAFrameRateRange(minimum: 60, preferred: 120, maximum: 120)
+        }
+        dl.add(to: .main, forMode: .common)
+        self.displayLink = dl
+    }
+    
+    func stop() {
+        displayLink?.invalidate()
+        displayLink = nil
+    }
+    
+    @objc private func tick(_ dl: CADisplayLink) {
+        let dt = CGFloat(dl.duration)
+        let decay = pow(0.90, dt / (1.0 / 60.0))
+        vx *= decay
+        vy *= decay
+        
+        offsetWidth  = max(-geoSize.width  * (scale - 1), min(geoSize.width  * (scale - 1), offsetWidth  + vx))
+        offsetHeight = max(-geoSize.height * (scale - 1), min(geoSize.height * (scale - 1), offsetHeight + vy))
+        
+        onTick?(CGSize(width: offsetWidth, height: offsetHeight))
+        
+        if abs(vx) <= 0.5 && abs(vy) <= 0.5 {
+            stop()
         }
     }
 }

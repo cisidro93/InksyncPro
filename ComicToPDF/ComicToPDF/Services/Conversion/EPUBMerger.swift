@@ -45,6 +45,29 @@ struct EPUBMerger: Sendable {
             }
         }
         
+        // Ensure cover is in sRGB if it's Display P3
+        if let coverData = activeCoverData, let image = UIImage(data: coverData) {
+            var needsConversion = false
+            if let cgImage = image.cgImage, let colorSpace = cgImage.colorSpace {
+                if let name = colorSpace.name {
+                    let nameStr = name as String
+                    if nameStr.localizedCaseInsensitiveContains("p3") {
+                        needsConversion = true
+                    }
+                }
+            }
+            if needsConversion {
+                let format = UIGraphicsImageRendererFormat()
+                format.scale = 1.0
+                format.preferredRange = .standard
+                let renderer = UIGraphicsImageRenderer(size: image.size, format: format)
+                let srgbImage = renderer.image { _ in image.draw(at: .zero) }
+                if let jpegData = srgbImage.jpegData(compressionQuality: 0.9) {
+                    activeCoverData = jpegData
+                }
+            }
+        }
+        
         var manifestItems: [String] = []
         var spineItems: [String] = []
         manifestItems.append("<item id=\"css\" href=\"css/comic.css\" media-type=\"text/css\"/>")
@@ -308,6 +331,29 @@ struct EPUBMerger: Sendable {
             try? fileManager.unzipItem(at: firstURL, to: tempExtract)
             if let images = try? findImages(in: tempExtract), let firstImg = images.first {
                 activeCoverData = try? Data(contentsOf: firstImg)
+            }
+        }
+        
+        // Ensure cover is in sRGB if it's Display P3
+        if let coverData = activeCoverData, let image = UIImage(data: coverData) {
+            var needsConversion = false
+            if let cgImage = image.cgImage, let colorSpace = cgImage.colorSpace {
+                if let name = colorSpace.name {
+                    let nameStr = name as String
+                    if nameStr.localizedCaseInsensitiveContains("p3") {
+                        needsConversion = true
+                    }
+                }
+            }
+            if needsConversion {
+                let format = UIGraphicsImageRendererFormat()
+                format.scale = 1.0
+                format.preferredRange = .standard
+                let renderer = UIGraphicsImageRenderer(size: image.size, format: format)
+                let srgbImage = renderer.image { _ in image.draw(at: .zero) }
+                if let jpegData = srgbImage.jpegData(compressionQuality: 0.9) {
+                    activeCoverData = jpegData
+                }
             }
         }
         
@@ -668,18 +714,41 @@ struct EPUBMerger: Sendable {
 
     private func copyAndPrepareImage(from srcURL: URL, to destURL: URL, settings: ConversionSettings) throws {
         let ext = srcURL.pathExtension.lowercased()
-        if ext == "webp" {
-            if let image = UIImage(contentsOfFile: srcURL.path),
-               let jpegData = image.jpegData(compressionQuality: settings.compressionQuality.value) {
-                try jpegData.write(to: destURL)
-            } else {
-                let data = try Data(contentsOf: srcURL)
-                try data.write(to: destURL)
+        if let image = UIImage(contentsOfFile: srcURL.path) {
+            var needsConversion = false
+            if let cgImage = image.cgImage, let colorSpace = cgImage.colorSpace {
+                if let name = colorSpace.name {
+                    let nameStr = name as String
+                    if nameStr.localizedCaseInsensitiveContains("p3") {
+                        needsConversion = true
+                    }
+                }
             }
-        } else {
-            let data = try Data(contentsOf: srcURL)
-            try data.write(to: destURL)
+            
+            if needsConversion || ext == "webp" {
+                let format = UIGraphicsImageRendererFormat()
+                format.scale = 1.0
+                format.preferredRange = .standard // Forces standard sRGB color space
+                let renderer = UIGraphicsImageRenderer(size: image.size, format: format)
+                let srgbImage = renderer.image { _ in image.draw(at: .zero) }
+                
+                let data: Data?
+                if ext == "png" {
+                    data = srgbImage.pngData()
+                } else {
+                    data = srgbImage.jpegData(compressionQuality: settings.compressionQuality.value)
+                }
+                
+                if let finalData = data {
+                    try finalData.write(to: destURL)
+                    return
+                }
+            }
         }
+        
+        // Fallback or if no conversion is needed
+        let data = try Data(contentsOf: srcURL)
+        try data.write(to: destURL)
     }
 
     private func findImages(in directory: URL) throws -> [URL] {

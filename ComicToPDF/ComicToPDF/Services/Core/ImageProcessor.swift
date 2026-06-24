@@ -19,7 +19,10 @@ struct ImageProcessor {
     /// functions don't invert or rotate the image unexpectedly.
     static func fixOrientation(of image: UIImage) -> UIImage? {
         if image.imageOrientation == .up { return image }
-        let renderer = UIGraphicsImageRenderer(size: image.size)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = image.scale
+        format.preferredRange = .standard // Forces standard sRGB color space
+        let renderer = UIGraphicsImageRenderer(size: image.size, format: format)
         return renderer.image { _ in image.draw(at: .zero) }
     }
     

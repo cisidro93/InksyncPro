@@ -57,7 +57,10 @@ struct ZipUtilities {
                                     if pageRect.width <= 0 || pageRect.height <= 0 || pageRect.width.isNaN || pageRect.height.isNaN {
                                         pageRect = CGRect(x: 0, y: 0, width: 612, height: 792)
                                     }
-                                    let renderer = UIGraphicsImageRenderer(size: pageRect.size)
+                                    let format = UIGraphicsImageRendererFormat()
+                                    format.scale = 1.0
+                                    format.preferredRange = .standard // Forces standard sRGB color space
+                                    let renderer = UIGraphicsImageRenderer(size: pageRect.size, format: format)
                                     let image = renderer.image { ctx in
                                         UIColor.white.set()
                                         ctx.fill(pageRect)
