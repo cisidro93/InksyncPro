@@ -772,6 +772,7 @@ struct PPLReaderView: View {
                     withAnimation(.easeInOut(duration: 0.25)) { bufferManager.lockedRect = guidedPanels[lastIdx] }
                 }
             }
+        }
     }
 }
 
