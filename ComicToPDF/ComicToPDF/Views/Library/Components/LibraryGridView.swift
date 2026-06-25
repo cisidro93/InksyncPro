@@ -927,10 +927,15 @@ private struct SeriesDragPreviewCard: View {
                 .background(Color.inkBlue)
                 .clipShape(Capsule())
                 .offset(x: 4, y: 4)
+        }
+        .frame(width: 80, height: 112)
+        .shadow(radius: 12)
     }
+}
 
-    // MARK: - Pan-To-Select Drag Gesture Handlers
-    
+// MARK: - Pan-To-Select Drag Gesture Handlers
+
+extension LibraryGridView {
     private func findItemUnderTouch(at location: CGPoint) -> LibraryListItem? {
         for item in items {
             if let frame = cellFrames[item.id], frame.contains(location) {
@@ -1054,6 +1059,7 @@ private struct SeriesDragPreviewCard: View {
         currentDragIndex = nil
         initialSelectionBeforeDrag.removeAll()
     }
+}
 }
 
 
