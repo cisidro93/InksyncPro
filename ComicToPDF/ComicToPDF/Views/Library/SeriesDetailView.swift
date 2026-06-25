@@ -37,6 +37,16 @@ struct SeriesDetailView: View {
     @State private var showBatchMetadataEditor: Bool = false
     @State private var showingBatchSeriesAssignment: Bool = false
     
+    // Drag-to-select Gestures & Coordinate Tracking
+    @State private var cellFrames: [UUID: CGRect] = [:]
+    @State private var scrollOffset: CGFloat = 0
+    @State private var dragStartIndex: Int? = nil
+    @State private var currentDragIndex: Int? = nil
+    @State private var isDragSelecting: Bool = true
+    @State private var initialSelectionBeforeDrag = Set<UUID>()
+    @State private var lastDragLocation: CGPoint = .zero
+    @State private var autoScrollTask: Task<Void, Never>? = nil
+
     // Context Menu State
     @State private var pdfToRename: ConvertedPDF?
     @State private var renameText = ""
@@ -130,6 +140,14 @@ struct SeriesDetailView: View {
     }
     
     @State private var localIssues: [ConvertedPDF] = []
+    
+    var visualIssues: [ConvertedPDF] {
+        if showVolumeGrouping && hasVolumeData {
+            return volumeGroups.flatMap { $0.issues }
+        } else {
+            return localIssues
+        }
+    }
     
     // Volume Grouping State
     @State private var showVolumeGrouping: Bool = true
@@ -235,34 +253,60 @@ struct SeriesDetailView: View {
     }
     
     private func listView(scrollProxy: ScrollViewProxy) -> some View {
-        List {
-            Section(header: headerView) {
-                continueReadingSection
-                missingIssuesSection
-                
-                if showVolumeGrouping && hasVolumeData {
-                    volumeGroupingSection
-                } else {
-                    flatListSection
+        GeometryReader { viewportGeo in
+            List {
+                Section(header: headerView) {
+                    continueReadingSection
+                    missingIssuesSection
+                    
+                    if showVolumeGrouping && hasVolumeData {
+                        volumeGroupingSection
+                    } else {
+                        flatListSection
+                    }
                 }
             }
-        }
-        .listStyle(InsetGroupedListStyle())
-        // ── Volume Jump: ensure target is expanded then scroll to its anchor ──
-        .onChange(of: jumpToVolume) { _, targetKey in
-            guard let targetKey else { return }
-            // 1. Expand the volume if it was collapsed
-            let _ = withAnimation(.easeInOut(duration: 0.2)) {
-                collapsedVolumes.remove(targetKey)
+            .listStyle(InsetGroupedListStyle())
+            .coordinateSpace(name: "SeriesDetailScrollView")
+            .coordinateSpace(name: "SeriesDetailViewport")
+            .gesture(
+                isSelectionMode ?
+                LongPressGesture(minimumDuration: 0.15)
+                    .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .named("SeriesDetailViewport")))
+                    .onChanged { value in
+                        switch value {
+                        case .first:
+                            break
+                        case .second(_, let dragValue):
+                            if let drag = dragValue {
+                                handleDragUpdate(to: drag.location, viewportHeight: viewportGeo.size.height, scrollProxy: scrollProxy)
+                            }
+                        }
+                    }
+                    .onEnded { _ in
+                        handleDragEnded()
+                    }
+                : nil
+            )
+            .onPreferenceChange(ScrollOffsetPreferenceKey.self) { value in
+                self.scrollOffset = value
             }
-            // 2. Scroll after the expand animation gives the List time to render
-            Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 350_000_000) // 0.35 s — matches expand animation
-                withAnimation(.easeInOut(duration: 0.4)) {
-                    scrollProxy.scrollTo("vol_\(targetKey)", anchor: .top)
+            // ── Volume Jump: ensure target is expanded then scroll to its anchor ──
+            .onChange(of: jumpToVolume) { _, targetKey in
+                guard let targetKey else { return }
+                // 1. Expand the volume if it was collapsed
+                let _ = withAnimation(.easeInOut(duration: 0.2)) {
+                    collapsedVolumes.remove(targetKey)
                 }
-                HapticEngine.medium()
-                jumpToVolume = nil  // reset so same volume can be re-selected
+                // 2. Scroll after the expand animation gives the List time to render
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 350_000_000) // 0.35 s — matches expand animation
+                    withAnimation(.easeInOut(duration: 0.4)) {
+                        scrollProxy.scrollTo("vol_\(targetKey)", anchor: .top)
+                    }
+                    HapticEngine.medium()
+                    jumpToVolume = nil  // reset so same volume can be re-selected
+                }
             }
         }
     }
@@ -578,111 +622,137 @@ struct SeriesDetailView: View {
     }
 
     private func gridView(scrollProxy: ScrollViewProxy) -> some View {
-        ScrollView {
-            LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
-                headerView
-                    .padding(.horizontal)
-                    .padding(.bottom, 16)
-                
-                if let nextIssue = nextUnreadIssue {
-                    Button {
-                        pdfToRead = nextIssue
-                    } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: "play.circle.fill")
-                                .font(.system(size: 28))
-                                .foregroundStyle(
-                                    LinearGradient(colors: [Theme.orange, Theme.red],
-                                                   startPoint: .topLeading, endPoint: .bottomTrailing)
-                                )
-                            
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Continue Reading")
-                                    .font(.system(size: 11, weight: .bold))
-                                    .foregroundColor(Theme.textSecondary)
-                                    .tracking(0.8)
-                                
-                                Text(nextIssue.name)
-                                    .font(.system(size: 14, weight: .semibold))
-                                    .foregroundColor(Theme.text)
-                                    .lineLimit(1)
-                                
-                                if let vol = nextIssue.metadata.volume, !vol.isEmpty,
-                                   let issue = nextIssue.metadata.issueNumber {
-                                    Text("Vol. \(vol) • Ch. \(issue) • Page \((nextIssue.metadata.lastReadPage ?? 0) + 1)")
-                                        .font(.system(size: 11, design: .rounded))
-                                        .foregroundColor(Theme.orange)
-                                } else {
-                                    Text("Page \((nextIssue.metadata.lastReadPage ?? 0) + 1) of \(nextIssue.pageCount)")
-                                        .font(.system(size: 11, design: .rounded))
-                                        .foregroundColor(Theme.orange)
-                                }
-                            }
-                            
-                            Spacer()
-                            
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundColor(Theme.textSecondary)
-                        }
-                        .padding(.vertical, 8)
-                        .padding(.horizontal, 12)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .fill(Theme.orange.opacity(0.1))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                        .stroke(Theme.orange.opacity(0.2), lineWidth: 1)
-                                )
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.horizontal)
-                    .padding(.bottom, 16)
-                }
-                
-                if !missingIssues.isEmpty {
-                    MissingIssueBanner(gaps: missingIssues)
+        GeometryReader { viewportGeo in
+            ScrollView {
+                LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
+                    headerView
                         .padding(.horizontal)
                         .padding(.bottom, 16)
-                }
-
-                let hPad: CGFloat = hSizeClass == .regular ? 24 : 12
-                let colSpacing: CGFloat = hSizeClass == .regular ? 20 : 10
-                let colCount = hSizeClass == .regular ? 5 : 3
-                let columns = Array(repeating: GridItem(.flexible(), spacing: colSpacing), count: colCount)
-
-                if showVolumeGrouping && hasVolumeData {
-                    ForEach(volumeGroups, id: \.key) { group in
-                        let isCollapsed = collapsedVolumes.contains(group.key)
-                        let progress = readingProgress(for: group.issues)
-                        let completed = completedCount(for: group.issues)
-                        
-                        Section(header: 
-                            volumeHeaderView(group: group, isCollapsed: isCollapsed, progress: progress, completed: completed)
-                                .background(.ultraThinMaterial)
-                                .id("vol_\(group.key)")
-                        ) {
-                            if !isCollapsed {
-                                LazyVGrid(columns: columns, spacing: hSizeClass == .regular ? 28 : 14) {
-                                    ForEach(group.issues) { pdf in
-                                        gridIssueCell(pdf)
+                    
+                    if let nextIssue = nextUnreadIssue {
+                        Button {
+                            pdfToRead = nextIssue
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "play.circle.fill")
+                                    .font(.system(size: 28))
+                                    .foregroundStyle(
+                                        LinearGradient(colors: [Theme.orange, Theme.red],
+                                                       startPoint: .topLeading, endPoint: .bottomTrailing)
+                                    )
+                                
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Continue Reading")
+                                        .font(.system(size: 11, weight: .bold))
+                                        .foregroundColor(Theme.textSecondary)
+                                        .tracking(0.8)
+                                    
+                                    Text(nextIssue.name)
+                                        .font(.system(size: 14, weight: .semibold))
+                                        .foregroundColor(Theme.text)
+                                        .lineLimit(1)
+                                    
+                                    if let vol = nextIssue.metadata.volume, !vol.isEmpty,
+                                       let issue = nextIssue.metadata.issueNumber {
+                                        Text("Vol. \(vol) • Ch. \(issue) • Page \((nextIssue.metadata.lastReadPage ?? 0) + 1)")
+                                            .font(.system(size: 11, design: .rounded))
+                                            .foregroundColor(Theme.orange)
+                                    } else {
+                                        Text("Page \((nextIssue.metadata.lastReadPage ?? 0) + 1) of \(nextIssue.pageCount)")
+                                            .font(.system(size: 11, design: .rounded))
+                                            .foregroundColor(Theme.orange)
                                     }
                                 }
-                                .padding(.horizontal, hPad)
-                                .padding(.vertical, 16)
+                                
+                                Spacer()
+                                
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundColor(Theme.textSecondary)
+                            }
+                            .padding(.vertical, 8)
+                            .padding(.horizontal, 12)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .fill(Theme.orange.opacity(0.1))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                            .stroke(Theme.orange.opacity(0.2), lineWidth: 1)
+                                    )
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.horizontal)
+                        .padding(.bottom, 16)
+                    }
+                    
+                    if !missingIssues.isEmpty {
+                        MissingIssueBanner(gaps: missingIssues)
+                            .padding(.horizontal)
+                            .padding(.bottom, 16)
+                    }
+
+                    let hPad: CGFloat = hSizeClass == .regular ? 24 : 12
+                    let colSpacing: CGFloat = hSizeClass == .regular ? 20 : 10
+                    let colCount = hSizeClass == .regular ? 5 : 3
+                    let columns = Array(repeating: GridItem(.flexible(), spacing: colSpacing), count: colCount)
+
+                    if showVolumeGrouping && hasVolumeData {
+                        ForEach(volumeGroups, id: \.key) { group in
+                            let isCollapsed = collapsedVolumes.contains(group.key)
+                            let progress = readingProgress(for: group.issues)
+                            let completed = completedCount(for: group.issues)
+                            
+                            Section(header: 
+                                volumeHeaderView(group: group, isCollapsed: isCollapsed, progress: progress, completed: completed)
+                                    .background(.ultraThinMaterial)
+                                    .id("vol_\(group.key)")
+                            ) {
+                                if !isCollapsed {
+                                    LazyVGrid(columns: columns, spacing: hSizeClass == .regular ? 28 : 14) {
+                                        ForEach(group.issues) { pdf in
+                                            gridIssueCell(pdf)
+                                        }
+                                    }
+                                    .padding(.horizontal, hPad)
+                                    .padding(.vertical, 16)
+                                }
                             }
                         }
-                    }
-                } else {
-                    LazyVGrid(columns: columns, spacing: hSizeClass == .regular ? 28 : 14) {
-                        ForEach(localIssues) { pdf in
-                            gridIssueCell(pdf)
+                    } else {
+                        LazyVGrid(columns: columns, spacing: hSizeClass == .regular ? 28 : 14) {
+                            ForEach(localIssues) { pdf in
+                                gridIssueCell(pdf)
+                            }
                         }
+                        .padding(.horizontal, hPad)
+                        .padding(.bottom, 120)
                     }
-                    .padding(.horizontal, hPad)
-                    .padding(.bottom, 120)
                 }
+                .coordinateSpace(name: "SeriesDetailScrollView")
+                .gesture(
+                    isSelectionMode ?
+                    LongPressGesture(minimumDuration: 0.15)
+                        .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .named("SeriesDetailViewport")))
+                        .onChanged { value in
+                            switch value {
+                            case .first:
+                                break
+                            case .second(_, let dragValue):
+                                if let drag = dragValue {
+                                    handleDragUpdate(to: drag.location, viewportHeight: viewportGeo.size.height, scrollProxy: scrollProxy)
+                                }
+                            }
+                        }
+                        .onEnded { _ in
+                            handleDragEnded()
+                        }
+                    : nil
+                )
+            }
+            .coordinateSpace(name: "SeriesDetailViewport")
+            .onPreferenceChange(ScrollOffsetPreferenceKey.self) { value in
+                self.scrollOffset = value
             }
         }
     }
@@ -786,6 +856,15 @@ struct SeriesDetailView: View {
                 ModernGridFileCell(pdf: pdf, isSelected: selection.contains(pdf.id), isBatch: true)
             }
             .buttonStyle(PlainButtonStyle())
+            .background(
+                GeometryReader { geo in
+                    Color.clear
+                        .preference(
+                            key: CellFramePreferenceKey.self,
+                            value: [pdf.id: geo.frame(in: .named("SeriesDetailScrollView"))]
+                        )
+                }
+            )
         } else {
             Button {
                 if tapAction == .read {
@@ -1112,7 +1191,15 @@ struct SeriesDetailView: View {
             }
             .buttonStyle(PlainButtonStyle())
             .listRowBackground(selection.contains(pdf.id) ? Color.blue.opacity(0.1) : Theme.bg)
-            
+            .background(
+                GeometryReader { geo in
+                    Color.clear
+                        .preference(
+                            key: CellFramePreferenceKey.self,
+                            value: [pdf.id: geo.frame(in: .named("SeriesDetailScrollView"))]
+                        )
+                }
+            )
         } else {
             Button {
                 if tapAction == .read {
@@ -1262,6 +1349,15 @@ struct SeriesDetailView: View {
             .frame(height: 4)
         }
         .padding(.vertical)
+        .background(
+            GeometryReader { geo in
+                Color.clear
+                    .preference(
+                        key: ScrollOffsetPreferenceKey.self,
+                        value: geo.frame(in: .named("SeriesDetailViewport")).minY
+                    )
+            }
+        )
     }
     
     // MARK: - Feature 5: Smart List Template Export
@@ -1567,6 +1663,127 @@ struct SeriesDetailView: View {
         if let cached = await MainActor.run(body: { conversionManager.thumbnailCache.object(forKey: key) }) {
             await MainActor.run { headerCover = cached }
         }
+    }
+    
+    // MARK: - Pan-To-Select Drag Gesture Handlers
+    
+    private func findPDFUnderTouch(at location: CGPoint) -> ConvertedPDF? {
+        let currentIssues = visualIssues
+        for pdf in currentIssues {
+            if let frame = cellFrames[pdf.id], frame.contains(location) {
+                return pdf
+            }
+        }
+        return nil
+    }
+    
+    private func handleDragUpdate(to location: CGPoint, viewportHeight: CGFloat, scrollProxy: ScrollViewProxy) {
+        lastDragLocation = location
+        
+        // Convert touch from viewport coordinates to content coordinates
+        let contentLocation = CGPoint(x: location.x, y: location.y - scrollOffset)
+        
+        if let pdf = findPDFUnderTouch(at: contentLocation) {
+            let currentIssues = visualIssues
+            if let index = currentIssues.firstIndex(where: { $0.id == pdf.id }) {
+                if dragStartIndex == nil {
+                    dragStartIndex = index
+                    isDragSelecting = !selection.contains(pdf.id)
+                    initialSelectionBeforeDrag = selection
+                }
+                currentDragIndex = index
+                updateSelectionForCurrentRange()
+            }
+        }
+        
+        let touchViewportY = location.y
+        
+        if touchViewportY < 60 || touchViewportY > viewportHeight - 60 {
+            if autoScrollTask == nil {
+                autoScrollTask = Task {
+                    while !Task.isCancelled {
+                        try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
+                        if Task.isCancelled { break }
+                        await MainActor.run {
+                            performAutoScroll(viewportHeight: viewportHeight, scrollProxy: scrollProxy)
+                        }
+                    }
+                }
+            }
+        } else {
+            autoScrollTask?.cancel()
+            autoScrollTask = nil
+        }
+    }
+    
+    private func updateSelectionForCurrentRange() {
+        guard let startIndex = dragStartIndex, let currentIndex = currentDragIndex else { return }
+        let range = min(startIndex, currentIndex)...max(startIndex, currentIndex)
+        let currentIssues = visualIssues
+        
+        var newSelection = initialSelectionBeforeDrag
+        for i in 0..<currentIssues.count {
+            let pdf = currentIssues[i]
+            if range.contains(i) {
+                if isDragSelecting {
+                    newSelection.insert(pdf.id)
+                } else {
+                    newSelection.remove(pdf.id)
+                }
+            }
+        }
+        selection = newSelection
+    }
+    
+    private func performAutoScroll(viewportHeight: CGFloat, scrollProxy: ScrollViewProxy) {
+        guard let currentIndex = currentDragIndex else { return }
+        let touchViewportY = lastDragLocation.y
+        let currentIssues = visualIssues
+        
+        if touchViewportY < 60 {
+            let targetIndex = max(0, currentIndex - 1)
+            if targetIndex != currentIndex {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    scrollProxy.scrollTo(currentIssues[targetIndex].id, anchor: .top)
+                }
+                currentDragIndex = targetIndex
+                updateSelectionForCurrentRange()
+            }
+        } else if touchViewportY > viewportHeight - 60 {
+            let targetIndex = min(currentIssues.count - 1, currentIndex + 1)
+            if targetIndex != currentIndex {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    scrollProxy.scrollTo(currentIssues[targetIndex].id, anchor: .bottom)
+                }
+                currentDragIndex = targetIndex
+                updateSelectionForCurrentRange()
+            }
+        }
+    }
+    
+    private func handleDragEnded() {
+        autoScrollTask?.cancel()
+        autoScrollTask = nil
+        dragStartIndex = nil
+        currentDragIndex = nil
+        initialSelectionBeforeDrag.removeAll()
+    }
+}
+
+// MARK: - Preference Keys for Coordinate Space Tracking
+
+struct CellFramePreferenceKey: PreferenceKey {
+    typealias Value = [UUID: CGRect]
+    static var defaultValue: [UUID: CGRect] = [:]
+    static func reduce(value: inout [UUID: CGRect], nextValue: () -> [UUID: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { $1 })
+    }
+}
+
+struct ScrollOffsetPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
     }
 }
 
