@@ -52,7 +52,7 @@ class EPUBStripFixer {
         
         // Optimize: Use CoreGraphics CGBitmapContext directly
         // This avoids the overhead of UIGraphicsBeginImageContext stack
-        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
         let bitmapInfo = CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
         
         guard let context = CGContext(

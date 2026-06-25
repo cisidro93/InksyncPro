@@ -191,7 +191,7 @@ final class PDFToEPUBConverter: Sendable {
                 let height = Int(scaledSize.height)
                 let bitsPerComponent = 8
                 let bytesPerRow = 0 // Auto
-                let colorSpace = CGColorSpaceCreateDeviceRGB()
+                let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
                 let bitmapInfo = CGImageAlphaInfo.noneSkipLast.rawValue // Opaque RGB
                 
                 guard let context = CGContext(data: nil,

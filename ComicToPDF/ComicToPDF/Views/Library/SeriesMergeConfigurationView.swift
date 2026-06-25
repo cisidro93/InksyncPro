@@ -25,6 +25,7 @@ struct SeriesMergeConfigurationView: View {
     
     // State ViewModel
     @StateObject private var viewModel: SeriesMergeConfigurationViewModel
+    @State private var draggedItem: ConvertedPDF? = nil
     
     init(sourceFiles: [ConvertedPDF], suggestedName: String? = nil) {
         self.sourceFiles = sourceFiles
@@ -68,9 +69,10 @@ struct SeriesMergeConfigurationView: View {
                         }
                         .listRowBackground(Color.inkSurface.opacity(0.4))
                         
-                        Section(header: Text("Merge Order"), footer: Text("Drag to reorder. The top file will be the first issue in the merged volume.")) {
+                        Section(header: Text("Merge Order"), footer: Text("Drag the handles or tap Edit to reorder. The top file will be the first issue in the merged volume.")) {
                             ForEach(viewModel.itemsToMerge) { pdf in
                                 pdfRow(for: pdf)
+                                    .onDrop(of: [.text], delegate: ReorderDropDelegate(item: pdf, items: $viewModel.itemsToMerge, draggedItem: $draggedItem))
                             }
                             .onMove(perform: moveItems)
                         }
@@ -149,6 +151,18 @@ struct SeriesMergeConfigurationView: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
+            
+            Spacer()
+            
+            Image(systemName: "line.3.horizontal")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 8)
+                .contentShape(Rectangle())
+                .onDrag {
+                    self.draggedItem = pdf
+                    return NSItemProvider(object: pdf.id.uuidString as NSString)
+                }
         }
     }
     

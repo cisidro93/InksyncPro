@@ -85,6 +85,28 @@ final class EInkOptimizer: @unchecked Sendable {
         // 6. CoreImage Unified Filtering (Brightness, Contrast, Sharpness, Grayscale, Dithering)
         workingImage = applyFilters(to: workingImage, settings: settings)
         
+        // 🚨 ENFORCE sRGB Color Space. Wide-color (P3) JPEGs will hard-brick Kindle E-Ink screens.
+        if let cgImage = workingImage.cgImage, let colorSpace = cgImage.colorSpace {
+            var needsConversion = false
+            if let name = colorSpace.name {
+                let nameStr = name as String
+                if nameStr.localizedCaseInsensitiveContains("p3") {
+                    needsConversion = true
+                }
+            }
+            let desc = String(describing: colorSpace).lowercased()
+            if desc.contains("p3") || desc.contains("display") || desc.contains("adobe") {
+                needsConversion = true
+            }
+            if needsConversion {
+                let format = UIGraphicsImageRendererFormat()
+                format.scale = workingImage.scale
+                format.preferredRange = .standard
+                let renderer = UIGraphicsImageRenderer(size: workingImage.size, format: format)
+                workingImage = renderer.image { _ in workingImage.draw(at: .zero) }
+            }
+        }
+        
         return workingImage
     }
     
