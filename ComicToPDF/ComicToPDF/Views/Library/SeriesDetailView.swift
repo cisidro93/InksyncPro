@@ -1774,14 +1774,14 @@ struct SeriesDetailView: View {
 
 struct CellFramePreferenceKey: PreferenceKey {
     typealias Value = [UUID: CGRect]
-    static var defaultValue: [UUID: CGRect] = [:]
+    static var defaultValue: [UUID: CGRect] { [:] }
     static func reduce(value: inout [UUID: CGRect], nextValue: () -> [UUID: CGRect]) {
         value.merge(nextValue(), uniquingKeysWith: { $1 })
     }
 }
 
 struct ScrollOffsetPreferenceKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
+    static var defaultValue: CGFloat { 0 }
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = nextValue()
     }
