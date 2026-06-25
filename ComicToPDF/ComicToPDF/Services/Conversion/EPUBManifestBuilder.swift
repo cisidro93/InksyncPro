@@ -90,22 +90,30 @@ public struct EPUBManifestBuilder {
         isManga: Bool,
         firstPageHref: String = "text/page_0001.xhtml"
     ) -> String {
+        let modified = ISO8601DateFormatter().string(from: Date())
         let direction = isManga ? "rtl" : "ltr"
+        let originalResolution = "1980x2640"
         return """
         <?xml version="1.0" encoding="UTF-8"?>
-        <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookID" version="3.0">
+        <package xmlns="http://www.idpf.org/2007/opf" xmlns:epub="http://www.idpf.org/2007/ops" unique-identifier="BookID" version="3.0" prefix="rendition: http://www.idpf.org/vocab/rendition/# dcterms: http://purl.org/dc/terms/">
             <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
                 <dc:identifier id="BookID">urn:uuid:\(bookUUID)</dc:identifier>
                 <dc:title>\(baseFilename.xmlEscaped())</dc:title>
                 <dc:creator>Inksync Pro</dc:creator>
                 <dc:language>en</dc:language>
+                <meta property="dcterms:modified">\(modified)</meta>
+                <meta property="rendition:layout">pre-paginated</meta>
+                <meta property="rendition:orientation">auto</meta>
+                <meta property="rendition:spread">auto</meta>
+                <meta name="fixed-layout" content="true"/>
+                <meta name="original-resolution" content="\(originalResolution)"/>
                 <meta name="comic-panel-view" content="guided"/>
                 <meta name="cover" content="\(coverMetaID)"/>
             </metadata>
             <manifest>
                 \(manifestItems.joined(separator: "\n        "))
             </manifest>
-            <spine page-progression-direction="\(direction)">
+            <spine toc="ncx" page-progression-direction="\(direction)">
                 \(spineItems.joined(separator: "\n        "))
             </spine>
             <guide>
