@@ -10,6 +10,14 @@ struct LibraryScrollOffsetKey: PreferenceKey {
     }
 }
 
+struct LibraryCellFramePreferenceKey: PreferenceKey {
+    typealias Value = [String: CGRect]
+    static var defaultValue: [String: CGRect] { [:] }
+    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { $1 })
+    }
+}
+
 // MARK: - Header Pin Mode
 // Controls whether the header auto-collapses on scroll (auto), is locked open
 // (pinnedExpanded), or locked collapsed (pinnedCollapsed).

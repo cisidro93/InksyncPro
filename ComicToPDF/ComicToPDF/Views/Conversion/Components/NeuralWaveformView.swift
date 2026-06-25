@@ -8,6 +8,8 @@ struct NeuralWaveformView: View {
     let primaryColor: Color
     let secondaryColor: Color
 
+    @State private var minInterval: Double = 1.0 / 120.0
+
     init(
         speed: Double = 1.8,
         primaryColor: Color = .inkBlue,
@@ -19,7 +21,7 @@ struct NeuralWaveformView: View {
     }
 
     var body: some View {
-        TimelineView(.animation) { context in
+        TimelineView(.animation(minimumInterval: minInterval)) { context in
             let time = context.date.timeIntervalSinceReferenceDate * speed
             
             Canvas { gc, size in
@@ -68,6 +70,35 @@ struct NeuralWaveformView: View {
             }
         }
         .frame(height: 48)
+        .onAppear {
+            updateInterval()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name.NSProcessInfoPowerStateDidChange)) { _ in
+            updateInterval()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: ProcessInfo.thermalStateDidChangeNotification)) { _ in
+            updateInterval()
+        }
+    }
+
+    private func updateInterval() {
+        minInterval = determineOptimalInterval()
+    }
+
+    private func determineOptimalInterval() -> Double {
+        let isLowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
+        let thermalState = ProcessInfo.processInfo.thermalState
+        
+        if isLowPower || thermalState == .serious || thermalState == .critical {
+            // Low Power Mode or serious thermal stress -> throttle down to 30 fps
+            return 1.0 / 30.0
+        } else if thermalState == .fair {
+            // Fair thermal stress -> throttle to 60 fps to preserve device temperature
+            return 1.0 / 60.0
+        } else {
+            // Nominal state -> run at premium high frame rate 120 fps
+            return 1.0 / 120.0
+        }
     }
 
     private func drawWave(

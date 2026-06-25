@@ -271,7 +271,7 @@ struct SeriesDetailView: View {
             .coordinateSpace(name: "SeriesDetailViewport")
             .gesture(
                 isSelectionMode ?
-                LongPressGesture(minimumDuration: 0.15)
+                LongPressGesture(minimumDuration: 0.08)
                     .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .named("SeriesDetailViewport")))
                     .onChanged { value in
                         switch value {
@@ -290,6 +290,9 @@ struct SeriesDetailView: View {
             )
             .onPreferenceChange(ScrollOffsetPreferenceKey.self) { value in
                 self.scrollOffset = value
+            }
+            .onPreferenceChange(CellFramePreferenceKey.self) { value in
+                self.cellFrames = value
             }
             // ── Volume Jump: ensure target is expanded then scroll to its anchor ──
             .onChange(of: jumpToVolume) { _, targetKey in
@@ -732,7 +735,7 @@ struct SeriesDetailView: View {
                 .coordinateSpace(name: "SeriesDetailScrollView")
                 .gesture(
                     isSelectionMode ?
-                    LongPressGesture(minimumDuration: 0.15)
+                    LongPressGesture(minimumDuration: 0.08)
                         .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .named("SeriesDetailViewport")))
                         .onChanged { value in
                             switch value {
@@ -753,6 +756,9 @@ struct SeriesDetailView: View {
             .coordinateSpace(name: "SeriesDetailViewport")
             .onPreferenceChange(ScrollOffsetPreferenceKey.self) { value in
                 self.scrollOffset = value
+            }
+            .onPreferenceChange(CellFramePreferenceKey.self) { value in
+                self.cellFrames = value
             }
         }
     }

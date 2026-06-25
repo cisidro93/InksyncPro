@@ -45,6 +45,16 @@ struct LibraryGridView: View {
     // Drop-result confirmation sheet
     @State private var pendingDropInfo: DropResolutionInfo? = nil
 
+    // Drag-to-select Gestures & Coordinate Tracking
+    @State private var cellFrames: [String: CGRect] = [:]
+    @State private var scrollOffset: CGFloat = 0
+    @State private var dragStartIndex: Int? = nil
+    @State private var currentDragIndex: Int? = nil
+    @State private var isDragSelecting: Bool = true
+    @State private var initialSelectionBeforeDrag: Set<UUID> = []
+    @State private var lastDragLocation: CGPoint = .zero
+    @State private var autoScrollTask: Task<Void, Never>? = nil
+
     private var rows: [GridRowItem] {
         let chunked = chunkedItems(items)
         return chunked.map { chunk in
@@ -119,86 +129,121 @@ struct LibraryGridView: View {
             if conversionManager.visiblePDFs.isEmpty {
                 ModernEmptyState(onImport: onImport, onFolderImport: nil)
             } else {
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        LazyVStack(spacing: 0, pinnedViews: []) {
-                            // ── Scroll offset anchor ─────────────────────────
-                            // A zero-height GeometryReader pinned at the very top of
-                            // the scroll content. Its minY in the named coordinate
-                            // space equals how far the user has scrolled down (positive).
-                            GeometryReader { geo in
-                                Color.clear
-                                    .preference(
-                                        key: LibraryScrollOffsetKey.self,
-                                        value: -geo.frame(in: .named("libraryScroll")).minY
-                                    )
-                            }
-                            .frame(height: 0)
-
-                            // ── Continue Reading shelf ─────────────────────
-                            if !inProgress.isEmpty {
-                                ContinueReadingShelf(inProgress: Array(inProgress.prefix(10))) { pdf in
-                                    if tapAction == .read {
-                                        onAction(.read, pdf)
-                                    } else {
-                                        onAction(.convert, pdf)
-                                    }
+                GeometryReader { viewportGeo in
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            LazyVStack(spacing: 0, pinnedViews: []) {
+                                // ── Scroll offset anchor ─────────────────────────
+                                // A zero-height GeometryReader pinned at the very top of
+                                // the scroll content. Its minY in the named coordinate
+                                // space equals how far the user has scrolled down (positive).
+                                GeometryReader { geo in
+                                    Color.clear
+                                        .preference(
+                                            key: LibraryScrollOffsetKey.self,
+                                            value: -geo.frame(in: .named("libraryScroll")).minY
+                                        )
                                 }
-                                .environmentObject(conversionManager)
-                            }
+                                .frame(height: 0)
+
+                                // ── Continue Reading shelf ─────────────────────
+                                if !inProgress.isEmpty {
+                                    ContinueReadingShelf(inProgress: Array(inProgress.prefix(10))) { pdf in
+                                        if tapAction == .read {
+                                            onAction(.read, pdf)
+                                        } else {
+                                            onAction(.convert, pdf)
+                                        }
+                                    }
+                                    .environmentObject(conversionManager)
+                                }
 
 
-                            // Recently Added banner removed to declutter workspace
+                                // Recently Added banner removed to declutter workspace
 
-                            let rowItems = rows
-                            LazyVStack(spacing: 24) {
-                                ForEach(rowItems) { row in
-                                    VStack(spacing: 8) {
-                                        HStack(alignment: .bottom, spacing: colSpacing) {
-                                            ForEach(row.items) { item in
-                                                cellFor(item)
-                                                    .id(item.id)
-                                                    .frame(maxWidth: .infinity)
-                                            }
-                                            
-                                            if row.items.count < colCount {
-                                                ForEach(0..<(colCount - row.items.count), id: \.self) { _ in
-                                                    Spacer()
+                                let rowItems = rows
+                                LazyVStack(spacing: 24) {
+                                    ForEach(rowItems) { row in
+                                        VStack(spacing: 8) {
+                                            HStack(alignment: .bottom, spacing: colSpacing) {
+                                                ForEach(row.items) { item in
+                                                    cellFor(item)
+                                                        .id(item.id)
                                                         .frame(maxWidth: .infinity)
+                                                        .background(
+                                                            GeometryReader { geo in
+                                                                Color.clear
+                                                                    .preference(
+                                                                        key: LibraryCellFramePreferenceKey.self,
+                                                                        value: [item.id: geo.frame(in: .named("libraryScroll"))]
+                                                                    )
+                                                            }
+                                                        )
+                                                }
+                                                
+                                                if row.items.count < colCount {
+                                                    ForEach(0..<(colCount - row.items.count), id: \.self) { _ in
+                                                        Spacer()
+                                                            .frame(maxWidth: .infinity)
+                                                    }
                                                 }
                                             }
+                                            .padding(.horizontal, hPad)
+                                            
+                                            ShelfLineView(accentColor: contentShelf.accentColor)
+                                                .padding(.horizontal, hPad / 2)
                                         }
-                                        .padding(.horizontal, hPad)
-                                        
-                                        ShelfLineView(accentColor: contentShelf.accentColor)
-                                            .padding(.horizontal, hPad / 2)
                                     }
                                 }
-                            }
-                            .padding(.top, 12)
-                            .padding(.bottom, 100)   // overshoots tab bar + home indicator
-                        }
-                    }
-                    .coordinateSpace(name: "libraryScroll")
-                    .onPreferenceChange(LibraryScrollOffsetKey.self) { offset in
-                        let past = offset > 44
-                        if isScrolledPastHeader != past {
-                            isScrolledPastHeader = past
-                        }
-                    }
-                    .inkTabBarScrollDetect()
-                    .background(Color.clear)
-                    .overlay(alignment: .trailing) {
-                        LibraryIndexScrubber { letter in
-                            if let targetID = firstItemId(for: letter) {
-                                withAnimation { proxy.scrollTo(targetID, anchor: .top) }
+                                .padding(.top, 12)
+                                .padding(.bottom, 100)   // overshoots tab bar + home indicator
                             }
                         }
-                        .padding(.vertical, 30)
-                        .padding(.trailing, 2)
+                        .coordinateSpace(name: "libraryScroll")
+                        .gesture(
+                            isBatchMode ?
+                            LongPressGesture(minimumDuration: 0.08)
+                                .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .named("libraryViewport")))
+                                .onChanged { value in
+                                    switch value {
+                                    case .first:
+                                        break
+                                    case .second(_, let dragValue):
+                                        if let drag = dragValue {
+                                            handleDragUpdate(to: drag.location, viewportHeight: viewportGeo.size.height, scrollProxy: proxy)
+                                        }
+                                    }
+                                }
+                                .onEnded { _ in
+                                    handleDragEnded()
+                                }
+                            : nil
+                        )
+                        .onPreferenceChange(LibraryScrollOffsetKey.self) { offset in
+                            self.scrollOffset = offset
+                            let past = offset > 44
+                            if isScrolledPastHeader != past {
+                                isScrolledPastHeader = past
+                            }
+                        }
+                        .onPreferenceChange(LibraryCellFramePreferenceKey.self) { value in
+                            self.cellFrames = value
+                        }
+                        .inkTabBarScrollDetect()
+                        .background(Color.clear)
+                        .overlay(alignment: .trailing) {
+                            LibraryIndexScrubber { letter in
+                                if let targetID = firstItemId(for: letter) {
+                                    withAnimation { proxy.scrollTo(targetID, anchor: .top) }
+                                }
+                            }
+                            .padding(.vertical, 30)
+                            .padding(.trailing, 2)
+                        }
+                        .id(tapAction)
                     }
-                    .id(tapAction)
                 }
+                .coordinateSpace(name: "libraryViewport")
             }
         }
         // MARK: Rename Alert
@@ -882,8 +927,132 @@ private struct SeriesDragPreviewCard: View {
                 .background(Color.inkBlue)
                 .clipShape(Capsule())
                 .offset(x: 4, y: 4)
+    }
+
+    // MARK: - Pan-To-Select Drag Gesture Handlers
+    
+    private func findItemUnderTouch(at location: CGPoint) -> LibraryListItem? {
+        for item in items {
+            if let frame = cellFrames[item.id], frame.contains(location) {
+                return item
+            }
         }
-        .shadow(radius: 14)
+        return nil
+    }
+    
+    private func handleDragUpdate(to location: CGPoint, viewportHeight: CGFloat, scrollProxy: ScrollViewProxy) {
+        lastDragLocation = location
+        let contentLocation = CGPoint(x: location.x, y: location.y + scrollOffset)
+        
+        if let item = findItemUnderTouch(at: contentLocation) {
+            if let index = items.firstIndex(where: { $0.id == item.id }) {
+                if dragStartIndex == nil {
+                    dragStartIndex = index
+                    
+                    let pdfIDs: [UUID]
+                    switch item {
+                    case .single(let pdf):
+                        pdfIDs = [pdf.id]
+                    case .series(let group):
+                        pdfIDs = group.issues.map(\.id)
+                    case .driveFolder:
+                        pdfIDs = []
+                    }
+                    
+                    if let firstID = pdfIDs.first {
+                        isDragSelecting = !multiSelection.contains(firstID)
+                    } else {
+                        isDragSelecting = true
+                    }
+                    initialSelectionBeforeDrag = multiSelection
+                }
+                currentDragIndex = index
+                updateSelectionForCurrentRange()
+            }
+        }
+        
+        let touchViewportY = location.y
+        if touchViewportY < 60 || touchViewportY > viewportHeight - 60 {
+            if autoScrollTask == nil {
+                autoScrollTask = Task {
+                    while !Task.isCancelled {
+                        try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
+                        if Task.isCancelled { break }
+                        await MainActor.run {
+                            performAutoScroll(viewportHeight: viewportHeight, scrollProxy: scrollProxy)
+                        }
+                    }
+                }
+            }
+        } else {
+            autoScrollTask?.cancel()
+            autoScrollTask = nil
+        }
+    }
+    
+    private func updateSelectionForCurrentRange() {
+        guard let startIndex = dragStartIndex, let currentIndex = currentDragIndex else { return }
+        let range = min(startIndex, currentIndex)...max(startIndex, currentIndex)
+        
+        var newSelection = initialSelectionBeforeDrag
+        for i in 0..<items.count {
+            let item = items[i]
+            let isInsideRange = range.contains(i)
+            
+            let pdfIDs: [UUID]
+            switch item {
+            case .single(let pdf):
+                pdfIDs = [pdf.id]
+            case .series(let group):
+                pdfIDs = group.issues.map(\.id)
+            case .driveFolder:
+                pdfIDs = []
+            }
+            
+            for id in pdfIDs {
+                if isInsideRange {
+                    if isDragSelecting {
+                        newSelection.insert(id)
+                    } else {
+                        newSelection.remove(id)
+                    }
+                }
+            }
+        }
+        multiSelection = newSelection
+    }
+    
+    private func performAutoScroll(viewportHeight: CGFloat, scrollProxy: ScrollViewProxy) {
+        guard let currentIndex = currentDragIndex else { return }
+        let touchViewportY = lastDragLocation.y
+        
+        if touchViewportY < 60 {
+            let targetIndex = max(0, currentIndex - 1)
+            if targetIndex != currentIndex {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    scrollProxy.scrollTo(items[targetIndex].id, anchor: .top)
+                }
+                currentDragIndex = targetIndex
+                updateSelectionForCurrentRange()
+            }
+        } else if touchViewportY > viewportHeight - 60 {
+            let targetIndex = min(items.count - 1, currentIndex + 1)
+            if targetIndex != currentIndex {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    scrollProxy.scrollTo(items[targetIndex].id, anchor: .bottom)
+                }
+                currentDragIndex = targetIndex
+                updateSelectionForCurrentRange()
+            }
+        }
+    }
+    
+    private func handleDragEnded() {
+        autoScrollTask?.cancel()
+        autoScrollTask = nil
+        dragStartIndex = nil
+        currentDragIndex = nil
+        initialSelectionBeforeDrag.removeAll()
     }
 }
 
