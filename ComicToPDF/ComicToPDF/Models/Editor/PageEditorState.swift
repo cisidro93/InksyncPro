@@ -2,6 +2,7 @@ import Foundation
 import SwiftUI
 import Combine
 
+@MainActor
 class PageEditorState: ObservableObject {
     @Published var pageModel: PageModel // ✅ Added missing property
     @Published var selectedPanelIndex: Int?
