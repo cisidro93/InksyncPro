@@ -66,11 +66,12 @@ class PageEditorState: ObservableObject {
         undoManager.registerUndo(withTarget: self) { target in
             MainActor.assumeIsolated {
                 command.undo(to: &target.pageModel)
-            }
-            // Register redo when undoing
-            target.undoManager.registerUndo(withTarget: target) { redoTarget in
-                MainActor.assumeIsolated {
-                    command.apply(to: &redoTarget.pageModel)
+                
+                // Register redo when undoing
+                target.undoManager.registerUndo(withTarget: target) { redoTarget in
+                    MainActor.assumeIsolated {
+                        command.apply(to: &redoTarget.pageModel)
+                    }
                 }
             }
         }
