@@ -63,10 +63,10 @@ class PageEditorState: ObservableObject {
     
     func execute(_ command: PageCommand) {
         // Register undo operation
-        undoManager.registerUndo(withTarget: self) { target in
+        undoManager.registerUndo(withTarget: self) { @MainActor target in
             command.undo(to: &target.pageModel)
             // Register redo when undoing
-            target.undoManager.registerUndo(withTarget: target) { redoTarget in
+            target.undoManager.registerUndo(withTarget: target) { @MainActor redoTarget in
                 command.apply(to: &redoTarget.pageModel)
                 // Cycle continues...
             }
