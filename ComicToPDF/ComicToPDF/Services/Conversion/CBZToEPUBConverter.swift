@@ -148,11 +148,13 @@ struct CBZToEPUBConverter: Sendable {
                 let isUnsafeFormat = !["jpg", "jpeg", "png"].contains(ext)
                 let needsCompression = settings.compressionQuality != .high
                 let needsEnhancement = settings.imageEnhancement.grayscale || settings.imageEnhancement.autoContrast || settings.imageEnhancement.invertColors || settings.imageEnhancement.brightness != 0 || settings.imageEnhancement.sharpness != 0 || settings.imageEnhancement.vibrance != 0 || settings.imageEnhancement.gamma != 1.0
+                let isWideColorImage = ImageProcessor.isWideColor(url: srcURL)
                 
-                let needsProcessing = needsCompression || needsEnhancement || settings.optimizeForDevice || settings.trimMargins || isUnsafeFormat
+                let needsProcessing = needsCompression || needsEnhancement || settings.optimizeForDevice || settings.trimMargins || isUnsafeFormat || isWideColorImage
                 
                 let appendToBatch = { (data: Data, indexToUse: Int, itemSourceURL: URL) in
-                    let itemSize = Int64(data.count)
+                    let safeData = ImageProcessor.convertToSRGB(data: data)
+                    let itemSize = Int64(safeData.count)
                     let overheadBuffer: Int64 = 500 * 1024
                     
                     let isNoLimit = limit == Int64.max
@@ -167,7 +169,7 @@ struct CBZToEPUBConverter: Sendable {
                     
                     // Immediately write data to disk instead of hoarding in memory
                     let diskURL = sandboxDir.appendingPathComponent("processed_\(UUID().uuidString).jpg")
-                    try? data.write(to: diskURL)
+                    try? safeData.write(to: diskURL)
                     
                     currentBatch.append((processedDiskURL: diskURL, sourceURL: itemSourceURL, index: indexToUse))
                     currentBatchSize += itemSize

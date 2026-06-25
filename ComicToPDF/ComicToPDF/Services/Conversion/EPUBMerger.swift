@@ -46,30 +46,8 @@ struct EPUBMerger: Sendable {
         }
         
         // Ensure cover is in sRGB if it's Display P3
-        if let coverData = activeCoverData, let image = UIImage(data: coverData) {
-            var needsConversion = false
-            if let cgImage = image.cgImage, let colorSpace = cgImage.colorSpace {
-                if let name = colorSpace.name {
-                    let nameStr = name as String
-                    if nameStr.localizedCaseInsensitiveContains("p3") {
-                        needsConversion = true
-                    }
-                }
-                let desc = String(describing: colorSpace).lowercased()
-                if desc.contains("p3") || desc.contains("display") || desc.contains("adobe") {
-                    needsConversion = true
-                }
-            }
-            if needsConversion {
-                let format = UIGraphicsImageRendererFormat()
-                format.scale = 1.0
-                format.preferredRange = .standard
-                let renderer = UIGraphicsImageRenderer(size: image.size, format: format)
-                let srgbImage = renderer.image { _ in image.draw(at: .zero) }
-                if let jpegData = srgbImage.jpegData(compressionQuality: 0.9) {
-                    activeCoverData = jpegData
-                }
-            }
+        if let coverData = activeCoverData {
+            activeCoverData = ImageProcessor.convertToSRGB(data: coverData)
         }
         
         var manifestItems: [String] = []
@@ -339,30 +317,8 @@ struct EPUBMerger: Sendable {
         }
         
         // Ensure cover is in sRGB if it's Display P3
-        if let coverData = activeCoverData, let image = UIImage(data: coverData) {
-            var needsConversion = false
-            if let cgImage = image.cgImage, let colorSpace = cgImage.colorSpace {
-                if let name = colorSpace.name {
-                    let nameStr = name as String
-                    if nameStr.localizedCaseInsensitiveContains("p3") {
-                        needsConversion = true
-                    }
-                }
-                let desc = String(describing: colorSpace).lowercased()
-                if desc.contains("p3") || desc.contains("display") || desc.contains("adobe") {
-                    needsConversion = true
-                }
-            }
-            if needsConversion {
-                let format = UIGraphicsImageRendererFormat()
-                format.scale = 1.0
-                format.preferredRange = .standard
-                let renderer = UIGraphicsImageRenderer(size: image.size, format: format)
-                let srgbImage = renderer.image { _ in image.draw(at: .zero) }
-                if let jpegData = srgbImage.jpegData(compressionQuality: 0.9) {
-                    activeCoverData = jpegData
-                }
-            }
+        if let coverData = activeCoverData {
+            activeCoverData = ImageProcessor.convertToSRGB(data: coverData)
         }
         
         // Setup initial Working Dir
@@ -722,22 +678,10 @@ struct EPUBMerger: Sendable {
 
     private func copyAndPrepareImage(from srcURL: URL, to destURL: URL, settings: ConversionSettings) throws {
         let ext = srcURL.pathExtension.lowercased()
-        if let image = UIImage(contentsOfFile: srcURL.path) {
-            var needsConversion = false
-            if let cgImage = image.cgImage, let colorSpace = cgImage.colorSpace {
-                if let name = colorSpace.name {
-                    let nameStr = name as String
-                    if nameStr.localizedCaseInsensitiveContains("p3") {
-                        needsConversion = true
-                    }
-                }
-                let desc = String(describing: colorSpace).lowercased()
-                if desc.contains("p3") || desc.contains("display") || desc.contains("adobe") {
-                    needsConversion = true
-                }
-            }
-            
-            if needsConversion || ext == "webp" {
+        let needsConversion = ImageProcessor.isWideColor(url: srcURL)
+        
+        if needsConversion || ext == "webp" {
+            if let image = UIImage(contentsOfFile: srcURL.path) {
                 let format = UIGraphicsImageRendererFormat()
                 format.scale = 1.0
                 format.preferredRange = .standard // Forces standard sRGB color space
