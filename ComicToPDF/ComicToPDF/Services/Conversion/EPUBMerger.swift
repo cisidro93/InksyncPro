@@ -348,6 +348,10 @@ struct EPUBMerger: Sendable {
                         needsConversion = true
                     }
                 }
+                let desc = String(describing: colorSpace).lowercased()
+                if desc.contains("p3") || desc.contains("display") || desc.contains("adobe") {
+                    needsConversion = true
+                }
             }
             if needsConversion {
                 let format = UIGraphicsImageRendererFormat()
