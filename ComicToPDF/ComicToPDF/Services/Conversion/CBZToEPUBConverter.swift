@@ -498,7 +498,7 @@ struct CBZToEPUBConverter: Sendable {
                     try archive.addEntry(with: "mimetype", fileURL: mimetypePath, compressionMethod: .none)
 
                     let containerPath = capturedBatchDir.appendingPathComponent("META-INF/container.xml")
-                    try archive.addEntry(with: "META-INF/container.xml", fileURL: containerPath, compressionMethod: .deflate)
+                    try archive.addEntry(with: "META-INF/container.xml", fileURL: containerPath, compressionMethod: .none)
 
                     let oebpsDir = capturedBatchDir.appendingPathComponent("OEBPS")
                     if let enumerator = FileManager.default.enumerator(at: oebpsDir, includingPropertiesForKeys: nil) {

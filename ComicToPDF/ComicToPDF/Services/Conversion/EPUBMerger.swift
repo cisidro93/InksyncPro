@@ -189,7 +189,7 @@ struct EPUBMerger: Sendable {
         
         // Inject container.xml second, matching CBZToEPUBConverter
         let containerPath = epubDir.appendingPathComponent("META-INF/container.xml")
-        try archive.addEntry(with: "META-INF/container.xml", fileURL: containerPath, compressionMethod: .deflate)
+        try archive.addEntry(with: "META-INF/container.xml", fileURL: containerPath, compressionMethod: .none)
         
         // 8. Recursive Payload Addition of OEBPS folder contents
         let keys: [URLResourceKey] = [.nameKey, .isDirectoryKey]
@@ -285,7 +285,7 @@ struct EPUBMerger: Sendable {
             try archive.addEntry(with: "mimetype", fileURL: mimetypePath, compressionMethod: .none)
             
             let containerPath = dirURL.appendingPathComponent("META-INF/container.xml")
-            try archive.addEntry(with: "META-INF/container.xml", fileURL: containerPath, compressionMethod: .deflate)
+            try archive.addEntry(with: "META-INF/container.xml", fileURL: containerPath, compressionMethod: .none)
             
             let oebpsDir = dirURL.appendingPathComponent("OEBPS")
             let keys: [URLResourceKey] = [.nameKey, .isDirectoryKey]
