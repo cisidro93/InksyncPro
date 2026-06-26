@@ -558,33 +558,28 @@ struct PPLReaderView: View {
 
     private func nextPage(geo: CGSize, targetDual: Bool) {
         let isSpread     = bufferManager.currentImage.map { isWideSpread($0) } ?? false
-        let nextIsSpread = bufferManager.nextImage.map   { isWideSpread($0) } ?? false
         let isPortrait   = geo.height > geo.width
 
         if isPortrait && isSpread && autoSplitPortraitSpreads {
             if splitHalf == 0 { splitHalf = 1; return } else { splitHalf = 0 }
         }
 
-        // Always base hop arithmetic on the canonical lead in dual-page mode so we never sit on a
-        // right-slot index and stall for a tap. This gives the natural
-        // "every tap = one spread forward" feel the user expects.
-        // In single-page mode, just use the current page index.
-        let lead = targetDual
-            ? PageBufferManager.canonicalLeadIndex(for: currentPageIndex, isMangaMode: isMangaMode)
-            : currentPageIndex
-        let isCover = targetDual && lead == 0
+        if targetDual && !bufferManager.activeSpreads.isEmpty {
+            let nextIndex = bufferManager.currentSpreadIndex + 1
+            if nextIndex < bufferManager.activeSpreads.count {
+                Haptics.shared.playImpact(style: .light)
+                currentPageIndex = bufferManager.activeSpreads[nextIndex].leadIndex
+            } else {
+                Haptics.shared.playImpact(style: .rigid)
+                NotificationCenter.default.post(name: NSNotification.Name("Reader_EndOfBookReached"), object: nil)
+            }
+            return
+        }
 
-        // In dual-page mode hop by 2 (one full spread) unless the current or next
-        // page is a wide physical spread — those always occupy a solo slot.
-        let hop: Int = (targetDual && !isSpread && !nextIsSpread && !isCover) ? 2 : 1
-        let next = lead + hop
-
+        let next = currentPageIndex + 1
         if next < pages.count {
             Haptics.shared.playImpact(style: .light)
             currentPageIndex = next
-        } else if lead < pages.count - 1 {
-            Haptics.shared.playImpact(style: .light)
-            currentPageIndex = pages.count - 1
         } else {
             Haptics.shared.playImpact(style: .rigid)
             NotificationCenter.default.post(name: NSNotification.Name("Reader_EndOfBookReached"), object: nil)
@@ -593,27 +588,30 @@ struct PPLReaderView: View {
 
     private func prevPage(geo: CGSize, targetDual: Bool) {
         let isSpread     = bufferManager.currentImage.map { isWideSpread($0) } ?? false
-        let prevIsSpread = bufferManager.prevImage.map    { isWideSpread($0) } ?? false
         let isPortrait   = geo.height > geo.width
 
         if isPortrait && isSpread && autoSplitPortraitSpreads {
             if splitHalf == 1 { splitHalf = 0; return } else { splitHalf = 1 }
         }
 
-        // Always base hop arithmetic on the canonical lead in dual-page mode — same reasoning as nextPage.
-        let lead = targetDual
-            ? PageBufferManager.canonicalLeadIndex(for: currentPageIndex, isMangaMode: isMangaMode)
-            : currentPageIndex
-        let isCover = targetDual && lead == 0
-        guard lead > 0 else {
-            Haptics.shared.playImpact(style: .rigid)
+        if targetDual && !bufferManager.activeSpreads.isEmpty {
+            let prevIndex = bufferManager.currentSpreadIndex - 1
+            if prevIndex >= 0 {
+                Haptics.shared.playImpact(style: .light)
+                currentPageIndex = bufferManager.activeSpreads[prevIndex].leadIndex
+            } else {
+                Haptics.shared.playImpact(style: .rigid)
+            }
             return
         }
 
-        // In dual-page mode hop back by 2 (one full spread), respecting wide pages.
-        let hop: Int = (targetDual && !isSpread && !prevIsSpread && !isCover) ? 2 : 1
-        Haptics.shared.playImpact(style: .light)
-        currentPageIndex = max(0, lead - hop)
+        let prev = currentPageIndex - 1
+        if prev >= 0 {
+            Haptics.shared.playImpact(style: .light)
+            currentPageIndex = prev
+        } else {
+            Haptics.shared.playImpact(style: .rigid)
+        }
     }
 
     // MARK: - Buffer Setup
@@ -636,13 +634,13 @@ struct PPLReaderView: View {
                 isMangaMode: isMangaMode
             )
         } else {
-            bufferManager.setup(pages: pages)
+            bufferManager.setup(pages: pages, isMangaMode: isMangaMode)
             if targetDual {
-                let lead = PageBufferManager.canonicalLeadIndex(
-                    for: currentPageIndex, isMangaMode: isMangaMode)
-                bufferManager.renderDual(
-                    leadIndex: lead, pages: pages,
-                    isMangaMode: isMangaMode, bounds: geo.size)
+                if let targetIdx = bufferManager.activeSpreads.firstIndex(where: { $0.leadIndex == currentPageIndex }) {
+                    bufferManager.renderDual(spreadIndex: targetIdx, bounds: geo.size)
+                } else {
+                    bufferManager.renderDual(spreadIndex: 0, bounds: geo.size)
+                }
             } else {
                 bufferManager.render(pageIndex: currentPageIndex, bounds: geo.size)
             }
@@ -663,9 +661,9 @@ struct PPLReaderView: View {
     }
 
     private func advanceBuffer(to index: Int, geo: GeometryProxy, dual: Bool) {
-        if dual {
-            let lead = PageBufferManager.canonicalLeadIndex(for: index, isMangaMode: isMangaMode)
-            bufferManager.renderDual(leadIndex: lead, pages: pages, isMangaMode: isMangaMode, bounds: geo.size)
+        if dual && !bufferManager.activeSpreads.isEmpty {
+            let targetIdx = bufferManager.activeSpreads.firstIndex(where: { $0.leadIndex == index }) ?? bufferManager.currentSpreadIndex
+            bufferManager.renderDual(spreadIndex: targetIdx, bounds: geo.size)
         } else {
             bufferManager.render(pageIndex: index, bounds: geo.size)
         }
@@ -699,9 +697,9 @@ struct PPLReaderView: View {
         bufferManager.prevImage = nil
         bufferManager.prevSpread = nil
 
-        if dual {
-            let lead = PageBufferManager.canonicalLeadIndex(for: currentPageIndex, isMangaMode: isMangaMode)
-            bufferManager.renderDual(leadIndex: lead, pages: pages, isMangaMode: isMangaMode, bounds: size)
+        if dual && !bufferManager.activeSpreads.isEmpty {
+            let targetIdx = bufferManager.activeSpreads.firstIndex(where: { $0.leadIndex == currentPageIndex }) ?? bufferManager.currentSpreadIndex
+            bufferManager.renderDual(spreadIndex: targetIdx, bounds: size)
         } else {
             bufferManager.render(pageIndex: currentPageIndex, bounds: size)
         }
