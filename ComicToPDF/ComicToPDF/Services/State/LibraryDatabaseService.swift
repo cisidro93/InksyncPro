@@ -344,7 +344,7 @@ final class LibraryDB: @unchecked Sendable {
     deinit { sqlite3_close(handle) }
 
     func createSchema() throws {
-        try execute("""
+        let schemaSql = """
             CREATE TABLE IF NOT EXISTS library_files (
                 id TEXT PRIMARY KEY,
                 path TEXT NOT NULL,
@@ -443,7 +443,15 @@ final class LibraryDB: @unchecked Sendable {
                 lastSyncedAt REAL
             );
             CREATE INDEX IF NOT EXISTS idx_vo_addedAt ON virtual_omnibuses(addedAt);
-        """)
+        """
+        
+        let statements = schemaSql.components(separatedBy: ";")
+        for statement in statements {
+            let trimmed = statement.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                try execute(trimmed)
+            }
+        }
     }
 
     func read<T>(_ block: (LibraryDB) throws -> T) throws -> T {
