@@ -93,6 +93,9 @@ final class ComicImageCache: ObservableObject {
     // ✅ OPDS-style cloud page streaming
     private var cloudPageSource: CloudPageSource?
     
+    // Virtual omnibus page mapping
+    private var virtualCoordinator: VirtualPageCoordinator?
+    
     @Published var isLoading = true
     @Published var loadError: String? = nil   // Non-nil = show error view with exit button
     var pageCount: Int = 0
@@ -103,13 +106,36 @@ final class ComicImageCache: ObservableObject {
     init(pdf: ConvertedPDF, prefetchLimit: Int = 2) {
         self.prefetchLimit = prefetchLimit
         let scheme = pdf.url.scheme?.lowercased() ?? ""
-        isStream = (scheme == "http" || scheme == "https")
         
-        let ext = pdf.url.pathExtension.lowercased()
-        isPDF = (ext == "pdf")
-        let isCBRFile = (ext == "cbr" || ext == "rar")
-        let isCBTFile = (ext == "cbt" || ext == "tar")
-        self.isPreExtracted = isCBRFile || isCBTFile
+        if scheme == "virtual-omnibus" {
+            isStream = false
+            isPDF = false
+            isPreExtracted = false
+            
+            let omnibusID = UUID(uuidString: pdf.url.host ?? "") ?? UUID()
+            if let omni = LibraryService.shared.virtualOmnibuses.first(where: { $0.id == omnibusID }) {
+                let resolvedFiles = omni.fileIDs.compactMap { id in
+                    LibraryService.shared.items.first(where: { $0.id == id })
+                }
+                let coord = VirtualPageCoordinator(files: resolvedFiles)
+                self.virtualCoordinator = coord
+                self.pageCount = coord.totalPageCount
+                self.isLoading = false
+            } else {
+                self.virtualCoordinator = nil
+                self.pageCount = 0
+                self.isLoading = false
+                self.loadError = "Could not find virtual omnibus data."
+            }
+        } else {
+            isStream = (scheme == "http" || scheme == "https")
+            let ext = pdf.url.pathExtension.lowercased()
+            isPDF = (ext == "pdf")
+            let isCBRFile = (ext == "cbr" || ext == "rar")
+            let isCBTFile = (ext == "cbt" || ext == "tar")
+            self.isPreExtracted = isCBRFile || isCBTFile
+            self.virtualCoordinator = nil
+        }
         
         NotificationCenter.default.addObserver(
             forName: UIApplication.didReceiveMemoryWarningNotification,
@@ -310,7 +336,9 @@ final class ComicImageCache: ObservableObject {
         
         if isFetching(index) { return nil }
         
-        if isStream && cloudPageSource != nil {
+        if virtualCoordinator != nil {
+            fetchVirtualImageAsync(at: index, priority: .userInitiated)
+        } else if isStream && cloudPageSource != nil {
             fetchCloudPageImage(at: index, priority: .userInitiated)
         } else if !isStream {
             fetchLocalImageAsync(at: index, priority: .userInitiated)
@@ -323,6 +351,144 @@ final class ComicImageCache: ObservableObject {
     func peekImageSize(at index: Int) -> CGSize? {
         guard index >= 0 && index < pageCount else { return nil }
         return cache.object(forKey: NSNumber(value: index))?.size
+    }
+    
+    private func fetchVirtualImageAsync(at index: Int, priority: TaskPriority = .userInitiated) {
+        guard let coordinator = self.virtualCoordinator,
+              let resolved = coordinator.resolvePage(at: index) else { return }
+        
+        startFetching(index)
+        
+        let pdf = resolved.file
+        let localPageIndex = resolved.localPageIndex
+        
+        let ext = pdf.url.pathExtension.lowercased()
+        let isPDF = (ext == "pdf")
+        let isCBRFile = (ext == "cbr" || ext == "rar")
+        let isCBTFile = (ext == "cbt" || ext == "tar")
+        let isPreExtracted = isCBRFile || isCBTFile
+        
+        let bounds = UIScreen.main.bounds
+        let scale = UIScreen.main.scale
+        
+        Task.detached(priority: priority) { [weak self] in
+            guard let self = self else { return }
+            
+            // Resolve external bookmark for linked files if needed
+            let resolvedURL: URL
+            var accessedURL: URL? = nil
+            if case .linked(let bm) = pdf.sourceMode,
+               let url = try? BookmarkResolver.shared.resolve(bm) {
+                let didAccess = url.startAccessingSecurityScopedResource()
+                resolvedURL = url
+                if didAccess { accessedURL = url }
+            } else {
+                resolvedURL = pdf.url
+            }
+            
+            defer {
+                accessedURL?.stopAccessingSecurityScopedResource()
+            }
+            
+            let img: UIImage?
+            if isPDF {
+                img = await PDFRenderActor.shared.renderPage(at: localPageIndex, scale: scale)
+            } else if isPreExtracted {
+                let (tempDir, imageURLs): (URL, [URL])
+                if isCBTFile {
+                    (tempDir, imageURLs) = (try? await CBTExtractor.extract(from: resolvedURL)) ?? (FileManager.default.temporaryDirectory, [])
+                } else {
+                    (tempDir, imageURLs) = (try? await CBRExtractor.extract(from: resolvedURL)) ?? (FileManager.default.temporaryDirectory, [])
+                }
+                defer {
+                    if tempDir != FileManager.default.temporaryDirectory {
+                        try? FileManager.default.removeItem(at: tempDir)
+                    }
+                }
+                
+                if localPageIndex < imageURLs.count {
+                    let imageURL = imageURLs[localPageIndex]
+                    img = autoreleasepool {
+                        let srcOpts: [CFString: Any] = [kCGImageSourceShouldCache: false]
+                        guard let source = CGImageSourceCreateWithURL(imageURL as CFURL, srcOpts as CFDictionary) else {
+                            return UIImage(data: (try? Data(contentsOf: imageURL)) ?? Data())
+                        }
+                        let maxPixelSize = max(bounds.width, bounds.height) * scale
+                        let downOpts: [CFString: Any] = [
+                            kCGImageSourceCreateThumbnailFromImageAlways: true,
+                            kCGImageSourceShouldCacheImmediately: true,
+                            kCGImageSourceCreateThumbnailWithTransform: true,
+                            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize
+                        ]
+                        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, downOpts as CFDictionary) else {
+                            return UIImage(data: (try? Data(contentsOf: imageURL)) ?? Data())
+                        }
+                        return UIImage(cgImage: cgImage)
+                    }
+                } else {
+                    img = nil
+                }
+            } else {
+                guard let archive = try? Archive(url: resolvedURL, accessMode: .read, pathEncoding: .utf8) else {
+                    await MainActor.run { self.stopFetching(index) }
+                    return
+                }
+                let imageExtensions: Set<String> = ["jpg", "jpeg", "png", "webp", "gif", "heic"]
+                let sortedEntries = archive.filter { entry in
+                    let path = entry.path
+                    let name = (path as NSString).lastPathComponent
+                    guard !path.contains("__MACOSX"), !name.hasPrefix("._"), name != ".DS_Store", !path.hasSuffix("/") else { return false }
+                    let ext = (name as NSString).pathExtension.lowercased()
+                    return imageExtensions.contains(ext)
+                }.sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
+                
+                if localPageIndex < sortedEntries.count {
+                    let entryPath = sortedEntries[localPageIndex].path
+                    do {
+                        let data = try await ArchiveManager.shared.extractEntry(from: resolvedURL, path: entryPath)
+                        img = autoreleasepool {
+                            let options: [CFString: Any] = [kCGImageSourceShouldCache: false]
+                            guard let imageSource = CGImageSourceCreateWithData(data as CFData, options as CFDictionary) else {
+                                return UIImage(data: data)
+                            }
+                            let maxPixelSize = max(bounds.width, bounds.height) * scale
+                            let downsampleOptions: [CFString: Any] = [
+                                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                                kCGImageSourceShouldCacheImmediately: true,
+                                kCGImageSourceCreateThumbnailWithTransform: true,
+                                kCGImageSourceThumbnailMaxPixelSize: maxPixelSize
+                            ]
+                            guard let downsampledImage = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, downsampleOptions as CFDictionary) else {
+                                return UIImage(data: data)
+                            }
+                            return UIImage(cgImage: downsampledImage)
+                        }
+                    } catch {
+                        img = nil
+                    }
+                } else {
+                    img = nil
+                }
+            }
+            
+            if let img {
+                await MainActor.run { [weak self] in
+                    guard let self = self else { return }
+                    self.cache.setObject(img, forKey: NSNumber(value: index))
+                    self.stopFetching(index)
+                    self.updateLRUOnMain(index)
+                    NotificationCenter.default.post(
+                        name: .comicImageCacheImageLoaded,
+                        object: self,
+                        userInfo: ["index": index]
+                    )
+                }
+            } else {
+                await MainActor.run { [weak self] in
+                    self?.stopFetching(index)
+                }
+            }
+        }
     }
     
     private func fetchLocalImageAsync(at index: Int, priority: TaskPriority = .userInitiated) {

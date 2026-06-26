@@ -85,6 +85,33 @@ struct LibraryListView: View {
                                 .listRowBackground(Color.clear)
                             }
 
+                            // ── Virtual Omnibuses Shelf ───────────────────
+                            VirtualOmnibusShelf(
+                                onEdit: { omnibus in
+                                    AppRouter.shared.presentSheet(.virtualOmnibusEditor(omnibus))
+                                },
+                                onRead: { omnibus in
+                                    let resolved = omnibus.fileIDs.compactMap { id in
+                                        conversionManager.convertedPDFs.first(where: { $0.id == id })
+                                    }
+                                    let totalPageCount = resolved.reduce(0) { $0 + max($1.pageCount, 1) }
+                                    let virtualPDF = ConvertedPDF(
+                                        id: omnibus.id,
+                                        name: omnibus.name,
+                                        url: URL(string: "virtual-omnibus://\(omnibus.id.uuidString)")!,
+                                        pageCount: totalPageCount,
+                                        fileSize: 0,
+                                        metadata: PDFMetadata(title: omnibus.name),
+                                        contentType: .comic
+                                    )
+                                    AppRouter.shared.presentFullScreen(.read(virtualPDF))
+                                }
+                            )
+                            .environmentObject(conversionManager)
+                            .listRowInsets(EdgeInsets())
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+
                             ForEach(items) { item in
                                 listRow(for: item)
                                     .id(item.id)

@@ -1278,3 +1278,19 @@ enum PageCoordinateSystem: String, Codable, Equatable, Hashable {
     }
 }
 
+
+// MARK: - Virtual Omnibus Models
+
+struct VirtualOmnibus: Identifiable, Codable, Equatable, Hashable, Sendable {
+    let id: UUID
+    var name: String
+    var fileIDs: [UUID] // Ordered list of comic issue file IDs
+    var coverFileID: UUID? // Optional override cover image file ID
+    var lastReadPageIndex: Int = 0
+    var lastReadFileID: UUID? = nil
+    var addedAt: Date = Date()
+    var modifiedAt: Date = Date()
+    var remoteSyncURL: String? = nil
+    var lastSyncedAt: Date? = nil
+}
+

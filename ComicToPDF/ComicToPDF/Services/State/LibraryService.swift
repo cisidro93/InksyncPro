@@ -9,6 +9,7 @@ final class LibraryService: ObservableObject {
     
     @Published var items: [ConvertedPDF] = []
     @Published var collections: [PDFCollection] = []
+    @Published var virtualOmnibuses: [VirtualOmnibus] = []
     
     private init() {}
     
@@ -18,7 +19,9 @@ final class LibraryService: ObservableObject {
             let (loadedItems, loadedCollections) = try await LibraryRepository.shared.loadLibrary()
             self.items = loadedItems
             self.collections = loadedCollections
-            Logger.shared.log("LibraryService: loaded \(loadedItems.count) items, \(loadedCollections.count) collections.", category: "Library")
+            self.virtualOmnibuses = await LibraryDatabaseService.shared.loadVirtualOmnibuses()
+            Logger.shared.log("LibraryService: loaded \(loadedItems.count) items, \(loadedCollections.count) collections, \(self.virtualOmnibuses.count) virtual omnibuses.", category: "Library")
+            self.syncAllRemoteVirtualOmnibuses()
         } catch {
             Logger.shared.log("LibraryService: failed to load library: \(error.localizedDescription)", category: "Library", type: .error)
         }
@@ -65,8 +68,82 @@ final class LibraryService: ObservableObject {
         }
     }
     
+    
+    /// Saves the virtual omnibuses array to the local database.
+    func saveVirtualOmnibuses() {
+        let omnibuses = self.virtualOmnibuses
+        Task.detached(priority: .background) {
+            await LibraryDatabaseService.shared.saveVirtualOmnibuses(omnibuses)
+        }
+    }
+    
     /// Post-import helper to notify that the library changed.
     func notifyImportCompleted() {
         NotificationCenter.default.post(name: .libraryNeedsRescan, object: nil)
+    }
+    
+    /// Synchronizes a specific virtual omnibus with its remote source (CBL or CSV).
+    func syncRemoteVirtualOmnibus(_ omnibus: VirtualOmnibus) async {
+        guard let urlString = omnibus.remoteSyncURL,
+              let url = URL(string: urlString) else { return }
+        
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            
+            // Save to temp file to reuse existing parser logic
+            let tempDir = FileManager.default.temporaryDirectory
+            let tempURL = tempDir.appendingPathComponent(UUID().uuidString).appendingPathExtension(url.pathExtension)
+            try data.write(to: tempURL)
+            defer { try? FileManager.default.removeItem(at: tempURL) }
+            
+            let requests: [RequestedComicItem]
+            if url.pathExtension.lowercased() == "cbl" {
+                requests = try SmartListImporter.shared.parseCBL(from: tempURL)
+            } else {
+                let cleanName = url.deletingPathExtension().lastPathComponent
+                requests = try SmartListImporter.shared.parseCSVList(from: tempURL, defaultSeriesName: cleanName)
+            }
+            
+            let customAliases = AppSettingsManager.shared.conversionSettings.customAliases
+            let libraryPDFs = self.items
+            
+            let resolutions = await SmartListImporter.shared.resolveList(requests, against: libraryPDFs, customAliases: customAliases)
+            
+            // Extract the matched/suggested file IDs in the precise parsed order
+            let matchedIDs = resolutions.compactMap { resolved -> UUID? in
+                switch resolved.resolution {
+                case .matched(let pdf): return pdf.id
+                case .suggested(let pdf): return pdf.id
+                case .missing: return nil
+                }
+            }
+            
+            // Perform UI and DB update on the Main Thread
+            await MainActor.run {
+                if let idx = self.virtualOmnibuses.firstIndex(where: { $0.id == omnibus.id }) {
+                    var updated = self.virtualOmnibuses[idx]
+                    updated.fileIDs = matchedIDs
+                    updated.lastSyncedAt = Date()
+                    updated.modifiedAt = Date()
+                    self.virtualOmnibuses[idx] = updated
+                    self.saveVirtualOmnibuses()
+                    Logger.shared.log("LibraryService: synced remote virtual omnibus '\(updated.name)' with \(matchedIDs.count) resolved files.", category: "Library")
+                }
+            }
+        } catch {
+            Logger.shared.log("LibraryService: remote sync failed for '\(omnibus.name)' — \(error.localizedDescription)", category: "Library", type: .error)
+        }
+    }
+    
+    /// Synchronizes all virtual omnibuses that have remote sync URLs.
+    func syncAllRemoteVirtualOmnibuses() {
+        let targets = self.virtualOmnibuses.filter { $0.remoteSyncURL != nil && !$0.remoteSyncURL!.isEmpty }
+        guard !targets.isEmpty else { return }
+        
+        Task {
+            for target in targets {
+                await syncRemoteVirtualOmnibus(target)
+            }
+        }
     }
 }

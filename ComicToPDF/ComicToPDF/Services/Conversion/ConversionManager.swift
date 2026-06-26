@@ -13,6 +13,10 @@ class ConversionManager: ObservableObject {
         get { LibraryService.shared.collections }
         set { LibraryService.shared.collections = newValue }
     }
+    var virtualOmnibuses: [VirtualOmnibus] {
+        get { LibraryService.shared.virtualOmnibuses }
+        set { LibraryService.shared.virtualOmnibuses = newValue; LibraryService.shared.saveVirtualOmnibuses() }
+    }
     // MARK: - App Config Shifted to AppSettingsManager
     
     // MARK: - Series Grouping Prompt (Layer 3)
@@ -135,14 +139,15 @@ class ConversionManager: ObservableObject {
                 self?.objectWillChange.send()
             }
 
-        // PERF M2: Rebuild visible/pro caches and relay when library arrays or vault state change.
-        librarySubscription = Publishers.CombineLatest3(
+        // PERF M2: Rebuild visible/pro caches and relay when library arrays, virtual omnibuses, or vault state change.
+        librarySubscription = Publishers.CombineLatest4(
             LibraryService.shared.$items,
             LibraryService.shared.$collections,
+            LibraryService.shared.$virtualOmnibuses,
             AppSettingsManager.shared.$isVaultUnlocked
         )
         .receive(on: DispatchQueue.main)
-        .sink { [weak self] _, _, _ in
+        .sink { [weak self] _, _, _, _ in
             self?.rebuildVisiblePDFs()
             self?.objectWillChange.send()
         }

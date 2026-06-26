@@ -271,3 +271,89 @@ struct ZettelRecord: Codable, Equatable {
     var createdAt: Double
     var modifiedAt: Double
 }
+
+// MARK: - VirtualOmnibusRecord
+
+struct VirtualOmnibusRecord: Codable, Equatable {
+    static let databaseTableName = "virtual_omnibuses"
+
+    var id: String
+    var name: String
+    var fileIDsJson: String       // JSON [String]
+    var coverFileID: String?
+    var lastReadPageIndex: Int
+    var lastReadFileID: String?
+    var addedAt: Double
+    var modifiedAt: Double
+    var remoteSyncURL: String?
+    var lastSyncedAt: Double?
+
+    static func from(_ omni: VirtualOmnibus) -> VirtualOmnibusRecord {
+        let encoder = JSONEncoder()
+        let fileIDsStr = (try? encoder.encode(omni.fileIDs.map { $0.uuidString })).flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
+        return VirtualOmnibusRecord(
+            id: omni.id.uuidString,
+            name: omni.name,
+            fileIDsJson: fileIDsStr,
+            coverFileID: omni.coverFileID?.uuidString,
+            lastReadPageIndex: omni.lastReadPageIndex,
+            lastReadFileID: omni.lastReadFileID?.uuidString,
+            addedAt: omni.addedAt.timeIntervalSince1970,
+            modifiedAt: omni.modifiedAt.timeIntervalSince1970,
+            remoteSyncURL: omni.remoteSyncURL,
+            lastSyncedAt: omni.lastSyncedAt?.timeIntervalSince1970
+        )
+    }
+
+    func toDomainModel() -> VirtualOmnibus {
+        let decoder = JSONDecoder()
+        let ids: [UUID] = {
+            guard let data = fileIDsJson.data(using: .utf8),
+                  let strArray = try? decoder.decode([String].self, from: data) else { return [] }
+            return strArray.compactMap { UUID(uuidString: $0) }
+        }()
+        let coverUUID = coverFileID.flatMap { UUID(uuidString: $0) }
+        let lastFileUUID = lastReadFileID.flatMap { UUID(uuidString: $0) }
+        return VirtualOmnibus(
+            id: UUID(uuidString: id) ?? UUID(),
+            name: name,
+            fileIDs: ids,
+            coverFileID: coverUUID,
+            lastReadPageIndex: lastReadPageIndex,
+            lastReadFileID: lastFileUUID,
+            addedAt: Date(timeIntervalSince1970: addedAt),
+            modifiedAt: Date(timeIntervalSince1970: modifiedAt),
+            remoteSyncURL: remoteSyncURL,
+            lastSyncedAt: lastSyncedAt.map { Date(timeIntervalSince1970: $0) }
+        )
+    }
+}
+
+extension VirtualOmnibusRecord {
+    func upsert(_ db: LibraryDB) throws {
+        try db.execute("""
+            INSERT OR REPLACE INTO virtual_omnibuses
+            (id, name, fileIDsJson, coverFileID, lastReadPageIndex, lastReadFileID, addedAt, modifiedAt, remoteSyncURL, lastSyncedAt)
+            VALUES (?,?,?,?,?,?,?,?,?,?)
+        """, arguments: [id, name, fileIDsJson, coverFileID as Any, lastReadPageIndex, lastReadFileID as Any, addedAt, modifiedAt, remoteSyncURL as Any, lastSyncedAt as Any])
+    }
+
+    init?(row: [String: Any]) {
+        guard let id = row["id"] as? String,
+              let name = row["name"] as? String,
+              let fileIDsJson = row["fileIDsJson"] as? String,
+              let addedAt = row["addedAt"] as? Double,
+              let modifiedAt = row["modifiedAt"] as? Double else { return nil }
+        self.id = id
+        self.name = name
+        self.fileIDsJson = fileIDsJson
+        self.coverFileID = row["coverFileID"] as? String
+        self.lastReadPageIndex = (row["lastReadPageIndex"] as? Int) ?? 0
+        self.lastReadFileID = row["lastReadFileID"] as? String
+        self.addedAt = addedAt
+        self.modifiedAt = modifiedAt
+        self.remoteSyncURL = row["remoteSyncURL"] as? String
+        self.lastSyncedAt = row["lastSyncedAt"] as? Double
+    }
+}
+

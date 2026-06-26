@@ -379,6 +379,9 @@ struct ModernLibraryView: View {
                             Button(action: { AppRouter.shared.presentSheet(.smartListImporter) }) {
                                 Label("Smart List Import", systemImage: "list.star")
                             }
+                            Button(action: { AppRouter.shared.presentSheet(.virtualOmnibusEditor(nil)) }) {
+                                Label("Create Virtual Volume", systemImage: "books.vertical.fill")
+                            }
                         }
                         
                         // Metadata & AI
@@ -754,6 +757,9 @@ struct ModernLibraryView: View {
                         }
                     }
             }
+        case .virtualOmnibusEditor(let omnibus):
+            VirtualOmnibusEditorView(omnibus: omnibus)
+                .environmentObject(conversionManager)
         }
     }
     

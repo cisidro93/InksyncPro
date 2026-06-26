@@ -21,6 +21,7 @@ enum LibrarySheetDestination: Identifiable {
     case ledger
     case metadataInbox
     case metadataSpreadsheet([ConvertedPDF])
+    case virtualOmnibusEditor(VirtualOmnibus?)
     
     var id: String {
         switch self {
@@ -44,6 +45,7 @@ enum LibrarySheetDestination: Identifiable {
         case .ledger: return "ledger"
         case .metadataInbox: return "metadataInbox"
         case .metadataSpreadsheet: return "metadataSpreadsheet"
+        case .virtualOmnibusEditor(let o): return "virtualOmnibusEditor_\(o?.id.uuidString ?? "new")"
         }
     }
 }
