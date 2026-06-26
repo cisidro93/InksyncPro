@@ -121,6 +121,9 @@ struct PPLReaderView: View {
                 setupBuffer(geo: geo, dual: effectiveDoublePage && geo.size.width > geo.size.height)
             }
             .onChange(of: isAutoCropEnabled) { _, _ in setupBuffer(geo: geo, dual: targetDual) }
+            .onDisappear {
+                momentumAnimator.stop()
+            }
         }
     }
 
