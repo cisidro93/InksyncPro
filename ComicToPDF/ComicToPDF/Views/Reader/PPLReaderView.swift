@@ -779,6 +779,21 @@ struct PPLReaderView: View {
     }
 }
 
+// ── Momentum DisplayLink Proxy ────────────────────────────────────────────────
+@MainActor
+private class MomentumDisplayLinkProxy: NSObject {
+    private weak var target: MomentumAnimator?
+    
+    init(target: MomentumAnimator) {
+        self.target = target
+        super.init()
+    }
+    
+    @objc func tick(_ dl: CADisplayLink) {
+        target?.tick(dl)
+    }
+}
+
 // ── Momentum Animator Class ──────────────────────────────────────────────────
 @MainActor
 class MomentumAnimator: NSObject {
@@ -804,7 +819,8 @@ class MomentumAnimator: NSObject {
         self.geoSize = geoSize
         self.onTick = onTick
         
-        let dl = CADisplayLink(target: self, selector: #selector(tick(_:)))
+        let proxy = MomentumDisplayLinkProxy(target: self)
+        let dl = CADisplayLink(target: proxy, selector: #selector(MomentumDisplayLinkProxy.tick(_:)))
         if #available(iOS 15.0, *) {
             dl.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
         }
@@ -817,7 +833,7 @@ class MomentumAnimator: NSObject {
         displayLink = nil
     }
     
-    @objc private func tick(_ dl: CADisplayLink) {
+    fileprivate func tick(_ dl: CADisplayLink) {
         let dt = CGFloat(dl.duration)
         let decay = pow(0.90, dt / (1.0 / 60.0))
         vx *= decay

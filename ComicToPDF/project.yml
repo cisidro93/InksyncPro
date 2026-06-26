@@ -69,7 +69,9 @@ targets:
         UIRequiresFullScreen: false
         UIFileSharingEnabled: true
         LSSupportsOpeningDocumentsInPlace: true
-        UIBackgroundModes: [audio]
+        UIBackgroundModes: [audio, fetch]
+        BGTaskSchedulerPermittedIdentifiers:
+          - "com.antigravity.InksyncPro.autosync"
         ITSAppUsesNonExemptEncryption: false
         NSLocalNetworkUsageDescription: "InksyncPro requires local network access to securely transfer comic files over your Wi-Fi and to discover Calibre libraries on your network."
         NSBonjourServices:
