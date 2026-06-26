@@ -553,11 +553,8 @@ struct LibraryControlCenterView: View {
     }
     
     private func transitionToSheet(_ destination: LibrarySheetDestination) {
+        AppRouter.shared.pendingSheet = destination
         dismiss()
-        // Wait briefly for the dismissal animation to complete to trigger the next sheet cleanly
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-            AppRouter.shared.presentSheet(destination)
-        }
     }
     
     private func handleVaultToggle() {

@@ -646,6 +646,14 @@ struct ModernLibraryView: View {
             )
             .environmentObject(conversionManager)
             .environmentObject(settingsManager)
+            .onDisappear {
+                if let pending = AppRouter.shared.pendingSheet {
+                    AppRouter.shared.pendingSheet = nil
+                    DispatchQueue.main.async {
+                        AppRouter.shared.presentSheet(pending)
+                    }
+                }
+            }
         }
     }
     
