@@ -276,18 +276,39 @@ struct ModernGridFileCell: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(height: 38, alignment: .topLeading)
 
+                HStack(spacing: 4) {
+                    if let vol = pdf.metadata.volume, !vol.trimmingCharacters(in: .whitespaces).isEmpty {
+                        Text("Vol. \(vol)")
+                            .font(.system(size: 9, weight: .bold))
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(Color.purple.opacity(0.12))
+                            .foregroundColor(.purple)
+                            .cornerRadius(3)
+                    }
+                    
+                    if let issue = pdf.metadata.issueNumber, !issue.trimmingCharacters(in: .whitespaces).isEmpty {
+                        Text("#\(issue)")
+                            .font(.system(size: 9, weight: .bold))
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(Color.blue.opacity(0.12))
+                            .foregroundColor(.blue)
+                            .cornerRadius(3)
+                    }
 
-                if pdf.contentType == .comic {
-                    let isManga = pdf.metadata.isManga ?? false
-                    Text(isManga ? "MANGA" : "COMIC")
-                        .font(.system(size: 9, weight: .black, design: .rounded))
-                        .foregroundColor(Color(hex: isManga ? mangaBadgeColorHex : comicBadgeColorHex))
-                        .tracking(1.0)
-                } else {
-                    Text(pdf.fileExtensionString.uppercased())
-                        .font(.system(size: 9, weight: .bold, design: .rounded))
-                        .foregroundColor(Theme.textTertiary)
-                        .tracking(1.0)
+                    if pdf.contentType == .comic {
+                        let isManga = pdf.metadata.isManga ?? false
+                        Text(isManga ? "MANGA" : "COMIC")
+                            .font(.system(size: 9, weight: .black, design: .rounded))
+                            .foregroundColor(Color(hex: isManga ? mangaBadgeColorHex : comicBadgeColorHex))
+                            .tracking(1.0)
+                    } else {
+                        Text(pdf.fileExtensionString.uppercased())
+                            .font(.system(size: 9, weight: .bold, design: .rounded))
+                            .foregroundColor(Theme.textTertiary)
+                            .tracking(1.0)
+                    }
                 }
             }
             .padding(.horizontal, 2)

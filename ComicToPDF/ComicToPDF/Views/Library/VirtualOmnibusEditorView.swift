@@ -80,6 +80,13 @@ struct VirtualOmnibusEditorView: View {
                                 .foregroundColor(.inkTextPrimary)
                                 .autocorrectionDisabled(true)
                                 .textInputAutocapitalization(.never)
+                            
+                            Text("Link this volume to a remote ComicRack reading list (.cbl) or standard CSV sheet hosted online (e.g. GitHub, Dropbox). The app will automatically background-sync the list order and align your local files.")
+                                .font(.system(.caption2, design: .rounded))
+                                .foregroundColor(.inkTextSecondary)
+                                .lineSpacing(3.5)
+                                .padding(.horizontal, 4)
+                                .padding(.top, 2)
                         }
                     }
                     .padding(.horizontal)

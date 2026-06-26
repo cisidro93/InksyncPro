@@ -804,37 +804,7 @@ struct SmartListImporterView: View {
     }
 }
 
-// MARK: - ProMotion High Frame Rate Lock
 
-fileprivate struct ProMotionFrameRateModifier: ViewModifier {
-    @State private var displayLink: CADisplayLink?
-
-    func body(content: Content) -> some View {
-        content
-            .onAppear {
-                let link = CADisplayLink(target: FrameRateTracker(), selector: #selector(FrameRateTracker.dummy))
-                if #available(iOS 15.0, *) {
-                    link.preferredFrameRateRange = CAFrameRateRange(minimum: 80, maximum: 120, preferred: 120)
-                }
-                link.add(to: .main, forMode: .common)
-                self.displayLink = link
-            }
-            .onDisappear {
-                displayLink?.invalidate()
-                displayLink = nil
-            }
-    }
-
-    private class FrameRateTracker: NSObject {
-        @objc func dummy() {}
-    }
-}
-
-extension View {
-    fileprivate func forceProMotion() -> some View {
-        self.modifier(ProMotionFrameRateModifier())
-    }
-}
 
 
 

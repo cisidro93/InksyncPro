@@ -78,7 +78,7 @@ struct ModernLibraryView: View {
         case location = "Storage (Local / Cloud)"
         var id: String { rawValue }
     }
-    @State private var sortOption: SortOption = .dateAdded
+    @State private var sortOption: SortOption = .name
     
     // 🗑 Removed Native Importer Bypass State
     // PERF D-H3: static let avoids UTType system registry query on every render
@@ -394,6 +394,7 @@ struct ModernLibraryView: View {
             }
             .sheet(item: $router.activeSheet) { item in
                 destinationSheet(for: item)
+                    .forceProMotion()
             }
             .onReceive(conversionManager.objectWillChange.debounce(for: .milliseconds(250), scheduler: RunLoop.main)) { _ in
                 rebuildNativeCache()
