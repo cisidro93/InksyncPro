@@ -112,8 +112,11 @@ class SyncCoordinator: ObservableObject {
                 // File exists on the other device, but not locally!
                 missingFiles.append(filename)
                 
+                let localDocDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
+                let localURL = localDocDir.appendingPathComponent(filename)
+                
                 // Inject placeholder record into SwiftData. It will be downloaded later via P2P.
-                let doc = SDConvertedPDF(id: incomingPDF.id, name: incomingPDF.name, url: incomingPDF.url, pageCount: incomingPDF.pageCount, fileSize: incomingPDF.fileSize, metadata: incomingPDF.metadata, collectionId: assignedLocalCollectionID, isFavorite: incomingPDF.isFavorite, isPrivate: incomingPDF.isPrivate, coverImageData: incomingPDF.coverImageData, contentType: incomingPDF.contentType, chapters: incomingPDF.chapters, addedByMode: incomingPDF.addedByMode)
+                let doc = SDConvertedPDF(id: incomingPDF.id, name: incomingPDF.name, url: localURL, pageCount: incomingPDF.pageCount, fileSize: incomingPDF.fileSize, metadata: incomingPDF.metadata, collectionId: assignedLocalCollectionID, isFavorite: incomingPDF.isFavorite, isPrivate: incomingPDF.isPrivate, coverImageData: incomingPDF.coverImageData, contentType: incomingPDF.contentType, chapters: incomingPDF.chapters, addedByMode: incomingPDF.addedByMode)
                 doc.isOnDevice = false // Cloud/P2P PlaceHolder Flag
                 doc.lastModified = incomingPDF.lastModified
                 context.insert(doc)
