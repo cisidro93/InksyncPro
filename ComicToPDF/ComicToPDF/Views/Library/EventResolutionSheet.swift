@@ -1,4 +1,6 @@
 import SwiftUI
+import QuartzCore
+
 
 struct EventResolutionSheet: View {
     @Environment(\.dismiss) var dismiss
@@ -520,7 +522,7 @@ struct ResolutionItemSuggestionCell: View {
 
 // MARK: - ProMotion High Frame Rate Lock
 
-struct ProMotionFrameRateModifier: ViewModifier {
+fileprivate struct ProMotionFrameRateModifier: ViewModifier {
     @State private var displayLink: CADisplayLink?
 
     func body(content: Content) -> some View {
@@ -545,7 +547,8 @@ struct ProMotionFrameRateModifier: ViewModifier {
 }
 
 extension View {
-    func forceProMotion() -> some View {
+    fileprivate func forceProMotion() -> some View {
         self.modifier(ProMotionFrameRateModifier())
     }
 }
+

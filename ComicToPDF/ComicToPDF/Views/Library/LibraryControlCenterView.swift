@@ -581,5 +581,6 @@ struct LibraryControlCenterView: View {
 
 // Custom emerald color
 extension Color {
-    static let emerald = Color(red: 16/255, green: 185/255, blue: 129/255)
+    fileprivate static let emerald = Color(red: 16/255, green: 185/255, blue: 129/255)
 }
+
