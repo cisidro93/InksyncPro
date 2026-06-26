@@ -66,9 +66,7 @@
     <key>NSBonjourServices</key>
     <array>
         <string>_inksync._tcp</string>
-        <string>_inksync._tcp.</string>
         <string>_http._tcp</string>
-        <string>_http._tcp.</string>
     </array>
     
     <!-- FILE SHARING & DOCS -->
