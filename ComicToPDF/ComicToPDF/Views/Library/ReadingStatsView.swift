@@ -120,7 +120,7 @@ struct ReadingStatsView: View {
                                 .foregroundColor(.secondary)
                                 .padding(.vertical, 8)
                         } else {
-                            ForEach(seriesGroups, id: \.name) { series in
+                            ForEach(seriesGroups, id: \.idKey) { series in
                                 HStack(spacing: 12) {
                                     // Completion ring
                                     ZStack {
@@ -137,9 +137,21 @@ struct ReadingStatsView: View {
                                     .frame(width: 32, height: 32)
                                     
                                     VStack(alignment: .leading, spacing: 2) {
-                                        Text(series.name)
-                                            .font(.system(size: 14, weight: .medium))
-                                            .lineLimit(1)
+                                        HStack(spacing: 6) {
+                                            Text(series.baseName)
+                                                .font(.system(size: 14, weight: .medium))
+                                                .lineLimit(1)
+                                            
+                                            if let vol = series.volume, !vol.isEmpty {
+                                                Text("Vol. \(vol)")
+                                                    .font(.system(size: 9, weight: .bold))
+                                                    .padding(.horizontal, 4)
+                                                    .padding(.vertical, 1)
+                                                    .background(Color.purple.opacity(0.12))
+                                                    .foregroundColor(.purple)
+                                                    .cornerRadius(3)
+                                            }
+                                        }
                                         Text("\(series.readCount)/\(series.totalCount) issues read")
                                             .font(.system(size: 11))
                                             .foregroundColor(.secondary)
@@ -379,35 +391,55 @@ struct ReadingStatsView: View {
         }
     }
     
-    struct SeriesProgress {
-        let name: String
+    struct SeriesProgress: Hashable {
+        let baseName: String
+        let volume: String?
         let readCount: Int
         let totalCount: Int
         var progress: Double {
             guard totalCount > 0 else { return 0 }
             return Double(readCount) / Double(totalCount)
         }
+        
+        var idKey: String {
+            if let vol = volume, !vol.isEmpty {
+                return "\(baseName)_vol_\(vol)"
+            }
+            return baseName
+        }
     }
     
     func buildSeriesGroups() -> [SeriesProgress] {
-        var groups: [String: (read: Int, total: Int)] = [:]
+        struct GroupKey: Hashable {
+            let baseName: String
+            let volume: String?
+        }
+        var groups: [GroupKey: (read: Int, total: Int)] = [:]
         
         for pdf in conversionManager.convertedPDFs {
             if let series = pdf.metadata.series, !series.isEmpty {
+                let vol = pdf.metadata.volume
+                let key = GroupKey(baseName: series, volume: vol?.isEmpty == false ? vol : nil)
                 let isRead = (pdf.metadata.lastReadPage ?? 0) > 0
-                groups[series, default: (0, 0)].total += 1
-                if isRead { groups[series, default: (0, 0)].read += 1 }
+                
+                var current = groups[key] ?? (read: 0, total: 0)
+                current.total += 1
+                if isRead { current.read += 1 }
+                groups[key] = current
             }
         }
         
         return groups
-            .map { SeriesProgress(name: $0.key, readCount: $0.value.read, totalCount: $0.value.total) }
-            // Sort by most books read (engagement) then alphabetically
+            .map { SeriesProgress(baseName: $0.key.baseName, volume: $0.key.volume, readCount: $0.value.read, totalCount: $0.value.total) }
             .sorted { lhs, rhs in
-                if lhs.readCount != rhs.readCount { return lhs.readCount > rhs.readCount }
-                return lhs.name < rhs.name
+                if lhs.baseName != rhs.baseName {
+                    return lhs.baseName.localizedStandardCompare(rhs.baseName) == .orderedAscending
+                }
+                let v1 = Int(lhs.volume ?? "") ?? 0
+                let v2 = Int(rhs.volume ?? "") ?? 0
+                return v1 < v2
             }
-            .prefix(10)
+            .prefix(15)
             .map { $0 }
     }
     

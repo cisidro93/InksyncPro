@@ -64,10 +64,32 @@ struct ModernFileRow: View {
                 
                 // ✅ Show Fetched Metadata Context
                 if let series = pdf.metadata.series, !series.isEmpty {
-                    Text("\(series) \(pdf.metadata.issueNumber.map { "#\($0)" } ?? "")")
-                        .font(.system(size: 12))
-                        .foregroundColor(Theme.textSecondary)
-                        .lineLimit(1)
+                    HStack(spacing: 6) {
+                        Text(series)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(Theme.textSecondary)
+                            .lineLimit(1)
+                        
+                        if let vol = pdf.metadata.volume, !vol.trimmingCharacters(in: .whitespaces).isEmpty {
+                            Text("Vol. \(vol)")
+                                .font(.system(size: 9, weight: .bold))
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 1)
+                                .background(Color.purple.opacity(0.12))
+                                .foregroundColor(.purple)
+                                .cornerRadius(3)
+                        }
+                        
+                        if let issue = pdf.metadata.issueNumber, !issue.trimmingCharacters(in: .whitespaces).isEmpty {
+                            Text("#\(issue)")
+                                .font(.system(size: 9, weight: .bold))
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 1)
+                                .background(Color.blue.opacity(0.12))
+                                .foregroundColor(.blue)
+                                .cornerRadius(3)
+                        }
+                    }
                 }
                 
                 HStack(spacing: 6) {
@@ -233,10 +255,21 @@ struct ModernSeriesRow: View {
             .shadow(color: Color(.sRGBLinear, white: 0, opacity: 0.25), radius: 4, y: 2)
             
             VStack(alignment: .leading, spacing: 4) {
-                Text(group.title)
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(Theme.text)
-                    .lineLimit(1)
+                HStack(spacing: 8) {
+                    Text(group.title)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(Theme.text)
+                        .lineLimit(1)
+                    
+                    if group.count > 0 {
+                        let readCount = group.issues.filter {
+                            (ReaderProgressTracker.shared.progress(for: $0.id)?.completionFraction ?? 0.0) >= 0.95
+                        }.count
+                        
+                        SeriesProgressRing(readCount: readCount, totalCount: group.count)
+                            .frame(width: 16, height: 16)
+                    }
+                }
                 
                 HStack(spacing: 6) {
                     HStack(spacing: 3) {

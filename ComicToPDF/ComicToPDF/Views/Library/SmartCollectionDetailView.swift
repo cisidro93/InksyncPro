@@ -395,8 +395,30 @@ import SwiftUI
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(pdf.name).font(.subheadline).foregroundStyle(Theme.text).lineLimit(2)
-                if let series = pdf.metadata.series {
-                    Text(series).font(.caption2).foregroundStyle(.secondary)
+                if let series = pdf.metadata.series, !series.isEmpty {
+                    HStack(spacing: 6) {
+                        Text(series).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                        
+                        if let vol = pdf.metadata.volume, !vol.trimmingCharacters(in: .whitespaces).isEmpty {
+                            Text("Vol. \(vol)")
+                                .font(.system(size: 8, weight: .bold))
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 1)
+                                .background(Color.purple.opacity(0.12))
+                                .foregroundColor(.purple)
+                                .cornerRadius(3)
+                        }
+                        
+                        if let issue = pdf.metadata.issueNumber, !issue.trimmingCharacters(in: .whitespaces).isEmpty {
+                            Text("#\(issue)")
+                                .font(.system(size: 8, weight: .bold))
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 1)
+                                .background(Color.blue.opacity(0.12))
+                                .foregroundColor(.blue)
+                                .cornerRadius(3)
+                        }
+                    }
                 }
                 if isCloud {
                     if let p = progress {

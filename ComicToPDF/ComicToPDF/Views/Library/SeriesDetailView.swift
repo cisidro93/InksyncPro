@@ -498,7 +498,7 @@ struct SeriesDetailView: View {
         // Volume Contents (shown when expanded)
         if !isCollapsed {
             ForEach(group.issues) { pdf in
-                issueRow(pdf)
+                issueRow(pdf, isInVolume: true, volumeKey: group.key)
             }
         }
     }
@@ -1178,24 +1178,35 @@ struct SeriesDetailView: View {
     // MARK: - Issue Row (Shared by flat + volume grouped views)
     
     @ViewBuilder
-    private func issueRow(_ pdf: ConvertedPDF) -> some View {
+    private func issueRow(_ pdf: ConvertedPDF, isInVolume: Bool = false, volumeKey: String = "") -> some View {
         if isSelectionMode {
-            Button {
-                if selection.contains(pdf.id) {
-                    selection.remove(pdf.id)
-                } else {
-                    selection.insert(pdf.id)
+            HStack(spacing: 0) {
+                if isInVolume && volumeKey != "Ungrouped" {
+                    RoundedRectangle(cornerRadius: 1.5)
+                        .fill(Theme.orange.opacity(0.8))
+                        .frame(width: 3)
+                        .padding(.vertical, 8)
+                        .padding(.trailing, 12)
                 }
-            } label: {
-                HStack {
-                    LibraryPDFRowWithCover(pdf: pdf, isSelected: false)
-                    Spacer()
-                    Image(systemName: selection.contains(pdf.id) ? "checkmark.circle.fill" : "circle")
-                        .foregroundColor(selection.contains(pdf.id) ? .blue : .gray)
-                        .font(.title2)
+                
+                Button {
+                    if selection.contains(pdf.id) {
+                        selection.remove(pdf.id)
+                    } else {
+                        selection.insert(pdf.id)
+                    }
+                } label: {
+                    HStack {
+                        LibraryPDFRowWithCover(pdf: pdf, isSelected: false)
+                        Spacer()
+                        Image(systemName: selection.contains(pdf.id) ? "checkmark.circle.fill" : "circle")
+                            .foregroundColor(selection.contains(pdf.id) ? .blue : .gray)
+                            .font(.title2)
+                    }
                 }
+                .buttonStyle(PlainButtonStyle())
             }
-            .buttonStyle(PlainButtonStyle())
+            .padding(.leading, isInVolume && volumeKey != "Ungrouped" ? 14 : 0)
             .listRowBackground(selection.contains(pdf.id) ? Color.blue.opacity(0.1) : Theme.bg)
             .background(
                 GeometryReader { geo in
@@ -1207,33 +1218,44 @@ struct SeriesDetailView: View {
                 }
             )
         } else {
-            Button {
-                if tapAction == .read {
-                    pdfToRead = pdf
-                } else { // tapAction == .convert
-                    if case .cloud = pdf.sourceMode {
-                        Task {
-                            await CloudDownloadManager.shared.downloadAndStore(
-                                pdf: pdf,
-                                thenConvert: false,
-                                manager: conversionManager
-                            )
-                            await MainActor.run {
-                                if let updated = conversionManager.convertedPDFs.first(where: { $0.id == pdf.id }) {
-                                    DispatchQueue.main.async {
-                                        AppRouter.shared.presentSheet(.convert(updated))
+            HStack(spacing: 0) {
+                if isInVolume && volumeKey != "Ungrouped" {
+                    RoundedRectangle(cornerRadius: 1.5)
+                        .fill(Theme.orange.opacity(0.8))
+                        .frame(width: 3)
+                        .padding(.vertical, 8)
+                        .padding(.trailing, 12)
+                }
+                
+                Button {
+                    if tapAction == .read {
+                        pdfToRead = pdf
+                    } else { // tapAction == .convert
+                        if case .cloud = pdf.sourceMode {
+                            Task {
+                                await CloudDownloadManager.shared.downloadAndStore(
+                                    pdf: pdf,
+                                    thenConvert: false,
+                                    manager: conversionManager
+                                )
+                                await MainActor.run {
+                                    if let updated = conversionManager.convertedPDFs.first(where: { $0.id == pdf.id }) {
+                                        DispatchQueue.main.async {
+                                            AppRouter.shared.presentSheet(.convert(updated))
+                                        }
                                     }
                                 }
                             }
+                        } else {
+                            AppRouter.shared.presentSheet(.convert(pdf))
                         }
-                    } else {
-                        AppRouter.shared.presentSheet(.convert(pdf))
                     }
+                } label: {
+                    LibraryPDFRowWithCover(pdf: pdf, isSelected: selectedPDF?.id == pdf.id)
                 }
-            } label: {
-                LibraryPDFRowWithCover(pdf: pdf, isSelected: selectedPDF?.id == pdf.id)
+                .buttonStyle(CellButtonStyle())
             }
-            .buttonStyle(CellButtonStyle())
+            .padding(.leading, isInVolume && volumeKey != "Ungrouped" ? 14 : 0)
             .listRowBackground(selectedPDF?.id == pdf.id ? Theme.surfaceElevated : Theme.bg)
             .swipeActions(edge: .leading) { swipeActionsLeading(pdf) }
             .swipeActions(edge: .trailing) { swipeActionsTrailing(pdf) }
