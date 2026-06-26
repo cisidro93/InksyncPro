@@ -194,3 +194,38 @@ class PeerManager: ObservableObject {
         }
     }
 }
+
+extension PeerManager {
+    /// Attempts to authenticate with a peer's server using the provided PIN.
+    /// Returns the session token cookie string if successful, or throws an error.
+    func authenticate(ipAddress: String, port: Int, pin: String) async throws -> String? {
+        guard let loginURL = URL(string: "http://\(ipAddress):\(port)/login") else {
+            throw NSError(domain: "InksyncPeer", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid Peer URL"])
+        }
+        var request = URLRequest(url: loginURL)
+        request.httpMethod = "POST"
+        request.httpBody = "pin=\(pin)".data(using: .utf8)
+        request.timeoutInterval = 10.0
+        
+        let (_, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw NSError(domain: "InksyncPeer", code: 500, userInfo: [NSLocalizedDescriptionKey: "Invalid server response"])
+        }
+        
+        if httpResponse.statusCode == 401 || httpResponse.statusCode == 400 {
+            throw NSError(domain: "InksyncPeer", code: 401, userInfo: [NSLocalizedDescriptionKey: "Incorrect PIN"])
+        }
+        
+        if let setCookieHeader = httpResponse.value(forHTTPHeaderField: "Set-Cookie") {
+            let parts = setCookieHeader.components(separatedBy: ";")
+            for part in parts {
+                let trimmed = part.trimmingCharacters(in: .whitespaces)
+                if trimmed.hasPrefix("session=") {
+                    return trimmed
+                }
+            }
+        }
+        return nil
+    }
+}
+

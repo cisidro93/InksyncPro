@@ -136,35 +136,7 @@ class SyncCoordinator: ObservableObject {
         self.syncStatus = "Authenticating with \(peerIP)..."
         defer { self.isSyncing = false }
         
-        guard let loginURL = URL(string: "http://\(peerIP):8080/login") else { return }
-        var loginReq = URLRequest(url: loginURL)
-        loginReq.httpMethod = "POST"
-        loginReq.httpBody = "pin=\(pin)".data(using: .utf8)
-        loginReq.timeoutInterval = 10.0
-        
-        // 1. Authenticate & Obtain Cookie
-        let (_, loginResp) = try await URLSession.shared.data(for: loginReq)
-        
-        guard let httpLoginResp = loginResp as? HTTPURLResponse else {
-             throw NSError(domain: "SyncCoordinator", code: 500, userInfo: [NSLocalizedDescriptionKey: "Invalid Server Response during Login."])
-        }
-        
-        // WiFiServer sends 302 Found on successful login, 401 on failed PIN.
-        if httpLoginResp.statusCode == 401 || httpLoginResp.statusCode == 400 {
-            throw NSError(domain: "SyncCoordinator", code: 401, userInfo: [NSLocalizedDescriptionKey: "Incorrect PIN."])
-        }
-        
-        var sessionCookie: String? = nil
-        if let setCookieHeader = httpLoginResp.value(forHTTPHeaderField: "Set-Cookie") {
-            let parts = setCookieHeader.components(separatedBy: ";")
-            for part in parts {
-                let trimmed = part.trimmingCharacters(in: .whitespaces)
-                if trimmed.hasPrefix("session=") {
-                    sessionCookie = trimmed
-                    break
-                }
-            }
-        }
+        let sessionCookie = try await PeerManager.shared.authenticate(ipAddress: peerIP, port: 8080, pin: pin)
         
         guard let url = URL(string: "http://\(peerIP):8080/api/sync") else {
             throw NSError(domain: "SyncCoordinator", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid Peer IP configuration."])

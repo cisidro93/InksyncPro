@@ -17,6 +17,11 @@ struct WiFiView: View {
     @State private var syncPin = ""
     @State private var selectedSyncPeer: PeerNode?
     
+    // P2P File Transfer Authentication
+    @State private var showingTransferAlert = false
+    @State private var transferPin = ""
+    @State private var selectedTransferPeer: PeerNode?
+    
     private func settingsIcon(_ systemName: String, color: Color) -> some View {
         Image(systemName: systemName)
             .font(.system(size: 14, weight: .semibold))
@@ -78,13 +83,9 @@ struct WiFiView: View {
             Section(header: Text("Direct Send to Device (High Speed)")) {
                 ForEach(peerManager.availablePeers) { peer in
                     Button(action: {
-                        Task {
-                            do {
-                                try await localSendClient.transferFiles(queueManager.stagedFiles, to: peer)
-                            } catch {
-                                Logger.shared.log("Transfer failed: \(error)", category: "Network", type: .error)
-                            }
-                        }
+                        selectedTransferPeer = peer
+                        transferPin = ""
+                        showingTransferAlert = true
                     }) {
                         HStack {
                             VStack(alignment: .leading) {
@@ -331,6 +332,23 @@ struct WiFiView: View {
                 }
             } message: {
                 Text("Enter the 4-Digit Security PIN shown on \(selectedSyncPeer?.name ?? "the other device") to sync reading progress.")
+            }
+            .alert("Send Files", isPresented: $showingTransferAlert) {
+                TextField("4-Digit PIN", text: $transferPin)
+                    .keyboardType(.numberPad)
+                Button("Cancel", role: .cancel) {}
+                Button("Send Now") {
+                    guard let peer = selectedTransferPeer, transferPin.count == 4 else { return }
+                    Task {
+                        do {
+                            try await localSendClient.transferFiles(queueManager.stagedFiles, to: peer, pin: transferPin)
+                        } catch {
+                            server.errorMessage = "Transfer Error: \(error.localizedDescription)"
+                        }
+                    }
+                }
+            } message: {
+                Text("Enter the 4-Digit Security PIN shown on \(selectedTransferPeer?.name ?? "the other device") to authorize this transfer.")
             }
             .overlay {
                 if syncCoordinator.isSyncing {
