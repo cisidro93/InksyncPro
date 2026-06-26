@@ -518,6 +518,13 @@ struct EPUBMerger: Sendable {
     }
 
     private func copyAndPrepareImage(from srcURL: URL, to destURL: URL, settings: ConversionSettings) throws {
+        // Validate that the image file is not corrupt (e.g. an HTML error page)
+        guard let _ = UIImage(contentsOfFile: srcURL.path) else {
+            throw NSError(domain: "ImageProcessor", code: 404, userInfo: [
+                NSLocalizedDescriptionKey: "Invalid or corrupted image file '\(srcURL.lastPathComponent)' in source archive. This often happens when a downloader saves an HTML error page instead of the image. Please verify your source file."
+            ])
+        }
+        
         let ext = srcURL.pathExtension.lowercased()
         let needsConversion = ImageProcessor.isWideColor(url: srcURL)
         

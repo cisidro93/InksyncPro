@@ -110,7 +110,14 @@ struct CBZToEPUBConverter: Sendable {
         var globalImageIndex = 0
         
         for (originalIndex, srcURL) in imageURLs.enumerated() {
-            autoreleasepool {
+            try autoreleasepool {
+                // Validate that the image file is not corrupt (e.g. an HTML error page)
+                guard let _ = UIImage(contentsOfFile: srcURL.path) else {
+                    throw NSError(domain: "ImageProcessor", code: 404, userInfo: [
+                        NSLocalizedDescriptionKey: "Invalid or corrupted image file '\(srcURL.lastPathComponent)' in source archive. This often happens when a downloader saves an HTML error page instead of the image. Please verify your source file."
+                    ])
+                }
+                
                 // A. Check for Webtoon Slicing
                 var imagesToProcess: [UIImage] = []
                 var isSliced = false
