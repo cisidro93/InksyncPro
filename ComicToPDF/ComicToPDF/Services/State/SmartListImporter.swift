@@ -41,6 +41,15 @@ final class SmartListImporter: Sendable {
         return regex.firstMatch(in: str, options: [], range: range) != nil
     }
     
+    private func cleanSeriesName(_ rawName: String) -> String {
+        let spaceCleaned = rawName.replacingOccurrences(of: "_", with: " ")
+        let pattern = "(?i)\\s*\\b(manga|chapter breakdown|breakdown|reading list|reading order|list|timeline|by volume|volume breakdown)\\b.*"
+        let cleaned = spaceCleaned.replacingOccurrences(of: pattern, with: "", options: [.regularExpression, .caseInsensitive])
+        let trimmed = cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+        let finalClean = trimmed.replacingOccurrences(of: "(?i)\\s*(?:chapter|breakdown|list|order)\\s*$", with: "", options: .regularExpression)
+        return finalClean.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    
     private struct PrepPDF {
         let pdf: ConvertedPDF
         let id: UUID
@@ -310,7 +319,8 @@ final class SmartListImporter: Sendable {
                 }
                 
                 let rowText = rowColumns.joined(separator: ",")
-                if let series = parsedSeries ?? (defaultSeriesName.isEmpty ? nil : defaultSeriesName) {
+                let seriesRaw = parsedSeries ?? (defaultSeriesName.isEmpty ? nil : defaultSeriesName)
+                if let series = seriesRaw.map({ cleanSeriesName($0) }) {
                     if let issue = parsedIssue {
                         let lowerIssue = issue.lowercased()
                         if lowerIssue.contains("-") || lowerIssue.contains("to") {
@@ -390,7 +400,8 @@ final class SmartListImporter: Sendable {
                     }
                     
                     let rowText = rowColumns.joined(separator: ",")
-                    if let series = parsedSeries ?? (defaultSeriesName.isEmpty ? nil : defaultSeriesName) {
+                    let seriesRaw = parsedSeries ?? (defaultSeriesName.isEmpty ? nil : defaultSeriesName)
+                    if let series = seriesRaw.map({ cleanSeriesName($0) }) {
                         if let issue = parsedIssue {
                             items.append(RequestedComicItem(series: series, issueNumber: issue, volume: volInfo, readingOrder: parsedReadingOrder, sortOrder: parsedSortOrder, label: parsedLabel, isOptional: parsedOptional, originalText: rowText))
                         } else if let start = startChap {
@@ -421,7 +432,7 @@ final class SmartListImporter: Sendable {
         let lines = text.components(separatedBy: .newlines)
         
         var currentVolumeContext: String? = nil
-        var currentSeriesContext: String = defaultSeriesName
+        var currentSeriesContext: String = self.cleanSeriesName(defaultSeriesName)
         
         for line in lines {
             let row = line.trimmingCharacters(in: .whitespaces)
@@ -430,7 +441,7 @@ final class SmartListImporter: Sendable {
             // Markdown Headings
             if row.hasPrefix("# ") {
                 let heading = String(row.dropFirst(2)).trimmingCharacters(in: .whitespaces)
-                currentSeriesContext = heading // Replace generic series name with explicitly authored H1
+                currentSeriesContext = self.cleanSeriesName(heading) // Replace generic series name with explicitly authored H1
                 continue
             } else if row.hasPrefix("## ") || row.hasPrefix("### ") || row.lowercased().hasPrefix("volume") {
                 // Detect Contextually nested Volumes
@@ -441,14 +452,20 @@ final class SmartListImporter: Sendable {
                         currentVolumeContext = String(firstWord.filter { $0.isNumber })
                     }
                 }
-                continue
+                
+                // CRITICAL FIX: Only skip this line if it does NOT contain a chapter range!
+                // If it contains a chapter range (like "Volume 1: Chapters 1-7"), do NOT skip, let it fall through to parse the range!
+                let hasRangeIndicators = header.contains("ch.") || header.contains("chapter") || header.contains("ch ") || header.contains("issues") || header.contains("-") || header.contains("–") || header.contains("—")
+                if !hasRangeIndicators {
+                    continue
+                }
             }
             
             let lowerRow = row.lowercased()
             // Smart AI Range Extraction (e.g., "Ch. 1-7")
             let hasChapterKeyword = lowerRow.contains("ch.") || lowerRow.contains("chapter") || lowerRow.contains("issues") || lowerRow.range(of: "\\bch\\b", options: .regularExpression) != nil
             
-            let rangePattern = "\\b([0-9]+)\\s*(?:-|to)\\s*([0-9]+)\\b"
+            let rangePattern = "\\b([0-9]+)\\s*(?:-|–|—|to)\\s*([0-9]+)\\b"
             if let rangeRange = row.range(of: rangePattern, options: .regularExpression) {
                 let match = String(row[rangeRange])
                 let numbers = match.components(separatedBy: CharacterSet.decimalDigits.inverted).filter { !$0.isEmpty }
