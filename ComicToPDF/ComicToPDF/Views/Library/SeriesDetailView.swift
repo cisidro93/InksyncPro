@@ -154,14 +154,19 @@ struct SeriesDetailView: View {
     @State private var collapsedVolumes: Set<String> = []
     @State private var showBatchVolumeAssignment = false
     @State private var jumpToVolume: String? = nil
+    @State private var cachedVolumeGroups: [(key: String, issues: [ConvertedPDF])] = []
     
     var isCollection: Bool {
         guard let id = UUID(uuidString: series.id) else { return false }
         return conversionManager.collections.contains(where: { $0.id == id })
     }
     
-    /// Groups issues by their volume metadata for collapsible rendering
+    /// Groups issues by their volume metadata for collapsible rendering (read from cached State to prevent thread bottlenecking)
     var volumeGroups: [(key: String, issues: [ConvertedPDF])] {
+        cachedVolumeGroups
+    }
+    
+    private func updateVolumeGroups() {
         var groups: [String: [ConvertedPDF]] = [:]
         var ungrouped: [ConvertedPDF] = []
         
@@ -174,13 +179,13 @@ struct SeriesDetailView: View {
         }
         
         // Sort volume keys numerically
-        var result = groups.map { (key: $0.key, issues: $0.value) }
+        var result = groups.map { (key: String, issues: [ConvertedPDF]) in (key: key, issues: issues) }
             .sorted { (Int($0.key) ?? 0) < (Int($1.key) ?? 0) }
         
         if !ungrouped.isEmpty {
             result.append((key: "Ungrouped", issues: ungrouped))
         }
-        return result
+        self.cachedVolumeGroups = result
     }
     
     /// True if any issues have volume metadata worth grouping by
@@ -245,11 +250,13 @@ struct SeriesDetailView: View {
         }
         .onAppear {
             localIssues = sortedIssues
+            updateVolumeGroups()
         }
         .onChange(of: sortOption) { localIssues = sortedIssues }
         .onChange(of: conversionManager.convertedPDFs) { localIssues = sortedIssues }
         .onChange(of: conversionManager.collections) { localIssues = sortedIssues }
         .onChange(of: settingsManager.isVaultUnlocked) { localIssues = sortedIssues }
+        .onChange(of: localIssues) { updateVolumeGroups() }
     }
     
     private func listView(scrollProxy: ScrollViewProxy) -> some View {
