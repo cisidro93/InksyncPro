@@ -2,13 +2,13 @@ import SwiftUI
 
 struct VirtualOmnibusShelf: View {
     @EnvironmentObject var conversionManager: ConversionManager
+    let omnibuses: [VirtualOmnibus]
     let onEdit: (VirtualOmnibus) -> Void
     let onRead: (VirtualOmnibus) -> Void
     
     @Environment(\.horizontalSizeClass) private var hSizeClass
     
     var body: some View {
-        let omnibuses = conversionManager.virtualOmnibuses
         if !omnibuses.isEmpty {
             VStack(spacing: 12) {
                 // Shelf Header
@@ -151,8 +151,8 @@ private struct VirtualOmnibusCard: View {
                 }
             }
         }
-        .onAppear {
-            loadCover()
+        .task(id: omnibus.id) {
+            await loadCover()
         }
         .contextMenu {
             if omnibus.remoteSyncURL != nil && !omnibus.remoteSyncURL!.isEmpty {
@@ -179,11 +179,25 @@ private struct VirtualOmnibusCard: View {
         }
     }
     
-    private func loadCover() {
-        if let coverID = omnibus.coverFileID,
-           let coverPDF = conversionManager.convertedPDFs.first(where: { $0.id == coverID }),
-           let data = coverPDF.coverImageData {
-            self.coverImage = UIImage(data: data)
+    private func loadCover() async {
+        let coverPDF: ConvertedPDF? = {
+            if let coverID = omnibus.coverFileID {
+                return conversionManager.convertedPDFs.first(where: { $0.id == coverID })
+            }
+            return firstPDF
+        }()
+        
+        guard let pdf = coverPDF else { return }
+        let key = pdf.id.uuidString as NSString
+        
+        if let cached = conversionManager.thumbnailCache.object(forKey: key) {
+            self.coverImage = cached
+            return
+        }
+        
+        await conversionManager.loadThumbnailAsync(for: pdf)
+        if let loaded = conversionManager.thumbnailCache.object(forKey: key) {
+            self.coverImage = loaded
         }
     }
     

@@ -187,7 +187,9 @@ final class ComicImageCache: ObservableObject {
             }
         }
         
-        if isStream {
+        if scheme == "virtual-omnibus" {
+            // Already initialized, no background archive extraction needed!
+        } else if isStream {
             self.pageCount = 0
             self.isLoading = true
         } else if isPDF {
@@ -392,6 +394,7 @@ final class ComicImageCache: ObservableObject {
             
             let img: UIImage?
             if isPDF {
+                _ = await PDFRenderActor.shared.loadDocument(at: resolvedURL)
                 img = await PDFRenderActor.shared.renderPage(at: localPageIndex, scale: scale)
             } else if isPreExtracted {
                 let (tempDir, imageURLs): (URL, [URL])

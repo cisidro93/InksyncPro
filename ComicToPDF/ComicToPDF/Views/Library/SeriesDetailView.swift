@@ -197,6 +197,47 @@ struct SeriesDetailView: View {
         SeriesSortOption.allCases.filter { $0 != .manual || isCollection }
     }
     
+    var seriesVirtualOmnibuses: [VirtualOmnibus] {
+        conversionManager.virtualOmnibuses.filter { omnibus in
+            guard let firstId = omnibus.fileIDs.first,
+                  let firstFile = conversionManager.convertedPDFs.first(where: { $0.id == firstId }) else { return false }
+            return firstFile.metadata.series == series.title
+        }
+    }
+    
+    @ViewBuilder
+    private var seriesVirtualOmnibusesSection: some View {
+        let list = seriesVirtualOmnibuses
+        if !list.isEmpty {
+            VirtualOmnibusShelf(
+                omnibuses: list,
+                onEdit: { omnibus in
+                    AppRouter.shared.presentSheet(.virtualOmnibusEditor(omnibus))
+                },
+                onRead: { omnibus in
+                    let resolved = omnibus.fileIDs.compactMap { id in
+                        conversionManager.convertedPDFs.first(where: { $0.id == id })
+                    }
+                    let totalPageCount = resolved.reduce(0) { $0 + max($1.pageCount, 1) }
+                    let virtualPDF = ConvertedPDF(
+                        id: omnibus.id,
+                        name: omnibus.name,
+                        url: URL(string: "virtual-omnibus://\(omnibus.id.uuidString)")!,
+                        pageCount: totalPageCount,
+                        fileSize: 0,
+                        metadata: PDFMetadata(title: omnibus.name),
+                        contentType: .comic
+                    )
+                    pdfToRead = virtualPDF
+                }
+            )
+            .environmentObject(conversionManager)
+            .listRowInsets(EdgeInsets())
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
+        }
+    }
+    
     /// Detected missing issues in the series
     var missingIssues: [String] {
         MissingIssueDetector.detectGaps(in: localIssues)
@@ -265,6 +306,8 @@ struct SeriesDetailView: View {
                 Section(header: headerView) {
                     continueReadingSection
                     missingIssuesSection
+                    
+                    seriesVirtualOmnibusesSection
                     
                     if showVolumeGrouping && hasVolumeData {
                         volumeGroupingSection
@@ -701,6 +744,9 @@ struct SeriesDetailView: View {
                             .padding(.horizontal)
                             .padding(.bottom, 16)
                     }
+                    
+                    seriesVirtualOmnibusesSection
+                        .padding(.bottom, 16)
 
                     let hPad: CGFloat = hSizeClass == .regular ? 24 : 12
                     let colSpacing: CGFloat = hSizeClass == .regular ? 20 : 10
