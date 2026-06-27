@@ -129,53 +129,20 @@ struct ContentView: View {
         .sheet(item: $pdfToShare) { pdf in ShareSheet(activityItems: [pdf.url]) }
         .overlay(alignment: .top) {
             if let toast = activeToast {
-                HStack(spacing: 12) {
-                    Image(systemName: toast.systemImage)
-                        .font(.system(size: 18, weight: .bold))
-                        .foregroundColor(toast.type.color)
-                    
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(toast.title)
-                            .font(.system(size: 13, weight: .bold))
-                            .foregroundColor(.white)
-                        Text(toast.message)
-                            .font(.system(size: 11))
-                            .foregroundColor(.gray)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.leading)
+                ToastHUDView(toast: toast)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .onTapGesture {
+                        toast.action?()
+                        withAnimation(.spring()) { activeToast = nil }
                     }
-                    
-                    Spacer()
-                    
-                    if toast.action != nil {
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 12, weight: .bold))
-                            .foregroundColor(.gray)
-                    }
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-                .frame(maxWidth: min(350, UIScreen.main.bounds.width - 32))
-                .background(Color(white: 0.1).opacity(0.95))
-                .cornerRadius(16)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16)
-                        .stroke(Color.white.opacity(0.1), lineWidth: 1)
-                )
-                .shadow(color: .black.opacity(0.35), radius: 10, x: 0, y: 5)
-                .transition(.move(edge: .top).combined(with: .opacity))
-                .onTapGesture {
-                    toast.action?()
-                    withAnimation(.spring()) { activeToast = nil }
-                }
-                .onAppear {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) {
-                        if activeToast == toast {
-                            withAnimation(.spring()) { activeToast = nil }
+                    .onAppear {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) {
+                            if activeToast == toast {
+                                withAnimation(.spring()) { activeToast = nil }
+                            }
                         }
                     }
-                }
-                .padding(.top, sizeClass == .regular ? 24 : 12)
+                    .padding(.top, sizeClass == .regular ? 24 : 12)
             }
         }
         .onChange(of: taskEngine.statusMessage) { _, newMessage in
@@ -442,6 +409,47 @@ struct ContentView: View {
                 .animation(.spring(response: 0.4, dampingFraction: 0.8), value: isActive)
             }
         }
+    }
+}
+
+struct ToastHUDView: View {
+    let toast: ToastMessage
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: toast.systemImage)
+                .font(.system(size: 18, weight: .bold))
+                .foregroundColor(toast.type.color)
+            
+            VStack(alignment: .leading, spacing: 2) {
+                Text(toast.title)
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundColor(.white)
+                Text(toast.message)
+                    .font(.system(size: 11))
+                    .foregroundColor(.gray)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+            }
+            
+            Spacer()
+            
+            if toast.action != nil {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundColor(.gray)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .frame(width: 340)
+        .background(Color(white: 0.1).opacity(0.95))
+        .cornerRadius(16)
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(Color.white.opacity(0.1), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.35), radius: 10, x: 0, y: 5)
     }
 }
 
