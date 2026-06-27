@@ -210,7 +210,7 @@ struct SeriesDetailView: View {
                 conversionManager.convertedPDFs.first(where: { $0.id == id })
             }
             return resolvedFiles.contains { pdf in
-                pdf.metadata.series?.localizedCaseInsensitiveCompare(series.title) == .orderedSame ?? false
+                pdf.metadata.series?.localizedCaseInsensitiveCompare(series.title) == .orderedSame
             }
         }
     }
