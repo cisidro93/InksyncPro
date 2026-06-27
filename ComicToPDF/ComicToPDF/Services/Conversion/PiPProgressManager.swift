@@ -172,37 +172,43 @@ final class PiPProgressManager: NSObject, ObservableObject {
 
 // MARK: - AVPictureInPictureSampleBufferPlaybackDelegate
 extension PiPProgressManager: AVPictureInPictureSampleBufferPlaybackDelegate {
-    func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, setPlaying playing: Bool) {}
+    nonisolated func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, setPlaying playing: Bool) {}
     
-    func pictureInPictureControllerTimeRangeForPlayback(_ pictureInPictureController: AVPictureInPictureController) -> CMTimeRange {
+    nonisolated func pictureInPictureControllerTimeRangeForPlayback(_ pictureInPictureController: AVPictureInPictureController) -> CMTimeRange {
         return CMTimeRange(start: .zero, duration: .indefinite)
     }
     
-    func pictureInPictureControllerTimeRangeForPlaybackDidChange(_ pictureInPictureController: AVPictureInPictureController) {}
+    nonisolated func pictureInPictureControllerTimeRangeForPlaybackDidChange(_ pictureInPictureController: AVPictureInPictureController) {}
     
-    func pictureInPictureControllerIsPlaybackPaused(_ pictureInPictureController: AVPictureInPictureController) -> Bool {
+    nonisolated func pictureInPictureControllerIsPlaybackPaused(_ pictureInPictureController: AVPictureInPictureController) -> Bool {
         return false
     }
     
-    func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, didTransitionToRenderSize newRenderSize: CMVideoDimensions) {}
+    nonisolated func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, didTransitionToRenderSize newRenderSize: CMVideoDimensions) {}
     
-    func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, skipByInterval skipInterval: TimeInterval, completion completionHandler: @escaping () -> Void) {
+    nonisolated func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, skipByInterval skipInterval: TimeInterval, completion completionHandler: @escaping () -> Void) {
         completionHandler()
     }
 }
 
 // MARK: - AVPictureInPictureControllerDelegate
 extension PiPProgressManager: AVPictureInPictureControllerDelegate {
-    func pictureInPictureControllerDidStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
-        isPiPActive = true
+    nonisolated func pictureInPictureControllerDidStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+        Task { @MainActor in
+            self.isPiPActive = true
+        }
     }
     
-    func pictureInPictureControllerDidStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
-        isPiPActive = false
+    nonisolated func pictureInPictureControllerDidStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+        Task { @MainActor in
+            self.isPiPActive = false
+        }
     }
     
-    func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, failedToStartPictureInPictureWithError error: Error) {
-        isPiPActive = false
+    nonisolated func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, failedToStartPictureInPictureWithError error: Error) {
+        Task { @MainActor in
+            self.isPiPActive = false
+        }
     }
 }
 
