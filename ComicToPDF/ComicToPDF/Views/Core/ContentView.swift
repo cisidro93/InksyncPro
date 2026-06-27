@@ -132,11 +132,6 @@ struct ContentView: View {
             Alert(title: Text(alert.title), message: Text(alert.message), dismissButton: .default(Text("OK")))
         }
         .onAppear {
-            if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-               let window = windowScene.windows.first {
-                PiPProgressManager.shared.setupPiP(with: window)
-                PiPProgressManager.shared.observeConversion()
-            }
             LinkedLibraryScanner.shared.conversionManager = conversionManager
             AnnotationStore.shared.initialize(with: modelContext)
             PageModelStore.shared.initialize(with: modelContext)
