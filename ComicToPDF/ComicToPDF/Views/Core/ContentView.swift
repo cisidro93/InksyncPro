@@ -127,77 +127,7 @@ struct ContentView: View {
         .environmentObject(PeerManager.shared)
         .environment(\.dynamicTypeSize, settingsManager.conversionSettings.textSize.swiftUIValue)
         .sheet(item: $pdfToShare) { pdf in ShareSheet(activityItems: [pdf.url]) }
-        .overlay(alignment: .top) {
-            if let toast = activeToast {
-                ToastHUDView(toast: toast)
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                    .onTapGesture {
-                        toast.action?()
-                        withAnimation(.spring()) { activeToast = nil }
-                    }
-                    .onAppear {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) {
-                            if activeToast == toast {
-                                withAnimation(.spring()) { activeToast = nil }
-                            }
-                        }
-                    }
-                    .padding(.top, sizeClass == .regular ? 24 : 12)
-            }
-        }
-        .onChange(of: taskEngine.statusMessage) { _, newMessage in
-            if let msg = newMessage {
-                if msg.starts(with: "✅") {
-                    let generator = UINotificationFeedbackGenerator()
-                    generator.notificationOccurred(.success)
-                    
-                    let sortedItems = LibraryService.shared.items.sorted { $0.lastModified > $1.lastModified }
-                    let latestBook = sortedItems.first
-                    
-                    withAnimation(.spring()) {
-                        activeToast = ToastMessage(
-                            title: "Complete",
-                            message: msg.replacingOccurrences(of: "✅ ", with: ""),
-                            systemImage: "checkmark.circle.fill",
-                            type: .success,
-                            action: {
-                                if let book = latestBook {
-                                    NotificationCenter.default.post(name: .openMergedBook, object: book)
-                                }
-                            }
-                        )
-                    }
-                } else if msg.starts(with: "Error") || msg.starts(with: "Merge Error") {
-                    let generator = UINotificationFeedbackGenerator()
-                    generator.notificationOccurred(.error)
-                    
-                    withAnimation(.spring()) {
-                        activeToast = ToastMessage(
-                            title: "Failed",
-                            message: msg,
-                            systemImage: "exclamationmark.triangle.fill",
-                            type: .warning
-                        )
-                    }
-                }
-            }
-        }
-        .onChange(of: taskEngine.appAlert) { _, newAlert in
-            if let alert = newAlert {
-                let generator = UINotificationFeedbackGenerator()
-                generator.notificationOccurred(.warning)
-                
-                withAnimation(.spring()) {
-                    activeToast = ToastMessage(
-                        title: alert.title,
-                        message: alert.message,
-                        systemImage: "exclamationmark.triangle.fill",
-                        type: .warning
-                    )
-                }
-                taskEngine.appAlert = nil // Suppress native popup alert
-            }
-        }
+        .modifier(ToastHUDModifier(activeToast: $activeToast))
         .alert(item: $taskEngine.appAlert) { alert in
             Alert(title: Text(alert.title), message: Text(alert.message), dismissButton: .default(Text("OK")))
         }
@@ -450,6 +380,86 @@ struct ToastHUDView: View {
                 .stroke(Color.white.opacity(0.1), lineWidth: 1)
         )
         .shadow(color: .black.opacity(0.35), radius: 10, x: 0, y: 5)
+    }
+}
+
+struct ToastHUDModifier: ViewModifier {
+    @ObservedObject var taskEngine = TaskEngine.shared
+    @Binding var activeToast: ToastMessage?
+    
+    func body(content: Content) -> some View {
+        content
+            .overlay(alignment: .top) {
+                if let toast = activeToast {
+                    ToastHUDView(toast: toast)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                        .onTapGesture {
+                            toast.action?()
+                            withAnimation(.spring()) { activeToast = nil }
+                        }
+                        .onAppear {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) {
+                                if activeToast == toast {
+                                    withAnimation(.spring()) { activeToast = nil }
+                                }
+                            }
+                        }
+                        .padding(.top, 24)
+                }
+            }
+            .onChange(of: taskEngine.statusMessage) { _, newMessage in
+                if let msg = newMessage {
+                    if msg.starts(with: "✅") {
+                        let generator = UINotificationFeedbackGenerator()
+                        generator.notificationOccurred(.success)
+                        
+                        let sortedItems = LibraryService.shared.items.sorted { $0.lastModified > $1.lastModified }
+                        let latestBook = sortedItems.first
+                        
+                        withAnimation(.spring()) {
+                            activeToast = ToastMessage(
+                                title: "Complete",
+                                message: msg.replacingOccurrences(of: "✅ ", with: ""),
+                                systemImage: "checkmark.circle.fill",
+                                type: .success,
+                                action: {
+                                    if let book = latestBook {
+                                        NotificationCenter.default.post(name: .openMergedBook, object: book)
+                                    }
+                                }
+                            )
+                        }
+                    } else if msg.starts(with: "Error") || msg.starts(with: "Merge Error") {
+                        let generator = UINotificationFeedbackGenerator()
+                        generator.notificationOccurred(.error)
+                        
+                        withAnimation(.spring()) {
+                            activeToast = ToastMessage(
+                                title: "Failed",
+                                message: msg,
+                                systemImage: "exclamationmark.triangle.fill",
+                                type: .warning
+                            )
+                        }
+                    }
+                }
+            }
+            .onChange(of: taskEngine.appAlert) { _, newAlert in
+                if let alert = newAlert {
+                    let generator = UINotificationFeedbackGenerator()
+                    generator.notificationOccurred(.warning)
+                    
+                    withAnimation(.spring()) {
+                        activeToast = ToastMessage(
+                            title: alert.title,
+                            message: alert.message,
+                            systemImage: "exclamationmark.triangle.fill",
+                            type: .warning
+                        )
+                    }
+                    taskEngine.appAlert = nil
+                }
+            }
     }
 }
 
