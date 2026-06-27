@@ -931,7 +931,7 @@ final class WiFiServer: ObservableObject, Sendable {
             
             Task {
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
-                NotificationCenter.default.post(name: Notification.Name("LibraryUpdated"), object: nil)
+                NotificationCenter.default.post(name: .libraryUpdated, object: nil)
             }
         }
     }

@@ -230,7 +230,7 @@ class SyncCoordinator: ObservableObject {
                         if let matchedDoc = allPDFs.first(where: { $0.url.lastPathComponent == filename }) {
                             matchedDoc.isOnDevice = true
                             try context.save()
-                            NotificationCenter.default.post(name: Notification.Name("LibraryUpdated"), object: nil)
+                            NotificationCenter.default.post(name: .libraryUpdated, object: nil)
                         }
                     } catch {
                         Logger.shared.log("P2P Background Update Error: \(error)", category: "Network", type: .warning)
