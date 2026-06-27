@@ -630,8 +630,8 @@ struct ModernLibraryView: View {
                         }
                     }
             }
-        case .virtualOmnibusEditor(let omnibus):
-            VirtualOmnibusEditorView(omnibus: omnibus)
+        case .virtualOmnibusEditor(let omnibus, let initialFileIDs):
+            VirtualOmnibusEditorView(omnibus: omnibus, initialFileIDs: initialFileIDs)
                 .environmentObject(conversionManager)
             
         case .controlCenter:
@@ -1374,6 +1374,13 @@ struct ModernLibraryView: View {
                         batchMergeItems = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
                         showingBatchMergeReorder = true
                     } label: { Label("Convert & Merge", systemImage: "arrow.triangle.2.circlepath.doc") }
+                    
+                    Button {
+                        let selectedUUIDs = Array(multiSelection)
+                        AppRouter.shared.presentSheet(.virtualOmnibusEditor(nil, initialFileIDs: selectedUUIDs))
+                        isBatchMode = false
+                        multiSelection.removeAll()
+                    } label: { Label("Create Virtual Volume", systemImage: "books.vertical.fill") }
                     
                     Button { AppRouter.shared.presentSheet(.merge) } label: { Label("Legacy PDF Merge", systemImage: "arrow.triangle.merge") }
                     Divider()

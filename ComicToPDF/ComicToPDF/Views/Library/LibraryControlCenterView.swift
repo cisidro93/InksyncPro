@@ -55,7 +55,7 @@ struct LibraryControlCenterView: View {
                                 icon: "books.vertical.fill",
                                 gradient: Gradient(colors: [Color.purple, Color.indigo]),
                                 action: {
-                                    transitionToSheet(.virtualOmnibusEditor(nil))
+                                    transitionToSheet(.virtualOmnibusEditor(nil, initialFileIDs: Array(multiSelection)))
                                 }
                             )
                             

@@ -979,6 +979,18 @@ struct SeriesDetailView: View {
                                     .foregroundColor(selection.isEmpty ? .gray : Theme.orange)
                             }
                             .disabled(selection.isEmpty)
+                            
+                            Button {
+                                let selectedUUIDs = Array(selection)
+                                AppRouter.shared.presentSheet(.virtualOmnibusEditor(nil, initialFileIDs: selectedUUIDs))
+                                isSelectionMode = false
+                                selection.removeAll()
+                            } label: {
+                                Text("Create Virtual Volume")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundColor(selection.isEmpty ? .gray : Theme.purple)
+                            }
+                            .disabled(selection.isEmpty)
                         }
                     }
                     

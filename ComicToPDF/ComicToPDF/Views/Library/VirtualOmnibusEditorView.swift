@@ -15,11 +15,13 @@ struct VirtualOmnibusEditorView: View {
     @State private var searchQuery: String = ""
     @State private var suggestions: [ConvertedPDF] = []
     
-    init(omnibus: VirtualOmnibus? = nil) {
+    init(omnibus: VirtualOmnibus? = nil, initialFileIDs: [UUID] = []) {
         self.omnibus = omnibus
         _name = State(initialValue: omnibus?.name ?? "")
-        _fileIDs = State(initialValue: omnibus?.fileIDs ?? [])
         _remoteSyncURL = State(initialValue: omnibus?.remoteSyncURL ?? "")
+        
+        let fileIDsVal = omnibus?.fileIDs ?? initialFileIDs
+        _fileIDs = State(initialValue: fileIDsVal)
     }
     
     var selectedFiles: [ConvertedPDF] {
