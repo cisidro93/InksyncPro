@@ -4,6 +4,8 @@ import AVFoundation
 import AVKit
 import SwiftUI
 import Combine
+import CoreMedia
+import CoreVideo
 
 final class PiPProgressManager: NSObject, ObservableObject {
     static let shared = PiPProgressManager()
