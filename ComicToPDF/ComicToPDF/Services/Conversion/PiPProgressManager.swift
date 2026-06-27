@@ -7,6 +7,7 @@ import Combine
 import CoreMedia
 import CoreVideo
 
+@MainActor
 final class PiPProgressManager: NSObject, ObservableObject {
     static let shared = PiPProgressManager()
     
@@ -20,7 +21,6 @@ final class PiPProgressManager: NSObject, ObservableObject {
         super.init()
     }
     
-    @MainActor
     func setupPiP(with window: UIWindow?) {
         guard AVPictureInPictureController.isPictureInPictureSupported() else { return }
         
@@ -45,10 +45,9 @@ final class PiPProgressManager: NSObject, ObservableObject {
         self.pipController = controller
     }
     
-    @MainActor
-    func observeConversion(manager: ConversionManager) {
-        manager.$isConverting
-            .combineLatest(manager.$conversionProgress, manager.$processingStatus)
+    func observeConversion() {
+        TaskEngine.shared.$isConverting
+            .combineLatest(TaskEngine.shared.$conversionProgress, TaskEngine.shared.$processingStatus)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] isConverting, progress, status in
                 guard let self = self else { return }
@@ -68,7 +67,6 @@ final class PiPProgressManager: NSObject, ObservableObject {
             .store(in: &cancellables)
     }
     
-    @MainActor
     func startPiP(title: String, initialProgress: Double) {
         guard let controller = pipController, !controller.isPictureInPictureActive else { return }
         
@@ -84,13 +82,11 @@ final class PiPProgressManager: NSObject, ObservableObject {
         controller.startPictureInPicture()
     }
     
-    @MainActor
     func stopPiP() {
         pipController?.stopPictureInPicture()
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
     
-    @MainActor
     private func renderView(title: String, progress: Double) -> UIImage? {
         let view = PiPProgressView(title: title, progress: progress)
         let hostingController = UIHostingController(rootView: view)
@@ -103,7 +99,6 @@ final class PiPProgressManager: NSObject, ObservableObject {
         }
     }
     
-    @MainActor
     private func updateProgressFrame(title: String, progress: Double) {
         guard let image = renderView(title: title, progress: progress),
               let cgImage = image.cgImage,
@@ -199,21 +194,15 @@ extension PiPProgressManager: AVPictureInPictureSampleBufferPlaybackDelegate {
 // MARK: - AVPictureInPictureControllerDelegate
 extension PiPProgressManager: AVPictureInPictureControllerDelegate {
     func pictureInPictureControllerDidStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
-        Task { @MainActor in
-            self.isPiPActive = true
-        }
+        isPiPActive = true
     }
     
     func pictureInPictureControllerDidStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
-        Task { @MainActor in
-            self.isPiPActive = false
-        }
+        isPiPActive = false
     }
     
     func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, failedToStartPictureInPictureWithError error: Error) {
-        Task { @MainActor in
-            self.isPiPActive = false
-        }
+        isPiPActive = false
     }
 }
 

@@ -131,7 +131,7 @@ struct ContentView: View {
             if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
                let window = windowScene.windows.first {
                 PiPProgressManager.shared.setupPiP(with: window)
-                PiPProgressManager.shared.observeConversion(manager: conversionManager)
+                PiPProgressManager.shared.observeConversion()
             }
             LinkedLibraryScanner.shared.conversionManager = conversionManager
             AnnotationStore.shared.initialize(with: modelContext)
