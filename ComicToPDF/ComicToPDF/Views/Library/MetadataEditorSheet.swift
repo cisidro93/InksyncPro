@@ -124,33 +124,48 @@ struct MetadataEditorSheet: View {
     @ViewBuilder
     private func autoFillSection() -> some View {
         Section(header: Text("Auto-Fill")) {
-            if settingsManager.conversionSettings.comicVineAPIKey.isEmpty {
-                Text("⚠️ Add a ComicVine API Key in Settings → Integrations to enable Auto-Fill")
-                    .font(.caption)
-                    .foregroundColor(.orange)
-            } else {
-                HStack(spacing: 16) {
-                    if !settingsManager.conversionSettings.comicVineAPIKey.isEmpty && pdf.contentType != .book {
-                        Button(action: searchComicVine) {
-                            Label("Fetch ComicVine", systemImage: "network")
-                        }.disabled(isSearching)
+            VStack(alignment: .leading, spacing: 12) {
+                Button(action: {
+                    withAnimation {
+                        autoFillFromFilename()
                     }
-                    if pdf.contentType == .book || pdf.url.pathExtension.lowercased() == "epub" {
-                        Button(action: searchBookVine) {
-                            Label("Fetch BookVine", systemImage: "book.pages")
-                        }.disabled(isSearching)
-                    }
-                    if pdf.contentType != .book {
-                        Button(action: { runLocalXMLExtract() }) {
-                            if isSearching { ProgressView() } else { Label("Auto-Fetch XML", systemImage: "doc.text.viewfinder") }
+                }) {
+                    Label("Autofill from Filename", systemImage: "wand.and.stars")
+                        .foregroundColor(.accentColor)
+                }
+                .buttonStyle(.borderless)
+                
+                Divider()
+                
+                if settingsManager.conversionSettings.comicVineAPIKey.isEmpty {
+                    Text("⚠️ Add a ComicVine API Key in Settings → Integrations to enable Cloud Autofill")
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                } else {
+                    HStack(spacing: 16) {
+                        if !settingsManager.conversionSettings.comicVineAPIKey.isEmpty && pdf.contentType != .book {
+                            Button(action: searchComicVine) {
+                                Label("Fetch ComicVine", systemImage: "network")
+                            }.disabled(isSearching)
+                        }
+                        if pdf.contentType == .book || pdf.url.pathExtension.lowercased() == "epub" {
+                            Button(action: searchBookVine) {
+                                Label("Fetch BookVine", systemImage: "book.pages")
+                            }.disabled(isSearching)
+                        }
+                        if pdf.contentType != .book {
+                            Button(action: { runLocalXMLExtract() }) {
+                                if isSearching { ProgressView() } else { Label("Auto-Fetch XML", systemImage: "doc.text.viewfinder") }
+                            }
                         }
                     }
+                    if isSearching { ProgressView().padding(.top, 4) }
                 }
-                if isSearching { ProgressView().padding(.top, 4) }
+                if let error = errorMessage {
+                    Text(error).font(.caption).foregroundColor(.red)
+                }
             }
-            if let error = errorMessage {
-                Text(error).font(.caption).foregroundColor(.red)
-            }
+            .padding(.vertical, 4)
         }
     }
     
@@ -221,6 +236,37 @@ struct MetadataEditorSheet: View {
     
     @State private var showingRenamePrompt = false
     @State private var newSuggestedCacheName = ""
+    
+    func autoFillFromFilename() {
+        let name = pdf.url.deletingPathExtension().lastPathComponent
+        let result = SeriesNameDetector.detect(from: name)
+        
+        editedMetadata.series = result.seriesName
+        editedMetadata.volume = result.seriesName
+        
+        if let issueStr = result.issueNumberString {
+            editedMetadata.issueNumber = issueStr
+        } else if let issueInt = result.issueNumber {
+            editedMetadata.issueNumber = "\(issueInt)"
+        } else {
+            editedMetadata.issueNumber = nil
+        }
+        
+        if let issueStr = editedMetadata.issueNumber {
+            editedMetadata.title = "\(result.seriesName) #\(issueStr)"
+        } else {
+            editedMetadata.title = result.seriesName
+        }
+        
+        if let range = name.range(of: "\\b(19|20)\\d{2}\\b", options: .regularExpression),
+           let year = Int(name[range]) {
+            var comps = DateComponents()
+            comps.year = year
+            comps.month = 1
+            comps.day = 1
+            editedMetadata.publicationDate = Calendar.current.date(from: comps)
+        }
+    }
     
     func runLocalXMLExtract() {
         isSearching = true
