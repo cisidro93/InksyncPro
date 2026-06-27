@@ -213,17 +213,28 @@ struct SeriesMergeConfigurationView: View {
     }
     
     private var estimatedOutputSize: Int64 {
-        let total = Double(totalInputSize)
-        let multiplier: Double
+        let totalPages = viewModel.itemsToMerge.reduce(0) { $0 + $1.pageCount }
+        guard totalPages > 0 else {
+            let total = Double(totalInputSize)
+            let multiplier: Double
+            switch settingsManager.conversionSettings.compressionQuality {
+            case .high: multiplier = 0.90
+            case .balanced: multiplier = 0.65
+            case .compact: multiplier = 0.40
+            }
+            return Int64(total * multiplier)
+        }
+        
+        let bytesPerPage: Int64
         switch settingsManager.conversionSettings.compressionQuality {
         case .high:
-            multiplier = 0.90
+            bytesPerPage = 900 * 1024 // ~900 KB
         case .balanced:
-            multiplier = 0.65
+            bytesPerPage = 450 * 1024 // ~450 KB
         case .compact:
-            multiplier = 0.40
+            bytesPerPage = 200 * 1024 // ~200 KB
         }
-        return Int64(total * multiplier)
+        return Int64(totalPages) * bytesPerPage
     }
     
     private func formatBytes(_ bytes: Int64) -> String {
@@ -244,17 +255,28 @@ struct SeriesMergeConfigurationView: View {
     }
     
     private func estimatedSize(for preset: CompressionPreset) -> String {
-        let total = Double(totalInputSize)
-        let multiplier: Double
+        let totalPages = viewModel.itemsToMerge.reduce(0) { $0 + $1.pageCount }
+        guard totalPages > 0 else {
+            let total = Double(totalInputSize)
+            let multiplier: Double
+            switch preset {
+            case .high: multiplier = 0.90
+            case .balanced: multiplier = 0.65
+            case .compact: multiplier = 0.40
+            }
+            return formatBytes(Int64(total * multiplier))
+        }
+        
+        let bytesPerPage: Int64
         switch preset {
         case .high:
-            multiplier = 0.90
+            bytesPerPage = 900 * 1024
         case .balanced:
-            multiplier = 0.65
+            bytesPerPage = 450 * 1024
         case .compact:
-            multiplier = 0.40
+            bytesPerPage = 200 * 1024
         }
-        return formatBytes(Int64(total * multiplier))
+        return formatBytes(Int64(totalPages) * bytesPerPage)
     }
     
     private func moveItems(from source: IndexSet, to destination: Int) {
