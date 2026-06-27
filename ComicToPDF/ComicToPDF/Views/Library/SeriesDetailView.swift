@@ -199,9 +199,19 @@ struct SeriesDetailView: View {
     
     var seriesVirtualOmnibuses: [VirtualOmnibus] {
         conversionManager.virtualOmnibuses.filter { omnibus in
-            guard let firstId = omnibus.fileIDs.first,
-                  let firstFile = conversionManager.convertedPDFs.first(where: { $0.id == firstId }) else { return false }
-            return firstFile.metadata.series == series.title
+            // 1. Match by virtual volume name (case-insensitive, substring/contains allowed)
+            let nameMatch = omnibus.name.localizedCaseInsensitiveCompare(series.title) == .orderedSame ||
+                            omnibus.name.localizedCaseInsensitiveContains(series.title) ||
+                            series.title.localizedCaseInsensitiveContains(omnibus.name)
+            if nameMatch { return true }
+            
+            // 2. Match if any issue inside the omnibus belongs to this series (case-insensitive)
+            let resolvedFiles = omnibus.fileIDs.compactMap { id in
+                conversionManager.convertedPDFs.first(where: { $0.id == id })
+            }
+            return resolvedFiles.contains { pdf in
+                pdf.metadata.series?.localizedCaseInsensitiveCompare(series.title) == .orderedSame ?? false
+            }
         }
     }
     
