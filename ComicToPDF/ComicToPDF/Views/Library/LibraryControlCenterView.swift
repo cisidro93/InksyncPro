@@ -55,7 +55,29 @@ struct LibraryControlCenterView: View {
                                 icon: "books.vertical.fill",
                                 gradient: Gradient(colors: [Color.purple, Color.indigo]),
                                 action: {
-                                    transitionToSheet(.virtualOmnibusEditor(nil, initialFileIDs: Array(multiSelection)))
+                                    let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
+                                    let sortedItems = items.sorted {
+                                        let n1 = Double($0.metadata.issueNumber ?? "")
+                                        let n2 = Double($1.metadata.issueNumber ?? "")
+                                        if let v1 = n1, let v2 = n2 { return v1 < v2 }
+                                        if n1 != nil && n2 == nil { return true }
+                                        if n1 == nil && n2 != nil { return false }
+                                        return $0.name.localizedStandardCompare($1.name) == .orderedAscending
+                                    }
+                                    let sortedIDs = sortedItems.map { $0.id }
+                                    
+                                    let suggestedName: String
+                                    if let firstSeries = sortedItems.first(where: { $0.metadata.series?.isEmpty == false })?.metadata.series {
+                                        if let sharedVolume = sortedItems.first(where: { $0.metadata.volume?.isEmpty == false })?.metadata.volume {
+                                            suggestedName = "\(firstSeries) Vol. \(sharedVolume)"
+                                        } else {
+                                            suggestedName = "\(firstSeries) Virtual Volume"
+                                        }
+                                    } else {
+                                        suggestedName = ""
+                                    }
+                                    
+                                    transitionToSheet(.virtualOmnibusEditor(nil, initialFileIDs: sortedIDs, suggestedName: suggestedName))
                                 }
                             )
                             

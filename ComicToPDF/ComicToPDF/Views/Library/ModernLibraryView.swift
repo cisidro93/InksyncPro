@@ -630,8 +630,8 @@ struct ModernLibraryView: View {
                         }
                     }
             }
-        case .virtualOmnibusEditor(let omnibus, let initialFileIDs):
-            VirtualOmnibusEditorView(omnibus: omnibus, initialFileIDs: initialFileIDs)
+        case .virtualOmnibusEditor(let omnibus, let initialFileIDs, let suggestedName):
+            VirtualOmnibusEditorView(omnibus: omnibus, initialFileIDs: initialFileIDs, suggestedName: suggestedName)
                 .environmentObject(conversionManager)
             
         case .controlCenter:
@@ -1376,8 +1376,29 @@ struct ModernLibraryView: View {
                     } label: { Label("Convert & Merge", systemImage: "arrow.triangle.2.circlepath.doc") }
                     
                     Button {
-                        let selectedUUIDs = Array(multiSelection)
-                        AppRouter.shared.presentSheet(.virtualOmnibusEditor(nil, initialFileIDs: selectedUUIDs))
+                        let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
+                        let sortedItems = items.sorted {
+                            let n1 = Double($0.metadata.issueNumber ?? "")
+                            let n2 = Double($1.metadata.issueNumber ?? "")
+                            if let v1 = n1, let v2 = n2 { return v1 < v2 }
+                            if n1 != nil && n2 == nil { return true }
+                            if n1 == nil && n2 != nil { return false }
+                            return $0.name.localizedStandardCompare($1.name) == .orderedAscending
+                        }
+                        let sortedIDs = sortedItems.map { $0.id }
+                        
+                        let suggestedName: String
+                        if let firstSeries = sortedItems.first(where: { $0.metadata.series?.isEmpty == false })?.metadata.series {
+                            if let sharedVolume = sortedItems.first(where: { $0.metadata.volume?.isEmpty == false })?.metadata.volume {
+                                suggestedName = "\(firstSeries) Vol. \(sharedVolume)"
+                            } else {
+                                suggestedName = "\(firstSeries) Virtual Volume"
+                            }
+                        } else {
+                            suggestedName = "New Virtual Volume"
+                        }
+                        
+                        AppRouter.shared.presentSheet(.virtualOmnibusEditor(nil, initialFileIDs: sortedIDs, suggestedName: suggestedName))
                         isBatchMode = false
                         multiSelection.removeAll()
                     } label: { Label("Create Virtual Volume", systemImage: "books.vertical.fill") }

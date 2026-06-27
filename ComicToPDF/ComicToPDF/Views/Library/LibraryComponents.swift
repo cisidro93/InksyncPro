@@ -644,30 +644,47 @@ struct BatchVolumeAssignmentSheet: View {
                     .foregroundColor(Theme.textSecondary)
                     .multilineTextAlignment(.center)
                 
-                TextField("Volume Number (e.g., 3)", text: $volumeText)
+                TextField("Volume Number (e.g., 3, 1.5, Special)", text: $volumeText)
                     .textFieldStyle(.roundedBorder)
-                    .keyboardType(.numberPad)
                     .padding(.horizontal, 40)
                 
-                Button {
-                    guard !volumeText.isEmpty else { return }
-                    for id in selectedIDs {
-                        if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == id }) {
-                            conversionManager.convertedPDFs[idx].metadata.volume = volumeText
+                VStack(spacing: 12) {
+                    Button {
+                        let finalVal = volumeText.trimmingCharacters(in: .whitespacesAndNewlines)
+                        for id in selectedIDs {
+                            if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == id }) {
+                                conversionManager.convertedPDFs[idx].metadata.volume = finalVal.isEmpty ? nil : finalVal
+                            }
+                        }
+                        conversionManager.saveLibrary()
+                        dismiss()
+                    } label: {
+                        Text(volumeText.isEmpty ? "Clear Volume Grouping" : "Assign Volume \(volumeText)")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(volumeText.isEmpty ? Theme.red : Theme.blue)
+                            .cornerRadius(12)
+                    }
+                    
+                    if !volumeText.isEmpty {
+                        Button {
+                            for id in selectedIDs {
+                                if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == id }) {
+                                    conversionManager.convertedPDFs[idx].metadata.volume = nil
+                                }
+                            }
+                            conversionManager.saveLibrary()
+                            dismiss()
+                        } label: {
+                            Text("Clear Volume Grouping")
+                                .font(.subheadline)
+                                .foregroundColor(Theme.red)
+                                .padding(.vertical, 8)
                         }
                     }
-                    conversionManager.saveLibrary()
-                    dismiss()
-                } label: {
-                    Text("Assign Volume \(volumeText.isEmpty ? "" : volumeText)")
-                        .font(.headline)
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                        .background(volumeText.isEmpty ? Color.gray : Theme.blue)
-                        .cornerRadius(12)
                 }
-                .disabled(volumeText.isEmpty)
                 .padding(.horizontal, 40)
                 
                 Spacer()
