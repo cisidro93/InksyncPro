@@ -65,6 +65,7 @@ class LibraryViewModel: ObservableObject {
         let shelf = self.contentShelf
         let collectionsSnapshot = collections
         let pdfsSnapshot = pdfs
+        let virtualOmnibusesSnapshot = LibraryService.shared.virtualOmnibuses
         // Snapshot linked drives so the background task doesn't capture @MainActor state.
         let linkedDrives = AppSettingsManager.shared.linkedDrives
 
@@ -75,6 +76,7 @@ class LibraryViewModel: ObservableObject {
             let finalItems = LibraryViewModel.rebuildCacheInBackground(
                 pdfs: pdfsSnapshot,
                 collections: collectionsSnapshot,
+                virtualOmnibuses: virtualOmnibusesSnapshot,
                 sortOption: sortOption,
                 folderID: folderID,
                 currentSearchText: currentSearchText,
@@ -108,6 +110,7 @@ class LibraryViewModel: ObservableObject {
     static nonisolated func rebuildCacheInBackground(
         pdfs: [ConvertedPDF],
         collections: [PDFCollection],
+        virtualOmnibuses: [VirtualOmnibus],
         sortOption: ModernLibraryView.SortOption,
         folderID: UUID?,
         currentSearchText: String,
@@ -126,7 +129,7 @@ class LibraryViewModel: ObservableObject {
         
         // Build a map of series title aliases based on virtual omnibuses
         var seriesAliases: [String: String] = [:]
-        for omnibus in LibraryService.shared.virtualOmnibuses {
+        for omnibus in virtualOmnibuses {
             for fileId in omnibus.fileIDs {
                 if let matchedPDF = pdfs.first(where: { $0.id == fileId }),
                    let fileSeries = matchedPDF.metadata.series, !fileSeries.isEmpty {
