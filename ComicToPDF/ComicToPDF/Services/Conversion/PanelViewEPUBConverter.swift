@@ -876,6 +876,12 @@ class PanelViewEPUBConverter {
 
     private func resolvePageSize(from url: URL) async -> CGSize {
         return await Task.detached(priority: .userInitiated) {
+            if let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] {
+                let w = properties[kCGImagePropertyPixelWidth] as? CGFloat ?? 1080
+                let h = properties[kCGImagePropertyPixelHeight] as? CGFloat ?? 1620
+                return CGSize(width: w, height: h)
+            }
             if let img = UIImage(contentsOfFile: url.path) { return img.size }
             return CGSize(width: 1080, height: 1620)
         }.value
