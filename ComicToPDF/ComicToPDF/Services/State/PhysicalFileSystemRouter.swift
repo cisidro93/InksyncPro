@@ -100,6 +100,11 @@ class PhysicalFileSystemRouter {
         guard let coverURL = getCoverURL(for: pdf) else { return }
         let pdfID = pdf.id
         
+        // Clear ThumbnailDaemon cache (both memory and disk) so the updated cover is generated
+        Task {
+            await ThumbnailDaemon.shared.clearCache(for: pdfID)
+        }
+        
         Task.detached(priority: .background) {
             try? data.write(to: coverURL)
             

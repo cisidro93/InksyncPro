@@ -117,4 +117,11 @@ actor ThumbnailDaemon {
         memoryCache[pdfID] = image  // warm so next call is O(1)
         return image
     }
+    
+    /// Clear the cached thumbnail from memory and disk for a specific PDF.
+    func clearCache(for pdfID: UUID) {
+        memoryCache.removeValue(forKey: pdfID)
+        let cachedURL = cacheDirectory.appendingPathComponent("\(pdfID.uuidString).webp")
+        try? FileManager.default.removeItem(at: cachedURL)
+    }
 }
