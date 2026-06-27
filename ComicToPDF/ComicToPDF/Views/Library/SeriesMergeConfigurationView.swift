@@ -69,6 +69,44 @@ struct SeriesMergeConfigurationView: View {
                         }
                         .listRowBackground(Color.inkSurface.opacity(0.4))
                         
+                        Section(header: Text("Size & Compression Preview")) {
+                            HStack {
+                                Text("Original Combined Size")
+                                    .foregroundColor(.inkTextSecondary)
+                                Spacer()
+                                Text(formatBytes(totalInputSize))
+                                    .foregroundColor(.secondary)
+                            }
+                            
+                            HStack {
+                                Text("Estimated Merged Size")
+                                    .foregroundColor(.inkTextPrimary)
+                                Spacer()
+                                Text(formatBytes(estimatedOutputSize))
+                                    .bold()
+                                    .foregroundColor(.inkAmber)
+                            }
+                            
+                            let splitMode = settingsManager.conversionSettings.splitMode
+                            if splitMode != .none {
+                                HStack {
+                                    Text("Splitting Status")
+                                        .foregroundColor(.inkTextPrimary)
+                                    Spacer()
+                                    if willSplit {
+                                        Text("⚠️ Splits into \(estimatedParts) files")
+                                            .foregroundColor(.inkAmber)
+                                            .bold()
+                                    } else {
+                                        Text("✅ Fits in 1 file")
+                                            .foregroundColor(.inkGreen)
+                                            .bold()
+                                    }
+                                }
+                            }
+                        }
+                        .listRowBackground(Color.inkSurface.opacity(0.4))
+                        
                         Section(header: Text("Merge Order"), footer: Text("Drag the handles or tap Edit to reorder. The top file will be the first issue in the merged volume.")) {
                             ForEach(viewModel.itemsToMerge) { pdf in
                                 pdfRow(for: pdf)
@@ -168,6 +206,41 @@ struct SeriesMergeConfigurationView: View {
     
     private var isMergeDisabled: Bool {
         viewModel.itemsToMerge.count < 2 || viewModel.outputName.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+    
+    private var totalInputSize: Int64 {
+        viewModel.itemsToMerge.reduce(0) { $0 + $1.fileSize }
+    }
+    
+    private var estimatedOutputSize: Int64 {
+        let total = Double(totalInputSize)
+        let multiplier: Double
+        switch settingsManager.conversionSettings.compressionQuality {
+        case .high:
+            multiplier = 0.90
+        case .balanced:
+            multiplier = 0.65
+        case .compact:
+            multiplier = 0.40
+        }
+        return Int64(total * multiplier)
+    }
+    
+    private func formatBytes(_ bytes: Int64) -> String {
+        let mb = Double(bytes) / 1024 / 1024
+        return String(format: "%.1f MB", mb)
+    }
+    
+    private var willSplit: Bool {
+        let limit = settingsManager.conversionSettings.splitMode.limit
+        return estimatedOutputSize > limit
+    }
+    
+    private var estimatedParts: Int {
+        let limit = settingsManager.conversionSettings.splitMode.limit
+        guard limit > 0 else { return 1 }
+        let parts = Double(estimatedOutputSize) / Double(limit)
+        return Int(ceil(parts))
     }
     
     private func moveItems(from source: IndexSet, to destination: Int) {
