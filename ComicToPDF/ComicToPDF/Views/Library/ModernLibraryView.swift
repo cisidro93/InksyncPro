@@ -326,7 +326,7 @@ struct ModernLibraryView: View {
                     Button(action: {
                         AppRouter.shared.presentSheet(.controlCenter)
                     }) {
-                        Image(systemName: "ellipsis.circle")
+                        Image(systemName: "slider.horizontal.3")
                     }
                 }
             }
@@ -643,7 +643,8 @@ struct ModernLibraryView: View {
                 filterState: $viewModel.filterState,
                 viewStyle: $viewStyle,
                 isBatchMode: $isBatchMode,
-                multiSelection: $multiSelection
+                multiSelection: $multiSelection,
+                tapAction: $tapAction
             )
             .environmentObject(conversionManager)
             .environmentObject(settingsManager)
@@ -1260,6 +1261,27 @@ struct ModernLibraryView: View {
         VStack(spacing: 0) {
             Divider().background(Theme.text.opacity(0.1))
             HStack {
+                Button {
+                    handleSelectAll()
+                } label: {
+                    VStack(spacing: 4) {
+                        let totalVisible = viewModel.cachedLibraryItems.reduce(0) { count, item -> Int in
+                            switch item {
+                            case .single: return count + 1
+                            case .series(let grp): return count + grp.issues.count
+                            case .driveFolder: return count
+                            }
+                        }
+                        let isAllSelected = totalVisible > 0 && multiSelection.count >= totalVisible
+                        Image(systemName: isAllSelected ? "checkmark.circle.fill" : "checkmark.circle")
+                            .font(.title3)
+                        Text(isAllSelected ? "Deselect All" : "Select All")
+                            .font(.caption)
+                    }
+                }
+                
+                Spacer()
+                
                 Button(role: .destructive) {
                     let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
                     for item in items { conversionManager.deletePDF(item) }

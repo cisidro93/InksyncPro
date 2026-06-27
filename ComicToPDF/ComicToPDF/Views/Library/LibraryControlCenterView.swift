@@ -12,6 +12,7 @@ struct LibraryControlCenterView: View {
     @Binding var viewStyle: ModernLibraryView.LibraryViewStyle
     @Binding var isBatchMode: Bool
     @Binding var multiSelection: Set<UUID>
+    @Binding var tapAction: LibraryTapAction
     
     @Environment(\.dismiss) private var dismiss
     
@@ -130,6 +131,25 @@ struct LibraryControlCenterView: View {
                             }
                             .padding(.horizontal)
                             .padding(.top, 4)
+                            
+                            Divider()
+                                .padding(.horizontal)
+                            
+                            // On Tap Gesture Picker
+                            HStack {
+                                Label("On Tap Gesture", systemImage: "hand.tap")
+                                    .font(.subheadline)
+                                    .foregroundColor(.primary)
+                                Spacer()
+                                Picker("On Tap Gesture", selection: $tapAction) {
+                                    ForEach(LibraryTapAction.allCases, id: \.self) { action in
+                                        Text(action.rawValue).tag(action)
+                                    }
+                                }
+                                .pickerStyle(.menu)
+                                .accentColor(.inkBlue)
+                            }
+                            .padding(.horizontal)
                             
                             Divider()
                                 .padding(.horizontal)
