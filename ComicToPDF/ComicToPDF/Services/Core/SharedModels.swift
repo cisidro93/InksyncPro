@@ -1015,10 +1015,14 @@ struct EPUBPanelManifest: Codable {
 }
 
 // MARK: - Global Alert
-struct AppAlert: Identifiable {
+struct AppAlert: Identifiable, Equatable {
     let id = UUID()
     let title: String
     let message: String
+    
+    static func == (lhs: AppAlert, rhs: AppAlert) -> Bool {
+        lhs.id == rhs.id
+    }
 }
 
 // MARK: - Editor Models (Precision Canvas)
