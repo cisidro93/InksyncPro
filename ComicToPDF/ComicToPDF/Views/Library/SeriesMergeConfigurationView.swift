@@ -57,7 +57,7 @@ struct SeriesMergeConfigurationView: View {
                             
                             Picker("Image Quality", selection: $settingsManager.conversionSettings.compressionQuality) {
                                 ForEach(CompressionPreset.allCases, id: \.self) { preset in
-                                    Text(preset.rawValue).tag(preset)
+                                    Text("\(preset.rawValue) (Est: \(estimatedSize(for: preset)))").tag(preset)
                                 }
                             }
                             
@@ -241,6 +241,20 @@ struct SeriesMergeConfigurationView: View {
         guard limit > 0 else { return 1 }
         let parts = Double(estimatedOutputSize) / Double(limit)
         return Int(ceil(parts))
+    }
+    
+    private func estimatedSize(for preset: CompressionPreset) -> String {
+        let total = Double(totalInputSize)
+        let multiplier: Double
+        switch preset {
+        case .high:
+            multiplier = 0.90
+        case .balanced:
+            multiplier = 0.65
+        case .compact:
+            multiplier = 0.40
+        }
+        return formatBytes(Int64(total * multiplier))
     }
     
     private func moveItems(from source: IndexSet, to destination: Int) {
