@@ -183,6 +183,10 @@ extension PiPProgressManager: AVPictureInPictureSampleBufferPlaybackDelegate {
     }
     
     nonisolated func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, didTransitionToRenderSize newRenderSize: CMVideoDimensions) {}
+    
+    nonisolated func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, skipByInterval skipInterval: CMTime, completion completionHandler: @escaping @Sendable () -> Void) {
+        completionHandler()
+    }
 }
 
 // MARK: - AVPictureInPictureControllerDelegate
