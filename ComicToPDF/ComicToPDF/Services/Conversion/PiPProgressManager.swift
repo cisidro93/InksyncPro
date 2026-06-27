@@ -187,7 +187,7 @@ extension PiPProgressManager: AVPictureInPictureSampleBufferPlaybackDelegate {
         return false
     }
     
-    func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, didTransitionToRenderSize newRenderSize: CMVideoFormatDescription) {}
+    func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, didTransitionToRenderSize newRenderSize: CMVideoDimensions) {}
     
     func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, skipByInterval skipInterval: TimeInterval, completion completionHandler: @escaping () -> Void) {
         completionHandler()
