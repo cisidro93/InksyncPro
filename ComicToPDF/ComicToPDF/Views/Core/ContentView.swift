@@ -44,6 +44,9 @@ struct ContentView: View {
     @State private var showingGlobalError = false
     @State private var globalErrorMessage = ""
     @State private var globalErrorCategory = "System"
+    
+    // QoL Notification Toast State
+    @State private var activeToast: ToastMessage? = nil
 
     var body: some View {
         ZStack {
@@ -124,6 +127,110 @@ struct ContentView: View {
         .environmentObject(PeerManager.shared)
         .environment(\.dynamicTypeSize, settingsManager.conversionSettings.textSize.swiftUIValue)
         .sheet(item: $pdfToShare) { pdf in ShareSheet(activityItems: [pdf.url]) }
+        .overlay(alignment: .top) {
+            if let toast = activeToast {
+                HStack(spacing: 12) {
+                    Image(systemName: toast.systemImage)
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundColor(toast.type.color)
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(toast.title)
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundColor(.white)
+                        Text(toast.message)
+                            .font(.system(size: 11))
+                            .foregroundColor(.gray)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                    }
+                    
+                    Spacer()
+                    
+                    if toast.action != nil {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(.gray)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .frame(maxWidth: min(350, UIScreen.main.bounds.width - 32))
+                .background(Color(white: 0.1).opacity(0.95))
+                .cornerRadius(16)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                )
+                .shadow(color: .black.opacity(0.35), radius: 10, x: 0, y: 5)
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .onTapGesture {
+                    toast.action?()
+                    withAnimation(.spring()) { activeToast = nil }
+                }
+                .onAppear {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) {
+                        if activeToast == toast {
+                            withAnimation(.spring()) { activeToast = nil }
+                        }
+                    }
+                }
+                .padding(.top, sizeClass == .regular ? 24 : 12)
+            }
+        }
+        .onChange(of: taskEngine.statusMessage) { _, newMessage in
+            if let msg = newMessage {
+                if msg.starts(with: "✅") {
+                    let generator = UINotificationFeedbackGenerator()
+                    generator.notificationOccurred(.success)
+                    
+                    let sortedItems = LibraryService.shared.items.sorted { $0.lastModified > $1.lastModified }
+                    let latestBook = sortedItems.first
+                    
+                    withAnimation(.spring()) {
+                        activeToast = ToastMessage(
+                            title: "Complete",
+                            message: msg.replacingOccurrences(of: "✅ ", with: ""),
+                            systemImage: "checkmark.circle.fill",
+                            type: .success,
+                            action: {
+                                if let book = latestBook {
+                                    NotificationCenter.default.post(name: .openMergedBook, object: book)
+                                }
+                            }
+                        )
+                    }
+                } else if msg.starts(with: "Error") || msg.starts(with: "Merge Error") {
+                    let generator = UINotificationFeedbackGenerator()
+                    generator.notificationOccurred(.error)
+                    
+                    withAnimation(.spring()) {
+                        activeToast = ToastMessage(
+                            title: "Failed",
+                            message: msg,
+                            systemImage: "exclamationmark.triangle.fill",
+                            type: .warning
+                        )
+                    }
+                }
+            }
+        }
+        .onChange(of: taskEngine.appAlert) { _, newAlert in
+            if let alert = newAlert {
+                let generator = UINotificationFeedbackGenerator()
+                generator.notificationOccurred(.warning)
+                
+                withAnimation(.spring()) {
+                    activeToast = ToastMessage(
+                        title: alert.title,
+                        message: alert.message,
+                        systemImage: "exclamationmark.triangle.fill",
+                        type: .warning
+                    )
+                }
+                taskEngine.appAlert = nil // Suppress native popup alert
+            }
+        }
         .alert(item: $taskEngine.appAlert) { alert in
             Alert(title: Text(alert.title), message: Text(alert.message), dismissButton: .default(Text("OK")))
         }
