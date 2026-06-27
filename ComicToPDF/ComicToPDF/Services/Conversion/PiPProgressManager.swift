@@ -178,17 +178,11 @@ extension PiPProgressManager: AVPictureInPictureSampleBufferPlaybackDelegate {
         return CMTimeRange(start: .zero, duration: .indefinite)
     }
     
-    nonisolated func pictureInPictureControllerTimeRangeForPlaybackDidChange(_ pictureInPictureController: AVPictureInPictureController) {}
-    
     nonisolated func pictureInPictureControllerIsPlaybackPaused(_ pictureInPictureController: AVPictureInPictureController) -> Bool {
         return false
     }
     
     nonisolated func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, didTransitionToRenderSize newRenderSize: CMVideoDimensions) {}
-    
-    nonisolated func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, skipByInterval skipInterval: TimeInterval, completion completionHandler: @escaping () -> Void) {
-        completionHandler()
-    }
 }
 
 // MARK: - AVPictureInPictureControllerDelegate
