@@ -123,6 +123,17 @@ class LibraryViewModel: ObservableObject {
         var groups: [String: SeriesGroup] = [:]
         var singles: [ConvertedPDF] = []
         var firstAppearanceIndex: [String: Int] = [:]
+        
+        // Build a map of series title aliases based on virtual omnibuses
+        var seriesAliases: [String: String] = [:]
+        for omnibus in LibraryService.shared.virtualOmnibuses {
+            for fileId in omnibus.fileIDs {
+                if let matchedPDF = pdfs.first(where: { $0.id == fileId }),
+                   let fileSeries = matchedPDF.metadata.series, !fileSeries.isEmpty {
+                    seriesAliases[fileSeries.lowercased()] = omnibus.name
+                }
+            }
+        }
 
         // O(1) lookup dict — replaces the O(N×M) collections.first(where:) scan inside the hot loop below.
         let collectionByID: [UUID: PDFCollection] = Dictionary(uniqueKeysWithValues: collections.map { ($0.id, $0) })
@@ -187,7 +198,8 @@ class LibraryViewModel: ObservableObject {
             var inAnyGroup = false
             
             // 1. Process standard Publisher Series (Only at Root)
-            if folderID == nil, let seriesName = pdf.metadata.series, !seriesName.isEmpty, isOrphan {
+            if folderID == nil, let rawSeriesName = pdf.metadata.series, !rawSeriesName.isEmpty, isOrphan {
+                let seriesName = seriesAliases[rawSeriesName.lowercased()] ?? rawSeriesName
                 let seriesKey = "series_\(seriesName)"
                 if firstAppearanceIndex[seriesKey] == nil { firstAppearanceIndex[seriesKey] = index }
                 

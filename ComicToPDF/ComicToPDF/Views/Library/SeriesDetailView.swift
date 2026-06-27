@@ -100,7 +100,20 @@ struct SeriesDetailView: View {
             return sorted
         } else {
             // It's a publisher series
-            return visiblePDFs.filter { $0.metadata.series == series.title }
+            var seriesAliases: [String: String] = [:]
+            for omnibus in conversionManager.virtualOmnibuses {
+                for fileId in omnibus.fileIDs {
+                    if let pdf = allPDFs.first(where: { $0.id == fileId }),
+                       let fileSeries = pdf.metadata.series, !fileSeries.isEmpty {
+                        seriesAliases[fileSeries.lowercased()] = omnibus.name
+                    }
+                }
+            }
+            return visiblePDFs.filter { pdf in
+                let rawSeries = pdf.metadata.series ?? ""
+                let resolvedSeries = seriesAliases[rawSeries.lowercased()] ?? rawSeries
+                return resolvedSeries.localizedCaseInsensitiveCompare(series.title) == .orderedSame
+            }
         }
     }
 
