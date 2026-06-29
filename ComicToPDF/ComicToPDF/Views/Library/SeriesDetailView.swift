@@ -171,26 +171,15 @@ struct SeriesDetailView: View {
     @State private var showSeriesDetails = false
     @State private var jumpToVolume: String? = nil
     @State private var cachedVolumeGroups: [(key: String, issues: [ConvertedPDF])] = []
+    @State private var cachedSeriesWriter: String? = nil
+    @State private var cachedSeriesArtist: String? = nil
+    @State private var cachedSeriesTags: [String] = []
+    @State private var cachedSeriesSummary: String? = nil
     
-    var seriesWriter: String? {
-        let writers = freshIssues.compactMap { $0.metadata.writer }.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
-        return writers.first
-    }
-    
-    var seriesArtist: String? {
-        let artists = freshIssues.compactMap { $0.metadata.penciller }.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
-        return artists.first
-    }
-    
-    var seriesTags: [String] {
-        let allTags = freshIssues.flatMap { $0.metadata.tags }.map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
-        return Array(Set(allTags)).sorted()
-    }
-    
-    var seriesSummary: String? {
-        let summaries = freshIssues.compactMap { $0.metadata.summary }.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
-        return summaries.first
-    }
+    var seriesWriter: String? { cachedSeriesWriter }
+    var seriesArtist: String? { cachedSeriesArtist }
+    var seriesTags: [String] { cachedSeriesTags }
+    var seriesSummary: String? { cachedSeriesSummary }
 
     var isCollection: Bool {
         guard let id = UUID(uuidString: series.id) else { return false }
@@ -252,6 +241,15 @@ struct SeriesDetailView: View {
             result.append((key: "Ungrouped", issues: ungrouped))
         }
         self.cachedVolumeGroups = result
+        
+        // Optimize metadata calculation and cache results to prevent main-thread spikes during scrolling
+        let currentIssues = freshIssues
+        self.cachedSeriesWriter = currentIssues.compactMap { $0.metadata.writer }.first { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        self.cachedSeriesArtist = currentIssues.compactMap { $0.metadata.penciller }.first { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        self.cachedSeriesSummary = currentIssues.compactMap { $0.metadata.summary }.first { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        
+        let allTags = currentIssues.flatMap { $0.metadata.tags }.map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        self.cachedSeriesTags = Array(Set(allTags)).sorted()
     }
     
     /// True if any issues have volume metadata worth grouping by
