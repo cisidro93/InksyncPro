@@ -81,8 +81,12 @@ actor LibraryScanner {
                     seriesName = parentName
                 }
 
-                var metadata = PDFMetadata(title: filename)
-                metadata.series = seriesName
+                let parsedTokens = DeterministicFilenameParser.parse(filename: filename)
+                let fallbackSeries = parsedTokens.seriesName.isEmpty ? (seriesName ?? "Unknown") : parsedTokens.seriesName
+                var metadata = PDFMetadata(title: parsedTokens.title ?? filename)
+                metadata.series = fallbackSeries
+                metadata.volume = parsedTokens.volume
+                metadata.issueNumber = parsedTokens.issueNumber
                 
                 // Fallback to smart filename extraction if series is still missing/empty
                 if metadata.series == nil || metadata.series?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == true {

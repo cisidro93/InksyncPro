@@ -498,19 +498,22 @@ final class LinkedLibraryScanner: ObservableObject {
                 ) else { continue }
 
                 let stem = fileURL.deletingPathExtension().lastPathComponent
-                var metadata = PDFMetadata(title: stem)
+                let parsedTokens = DeterministicFilenameParser.parse(filename: fileURL.lastPathComponent)
+                var metadata = PDFMetadata(title: parsedTokens.title ?? stem)
                 if let parsed = ComicInfoParser.parse(from: fileURL) {
                     metadata.title = parsed.title ?? stem
-                    metadata.series = parsed.series ?? SeriesNameDetector.detect(from: fileURL.lastPathComponent).seriesName
-                    metadata.issueNumber = parsed.number
-                    metadata.volume = parsed.volume.map { String($0) }
+                    metadata.series = parsed.series ?? (parsedTokens.seriesName.isEmpty ? SeriesNameDetector.detect(from: fileURL.lastPathComponent).seriesName : parsedTokens.seriesName)
+                    metadata.issueNumber = parsed.number ?? parsedTokens.issueNumber
+                    metadata.volume = parsed.volume.map { String($0) } ?? parsedTokens.volume
                     metadata.publisher = parsed.publisher
                     metadata.summary = parsed.summary
                     metadata.writer = parsed.writer
                     metadata.isManga = parsed.manga ? true : nil
                     metadata.tags = parsed.tags
                 } else {
-                    metadata.series = SeriesNameDetector.detect(from: fileURL.lastPathComponent).seriesName
+                    metadata.series = parsedTokens.seriesName.isEmpty ? SeriesNameDetector.detect(from: fileURL.lastPathComponent).seriesName : parsedTokens.seriesName
+                    metadata.volume = parsedTokens.volume
+                    metadata.issueNumber = parsedTokens.issueNumber
                 }
 
                 var pdf = ConvertedPDF(

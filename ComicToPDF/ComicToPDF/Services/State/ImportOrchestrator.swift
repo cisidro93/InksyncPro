@@ -93,10 +93,13 @@ actor ImportOrchestrator {
                     // FIX: read size from enumerator's pre-fetched resourceValues — saves one attributesOfItem syscall per file
                     let size = resourceValues.fileSize.map(Int64.init) ?? 0
                     
-                    let seriesName = fileURL.deletingLastPathComponent().lastPathComponent
-                    var smartDisplayName = fileName
-                    var smartMetadata = PDFMetadata(title: fileName)
+                    let parsedTokens = DeterministicFilenameParser.parse(filename: fileName)
+                    let seriesName = parsedTokens.seriesName.isEmpty ? fileURL.deletingLastPathComponent().lastPathComponent : parsedTokens.seriesName
+                    var smartDisplayName = parsedTokens.title ?? fileName
+                    var smartMetadata = PDFMetadata(title: smartDisplayName)
                     smartMetadata.series = seriesName
+                    smartMetadata.volume = parsedTokens.volume
+                    smartMetadata.issueNumber = parsedTokens.issueNumber
                     
                     let cType = MetadataHeuristics.detectAsymmetricContentType(url: fileURL)
                     
@@ -121,7 +124,8 @@ actor ImportOrchestrator {
                         smartDisplayName = xmlData.displayName
                         smartMetadata.title = xmlData.parsedTitle ?? smartDisplayName
                         smartMetadata.series = xmlData.parsedSeries ?? seriesName
-                        smartMetadata.issueNumber = xmlData.parsedNumber
+                        smartMetadata.issueNumber = xmlData.parsedNumber ?? parsedTokens.issueNumber
+                        smartMetadata.volume = xmlData.parsedVolume ?? parsedTokens.volume
                         smartMetadata.tags.append("Auto XML Scrape")
                     }
 
@@ -130,7 +134,12 @@ actor ImportOrchestrator {
                         if xmlData == nil {
                             smartMetadata.title = parsedInfo.title ?? smartDisplayName
                             smartMetadata.series = parsedInfo.series ?? seriesName
-                            smartMetadata.issueNumber = parsedInfo.number
+                            smartMetadata.issueNumber = parsedInfo.number ?? parsedTokens.issueNumber
+                            if let vol = parsedInfo.volume {
+                                smartMetadata.volume = String(vol)
+                            } else {
+                                smartMetadata.volume = parsedTokens.volume
+                            }
                             smartMetadata.writer = parsedInfo.writer
                             smartMetadata.publisher = parsedInfo.publisher
                             smartMetadata.summary = parsedInfo.summary
@@ -275,8 +284,11 @@ actor ImportOrchestrator {
 
                     let cType = MetadataHeuristics.detectAsymmetricContentType(url: url)
 
-                    var smartDisplayName = fileName
-                    var smartMetadata = PDFMetadata(title: fileName)
+                    let parsedTokens = DeterministicFilenameParser.parse(filename: fileName)
+                    var smartDisplayName = parsedTokens.title ?? fileName
+                    var smartMetadata = PDFMetadata(title: smartDisplayName)
+                    smartMetadata.volume = parsedTokens.volume
+                    smartMetadata.issueNumber = parsedTokens.issueNumber
 
                     // Always calculate the Safe Parent Folder fallback
                     let parentName = url.deletingLastPathComponent().lastPathComponent
@@ -286,6 +298,9 @@ actor ImportOrchestrator {
                     if !invalidParents.contains(where: { parentName.lowercased().hasPrefix($0) }) && parentName.count > 2 && UUID(uuidString: parentName) == nil {
                         validParentFolder = parentName
                     }
+                    
+                    let fallbackSeries = parsedTokens.seriesName.isEmpty ? (validParentFolder ?? "Unknown") : parsedTokens.seriesName
+                    smartMetadata.series = fallbackSeries
 
                     // ── Single ZIP pass: merge ComicInfo fetch + full parse ─────────────
                     // Previously two separate ZIP opens (fetchNonDestructiveMetadata + ComicInfoParser.parse)
@@ -309,8 +324,9 @@ actor ImportOrchestrator {
                     if let xmlData = xmlData {
                         smartDisplayName = xmlData.displayName
                         smartMetadata.title = xmlData.parsedTitle ?? overrideMeta?.title ?? smartDisplayName
-                        smartMetadata.series = xmlData.parsedSeries ?? overrideMeta?.series ?? validParentFolder
-                        smartMetadata.issueNumber = xmlData.parsedNumber
+                        smartMetadata.series = xmlData.parsedSeries ?? overrideMeta?.series ?? fallbackSeries
+                        smartMetadata.issueNumber = xmlData.parsedNumber ?? overrideMeta?.issueNumber ?? parsedTokens.issueNumber
+                        smartMetadata.volume = xmlData.parsedVolume ?? overrideMeta?.volume ?? parsedTokens.volume
                         smartMetadata.tags.append("Auto XML Scrape")
                         if smartMetadata.issueNumber == nil, let overMeta = overrideMeta {
                             smartMetadata.issueNumber = overMeta.issueNumber
@@ -319,10 +335,10 @@ actor ImportOrchestrator {
                         smartDisplayName = meta.title
                         smartMetadata = meta
                         if smartMetadata.series == nil || smartMetadata.series?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == true {
-                            smartMetadata.series = validParentFolder
+                            smartMetadata.series = fallbackSeries
                         }
                     } else {
-                        smartMetadata.series = validParentFolder
+                        smartMetadata.series = fallbackSeries
                     }
                     
                     // Fallback to smart filename extraction if series is still missing/empty
@@ -341,6 +357,14 @@ actor ImportOrchestrator {
                             smartMetadata.writer    = parsedInfo.writer
                             smartMetadata.publisher = parsedInfo.publisher
                             smartMetadata.summary   = parsedInfo.summary
+                            if let vol = parsedInfo.volume {
+                                smartMetadata.volume = String(vol)
+                            } else if smartMetadata.volume == nil {
+                                smartMetadata.volume = parsedTokens.volume
+                            }
+                            if smartMetadata.issueNumber == nil {
+                                smartMetadata.issueNumber = parsedInfo.number ?? parsedTokens.issueNumber
+                            }
                             if let year = parsedInfo.year {
                                 var comps = DateComponents()
                                 comps.year = year; comps.month = 1; comps.day = 1
