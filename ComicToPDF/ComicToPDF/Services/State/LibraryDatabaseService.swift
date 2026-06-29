@@ -440,7 +440,8 @@ final class LibraryDB: @unchecked Sendable {
                 addedAt REAL NOT NULL,
                 modifiedAt REAL NOT NULL,
                 remoteSyncURL TEXT,
-                lastSyncedAt REAL
+                lastSyncedAt REAL,
+                parentSeriesID TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_vo_addedAt ON virtual_omnibuses(addedAt);
         """
@@ -451,6 +452,13 @@ final class LibraryDB: @unchecked Sendable {
             if !trimmed.isEmpty {
                 try execute(trimmed)
             }
+        }
+        
+        // Safely migrate existing databases to support parentSeriesID
+        do {
+            try execute("ALTER TABLE virtual_omnibuses ADD COLUMN parentSeriesID TEXT")
+        } catch {
+            // Ignore column-exists errors
         }
     }
 

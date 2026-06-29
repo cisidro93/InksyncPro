@@ -1296,5 +1296,6 @@ struct VirtualOmnibus: Identifiable, Codable, Equatable, Hashable, Sendable {
     var modifiedAt: Date = Date()
     var remoteSyncURL: String? = nil
     var lastSyncedAt: Date? = nil
+    var parentSeriesID: String? = nil
 }
 

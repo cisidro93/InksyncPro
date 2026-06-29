@@ -6,6 +6,7 @@ struct VirtualOmnibusEditorView: View {
     
     /// The virtual omnibus being edited (nil if creating a new one)
     let omnibus: VirtualOmnibus?
+    let parentSeriesID: String?
     
     @State private var name: String = ""
     @State private var fileIDs: [UUID] = []
@@ -15,7 +16,7 @@ struct VirtualOmnibusEditorView: View {
     @State private var searchQuery: String = ""
     @State private var suggestions: [ConvertedPDF] = []
     
-    init(omnibus: VirtualOmnibus? = nil, initialFileIDs: [UUID] = [], suggestedName: String = "") {
+    init(omnibus: VirtualOmnibus? = nil, initialFileIDs: [UUID] = [], suggestedName: String = "", parentSeriesID: String? = nil) {
         self.omnibus = omnibus
         let nameVal = omnibus?.name ?? suggestedName
         _name = State(initialValue: nameVal)
@@ -23,6 +24,7 @@ struct VirtualOmnibusEditorView: View {
         
         let fileIDsVal = omnibus?.fileIDs ?? initialFileIDs
         _fileIDs = State(initialValue: fileIDsVal)
+        self.parentSeriesID = omnibus?.parentSeriesID ?? parentSeriesID
     }
     
     var selectedFiles: [ConvertedPDF] {
@@ -305,7 +307,8 @@ struct VirtualOmnibusEditorView: View {
             addedAt: omnibus?.addedAt ?? Date(),
             modifiedAt: Date(),
             remoteSyncURL: cleanSyncURL.isEmpty ? nil : cleanSyncURL,
-            lastSyncedAt: omnibus?.lastSyncedAt
+            lastSyncedAt: omnibus?.lastSyncedAt,
+            parentSeriesID: parentSeriesID
         )
         
         var list = conversionManager.virtualOmnibuses

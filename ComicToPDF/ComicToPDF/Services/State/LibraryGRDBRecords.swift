@@ -287,6 +287,7 @@ struct VirtualOmnibusRecord: Codable, Equatable {
     var modifiedAt: Double
     var remoteSyncURL: String?
     var lastSyncedAt: Double?
+    var parentSeriesID: String?
 
     static func from(_ omni: VirtualOmnibus) -> VirtualOmnibusRecord {
         let encoder = JSONEncoder()
@@ -301,7 +302,8 @@ struct VirtualOmnibusRecord: Codable, Equatable {
             addedAt: omni.addedAt.timeIntervalSince1970,
             modifiedAt: omni.modifiedAt.timeIntervalSince1970,
             remoteSyncURL: omni.remoteSyncURL,
-            lastSyncedAt: omni.lastSyncedAt?.timeIntervalSince1970
+            lastSyncedAt: omni.lastSyncedAt?.timeIntervalSince1970,
+            parentSeriesID: omni.parentSeriesID
         )
     }
 
@@ -324,7 +326,8 @@ struct VirtualOmnibusRecord: Codable, Equatable {
             addedAt: Date(timeIntervalSince1970: addedAt),
             modifiedAt: Date(timeIntervalSince1970: modifiedAt),
             remoteSyncURL: remoteSyncURL,
-            lastSyncedAt: lastSyncedAt.map { Date(timeIntervalSince1970: $0) }
+            lastSyncedAt: lastSyncedAt.map { Date(timeIntervalSince1970: $0) },
+            parentSeriesID: parentSeriesID
         )
     }
 }
@@ -333,9 +336,9 @@ extension VirtualOmnibusRecord {
     func upsert(_ db: LibraryDB) throws {
         try db.execute("""
             INSERT OR REPLACE INTO virtual_omnibuses
-            (id, name, fileIDsJson, coverFileID, lastReadPageIndex, lastReadFileID, addedAt, modifiedAt, remoteSyncURL, lastSyncedAt)
-            VALUES (?,?,?,?,?,?,?,?,?,?)
-        """, arguments: [id, name, fileIDsJson, coverFileID as Any, lastReadPageIndex, lastReadFileID as Any, addedAt, modifiedAt, remoteSyncURL as Any, lastSyncedAt as Any])
+            (id, name, fileIDsJson, coverFileID, lastReadPageIndex, lastReadFileID, addedAt, modifiedAt, remoteSyncURL, lastSyncedAt, parentSeriesID)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?)
+        """, arguments: [id, name, fileIDsJson, coverFileID as Any, lastReadPageIndex, lastReadFileID as Any, addedAt, modifiedAt, remoteSyncURL as Any, lastSyncedAt as Any, parentSeriesID as Any])
     }
 
     init?(row: [String: Any]) {
@@ -354,6 +357,7 @@ extension VirtualOmnibusRecord {
         self.modifiedAt = modifiedAt
         self.remoteSyncURL = row["remoteSyncURL"] as? String
         self.lastSyncedAt = row["lastSyncedAt"] as? Double
+        self.parentSeriesID = row["parentSeriesID"] as? String
     }
 }
 

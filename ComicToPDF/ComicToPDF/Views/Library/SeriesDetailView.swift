@@ -215,20 +215,27 @@ struct SeriesDetailView: View {
         Logger.shared.log("SeriesDetailView: evaluating seriesVirtualOmnibuses. total: \(allOmnibuses.count), series title: \(series.title), series id: \(series.id)", category: "Library")
         
         return allOmnibuses.filter { omnibus in
-            // 1. Match by virtual volume name (case-insensitive, substring/contains allowed)
+            // 1. Explicit connection context (parentSeriesID) matches series.id
+            if let parent = omnibus.parentSeriesID {
+                let parentMatch = parent.localizedCaseInsensitiveCompare(series.id) == .orderedSame
+                Logger.shared.log("SeriesDetailView: omnibus '\(omnibus.name)' parentSeriesID: '\(parent)', parentMatch: \(parentMatch)", category: "Library")
+                if parentMatch { return true }
+            }
+            
+            // 2. Match by virtual volume name (case-insensitive, substring/contains allowed)
             let nameMatch = omnibus.name.localizedCaseInsensitiveCompare(series.title) == .orderedSame ||
                             omnibus.name.localizedCaseInsensitiveContains(series.title) ||
                             series.title.localizedCaseInsensitiveContains(omnibus.name)
             Logger.shared.log("SeriesDetailView: omnibus '\(omnibus.name)' nameMatch: \(nameMatch)", category: "Library")
             if nameMatch { return true }
             
-            // 2. Match if any issue inside the omnibus belongs to this series (case-insensitive)
+            // 3. Match if any issue inside the omnibus belongs to this series (case-insensitive)
             let resolvedFiles = omnibus.fileIDs.compactMap { id in
                 conversionManager.convertedPDFs.first(where: { $0.id == id })
             }
             Logger.shared.log("SeriesDetailView: omnibus '\(omnibus.name)' fileIDs count: \(omnibus.fileIDs.count), resolvedFiles count: \(resolvedFiles.count)", category: "Library")
             
-            // 3. Match if this is a custom collection (folder) and any file in the omnibus belongs to it
+            // 4. Match if this is a custom collection (folder) and any file in the omnibus belongs to it
             if let folderUUID = UUID(uuidString: series.id) {
                 let collectionMatch = resolvedFiles.contains { $0.collectionId == folderUUID }
                 Logger.shared.log("SeriesDetailView: omnibus '\(omnibus.name)' collectionMatch: \(collectionMatch)", category: "Library")
@@ -254,7 +261,7 @@ struct SeriesDetailView: View {
             VirtualOmnibusShelf(
                 omnibuses: list,
                 onEdit: { omnibus in
-                    AppRouter.shared.presentSheet(.virtualOmnibusEditor(omnibus))
+                    AppRouter.shared.presentSheet(.virtualOmnibusEditor(omnibus, parentSeriesID: series.id))
                 },
                 onRead: { omnibus in
                     let resolved = omnibus.fileIDs.compactMap { id in
@@ -1091,7 +1098,7 @@ struct SeriesDetailView: View {
                                     suggestedName = "New Virtual Volume"
                                 }
                                 
-                                AppRouter.shared.presentSheet(.virtualOmnibusEditor(nil, initialFileIDs: sortedIDs, suggestedName: suggestedName))
+                                AppRouter.shared.presentSheet(.virtualOmnibusEditor(nil, initialFileIDs: sortedIDs, suggestedName: suggestedName, parentSeriesID: series.id))
                                 isSelectionMode = false
                                 selection.removeAll()
                             } label: {

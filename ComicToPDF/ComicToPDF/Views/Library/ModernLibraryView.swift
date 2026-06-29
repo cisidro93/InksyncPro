@@ -630,8 +630,8 @@ struct ModernLibraryView: View {
                         }
                     }
             }
-        case .virtualOmnibusEditor(let omnibus, let initialFileIDs, let suggestedName):
-            VirtualOmnibusEditorView(omnibus: omnibus, initialFileIDs: initialFileIDs, suggestedName: suggestedName)
+        case .virtualOmnibusEditor(let omnibus, let initialFileIDs, let suggestedName, let parentSeriesID):
+            VirtualOmnibusEditorView(omnibus: omnibus, initialFileIDs: initialFileIDs, suggestedName: suggestedName, parentSeriesID: parentSeriesID)
                 .environmentObject(conversionManager)
             
         case .controlCenter:
