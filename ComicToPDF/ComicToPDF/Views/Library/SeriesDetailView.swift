@@ -2251,10 +2251,12 @@ struct SeriesDetailView: View {
             )
             .shadow(color: Color.black.opacity(0.1), radius: 10, y: 5)
             .padding(.top, 4)
+
         }
     }
-    
-    // MARK: - Preference Keys for Coordinate Space Tracking
+}
+
+// MARK: - Preference Keys for Coordinate Space Tracking
 
 struct CellFramePreferenceKey: PreferenceKey {
     typealias Value = [UUID: CGRect]
@@ -2270,6 +2272,3 @@ struct ScrollOffsetPreferenceKey: PreferenceKey {
         value = nextValue()
     }
 }
-
-
-
