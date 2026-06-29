@@ -153,12 +153,13 @@ struct SeriesDetailView: View {
     }
     
     @State private var localIssues: [ConvertedPDF] = []
+    @State private var selectedVolumeFilter: String? = nil
     
     var visualIssues: [ConvertedPDF] {
         if showVolumeGrouping && hasVolumeData {
             return volumeGroups.flatMap { $0.issues }
         } else {
-            return localIssues
+            return filteredIssues
         }
     }
     
@@ -174,9 +175,30 @@ struct SeriesDetailView: View {
         return conversionManager.collections.contains(where: { $0.id == id })
     }
     
+    var availableVolumes: [String] {
+        cachedVolumeGroups.map { $0.key }
+    }
+    
+    var filteredIssues: [ConvertedPDF] {
+        if let selectedVolume = selectedVolumeFilter {
+            return localIssues.filter { pdf in
+                if selectedVolume == "Ungrouped" {
+                    return pdf.metadata.volume?.isEmpty ?? true
+                } else {
+                    return pdf.metadata.volume == selectedVolume
+                }
+            }
+        }
+        return localIssues
+    }
+    
     /// Groups issues by their volume metadata for collapsible rendering (read from cached State to prevent thread bottlenecking)
     var volumeGroups: [(key: String, issues: [ConvertedPDF])] {
-        cachedVolumeGroups
+        let allGroups = cachedVolumeGroups
+        if let selectedVolume = selectedVolumeFilter {
+            return allGroups.filter { $0.key == selectedVolume }
+        }
+        return allGroups
     }
     
     private func updateVolumeGroups() {
@@ -346,6 +368,11 @@ struct SeriesDetailView: View {
         .onChange(of: conversionManager.collections) { localIssues = sortedIssues }
         .onChange(of: settingsManager.isVaultUnlocked) { localIssues = sortedIssues }
         .onChange(of: localIssues) { updateVolumeGroups() }
+        .onChange(of: selectedVolumeFilter) { _, newValue in
+            if let newValue = newValue {
+                collapsedVolumes.remove(newValue)
+            }
+        }
     }
     
     private func listView(scrollProxy: ScrollViewProxy) -> some View {
@@ -356,6 +383,12 @@ struct SeriesDetailView: View {
                     missingIssuesSection
                     
                     seriesVirtualOmnibusesSection
+                    
+                    if hasVolumeData {
+                        volumeFilterBar
+                            .listRowInsets(EdgeInsets())
+                            .listRowBackground(Color.clear)
+                    }
                     
                     if showVolumeGrouping && hasVolumeData {
                         volumeGroupingSection
@@ -602,8 +635,61 @@ struct SeriesDetailView: View {
     }
 
     @ViewBuilder
+    private var volumeFilterBar: some View {
+        if hasVolumeData {
+            let volumes = availableVolumes
+            if !volumes.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        Button {
+                            withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
+                                selectedVolumeFilter = nil
+                            }
+                        } label: {
+                            Text("All Volumes")
+                                .font(.system(size: 13, weight: selectedVolumeFilter == nil ? .semibold : .medium))
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(selectedVolumeFilter == nil ? Theme.orange : Theme.surface.opacity(0.6))
+                                .foregroundColor(selectedVolumeFilter == nil ? .white : Theme.text)
+                                .clipShape(Capsule())
+                                .overlay(
+                                    Capsule()
+                                        .stroke(Color.white.opacity(selectedVolumeFilter == nil ? 0.2 : 0.08), lineWidth: 0.5)
+                                )
+                        }
+                        
+                        ForEach(volumes, id: \.self) { vol in
+                            let isSelected = selectedVolumeFilter == vol
+                            Button {
+                                withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
+                                    selectedVolumeFilter = vol
+                                }
+                            } label: {
+                                Text(vol == "Ungrouped" ? "Ungrouped" : "Vol. \(vol)")
+                                    .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 6)
+                                    .background(isSelected ? Theme.orange : Theme.surface.opacity(0.6))
+                                    .foregroundColor(isSelected ? .white : Theme.text)
+                                    .clipShape(Capsule())
+                                    .overlay(
+                                        Capsule()
+                                            .stroke(Color.white.opacity(isSelected ? 0.2 : 0.08), lineWidth: 0.5)
+                                    )
+                            }
+                        }
+                    }
+                    .padding(.horizontal)
+                    .padding(.vertical, 8)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
     private var flatListSection: some View {
-        ForEach(localIssues) { pdf in
+        ForEach(filteredIssues) { pdf in
             issueRow(pdf)
         }
         .onMove { source, destination in
@@ -795,6 +881,9 @@ struct SeriesDetailView: View {
                     
                     seriesVirtualOmnibusesSection
                         .padding(.bottom, 16)
+                    
+                    volumeFilterBar
+                        .padding(.bottom, 8)
 
                     let hPad: CGFloat = hSizeClass == .regular ? 24 : 12
                     let colSpacing: CGFloat = hSizeClass == .regular ? 20 : 10
@@ -825,7 +914,7 @@ struct SeriesDetailView: View {
                         }
                     } else {
                         LazyVGrid(columns: columns, spacing: hSizeClass == .regular ? 28 : 14) {
-                            ForEach(localIssues) { pdf in
+                            ForEach(filteredIssues) { pdf in
                                 gridIssueCell(pdf)
                             }
                         }
