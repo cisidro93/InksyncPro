@@ -37,6 +37,7 @@ struct LibraryGridView: View {
     // Rename series alert state
     @State private var renamingGroup: SeriesGroup? = nil
     @State private var pendingSeriesName: String = ""
+    @State private var selectedDetailSeries: SeriesGroup? = nil
 
     // Drop target highlight
     @State private var dropTargetSeriesTitle: String? = nil   // highlights a series cell
@@ -274,6 +275,13 @@ struct LibraryGridView: View {
         } message: {
             Text("This will rename all \(renamingGroup?.count ?? 0) issues in this series.")
         }
+        // MARK: Details Sheet
+        .sheet(item: $selectedDetailSeries) { group in
+            NavigationStack {
+                SeriesDetailView(series: group, selectedPDF: $selectedPDF, useNavigationStack: false)
+                    .environmentObject(conversionManager)
+            }
+        }
         // MARK: Drop Resolution Sheet
         .sheet(item: $pendingDropInfo) { info in
             DropResolutionSheet(info: info) { chosenName in
@@ -323,6 +331,14 @@ struct LibraryGridView: View {
                     }
                     .buttonStyle(TactileButtonStyle())
                     .contextMenu {
+                        Button {
+                            selectedDetailSeries = group
+                        } label: {
+                            Label("View Details", systemImage: "info.circle")
+                        }
+                        
+                        Divider()
+                        
                         // Standard Series context actions...
                         Button {
                             if let next = nextUnread(in: group) {
@@ -363,6 +379,14 @@ struct LibraryGridView: View {
                     }
                     .buttonStyle(TactileButtonStyle())
                     .contextMenu {
+                        Button {
+                            selectedDetailSeries = group
+                        } label: {
+                            Label("View Details", systemImage: "info.circle")
+                        }
+                        
+                        Divider()
+                        
                         Button {
                             if let next = nextUnread(in: group) {
                                 HapticEngine.success()
