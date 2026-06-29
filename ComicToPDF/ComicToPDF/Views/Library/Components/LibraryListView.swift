@@ -27,6 +27,7 @@ struct LibraryListView: View {
 
     // Drop-result confirmation sheet
     @State private var pendingDropInfo: DropResolutionInfo? = nil
+    @State private var selectedDetailSeries: SeriesGroup? = nil
 
     // Drag-to-select Gestures & Coordinate Tracking
     @State private var cellFrames: [String: CGRect] = [:]
@@ -148,6 +149,13 @@ struct LibraryListView: View {
                     } // end ScrollViewReader
                 } // end GeometryReader
                 .coordinateSpace(name: "libraryListViewport")
+            }
+        }
+        // MARK: Details Sheet
+        .sheet(item: $selectedDetailSeries) { group in
+            NavigationStack {
+                SeriesDetailView(series: group, selectedPDF: $selectedPDF, useNavigationStack: false)
+                    .environmentObject(conversionManager)
             }
         }
         // MARK: Drop Resolution Sheet
@@ -442,6 +450,14 @@ struct LibraryListView: View {
                     .buttonStyle(TactileButtonStyle())
                     .contextMenu {
                         Button {
+                            selectedDetailSeries = group
+                        } label: {
+                            Label("View Details", systemImage: "info.circle")
+                        }
+                        
+                        Divider()
+                        
+                        Button {
                             if let next = nextUnread(in: group) {
                                 HapticEngine.success()
                                 onAction(.read, next)
@@ -481,6 +497,14 @@ struct LibraryListView: View {
                     }
                     .buttonStyle(TactileButtonStyle())
                     .contextMenu {
+                        Button {
+                            selectedDetailSeries = group
+                        } label: {
+                            Label("View Details", systemImage: "info.circle")
+                        }
+                        
+                        Divider()
+                        
                         Button {
                             if let next = nextUnread(in: group) {
                                 HapticEngine.success()
