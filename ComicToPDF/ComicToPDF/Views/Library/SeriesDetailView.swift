@@ -776,6 +776,17 @@ struct SeriesDetailView: View {
                 }
             }
             
+            if hasVolumeData {
+                Divider()
+                
+                Picker("Filter by Volume", selection: $selectedVolumeFilter) {
+                    Text("All Volumes").tag(nil as String?)
+                    ForEach(availableVolumes, id: \.self) { vol in
+                        Text(vol == "Ungrouped" ? "Ungrouped" : "Volume \(vol)").tag(vol as String?)
+                    }
+                }
+            }
+            
             if showVolumeGrouping && hasVolumeData {
                 Divider()
                 
