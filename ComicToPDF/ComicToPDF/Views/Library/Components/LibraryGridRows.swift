@@ -33,236 +33,233 @@ struct ModernGridFileCell: View {
         VStack(alignment: .leading, spacing: 5) {
 
             // ── Cover ─────────────────────────────────────────────────────────
-            ZStack(alignment: .bottom) {
-                // Image or placeholder
-                Group {
-                    if let img = conversionManager.thumbnailCache.object(forKey: pdf.id.uuidString as NSString) ?? localCover {
-                        // GPU-composited blur background: drawingGroup() flattens the ZStack
-                        // into a single offscreen Metal texture before compositing. This replaces
-                        // the previous double-image approach (blur + crisp) which ran entirely in
-                        // software and caused ~8ms frame drops per cell during scroll.
-                        ZStack {
-                            // Blurred background: smaller radius (8 vs 18) + drawingGroup = GPU-only
-                            Image(uiImage: img)
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                                .blur(radius: 8, opaque: true)
-                                .overlay(Color.black.opacity(0.40))
-                                .drawingGroup() // ← rasterises blur to GPU texture once
+            Color.clear
+                .aspectRatio(0.63, contentMode: .fit)
+                .overlay(
+                    ZStack(alignment: .bottom) {
+                        // Image or placeholder
+                        Group {
+                            if let img = conversionManager.thumbnailCache.object(forKey: pdf.id.uuidString as NSString) ?? localCover {
+                                // GPU-composited blur background: drawingGroup() flattens the ZStack
+                                // into a single offscreen Metal texture before compositing. This replaces
+                                // the previous double-image approach (blur + crisp) which ran entirely in
+                                // software and caused ~8ms frame drops per cell during scroll.
+                                ZStack {
+                                    Color.inkSurfaceRaised
 
-                            // Foreground: actual cover scaled to fit
-                            Image(uiImage: img)
-                                .resizable()
-                                .aspectRatio(contentMode: .fit)
-                                .shadow(color: .black.opacity(0.45), radius: 6, y: 3)
-                        }
+                                    // Foreground: actual cover scaled to fit
+                                    Image(uiImage: img)
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fit)
+                                        .shadow(color: .black.opacity(0.25), radius: 4, y: 2)
+                                }
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .clipped()
 
-                        // Book spine overlay — left-edge depth cue
-                        HStack(spacing: 0) {
-                            LinearGradient(
-                                colors: [.black.opacity(0.28), .black.opacity(0.05), .clear],
-                                startPoint: .leading, endPoint: .trailing
-                            )
-                            .frame(width: 16)
-                            Spacer()
-                        }
-                    } else if isCloudPending {
-                        // Animated cloud-fetch pulse — cover is being extracted in background
-                        ZStack {
-                            LinearGradient(
-                                colors: [Color(red: 0.1, green: 0.35, blue: 0.55),
-                                         Color(red: 0.05, green: 0.2, blue: 0.4)],
-                                startPoint: .topLeading, endPoint: .bottomTrailing
-                            )
-                            Image(systemName: "icloud.and.arrow.down")
-                                .font(.system(size: 26))
-                                .foregroundColor(.white.opacity(0.7))
-                                .symbolEffect(.pulse, isActive: true)
-                        }
-                    } else if case .cloud = pdf.sourceMode {
-                        cloudPlaceholder
-                    } else {
-                        // Shimmer loading placeholder
-                        GeometryReader { geo in
-                            let w = geo.size.width
-                            ZStack {
-                                let ext = pdf.fileExtensionString.uppercased()
-                                let (c1, c2): (Color, Color) = {
-                                    switch ext {
-                                    case "CBZ","CBR": return (Color(red:0.15,green:0.25,blue:0.6), Color(red:0.1,green:0.15,blue:0.4))
-                                    case "PDF":       return (Color(red:0.6,green:0.15,blue:0.15), Color(red:0.4,green:0.1,blue:0.1))
-                                    case "EPUB":      return (Color(red:0.15,green:0.5,blue:0.3),  Color(red:0.1,green:0.35,blue:0.2))
-                                    default:          return (Color(red:0.25,green:0.25,blue:0.3), Color(red:0.15,green:0.15,blue:0.2))
-                                    }
-                                }()
-                                LinearGradient(colors: [c1, c2], startPoint: .topLeading, endPoint: .bottomTrailing)
+                                // Book spine overlay — left-edge depth cue
+                                HStack(spacing: 0) {
+                                    LinearGradient(
+                                        colors: [.black.opacity(0.28), .black.opacity(0.05), .clear],
+                                        startPoint: .leading, endPoint: .trailing
+                                    )
+                                    .frame(width: 16)
+                                    Spacer()
+                                }
+                            } else if isCloudPending {
+                                // Animated cloud-fetch pulse — cover is being extracted in background
+                                ZStack {
+                                    LinearGradient(
+                                        colors: [Color(red: 0.1, green: 0.35, blue: 0.55),
+                                                 Color(red: 0.05, green: 0.2, blue: 0.4)],
+                                        startPoint: .topLeading, endPoint: .bottomTrailing
+                                    )
+                                    Image(systemName: "icloud.and.arrow.down")
+                                        .font(.system(size: 26))
+                                        .foregroundColor(.white.opacity(0.7))
+                                        .symbolEffect(.pulse, isActive: true)
+                                }
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            } else if case .cloud = pdf.sourceMode {
+                                cloudPlaceholder
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            } else {
+                                // Shimmer loading placeholder
+                                GeometryReader { geo in
+                                    let w = geo.size.width
+                                    ZStack {
+                                        let ext = pdf.fileExtensionString.uppercased()
+                                        let (c1, c2): (Color, Color) = {
+                                            switch ext {
+                                            case "CBZ","CBR": return (Color(red:0.15,green:0.25,blue:0.6), Color(red:0.1,green:0.15,blue:0.4))
+                                            case "PDF":       return (Color(red:0.6,green:0.15,blue:0.15), Color(red:0.4,green:0.1,blue:0.1))
+                                            case "EPUB":      return (Color(red:0.15,green:0.5,blue:0.3),  Color(red:0.1,green:0.35,blue:0.2))
+                                            default:          return (Color(red:0.25,green:0.25,blue:0.3), Color(red:0.15,green:0.15,blue:0.2))
+                                            }
+                                        }()
+                                        LinearGradient(colors: [c1, c2], startPoint: .topLeading, endPoint: .bottomTrailing)
 
-                                // Shimmer sweep
-                                LinearGradient(colors: [.clear, .white.opacity(0.07), .clear], startPoint: .leading, endPoint: .trailing)
-                                    .frame(width: w * 0.5)
-                                    .offset(x: shimmerPhase * w)
-                                    .onAppear {
-                                        withAnimation(.linear(duration: 1.6).repeatForever(autoreverses: false)) {
-                                            shimmerPhase = 1.8
+                                        // Shimmer sweep
+                                        LinearGradient(colors: [.clear, .white.opacity(0.07), .clear], startPoint: .leading, endPoint: .trailing)
+                                            .frame(width: w * 0.5)
+                                            .offset(x: shimmerPhase * w)
+                                            .onAppear {
+                                                withAnimation(.linear(duration: 1.6).repeatForever(autoreverses: false)) {
+                                                    shimmerPhase = 1.8
+                                                }
+                                            }
+                                            .blendMode(.screen)
+
+                                        VStack(spacing: 8) {
+                                            Image(systemName: "doc.text.fill").font(.system(size: 26)).foregroundColor(.white.opacity(0.4))
+                                            Text(ext).font(.system(size: 10, weight: .black, design: .rounded)).foregroundColor(.white.opacity(0.35)).tracking(1.5)
                                         }
                                     }
-                                    .blendMode(.screen)
-
-                                VStack(spacing: 8) {
-                                    Image(systemName: "doc.text.fill").font(.system(size: 26)).foregroundColor(.white.opacity(0.4))
-                                    Text(ext).font(.system(size: 10, weight: .black, design: .rounded)).foregroundColor(.white.opacity(0.35)).tracking(1.5)
                                 }
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
                             }
                         }
-                    }
-                }
 
-                // Bottom scrim + progress bar (premium Panels-style)
-                if isInProgress || isFullyRead {
-                    VStack(spacing: 0) {
-                        Spacer()
-                        LinearGradient(
-                            colors: [.clear, .black.opacity(0.72)],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                        .frame(height: 60)
-                    }
-
-                    VStack(spacing: 5) {
-                        Spacer()
-                        HStack {
-                            Text(isFullyRead ? "Finished" : "\(Int(readingProgress * 100))%")
-                                .font(.system(size: 9, weight: .black, design: .rounded))
-                                .foregroundColor(isFullyRead ? Color.green : .white)
-                            Spacer()
-                        }
-                        .padding(.horizontal, 8)
-
-                        GeometryReader { g in
-                            ZStack(alignment: .leading) {
-                                Capsule()
-                                    .fill(Color.white.opacity(0.18))
-                                    .frame(height: 4)
-                                Capsule()
-                                    .fill(
-                                        isFullyRead
-                                            ? AnyShapeStyle(Color.green)
-                                            : AnyShapeStyle(LinearGradient(
-                                                colors: [Color(hue: 0.56, saturation: 0.8, brightness: 1.0),
-                                                         Color(hue: 0.52, saturation: 0.9, brightness: 0.95)],
-                                                startPoint: .leading, endPoint: .trailing
-                                              ))
-                                    )
-                                    .frame(width: g.size.width * CGFloat(readingProgress), height: 4)
-                                    .shadow(color: isFullyRead ? Color.green.opacity(0.6) : Color.blue.opacity(0.5), radius: 4, y: 0)
-                            }
-                        }
-                        .frame(height: 4)
-                        .padding(.horizontal, 8)
-                        .padding(.bottom, 8)
-                    }
-                }
-
-                // "NEW" badge — gradient pill at bottom-left
-                if isNew {
-                    HStack {
-                        Text("NEW")
-                            .font(.system(size: 8, weight: .black, design: .rounded))
-                            .foregroundColor(.white)
-                            .tracking(0.8)
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 4)
-                            .background(
+                        // Bottom scrim + progress bar (premium Panels-style)
+                        if isInProgress || isFullyRead {
+                            VStack(spacing: 0) {
+                                Spacer()
                                 LinearGradient(
-                                    colors: [Color(hue: 0.56, saturation: 0.85, brightness: 1.0),
-                                             Color(hue: 0.63, saturation: 0.9, brightness: 0.9)],
-                                    startPoint: .leading, endPoint: .trailing
-                                ),
-                                in: Capsule()
-                            )
-                            .shadow(color: Color.blue.opacity(0.35), radius: 4, y: 2)
-                            .padding(8)
-                        Spacer()
-                    }
-                    .frame(maxWidth: .infinity)
-                }
+                                    colors: [.clear, .black.opacity(0.72)],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                                .frame(height: 60)
+                            }
 
-                // Fully-read checkmark (Panels style)
-                if isFullyRead {
-                    VStack {
-                        HStack {
+                            VStack(spacing: 5) {
+                                Spacer()
+                                HStack {
+                                    Text(isFullyRead ? "Finished" : "\(Int(readingProgress * 100))%")
+                                        .font(.system(size: 9, weight: .black, design: .rounded))
+                                        .foregroundColor(isFullyRead ? Color.green : .white)
+                                    Spacer()
+                                }
+                                .padding(.horizontal, 8)
+
+                                GeometryReader { g in
+                                    ZStack(alignment: .leading) {
+                                        Capsule()
+                                            .fill(Color.white.opacity(0.18))
+                                            .frame(height: 4)
+                                        Capsule()
+                                            .fill(
+                                                isFullyRead
+                                                    ? AnyShapeStyle(Color.green)
+                                                    : AnyShapeStyle(LinearGradient(
+                                                        colors: [Color(hue: 0.56, saturation: 0.8, brightness: 1.0),
+                                                                 Color(hue: 0.52, saturation: 0.9, brightness: 0.95)],
+                                                        startPoint: .leading, endPoint: .trailing
+                                                      ))
+                                            )
+                                            .frame(width: g.size.width * CGFloat(readingProgress), height: 4)
+                                            .shadow(color: isFullyRead ? Color.green.opacity(0.6) : Color.blue.opacity(0.5), radius: 4, y: 0)
+                                    }
+                                }
+                                .frame(height: 4)
+                                .padding(.horizontal, 8)
+                                .padding(.bottom, 8)
+                            }
+                        }
+
+                        // "NEW" badge — gradient pill at bottom-left
+                        if isNew {
+                            HStack {
+                                Text("NEW")
+                                    .font(.system(size: 8, weight: .black, design: .rounded))
+                                    .foregroundColor(.white)
+                                    .tracking(0.8)
+                                    .padding(.horizontal, 7)
+                                    .padding(.vertical, 4)
+                                    .background(
+                                        LinearGradient(
+                                            colors: [Color(hue: 0.56, saturation: 0.85, brightness: 1.0),
+                                                     Color(hue: 0.63, saturation: 0.9, brightness: 0.9)],
+                                            startPoint: .leading, endPoint: .trailing
+                                        ),
+                                        in: Capsule()
+                                    )
+                                    .shadow(color: Color.blue.opacity(0.35), radius: 4, y: 2)
+                                    .padding(8)
+                                Spacer()
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+
+                        // Fully-read checkmark (Panels style)
+                        if isFullyRead {
+                            VStack {
+                                HStack {
+                                    Spacer()
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .font(.system(size: 18))
+                                        .foregroundStyle(.white, Color.green)
+                                        .padding(8)
+                                        .shadow(color: .black.opacity(0.4), radius: 4)
+                                }
+                                Spacer()
+                            }
+                        }
+
+                        // Source badges (cloud / linked drive) — top-left
+                        VStack {
+                            HStack {
+                                if case .linked = pdf.sourceMode {
+                                    sourceBadge(icon: "externaldrive.fill", color: Theme.blue)
+                                } else if case .cloud = pdf.sourceMode {
+                                    sourceBadge(icon: "icloud.fill", color: Theme.orange)
+                                }
+                                Spacer()
+                            }
                             Spacer()
-                            Image(systemName: "checkmark.circle.fill")
-                                .font(.system(size: 18))
-                                .foregroundStyle(.white, Color.green)
-                                .padding(8)
-                                .shadow(color: .black.opacity(0.4), radius: 4)
                         }
-                        Spacer()
-                    }
-                }
 
-                // Source badges (cloud / linked drive) — top-left
-                VStack {
-                    HStack {
-                        if case .linked = pdf.sourceMode {
-                            sourceBadge(icon: "externaldrive.fill", color: Theme.blue)
-                        } else if case .cloud = pdf.sourceMode {
-                            sourceBadge(icon: "icloud.fill", color: Theme.orange)
+                        // Batch selection overlay
+                        if isBatch {
+                            VStack {
+                                HStack {
+                                    Spacer()
+                                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                                        .font(.title3)
+                                        .foregroundColor(isSelected ? Theme.blue : .white)
+                                        .padding(8)
+                                        .shadow(radius: 2)
+                                }
+                                Spacer()
+                            }
                         }
-                        Spacer()
-                    }
-                    Spacer()
-                }
 
-                // Batch selection overlay
-                if isBatch {
-                    VStack {
-                        HStack {
-                            Spacer()
-                            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                                .font(.title3)
-                                .foregroundColor(isSelected ? Theme.blue : .white)
-                                .padding(8)
-                                .shadow(radius: 2)
+                        // 📌 Work Area pin badge — top-right (only when not in batch mode)
+                        if !isBatch && WorkspaceFocusManager.shared.isPinned(pdf) {
+                            VStack {
+                                HStack {
+                                    Spacer()
+                                    Image(systemName: "pin.fill")
+                                        .font(.system(size: 10, weight: .bold))
+                                        .foregroundStyle(.white)
+                                        .padding(5)
+                                        .background(Color.inkAccentKnowledge, in: Circle())
+                                        .shadow(color: .black.opacity(0.3), radius: 3, y: 1)
+                                        .padding(6)
+                                }
+                                Spacer()
+                            }
                         }
-                        Spacer()
                     }
-                }
-
-                // 📌 Work Area pin badge — top-right (only when not in batch mode)
-                if !isBatch && WorkspaceFocusManager.shared.isPinned(pdf) {
-                    VStack {
-                        HStack {
-                            Spacer()
-                            Image(systemName: "pin.fill")
-                                .font(.system(size: 10, weight: .bold))
-                                .foregroundStyle(.white)
-                                .padding(5)
-                                .background(Color.inkAccentKnowledge, in: Circle())
-                                .shadow(color: .black.opacity(0.3), radius: 3, y: 1)
-                                .padding(6)
-                        }
-                        Spacer()
-                    }
-                }
-            }
-            // ⚠️ WIDTH FIX: .fill content mode lets landscape-ratio covers expand
-            // the ZStack beyond the outer .aspectRatio frame, making column widths vary.
-            // Constraining to maxWidth/Height here forces every cover into its grid slot.
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .clipped()
-            .frame(maxWidth: .infinity)
-            .aspectRatio(0.63, contentMode: .fit)
-            .clipShape(RoundedRectangle(cornerRadius: hSizeClass == .regular ? 14 : 12, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: hSizeClass == .regular ? 14 : 12, style: .continuous)
-                    .stroke(Color.white.opacity(isSelected && !isBatch ? 0.7 : 0.08), lineWidth: isSelected && !isBatch ? 2 : 0.5)
-            )
-            // Dual shadow: crisp near + soft ambient (Apple Books technique)
-            .shadow(color: .black.opacity(0.28), radius: 4, y: 3)
-            .shadow(color: .black.opacity(0.12), radius: hSizeClass == .regular ? 18 : 14, y: hSizeClass == .regular ? 12 : 10)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: hSizeClass == .regular ? 14 : 12, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: hSizeClass == .regular ? 14 : 12, style: .continuous)
+                        .stroke(Color.white.opacity(isSelected && !isBatch ? 0.7 : 0.08), lineWidth: isSelected && !isBatch ? 2 : 0.5)
+                )
+                // Dual shadow: crisp near + soft ambient (Apple Books technique)
+                .shadow(color: .black.opacity(0.28), radius: 4, y: 3)
+                .shadow(color: .black.opacity(0.12), radius: hSizeClass == .regular ? 18 : 14, y: hSizeClass == .regular ? 12 : 10)
 
             // ── Text + type badge ────────────────────────────────────────────
             VStack(alignment: .leading, spacing: 3) {
@@ -273,18 +270,39 @@ struct ModernGridFileCell: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(height: 38, alignment: .topLeading)
 
+                HStack(spacing: 4) {
+                    if let vol = pdf.metadata.volume, !vol.trimmingCharacters(in: .whitespaces).isEmpty {
+                        Text("Vol. \(vol)")
+                            .font(.system(size: 9, weight: .bold))
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(Color.purple.opacity(0.12))
+                            .foregroundColor(.purple)
+                            .cornerRadius(3)
+                    }
+                    
+                    if let issue = pdf.metadata.issueNumber, !issue.trimmingCharacters(in: .whitespaces).isEmpty {
+                        Text("#\(issue)")
+                            .font(.system(size: 9, weight: .bold))
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(Color.blue.opacity(0.12))
+                            .foregroundColor(.blue)
+                            .cornerRadius(3)
+                    }
 
-                if pdf.contentType == .comic {
-                    let isManga = pdf.metadata.isManga ?? false
-                    Text(isManga ? "MANGA" : "COMIC")
-                        .font(.system(size: 9, weight: .black, design: .rounded))
-                        .foregroundColor(Color(hex: isManga ? mangaBadgeColorHex : comicBadgeColorHex))
-                        .tracking(1.0)
-                } else {
-                    Text(pdf.fileExtensionString.uppercased())
-                        .font(.system(size: 9, weight: .bold, design: .rounded))
-                        .foregroundColor(Theme.textTertiary)
-                        .tracking(1.0)
+                    if pdf.contentType == .comic {
+                        let isManga = pdf.metadata.isManga ?? false
+                        Text(isManga ? "MANGA" : "COMIC")
+                            .font(.system(size: 9, weight: .black, design: .rounded))
+                            .foregroundColor(Color(hex: isManga ? mangaBadgeColorHex : comicBadgeColorHex))
+                            .tracking(1.0)
+                    } else {
+                        Text(pdf.fileExtensionString.uppercased())
+                            .font(.system(size: 9, weight: .bold, design: .rounded))
+                            .foregroundColor(Theme.textTertiary)
+                            .tracking(1.0)
+                    }
                 }
             }
             .padding(.horizontal, 2)
@@ -317,43 +335,25 @@ struct ModernGridFileCell: View {
 
             // 1. Already in NSCache — instant return, zero I/O
             if let cached = conversionManager.thumbnailCache.object(forKey: key) {
-                self.localCover = cached; return
-            }
-
-            // 2. Cover file exists on disk — fast ImageIO downsampled read.
-            //    Bypasses the ThumbnailGenerationQueue actor chain entirely for the
-            //    common cold-start case. 300px is plenty for a 2-col grid cell.
-            let coverURL = conversionManager.getCoverURL(for: pdf)
-            if let url = coverURL, FileManager.default.fileExists(atPath: url.path) {
-                let image = await Task.detached(priority: .userInitiated) { () -> UIImage? in
-                    let srcOpts = [kCGImageSourceShouldCache: false] as CFDictionary
-                    guard let src = CGImageSourceCreateWithURL(url as CFURL, srcOpts) else { return nil }
-                    let downsampleOpts = [
-                        kCGImageSourceCreateThumbnailFromImageAlways: true,
-                        kCGImageSourceShouldCacheImmediately: true,
-                        kCGImageSourceCreateThumbnailWithTransform: true,
-                        kCGImageSourceThumbnailMaxPixelSize: 600   // grid cells never exceed ~200pt (Retina 3x = 600px)
-                    ] as CFDictionary
-                    guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, downsampleOpts) else { return nil }
-                    return UIImage(cgImage: cg)
-                }.value
-                if let image {
-                    conversionManager.thumbnailCache.setObject(image, forKey: key)
-                    self.localCover = image
-                }
+                self.localCover = cached
                 return
             }
 
-            // 3. No cover on disk yet — route to the capped generation queue.
-            //    This path fires only on first import or after a cache wipe.
-            await ThumbnailGenerationQueue.shared.enqueue(pdf, manager: conversionManager)
-
-            // 4. Cloud file with no cover yet.
-            //    CloudCoverExtractor is running in the background (fired from
-            //    PhysicalFileSystemRouter.backfillMissingThumbnails Pass 3).
-            //    When it finishes, it posts .cloudCoverReady → ConversionManager
-            //    updates thumbnailCache and calls objectWillChange.send() →
-            //    this View re-renders and the body picks up the cached image.
+            // 2. Load thumbnail asynchronously using non-blocking background logic
+            if let thumbnail = await conversionManager.loadCoverThumbnail(for: pdf) {
+                self.localCover = thumbnail
+            } else {
+                // 3. No cover on disk yet — route to the capped generation queue.
+                await ThumbnailGenerationQueue.shared.enqueue(pdf, manager: conversionManager)
+            }
+        }
+        .onReceive(conversionManager.thumbnailReadySubject.receive(on: RunLoop.main)) { updatedID in
+            if updatedID == pdf.id {
+                let key = pdf.id.uuidString as NSString
+                if let cached = conversionManager.thumbnailCache.object(forKey: key) {
+                    self.localCover = cached
+                }
+            }
         }
     }
 
@@ -499,12 +499,11 @@ struct ModernGridSeriesCell: View {
     @Environment(\.horizontalSizeClass) private var hSizeClass
 
     @State private var localCover: UIImage? = nil
-    // Cached progress — computed in .task, not in body to avoid per-render disk reads
-    @State private var cachedReadCount: Int = 0
-    @State private var cachedNewCount: Int = 0
     @State private var scale: CGFloat = 0.85
     @State private var opacity: Double = 0.0
     @State private var isHovered = false
+
+
 
     @AppStorage("mangaBadgeColorHex") private var mangaBadgeColorHex = "#ff5a36"
     @AppStorage("comicBadgeColorHex") private var comicBadgeColorHex = "#3d6fff"
@@ -554,7 +553,7 @@ struct ModernGridSeriesCell: View {
                 }
 
                 // ✅ Series Completion Badge — shown when every issue is read
-                if !isBatch && cachedReadCount > 0 && cachedReadCount >= group.count {
+                if !isBatch && group.readCount > 0 && group.readCount >= group.count {
                     VStack {
                         HStack {
                             Image(systemName: "checkmark.seal.fill")
@@ -607,10 +606,9 @@ struct ModernGridSeriesCell: View {
 
                     Spacer()
 
-                    // Reading progress ring
-                    if cachedReadCount > 0 || group.count > 0 {
+                    if group.readCount > 0 || group.count > 0 {
                         SeriesProgressRing(
-                            readCount: cachedReadCount,
+                            readCount: group.readCount,
                             totalCount: group.count
                         )
                         .frame(width: 30, height: 30)
@@ -642,53 +640,33 @@ struct ModernGridSeriesCell: View {
             }
         }
         // Throttled loader — gets the cover of the series' issue #1
-        .task(id: group.id) {
-            // 1. Build progress map once — 1 read per issue instead of 2.
-            //    uniquingKeysWith: keeps first value, never crashes on duplicate IDs.
-            let progressMap = Dictionary(
-                group.issues.map { ($0.id, ReaderProgressTracker.shared.progress(for: $0.id)) },
-                uniquingKeysWith: { first, _ in first }
-            )
-            let readCount = progressMap.values.filter { ($0?.completionFraction ?? 0) >= 0.95 }.count
-            let newCount  = progressMap.values.filter { $0 == nil }.count
-
-
-            self.cachedReadCount = readCount
-            self.cachedNewCount = newCount
-
-            // 2. Load thumbnail
+        .task(id: group.coverIssueID) {
+            // Load thumbnail
             guard let issueID = group.coverIssueID,
-                  let pdf = conversionManager.convertedPDFs.first(where: { $0.id == issueID }) else { return }
+                  let pdf = group.issues.first(where: { $0.id == issueID }) ?? conversionManager.convertedPDFs.first(where: { $0.id == issueID }) else { return }
             let key = issueID.uuidString as NSString
             
-            // 2a. Already in cache
+            // 1. Already in NSCache — instant return, zero I/O
             if let cached = conversionManager.thumbnailCache.object(forKey: key) {
-                self.localCover = cached; return
-            }
-            
-            // 2b. Fast ImageIO direct disk read (bypasses ThumbnailGenerationQueue entirely)
-            if let coverURL = conversionManager.getCoverURL(for: pdf), FileManager.default.fileExists(atPath: coverURL.path) {
-                let image = await Task.detached(priority: .userInitiated) { () -> UIImage? in
-                    let srcOpts = [kCGImageSourceShouldCache: false] as CFDictionary
-                    guard let src = CGImageSourceCreateWithURL(coverURL as CFURL, srcOpts) else { return nil }
-                    let downsampleOpts = [
-                        kCGImageSourceCreateThumbnailFromImageAlways: true,
-                        kCGImageSourceShouldCacheImmediately: true,
-                        kCGImageSourceCreateThumbnailWithTransform: true,
-                        kCGImageSourceThumbnailMaxPixelSize: 600   // grid cells never exceed ~200pt (Retina 3x = 600px)
-                    ] as CFDictionary
-                    guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, downsampleOpts) else { return nil }
-                    return UIImage(cgImage: cg)
-                }.value
-                if let image {
-                    conversionManager.thumbnailCache.setObject(image, forKey: key)
-                    self.localCover = image
-                }
+                self.localCover = cached
                 return
             }
             
-            // 3. Fallback: Queue generation
-            await ThumbnailGenerationQueue.shared.enqueue(pdf, manager: conversionManager)
+            // 2. Load thumbnail asynchronously using non-blocking background logic
+            if let thumbnail = await conversionManager.loadCoverThumbnail(for: pdf) {
+                self.localCover = thumbnail
+            } else {
+                // 3. Fallback: Queue generation
+                await ThumbnailGenerationQueue.shared.enqueue(pdf, manager: conversionManager)
+            }
+        }
+        .onReceive(conversionManager.thumbnailReadySubject.receive(on: RunLoop.main)) { updatedID in
+            if let coverID = group.coverIssueID, updatedID == coverID {
+                let key = coverID.uuidString as NSString
+                if let cached = conversionManager.thumbnailCache.object(forKey: key) {
+                    self.localCover = cached
+                }
+            }
         }
     }
 

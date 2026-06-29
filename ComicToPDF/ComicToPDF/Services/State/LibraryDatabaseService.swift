@@ -18,6 +18,7 @@ private enum WriteRequest: Sendable {
     case saveProgress(ReadingProgress, String)
     case saveAnnotations([Annotation], String)
     case saveZettelRecord(ZettelRecord)
+    case saveVirtualOmnibuses([VirtualOmnibus])
 }
 
 // MARK: - LibraryDatabaseService
@@ -133,6 +134,29 @@ actor LibraryDatabaseService {
                         }
                     case .saveZettelRecord(let rec):
                         try rec.upsert(handle)
+                    case .saveVirtualOmnibuses(let omnibuses):
+                        let existingRows = try handle.fetchAll("SELECT * FROM virtual_omnibuses")
+                        var existingRecords: [String: VirtualOmnibusRecord] = [:]
+                        for row in existingRows {
+                            if let r = VirtualOmnibusRecord(row: row) { existingRecords[r.id] = r }
+                        }
+                        
+                        let newIds = Set(omnibuses.map { $0.id.uuidString })
+                        for omni in omnibuses {
+                            let rec = VirtualOmnibusRecord.from(omni)
+                            if let existing = existingRecords[rec.id] {
+                                var tempRec = rec
+                                tempRec.modifiedAt = existing.modifiedAt
+                                if tempRec == existing { continue }
+                            }
+                            try rec.upsert(handle)
+                        }
+                        
+                        for existingId in existingRecords.keys {
+                            if !newIds.contains(existingId) {
+                                try handle.execute("DELETE FROM virtual_omnibuses WHERE id = ?", arguments: [existingId])
+                            }
+                        }
                     }
                 }
             }
@@ -206,6 +230,30 @@ actor LibraryDatabaseService {
             }.value
         } catch {
             Logger.shared.log("LibraryDatabaseService: loadAnnotations failed — \(error.localizedDescription)", category: "Import", type: .error)
+            return []
+        }
+    }
+
+    func saveVirtualOmnibuses(_ omnibuses: [VirtualOmnibus]) {
+        writeStream?.yield(.saveVirtualOmnibuses(omnibuses))
+    }
+
+    func loadVirtualOmnibuses() async -> [VirtualOmnibus] {
+        guard let db = self.db else { return [] }
+        do {
+            let list = try await Task.detached(priority: .userInitiated) {
+                try db.read { handle in
+                    let rows = try handle.fetchAll("SELECT * FROM virtual_omnibuses ORDER BY addedAt DESC")
+                    return rows.compactMap { row -> VirtualOmnibus? in
+                        guard let rec = VirtualOmnibusRecord(row: row) else { return nil }
+                        return rec.toDomainModel()
+                    }
+                }
+            }.value
+            Logger.shared.log("🔍 [Flight Recorder] 💾 [Virtual Volume] Loaded \(list.count) virtual volumes from SQLite", category: "Debug")
+            return list
+        } catch {
+            Logger.shared.log("LibraryDatabaseService: loadVirtualOmnibuses failed — \(error.localizedDescription)", category: "Import", type: .error)
             return []
         }
     }
@@ -298,7 +346,7 @@ final class LibraryDB: @unchecked Sendable {
     deinit { sqlite3_close(handle) }
 
     func createSchema() throws {
-        try execute("""
+        let schemaSql = """
             CREATE TABLE IF NOT EXISTS library_files (
                 id TEXT PRIMARY KEY,
                 path TEXT NOT NULL,
@@ -383,7 +431,37 @@ final class LibraryDB: @unchecked Sendable {
                 content='library_files',
                 content_rowid='rowid'
             );
-        """)
+
+            CREATE TABLE IF NOT EXISTS virtual_omnibuses (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                fileIDsJson TEXT NOT NULL,
+                coverFileID TEXT,
+                lastReadPageIndex INTEGER NOT NULL DEFAULT 0,
+                lastReadFileID TEXT,
+                addedAt REAL NOT NULL,
+                modifiedAt REAL NOT NULL,
+                remoteSyncURL TEXT,
+                lastSyncedAt REAL,
+                parentSeriesID TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_vo_addedAt ON virtual_omnibuses(addedAt);
+        """
+        
+        let statements = schemaSql.components(separatedBy: ";")
+        for statement in statements {
+            let trimmed = statement.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                try execute(trimmed)
+            }
+        }
+        
+        // Safely migrate existing databases to support parentSeriesID
+        do {
+            try execute("ALTER TABLE virtual_omnibuses ADD COLUMN parentSeriesID TEXT")
+        } catch {
+            // Ignore column-exists errors
+        }
     }
 
     func read<T>(_ block: (LibraryDB) throws -> T) throws -> T {

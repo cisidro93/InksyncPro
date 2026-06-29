@@ -12,9 +12,6 @@ struct ModernLibraryView: View {
     @StateObject private var viewModel = LibraryViewModel()
     @ObservedObject private var ledger = ConversionLedger.shared
     
-    @Query(sort: \SDConvertedPDF.lastModified, order: .reverse) private var swiftDataPDFs: [SDConvertedPDF]
-    @Query private var swiftDataCollections: [SDPDFCollection]
-    
     @Binding var selectedPDF: ConvertedPDF?
     @Binding var isBatchMode: Bool
     @Binding var multiSelection: Set<UUID>
@@ -81,7 +78,7 @@ struct ModernLibraryView: View {
         case location = "Storage (Local / Cloud)"
         var id: String { rawValue }
     }
-    @State private var sortOption: SortOption = .dateAdded
+    @State private var sortOption: SortOption = .name
     
     // 🗑 Removed Native Importer Bypass State
     // PERF D-H3: static let avoids UTType system registry query on every render
@@ -103,9 +100,12 @@ struct ModernLibraryView: View {
     @State private var cachedReviewCount: Int = 0
 
     private func rebuildNativeCache() {
-        let mapped = swiftDataPDFs.map { $0.toDTO() }
+        let mapped = conversionManager.convertedPDFs
+        let mappedCols = conversionManager.collections
+        
         cachedVisiblePDFs = settingsManager.isVaultUnlocked ? mapped : mapped.filter { !$0.isPrivate }
-        cachedCollections = swiftDataCollections.map { $0.toDTO() }
+        cachedCollections = mappedCols
+        
         cachedReviewCount = mapped.filter { pdf in
             let seriesEmpty = pdf.metadata.series?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true
             let authorEmpty = pdf.metadata.author?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true
@@ -120,12 +120,24 @@ struct ModernLibraryView: View {
         return conversionManager.collections.first(where: { $0.id == id })
     }
 
+    private var listIdentifier: Int {
+        var hasher = Hasher()
+        hasher.combine(sortOption)
+        hasher.combine(tapAction)
+        hasher.combine(viewModel.currentFolderID)
+        hasher.combine(viewModel.cachedLibraryItems.count)
+        for item in viewModel.cachedLibraryItems {
+            hasher.combine(item.id)
+        }
+        return hasher.finalize()
+    }
+
     var body: some View {
         shellWithNotifications
             // PERF D-C1 boot fix: seed the cache before the view fully renders
             // so notification-based lookups (Resume, Handoff) fire correctly even
             // if onAppear hasn't run yet (e.g. app launch via Spotlight/widget).
-            .task(id: swiftDataPDFs.count) {
+            .task(id: conversionManager.convertedPDFs.count) {
                 if cachedVisiblePDFs.isEmpty { rebuildNativeCache() }
             }
             .focusable()
@@ -149,14 +161,14 @@ struct ModernLibraryView: View {
                 
                 if press.key == .escape {
                     if isSearchActive {
-                        withAnimation {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                             viewModel.searchText = ""
                             isSearchActive = false
                         }
                         return .handled
                     }
                     if isBatchMode {
-                        withAnimation {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                             isBatchMode = false
                             multiSelection.removeAll()
                         }
@@ -310,128 +322,11 @@ struct ModernLibraryView: View {
                         Image(systemName: "plus")
                     }
                     
-                    // Advanced Tools Menu
-                    Menu {
-                        // Sort & Filter
-                        Menu("Sort Options", systemImage: "arrow.up.arrow.down") {
-                            Picker("Sort By", selection: Binding(get: { sortOption }, set: { sortOption = $0; rebuildNativeCache(); viewModel.updateLibraryItemsCache(pdfs: cachedVisiblePDFs, collections: cachedCollections, sortOption: $0) })) {
-                                ForEach(SortOption.allCases) { option in
-                                    Text(option.rawValue).tag(option)
-                                }
-                            }
-                        }
-                        
-                        Menu("Filter Options", systemImage: "line.3.horizontal.decrease.circle") {
-                            Picker("Filter By", selection: $viewModel.filterState) {
-                                ForEach(LibraryFilterState.allCases) { state in
-                                    Text(state.rawValue).tag(state)
-                                }
-                            }
-                        }
-                        
-                        Divider()
-                        
-                        // View Options
-                        Button(action: { viewStyle = viewStyle == .grid ? .list : .grid }) {
-                            Label(viewStyle == .grid ? "Switch to List View" : "Switch to Grid View", systemImage: viewStyle == .grid ? "list.bullet" : "square.grid.2x2")
-                        }
-                        Button(action: { withAnimation { isBatchMode.toggle() } }) {
-                            Label(isBatchMode ? "Exit Batch Mode" : "Enter Batch Mode", systemImage: "checkmark.circle")
-                        }
-                        Button(action: handleVaultToggle) {
-                            Label(settingsManager.isVaultUnlocked ? "Lock Vault" : "Unlock Vault", systemImage: settingsManager.isVaultUnlocked ? "lock.open.fill" : "lock.fill")
-                        }
-                        Button(action: { AppRouter.shared.presentSheet(.stats) }) {
-                            Label("Library Stats", systemImage: "chart.bar.fill")
-                        }
-                        
-                        Divider()
-                        
-                        // Connections
-                        Menu("Connections", systemImage: "network") {
-                            Button(action: { AppRouter.shared.presentSheet(.cloudBrowser) }) {
-                                let cloudConnected = DropboxProvider.shared.isConnected
-                                Label("Cloud Library", systemImage: cloudConnected ? "checkmark.icloud.fill" : "icloud.and.arrow.down")
-                            }
-                            Button(action: { AppRouter.shared.presentSheet(.wifi) }) {
-                                Label("Wi-Fi Sync", systemImage: "wifi")
-                            }
-                            Button(action: { AppRouter.shared.presentSheet(.smartListImporter) }) {
-                                Label("Smart List Import", systemImage: "list.star")
-                            }
-                        }
-                        
-                        // Metadata & AI
-                        Menu("Metadata & AI", systemImage: "sparkles") {
-                            Button(action: {
-                                Task { await BackgroundMetadataEngine.shared.startEngine(manager: conversionManager) }
-                            }) {
-                                Label("Auto-Match Metadata", systemImage: "wand.and.stars.inverse")
-                            }
-                            
-                            if !conversionManager.failedMetadataPDFs.isEmpty {
-                                Button(action: {
-                                    AppRouter.shared.presentSheet(.reviewMetadata)
-                                }) {
-                                    Label("Review Missing", systemImage: "exclamationmark.triangle.fill")
-                                }
-                            }
-                            
-                            Button(action: {
-                                if multiSelection.count >= 1 {
-                                    let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
-                                    AppRouter.shared.presentSheet(.cognitiveBatchRenamer(items))
-                                } else {
-                                    withAnimation { isBatchMode = true }
-                                    conversionManager.appAlert = AppAlert(title: "Select Issues", message: "Select 1 or more scrambled issues from your library to automatically rename using AI Vision.")
-                                }
-                            }) {
-                                Label("AI Rename", systemImage: "sparkles.tv")
-                            }
-                            
-                            Button(action: {
-                                if multiSelection.count >= 1 {
-                                    let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
-                                    AppRouter.shared.presentSheet(.metadataSpreadsheet(items))
-                                    withAnimation { isBatchMode = false }
-                                } else {
-                                    withAnimation { isBatchMode = true }
-                                    conversionManager.appAlert = AppAlert(title: "Select Issues", message: "Select issues to edit in the Grid Editor.")
-                                }
-                            }) {
-                                Label("Grid Editor", systemImage: "tablecells")
-                            }
-                        }
-                        
-                        // File Operations
-                        Menu("File Operations", systemImage: "doc.on.doc") {
-                            Button(action: {
-                                AppRouter.shared.presentSheet(.merge)
-                            }) {
-                                Label("PDF Merge Tool", systemImage: "arrow.triangle.merge")
-                            }
-                            
-                            Button(action: {
-                                if multiSelection.count >= 2 {
-                                    batchMergeItems = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
-                                    showingBatchMergeReorder = true
-                                } else {
-                                    withAnimation { isBatchMode = true }
-                                    conversionManager.appAlert = AppAlert(title: "Select Issues", message: "Select 2 or more issues from your library, then tap Convert & Merge again.")
-                                }
-                            }) {
-                                Label("Convert & Merge", systemImage: "arrow.triangle.2.circlepath.doc")
-                            }
-                        }
-                        
-                        Divider()
-                        
-                        // App Settings
-                        Button(action: { NotificationCenter.default.post(name: NSNotification.Name("ShowSettingsInspector"), object: nil) }) {
-                            Label("App Settings", systemImage: "gearshape.fill")
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
+                    // Control Center Dashboard Trigger
+                    Button(action: {
+                        AppRouter.shared.presentSheet(.controlCenter)
+                    }) {
+                        Image(systemName: "slider.horizontal.3")
                     }
                 }
             }
@@ -450,15 +345,6 @@ struct ModernLibraryView: View {
                 let size = UIScreen.main.bounds.size
                 isLandscape = size.width > size.height
                 isLibraryFocused = true
-
-                // PERF D-C1: debounce absorbs page-turn bursts; rebuilds DTO map once per 250ms
-                viewModel.swiftDataCancellable = viewModel.swiftDataDidChange
-                    .debounce(for: .milliseconds(250), scheduler: RunLoop.main)
-                    .sink { [weak viewModel] in
-                        guard let vm = viewModel else { return }
-                        self.rebuildNativeCache()
-                        vm.updateLibraryItemsCache(pdfs: self.cachedVisiblePDFs, collections: self.cachedCollections, sortOption: self.sortOption)
-                    }
             }
             .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
                 let size = UIScreen.main.bounds.size
@@ -466,15 +352,16 @@ struct ModernLibraryView: View {
                     isLandscape = size.width > size.height
                 }
             }
-            // Raw SwiftData row changes: send through the debounced publisher
-            // instead of calling updateLibraryItemsCache directly.
-            .onChange(of: swiftDataPDFs) { viewModel.notifySwiftDataChanged() }
-            // All other triggers are low-frequency and user-initiated — rebuild immediately.
-            .onChange(of: sortOption) {
+            .onChange(of: settingsManager.isVaultUnlocked) {
                 rebuildNativeCache()
                 viewModel.updateLibraryItemsCache(pdfs: cachedVisiblePDFs, collections: cachedCollections, sortOption: sortOption)
             }
-            .onChange(of: swiftDataCollections) {
+            .onChange(of: ImportMonitorManager.shared.isImporting) { _, _ in
+                rebuildNativeCache()
+                viewModel.updateLibraryItemsCache(pdfs: cachedVisiblePDFs, collections: cachedCollections, sortOption: sortOption)
+            }
+            // All other triggers are low-frequency and user-initiated — rebuild immediately.
+            .onChange(of: sortOption) {
                 rebuildNativeCache()
                 viewModel.updateLibraryItemsCache(pdfs: cachedVisiblePDFs, collections: cachedCollections, sortOption: sortOption)
             }
@@ -507,6 +394,11 @@ struct ModernLibraryView: View {
             }
             .sheet(item: $router.activeSheet) { item in
                 destinationSheet(for: item)
+                    .forceProMotion()
+            }
+            .onReceive(conversionManager.objectWillChange.debounce(for: .milliseconds(250), scheduler: RunLoop.main)) { _ in
+                rebuildNativeCache()
+                viewModel.updateLibraryItemsCache(pdfs: cachedVisiblePDFs, collections: cachedCollections, sortOption: sortOption)
             }
     }
 
@@ -530,13 +422,10 @@ struct ModernLibraryView: View {
                         conversionManager.collections[colIdx].name = newName
                     }
                     
-                    for pdf in group.issues {
-                        if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
-                            conversionManager.convertedPDFs[idx].metadata.series = newName
-                        }
+                    Task {
+                        await conversionManager.safelyRenameSeries(issues: group.issues, newSeriesName: newName)
+                        listRenameGroup = nil
                     }
-                    conversionManager.saveLibrary()
-                    listRenameGroup = nil
                 }
                 Button("Cancel", role: .cancel) { listRenameGroup = nil }
             } message: {
@@ -588,7 +477,7 @@ struct ModernLibraryView: View {
                             }
                         }
                         Button("Cancel") {
-                            withAnimation(.spring) {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                                 viewModel.searchText = ""
                                 isSearchActive = false
                             }
@@ -741,6 +630,32 @@ struct ModernLibraryView: View {
                         }
                     }
             }
+        case .virtualOmnibusEditor(let omnibus, let initialFileIDs, let suggestedName, let parentSeriesID):
+            VirtualOmnibusEditorView(omnibus: omnibus, initialFileIDs: initialFileIDs, suggestedName: suggestedName, parentSeriesID: parentSeriesID)
+                .environmentObject(conversionManager)
+            
+        case .controlCenter:
+            LibraryControlCenterView(
+                sortOption: Binding(
+                    get: { sortOption },
+                    set: { sortOption = $0; rebuildNativeCache(); viewModel.updateLibraryItemsCache(pdfs: cachedVisiblePDFs, collections: cachedCollections, sortOption: $0) }
+                ),
+                filterState: $viewModel.filterState,
+                viewStyle: $viewStyle,
+                isBatchMode: $isBatchMode,
+                multiSelection: $multiSelection,
+                tapAction: $tapAction
+            )
+            .environmentObject(conversionManager)
+            .environmentObject(settingsManager)
+            .onDisappear {
+                if let pending = AppRouter.shared.pendingSheet {
+                    AppRouter.shared.pendingSheet = nil
+                    DispatchQueue.main.async {
+                        AppRouter.shared.presentSheet(pending)
+                    }
+                }
+            }
         }
     }
     
@@ -770,11 +685,15 @@ struct ModernLibraryView: View {
 
     private func handleVaultToggle() {
         if settingsManager.isVaultUnlocked {
-            withAnimation { settingsManager.isVaultUnlocked = false }
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { settingsManager.isVaultUnlocked = false }
         } else {
             Task {
                 if await SecurityManager.shared.authenticate() {
-                    await MainActor.run { withAnimation { settingsManager.isVaultUnlocked = true } }
+                    await MainActor.run {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                            settingsManager.isVaultUnlocked = true
+                        }
+                    }
                 }
             }
         }
@@ -849,7 +768,7 @@ struct ModernLibraryView: View {
                     viewModel.handleDetailAction(action: .read, for: next, conversionManager: conversionManager)
                 }
             }
-        case .driveFolder(let entry):
+        case .driveFolder:
             break
         }
     }
@@ -992,6 +911,7 @@ struct ModernLibraryView: View {
                     isScrolledPastHeader: $isScrolledPastHeader,
                     highlightedItemID: highlightedItemID
                 )
+                .id(listIdentifier)
             } else {
                 LibraryGridView(
                     items: viewModel.cachedLibraryItems,
@@ -1008,6 +928,7 @@ struct ModernLibraryView: View {
                     isScrolledPastHeader: $isScrolledPastHeader,
                     highlightedItemID: highlightedItemID
                 )
+                .id(listIdentifier)
             }
         }
     }
@@ -1340,6 +1261,27 @@ struct ModernLibraryView: View {
         VStack(spacing: 0) {
             Divider().background(Theme.text.opacity(0.1))
             HStack {
+                Button {
+                    handleSelectAll()
+                } label: {
+                    VStack(spacing: 4) {
+                        let totalVisible = viewModel.cachedLibraryItems.reduce(0) { count, item -> Int in
+                            switch item {
+                            case .single: return count + 1
+                            case .series(let grp): return count + grp.issues.count
+                            case .driveFolder: return count
+                            }
+                        }
+                        let isAllSelected = totalVisible > 0 && multiSelection.count >= totalVisible
+                        Image(systemName: isAllSelected ? "checkmark.circle.fill" : "checkmark.circle")
+                            .font(.title3)
+                        Text(isAllSelected ? "Deselect All" : "Select All")
+                            .font(.caption)
+                    }
+                }
+                
+                Spacer()
+                
                 Button(role: .destructive) {
                     let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
                     for item in items { conversionManager.deletePDF(item) }
@@ -1387,7 +1329,7 @@ struct ModernLibraryView: View {
                                 do {
                                     try await LinkedLibraryScanner.shared.offloadToExternalDrive(
                                         files: items,
-                                        targetFolderURL: targetURL
+                                        targetFolderURL: targetURL.url
                                     ) { progress, status in
                                         DispatchQueue.main.async {
                                             self.transferProgress = progress
@@ -1454,6 +1396,34 @@ struct ModernLibraryView: View {
                         batchMergeItems = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
                         showingBatchMergeReorder = true
                     } label: { Label("Convert & Merge", systemImage: "arrow.triangle.2.circlepath.doc") }
+                    
+                    Button {
+                        let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
+                        let sortedItems = items.sorted {
+                            let n1 = Double($0.metadata.issueNumber ?? "")
+                            let n2 = Double($1.metadata.issueNumber ?? "")
+                            if let v1 = n1, let v2 = n2 { return v1 < v2 }
+                            if n1 != nil && n2 == nil { return true }
+                            if n1 == nil && n2 != nil { return false }
+                            return $0.name.localizedStandardCompare($1.name) == .orderedAscending
+                        }
+                        let sortedIDs = sortedItems.map { $0.id }
+                        
+                        let suggestedName: String
+                        if let firstSeries = sortedItems.first(where: { $0.metadata.series?.isEmpty == false })?.metadata.series {
+                            if let sharedVolume = sortedItems.first(where: { $0.metadata.volume?.isEmpty == false })?.metadata.volume {
+                                suggestedName = "\(firstSeries) Vol. \(sharedVolume)"
+                            } else {
+                                suggestedName = "\(firstSeries) Virtual Volume"
+                            }
+                        } else {
+                            suggestedName = "New Virtual Volume"
+                        }
+                        
+                        AppRouter.shared.presentSheet(.virtualOmnibusEditor(nil, initialFileIDs: sortedIDs, suggestedName: suggestedName))
+                        isBatchMode = false
+                        multiSelection.removeAll()
+                    } label: { Label("Create Virtual Volume", systemImage: "books.vertical.fill") }
                     
                     Button { AppRouter.shared.presentSheet(.merge) } label: { Label("Legacy PDF Merge", systemImage: "arrow.triangle.merge") }
                     Divider()

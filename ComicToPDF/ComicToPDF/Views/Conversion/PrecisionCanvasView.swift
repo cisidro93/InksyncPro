@@ -10,6 +10,7 @@ struct PrecisionCanvasView: View {
     let pdf: ConvertedPDF
     @Binding var pageIndex: Int
     let totalCount: Int
+    let shouldEndSessionOnDisappear: Bool
     
     @StateObject private var editorState: PageEditorState
     @State private var pageImage: UIImage?
@@ -24,12 +25,21 @@ struct PrecisionCanvasView: View {
     // Geometry State
     @State private var dragStart:  NormalizedCoordinate?
     @State private var currentDragRect: NormalizedRect?
+    @State private var cropBox: NormalizedRect? = nil
     @State private var guideOpacity: Double = 0.0
     
-    init(pdf: ConvertedPDF, pageIndex: Binding<Int>, totalCount: Int, conversionManager: ConversionManager) {
+    private var isPreviewPresented: Binding<Bool> {
+        Binding(
+            get: { selectedTool == .preview },
+            set: { if !$0 { selectedTool = .edit } }
+        )
+    }
+    
+    init(pdf: ConvertedPDF, pageIndex: Binding<Int>, totalCount: Int, conversionManager: ConversionManager, shouldEndSessionOnDisappear: Bool = true) {
         self.pdf = pdf
         self._pageIndex = pageIndex
         self.totalCount = totalCount
+        self.shouldEndSessionOnDisappear = shouldEndSessionOnDisappear
         
         let initialModel = PageModelStore.shared.getPageModel(for: pdf.id, pageIndex: pageIndex.wrappedValue)
         let undoManager = UndoManager()
@@ -63,20 +73,23 @@ struct PrecisionCanvasView: View {
             editorState.pageModel = newModel
             editorState.selectedPanelIndex = nil
             currentDragRect = nil
+            cropBox = nil
             selectedTool = .edit
             loadPage()
         }
-        .fullScreenCover(isPresented: Binding(
-            get: { selectedTool == .preview },
-            set: { if !$0 { selectedTool = .edit } }
-        )) {
+        .onChange(of: selectedTool) { _, _ in
+            cropBox = nil
+        }
+        .fullScreenCover(isPresented: isPreviewPresented) {
             previewDestination
         }
         .onDisappear {
             // ✅ Auto-save changes when leaving the page
             PageModelStore.shared.savePageModel(editorState.pageModel, for: pdf.id)
             // ✅ Clean up temporary files when closing editor
-            conversionManager.endSession()
+            if shouldEndSessionOnDisappear {
+                conversionManager.endSession()
+            }
         }
         .onChange(of: activeSnapGuides) { _, newValue in
             if !newValue.isEmpty {
@@ -110,56 +123,71 @@ struct PrecisionCanvasView: View {
     @ViewBuilder
     private var navigationBarTrailingItems: some View {
         HStack(spacing: 16) {
-            if pageIndex > 0 {
-                Button(action: {
-                    PageModelStore.shared.savePageModel(editorState.pageModel, for: pdf.id)
-                    pageIndex -= 1
-                }) {
-                    Image(systemName: "chevron.left")
-                }
-            }
-            if pageIndex < totalCount - 1 {
-                Button(action: {
-                    PageModelStore.shared.savePageModel(editorState.pageModel, for: pdf.id)
-                    pageIndex += 1
-                }) {
-                    Image(systemName: "chevron.right")
-                }
-            }
-
-            Button(action: { withAnimation { editorState.undo() } }) {
-                Image(systemName: "arrow.uturn.backward")
-            }
-            .disabled(!editorState.canUndo)
-            .keyboardShortcut("z", modifiers: .command)
-            
-            Button(action: { withAnimation { editorState.redo() } }) {
-                Image(systemName: "arrow.uturn.forward")
-            }
-            .disabled(!editorState.canRedo)
-            .keyboardShortcut("z", modifiers: [.command, .shift])
-            
-            if let index = editorState.selectedPanelIndex {
-                Button(role: .destructive, action: {
-                    withAnimation {
-                        if index < editorState.pageModel.panels.count {
-                            let rect = editorState.pageModel.panels[index]
-                            editorState.execute(.removePanel(index: index, rect: rect))
-                            editorState.selectedPanelIndex = nil
-                            currentDragRect = nil
-                        }
+            if selectedTool == .crop {
+                if let _ = cropBox {
+                    Button(action: { cropBox = nil }) {
+                        Text("Clear").foregroundColor(Theme.red)
                     }
-                }) {
-                    Image(systemName: "trash").foregroundColor(Theme.red)
+                    Button(action: {
+                        Task {
+                            await applyCrop()
+                        }
+                    }) {
+                        Text("Apply").bold().foregroundColor(Theme.green)
+                    }
                 }
-            }
-            
-            if !editorState.pageModel.proposedPanels.isEmpty {
-                Button("Commit") {
-                    withAnimation { editorState.commitProposals() }
+            } else {
+                if pageIndex > 0 {
+                    Button(action: {
+                        PageModelStore.shared.savePageModel(editorState.pageModel, for: pdf.id)
+                        pageIndex -= 1
+                    }) {
+                        Image(systemName: "chevron.left")
+                    }
                 }
-                .bold()
-                .foregroundColor(Theme.green)
+                if pageIndex < totalCount - 1 {
+                    Button(action: {
+                        PageModelStore.shared.savePageModel(editorState.pageModel, for: pdf.id)
+                        pageIndex += 1
+                    }) {
+                        Image(systemName: "chevron.right")
+                    }
+                }
+
+                Button(action: { withAnimation { editorState.undo() } }) {
+                    Image(systemName: "arrow.uturn.backward")
+                }
+                .disabled(!editorState.canUndo)
+                .keyboardShortcut("z", modifiers: .command)
+                
+                Button(action: { withAnimation { editorState.redo() } }) {
+                    Image(systemName: "arrow.uturn.forward")
+                }
+                .disabled(!editorState.canRedo)
+                .keyboardShortcut("z", modifiers: [.command, .shift])
+                
+                if let index = editorState.selectedPanelIndex {
+                    Button(role: .destructive, action: {
+                        withAnimation {
+                            if index < editorState.pageModel.panels.count {
+                                let rect = editorState.pageModel.panels[index]
+                                editorState.execute(.removePanel(index: index, rect: rect))
+                                editorState.selectedPanelIndex = nil
+                                currentDragRect = nil
+                            }
+                        }
+                    }) {
+                        Image(systemName: "trash").foregroundColor(Theme.red)
+                    }
+                }
+                
+                if !editorState.pageModel.proposedPanels.isEmpty {
+                    Button("Commit") {
+                        withAnimation { editorState.commitProposals() }
+                    }
+                    .bold()
+                    .foregroundColor(Theme.green)
+                }
             }
         }
     }
@@ -167,46 +195,57 @@ struct PrecisionCanvasView: View {
     @ViewBuilder
     private var bottomBarItems: some View {
         Group {
-            Spacer()
-            Button(action: runScan) {
-                VStack(spacing: 4) { Image(systemName: "sparkles"); Text("Scan").font(.caption2) }
+            Group {
+                Spacer()
+                Button(action: runScan) {
+                    VStack(spacing: 4) { Image(systemName: "sparkles"); Text("Scan").font(.caption2) }
+                }
+                .foregroundColor(selectedTool == .scan ? Theme.blue : .primary)
+                
+                Spacer()
+                
+                Button(action: { selectedTool = .edit }) {
+                    VStack(spacing: 4) { Image(systemName: "cursorarrow.rays"); Text("Edit").font(.caption2) }
+                }
+                .foregroundColor(selectedTool == .edit ? Theme.blue : .primary)
+                
+                Spacer()
+                
+                Button(action: { selectedTool = .crop }) {
+                    VStack(spacing: 4) { Image(systemName: "crop"); Text("Crop").font(.caption2) }
+                }
+                .foregroundColor(selectedTool == .crop ? Theme.blue : .primary)
+                
+                Spacer()
+                
+                Button(action: { selectedTool = .knife }) {
+                    VStack(spacing: 4) { Image(systemName: "scissors"); Text("Split").font(.caption2) }
+                }
+                .foregroundColor(selectedTool == .knife ? Theme.blue : .primary)
             }
-            
-            Spacer()
-            
-            Button(action: { selectedTool = .edit }) {
-                VStack(spacing: 4) { Image(systemName: "cursorarrow.rays"); Text("Edit").font(.caption2) }
+            Group {
+                Spacer()
+                
+                Button(action: { selectedTool = .anchor }) {
+                    VStack(spacing: 4) { Image(systemName: "plus.square.dashed"); Text("Add").font(.caption2) }
+                }
+                .foregroundColor(selectedTool == .anchor ? Theme.blue : .primary)
+                
+                Spacer()
+                
+                Button(action: { selectedTool = .draw }) {
+                    VStack(spacing: 4) { Image(systemName: "pencil.tip"); Text("Draw").font(.caption2) }
+                }
+                .foregroundColor(selectedTool == .draw ? Theme.blue : .primary)
+                
+                Spacer()
+                
+                Button(action: { selectedTool = .preview }) {
+                    VStack(spacing: 4) { Image(systemName: "eye"); Text("Preview").font(.caption2) }
+                }
+                .foregroundColor(selectedTool == .preview ? Theme.blue : .primary)
+                Spacer()
             }
-            .foregroundColor(selectedTool == .edit ? Theme.blue : .primary)
-            
-            Spacer()
-            
-            Button(action: { selectedTool = .knife }) {
-                VStack(spacing: 4) { Image(systemName: "scissors"); Text("Split").font(.caption2) }
-            }
-            .foregroundColor(selectedTool == .knife ? Theme.blue : .primary)
-            
-            Spacer()
-            
-            Button(action: { selectedTool = .anchor }) {
-                VStack(spacing: 4) { Image(systemName: "plus.square.dashed"); Text("Add").font(.caption2) }
-            }
-            .foregroundColor(selectedTool == .anchor ? Theme.blue : .primary)
-            
-            Spacer()
-            
-            Button(action: { selectedTool = .draw }) {
-                VStack(spacing: 4) { Image(systemName: "pencil.tip"); Text("Draw").font(.caption2) }
-            }
-            .foregroundColor(selectedTool == .draw ? Theme.blue : .primary)
-            
-            Spacer()
-            
-            Button(action: { selectedTool = .preview }) {
-                VStack(spacing: 4) { Image(systemName: "eye"); Text("Preview").font(.caption2) }
-            }
-            .foregroundColor(selectedTool == .preview ? Theme.blue : .primary)
-            Spacer()
         }
     }
 
@@ -307,7 +346,7 @@ struct PrecisionCanvasView: View {
                 }
             }
             // Draw Proposed Panels
-            if selectedTool == .scan {
+            if selectedTool == .scan || !editorState.pageModel.proposedPanels.isEmpty {
                 for (i, panel) in editorState.pageModel.proposedPanels.enumerated() {
                     let rect = CoordinateConverter.denormalize(rect: panel, in: displayedRect)
                     context.stroke(Path(rect), with: .color(Color.green.opacity(0.6)), style: StrokeStyle(lineWidth: 1.5, dash: [4, 4]))
@@ -365,6 +404,12 @@ struct PrecisionCanvasView: View {
                 let rect = CoordinateConverter.denormalize(rect: dragRect, in: displayedRect)
                 context.fill(Path(rect), with: .color(.green.opacity(0.3)))
                 context.stroke(Path(rect), with: .color(.green), lineWidth: 2)
+            }
+            // Draw Crop Box
+            if selectedTool == .crop, let crop = cropBox {
+                let rect = CoordinateConverter.denormalize(rect: crop, in: displayedRect)
+                context.fill(Path(rect), with: .color(Color.red.opacity(0.05)))
+                context.stroke(Path(rect), with: .color(Color.red.opacity(0.8)), style: StrokeStyle(lineWidth: 2.0, dash: [6, 6]))
             }
         }
     }
@@ -484,6 +529,84 @@ struct PrecisionCanvasView: View {
     private func saveAndExit() {
         PageModelStore.shared.savePageModel(editorState.pageModel, for: pdf.id)
         dismiss()
+    }
+    
+    private func applyCrop() async {
+        guard let crop = cropBox, crop.width > 10, crop.height > 10 else {
+            await MainActor.run {
+                editorState.log("⚠️ Crop box is too small or invalid")
+            }
+            return
+        }
+        
+        let left = max(0.0, min(1.0, crop.x / 1000.0))
+        let top = max(0.0, min(1.0, crop.y / 1000.0))
+        let right = max(0.0, min(1.0, 1.0 - (crop.maxX / 1000.0)))
+        let bottom = max(0.0, min(1.0, 1.0 - (crop.maxY / 1000.0)))
+        
+        // Transform existing panels
+        var newPanels: [NormalizedRect] = []
+        for panel in editorState.pageModel.panels {
+            let intersectionMinX = max(panel.minX, crop.minX)
+            let intersectionMaxX = min(panel.maxX, crop.maxX)
+            let intersectionMinY = max(panel.minY, crop.minY)
+            let intersectionMaxY = min(panel.maxY, crop.maxY)
+            
+            if intersectionMinX < intersectionMaxX && intersectionMinY < intersectionMaxY {
+                let newX = ((intersectionMinX - crop.x) / crop.width) * 1000.0
+                let newY = ((intersectionMinY - crop.y) / crop.height) * 1000.0
+                let newW = ((intersectionMaxX - intersectionMinX) / crop.width) * 1000.0
+                let newH = ((intersectionMaxY - intersectionMinY) / crop.height) * 1000.0
+                newPanels.append(NormalizedRect(x: newX, y: newY, width: newW, height: newH))
+            }
+        }
+        
+        // Transform proposed panels
+        var newProposedPanels: [NormalizedRect] = []
+        for panel in editorState.pageModel.proposedPanels {
+            let intersectionMinX = max(panel.minX, crop.minX)
+            let intersectionMaxX = min(panel.maxX, crop.maxX)
+            let intersectionMinY = max(panel.minY, crop.minY)
+            let intersectionMaxY = min(panel.maxY, crop.maxY)
+            
+            if intersectionMinX < intersectionMaxX && intersectionMinY < intersectionMaxY {
+                let newX = ((intersectionMinX - crop.x) / crop.width) * 1000.0
+                let newY = ((intersectionMinY - crop.y) / crop.height) * 1000.0
+                let newW = ((intersectionMaxX - intersectionMinX) / crop.width) * 1000.0
+                let newH = ((intersectionMaxY - intersectionMinY) / crop.height) * 1000.0
+                newProposedPanels.append(NormalizedRect(x: newX, y: newY, width: newW, height: newH))
+            }
+        }
+        
+        await MainActor.run {
+            editorState.isProcessing = true
+            editorState.log("Cropping page...")
+        }
+        
+        do {
+            try await conversionManager.trimPages(from: pdf, pageIndices: Set([pageIndex]), trim: (top: top, bottom: bottom, left: left, right: right))
+            
+            await MainActor.run {
+                self.cropBox = nil
+                self.selectedTool = .edit
+                
+                // Update panels with scaled versions
+                editorState.pageModel.panels = newPanels
+                editorState.pageModel.proposedPanels = newProposedPanels
+                PageModelStore.shared.savePageModel(editorState.pageModel, for: pdf.id)
+                
+                editorState.isProcessing = false
+                editorState.log("Page cropped successfully")
+                
+                // Force reload page image
+                loadPage()
+            }
+        } catch {
+            await MainActor.run {
+                editorState.isProcessing = false
+                editorState.log("Cropping failed: \(error.localizedDescription)")
+            }
+        }
     }
     
     private func runScan() {
@@ -704,6 +827,15 @@ struct PreviewMaskShape: Shape {
                 switch selectedTool {
                 case .scan, .preview, .draw:
                     break // No interaction (draw is handled by PencilKit wrapper)
+                    
+                case .crop:
+                    if dragStart == nil { dragStart = point }
+                    let start = dragStart!
+                    let minX = max(0, min(start.x, point.x))
+                    let minY = max(0, min(start.y, point.y))
+                    let maxX = min(1000, max(start.x, point.x))
+                    let maxY = min(1000, max(start.y, point.y))
+                    cropBox = NormalizedRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
                     
                 case .knife:
                     // Visual feedback for knife cut?

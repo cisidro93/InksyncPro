@@ -43,7 +43,9 @@ struct CollectionEditorSheet: View {
     let onSave: (String, String, String) -> Void
     
     @State private var name: String = ""
+    @FocusState private var isNameFocused: Bool
     @State private var selectedIcon: String = "folder.fill"
+
     @State private var selectedColor: String = "Blue"
     
     let icons = ["folder.fill", "book.fill", "books.vertical.fill", "tray.full.fill", "star.fill", "heart.fill", "bookmark.fill", "sparkles"]
@@ -106,6 +108,15 @@ struct CollectionEditorSheet: View {
                              )
                             .foregroundColor(.primary)
                             .tint(colorFromName(selectedColor))
+                            .focused($isNameFocused)
+                            .onSubmit {
+                                let trimmed = name.trimmingCharacters(in: .whitespaces)
+                                if !trimmed.isEmpty {
+                                    onSave(trimmed, selectedIcon, selectedColor)
+                                    dismiss()
+                                }
+                            }
+
                     }
                     
                     // MARK: - Choose Existing Collection
@@ -207,6 +218,19 @@ struct CollectionEditorSheet: View {
             }
             .background(Color(UIColor.systemBackground).ignoresSafeArea())
             .navigationTitle(isEditing ? "Edit Collection" : "New Collection")
+            .background(
+                Group {
+                    Button("") { dismiss() }
+                        .keyboardShortcut("w", modifiers: .command)
+                    Button("") { dismiss() }
+                        .keyboardShortcut(.cancelAction)
+                }
+                .opacity(0)
+            )
+            .onAppear {
+                isNameFocused = true
+            }
+
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

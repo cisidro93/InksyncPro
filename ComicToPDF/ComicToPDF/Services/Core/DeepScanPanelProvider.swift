@@ -48,8 +48,8 @@ class DeepScanPanelProvider: PanelProvider {
                     let boundingBox = path.boundingBox
                     
                     // Filter out tiny noise contours
-                    let area = boundingBox.width * boundingBox.height
-                    guard area >= CGFloat(currentMinSize) else { continue }
+                    let minSide = CGFloat(currentMinSize)
+                    guard boundingBox.width >= minSide && boundingBox.height >= minSide else { continue }
                     
                     // We also don't want the contour of the *entire page* itself, if present
                     if boundingBox.width > 0.95 && boundingBox.height > 0.95 { continue }

@@ -19,7 +19,10 @@ struct ImageProcessor {
     /// functions don't invert or rotate the image unexpectedly.
     static func fixOrientation(of image: UIImage) -> UIImage? {
         if image.imageOrientation == .up { return image }
-        let renderer = UIGraphicsImageRenderer(size: image.size)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = image.scale
+        format.preferredRange = .standard // Forces standard sRGB color space
+        let renderer = UIGraphicsImageRenderer(size: image.size, format: format)
         return renderer.image { _ in image.draw(at: .zero) }
     }
     
@@ -132,4 +135,104 @@ struct ImageProcessor {
         
         return slices
     }
+    
+    // MARK: - Color Space Conversion & Verification
+    
+    /// Checks if a UIImage uses a wide color space (Display P3, Adobe RGB, etc.).
+    /// Handles deferred-decoding images by drawing them into a graphics context if cgImage is nil.
+    static func isWideColor(_ image: UIImage) -> Bool {
+        let cgImageToUse: CGImage?
+        if let cg = image.cgImage {
+            cgImageToUse = cg
+        } else {
+            // Draw to a temporary context to get a CGImage
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = image.scale
+            format.preferredRange = .automatic // Keep original color space
+            let renderer = UIGraphicsImageRenderer(size: image.size, format: format)
+            let renderedImage = renderer.image { _ in image.draw(at: .zero) }
+            cgImageToUse = renderedImage.cgImage
+        }
+        
+        guard let cgImage = cgImageToUse, let colorSpace = cgImage.colorSpace else { return false }
+        
+        if let name = colorSpace.name {
+            let nameStr = name as String
+            if nameStr.localizedCaseInsensitiveContains("p3") {
+                return true
+            }
+        }
+        
+        let desc = String(describing: colorSpace).lowercased()
+        if desc.contains("p3") || desc.contains("display") || desc.contains("adobe") {
+            return true
+        }
+        
+        return false
+    }
+    
+    /// Checks if an image file at URL uses a wide color space without full decompression.
+    static func isWideColor(url: URL) -> Bool {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return false }
+        guard let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return false }
+        guard let colorSpace = cgImage.colorSpace else { return false }
+        
+        if let name = colorSpace.name {
+            let nameStr = name as String
+            if nameStr.localizedCaseInsensitiveContains("p3") {
+                return true
+            }
+        }
+        
+        let desc = String(describing: colorSpace).lowercased()
+        if desc.contains("p3") || desc.contains("display") || desc.contains("adobe") {
+            return true
+        }
+        
+        return false
+    }
+    
+    /// Checks if image data uses a wide color space without full decompression.
+    static func isWideColor(data: Data) -> Bool {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return false }
+        guard let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return false }
+        guard let colorSpace = cgImage.colorSpace else { return false }
+        
+        if let name = colorSpace.name {
+            let nameStr = name as String
+            if nameStr.localizedCaseInsensitiveContains("p3") {
+                return true
+            }
+        }
+        
+        let desc = String(describing: colorSpace).lowercased()
+        if desc.contains("p3") || desc.contains("display") || desc.contains("adobe") {
+            return true
+        }
+        
+        return false
+    }
+    
+    /// Converts a UIImage to sRGB space if it is wide-color.
+    static func convertToSRGB(_ image: UIImage) -> UIImage {
+        if !isWideColor(image) { return image }
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = image.scale
+        format.preferredRange = .standard // Forces standard sRGB color space
+        let renderer = UIGraphicsImageRenderer(size: image.size, format: format)
+        return renderer.image { _ in image.draw(at: .zero) }
+    }
+    
+    /// Converts image data to sRGB space if it is wide-color.
+    static func convertToSRGB(data: Data, quality: CGFloat = 0.9) -> Data {
+        if !isWideColor(data: data) { return data }
+        guard let image = UIImage(data: data) else { return data }
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1.0
+        format.preferredRange = .standard
+        let renderer = UIGraphicsImageRenderer(size: image.size, format: format)
+        let srgbImage = renderer.image { _ in image.draw(at: .zero) }
+        return srgbImage.jpegData(compressionQuality: quality) ?? data
+    }
 }
+

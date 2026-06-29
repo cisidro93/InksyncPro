@@ -30,11 +30,20 @@ struct BookFlipGesture: View {
         hSizeClass == .regular ? totalWidth * 0.15 : totalWidth / 3.0
     }
 
+    private var backgroundIndex: Int {
+        let isForward = isMangaRTL ? (dragOffset > 0) : (dragOffset < 0)
+        if isForward {
+            return canFlipForward() ? currentIndex + 1 : currentIndex
+        } else {
+            return canFlipBack() ? currentIndex - 1 : currentIndex
+        }
+    }
+
     var body: some View {
         GeometryReader { geo in
             ZStack {
-                // ── Background: previous spread (renders beneath the curl) ──
-                content(max(0, currentIndex - 1))
+                // ── Background: correct page (renders beneath the curl) ──
+                content(backgroundIndex)
                     .frame(width: geo.size.width, height: geo.size.height)
                     .zIndex(0)
 
@@ -44,6 +53,7 @@ struct BookFlipGesture: View {
 
                 content(currentIndex)
                     .frame(width: geo.size.width, height: geo.size.height)
+                    .id("curl-front-\(currentIndex)")
                     .rotation3DEffect(
                         .degrees(isAnimating ? 0 : rotation),
                         axis: (x: 0, y: 1, z: 0),
@@ -66,37 +76,6 @@ struct BookFlipGesture: View {
                         .allowsHitTesting(false)
                     )
                     .zIndex(1)
-
-                // ── Instant Tap Zones Overlay ──
-                let zoneW = tapZoneWidth(totalWidth: geo.size.width)
-                HStack(spacing: 0) {
-                    Color.clear
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            guard !isAnimating else { return }
-                            if isMangaRTL {
-                                if canFlipForward() { flipForward(width: geo.size.width) } else { onFlipPastEnd?() }
-                            } else {
-                                if canFlipBack() { flipBack(width: geo.size.width) }
-                            }
-                        }
-                        .frame(width: zoneW)
-                    
-                    Spacer()
-                    
-                    Color.clear
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            guard !isAnimating else { return }
-                            if isMangaRTL {
-                                if canFlipBack() { flipBack(width: geo.size.width) }
-                            } else {
-                                if canFlipForward() { flipForward(width: geo.size.width) } else { onFlipPastEnd?() }
-                            }
-                        }
-                        .frame(width: zoneW)
-                }
-                .zIndex(2)
             }
             .contentShape(Rectangle())
             .gesture(
@@ -129,7 +108,6 @@ struct BookFlipGesture: View {
                     }
             )
             .onTapGesture { location in
-                guard !isAnimating else { return }
                 let zoneW = tapZoneWidth(totalWidth: geo.size.width)
                 if location.x < zoneW {
                     if isMangaRTL { 
@@ -159,30 +137,40 @@ struct BookFlipGesture: View {
 
     // MARK: - Flip Forward
     private func flipForward(width: CGFloat) {
-        guard !isAnimating, canFlipForward() else { return }
+        if isAnimating {
+            // Interrupt current flip and commit it instantly
+            flipTask?.cancel()
+            if canFlipForward() {
+                onFlipForward()
+            }
+            dragOffset = 0
+            isAnimating = false
+            return
+        }
+
+        guard canFlipForward() else { return }
         isAnimating = true
         HapticEngine.light()
-        // Cancel any lingering previous task before starting fresh
         flipTask?.cancel()
 
         // Phase 1 — peel the page offscreen
         let exitOffset: CGFloat = isMangaRTL ? width * 0.6 : -width * 0.6
-        withAnimation(.interactiveSpring(response: 0.28, dampingFraction: 0.78)) {
+        withAnimation(.interactiveSpring(response: 0.22, dampingFraction: 0.82)) {
             dragOffset = exitOffset
         }
 
         flipTask = Task { @MainActor in
             // Phase 2 — swap content while curl is offscreen
-            try? await Task.sleep(nanoseconds: 160_000_000)
+            try? await Task.sleep(nanoseconds: 120_000_000)
             guard !Task.isCancelled else { isAnimating = false; return }
             onFlipForward()
 
             // Phase 3 — bounce snap back to reveal new page
-            dragOffset = isMangaRTL ? -28 : 28
-            withAnimation(.spring(response: 0.22, dampingFraction: 0.88)) { dragOffset = 0 }
+            dragOffset = isMangaRTL ? -20 : 20
+            withAnimation(.spring(response: 0.18, dampingFraction: 0.9)) { dragOffset = 0 }
 
             // Phase 4 — unlock gate after settle
-            try? await Task.sleep(nanoseconds: 300_000_000)
+            try? await Task.sleep(nanoseconds: 180_000_000)
             guard !Task.isCancelled else { return }
             isAnimating = false
         }
@@ -190,25 +178,36 @@ struct BookFlipGesture: View {
 
     // MARK: - Flip Back
     private func flipBack(width: CGFloat) {
-        guard !isAnimating, canFlipBack() else { return }
+        if isAnimating {
+            // Interrupt current flip and commit it instantly
+            flipTask?.cancel()
+            if canFlipBack() {
+                onFlipBack()
+            }
+            dragOffset = 0
+            isAnimating = false
+            return
+        }
+
+        guard canFlipBack() else { return }
         isAnimating = true
         HapticEngine.light()
         flipTask?.cancel()
 
         let exitOffset: CGFloat = isMangaRTL ? -width * 0.6 : width * 0.6
-        withAnimation(.interactiveSpring(response: 0.28, dampingFraction: 0.78)) {
+        withAnimation(.interactiveSpring(response: 0.22, dampingFraction: 0.82)) {
             dragOffset = exitOffset
         }
 
         flipTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 160_000_000)
+            try? await Task.sleep(nanoseconds: 120_000_000)
             guard !Task.isCancelled else { isAnimating = false; return }
             onFlipBack()
 
-            dragOffset = isMangaRTL ? 28 : -28
-            withAnimation(.spring(response: 0.22, dampingFraction: 0.88)) { dragOffset = 0 }
+            dragOffset = isMangaRTL ? 20 : -20
+            withAnimation(.spring(response: 0.18, dampingFraction: 0.9)) { dragOffset = 0 }
 
-            try? await Task.sleep(nanoseconds: 300_000_000)
+            try? await Task.sleep(nanoseconds: 180_000_000)
             guard !Task.isCancelled else { return }
             isAnimating = false
         }
@@ -224,6 +223,7 @@ struct BookPager: View {
     let cache: ComicImageCache
     let readingMode: ComicReadingMode
     let activeFilterPreset: ReadingFilterPreset
+    let isMangaRTL: Bool
     var onChromeTap: () -> Void
     var onFlipPastEnd: (() -> Void)? = nil
 
@@ -245,8 +245,8 @@ struct BookPager: View {
             content: { idx in
                 AnyView(
                     ComicPageView(
-                        image: cache.getImage(at: idx),
-                        forceRedrawTick: cache.cacheUpdatedTick
+                        index: idx,
+                        cache: cache
                     )
                     .applyFilterPreset(activeFilterPreset)
                 )
@@ -263,11 +263,21 @@ struct BookPager: View {
 
     // ── Flat Slide (TabView / PageTabViewStyle) ────────────────────────
     private var slidePager: some View {
-        TabView(selection: $currentIndex) {
+        let selectionBinding = Binding<Int>(
+            get: {
+                isMangaRTL ? (totalPages - 1 - currentIndex) : currentIndex
+            },
+            set: { newValue in
+                currentIndex = isMangaRTL ? (totalPages - 1 - newValue) : newValue
+            }
+        )
+
+        return TabView(selection: selectionBinding) {
             ForEach(0..<totalPages, id: \.self) { idx in
+                let pageIndex = isMangaRTL ? (totalPages - 1 - idx) : idx
                 ComicPageView(
-                    image: cache.getImage(at: idx),
-                    forceRedrawTick: cache.cacheUpdatedTick
+                    index: pageIndex,
+                    cache: cache
                 )
                 .applyFilterPreset(activeFilterPreset)
                 .tag(idx)
@@ -283,8 +293,8 @@ struct BookPager: View {
     private var fadePager: some View {
         ZStack {
             ComicPageView(
-                image: cache.getImage(at: currentIndex),
-                forceRedrawTick: cache.cacheUpdatedTick
+                index: currentIndex,
+                cache: cache
             )
             .applyFilterPreset(activeFilterPreset)
             .id(currentIndex) // forces view replacement on change → triggers transition
@@ -297,13 +307,31 @@ struct BookPager: View {
             DragGesture(minimumDistance: 30)
                 .onEnded { val in
                     if val.translation.width < -30 {
-                        if currentIndex < totalPages - 1 {
-                            withAnimation(.easeInOut(duration: 0.28)) { currentIndex += 1 }
+                        // Swipe left: next in LTR, prev in RTL
+                        if isMangaRTL {
+                            if currentIndex > 0 {
+                                withAnimation(.easeInOut(duration: 0.28)) { currentIndex -= 1 }
+                            }
                         } else {
-                            onFlipPastEnd?()
+                            if currentIndex < totalPages - 1 {
+                                withAnimation(.easeInOut(duration: 0.28)) { currentIndex += 1 }
+                            } else {
+                                onFlipPastEnd?()
+                            }
                         }
-                    } else if val.translation.width > 30, currentIndex > 0 {
-                        withAnimation(.easeInOut(duration: 0.28)) { currentIndex -= 1 }
+                    } else if val.translation.width > 30 {
+                        // Swipe right: prev in LTR, next in RTL
+                        if isMangaRTL {
+                            if currentIndex < totalPages - 1 {
+                                withAnimation(.easeInOut(duration: 0.28)) { currentIndex += 1 }
+                            } else {
+                                onFlipPastEnd?()
+                            }
+                        } else {
+                            if currentIndex > 0 {
+                                withAnimation(.easeInOut(duration: 0.28)) { currentIndex -= 1 }
+                            }
+                        }
                     }
                 }
         )
@@ -326,37 +354,27 @@ struct TwoUpBookPager: View {
     var onFlipPastEnd: (() -> Void)? = nil
 
     @State private var spreadIdx: Int = 0
+    @State private var forceUpdateTick: Int = 0
 
     private var spreads: [[Int]] {
-        var currentSpread: [Int] = []
+        _ = forceUpdateTick
         var allSpreads: [[Int]] = []
+        guard cache.pageCount > 0 else { return [[0]] }
         
-        let startIdx: Int
         if cache.pageCount > 1 {
-            // Page 0 is the cover, keep it solo
-            allSpreads.append([0])
-            startIdx = 1
-        } else {
-            startIdx = 0
-        }
-        
-        for i in startIdx..<cache.pageCount {
-            if isLandscapePage(i) {
-                if !currentSpread.isEmpty {
-                    allSpreads.append(currentSpread)
-                    currentSpread = []
-                }
-                allSpreads.append([i])
-            } else {
-                currentSpread.append(i)
-                if currentSpread.count == 2 {
-                    allSpreads.append(currentSpread)
-                    currentSpread = []
+            allSpreads.append([0]) // Page 0 is the cover, keep it solo
+            var i = 1
+            while i < cache.pageCount {
+                if i + 1 < cache.pageCount {
+                    allSpreads.append([i, i + 1])
+                    i += 2
+                } else {
+                    allSpreads.append([i])
+                    i += 1
                 }
             }
-        }
-        if !currentSpread.isEmpty {
-            allSpreads.append(currentSpread)
+        } else {
+            allSpreads.append([0])
         }
         return allSpreads.isEmpty ? [[0]] : allSpreads
     }
@@ -402,8 +420,8 @@ struct TwoUpBookPager: View {
         .onChange(of: currentIndex) { _, newVal in
             updateSpreadIdx(from: newVal)
         }
-        .onChange(of: cache.cacheUpdatedTick) { _, _ in
-            // Re-align spreadIdx if image load changed the spread map
+        .onReceive(NotificationCenter.default.publisher(for: .comicImageCacheImageLoaded)) { _ in
+            forceUpdateTick += 1
             updateSpreadIdx(from: currentIndex)
         }
     }
@@ -416,28 +434,28 @@ struct TwoUpBookPager: View {
         GeometryReader { geo in
             if pages.count == 1 && isLandscapePage(pages[0]) {
                 // Native landscape — fills the full frame solo
-                pageSlot(pages[0])
+                TwoUpPageCell(index: pages[0], cache: cache, activeFilterPreset: activeFilterPreset)
                     .frame(width: geo.size.width, height: geo.size.height)
             } else if isMangaRTL {
                 // Manga RTL: higher page number (right panel) on left of screen
                 HStack(spacing: 0) {
                     if pages.count == 2 {
-                        pageSlot(pages[1])
+                        TwoUpPageCell(index: pages[1], cache: cache, activeFilterPreset: activeFilterPreset)
                             .frame(width: geo.size.width / 2, height: geo.size.height)
                     } else {
                         Color.black
                             .frame(width: geo.size.width / 2, height: geo.size.height)
                     }
-                    pageSlot(pages[0])
+                    TwoUpPageCell(index: pages[0], cache: cache, activeFilterPreset: activeFilterPreset)
                         .frame(width: geo.size.width / 2, height: geo.size.height)
                 }
             } else {
                 // Standard LTR two-page spread
                 HStack(spacing: 0) {
-                    pageSlot(pages[0])
+                    TwoUpPageCell(index: pages[0], cache: cache, activeFilterPreset: activeFilterPreset)
                         .frame(width: geo.size.width / 2, height: geo.size.height)
                     if pages.count == 2 {
-                        pageSlot(pages[1])
+                        TwoUpPageCell(index: pages[1], cache: cache, activeFilterPreset: activeFilterPreset)
                             .frame(width: geo.size.width / 2, height: geo.size.height)
                     } else {
                         Color.black
@@ -447,20 +465,21 @@ struct TwoUpBookPager: View {
             }
         }
         .id("spread_\(pages.first ?? 0)")
-        // Observe cache ticks WITHOUT rebuilding the full spread view:
-        // opacity stays 1 always; this merely gives SwiftUI a value to watch
-        // so that individual pageSlot views redraw in place.
-        .animation(.easeIn(duration: 0.18), value: cache.cacheUpdatedTick)
     }
+}
 
-    @ViewBuilder
-    private func pageSlot(_ index: Int) -> some View {
-        // Use ZStack + opacity transition so the loaded image fades in over
-        // the black placeholder — eliminates the hard white/black flash.
+struct TwoUpPageCell: View {
+    let index: Int
+    let cache: ComicImageCache
+    let activeFilterPreset: ReadingFilterPreset
+    
+    @State private var image: UIImage? = nil
+    
+    var body: some View {
         ZStack {
             Color.black
-            if let img = cache.getImage(at: index) {
-                Image(uiImage: img)
+            if let image = image {
+                Image(uiImage: image)
                     .resizable()
                     .applyFilterPreset(activeFilterPreset)
                     .aspectRatio(contentMode: .fit)
@@ -472,9 +491,17 @@ struct TwoUpBookPager: View {
                     .transition(.opacity)
             }
         }
-        // cacheUpdatedTick is @Published on MainActor — safe to use as animation
-        // trigger. Avoids calling cache.getImage() during SwiftUI's diffing phase
-        // which can race with background prefetch mutations on NSCache.
-        .animation(.easeIn(duration: 0.18), value: cache.cacheUpdatedTick)
+        .id(index)
+        .onAppear {
+            image = cache.getImage(at: index)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .comicImageCacheImageLoaded)) { notification in
+            guard let userInfo = notification.userInfo,
+                  let loadedIndex = userInfo["index"] as? Int,
+                  loadedIndex == index else { return }
+            withAnimation(.easeIn(duration: 0.18)) {
+                image = cache.getImage(at: index)
+            }
+        }
     }
 }

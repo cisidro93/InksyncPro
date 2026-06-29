@@ -29,6 +29,18 @@ struct MetadataEditorSheet: View {
     
     @State private var errorMessage: String?
     
+    enum FocusableField: Hashable {
+        case title
+        case series
+        case volume
+        case issueNumber
+        case writer
+        case penciller
+        case publisher
+        case publicationDate
+    }
+    @FocusState private var focusedField: FocusableField?
+    
     // Date Formatter
     private var dateFormatter: DateFormatter {
         let formatter = DateFormatter()
@@ -60,6 +72,19 @@ struct MetadataEditorSheet: View {
                 systemSection()
             }
             .navigationTitle("Edit Metadata")
+            .background(
+                Group {
+                    Button("") { dismiss() }
+                        .keyboardShortcut("w", modifiers: .command)
+                    Button("") { dismiss() }
+                        .keyboardShortcut(.cancelAction)
+                }
+                .opacity(0)
+            )
+            .onAppear {
+                focusedField = .title
+            }
+
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -99,33 +124,48 @@ struct MetadataEditorSheet: View {
     @ViewBuilder
     private func autoFillSection() -> some View {
         Section(header: Text("Auto-Fill")) {
-            if settingsManager.conversionSettings.comicVineAPIKey.isEmpty {
-                Text("⚠️ Add a ComicVine API Key in Settings → Integrations to enable Auto-Fill")
-                    .font(.caption)
-                    .foregroundColor(.orange)
-            } else {
-                HStack(spacing: 16) {
-                    if !settingsManager.conversionSettings.comicVineAPIKey.isEmpty && pdf.contentType != .book {
-                        Button(action: searchComicVine) {
-                            Label("Fetch ComicVine", systemImage: "network")
-                        }.disabled(isSearching)
+            VStack(alignment: .leading, spacing: 12) {
+                Button(action: {
+                    withAnimation {
+                        autoFillFromFilename()
                     }
-                    if pdf.contentType == .book || pdf.url.pathExtension.lowercased() == "epub" {
-                        Button(action: searchBookVine) {
-                            Label("Fetch BookVine", systemImage: "book.pages")
-                        }.disabled(isSearching)
-                    }
-                    if pdf.contentType != .book {
-                        Button(action: { runLocalXMLExtract() }) {
-                            if isSearching { ProgressView() } else { Label("Auto-Fetch XML", systemImage: "doc.text.viewfinder") }
+                }) {
+                    Label("Autofill from Filename", systemImage: "wand.and.stars")
+                        .foregroundColor(.accentColor)
+                }
+                .buttonStyle(.borderless)
+                
+                Divider()
+                
+                if settingsManager.conversionSettings.comicVineAPIKey.isEmpty {
+                    Text("⚠️ Add a ComicVine API Key in Settings → Integrations to enable Cloud Autofill")
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                } else {
+                    HStack(spacing: 16) {
+                        if !settingsManager.conversionSettings.comicVineAPIKey.isEmpty && pdf.contentType != .book {
+                            Button(action: searchComicVine) {
+                                Label("Fetch ComicVine", systemImage: "network")
+                            }.disabled(isSearching)
+                        }
+                        if pdf.contentType == .book || pdf.url.pathExtension.lowercased() == "epub" {
+                            Button(action: searchBookVine) {
+                                Label("Fetch BookVine", systemImage: "book.pages")
+                            }.disabled(isSearching)
+                        }
+                        if pdf.contentType != .book {
+                            Button(action: { runLocalXMLExtract() }) {
+                                if isSearching { ProgressView() } else { Label("Auto-Fetch XML", systemImage: "doc.text.viewfinder") }
+                            }
                         }
                     }
+                    if isSearching { ProgressView().padding(.top, 4) }
                 }
-                if isSearching { ProgressView().padding(.top, 4) }
+                if let error = errorMessage {
+                    Text(error).font(.caption).foregroundColor(.red)
+                }
             }
-            if let error = errorMessage {
-                Text(error).font(.caption).foregroundColor(.red)
-            }
+            .padding(.vertical, 4)
         }
     }
     
@@ -133,9 +173,17 @@ struct MetadataEditorSheet: View {
     private func coreInfoSection() -> some View {
         Section(header: Text("Core Info")) {
             TextField("Title", text: $editedMetadata.title)
+                .focused($focusedField, equals: .title)
+                .onSubmit { focusedField = .series }
             TextField("Series", text: $editedMetadata.series.bound)
+                .focused($focusedField, equals: .series)
+                .onSubmit { focusedField = .volume }
             TextField("Volume", text: $editedMetadata.volume.bound)
+                .focused($focusedField, equals: .volume)
+                .onSubmit { focusedField = .issueNumber }
             TextField("Issue #", text: $editedMetadata.issueNumber.bound)
+                .focused($focusedField, equals: .issueNumber)
+                .onSubmit { focusedField = .writer }
         }
     }
     
@@ -143,8 +191,14 @@ struct MetadataEditorSheet: View {
     private func creditsSection() -> some View {
         Section(header: Text("Credits")) {
             TextField("Writer", text: $editedMetadata.writer.bound)
+                .focused($focusedField, equals: .writer)
+                .onSubmit { focusedField = .penciller }
             TextField("Penciller", text: $editedMetadata.penciller.bound)
+                .focused($focusedField, equals: .penciller)
+                .onSubmit { focusedField = .publisher }
             TextField("Publisher", text: $editedMetadata.publisher.bound)
+                .focused($focusedField, equals: .publisher)
+                .onSubmit { focusedField = .publicationDate }
             TextField("Publication Date (YYYY-MM-DD)", text: Binding(
                 get: {
                     if let date = editedMetadata.publicationDate { return dateFormatter.string(from: date) }
@@ -155,6 +209,11 @@ struct MetadataEditorSheet: View {
                     else if newValue.isEmpty { editedMetadata.publicationDate = nil }
                 }
             ))
+            .focused($focusedField, equals: .publicationDate)
+            .onSubmit {
+                focusedField = nil
+                saveChanges()
+            }
         }
     }
     
@@ -177,6 +236,37 @@ struct MetadataEditorSheet: View {
     
     @State private var showingRenamePrompt = false
     @State private var newSuggestedCacheName = ""
+    
+    func autoFillFromFilename() {
+        let name = pdf.url.deletingPathExtension().lastPathComponent
+        let result = SeriesNameDetector.detect(from: name)
+        
+        editedMetadata.series = result.seriesName
+        editedMetadata.volume = result.seriesName
+        
+        if let issueStr = result.issueNumberString {
+            editedMetadata.issueNumber = issueStr
+        } else if let issueInt = result.issueNumber {
+            editedMetadata.issueNumber = "\(issueInt)"
+        } else {
+            editedMetadata.issueNumber = nil
+        }
+        
+        if let issueStr = editedMetadata.issueNumber {
+            editedMetadata.title = "\(result.seriesName) #\(issueStr)"
+        } else {
+            editedMetadata.title = result.seriesName
+        }
+        
+        if let range = name.range(of: "\\b(19|20)\\d{2}\\b", options: .regularExpression),
+           let year = Int(name[range]) {
+            var comps = DateComponents()
+            comps.year = year
+            comps.month = 1
+            comps.day = 1
+            editedMetadata.publicationDate = Calendar.current.date(from: comps)
+        }
+    }
     
     func runLocalXMLExtract() {
         isSearching = true
@@ -226,7 +316,7 @@ struct MetadataEditorSheet: View {
     
     func physicalRenameFile() async {
         do {
-            try conversionManager.safelyRenamePhysicalFile(pdf: pdf, newName: newSuggestedCacheName)
+            try await conversionManager.safelyRenamePhysicalFile(pdf: pdf, newName: newSuggestedCacheName)
             await MainActor.run {
                 saveChanges() // Save and dismiss
             }
@@ -302,6 +392,37 @@ struct MetadataEditorSheet: View {
         }
     }
     
+    private func fetchAndApplyOnlineCover(urlString: String) async {
+        guard let url = URL(string: urlString) else { return }
+        
+        let result = await Task.detached(priority: .userInitiated) { () -> (URL, UUID)? in
+            guard let data = try? Data(contentsOf: url),
+                  let image = UIImage(data: data),
+                  let jpegData = image.jpegData(compressionQuality: 0.9) else { return nil }
+            
+            guard image.size.width > 20 && image.size.height > 20 else { return nil }
+            
+            let variantID = UUID()
+            let coversDir = await ConversionManager.getCoversDirectory()
+            let variantURL = coversDir.appendingPathComponent("\(variantID.uuidString).jpg")
+            do {
+                try jpegData.write(to: variantURL)
+                return (variantURL, variantID)
+            } catch {
+                return nil
+            }
+        }.value
+        
+        if let (variantURL, variantID) = result {
+            await MainActor.run {
+                pdf.metadata.coverVariants[variantID] = variantURL
+                pdf.metadata.selectedCoverID = variantID
+                editedMetadata.coverVariants[variantID] = variantURL
+                editedMetadata.selectedCoverID = variantID
+            }
+        }
+    }
+    
     func applyBookMetadata(_ book: GoogleBookItem) {
         showBookResults = false
         
@@ -334,18 +455,10 @@ struct MetadataEditorSheet: View {
         
         editedMetadata.tags.append("Google Books")
         
-        // Asynchronously download the high-res cover image without freezing the UI
         if let imageURLStr = info.imageLinks?.bestQualityURL ?? info.imageLinks?.thumbnail, let url = URL(string: imageURLStr.replacingOccurrences(of: "http://", with: "https://")) {
             Task {
-                if let (data, _) = try? await URLSession.shared.data(from: url) {
-                    await MainActor.run {
-                        conversionManager.saveCoverImage(data, for: pdf)
-                        conversionManager.saveLibrary() // Write changes to disk immediately
-                        saveChanges() 
-                    }
-                } else {
-                    await MainActor.run { saveChanges() }
-                }
+                await fetchAndApplyOnlineCover(urlString: url.absoluteString)
+                await MainActor.run { saveChanges() }
             }
         } else {
             saveChanges()
@@ -409,14 +522,9 @@ struct MetadataEditorSheet: View {
                         isSearching = false
                     }
                     
-                    if let imageURLStr = issue.image?.original_url ?? issue.image?.medium_url, let url = URL(string: imageURLStr) {
-                        if let (data, _) = try? await URLSession.shared.data(from: url) {
-                            await MainActor.run {
-                                conversionManager.saveCoverImage(data, for: pdf)
-                                conversionManager.saveLibrary()
-                                saveChanges()
-                            }
-                        } else {
+                    if let imageURLStr = issue.image?.original_url ?? issue.image?.medium_url {
+                        Task {
+                            await fetchAndApplyOnlineCover(urlString: imageURLStr)
                             await MainActor.run { saveChanges() }
                         }
                     } else {

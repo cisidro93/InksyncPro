@@ -155,9 +155,7 @@ struct BatchLocalRenamerView: View {
                     
                     do {
                         // Return to MainActor for ConversionManager operations (which edit core state)
-                        try await MainActor.run {
-                            try conversionManager.safelyRenamePhysicalFile(pdf: pdf, newName: newName)
-                        }
+                        try await conversionManager.safelyRenamePhysicalFile(pdf: pdf, newName: newName)
                         processingStates[pdf.id] = .finished(newName)
                     } catch {
                         processingStates[pdf.id] = .warning("Rename Collision/Fail: \(error.localizedDescription)")

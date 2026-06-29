@@ -27,6 +27,16 @@ struct LibraryListView: View {
 
     // Drop-result confirmation sheet
     @State private var pendingDropInfo: DropResolutionInfo? = nil
+
+    // Drag-to-select Gestures & Coordinate Tracking
+    @State private var cellFrames: [String: CGRect] = [:]
+    @State private var scrollOffset: CGFloat = 0
+    @State private var dragStartIndex: Int? = nil
+    @State private var currentDragIndex: Int? = nil
+    @State private var isDragSelecting: Bool = true
+    @State private var initialSelectionBeforeDrag: Set<UUID> = []
+    @State private var lastDragLocation: CGPoint = .zero
+    @State private var autoScrollTask: Task<Void, Never>? = nil
     
     private var inProgress: [ConvertedPDF] {
         items.compactMap {
@@ -46,60 +56,98 @@ struct LibraryListView: View {
             if conversionManager.visiblePDFs.isEmpty {
                 ModernEmptyState(onImport: onImport, onFolderImport: nil)
             } else {
-                ScrollViewReader { proxy in
-                    List(selection: useNavigationStack ? nil : $selectedPDF) {
-                        // ── Scroll offset anchor (zero-height row) ──────────────
-                        GeometryReader { geo in
-                            Color.clear
-                                .preference(
-                                    key: LibraryScrollOffsetKey.self,
-                                    value: -geo.frame(in: .named("libraryListScroll")).minY
-                                )
-                        }
-                        .frame(height: 0)
-                        .listRowSeparator(.hidden)
-                        .listRowInsets(EdgeInsets())
+                GeometryReader { viewportGeo in
+                    ScrollViewReader { proxy in
+                        List(selection: useNavigationStack ? nil : $selectedPDF) {
+                            // ── Scroll offset anchor (zero-height row) ──────────────
+                            GeometryReader { geo in
+                                Color.clear
+                                    .preference(
+                                        key: LibraryScrollOffsetKey.self,
+                                        value: -geo.frame(in: .named("libraryListScroll")).minY
+                                    )
+                            }
+                            .frame(height: 0)
+                            .listRowSeparator(.hidden)
+                            .listRowInsets(EdgeInsets())
 
-                        if !inProgress.isEmpty {
-                            ContinueReadingShelf(inProgress: Array(inProgress.prefix(10))) { pdf in
-                                if tapAction == .read {
-                                    onAction(.read, pdf)
-                                } else {
-                                    onAction(.convert, pdf)
+                            if !inProgress.isEmpty {
+                                ContinueReadingShelf(inProgress: Array(inProgress.prefix(10))) { pdf in
+                                    if tapAction == .read {
+                                        onAction(.read, pdf)
+                                    } else {
+                                        onAction(.convert, pdf)
+                                    }
+                                }
+                                .environmentObject(conversionManager)
+                                .listRowInsets(EdgeInsets())
+                                .listRowSeparator(.hidden)
+                                .listRowBackground(Color.clear)
+                            }
+
+
+
+                            ForEach(items) { item in
+                                listRow(for: item)
+                                    .id(item.id)
+                                    .background(
+                                        GeometryReader { geo in
+                                            Color.clear
+                                                .preference(
+                                                    key: LibraryCellFramePreferenceKey.self,
+                                                    value: [item.id: geo.frame(in: .named("libraryListScroll"))]
+                                                )
+                                        }
+                                    )
+                            }
+                        } // end List
+                        .listStyle(.plain)
+                        .scrollContentBackground(.hidden)
+                        .background(Color.clear)
+                        .coordinateSpace(name: "libraryListScroll")
+                        .gesture(
+                            isBatchMode ?
+                            LongPressGesture(minimumDuration: 0.08)
+                                .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .named("libraryListViewport")))
+                                .onChanged { value in
+                                    switch value {
+                                    case .first:
+                                        break
+                                    case .second(_, let dragValue):
+                                        if let drag = dragValue {
+                                            handleDragUpdate(to: drag.location, viewportHeight: viewportGeo.size.height, scrollProxy: proxy)
+                                        }
+                                    }
+                                }
+                                .onEnded { _ in
+                                    handleDragEnded()
+                                }
+                            : nil
+                        )
+                        .onPreferenceChange(LibraryScrollOffsetKey.self) { offset in
+                            self.scrollOffset = offset
+                            let past = offset > 44
+                            if isScrolledPastHeader != past {
+                                isScrolledPastHeader = past
+                            }
+                        }
+                        .onPreferenceChange(LibraryCellFramePreferenceKey.self) { value in
+                            self.cellFrames = value
+                        }
+                        .overlay(alignment: .trailing) {
+                            // ✅ PHASE 10: Comic Zeal Feature Restored
+                            LibraryIndexScrubber { letter in
+                                if let targetID = firstItemId(for: letter) {
+                                    withAnimation { proxy.scrollTo(targetID, anchor: .top) }
                                 }
                             }
-                            .environmentObject(conversionManager)
-                            .listRowInsets(EdgeInsets())
-                            .listRowSeparator(.hidden)
-                            .listRowBackground(Color.clear)
+                            .padding(.vertical, 30)
+                            .padding(.trailing, 2)
                         }
-
-                        ForEach(items) { item in
-                            listRow(for: item)
-                        }
-                    } // end List
-                .listStyle(.plain)
-                .scrollContentBackground(.hidden)
-                .background(Color.clear)
-                .coordinateSpace(name: "libraryListScroll")
-                .onPreferenceChange(LibraryScrollOffsetKey.self) { offset in
-                    let past = offset > 44
-                    if isScrolledPastHeader != past {
-                        isScrolledPastHeader = past
-                    }
-                }
-                .overlay(alignment: .trailing) {
-                    // ✅ PHASE 10: Comic Zeal Feature Restored
-                    LibraryIndexScrubber { letter in
-                        if let targetID = firstItemId(for: letter) {
-                            withAnimation { proxy.scrollTo(targetID, anchor: .top) }
-                        }
-                    }
-                    .padding(.vertical, 30)
-                    .padding(.trailing, 2)
-                }
-                .id(tapAction)
-                } // end ScrollViewReader
+                        .id(tapAction)
+                    } // end ScrollViewReader
+                } // end GeometryReader
+                .coordinateSpace(name: "libraryListViewport")
             }
         }
         // MARK: Drop Resolution Sheet
@@ -381,6 +429,7 @@ struct LibraryListView: View {
                 } label: {
                     ModernSeriesRow(group: group, isSelected: group.issues.allSatisfy { multiSelection.contains($0.id) }, isBatch: true)
                 }
+                .buttonStyle(TactileButtonStyle())
             } else {
                 if let folderUUID = UUID(uuidString: group.id) {
                     Button {
@@ -390,6 +439,7 @@ struct LibraryListView: View {
                     } label: {
                         ModernSeriesRow(group: group, isSelected: false, isBatch: false)
                     }
+                    .buttonStyle(TactileButtonStyle())
                     .contextMenu {
                         Button {
                             if let next = nextUnread(in: group) {
@@ -429,6 +479,7 @@ struct LibraryListView: View {
                     NavigationLink(destination: LazyView { SeriesDetailView(series: group, selectedPDF: $selectedPDF, useNavigationStack: useNavigationStack) }) {
                         ModernSeriesRow(group: group, isSelected: false, isBatch: false)
                     }
+                    .buttonStyle(TactileButtonStyle())
                     .contextMenu {
                         Button {
                             if let next = nextUnread(in: group) {
@@ -538,6 +589,7 @@ struct LibraryListView: View {
                  } label: {
                      ModernFileRow(pdf: pdf, isSelected: multiSelection.contains(pdf.id), isBatch: true)
                   }
+                  .buttonStyle(TactileButtonStyle())
              } else {
                  Button {
                      if case .cloud = pdf.sourceMode {
@@ -558,6 +610,7 @@ struct LibraryListView: View {
                  } label: {
                      ModernFileRow(pdf: pdf, isSelected: false, isBatch: false)
                  }
+                 .buttonStyle(TactileButtonStyle())
                  .tag(pdf)
                  .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                      Button {
@@ -648,6 +701,7 @@ struct LibraryListView: View {
             }
             .padding(.vertical, 2)
         }
+        .buttonStyle(TactileButtonStyle())
         .disabled(!isConnected)
         .listRowBackground(Color.inkSurface.opacity(0.4))
         .listRowSeparatorTint(Color(UIColor.separator))
@@ -658,6 +712,132 @@ struct LibraryListView: View {
                 } label: { Label("Sync Drive", systemImage: "arrow.triangle.2.circlepath") }
             }
         }
+    }
+
+    // MARK: - Pan-To-Select Drag Gesture Handlers
+    
+    private func findItemUnderTouch(at location: CGPoint) -> LibraryListItem? {
+        for item in items {
+            if let frame = cellFrames[item.id], frame.contains(location) {
+                return item
+            }
+        }
+        return nil
+    }
+    
+    private func handleDragUpdate(to location: CGPoint, viewportHeight: CGFloat, scrollProxy: ScrollViewProxy) {
+        lastDragLocation = location
+        let contentLocation = CGPoint(x: location.x, y: location.y + scrollOffset)
+        
+        if let item = findItemUnderTouch(at: contentLocation) {
+            if let index = items.firstIndex(where: { $0.id == item.id }) {
+                if dragStartIndex == nil {
+                    dragStartIndex = index
+                    
+                    let pdfIDs: [UUID]
+                    switch item {
+                    case .single(let pdf):
+                        pdfIDs = [pdf.id]
+                    case .series(let group):
+                        pdfIDs = group.issues.map(\.id)
+                    case .driveFolder:
+                        pdfIDs = []
+                    }
+                    
+                    if let firstID = pdfIDs.first {
+                        isDragSelecting = !multiSelection.contains(firstID)
+                    } else {
+                        isDragSelecting = true
+                    }
+                    initialSelectionBeforeDrag = multiSelection
+                }
+                currentDragIndex = index
+                updateSelectionForCurrentRange()
+            }
+        }
+        
+        let touchViewportY = location.y
+        if touchViewportY < 60 || touchViewportY > viewportHeight - 60 {
+            if autoScrollTask == nil {
+                autoScrollTask = Task {
+                    while !Task.isCancelled {
+                        try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
+                        if Task.isCancelled { break }
+                        await MainActor.run {
+                            performAutoScroll(viewportHeight: viewportHeight, scrollProxy: scrollProxy)
+                        }
+                    }
+                }
+            }
+        } else {
+            autoScrollTask?.cancel()
+            autoScrollTask = nil
+        }
+    }
+    
+    private func updateSelectionForCurrentRange() {
+        guard let startIndex = dragStartIndex, let currentIndex = currentDragIndex else { return }
+        let range = min(startIndex, currentIndex)...max(startIndex, currentIndex)
+        
+        var newSelection = initialSelectionBeforeDrag
+        for i in 0..<items.count {
+            let item = items[i]
+            let isInsideRange = range.contains(i)
+            
+            let pdfIDs: [UUID]
+            switch item {
+            case .single(let pdf):
+                pdfIDs = [pdf.id]
+            case .series(let group):
+                pdfIDs = group.issues.map(\.id)
+            case .driveFolder:
+                pdfIDs = []
+            }
+            
+            for id in pdfIDs {
+                if isInsideRange {
+                    if isDragSelecting {
+                        newSelection.insert(id)
+                    } else {
+                        newSelection.remove(id)
+                    }
+                }
+            }
+        }
+        multiSelection = newSelection
+    }
+    
+    private func performAutoScroll(viewportHeight: CGFloat, scrollProxy: ScrollViewProxy) {
+        guard let currentIndex = currentDragIndex else { return }
+        let touchViewportY = lastDragLocation.y
+        
+        if touchViewportY < 60 {
+            let targetIndex = max(0, currentIndex - 1)
+            if targetIndex != currentIndex {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    scrollProxy.scrollTo(items[targetIndex].id, anchor: .top)
+                }
+                currentDragIndex = targetIndex
+                updateSelectionForCurrentRange()
+            }
+        } else if touchViewportY > viewportHeight - 60 {
+            let targetIndex = min(items.count - 1, currentIndex + 1)
+            if targetIndex != currentIndex {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    scrollProxy.scrollTo(items[targetIndex].id, anchor: .bottom)
+                }
+                currentDragIndex = targetIndex
+                updateSelectionForCurrentRange()
+            }
+        }
+    }
+    
+    private func handleDragEnded() {
+        autoScrollTask?.cancel()
+        autoScrollTask = nil
+        dragStartIndex = nil
+        currentDragIndex = nil
+        initialSelectionBeforeDrag.removeAll()
     }
 }
 

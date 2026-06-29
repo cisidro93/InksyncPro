@@ -110,7 +110,14 @@ struct CBZToEPUBConverter: Sendable {
         var globalImageIndex = 0
         
         for (originalIndex, srcURL) in imageURLs.enumerated() {
-            autoreleasepool {
+            try autoreleasepool {
+                // Validate that the image file is not corrupt (e.g. an HTML error page)
+                guard let _ = UIImage(contentsOfFile: srcURL.path) else {
+                    throw NSError(domain: "ImageProcessor", code: 404, userInfo: [
+                        NSLocalizedDescriptionKey: "Invalid or corrupted image file '\(srcURL.lastPathComponent)' in source archive. This often happens when a downloader saves an HTML error page instead of the image. Please verify your source file."
+                    ])
+                }
+                
                 // A. Check for Webtoon Slicing
                 var imagesToProcess: [UIImage] = []
                 var isSliced = false
@@ -148,11 +155,13 @@ struct CBZToEPUBConverter: Sendable {
                 let isUnsafeFormat = !["jpg", "jpeg", "png"].contains(ext)
                 let needsCompression = settings.compressionQuality != .high
                 let needsEnhancement = settings.imageEnhancement.grayscale || settings.imageEnhancement.autoContrast || settings.imageEnhancement.invertColors || settings.imageEnhancement.brightness != 0 || settings.imageEnhancement.sharpness != 0 || settings.imageEnhancement.vibrance != 0 || settings.imageEnhancement.gamma != 1.0
+                let isWideColorImage = ImageProcessor.isWideColor(url: srcURL)
                 
-                let needsProcessing = needsCompression || needsEnhancement || settings.optimizeForDevice || settings.trimMargins || isUnsafeFormat
+                let needsProcessing = needsCompression || needsEnhancement || settings.optimizeForDevice || settings.trimMargins || isUnsafeFormat || isWideColorImage
                 
                 let appendToBatch = { (data: Data, indexToUse: Int, itemSourceURL: URL) in
-                    let itemSize = Int64(data.count)
+                    let safeData = ImageProcessor.convertToSRGB(data: data)
+                    let itemSize = Int64(safeData.count)
                     let overheadBuffer: Int64 = 500 * 1024
                     
                     let isNoLimit = limit == Int64.max
@@ -167,7 +176,7 @@ struct CBZToEPUBConverter: Sendable {
                     
                     // Immediately write data to disk instead of hoarding in memory
                     let diskURL = sandboxDir.appendingPathComponent("processed_\(UUID().uuidString).jpg")
-                    try? data.write(to: diskURL)
+                    try? safeData.write(to: diskURL)
                     
                     currentBatch.append((processedDiskURL: diskURL, sourceURL: itemSourceURL, index: indexToUse))
                     currentBatchSize += itemSize
@@ -519,6 +528,7 @@ struct CBZToEPUBConverter: Sendable {
 
         Logger.shared.log("About to analyze EPUB structure for: \(capturedOutputURL.lastPathComponent)", category: "Debug")
         Logger.shared.logEPUBStructure(at: capturedOutputURL)
+        PhysicalFileSystemRouter.excludeFromBackup(at: capturedOutputURL)
         Logger.shared.log("Stage 4 End: EPUB Packaged at \(capturedOutputURL.lastPathComponent)", category: "Converter")
         return capturedOutputURL
     }

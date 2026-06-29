@@ -293,7 +293,7 @@ struct ImportQueueView: View {
 
     private func iconFor(_ url: URL) -> String {
         switch url.pathExtension.lowercased() {
-        case "cbz", "cbr", "cb7", "cbt": return "doc.zipper"
+        case "cbz", "cbr", "cb7", "cbt", "zip": return "doc.zipper"
         case "epub": return "book"
         case "pdf": return "doc.richtext"
         default: return "doc"

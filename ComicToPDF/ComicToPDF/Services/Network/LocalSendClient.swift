@@ -22,7 +22,7 @@ class LocalSendClient: ObservableObject {
     }
 
     /// Starts a chunked upload sequence to a discovered peer.
-    func transferFiles(_ files: [ConvertedPDF], to peer: PeerNode) async throws {
+    func transferFiles(_ files: [ConvertedPDF], to peer: PeerNode, pin: String) async throws {
         guard !files.isEmpty else { return }
         guard let baseURL = URL(string: "http://\(peer.ipAddress):\(peer.port)") else {
             throw NSError(domain: "LocalSend", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid Peer URL"])
@@ -36,7 +36,10 @@ class LocalSendClient: ObservableObject {
             progress = 1.0
         }
 
-        Logger.shared.log("LocalSendClient: Starting transfer of \(files.count) files to \(peer.name)", category: "Network")
+        Logger.shared.log("LocalSendClient: Authenticating with \(peer.name)...", category: "Network")
+        let sessionCookie = try await PeerManager.shared.authenticate(ipAddress: peer.ipAddress, port: peer.port, pin: pin)
+
+        Logger.shared.log("LocalSendClient: Authenticated successfully. Starting transfer of \(files.count) files to \(peer.name)", category: "Network")
 
         // Temp staging directory for linked-library files that need sandbox copies.
         // URLSession runs on OS threads with no inherited security scope — files on external
@@ -60,8 +63,8 @@ class LocalSendClient: ObservableObject {
                             try? FileManager.default.removeItem(at: sandboxCopy)
                         }
                         try FileManager.default.copyItem(at: driveURL, to: sandboxCopy)
-                    }
-                    uploadURL = sandboxCopy
+                     }
+                     uploadURL = sandboxCopy
                 } catch {
                     Logger.shared.log("LocalSendClient: Could not stage linked file \(file.name) — skipping: \(error.localizedDescription)", category: "Network", type: .warning)
                     continue
@@ -76,7 +79,7 @@ class LocalSendClient: ObservableObject {
                 .addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? file.url.lastPathComponent
             let endpoint = baseURL.appendingPathComponent("upload").appendingPathComponent(encodedName)
 
-            try await uploadFileChunked(fileName: file.url.lastPathComponent, from: uploadURL, to: endpoint)
+            try await uploadFileChunked(fileName: file.url.lastPathComponent, from: uploadURL, to: endpoint, cookie: sessionCookie)
         }
 
         Logger.shared.log("LocalSendClient: Transfer complete (\(files.count) files)", category: "Network")
@@ -84,11 +87,14 @@ class LocalSendClient: ObservableObject {
 
     /// Streams a file via `URLSession.upload(for:fromFile:)` — OS-level disk streaming
     /// ensures the file is never fully loaded into RAM. Safe for 500 MB+ archives.
-    private func uploadFileChunked(fileName: String, from localURL: URL, to endpoint: URL) async throws {
+    private func uploadFileChunked(fileName: String, from localURL: URL, to endpoint: URL, cookie: String?) async throws {
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
         request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
         request.setValue(fileName, forHTTPHeaderField: "X-File-Name")
+        if let cookie {
+            request.setValue(cookie, forHTTPHeaderField: "Cookie")
+        }
 
         let (_, response) = try await session.upload(for: request, fromFile: localURL)
 

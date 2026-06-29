@@ -7,7 +7,11 @@ class AppRouter: ObservableObject {
     @Published var activeSheet: LibrarySheetDestination?
     @Published var activeFullScreen: LibraryFullScreenDestination?
     
+    // Temporary holder for sequential sheet presentation to avoid SwiftUI transition race conditions
+    var pendingSheet: LibrarySheetDestination?
+    
     // Global Navigation Path for NavigationStack
+
     @Published var path = NavigationPath()
     
     @Published var selectedTab: Int = 0

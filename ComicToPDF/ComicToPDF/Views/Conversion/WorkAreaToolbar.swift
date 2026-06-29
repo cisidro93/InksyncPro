@@ -10,6 +10,7 @@ struct WorkAreaToolbar: View {
     enum ToolType: String, CaseIterable, Identifiable {
         case scan = "Scan"
         case edit = "Edit" // Standard selection/move
+        case crop = "Crop"
         case knife = "Knife"
         case anchor = "Anchor"
         case draw = "Draw"
@@ -21,6 +22,7 @@ struct WorkAreaToolbar: View {
             switch self {
             case .scan: return "sparkles"
             case .edit: return "cursorarrow.rays"
+            case .crop: return "crop"
             case .knife: return "scissors"
             case .anchor: return "number.square"
             case .draw: return "pencil.tip" // Native Apple Pencil icon

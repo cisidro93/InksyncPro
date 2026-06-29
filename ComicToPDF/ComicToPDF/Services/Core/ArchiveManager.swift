@@ -8,41 +8,63 @@ public actor ArchiveManager {
     
     private var cachedArchive: Archive?
     private var cachedURL: URL?
+    private var cachedEntries: [String: Entry] = [:]
     
     private init() {}
     
     /// Extracts entry data for a given file path from a ZIP archive.
     /// Uses standard String path to look up the entry within the cached Archive.
     public func extractEntry(from url: URL, path: String) throws -> Data {
-        let archive = try getArchive(for: url)
-        guard let entry = archive[path] else {
+        try Task.checkCancellation()
+        
+        let (archive, entries) = try getArchiveAndEntries(for: url)
+        guard let entry = entries[path] else {
             throw NSError(domain: "ArchiveManager", code: 404, userInfo: [NSLocalizedDescriptionKey: "Entry not found in archive: \(path)"])
         }
+        
+        try Task.checkCancellation()
+        
         var data = Data()
-        _ = try archive.extract(entry, bufferSize: 32768) { chunk in
+        data.reserveCapacity(Int(entry.uncompressedSize))
+        _ = try archive.extract(entry, bufferSize: 262144) { chunk in
+            if Task.isCancelled {
+                throw CancellationError()
+            }
             data.append(chunk)
         }
         return data
     }
     
-    private func getArchive(for url: URL) throws -> Archive {
+    private func getArchiveAndEntries(for url: URL) throws -> (Archive, [String: Entry]) {
         if let cached = cachedArchive, cachedURL == url {
-            return cached
+            return (cached, cachedEntries)
         }
         
         // Close / clean up old cache
         cachedArchive = nil
         cachedURL = nil
+        cachedEntries = [:]
         
         let archive = try Archive(url: url, accessMode: .read, pathEncoding: .utf8)
+        
+        // Build O(1) dictionary mapping path -> Entry
+        var entriesMap: [String: Entry] = [:]
+        for entry in archive {
+            entriesMap[entry.path] = entry
+        }
+        
         cachedArchive = archive
         cachedURL = url
-        return archive
+        cachedEntries = entriesMap
+        
+        return (archive, entriesMap)
     }
     
     /// Clear active archive cache when reading session finishes
     public func clearCache() {
         cachedArchive = nil
         cachedURL = nil
+        cachedEntries = [:]
     }
 }
+

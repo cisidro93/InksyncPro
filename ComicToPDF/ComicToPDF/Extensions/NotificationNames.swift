@@ -11,6 +11,8 @@ extension Notification.Name {
     // MARK: Library & Import
     /// Fired when the on-disk library has changed and needs a full rescan.
     static let libraryNeedsRescan     = Notification.Name("LibraryNeedsRescan")
+    /// Fired when background file transfer or sync completes and the library needs a refresh.
+    static let libraryUpdated         = Notification.Name("LibraryUpdated")
     /// Fired when the library data needs to be written to disk immediately.
     static let libraryNeedsSave       = Notification.Name("LibraryNeedsSave")
     /// Fired after a merge completes, carrying the newly created `ConvertedPDF`.

@@ -65,6 +65,7 @@ final class ConversionOrchestrator: Sendable {
                 try PDFGenerator.generate(from: imageURLs, to: outputURL, mangaMode: jobSettings.mangaMode, chapters: pdf.chapters, settings: jobSettings, coverOverrideData: coverOverrideData) { progress in
                     Task { @MainActor in manager.conversionProgress = progress; manager.processingStatus = "Converting \(Int(progress * 100))%" }
                 }
+                PhysicalFileSystemRouter.excludeFromBackup(at: outputURL)
                 await MainActor.run { manager.isConverting = false; manager.conversionProgress = 1.0; manager.statusMessage = "✅ Conversion Complete!"; manager.scanLibrary() }
                 Logger.shared.log("Conversion Successful: \(pdf.name) -> PDF", category: "Converter")
             } else if jobSettings.outputFormat == .cbz {
@@ -95,6 +96,7 @@ final class ConversionOrchestrator: Sendable {
                 
                 if fileManager.fileExists(atPath: outputURL.path) { try fileManager.removeItem(at: outputURL) }
                 try await ZipUtilities.zipDirectory(tempDir, to: outputURL)
+                PhysicalFileSystemRouter.excludeFromBackup(at: outputURL)
                 
                 await MainActor.run { manager.isConverting = false; manager.conversionProgress = 1.0; manager.statusMessage = "✅ Conversion Complete!"; manager.scanLibrary() }
                 Logger.shared.log("Conversion Successful: \(pdf.name) -> CBZ", category: "Converter")
@@ -204,6 +206,7 @@ final class ConversionOrchestrator: Sendable {
                     try PDFGenerator.generate(from: imageURLs, to: outputURL, mangaMode: jobSettings.mangaMode, chapters: pdf.chapters, settings: jobSettings, coverOverrideData: coverOverrideData) { p in
                         Task { @MainActor in manager.conversionProgress = p; manager.processingStatus = "Converting \(currentNum) of \(total) (\(Int(p * 100))%)" }
                     }
+                    PhysicalFileSystemRouter.excludeFromBackup(at: outputURL)
                     await MainActor.run { manager.scanLibrary() }
                 } else if jobSettings.outputFormat == .cbz {
                     let fileManager = FileManager.default
@@ -228,6 +231,7 @@ final class ConversionOrchestrator: Sendable {
                     }
                     if fileManager.fileExists(atPath: outputURL.path) { try fileManager.removeItem(at: outputURL) }
                     try await ZipUtilities.zipDirectory(tempDir, to: outputURL)
+                    PhysicalFileSystemRouter.excludeFromBackup(at: outputURL)
                     await MainActor.run { manager.scanLibrary() }
                 } else if jobSettings.outputPipeline == .proPanel {
                     await MainActor.run { manager.processingStatus = "Reading panels for \(pdf.name)..." }
@@ -383,6 +387,7 @@ final class ConversionOrchestrator: Sendable {
                             }
                         }
                         try await task.value
+                        PhysicalFileSystemRouter.excludeFromBackup(at: finalOutputURL)
                     } else {
                         let finalBatchImages = batchImages
                         let task = Task.detached {
@@ -399,6 +404,7 @@ final class ConversionOrchestrator: Sendable {
                             try await ZipUtilities.zipDirectory(tempDir, to: finalOutputURL)
                         }
                         try await task.value
+                        PhysicalFileSystemRouter.excludeFromBackup(at: finalOutputURL)
                     }
                     
                     let finalFileSize = (try? finalOutputURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
@@ -496,6 +502,7 @@ final class ConversionOrchestrator: Sendable {
                 if let baseCover = firstEPUBFileCoverData, generatedBatches.count > 1 { overrideCover = CoverGenerator.generateCover(from: baseCover, partNumber: batchIndex + 1, totalParts: generatedBatches.count) }
                 
                 try await merger.mergeEPUBs(sourceURLs: batch, outputURL: finalOutputURL, settings: jobSettings, overrideCoverData: overrideCover, sourceMetadata: sourceFiles.first?.metadata)
+                PhysicalFileSystemRouter.excludeFromBackup(at: finalOutputURL)
                 
                 let finalFileSize = (try? finalOutputURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
                 let outputURL = finalOutputURL

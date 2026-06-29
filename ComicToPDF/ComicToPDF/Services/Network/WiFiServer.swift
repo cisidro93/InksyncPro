@@ -304,7 +304,11 @@ final class WiFiServer: ObservableObject, Sendable {
                 if isComplete {
                     connection.cancel()
                 } else if let error = error {
-                    Logger.shared.log("Connection Error: \(error)", category: "Network", type: .error)
+                    if case .posix(let code) = error, code == .ECANCELED {
+                        // Silent cleanup on expected connection close
+                    } else {
+                        Logger.shared.log("Connection Error: \(error)", category: "Network", type: .error)
+                    }
                     connection.cancel()
                 } else {
                     // Continue reading
@@ -927,7 +931,7 @@ final class WiFiServer: ObservableObject, Sendable {
             
             Task {
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
-                NotificationCenter.default.post(name: Notification.Name("LibraryUpdated"), object: nil)
+                NotificationCenter.default.post(name: .libraryUpdated, object: nil)
             }
         }
     }

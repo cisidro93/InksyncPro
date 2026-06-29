@@ -6,20 +6,7 @@ import Combine
 import ImageIO
 import ZIPFoundation
 
-// MARK: - CancellationFlag
-// Thread-safe class-boxed cancellation flag.
-// Using a final class (reference type) means both DispatchQueue.async blocks and
-// @Sendable onCancel closures can safely capture and mutate state — Swift 6 strict
-// concurrency allows class references to cross isolation boundaries because only
-// one caller holds the reference at a time, enforced by the internal NSLock.
-private final class CancellationFlag: @unchecked Sendable {
-    private let lock = NSLock()
-    private var _cancelled = false
 
-    var isCancelled: Bool { lock.withLock { _cancelled } }
-
-    func cancel() { lock.withLock { _cancelled = true } }
-}
 
 // ============================================================================
 // SpreadPair
@@ -33,6 +20,42 @@ struct SpreadPair {
 
     /// The "primary" index for progress tracking — always the first in reading order.
     var leadIndex: Int { leftIndex ?? rightIndex ?? 0 }
+}
+
+// ============================================================================
+// ReaderSpread
+// ============================================================================
+enum ReaderSpread: Equatable {
+    case single(pageIndex: Int, isLandscape: Bool)
+    case dual(leftIndex: Int, rightIndex: Int)
+    
+    var leadIndex: Int {
+        switch self {
+        case .single(let idx, _): return idx
+        case .dual(let left, let right): return min(left, right)
+        }
+    }
+    
+    var leftIndex: Int? {
+        switch self {
+        case .single(let idx, _): return idx
+        case .dual(let left, _): return left
+        }
+    }
+    
+    var rightIndex: Int? {
+        switch self {
+        case .single: return nil
+        case .dual(_, let right): return right
+        }
+    }
+    
+    var isLandscape: Bool {
+        switch self {
+        case .single(_, let isL): return isL
+        case .dual: return false
+        }
+    }
 }
 
 // ============================================================================
@@ -77,20 +100,24 @@ final class CGImageBox {
 //   lead indices so renderPage(at:nil) task slots are never allocated.
 // ============================================================================
 
-// File-private global — must live outside the @MainActor class so it is
-// nonisolated and accessible from nonisolated static functions (executeRender).
-// Swift 6: static stored properties on @MainActor types are @MainActor-isolated
-// and cannot be read from nonisolated contexts.
-private let _pageBufferArchiveQueue = DispatchQueue(
-    label: "com.inksyncpro.pagebuffer.archive",
-    qos: .userInitiated
-)
+
 
 @MainActor
 class PageBufferManager: ObservableObject {
     static let shared = PageBufferManager()
     private init() {
         Logger.shared.log("PageBufferManager: init", category: "Engine")
+        // Dynamically set imageCache countLimit based on performance class
+        let perfClass = ProcessInfo.processInfo.performanceClass
+        switch perfClass {
+        case .low:
+            imageCache.countLimit = 8
+        case .medium:
+            imageCache.countLimit = 16
+        case .high:
+            imageCache.countLimit = 32
+        }
+        Logger.shared.log("PageBufferManager: cache limit configured to \(imageCache.countLimit)", category: "Engine")
     }
     deinit {
         Logger.shared.log("PageBufferManager: deinit", category: "Engine")
@@ -107,6 +134,8 @@ class PageBufferManager: ObservableObject {
     @Published var currentSpread: SpreadPair?
     @Published var nextSpread: SpreadPair?
     @Published var prevSpread: SpreadPair?
+    @Published var activeSpreads: [ReaderSpread] = []
+    @Published var currentSpreadIndex: Int = 0
 
     // MARK: - PPL State
     @Published var isPPLEnabled: Bool = false
@@ -146,7 +175,7 @@ class PageBufferManager: ObservableObject {
 
     // MARK: - Setup (Single Page / Extracted Files)
 
-    func setup(pages: [URL]) {
+    func setup(pages: [URL], isMangaMode: Bool = false) {
         renderTask?.cancel()
         renderTask = nil
         generation &+= 1
@@ -163,18 +192,128 @@ class PageBufferManager: ObservableObject {
         prevSpread = nil
         lastPageTurnTime = Date()
         isSkimming = false
+
+        activeSpreads = compileSpreadsDefault(isMangaMode: isMangaMode)
+        currentSpreadIndex = 0
+
+        let capturedGen = generation
+        Task { [weak self] in
+            guard let self else { return }
+            let compiled = await self.compileSpreads(isMangaMode: isMangaMode)
+            guard self.generation == capturedGen else { return }
+            self.activeSpreads = compiled
+            if let targetIdx = compiled.firstIndex(where: { $0.leadIndex == self.activeSpreads[self.currentSpreadIndex].leadIndex }) {
+                self.currentSpreadIndex = targetIdx
+            }
+        }
+    }
+
+    private func compileSpreadsDefault(isMangaMode: Bool) -> [ReaderSpread] {
+        let total = pageURLs.count
+        guard total > 0 else { return [] }
+        var spreads: [ReaderSpread] = []
+        
+        // Page 0 is cover
+        spreads.append(.single(pageIndex: 0, isLandscape: false))
+        
+        var i = 1
+        while i < total {
+            if i + 1 < total {
+                if isMangaMode {
+                    spreads.append(.dual(leftIndex: i + 1, rightIndex: i))
+                } else {
+                    spreads.append(.dual(leftIndex: i, rightIndex: i + 1))
+                }
+                i += 2
+            } else {
+                spreads.append(.single(pageIndex: i, isLandscape: false))
+                i += 1
+            }
+        }
+        return spreads
+    }
+
+    private func compileSpreads(isMangaMode: Bool) async -> [ReaderSpread] {
+        let total = pageURLs.count
+        guard total > 0 else { return [] }
+        
+        var isLandscapeArray = Array(repeating: false, count: total)
+        
+        let archive = self.archiveURL
+        let paths = self.zipEntryPaths
+        
+        await withTaskGroup(of: (Int, Bool).self) { group in
+            for i in 0..<total {
+                let url = pageURLs[i]
+                let path = i < paths.count ? paths[i] : nil
+                group.addTask(priority: .userInitiated) {
+                    let isL = await PageBufferManager.checkIsLandscape(url: url, archiveURL: archive, entryPath: path)
+                    return (i, isL)
+                }
+            }
+            
+            for await (index, isL) in group {
+                isLandscapeArray[index] = isL
+            }
+        }
+        
+        var spreads: [ReaderSpread] = []
+        if total > 0 {
+            spreads.append(.single(pageIndex: 0, isLandscape: isLandscapeArray[0]))
+        }
+        
+        var i = 1
+        while i < total {
+            let isL = isLandscapeArray[i]
+            if isL {
+                spreads.append(.single(pageIndex: i, isLandscape: true))
+                i += 1
+            } else {
+                if i + 1 < total {
+                    let nextIsL = isLandscapeArray[i + 1]
+                    if nextIsL {
+                        spreads.append(.single(pageIndex: i, isLandscape: false))
+                        i += 1
+                    } else {
+                        if isMangaMode {
+                            spreads.append(.dual(leftIndex: i + 1, rightIndex: i))
+                        } else {
+                            spreads.append(.dual(leftIndex: i, rightIndex: i + 1))
+                        }
+                        i += 2
+                    }
+                } else {
+                    spreads.append(.single(pageIndex: i, isLandscape: false))
+                    i += 1
+                }
+            }
+        }
+        return spreads
+    }
+
+    nonisolated private static func checkIsLandscape(url: URL, archiveURL: URL?, entryPath: String?) async -> Bool {
+        if let archiveURL, let entryPath = entryPath {
+            do {
+                let data = try await ArchiveManager.shared.extractEntry(from: archiveURL, path: entryPath)
+                guard let imageSource = CGImageSourceCreateWithData(data as CFData, nil) else { return false }
+                guard let properties = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil) as? [CFString: Any] else { return false }
+                let width = properties[kCGImagePropertyPixelWidth] as? CGFloat ?? 0
+                let height = properties[kCGImagePropertyPixelHeight] as? CGFloat ?? 0
+                return width > height * 1.2
+            } catch {
+                return false
+            }
+        } else {
+            guard let imageSource = CGImageSourceCreateWithURL(url as CFURL, nil) else { return false }
+            guard let properties = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil) as? [CFString: Any] else { return false }
+            let width = properties[kCGImagePropertyPixelWidth] as? CGFloat ?? 0
+            let height = properties[kCGImagePropertyPixelHeight] as? CGFloat ?? 0
+            return width > height * 1.2
+        }
     }
 
     // MARK: - Setup (Direct ZIP Streaming)
     // Issue 1 fix: ZIP header scanning moved off @MainActor.
-    //
-    // IMPORTANT — render is called INSIDE this function after the async scan writes
-    // pageURLs. The caller must NOT call render() separately, because immediately
-    // after setupDirectArchive() returns, pageURLs is still empty (the Task.detached
-    // scan hasn't finished). Calling render() on empty pageURLs produces a nil
-    // currentImage, which crashes MetalCanvasView's GPU texture upload in single-page
-    // mode (dual-page mode guards with `if let left/right` so it degrades to black
-    // rather than crashing — that's why dual worked but single crashed).
 
     func setupDirectArchive(
         url: URL,
@@ -240,17 +379,27 @@ class PageBufferManager: ObservableObject {
                 self.zipEntryPaths = paths
                 self.pageURLs = syntheticURLs
 
-                // Fire the initial render NOW — pageURLs is populated so
-                // renderPage will decode real images instead of returning nil.
+                self.activeSpreads = self.compileSpreadsDefault(isMangaMode: isMangaMode)
+                if let targetIdx = self.activeSpreads.firstIndex(where: { $0.leadIndex == initialPageIndex }) {
+                    self.currentSpreadIndex = targetIdx
+                } else {
+                    self.currentSpreadIndex = 0
+                }
+
+                Task {
+                    let compiled = await self.compileSpreads(isMangaMode: isMangaMode)
+                    guard self.generation == capturedGen else { return }
+                    self.activeSpreads = compiled
+                    if let targetIdx = compiled.firstIndex(where: { $0.leadIndex == self.activeSpreads[self.currentSpreadIndex].leadIndex }) {
+                        self.currentSpreadIndex = targetIdx
+                    }
+                    if dual {
+                        self.renderDual(spreadIndex: self.currentSpreadIndex, bounds: bounds)
+                    }
+                }
+
                 if dual {
-                    let lead = PageBufferManager.canonicalLeadIndex(
-                        for: initialPageIndex, isMangaMode: isMangaMode)
-                    self.renderDual(
-                        leadIndex: lead,
-                        pages: syntheticURLs,
-                        isMangaMode: isMangaMode,
-                        bounds: bounds
-                    )
+                    self.renderDual(spreadIndex: self.currentSpreadIndex, bounds: bounds)
                 } else {
                     self.render(pageIndex: initialPageIndex, bounds: bounds)
                 }
@@ -339,7 +488,8 @@ class PageBufferManager: ObservableObject {
                 if !Task.isCancelled, self.generation == gen { self.nextImage = nImage }
                 let pImage = await renderPage(at: pageIndex - 1, bounds: bounds)
                 if !Task.isCancelled, self.generation == gen { self.prevImage = pImage }
-            } else {
+            } else if perfClass == .medium {
+                // Parallel fetch adjacent
                 async let next = renderPage(at: pageIndex + 1, bounds: bounds)
                 async let prev = renderPage(at: pageIndex - 1, bounds: bounds)
                 let (nImage, pImage) = await (next, prev)
@@ -347,6 +497,30 @@ class PageBufferManager: ObservableObject {
                     self.nextImage = nImage
                     self.prevImage = pImage
                 }
+                
+                // Preload further ahead (+2, +3) in background to warm cache
+                guard !Task.isCancelled, self.generation == gen else { return }
+                async let p2 = renderPage(at: pageIndex + 2, bounds: bounds)
+                async let p3 = renderPage(at: pageIndex + 3, bounds: bounds)
+                _ = await (p2, p3)
+            } else { // .high
+                // Parallel fetch adjacent
+                async let next = renderPage(at: pageIndex + 1, bounds: bounds)
+                async let prev = renderPage(at: pageIndex - 1, bounds: bounds)
+                let (nImage, pImage) = await (next, prev)
+                if !Task.isCancelled, self.generation == gen {
+                    self.nextImage = nImage
+                    self.prevImage = pImage
+                }
+                
+                // Preload further ahead (+2, +3, +4, +5) and backward (-2)
+                guard !Task.isCancelled, self.generation == gen else { return }
+                async let p2 = renderPage(at: pageIndex + 2, bounds: bounds)
+                async let p3 = renderPage(at: pageIndex + 3, bounds: bounds)
+                async let p4 = renderPage(at: pageIndex + 4, bounds: bounds)
+                async let p5 = renderPage(at: pageIndex + 5, bounds: bounds)
+                async let prev2 = renderPage(at: pageIndex - 2, bounds: bounds)
+                _ = await (p2, p3, p4, p5, prev2)
             }
 
             emitNearingEndIfNeeded(at: pageIndex)
@@ -355,7 +529,7 @@ class PageBufferManager: ObservableObject {
 
     // MARK: - Dual Page Render
 
-    func renderDual(leadIndex: Int, pages allPages: [URL], isMangaMode: Bool, bounds: CGSize? = nil) {
+    func renderDual(spreadIndex: Int, bounds: CGSize? = nil) {
         let now = Date()
         let interval = now.timeIntervalSince(lastPageTurnTime)
         lastPageTurnTime = now
@@ -364,18 +538,23 @@ class PageBufferManager: ObservableObject {
 
         renderTask?.cancel()
         let gen = generation
-        let totalPages = allPages.count
+        
+        currentSpreadIndex = spreadIndex
 
-        // Issue 3 fix: [weak self]
         renderTask = Task { [weak self] in
             guard let self else { return }
 
             self.isLoading = true
             self.decodeProgress = 0.0
 
-            let curPair  = buildSpreadPair(leadIndex: leadIndex,     totalPages: totalPages, isMangaMode: isMangaMode)
-            let prevPair = buildSpreadPair(leadIndex: leadIndex - 2, totalPages: totalPages, isMangaMode: isMangaMode)
-            let nextPair = buildSpreadPair(leadIndex: leadIndex + 2, totalPages: totalPages, isMangaMode: isMangaMode)
+            guard spreadIndex >= 0, spreadIndex < self.activeSpreads.count else {
+                self.isLoading = false
+                return
+            }
+
+            let curPair = self.activeSpreads[spreadIndex]
+            let prevPair = spreadIndex > 0 ? self.activeSpreads[spreadIndex - 1] : nil
+            let nextPair = spreadIndex + 1 < self.activeSpreads.count ? self.activeSpreads[spreadIndex + 1] : nil
 
             let pageBounds: CGSize? = {
                 if let b = bounds, b.width > 0, b.height > 0 {
@@ -384,11 +563,10 @@ class PageBufferManager: ObservableObject {
                 return nil
             }()
 
-            // Issue 6 fix: count only non-nil page slots so progress is accurate.
             let totalSlots = max(1, [
                 curPair.leftIndex, curPair.rightIndex,
-                prevPair.leftIndex, prevPair.rightIndex,
-                nextPair.leftIndex, nextPair.rightIndex
+                prevPair?.leftIndex, prevPair?.rightIndex,
+                nextPair?.leftIndex, nextPair?.rightIndex
             ].compactMap { $0 }.count)
             var decoded = 0
 
@@ -447,27 +625,26 @@ class PageBufferManager: ObservableObject {
             // Background preload
             let perfClass = ProcessInfo.processInfo.performanceClass
 
-            // Issue 7 fix: skip spreading decode task allocation for nil-index pairs.
-            let hasPrev = prevPair.leftIndex != nil || prevPair.rightIndex != nil
-            let hasNext = nextPair.leftIndex != nil || nextPair.rightIndex != nil
+            let hasPrev = prevPair != nil && (prevPair!.leftIndex != nil || prevPair!.rightIndex != nil)
+            let hasNext = nextPair != nil && (nextPair!.leftIndex != nil || nextPair!.rightIndex != nil)
 
             if perfClass == .low {
-                if hasNext {
+                if hasNext, let nextPair = nextPair {
                     let nL = await renderPage(at: nextPair.leftIndex,  bounds: pageBounds); self.decodeProgress = progress()
                     let nR = await renderPage(at: nextPair.rightIndex, bounds: pageBounds); self.decodeProgress = progress()
                     guard !Task.isCancelled, self.generation == gen else { return }
                     self.nextSpread = SpreadPair(leftIndex: nextPair.leftIndex, rightIndex: nextPair.rightIndex, leftImage: nL, rightImage: nR)
                     self.nextImage = nL ?? nR
                 }
-                if hasPrev {
+                if hasPrev, let prevPair = prevPair {
                     let pL = await renderPage(at: prevPair.leftIndex,  bounds: pageBounds); self.decodeProgress = progress()
                     let pR = await renderPage(at: prevPair.rightIndex, bounds: pageBounds); self.decodeProgress = progress()
                     guard !Task.isCancelled, self.generation == gen else { return }
                     self.prevSpread = SpreadPair(leftIndex: prevPair.leftIndex, rightIndex: prevPair.rightIndex, leftImage: pL, rightImage: pR)
                     self.prevImage = pL ?? pR
                 }
-            } else {
-                if hasNext {
+            } else if perfClass == .medium {
+                if hasNext, let nextPair = nextPair {
                     async let nextL = renderPage(at: nextPair.leftIndex,  bounds: pageBounds)
                     async let nextR = renderPage(at: nextPair.rightIndex, bounds: pageBounds)
                     let nL = await nextL; self.decodeProgress = progress()
@@ -477,7 +654,7 @@ class PageBufferManager: ObservableObject {
                         self.nextImage  = nL ?? nR
                     }
                 }
-                if hasPrev {
+                if hasPrev, let prevPair = prevPair {
                     async let prevL = renderPage(at: prevPair.leftIndex,  bounds: pageBounds)
                     async let prevR = renderPage(at: prevPair.rightIndex, bounds: pageBounds)
                     let pL = await prevL; self.decodeProgress = progress()
@@ -487,11 +664,58 @@ class PageBufferManager: ObservableObject {
                         self.prevImage  = pL ?? pR
                     }
                 }
+                
+                // Preload spread +2 in background to warm cache
+                guard !Task.isCancelled, self.generation == gen else { return }
+                let spread2 = spreadIndex + 2 < self.activeSpreads.count ? self.activeSpreads[spreadIndex + 2] : nil
+                if let spread2 = spread2, (spread2.leftIndex != nil || spread2.rightIndex != nil) {
+                    async let s2L = renderPage(at: spread2.leftIndex, bounds: pageBounds)
+                    async let s2R = renderPage(at: spread2.rightIndex, bounds: pageBounds)
+                    _ = await (s2L, s2R)
+                }
+            } else { // .high
+                if hasNext, let nextPair = nextPair {
+                    async let nextL = renderPage(at: nextPair.leftIndex,  bounds: pageBounds)
+                    async let nextR = renderPage(at: nextPair.rightIndex, bounds: pageBounds)
+                    let nL = await nextL; self.decodeProgress = progress()
+                    let nR = await nextR; self.decodeProgress = progress()
+                    if !Task.isCancelled, self.generation == gen {
+                        self.nextSpread = SpreadPair(leftIndex: nextPair.leftIndex, rightIndex: nextPair.rightIndex, leftImage: nL, rightImage: nR)
+                        self.nextImage  = nL ?? nR
+                    }
+                }
+                if hasPrev, let prevPair = prevPair {
+                    async let prevL = renderPage(at: prevPair.leftIndex,  bounds: pageBounds)
+                    async let prevR = renderPage(at: prevPair.rightIndex, bounds: pageBounds)
+                    let pL = await prevL; self.decodeProgress = progress()
+                    let pR = await prevR; self.decodeProgress = progress()
+                    if !Task.isCancelled, self.generation == gen {
+                        self.prevSpread = SpreadPair(leftIndex: prevPair.leftIndex, rightIndex: prevPair.rightIndex, leftImage: pL, rightImage: pR)
+                        self.prevImage  = pL ?? pR
+                    }
+                }
+                
+                // Preload spreads +2, +3, +4 and previous spread -2 in background
+                guard !Task.isCancelled, self.generation == gen else { return }
+                let spread2 = spreadIndex + 2 < self.activeSpreads.count ? self.activeSpreads[spreadIndex + 2] : nil
+                let spread3 = spreadIndex + 3 < self.activeSpreads.count ? self.activeSpreads[spreadIndex + 3] : nil
+                let spread4 = spreadIndex + 4 < self.activeSpreads.count ? self.activeSpreads[spreadIndex + 4] : nil
+                let spreadPrev2 = spreadIndex > 1 ? self.activeSpreads[spreadIndex - 2] : nil
+                
+                async let s2L = renderPage(at: spread2?.leftIndex, bounds: pageBounds)
+                async let s2R = renderPage(at: spread2?.rightIndex, bounds: pageBounds)
+                async let s3L = renderPage(at: spread3?.leftIndex, bounds: pageBounds)
+                async let s3R = renderPage(at: spread3?.rightIndex, bounds: pageBounds)
+                async let s4L = renderPage(at: spread4?.leftIndex, bounds: pageBounds)
+                async let s4R = renderPage(at: spread4?.rightIndex, bounds: pageBounds)
+                async let sp2L = renderPage(at: spreadPrev2?.leftIndex, bounds: pageBounds)
+                async let sp2R = renderPage(at: spreadPrev2?.rightIndex, bounds: pageBounds)
+                _ = await (s2L, s2R, s3L, s3R, s4L, s4R, sp2L, sp2R)
             }
 
             self.decodeProgress = 1.0
             self.isLoading = false
-            emitNearingEndIfNeeded(at: leadIndex)
+            emitNearingEndIfNeeded(at: curPair.leadIndex)
         }
     }
 
@@ -570,9 +794,8 @@ class PageBufferManager: ObservableObject {
         return result
     }
 
-    // Issue 2 fix: static nonisolated function, but all ZIP reads are serialised
-    // through PageBufferManager.archiveQueue — a serial DispatchQueue that ensures
-    // only one ZIPFoundation extract() call runs at a time on the same archive file.
+    // Issue 2 fix: static nonisolated function, leveraging ArchiveManager.shared actor
+    // to serialize ZIP file reads safely while allowing parallel image decoding.
     nonisolated private static func executeRender(
         url: URL,
         index: Int,
@@ -586,49 +809,24 @@ class PageBufferManager: ObservableObject {
         if let archiveURL, index < zipEntryPaths.count {
             let entryPath = zipEntryPaths[index]
 
-            // Issue 2 fix: serialise ZIP reads through the archive queue.
-            //
-            // Bug 3 fix: Task.isCancelled is always false inside a DispatchQueue.async block
-            // because GCD blocks have no Swift Task context. Use withTaskCancellationHandler
-            // to atomically signal an NSLock-protected flag when the Task is cancelled, then
-            // read that flag inside the GCD block instead.
-            // Swift 6 fix: replace NSLock + var + nested-func with a class-boxed flag.
-            // Class references are always Sendable by capture, so both the DispatchQueue.async
-            // block and the @Sendable onCancel closure can safely call methods on it.
-            let cancelFlag = CancellationFlag()
-
-            let cgImage: CGImage? = await withTaskCancellationHandler {
-                await withCheckedContinuation { continuation in
-                    _pageBufferArchiveQueue.async {
-                        var result: CGImage? = nil
-                        autoreleasepool {
-                            guard !cancelFlag.isCancelled else { return }
-                            do {
-                                let archive = try Archive(url: archiveURL, accessMode: .read)
-                                guard let entry = archive[entryPath] else { return }
-                                var data = Data()
-                                _ = try archive.extract(entry) { data.append($0) }
-                                guard !cancelFlag.isCancelled else { return }
-
-                                if let source = CGImageSourceCreateWithData(data as CFData, nil) {
-                                    result = Self.decodeFromSource(source, maxPixelSize: maxPixelSize)
-                                }
-                            } catch {
-                                Logger.shared.log(
-                                    "ZIP decode failed for \(entryPath): \(error.localizedDescription)",
-                                    category: "Engine", type: .error
-                                )
-                            }
-                        }
-                        continuation.resume(returning: result)
-                    }
+            do {
+                let data = try await ArchiveManager.shared.extractEntry(from: archiveURL, path: entryPath)
+                guard !Task.isCancelled else { return nil }
+                
+                let cgImage = autoreleasepool { () -> CGImage? in
+                    guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+                    return Self.decodeFromSource(source, maxPixelSize: maxPixelSize)
                 }
-            } onCancel: {
-                cancelFlag.cancel()
+                
+                guard let image = cgImage, !Task.isCancelled else { return nil }
+                return isAutoCropEnabled ? autoCropMargins(from: image) : image
+            } catch {
+                Logger.shared.log(
+                    "ZIP decode failed for \(entryPath): \(error.localizedDescription)",
+                    category: "Engine", type: .error
+                )
+                return nil
             }
-
-            guard let image = cgImage, !Task.isCancelled else { return nil }
-            return isAutoCropEnabled ? autoCropMargins(from: image) : image
         }
 
         guard !Task.isCancelled else { return nil }

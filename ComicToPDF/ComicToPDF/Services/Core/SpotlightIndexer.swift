@@ -27,21 +27,24 @@ final class SpotlightIndexer {
 
     /// Index the entire library — call after import or metadata changes.
     func indexLibrary(pdfs: [ConvertedPDF]) {
-        let tuples = pdfs.map { (id: $0.id, name: $0.name, series: $0.metadata.series, type: $0.contentType.rawValue) }
-        let items: [CSSearchableItem] = tuples.map { t in
-            let attrs = CSSearchableItemAttributeSet(contentType: .content)
-            attrs.title = t.name
-            attrs.contentDescription = t.series
-            attrs.keywords = [t.type]
-            attrs.identifier = t.id.uuidString
-            return CSSearchableItem(
-                uniqueIdentifier: "book-\(t.id.uuidString)",
-                domainIdentifier: "com.inksyncpro.library",
-                attributeSet: attrs
-            )
-        }
-        self.index.indexSearchableItems(items) { @Sendable error in
-            if let error = error {
+        let localIndex = self.index
+        Task.detached(priority: .background) {
+            let tuples = pdfs.map { (id: $0.id, name: $0.name, series: $0.metadata.series, type: $0.contentType.rawValue) }
+            let items: [CSSearchableItem] = tuples.map { t in
+                let attrs = CSSearchableItemAttributeSet(contentType: .content)
+                attrs.title = t.name
+                attrs.contentDescription = t.series
+                attrs.keywords = [t.type]
+                attrs.identifier = t.id.uuidString
+                return CSSearchableItem(
+                    uniqueIdentifier: "book-\(t.id.uuidString)",
+                    domainIdentifier: "com.inksyncpro.library",
+                    attributeSet: attrs
+                )
+            }
+            do {
+                try await localIndex.indexSearchableItems(items)
+            } catch {
                 Logger.shared.log("Spotlight: failed to index library — \(error)", category: "Spotlight", type: .error)
             }
         }
@@ -50,8 +53,11 @@ final class SpotlightIndexer {
     /// Index (or re-index) a single book — call after metadata edit.
     func indexBook(_ pdf: ConvertedPDF) {
         let item = makeBookItem(pdf)
-        self.index.indexSearchableItems([item]) { @Sendable error in
-            if let error = error {
+        let localIndex = self.index
+        Task {
+            do {
+                try await localIndex.indexSearchableItems([item])
+            } catch {
                 Logger.shared.log("Spotlight: failed to index book item — \(error)", category: "Spotlight", type: .error)
             }
         }
@@ -191,9 +197,7 @@ final class SpotlightIndexer {
             guard url.isFileURL, FileManager.default.fileExists(atPath: url.path) else { return }
             
             // Lock and load via PDFRenderActor or directly using CGPDFDocument/PDFDocument
-            let doc = ConcurrencyLocks.pdfLock.withLock {
-                PDFDocument(url: url)
-            }
+            let doc = PDFDocument(url: url)
             
             guard let pdfDoc = doc else { return }
             

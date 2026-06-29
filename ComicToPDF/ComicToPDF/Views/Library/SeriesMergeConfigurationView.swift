@@ -25,6 +25,7 @@ struct SeriesMergeConfigurationView: View {
     
     // State ViewModel
     @StateObject private var viewModel: SeriesMergeConfigurationViewModel
+    @State private var draggedItem: ConvertedPDF? = nil
     
     init(sourceFiles: [ConvertedPDF], suggestedName: String? = nil) {
         self.sourceFiles = sourceFiles
@@ -56,7 +57,7 @@ struct SeriesMergeConfigurationView: View {
                             
                             Picker("Image Quality", selection: $settingsManager.conversionSettings.compressionQuality) {
                                 ForEach(CompressionPreset.allCases, id: \.self) { preset in
-                                    Text(preset.rawValue).tag(preset)
+                                    Text("\(preset.rawValue) (Est: \(estimatedSize(for: preset)))").tag(preset)
                                 }
                             }
                             
@@ -68,9 +69,48 @@ struct SeriesMergeConfigurationView: View {
                         }
                         .listRowBackground(Color.inkSurface.opacity(0.4))
                         
-                        Section(header: Text("Merge Order"), footer: Text("Drag to reorder. The top file will be the first issue in the merged volume.")) {
+                        Section(header: Text("Size & Compression Preview")) {
+                            HStack {
+                                Text("Original Combined Size")
+                                    .foregroundColor(.inkTextSecondary)
+                                Spacer()
+                                Text(formatBytes(totalInputSize))
+                                    .foregroundColor(.secondary)
+                            }
+                            
+                            HStack {
+                                Text("Estimated Merged Size")
+                                    .foregroundColor(.inkTextPrimary)
+                                Spacer()
+                                Text(formatBytes(estimatedOutputSize))
+                                    .bold()
+                                    .foregroundColor(.inkAmber)
+                            }
+                            
+                            let splitMode = settingsManager.conversionSettings.splitMode
+                            if splitMode != .none {
+                                HStack {
+                                    Text("Splitting Status")
+                                        .foregroundColor(.inkTextPrimary)
+                                    Spacer()
+                                    if willSplit {
+                                        Text("⚠️ Splits into \(estimatedParts) files")
+                                            .foregroundColor(.inkAmber)
+                                            .bold()
+                                    } else {
+                                        Text("✅ Fits in 1 file")
+                                            .foregroundColor(.inkGreen)
+                                            .bold()
+                                    }
+                                }
+                            }
+                        }
+                        .listRowBackground(Color.inkSurface.opacity(0.4))
+                        
+                        Section(header: Text("Merge Order"), footer: Text("Drag the handles or tap Edit to reorder. The top file will be the first issue in the merged volume.")) {
                             ForEach(viewModel.itemsToMerge) { pdf in
                                 pdfRow(for: pdf)
+                                    .onDrop(of: [.text], delegate: ReorderDropDelegate(item: pdf, items: $viewModel.itemsToMerge, draggedItem: $draggedItem))
                             }
                             .onMove(perform: moveItems)
                         }
@@ -149,11 +189,94 @@ struct SeriesMergeConfigurationView: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
+            
+            Spacer()
+            
+            Image(systemName: "line.3.horizontal")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 8)
+                .contentShape(Rectangle())
+                .onDrag {
+                    self.draggedItem = pdf
+                    return NSItemProvider(object: pdf.id.uuidString as NSString)
+                }
         }
     }
     
     private var isMergeDisabled: Bool {
         viewModel.itemsToMerge.count < 2 || viewModel.outputName.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+    
+    private var totalInputSize: Int64 {
+        viewModel.itemsToMerge.reduce(0) { $0 + $1.fileSize }
+    }
+    
+    private var estimatedOutputSize: Int64 {
+        let totalPages = viewModel.itemsToMerge.reduce(0) { $0 + $1.pageCount }
+        guard totalPages > 0 else {
+            let total = Double(totalInputSize)
+            let multiplier: Double
+            switch settingsManager.conversionSettings.compressionQuality {
+            case .high: multiplier = 0.90
+            case .balanced: multiplier = 0.65
+            case .compact: multiplier = 0.40
+            }
+            return Int64(total * multiplier)
+        }
+        
+        let bytesPerPage: Int64
+        switch settingsManager.conversionSettings.compressionQuality {
+        case .high:
+            bytesPerPage = 900 * 1024 // ~900 KB
+        case .balanced:
+            bytesPerPage = 450 * 1024 // ~450 KB
+        case .compact:
+            bytesPerPage = 200 * 1024 // ~200 KB
+        }
+        return Int64(totalPages) * bytesPerPage
+    }
+    
+    private func formatBytes(_ bytes: Int64) -> String {
+        let mb = Double(bytes) / 1024 / 1024
+        return String(format: "%.1f MB", mb)
+    }
+    
+    private var willSplit: Bool {
+        let limit = settingsManager.conversionSettings.splitMode.limit
+        return estimatedOutputSize > limit
+    }
+    
+    private var estimatedParts: Int {
+        let limit = settingsManager.conversionSettings.splitMode.limit
+        guard limit > 0 else { return 1 }
+        let parts = Double(estimatedOutputSize) / Double(limit)
+        return Int(ceil(parts))
+    }
+    
+    private func estimatedSize(for preset: CompressionPreset) -> String {
+        let totalPages = viewModel.itemsToMerge.reduce(0) { $0 + $1.pageCount }
+        guard totalPages > 0 else {
+            let total = Double(totalInputSize)
+            let multiplier: Double
+            switch preset {
+            case .high: multiplier = 0.90
+            case .balanced: multiplier = 0.65
+            case .compact: multiplier = 0.40
+            }
+            return formatBytes(Int64(total * multiplier))
+        }
+        
+        let bytesPerPage: Int64
+        switch preset {
+        case .high:
+            bytesPerPage = 900 * 1024
+        case .balanced:
+            bytesPerPage = 450 * 1024
+        case .compact:
+            bytesPerPage = 200 * 1024
+        }
+        return formatBytes(Int64(totalPages) * bytesPerPage)
     }
     
     private func moveItems(from source: IndexSet, to destination: Int) {

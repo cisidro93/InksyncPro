@@ -50,6 +50,10 @@ struct CBRExtractor {
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 let fm = FileManager.default
+                let stem = sourceURL.deletingPathExtension().lastPathComponent
+                let uniqueID = UUID().uuidString.prefix(8)
+                let tempDir = fm.temporaryDirectory
+                    .appendingPathComponent("cbr_\(stem)_\(uniqueID)")
                 do {
                     // Security-scoped access (only applies to local sandbox-scoped URLs)
                     let secured = localSourceURL.startAccessingSecurityScopedResource()
@@ -60,10 +64,6 @@ struct CBRExtractor {
                     }
 
                     // Create extraction destination
-                    let stem = sourceURL.deletingPathExtension().lastPathComponent
-                    let uniqueID = UUID().uuidString.prefix(8)
-                    let tempDir = fm.temporaryDirectory
-                        .appendingPathComponent("cbr_\(stem)_\(uniqueID)")
                     try fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
 
                     let imageURLs = try ConcurrencyLocks.unrarLock.withLock {
@@ -119,6 +119,7 @@ struct CBRExtractor {
                         "CBRExtractor failed: \(error.localizedDescription)",
                         category: "System", type: .error
                     )
+                    try? fm.removeItem(at: tempDir)
                     continuation.resume(throwing: error)
                 }
             }

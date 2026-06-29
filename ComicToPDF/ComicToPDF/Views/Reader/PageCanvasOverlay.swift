@@ -106,19 +106,46 @@ struct PageCanvasOverlay: View {
 struct PKCanvasRepresentation: UIViewRepresentable {
     @Binding var canvasView: PKCanvasView
     let isMarkupEnabled: Bool
+    @EnvironmentObject var settingsManager: AppSettingsManager
     
     func makeUIView(context: Context) -> PKCanvasView {
         canvasView.isOpaque = false
         canvasView.backgroundColor = .clear
-        canvasView.drawingPolicy = isMarkupEnabled ? .anyInput : .pencilOnly // When not in markup, allow pencil only or disable
-        canvasView.isUserInteractionEnabled = true
+        
+        let pencilOnly = settingsManager.conversionSettings.pencilOnlyDrawing
+        canvasView.drawingPolicy = isMarkupEnabled ? (pencilOnly ? .pencilOnly : .anyInput) : .pencilOnly
+        canvasView.isUserInteractionEnabled = isMarkupEnabled
+        
+        let picker = PKToolPicker()
+        picker.setVisible(isMarkupEnabled, forFirstResponder: canvasView)
+        picker.addObserver(canvasView)
+        context.coordinator.toolPicker = picker
+        
+        if isMarkupEnabled {
+            canvasView.becomeFirstResponder()
+        }
+        
         return canvasView
     }
     
     func updateUIView(_ uiView: PKCanvasView, context: Context) {
-        // Toggle interactivity. If markup is off, maybe we only allow Apple Pencil, or completely disable touch
-        // so gestures pass through to the reader.
         uiView.isUserInteractionEnabled = isMarkupEnabled
-        uiView.drawingPolicy = .anyInput
+        let pencilOnly = settingsManager.conversionSettings.pencilOnlyDrawing
+        uiView.drawingPolicy = isMarkupEnabled ? (pencilOnly ? .pencilOnly : .anyInput) : .pencilOnly
+        
+        if isMarkupEnabled {
+            uiView.becomeFirstResponder()
+            context.coordinator.toolPicker?.setVisible(true, forFirstResponder: uiView)
+        } else {
+            uiView.resignFirstResponder()
+        }
+    }
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+    
+    class Coordinator: NSObject {
+        var toolPicker: PKToolPicker?
     }
 }

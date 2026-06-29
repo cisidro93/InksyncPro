@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 
 // MARK: - CBTExtractor
 // Extracts CBT (Comic Book TAR) archives — TAR files renamed with the .cbt extension.
@@ -25,6 +26,10 @@ struct CBTExtractor {
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 let fm = FileManager.default
+                let stem = sourceURL.deletingPathExtension().lastPathComponent
+                let uniqueID = UUID().uuidString.prefix(8)
+                let tempDir = fm.temporaryDirectory
+                    .appendingPathComponent("cbt_\(stem)_\(uniqueID)")
                 do {
                     let secured = sourceURL.startAccessingSecurityScopedResource()
                     defer { if secured { sourceURL.stopAccessingSecurityScopedResource() } }
@@ -34,10 +39,6 @@ struct CBTExtractor {
                     // devices. For very large archives a streaming approach could be added later.
                     let archiveData = try Data(contentsOf: sourceURL, options: .mappedIfSafe)
 
-                    let stem = sourceURL.deletingPathExtension().lastPathComponent
-                    let uniqueID = UUID().uuidString.prefix(8)
-                    let tempDir = fm.temporaryDirectory
-                        .appendingPathComponent("cbt_\(stem)_\(uniqueID)")
                     try fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
 
                     let imageURLs = try parseTAR(data: archiveData, into: tempDir)
@@ -59,10 +60,178 @@ struct CBTExtractor {
                         "CBTExtractor failed: \(error.localizedDescription)",
                         category: "System", type: .error
                     )
+                    try? fm.removeItem(at: tempDir)
                     continuation.resume(throwing: error)
                 }
             }
         }
+    }
+
+    /// Synchronously extracts the first image from a TAR/CBT archive for cover thumbnail generation.
+    static func extractFirstImage(from sourceURL: URL) -> UIImage? {
+        let secured = sourceURL.startAccessingSecurityScopedResource()
+        defer { if secured { sourceURL.stopAccessingSecurityScopedResource() } }
+
+        guard let archiveData = try? Data(contentsOf: sourceURL, options: .mappedIfSafe) else { return nil }
+
+        let blockSize = 512
+        var offset = 0
+        var consecutiveZeroBlocks = 0
+
+        while offset + blockSize <= archiveData.count {
+            let headerBlock = archiveData[offset ..< offset + blockSize]
+
+            if headerBlock.allSatisfy({ $0 == 0 }) {
+                consecutiveZeroBlocks += 1
+                if consecutiveZeroBlocks >= 2 { break }
+                offset += blockSize
+                continue
+            }
+            consecutiveZeroBlocks = 0
+
+            guard let name = tarString(headerBlock, offset: 0, length: 100),
+                  let sizeOctal = tarString(headerBlock, offset: 124, length: 12) else {
+                offset += blockSize
+                continue
+            }
+
+            let fileSize = Int(sizeOctal.trimmingCharacters(in: .whitespaces)
+                                .trimmingCharacters(in: CharacterSet(charactersIn: "\0")), radix: 8) ?? 0
+
+            guard fileSize >= 0 else {
+                offset += blockSize
+                continue
+            }
+
+            let dataBlocks = (fileSize / blockSize) + (fileSize % blockSize > 0 ? 1 : 0)
+
+            let (blockOffset, overflow1) = dataBlocks.multipliedReportingOverflow(by: blockSize)
+            let (totalAdvance, overflow2) = blockOffset.addingReportingOverflow(blockSize)
+            let (newOffset, overflow3) = offset.addingReportingOverflow(totalAdvance)
+
+            guard !overflow1, !overflow2, !overflow3, newOffset >= 0, newOffset <= archiveData.count else {
+                break
+            }
+
+            let typeflag = headerBlock[headerBlock.startIndex + 156]
+            let isRegular = typeflag == UInt8(ascii: "0") || typeflag == 0
+
+            if !isRegular || fileSize == 0 {
+                offset = newOffset
+                continue
+            }
+
+            let flatName = (name as NSString).lastPathComponent
+
+            guard !name.contains("__MACOSX"),
+                  !flatName.hasPrefix("._"),
+                  flatName != ".DS_Store" else {
+                offset = newOffset
+                continue
+            }
+
+            if PhysicalFileSystemRouter.isDisclaimerFilename(flatName) {
+                offset = newOffset
+                continue
+            }
+
+            let ext = (flatName as NSString).pathExtension.lowercased()
+            let dataStart = offset + blockSize
+            let dataEnd = dataStart + fileSize
+
+            if imageExtensions.contains(ext), dataEnd <= archiveData.count {
+                let fileData = archiveData[dataStart ..< dataEnd]
+                let image = autoreleasepool { () -> UIImage? in
+                    guard let img = UIImage(data: fileData) else { return nil }
+                    if PhysicalFileSystemRouter.containsDisclaimerText(in: img) {
+                        return nil
+                    }
+                    return img
+                }
+                if let img = image {
+                    return img
+                }
+            }
+
+            offset = newOffset
+        }
+
+        return nil
+    }
+
+    /// Synchronously retrieves the number of images inside a TAR/CBT archive.
+    static func getPageCount(from sourceURL: URL) -> Int {
+        let secured = sourceURL.startAccessingSecurityScopedResource()
+        defer { if secured { sourceURL.stopAccessingSecurityScopedResource() } }
+
+        guard let archiveData = try? Data(contentsOf: sourceURL, options: .mappedIfSafe) else { return 0 }
+
+        let blockSize = 512
+        var offset = 0
+        var consecutiveZeroBlocks = 0
+        var count = 0
+
+        while offset + blockSize <= archiveData.count {
+            let headerBlock = archiveData[offset ..< offset + blockSize]
+
+            if headerBlock.allSatisfy({ $0 == 0 }) {
+                consecutiveZeroBlocks += 1
+                if consecutiveZeroBlocks >= 2 { break }
+                offset += blockSize
+                continue
+            }
+            consecutiveZeroBlocks = 0
+
+            guard let name = tarString(headerBlock, offset: 0, length: 100),
+                  let sizeOctal = tarString(headerBlock, offset: 124, length: 12) else {
+                offset += blockSize
+                continue
+            }
+
+            let fileSize = Int(sizeOctal.trimmingCharacters(in: .whitespaces)
+                                .trimmingCharacters(in: CharacterSet(charactersIn: "\0")), radix: 8) ?? 0
+
+            guard fileSize >= 0 else {
+                offset += blockSize
+                continue
+            }
+
+            let dataBlocks = (fileSize / blockSize) + (fileSize % blockSize > 0 ? 1 : 0)
+
+            let (blockOffset, overflow1) = dataBlocks.multipliedReportingOverflow(by: blockSize)
+            let (totalAdvance, overflow2) = blockOffset.addingReportingOverflow(blockSize)
+            let (newOffset, overflow3) = offset.addingReportingOverflow(totalAdvance)
+
+            guard !overflow1, !overflow2, !overflow3, newOffset >= 0, newOffset <= archiveData.count else {
+                break
+            }
+
+            let typeflag = headerBlock[headerBlock.startIndex + 156]
+            let isRegular = typeflag == UInt8(ascii: "0") || typeflag == 0
+
+            if !isRegular || fileSize == 0 {
+                offset = newOffset
+                continue
+            }
+
+            let flatName = (name as NSString).lastPathComponent
+
+            guard !name.contains("__MACOSX"),
+                  !flatName.hasPrefix("._"),
+                  flatName != ".DS_Store" else {
+                offset = newOffset
+                continue
+            }
+
+            let ext = (flatName as NSString).pathExtension.lowercased()
+            if imageExtensions.contains(ext) {
+                count += 1
+            }
+
+            offset = newOffset
+        }
+
+        return count
     }
 
     // MARK: - TAR Parser

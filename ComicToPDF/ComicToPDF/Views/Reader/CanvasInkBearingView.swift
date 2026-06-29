@@ -7,11 +7,12 @@ import PencilKit
 struct CanvasInkBearingView: UIViewRepresentable {
     @Binding var canvasView: PKCanvasView
     let isDrawingMode: Bool
+    let pencilOnly: Bool
     var onDrawingSaved: ((PKDrawing) -> Void)?
 
     func makeUIView(context: Context) -> PKCanvasView {
-        // Phase 4E-1: allow finger drawing so the tool picker's finger option works
-        canvasView.drawingPolicy = .anyInput
+        // Phase 4E-1: allow drawing based on setting (pencil only vs any input)
+        canvasView.drawingPolicy = pencilOnly ? .pencilOnly : .anyInput
         canvasView.backgroundColor = .clear
         canvasView.isOpaque = false
 
@@ -32,6 +33,7 @@ struct CanvasInkBearingView: UIViewRepresentable {
 
     func updateUIView(_ uiView: PKCanvasView, context: Context) {
         uiView.isUserInteractionEnabled = isDrawingMode
+        uiView.drawingPolicy = isDrawingMode ? (pencilOnly ? .pencilOnly : .anyInput) : .pencilOnly
 
         if isDrawingMode {
             uiView.becomeFirstResponder()

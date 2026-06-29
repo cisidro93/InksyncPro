@@ -143,7 +143,7 @@ class EPUBGenerator {
         
         // Streaming Process
         for (index, url) in imageURLs.enumerated() {
-            try? autoreleasepool {
+            try autoreleasepool {
                 let pageNumber = index + 1
                 let imageName = "image\(pageNumber).jpg"
                 let imageDestURL = oebpsDir.appendingPathComponent("images/\(imageName)")
@@ -153,16 +153,17 @@ class EPUBGenerator {
             // But we typically enforce constraints.
             // Let's load and processed like normal to ensure consistency
             
-            var imgWidth = 1000
-            var imgHeight = 1500
+            guard let image = UIImage(contentsOfFile: url.path) else {
+                throw NSError(domain: "ImageProcessor", code: 404, userInfo: [
+                    NSLocalizedDescriptionKey: "Invalid or corrupted image file '\(url.lastPathComponent)'. Please verify your source file."
+                ])
+            }
             
-            if let image = UIImage(contentsOfFile: url.path) {
-                let processed = resizeImageIfNeeded(image)
-                imgWidth = Int(processed.size.width)
-                imgHeight = Int(processed.size.height)
-                if let data = processed.jpegData(compressionQuality: compressionQuality) {
-                     try data.write(to: imageDestURL)
-                }
+            let processed = resizeImageIfNeeded(image)
+            let imgWidth = Int(processed.size.width)
+            let imgHeight = Int(processed.size.height)
+            if let data = processed.jpegData(compressionQuality: compressionQuality) {
+                 try data.write(to: imageDestURL)
             }
             
             accumulatedImageManifestItems += "        <item id=\"image\(pageNumber)\" href=\"images/\(imageName)\" media-type=\"image/jpeg\"/>\n"
@@ -426,6 +427,7 @@ class EPUBGenerator {
         
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1.0
+        format.preferredRange = .standard // Forces standard sRGB color space
         format.opaque = true // No alpha channel = smaller file
         
         let renderer = UIGraphicsImageRenderer(size: finalCanvas, format: format)

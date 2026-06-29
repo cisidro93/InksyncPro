@@ -18,6 +18,8 @@ struct MetadataSearchSheet: View {
     }
     
     @State private var query = ""
+    @FocusState private var isSearchFieldFocused: Bool
+
     @State private var selectedProvider: MetadataProvider = .comicVine
     @State private var comicResults: [ComicVineVolume] = []
     @State private var bookResults: [GoogleBookItem] = []
@@ -34,6 +36,7 @@ struct MetadataSearchSheet: View {
                 HStack {
                     TextField((selectedProvider == .aniList || selectedProvider == .mangaUpdates) ? "Manga Name (e.g. Naruto)" : "Series Name (e.g. Saga)", text: $query)
                         .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .focused($isSearchFieldFocused)
                         .onSubmit { performSearch() }
                     
                     Button(action: performSearch) {
@@ -219,9 +222,19 @@ struct MetadataSearchSheet: View {
             }
             .background(Color.inkBackground.ignoresSafeArea())
             .navigationTitle("Find Series")
+            .background(
+                Group {
+                    Button("") { dismiss() }
+                        .keyboardShortcut("w", modifiers: .command)
+                    Button("") { dismiss() }
+                        .keyboardShortcut(.cancelAction)
+                }
+                .opacity(0)
+            )
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) { Button("Cancel") { dismiss() } }
             }
+
             .alert("Search Error", isPresented: $showingErrorAlert, presenting: errorMessage) { _ in
                 Button("OK", role: .cancel) { }
             } message: { msg in
@@ -239,7 +252,10 @@ struct MetadataSearchSheet: View {
                 } else {
                     selectedProvider = .comicVine
                 }
+                
+                isSearchFieldFocused = true
             }
+
         }
     }
     
@@ -604,11 +620,33 @@ struct MetadataSearchSheet: View {
     
     func fetchAndSaveCover(_ urlString: String) async {
         guard let url = URL(string: urlString) else { return }
-        if let data = try? Data(contentsOf: url) {
-             await MainActor.run {
-                 conversionManager.saveCoverImage(data, for: pdf)
-                 conversionManager.saveLibrary()
-             }
+        
+        let result = await Task.detached(priority: .userInitiated) { () -> (URL, UUID)? in
+            guard let data = try? Data(contentsOf: url),
+                  let image = UIImage(data: data),
+                  let jpegData = image.jpegData(compressionQuality: 0.9) else { return nil }
+            
+            guard image.size.width > 20 && image.size.height > 20 else { return nil }
+            
+            let variantID = UUID()
+            let coversDir = await ConversionManager.getCoversDirectory()
+            let variantURL = coversDir.appendingPathComponent("\(variantID.uuidString).jpg")
+            do {
+                try jpegData.write(to: variantURL)
+                return (variantURL, variantID)
+            } catch {
+                return nil
+            }
+        }.value
+        
+        if let (variantURL, variantID) = result {
+            await MainActor.run {
+                if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                    conversionManager.convertedPDFs[idx].metadata.coverVariants[variantID] = variantURL
+                    conversionManager.convertedPDFs[idx].metadata.selectedCoverID = variantID
+                    conversionManager.saveLibrary()
+                }
+            }
         }
     }
     
@@ -792,23 +830,10 @@ struct MetadataSearchSheet: View {
     
     // MARK: - Helpers
     func cleanFilename(_ name: String) -> String {
-        var clean = URL(fileURLWithPath: name).deletingPathExtension().lastPathComponent
-        clean = clean.replacingOccurrences(of: "_", with: " ")
-        if let range = clean.range(of: "\\(.*?\\)", options: .regularExpression) {
-             clean.removeSubrange(range)
-        }
-        return clean.trimmingCharacters(in: .whitespaces)
+        return MetadataHeuristics.cleanFilename(name)
     }
     
     func extractIssueNumber(from name: String) -> String? {
-        let pattern = "#?(\\d+)"
-        let optRegex = try? NSRegularExpression(pattern: pattern)
-        if let regex = optRegex,
-           let match = regex.firstMatch(in: name, range: NSRange(name.startIndex..., in: name)) {
-            if let range = Range(match.range(at: 1), in: name) {
-                return String(name[range])
-            }
-        }
-        return nil
+        return MetadataHeuristics.extractIssueNumber(from: name)
     }
 }

@@ -18,6 +18,7 @@ struct ReaderView: View {
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var conversionManager: ConversionManager
     @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject var settingsManager: AppSettingsManager
     
     @AppStorage("isMangaMode") private var isMangaMode = false
     @State private var isPanelViewEnabled = true
@@ -31,7 +32,6 @@ struct ReaderView: View {
 
     // Advanced Reader Features
     @AppStorage("isVerticalScroll") private var isVerticalScroll = false
-    @AppStorage("isDoublePageMode") private var isDoublePageMode = false
     @AppStorage("autoLandscapeDualPage") private var autoLandscapeDualPage = true
     @State private var isDrawingMode = false
     @State private var canvasView = PKCanvasView()
@@ -137,7 +137,7 @@ struct ReaderView: View {
                 // KOReader Casual Comforts Overlay
                 edgeSwipeOverlay(in: geo)
                 
-                // Manga Binge-Mode HUD
+                // Series Binge-Mode HUD
                 if showBingePrompt, let nextVol = nextVolumeToRead {
                     bingeModeOverlay(nextVol: nextVol)
                 }
@@ -305,7 +305,7 @@ struct ReaderView: View {
                 Button("Go") {
                     if let n = Int(jumpToPageText), n >= 1, n <= pages.count {
                         let rawIndex = n - 1
-                        let isDual = (isDoublePageMode || autoLandscapeDualPage) && geo.size.width > geo.size.height
+                        let isDual = autoLandscapeDualPage && geo.size.width > geo.size.height
                         currentPageIndex = isDual
                             ? PageBufferManager.canonicalLeadIndex(for: rawIndex, isMangaMode: isMangaMode)
                             : rawIndex
@@ -329,7 +329,6 @@ struct ReaderView: View {
                 ReaderSettingsSheet(
                     isMangaMode: $isMangaMode,
                     isVerticalScroll: $isVerticalScroll,
-                    isDoublePageMode: $isDoublePageMode,
                     autoLandscapeDualPage: $autoLandscapeDualPage,
                     autoContrastLevel: $autoContrastLevel,
                     smartSharpen: $smartSharpen,
@@ -370,7 +369,7 @@ struct ReaderView: View {
         if !isLoading && errorMessage == nil {
             let pageText: String = {
                 if pages.isEmpty { return "" }
-                let isDual = (isDoublePageMode || autoLandscapeDualPage) && geo.size.width > geo.size.height
+                let isDual = autoLandscapeDualPage && geo.size.width > geo.size.height
                 if isDual && currentPageIndex > 0 {
                     let lead = PageBufferManager.canonicalLeadIndex(for: currentPageIndex, isMangaMode: isMangaMode)
                     let right = min(lead + 1, pages.count - 1)
@@ -393,7 +392,7 @@ struct ReaderView: View {
                     get: { pages.isEmpty ? 0 : Double(currentPageIndex) / Double(max(1, pages.count - 1)) },
                     set: { val in
                         let raw = Int((val * Double(max(1, pages.count - 1))).rounded())
-                        let isDual = isDoublePageMode || (autoLandscapeDualPage && geo.size.width > geo.size.height)
+                        let isDual = autoLandscapeDualPage && geo.size.width > geo.size.height
                         let snapped = isDual
                             ? PageBufferManager.canonicalLeadIndex(for: raw, isMangaMode: isMangaMode)
                             : raw
@@ -468,8 +467,8 @@ struct ReaderView: View {
                             if fileURL.pathExtension.lowercased() != "pdf" {
                                 if !pages.isEmpty {
                                     // ⚠️  Do NOT pass isDoublePageOverride here.
-                                    // PPLReaderView already reads @AppStorage("isDoublePageMode")
-                                    // internally. Passing it as a prop AND having the internal
+                                     // PPLReaderView already reads @AppStorage("autoLandscapeDualPage")
+                                     // internally. Passing it as a prop AND having the internal
                                     // observer both fire setupBuffer on toggle creates a race:
                                     // two concurrent setupDirectArchive() calls clear and repopulate
                                     // currentImage at the same time → MetalCanvasView GPU crash.
@@ -494,7 +493,7 @@ struct ReaderView: View {
                                     totalPages: $pages,
                                     isVerticalScroll: isVerticalScroll,
                                     isMangaMode: isMangaMode,
-                                    isDoublePageMode: isDoublePageMode || (autoLandscapeDualPage && geo.size.width > geo.size.height),
+                                    isDoublePageMode: autoLandscapeDualPage && geo.size.width > geo.size.height,
                                     loadedDocument: $loadedPDFDocument,
                                     onSingleTap: {
                                         withAnimation(.easeInOut(duration: 0.2)) { isToolbarVisible.toggle() }
@@ -510,6 +509,7 @@ struct ReaderView: View {
                                     CanvasInkBearingView(
                                         canvasView: $canvasView,
                                         isDrawingMode: isDrawingMode,
+                                        pencilOnly: settingsManager.conversionSettings.pencilOnlyDrawing,
                                         onDrawingSaved: { drawing in
                                             // Item 8 — delegated to helper to keep comicReaderContent type-checkable
                                             saveInkAnnotation(drawing)
@@ -549,7 +549,7 @@ struct ReaderView: View {
                 if !isVerticalScroll && !pages.isEmpty && !isLoading && !isToolbarVisible {
                     VStack {
                         Spacer()
-                        let isDual = (isDoublePageMode || autoLandscapeDualPage) && geo.size.width > geo.size.height
+                        let isDual = autoLandscapeDualPage && geo.size.width > geo.size.height
                         let pillText: String = {
                             if isDual && currentPageIndex > 0 {
                                 let lead = PageBufferManager.canonicalLeadIndex(for: currentPageIndex, isMangaMode: isMangaMode)
@@ -583,27 +583,25 @@ struct ReaderView: View {
             let docURL = fileURL
             Task { @MainActor in
                 let img = await Task.detached(priority: .userInitiated) { () -> UIImage? in
-                    return ConcurrencyLocks.pdfLock.withLock {
-                        guard let doc = PDFDocument(url: docURL),
-                              let page = doc.page(at: pageIdx) else { return nil }
+                    guard let doc = PDFDocument(url: docURL),
+                          let page = doc.page(at: pageIdx) else { return nil }
+                    
+                    let pageBounds = page.bounds(for: .mediaBox)
+                    guard pageBounds.width > 0 && pageBounds.height > 0 && !pageBounds.width.isNaN && !pageBounds.height.isNaN else { return nil }
+                    let size = CGSize(width: 1024, height: 1408)
+                    let scale = min(size.width / pageBounds.width, size.height / pageBounds.height)
+                    let scaledSize = CGSize(width: pageBounds.width * scale, height: pageBounds.height * scale)
+                    guard scaledSize.width > 0 && scaledSize.height > 0 && !scaledSize.width.isNaN && !scaledSize.height.isNaN else { return nil }
+                    
+                    let renderer = UIGraphicsImageRenderer(size: scaledSize)
+                    return renderer.image { context in
+                        UIColor.white.setFill()
+                        context.fill(CGRect(origin: .zero, size: scaledSize))
                         
-                        let pageBounds = page.bounds(for: .mediaBox)
-                        guard pageBounds.width > 0 && pageBounds.height > 0 && !pageBounds.width.isNaN && !pageBounds.height.isNaN else { return nil }
-                        let size = CGSize(width: 1024, height: 1408)
-                        let scale = min(size.width / pageBounds.width, size.height / pageBounds.height)
-                        let scaledSize = CGSize(width: pageBounds.width * scale, height: pageBounds.height * scale)
-                        guard scaledSize.width > 0 && scaledSize.height > 0 && !scaledSize.width.isNaN && !scaledSize.height.isNaN else { return nil }
+                        context.cgContext.translateBy(x: 0, y: scaledSize.height)
+                        context.cgContext.scaleBy(x: scale, y: -scale)
                         
-                        let renderer = UIGraphicsImageRenderer(size: scaledSize)
-                        return renderer.image { context in
-                            UIColor.white.setFill()
-                            context.fill(CGRect(origin: .zero, size: scaledSize))
-                            
-                            context.cgContext.translateBy(x: 0, y: scaledSize.height)
-                            context.cgContext.scaleBy(x: scale, y: -scale)
-                            
-                            page.draw(with: .mediaBox, to: context.cgContext)
-                        }
+                        page.draw(with: .mediaBox, to: context.cgContext)
                     }
                 }.value
                 if let img {
@@ -934,7 +932,7 @@ struct ReaderView: View {
         if currentPageIndex < pages.count - 1 {
             currentPageIndex += 1
         } else {
-            // Trigger Manga Binge-Mode auto-continuation
+            // Trigger Series Binge-Mode auto-continuation (supports Books, Comics, and Manga)
             if let nextVol = getNextVolume() {
                 self.nextVolumeToRead = nextVol
                 withAnimation(.spring()) { self.showBingePrompt = true }
@@ -948,11 +946,12 @@ struct ReaderView: View {
         }
     }
     
-    // MARK: - Manga Binge-Mode Pipeline
+    // MARK: - Series Binge-Mode Pipeline
     
     private func getNextVolume() -> ConvertedPDF? {
         guard let current = pdf, let series = current.metadata.series else { return nil }
-        let seriesItems = conversionManager.convertedPDFs.filter { $0.metadata.series == series && $0.id != current.id && !$0.isPrivate }
+        let isVaultUnlocked = AppSettingsManager.shared.isVaultUnlocked
+        let seriesItems = conversionManager.convertedPDFs.filter { $0.metadata.series == series && $0.id != current.id && (isVaultUnlocked ? true : !$0.isPrivate) }
         
         let sorted = seriesItems.sorted { a, b in
             let aNum = Double(a.metadata.issueNumber ?? a.metadata.volume ?? "0") ?? 0
@@ -1375,12 +1374,12 @@ struct PDFKitView: UIViewRepresentable {
         )
 
         context.coordinator.loadTask = Task.detached(priority: .userInitiated) {
-            let (document, pageCount) = ConcurrencyLocks.pdfLock.withLock { () -> (PDFDocument?, Int) in
+            let (document, pageCount): (PDFDocument?, Int) = {
                 if let doc = PDFDocument(url: url) {
                     return (doc, doc.pageCount)
                 }
                 return (nil, 0)
-            }
+            }()
             if let document = document {
                 if Task.isCancelled { return }
                 await MainActor.run {

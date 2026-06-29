@@ -14,7 +14,7 @@ DerivedData/
 
 # CocoaPods
 Pods/
-"ComicToPDF/reference files/"
+ComicToPDF/reference files/
 *.cbz
 *.epub
 

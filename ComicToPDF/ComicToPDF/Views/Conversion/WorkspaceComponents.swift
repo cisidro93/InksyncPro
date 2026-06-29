@@ -9,7 +9,7 @@ struct WorkspaceCanvasView: View {
     @ObservedObject var viewModel: PageEditorViewModel
     @Binding var selectedPages: Set<Int>
     
-    @State private var pageToEdit: Int?
+    @Binding var pageToEdit: Int?
     @State private var draggedItem: GridPageItem?
     
     // Scale features
@@ -124,6 +124,7 @@ struct WorkspaceToolPalette: View {
     let pdf: ConvertedPDF
     @ObservedObject var viewModel: PageEditorViewModel
     @Binding var selectedPages: Set<Int>
+    @Binding var pageToEdit: Int?
     
     var body: some View {
         HStack(spacing: 20) {
@@ -148,10 +149,8 @@ struct WorkspaceToolPalette: View {
                 let index = selectedPages.first ?? 0
                 
                 Button(action: {
-                    // Navigate strictly through AdvancedWorkspaceView binding. 
-                    // To do this properly, we'd need pageToEdit bound up from Canvas.
-                    // For now, let's keep it simple or hook it into a notification.
-                    // Given the constraint, we will rely on internal logic.
+                    self.pageToEdit = index
+                    selectedPages.removeAll() // Clear selection on enter
                 }) {
                     Label("Precision Tools", systemImage: "paintbrush.pointed")
                 }
@@ -213,7 +212,7 @@ struct WorkspaceToolPalette: View {
             try await conversionManager.deletePages(from: pdf, pageIndices: selectedPages)
             selectedPages.removeAll()
             viewModel.cleanup()
-            await viewModel.loadPages(from: pdf)
+            await viewModel.loadPages(from: pdf, conversionManager: conversionManager)
         } catch {
              viewModel.errorMessage = "Delete failed: \(error.localizedDescription)"
              viewModel.isLoading = false
@@ -328,6 +327,7 @@ struct CoverStudioView: View {
     @State private var isFetching = false
     @State private var hasFetched = false
     @State private var fetchLimit = 10
+    @State private var remoteStageImage: UIImage? = nil
 
     
     var activeCoverURL: URL? { conversionManager.getCoverURL(for: livePDF) }
@@ -336,10 +336,6 @@ struct CoverStudioView: View {
         guard let url = previewCoverURL ?? activeCoverURL else { return nil }
         if url.isFileURL {
             return UIImage(contentsOfFile: url.path)
-        } else {
-            if let data = try? Data(contentsOf: url) {
-                return UIImage(data: data)
-            }
         }
         return nil
     }
@@ -373,6 +369,25 @@ struct CoverStudioView: View {
                     .frame(height: 360)
                     .cornerRadius(12)
                     .padding(10)
+            } else if let url = previewCoverURL ?? activeCoverURL, !url.isFileURL {
+                if let remoteImg = remoteStageImage {
+                    Image(uiImage: remoteImg)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(height: 360)
+                        .cornerRadius(12)
+                        .padding(10)
+                } else {
+                    ProgressView()
+                        .frame(height: 360)
+                        .task(id: url) {
+                            remoteStageImage = nil
+                            if let (data, _) = try? await URLSession.shared.data(from: url),
+                               let img = UIImage(data: data) {
+                                remoteStageImage = img
+                            }
+                        }
+                }
             } else {
                 VStack {
                     Image(systemName: "photo.artframe")

@@ -30,7 +30,7 @@ struct InksyncProApp: App {
     @Environment(\.scenePhase) private var scenePhase
     
     // ✅ Global Thread-Safe Model Container
-    static let sharedModelContainer: ModelContainer = {
+    nonisolated static let sharedModelContainer: ModelContainer = {
         let schema = Schema([
             SDConvertedPDF.self,
             SDPDFCollection.self,

@@ -10,6 +10,14 @@ struct LibraryScrollOffsetKey: PreferenceKey {
     }
 }
 
+struct LibraryCellFramePreferenceKey: PreferenceKey {
+    typealias Value = [String: CGRect]
+    static var defaultValue: [String: CGRect] { [:] }
+    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { $1 })
+    }
+}
+
 // MARK: - Header Pin Mode
 // Controls whether the header auto-collapses on scroll (auto), is locked open
 // (pinnedExpanded), or locked collapsed (pinnedCollapsed).
@@ -240,7 +248,7 @@ struct LibraryIndexScrubber: View {
                             withAnimation(.spring(response: 0.22, dampingFraction: 0.72)) {
                                 isExpanded = true
                             }
-                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            HapticEngine.light()
                         }
 
                         // Letter tracking
@@ -249,7 +257,7 @@ struct LibraryIndexScrubber: View {
                         if activeLetter != letter {
                             activeLetter = letter
                             onScrub(letter)
-                            UISelectionFeedbackGenerator().selectionChanged()
+                            HapticEngine.selection()
                         }
                     }
                     .onEnded { _ in
@@ -278,6 +286,16 @@ struct LazyView<Content: View>: View {
     }
     var body: Content {
         build()
+    }
+}
+
+// MARK: - Tactile Button Style
+/// ButtonStyle that shrinks slightly on press and triggers a light haptic tick.
+struct TactileButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.96 : 1.0)
+            .animation(.spring(response: 0.2, dampingFraction: 0.7), value: configuration.isPressed)
     }
 }
 

@@ -23,11 +23,23 @@ class AdaptiveLearningManager: ObservableObject {
     
     func recordUserDeletedPanel(size: CGSize) {
         deletedPanelsCount += 1
+        let minDim = min(size.width, size.height)
+        if minDim > 0 && minDim <= currentMinimumSize * 1.2 {
+            // User deleted a small panel, possibly noise. Push up minimum size threshold.
+            currentMinimumSize = min(0.18, (currentMinimumSize * 0.8) + (minDim * 1.2 * 0.2))
+            Logger.shared.log("AI: Adjusted minimum size threshold upward to \(String(format: "%.3f", currentMinimumSize)) based on deleted small panel.", category: "AI")
+        }
         evaluateHeuristics()
     }
     
     func recordUserAddedPanel(size: CGSize) {
         addedPanelsCount += 1
+        let minDim = min(size.width, size.height)
+        if minDim > 0.02 && minDim < currentMinimumSize {
+            // Adaptively pull down the minimum size to allow smaller panels like this one
+            currentMinimumSize = max(0.03, (currentMinimumSize * 0.8) + (minDim * 0.2))
+            Logger.shared.log("AI: Adapted minimum size threshold to \(String(format: "%.3f", currentMinimumSize)) based on small user-added panel.", category: "AI")
+        }
         evaluateHeuristics()
     }
     
@@ -43,20 +55,18 @@ class AdaptiveLearningManager: ObservableObject {
         // SCENARIO 1: The user keeps DELETING panels.
         // Diagnosis: The AI is being too aggressive. It's grabbing gutters or noise.
         // Action: Raise the confidence threshold required to pass, and raise the minimum size limit.
-        if deletedPanelsCount > 20 && deletedPanelsCount > (addedPanelsCount * 2) {
-            Logger.shared.log("AI: User is over-deleting. Raising confidence to \(String(format: "%.2f", min(currentBaseConfidence + 0.05, 0.8)))", category: "AI")
-            if currentBaseConfidence < 0.8 { currentBaseConfidence += 0.05 }
-            if currentMinimumSize  < 0.15  { currentMinimumSize  += 0.01 }
+        if deletedPanelsCount >= 5 && deletedPanelsCount > addedPanelsCount {
+            Logger.shared.log("AI: User is over-deleting. Raising confidence to \(String(format: "%.2f", min(currentBaseConfidence + 0.03, 0.8)))", category: "AI")
+            if currentBaseConfidence < 0.8 { currentBaseConfidence += 0.03 }
             resetEpoch()
         }
         
         // SCENARIO 2: The user keeps ADDING panels manually.
         // Diagnosis: The AI is being too blind. It's missing small or faded panels.
         // Action: Lower the confidence threshold, and lower the minimum size.
-        else if addedPanelsCount > 20 && addedPanelsCount > (deletedPanelsCount * 2) {
-            Logger.shared.log("AI: User is under-detecting. Lowering confidence to \(String(format: "%.2f", max(currentBaseConfidence - 0.05, 0.3)))", category: "AI")
-            if currentBaseConfidence > 0.3 { currentBaseConfidence -= 0.05 }
-            if currentMinimumSize  > 0.04  { currentMinimumSize  -= 0.01 }
+        else if addedPanelsCount >= 5 && addedPanelsCount > deletedPanelsCount {
+            Logger.shared.log("AI: User is under-detecting. Lowering confidence to \(String(format: "%.2f", max(currentBaseConfidence - 0.03, 0.35)))", category: "AI")
+            if currentBaseConfidence > 0.35 { currentBaseConfidence -= 0.03 }
             resetEpoch()
         }
     }

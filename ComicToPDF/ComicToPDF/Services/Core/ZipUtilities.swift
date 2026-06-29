@@ -29,16 +29,14 @@ struct ZipUtilities {
         return try await withCheckedThrowingContinuation { continuation in
             // Use a raw background queue to guarantee isolation from the UI
             DispatchQueue.global(qos: .userInitiated).async {
+                let fileManager = FileManager.default
+                let filename = sourceURL.deletingPathExtension().lastPathComponent
+                let uniqueID = UUID().uuidString.prefix(8)
+                let tempDir = fileManager.temporaryDirectory.appendingPathComponent("extract_\(filename)_\(uniqueID)")
                 do {
-                    let fileManager = FileManager.default
-
                     // Security scope is managed by the CALLER — do not open it here.
                     // See doc comment on extractComic for the ownership contract.
 
-                    let filename = sourceURL.deletingPathExtension().lastPathComponent
-                    let uniqueID = UUID().uuidString.prefix(8)
-                    let tempDir = fileManager.temporaryDirectory.appendingPathComponent("extract_\(filename)_\(uniqueID)")
-                    
                     // 2. Create Target Directory
                     try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
                     
@@ -47,40 +45,35 @@ struct ZipUtilities {
                     // 3. Extraction Strategy
                     if ext == "pdf" {
                         // --- PDF PATH ---
-                        let images = try ConcurrencyLocks.pdfLock.withLock { () throws -> [UIImage] in
-                            guard let document = PDFDocument(url: sourceURL) else { return [] }
-                            let pageCount = document.pageCount
-                            var rendered: [UIImage] = []
-                            for i in 0..<pageCount {
-                                try autoreleasepool {
-                                    if let page = document.page(at: i) {
-                                        // Render full page
-                                        var pageRect = page.bounds(for: .mediaBox)
-                                        if pageRect.width <= 0 || pageRect.height <= 0 || pageRect.width.isNaN || pageRect.height.isNaN {
-                                            pageRect = CGRect(x: 0, y: 0, width: 612, height: 792)
-                                        }
-                                        let renderer = UIGraphicsImageRenderer(size: pageRect.size)
-                                        let image = renderer.image { ctx in
-                                            UIColor.white.set()
-                                            ctx.fill(pageRect)
-                                            ctx.cgContext.translateBy(x: 0.0, y: pageRect.size.height)
-                                            ctx.cgContext.scaleBy(x: 1.0, y: -1.0)
-                                            page.draw(with: .mediaBox, to: ctx.cgContext)
-                                        }
-                                        rendered.append(image)
-                                    }
-                                }
-                            }
-                            return rendered
+                        guard let document = PDFDocument(url: sourceURL) else {
+                            throw NSError(domain: "ZipError", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to load PDF document"])
                         }
-                        
-                        for (i, image) in images.enumerated() {
+                        let pageCount = document.pageCount
+                        for i in 0..<pageCount {
                             try autoreleasepool {
-                                let pageName = String(format: "%04d.jpg", i)
-                                let fileURL = tempDir.appendingPathComponent(pageName)
-                                if let data = image.jpegData(compressionQuality: 0.9) {
-                                    try data.write(to: fileURL)
-                                    extractedFiles.append(fileURL)
+                                if let page = document.page(at: i) {
+                                    // Render full page
+                                    var pageRect = page.bounds(for: .mediaBox)
+                                    if pageRect.width <= 0 || pageRect.height <= 0 || pageRect.width.isNaN || pageRect.height.isNaN {
+                                        pageRect = CGRect(x: 0, y: 0, width: 612, height: 792)
+                                    }
+                                    let format = UIGraphicsImageRendererFormat()
+                                    format.scale = 1.0
+                                    format.preferredRange = .standard // Forces standard sRGB color space
+                                    let renderer = UIGraphicsImageRenderer(size: pageRect.size, format: format)
+                                    let image = renderer.image { ctx in
+                                        UIColor.white.set()
+                                        ctx.fill(pageRect)
+                                        ctx.cgContext.translateBy(x: 0.0, y: pageRect.size.height)
+                                        ctx.cgContext.scaleBy(x: 1.0, y: -1.0)
+                                        page.draw(with: .mediaBox, to: ctx.cgContext)
+                                    }
+                                    let pageName = String(format: "%04d.jpg", i)
+                                    let fileURL = tempDir.appendingPathComponent(pageName)
+                                    if let data = image.jpegData(compressionQuality: 0.9) {
+                                        try data.write(to: fileURL)
+                                        extractedFiles.append(fileURL)
+                                    }
                                 }
                             }
                         }
@@ -204,6 +197,7 @@ struct ZipUtilities {
                     
                 } catch {
                     Logger.shared.log("Crash/Error in ZipUtilities: \(error.localizedDescription)", category: "System", type: .error)
+                    try? fileManager.removeItem(at: tempDir)
                     continuation.resume(throwing: error)
                 }
             }

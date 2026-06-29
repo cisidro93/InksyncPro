@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 
+@MainActor
 struct SettingsView: View {
     @EnvironmentObject var conversionManager: ConversionManager
     @EnvironmentObject var settingsManager: AppSettingsManager
@@ -35,6 +36,18 @@ struct SettingsView: View {
     @State private var customPresetName = "Custom Base"
     @Environment(\.dismiss) var dismiss
 
+    enum FocusableField: Hashable {
+        case kindleEmail
+        case comicVineAPIKey
+        case aniListAPIToken
+        case aniListClientID
+        case mangaUpdatesUsername
+        case mangaUpdatesPassword
+        case aliasImportedTitle
+        case aliasLibraryTitle
+    }
+    @FocusState private var focusedField: FocusableField?
+
     @State private var showingAIExport = false
     @State private var aiExportDocument: JSONFileDocument?
     @State private var showingAIFeedbackAlert = false
@@ -50,10 +63,15 @@ struct SettingsView: View {
     // AniList API key verification state
     @State private var isVerifyingAniList = false
     @State private var aniListVerificationStatus: KeyStatus = .none
+    @State private var aniListClientID = ""
     
     // MangaUpdates verification state
     @State private var isVerifyingMangaUpdates = false
     @State private var mangaUpdatesVerificationStatus: KeyStatus = .none
+    
+    // Smart List Alias properties
+    @State private var aliasImportedTitle = ""
+    @State private var aliasLibraryTitle = ""
     
     enum KeyStatus: Equatable {
         case none, verifying, success, invalid, localizedError(String)
@@ -164,6 +182,19 @@ struct SettingsView: View {
         .background(Color.inkBackground.ignoresSafeArea())
         .listRowBackground(Color.inkSurface.opacity(0.4))
         .navigationTitle("Preferences")
+        .background(
+            Group {
+                Button("") {
+                    dismiss()
+                }
+                .keyboardShortcut("w", modifiers: .command)
+                Button("") {
+                    dismiss()
+                }
+                .keyboardShortcut(.cancelAction)
+            }
+            .opacity(0)
+        )
         .onChange(of: settingsManager.conversionSettings) {
             settingsManager.save()
         }
@@ -311,6 +342,10 @@ struct SettingsView: View {
                 settingsIcon("hand.tap.fill", color: .orange)
                 Toggle("Back Tap Navigation", isOn: $backTapEnabled)
             }
+            HStack {
+                settingsIcon("applepencil.and.scribble", color: .orange)
+                Toggle("Apple Pencil Drawing Only", isOn: $settingsManager.conversionSettings.pencilOnlyDrawing)
+            }
         }
     }
 
@@ -323,6 +358,10 @@ struct SettingsView: View {
                     .keyboardType(.emailAddress)
                     .autocapitalization(.none)
                     .disableAutocorrection(true)
+                    .focused($focusedField, equals: .kindleEmail)
+                    .onSubmit {
+                        focusedField = nil
+                    }
             }
         }
     }
@@ -670,6 +709,10 @@ struct SettingsView: View {
                     .textContentType(.password)
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
+                    .focused($focusedField, equals: .comicVineAPIKey)
+                    .onSubmit {
+                        verifyAPIKey()
+                    }
             }
             Text("To comply with ComicVine's commercial guidelines, please enter your free personal API key for metadata lookups.")
                 .font(.caption2)
@@ -726,6 +769,10 @@ struct SettingsView: View {
                     .textContentType(.password)
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
+                    .focused($focusedField, equals: .aniListAPIToken)
+                    .onSubmit {
+                        focusedField = .aniListClientID
+                    }
             }
             Text("Enter a personal developer token to authenticate requests and increase rate limits on AniList.")
                 .font(.caption2)
@@ -745,30 +792,193 @@ struct SettingsView: View {
         }
         
         DisclosureGroup {
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 10) {
                 Text("How to get your personal token:")
                     .font(.caption).bold()
                     .foregroundColor(.primary)
                     .padding(.top, 4)
-                Text("1. Log in to anilist.co and navigate to Settings → Developer")
+                
+                Text("1. Log in to anilist.co and navigate to Settings → Developer.")
                     .font(.caption2)
                     .foregroundColor(.secondary)
-                Text("2. Create a new Client / Personal Access Token")
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("2. Click 'Create New Client' and set the Homepage/Website URL to https://inksync.app and Redirect URL to:")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    
+                    HStack {
+                        Text("https://anilist.co/api/v2/oauth/pin")
+                            .font(.caption2)
+                            .foregroundColor(.cyan)
+                            .monospaced()
+                        Spacer()
+                        Button(action: {
+                            UIPasteboard.general.string = "https://anilist.co/api/v2/oauth/pin"
+                        }) {
+                            Label("Copy", systemImage: "doc.on.doc")
+                                .font(.caption2)
+                                .foregroundColor(.blue)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(6)
+                    .background(Color.black.opacity(0.2))
+                    .cornerRadius(6)
+                }
+                
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("3. Paste your Client ID below to generate the authorization link:")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    
+                    TextField("Enter Client ID here", text: $aniListClientID)
+                        .textFieldStyle(.roundedBorder)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                        .padding(.vertical, 2)
+                        .focused($focusedField, equals: .aniListClientID)
+                        .onSubmit {
+                            focusedField = nil
+                        }
+                    
+                    Button(action: {
+                        let clientID = aniListClientID.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if let url = URL(string: "https://anilist.co/api/v2/oauth/authorize?client_id=\(clientID)&response_type=token") {
+                            UIApplication.shared.open(url)
+                        }
+                    }) {
+                        Text("Generate & Open Auth Link")
+                            .font(.caption)
+                            .bold()
+                            .foregroundColor(.white)
+                            .padding(.vertical, 8)
+                            .padding(.horizontal, 16)
+                            .background(aniListClientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Color.gray : Color.blue)
+                            .cornerRadius(8)
+                    }
+                    .disabled(aniListClientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .buttonStyle(.plain)
+                }
+                
+                Text("4. Authorize and copy the long token displayed in your browser (NOT the Client Secret), and paste it in the Token field above.")
                     .font(.caption2)
                     .foregroundColor(.secondary)
-                Text("3. Copy the token and paste it in the field above")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
+                
                 Link("Open AniList Developer Page ↗", destination: URL(string: "https://anilist.co/settings/developer") ?? URL(fileURLWithPath: "/"))
                     .font(.caption2)
                     .foregroundColor(.blue)
-                    .padding(.top, 2)
             }
             .padding(.bottom, 4)
         } label: {
             Label("AniList Token Instructions", systemImage: "info.circle")
                 .font(.caption)
                 .foregroundColor(.secondary)
+        }
+    }
+
+    
+    @ViewBuilder
+    private var customAliasesSettings: some View {
+        DisclosureGroup {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Map alternate titles to match imported smart lists against your library titles (e.g. English vs Romanized/Japanese titles).")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                
+                let aliases = settingsManager.conversionSettings.customAliases
+                if !aliases.isEmpty {
+                    ForEach(Array(aliases.keys).sorted(), id: \.self) { importedName in
+                        if let libraryName = aliases[importedName] {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("If list contains: \"\(importedName)\"")
+                                        .font(.caption2).foregroundColor(.secondary)
+                                    Text("Match against library: \"\(libraryName)\"")
+                                        .font(.caption)
+                                }
+                                Spacer()
+                                Button(action: {
+                                    settingsManager.conversionSettings.customAliases.removeValue(forKey: importedName)
+                                    settingsManager.save()
+                                }) {
+                                    Image(systemName: "trash")
+                                        .foregroundColor(.red)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            .padding(.vertical, 4)
+                            Divider()
+                        }
+                    }
+                } else {
+                    Text("No custom aliases defined yet.")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                        .italic()
+                }
+                
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Add Title Alias Mapping:")
+                        .font(.caption).bold()
+                        .padding(.top, 4)
+                    
+                    TextField("Imported List Title (e.g., Witch Hat Atelier)", text: $aliasImportedTitle)
+                        .textFieldStyle(.roundedBorder)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                        .focused($focusedField, equals: .aliasImportedTitle)
+                        .onSubmit {
+                            focusedField = .aliasLibraryTitle
+                        }
+                    
+                    TextField("Library Folder/Series Title (e.g., Tongari Boushi no Atelier)", text: $aliasLibraryTitle)
+                        .textFieldStyle(.roundedBorder)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                        .focused($focusedField, equals: .aliasLibraryTitle)
+                        .onSubmit {
+                            let imported = aliasImportedTitle.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                            let library = aliasLibraryTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+                            if !imported.isEmpty && !library.isEmpty {
+                                settingsManager.conversionSettings.customAliases[imported] = library
+                                settingsManager.save()
+                                aliasImportedTitle = ""
+                                aliasLibraryTitle = ""
+                                focusedField = .aliasImportedTitle
+                            } else {
+                                focusedField = nil
+                            }
+                        }
+                    
+                    Button(action: {
+                        let imported = aliasImportedTitle.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                        let library = aliasLibraryTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !imported.isEmpty && !library.isEmpty {
+                            settingsManager.conversionSettings.customAliases[imported] = library
+                            settingsManager.save()
+                            aliasImportedTitle = ""
+                            aliasLibraryTitle = ""
+                        }
+                    }) {
+                        Text("Add Alias Mapping")
+                            .font(.caption)
+                            .bold()
+                            .foregroundColor(.white)
+                            .padding(.vertical, 6)
+                            .padding(.horizontal, 16)
+                            .background((aliasImportedTitle.isEmpty || aliasLibraryTitle.isEmpty) ? Color.gray : Color.blue)
+                            .cornerRadius(6)
+                    }
+                    .disabled(aliasImportedTitle.isEmpty || aliasLibraryTitle.isEmpty)
+                    .buttonStyle(.plain)
+                }
+                .padding(.top, 6)
+            }
+            .padding(.bottom, 4)
+        } label: {
+            Label("Smart List Title Aliases", systemImage: "arrow.2.squarepath")
+                .font(.subheadline)
         }
     }
 
@@ -782,10 +992,18 @@ struct SettingsView: View {
                     TextField("MangaUpdates Username (Optional)", text: $settingsManager.conversionSettings.mangaUpdatesUsername)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
+                        .focused($focusedField, equals: .mangaUpdatesUsername)
+                        .onSubmit {
+                            focusedField = .mangaUpdatesPassword
+                        }
                     SecureField("MangaUpdates Password (Optional)", text: $settingsManager.conversionSettings.mangaUpdatesPassword)
                         .textContentType(.password)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
+                        .focused($focusedField, equals: .mangaUpdatesPassword)
+                        .onSubmit {
+                            verifyMangaUpdatesCredentials()
+                        }
                 }
             }
             Text("Log in to MangaUpdates to search and fetch series details using your personal account profile.")
@@ -812,6 +1030,7 @@ struct SettingsView: View {
             comicVineSettings
             aniListSettings
             mangaUpdatesSettings
+            customAliasesSettings
 
             NavigationLink(destination: CloudConnectionSettingsView()) {
                 HStack {

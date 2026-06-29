@@ -29,12 +29,36 @@ struct PDFGenerator: Sendable {
         
         let sourceImages = mangaMode ? images.reversed() : images
         
+        // Determine the standard page size by finding the most common image size
+        let fallbackTargetSize = settings.targetDeviceProfile.resolution ?? CGSize(width: 1200, height: 1800)
+        var standardSize = fallbackTargetSize
+        var sizeCounts: [String: Int] = [:]
+        
+        for imgURL in sourceImages.prefix(15) {
+            autoreleasepool {
+                if let img = UIImage(contentsOfFile: imgURL.path) {
+                    let w = round(img.size.width)
+                    let h = round(img.size.height)
+                    let key = "\(w),\(h)"
+                    sizeCounts[key, default: 0] += 1
+                }
+            }
+        }
+        
+        if let mostCommonKey = sizeCounts.max(by: { $0.value < $1.value })?.key {
+            let comps = mostCommonKey.components(separatedBy: ",")
+            if comps.count == 2, let w = Double(comps[0]), let h = Double(comps[1]) {
+                standardSize = CGSize(width: w, height: h)
+            }
+        } else if let firstURL = sourceImages.first, let firstImg = UIImage(contentsOfFile: firstURL.path) {
+            standardSize = firstImg.size
+        }
+        
         // Format is initialized, but bounds will be set per-page dynamically
         let format = UIGraphicsPDFRendererFormat()
         let renderer = UIGraphicsPDFRenderer(bounds: .zero, format: format)
         
         var hasValidChapters = false
-        let fallbackTargetSize = settings.targetDeviceProfile.resolution ?? CGSize(width: 1200, height: 1800)
         var tocLinks: [(rect: CGRect, targetPage: Int)] = []
         
         try renderer.writePDF(to: outputURL) { context in
@@ -59,7 +83,25 @@ struct PDFGenerator: Sendable {
                         isOddPage: index % 2 == 0
                     )
                     
-                    let targetSize = optimizedImage.size
+                    let imgSize = optimizedImage.size
+                    let isLandscape = imgSize.width > imgSize.height
+                    let standardIsLandscape = standardSize.width > standardSize.height
+                    
+                    let targetSize: CGSize
+                    if isLandscape && !standardIsLandscape {
+                        // Double page spread: scale width proportional to height
+                        let scaleHeight = standardSize.height
+                        let scaleWidth = scaleHeight * (imgSize.width / imgSize.height)
+                        targetSize = CGSize(width: scaleWidth, height: scaleHeight)
+                    } else if !isLandscape && standardIsLandscape {
+                        // Standard is landscape, but page is portrait: scale height proportional to width
+                        let scaleWidth = standardSize.width
+                        let scaleHeight = scaleWidth * (imgSize.height / imgSize.width)
+                        targetSize = CGSize(width: scaleWidth, height: scaleHeight)
+                    } else {
+                        targetSize = standardSize
+                    }
+                    
                     let pageRect = CGRect(origin: .zero, size: targetSize)
                     
                     context.beginPage(withBounds: pageRect, pageInfo: [:])
@@ -71,7 +113,6 @@ struct PDFGenerator: Sendable {
                     }
                     
                     // Aspect Fit Calculation
-                    let imgSize = optimizedImage.size
                     let hRatio = targetSize.width / imgSize.width
                     let vRatio = targetSize.height / imgSize.height
                     let scale = min(hRatio, vRatio)
@@ -171,54 +212,52 @@ struct PDFGenerator: Sendable {
             if !isSafeSize {
                 Logger.shared.log("⚠️ Skipping PDF ToC Injection: File exceeds safe memory bounds (\(rawFileSize / 1024 / 1024)MB).", category: "PDF", type: .warning)
             } else {
-                ConcurrencyLocks.pdfLock.withLock {
-                    guard let pdfDocument = PDFDocument(url: outputURL) else { return }
-                    let outlineRoot = PDFOutline()
-                    for chapter in chapterList {
-                        let actualIndex = mangaMode ? (images.count - 1 - chapter.pageIndex) : chapter.pageIndex
-                        let safeIndex = max(0, min(actualIndex, pdfDocument.pageCount - 1))
+                guard let pdfDocument = PDFDocument(url: outputURL) else { return }
+                let outlineRoot = PDFOutline()
+                for chapter in chapterList {
+                    let actualIndex = mangaMode ? (images.count - 1 - chapter.pageIndex) : chapter.pageIndex
+                    let safeIndex = max(0, min(actualIndex, pdfDocument.pageCount - 1))
+                    
+                    if let destinationPage = pdfDocument.page(at: safeIndex) {
+                        let outlineItem = PDFOutline()
+                        outlineItem.label = chapter.title
+                        outlineItem.destination = PDFDestination(page: destinationPage, at: CGPoint(x: 0, y: destinationPage.bounds(for: .mediaBox).height))
+                        outlineRoot.insertChild(outlineItem, at: outlineRoot.numberOfChildren)
+                    }
+                }
+                
+                // Add Physical ToC to Outline
+                if let tocPage = pdfDocument.page(at: pdfDocument.pageCount - 1) {
+                    let tocOutline = PDFOutline()
+                    tocOutline.label = "Table of Contents"
+                    tocOutline.destination = PDFDestination(page: tocPage, at: CGPoint(x: 0, y: tocPage.bounds(for: .mediaBox).height))
+                    outlineRoot.insertChild(tocOutline, at: outlineRoot.numberOfChildren)
+                    
+                    // 🔗 Inject Tap Link Annotations into the ToC Page
+                    for link in tocLinks {
+                        // PDF coordinates are flipped (Origin at bottom-left)
+                        let pdfY = tocPage.bounds(for: .mediaBox).height - link.rect.maxY
+                        let annotationRect = CGRect(x: link.rect.minX, y: pdfY, width: link.rect.width, height: link.rect.height)
                         
-                        if let destinationPage = pdfDocument.page(at: safeIndex) {
-                            let outlineItem = PDFOutline()
-                            outlineItem.label = chapter.title
-                            outlineItem.destination = PDFDestination(page: destinationPage, at: CGPoint(x: 0, y: destinationPage.bounds(for: .mediaBox).height))
-                            outlineRoot.insertChild(outlineItem, at: outlineRoot.numberOfChildren)
+                        // Create an invisible hyperlink annotation
+                        let linkAnnotation = PDFAnnotation(bounds: annotationRect, forType: .link, withProperties: nil)
+                        
+                        // Point annotation to target page
+                        if let targetPDFPage = pdfDocument.page(at: link.targetPage - 1) {
+                            let destination = PDFDestination(page: targetPDFPage, at: CGPoint(x: 0, y: targetPDFPage.bounds(for: .mediaBox).height))
+                            linkAnnotation.action = PDFActionGoTo(destination: destination)
+                            tocPage.addAnnotation(linkAnnotation)
                         }
                     }
-                    
-                    // Add Physical ToC to Outline
-                    if let tocPage = pdfDocument.page(at: pdfDocument.pageCount - 1) {
-                        let tocOutline = PDFOutline()
-                        tocOutline.label = "Table of Contents"
-                        tocOutline.destination = PDFDestination(page: tocPage, at: CGPoint(x: 0, y: tocPage.bounds(for: .mediaBox).height))
-                        outlineRoot.insertChild(tocOutline, at: outlineRoot.numberOfChildren)
-                        
-                        // 🔗 Inject Tap Link Annotations into the ToC Page
-                        for link in tocLinks {
-                            // PDF coordinates are flipped (Origin at bottom-left)
-                            let pdfY = tocPage.bounds(for: .mediaBox).height - link.rect.maxY
-                            let annotationRect = CGRect(x: link.rect.minX, y: pdfY, width: link.rect.width, height: link.rect.height)
-                            
-                            // Create an invisible hyperlink annotation
-                            let linkAnnotation = PDFAnnotation(bounds: annotationRect, forType: .link, withProperties: nil)
-                            
-                            // Point annotation to target page
-                            if let targetPDFPage = pdfDocument.page(at: link.targetPage - 1) {
-                                let destination = PDFDestination(page: targetPDFPage, at: CGPoint(x: 0, y: targetPDFPage.bounds(for: .mediaBox).height))
-                                linkAnnotation.action = PDFActionGoTo(destination: destination)
-                                tocPage.addAnnotation(linkAnnotation)
-                            }
-                        }
-                    }
-                    
-                    pdfDocument.outlineRoot = outlineRoot
-                    let tempURL = outputURL.deletingPathExtension().appendingPathExtension("tmp.pdf")
-                    if pdfDocument.write(to: tempURL) {
-                        try? FileManager.default.removeItem(at: outputURL)
-                        try? FileManager.default.moveItem(at: tempURL, to: outputURL)
-                    } else {
-                        Logger.shared.log("Failed to write PDF with outlines, file size might be 0 bytes.", category: "PDF", type: .error)
-                    }
+                }
+                
+                pdfDocument.outlineRoot = outlineRoot
+                let tempURL = outputURL.deletingPathExtension().appendingPathExtension("tmp.pdf")
+                if pdfDocument.write(to: tempURL) {
+                    try? FileManager.default.removeItem(at: outputURL)
+                    try? FileManager.default.moveItem(at: tempURL, to: outputURL)
+                } else {
+                    Logger.shared.log("Failed to write PDF with outlines, file size might be 0 bytes.", category: "PDF", type: .error)
                 }
             }   
         } // Close outer `if hasValidChapters`

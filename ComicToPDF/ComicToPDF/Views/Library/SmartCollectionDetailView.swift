@@ -13,6 +13,7 @@ import SwiftUI
 @MainActor struct SmartCollectionDetailView: View {
     let rule: SmartCollectionRule
     @EnvironmentObject var conversionManager: ConversionManager
+    @EnvironmentObject var settingsManager: AppSettingsManager
     @Environment(\.dismiss) var dismiss
     @Environment(\.horizontalSizeClass) private var hSizeClass
 
@@ -32,26 +33,28 @@ import SwiftUI
     // MARK: - Filter + Group
 
     private func recomputeFilter() {
+        let isVaultUnlocked = settingsManager.isVaultUnlocked
         let allPDFs = conversionManager.convertedPDFs
         let rule = self.rule
 
         Task.detached(priority: .userInitiated) {
             let cap = 200
+            let filteredPDFs = isVaultUnlocked ? allPDFs : allPDFs.filter { !$0.isPrivate }
             var results: [ConvertedPDF]
             var truncated = false
 
             let progressSnapshot: [UUID: ReadingProgress] = await MainActor.run {
-                Dictionary(uniqueKeysWithValues: allPDFs.compactMap { pdf in
+                Dictionary(uniqueKeysWithValues: filteredPDFs.compactMap { pdf in
                     ReaderProgressTracker.shared.progress(for: pdf.id).map { (pdf.id, $0) }
                 })
             }
 
             switch rule {
             case .recentlyAdded:
-                results = Array(allPDFs.sorted { $0.lastModified > $1.lastModified }.prefix(50))
+                results = Array(filteredPDFs.sorted { $0.lastModified > $1.lastModified }.prefix(50))
 
             case .readingNow:
-                results = allPDFs.filter {
+                results = filteredPDFs.filter {
                     let f = progressSnapshot[$0.id]?.completionFraction ?? 0
                     return f > 0 && f < 1
                 }.sorted {
@@ -60,24 +63,24 @@ import SwiftUI
                 }
 
             case .allUnread:
-                results = allPDFs.filter { (progressSnapshot[$0.id]?.completionFraction ?? 0) == 0 }
+                results = filteredPDFs.filter { (progressSnapshot[$0.id]?.completionFraction ?? 0) == 0 }
                     .sorted { $0.lastModified > $1.lastModified }
                 if results.count > cap { results = Array(results.prefix(cap)); truncated = true }
 
             case .completed:
-                results = allPDFs.filter { (progressSnapshot[$0.id]?.completionFraction ?? 0) >= 1 }
+                results = filteredPDFs.filter { (progressSnapshot[$0.id]?.completionFraction ?? 0) >= 1 }
                     .sorted {
                         (progressSnapshot[$0.id]?.lastOpenedAt ?? .distantPast) >
                         (progressSnapshot[$1.id]?.lastOpenedAt ?? .distantPast)
                     }
 
             case .onDrive:
-                results = allPDFs.filter { if case .linked = $0.sourceMode { return true }; return false }
+                results = filteredPDFs.filter { if case .linked = $0.sourceMode { return true }; return false }
                     .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
                 if results.count > cap { results = Array(results.prefix(cap)); truncated = true }
 
             case .cloudLibrary:
-                results = allPDFs.filter { if case .cloud = $0.sourceMode { return true }; return false }
+                results = filteredPDFs.filter { if case .cloud = $0.sourceMode { return true }; return false }
                     .sorted { $0.lastModified > $1.lastModified }
                 if results.count > cap { results = Array(results.prefix(cap)); truncated = true }
             }
@@ -168,6 +171,7 @@ import SwiftUI
         }
         .task { recomputeFilter() }
         .onChange(of: conversionManager.convertedPDFs.count) { recomputeFilter() }
+        .onChange(of: settingsManager.isVaultUnlocked) { recomputeFilter() }
         .onReceive(tracker.objectWillChange) { recomputeFilter() }
     }
 
@@ -391,8 +395,30 @@ import SwiftUI
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(pdf.name).font(.subheadline).foregroundStyle(Theme.text).lineLimit(2)
-                if let series = pdf.metadata.series {
-                    Text(series).font(.caption2).foregroundStyle(.secondary)
+                if let series = pdf.metadata.series, !series.isEmpty {
+                    HStack(spacing: 6) {
+                        Text(series).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                        
+                        if let vol = pdf.metadata.volume, !vol.trimmingCharacters(in: .whitespaces).isEmpty {
+                            Text("Vol. \(vol)")
+                                .font(.system(size: 8, weight: .bold))
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 1)
+                                .background(Color.purple.opacity(0.12))
+                                .foregroundColor(.purple)
+                                .cornerRadius(3)
+                        }
+                        
+                        if let issue = pdf.metadata.issueNumber, !issue.trimmingCharacters(in: .whitespaces).isEmpty {
+                            Text("#\(issue)")
+                                .font(.system(size: 8, weight: .bold))
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 1)
+                                .background(Color.blue.opacity(0.12))
+                                .foregroundColor(.blue)
+                                .cornerRadius(3)
+                        }
+                    }
                 }
                 if isCloud {
                     if let p = progress {

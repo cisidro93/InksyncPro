@@ -68,7 +68,7 @@ struct InkTabBar: View {
     var body: some View {
         VStack(spacing: 6) {
             // Unified task progress banner (conversion OR import)
-            if isAnyTaskActive {
+            if isAnyTaskActive && hSizeClass == .compact {
                 taskBanner
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }

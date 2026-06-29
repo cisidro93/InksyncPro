@@ -116,10 +116,15 @@ private struct PremiumHeroCard: View {
         }
         .task(id: pdf.id) {
             let key = pdf.id.uuidString as NSString
-            if let cached = conversionManager.thumbnailCache.object(forKey: key) { cover = cached; return }
-            guard let url = conversionManager.getCoverURL(for: pdf),
-                  FileManager.default.fileExists(atPath: url.path) else { return }
-            await ThumbnailGenerationQueue.shared.enqueue(pdf, manager: conversionManager)
+            if let cached = conversionManager.thumbnailCache.object(forKey: key) {
+                cover = cached
+                return
+            }
+            if let thumbnail = await conversionManager.loadCoverThumbnail(for: pdf) {
+                cover = thumbnail
+            } else {
+                await ThumbnailGenerationQueue.shared.enqueue(pdf, manager: conversionManager)
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .thumbnailGenerated)) { note in
             if let id = note.userInfo?["id"] as? UUID, id == pdf.id,

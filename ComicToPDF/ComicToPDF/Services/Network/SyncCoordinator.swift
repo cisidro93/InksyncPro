@@ -112,8 +112,11 @@ class SyncCoordinator: ObservableObject {
                 // File exists on the other device, but not locally!
                 missingFiles.append(filename)
                 
+                let localDocDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
+                let localURL = localDocDir.appendingPathComponent(filename)
+                
                 // Inject placeholder record into SwiftData. It will be downloaded later via P2P.
-                let doc = SDConvertedPDF(id: incomingPDF.id, name: incomingPDF.name, url: incomingPDF.url, pageCount: incomingPDF.pageCount, fileSize: incomingPDF.fileSize, metadata: incomingPDF.metadata, collectionId: assignedLocalCollectionID, isFavorite: incomingPDF.isFavorite, isPrivate: incomingPDF.isPrivate, coverImageData: incomingPDF.coverImageData, contentType: incomingPDF.contentType, chapters: incomingPDF.chapters, addedByMode: incomingPDF.addedByMode)
+                let doc = SDConvertedPDF(id: incomingPDF.id, name: incomingPDF.name, url: localURL, pageCount: incomingPDF.pageCount, fileSize: incomingPDF.fileSize, metadata: incomingPDF.metadata, collectionId: assignedLocalCollectionID, isFavorite: incomingPDF.isFavorite, isPrivate: incomingPDF.isPrivate, coverImageData: incomingPDF.coverImageData, contentType: incomingPDF.contentType, chapters: incomingPDF.chapters, addedByMode: incomingPDF.addedByMode)
                 doc.isOnDevice = false // Cloud/P2P PlaceHolder Flag
                 doc.lastModified = incomingPDF.lastModified
                 context.insert(doc)
@@ -136,35 +139,7 @@ class SyncCoordinator: ObservableObject {
         self.syncStatus = "Authenticating with \(peerIP)..."
         defer { self.isSyncing = false }
         
-        guard let loginURL = URL(string: "http://\(peerIP):8080/login") else { return }
-        var loginReq = URLRequest(url: loginURL)
-        loginReq.httpMethod = "POST"
-        loginReq.httpBody = "pin=\(pin)".data(using: .utf8)
-        loginReq.timeoutInterval = 10.0
-        
-        // 1. Authenticate & Obtain Cookie
-        let (_, loginResp) = try await URLSession.shared.data(for: loginReq)
-        
-        guard let httpLoginResp = loginResp as? HTTPURLResponse else {
-             throw NSError(domain: "SyncCoordinator", code: 500, userInfo: [NSLocalizedDescriptionKey: "Invalid Server Response during Login."])
-        }
-        
-        // WiFiServer sends 302 Found on successful login, 401 on failed PIN.
-        if httpLoginResp.statusCode == 401 || httpLoginResp.statusCode == 400 {
-            throw NSError(domain: "SyncCoordinator", code: 401, userInfo: [NSLocalizedDescriptionKey: "Incorrect PIN."])
-        }
-        
-        var sessionCookie: String? = nil
-        if let setCookieHeader = httpLoginResp.value(forHTTPHeaderField: "Set-Cookie") {
-            let parts = setCookieHeader.components(separatedBy: ";")
-            for part in parts {
-                let trimmed = part.trimmingCharacters(in: .whitespaces)
-                if trimmed.hasPrefix("session=") {
-                    sessionCookie = trimmed
-                    break
-                }
-            }
-        }
+        let sessionCookie = try await PeerManager.shared.authenticate(ipAddress: peerIP, port: 8080, pin: pin)
         
         guard let url = URL(string: "http://\(peerIP):8080/api/sync") else {
             throw NSError(domain: "SyncCoordinator", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid Peer IP configuration."])
@@ -214,7 +189,7 @@ class SyncCoordinator: ObservableObject {
             // Security: only accept known document extensions to prevent a rogue peer
             // from writing arbitrary files into the app's Documents directory.
             let ext = (filename as NSString).pathExtension.lowercased()
-            let allowedExtensions: Set<String> = ["pdf", "epub", "cbz", "cbr", "cbt", "cb7"]
+            let allowedExtensions: Set<String> = ["pdf", "epub", "cbz", "cbr", "cbt", "cb7", "zip"]
             guard allowedExtensions.contains(ext) else {
                 Logger.shared.log("P2P blocked disallowed file type: \(filename)", category: "Network", type: .warning)
                 continue
@@ -255,7 +230,7 @@ class SyncCoordinator: ObservableObject {
                         if let matchedDoc = allPDFs.first(where: { $0.url.lastPathComponent == filename }) {
                             matchedDoc.isOnDevice = true
                             try context.save()
-                            NotificationCenter.default.post(name: Notification.Name("LibraryUpdated"), object: nil)
+                            NotificationCenter.default.post(name: .libraryUpdated, object: nil)
                         }
                     } catch {
                         Logger.shared.log("P2P Background Update Error: \(error)", category: "Network", type: .warning)

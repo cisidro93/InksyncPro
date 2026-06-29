@@ -16,10 +16,10 @@ class SeriesViewModel: ObservableObject {
         self.manager = manager
 
         // Rebuild groups any time the library or Vault state changes
-        Publishers.CombineLatest(manager.$convertedPDFs, AppSettingsManager.shared.$isVaultUnlocked)
+        Publishers.CombineLatest(LibraryService.shared.$items, AppSettingsManager.shared.$isVaultUnlocked)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] pdfs, isUnlocked in 
-                let visible = pdfs.filter { $0.isPrivate == isUnlocked }
+                let visible = isUnlocked ? pdfs : pdfs.filter { !$0.isPrivate }
                 self?.groupPDFs(visible) 
             }
             .store(in: &cancellables)
@@ -33,13 +33,10 @@ class SeriesViewModel: ObservableObject {
         guard !newName.isEmpty, newName != target.title else {
             renameTarget = nil; return
         }
-        for pdf in target.issues {
-            if let idx = manager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
-                manager.convertedPDFs[idx].metadata.series = newName
-            }
+        Task {
+            await manager.safelyRenameSeries(issues: target.issues, newSeriesName: newName)
+            renameTarget = nil
         }
-        manager.saveLibrary()
-        renameTarget = nil
     }
 
     private func groupPDFs(_ pdfs: [ConvertedPDF]) {

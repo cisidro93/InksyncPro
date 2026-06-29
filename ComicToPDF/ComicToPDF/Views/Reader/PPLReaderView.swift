@@ -22,13 +22,14 @@ struct PPLReaderView: View {
     var onCenterTap: () -> Void
 
     @ObservedObject private var bufferManager = PageBufferManager.shared
+    @EnvironmentObject var settingsManager: AppSettingsManager
 
     // ── Zoom / pan state ──────────────────────────────────────────────────────
     @State private var scale: CGFloat = 1.0
     @State private var lastScale: CGFloat = 1.0
     @State private var offset: CGSize = .zero
     @State private var dragOffset: CGSize = .zero
-    @State private var momentumTask: Task<Void, Never>?
+    @State private var momentumAnimator = MomentumAnimator()
 
     // ── Live swipe peel state ─────────────────────────────────────────────────
     @State private var swipeDragX: CGFloat = 0
@@ -120,6 +121,9 @@ struct PPLReaderView: View {
                 setupBuffer(geo: geo, dual: effectiveDoublePage && geo.size.width > geo.size.height)
             }
             .onChange(of: isAutoCropEnabled) { _, _ in setupBuffer(geo: geo, dual: targetDual) }
+            .onDisappear {
+                momentumAnimator.stop()
+            }
         }
     }
 
@@ -163,9 +167,9 @@ struct PPLReaderView: View {
             .offset(x: offset.width + dragOffset.width,
                     y: offset.height + dragOffset.height)
         }
-        // If drawing mode is on, we let PKCanvasView handle gestures and disable reader zoom/pan
-        .gesture(isDrawingMode ? nil : zoomGesture(geo: geo))
-        .simultaneousGesture(isDrawingMode ? nil : swipeAndPanGesture(geo: geo))
+        // If drawing mode is on, we let PKCanvasView handle gestures and disable reader zoom/pan (unless Pencil-Only is active)
+        .gesture((isDrawingMode && !settingsManager.conversionSettings.pencilOnlyDrawing) ? nil : zoomGesture(geo: geo))
+        .simultaneousGesture((isDrawingMode && !settingsManager.conversionSettings.pencilOnlyDrawing) ? nil : swipeAndPanGesture(geo: geo))
         .onTapGesture(count: 2) { loc in handleDoubleTap(at: loc, geo: geo) }
         .onTapGesture              { loc in handleSingleTap(at: loc, geo: geo) }
         .overlay(alignment: .bottom) {
@@ -335,7 +339,8 @@ struct PPLReaderView: View {
     private func swipeAndPanGesture(geo: GeometryProxy) -> some Gesture {
         DragGesture(minimumDistance: 8)
             .onChanged { val in
-                momentumTask?.cancel()
+                guard !isCommittingSwipe else { return }
+                momentumAnimator.stop()
                 if scale > 1.0 {
                     // Rubber-band resistance at pan boundaries
                     let maxOffsetX = geo.size.width * (scale - 1) / 2
@@ -366,6 +371,7 @@ struct PPLReaderView: View {
                 }
             }
             .onEnded { val in
+                guard !isCommittingSwipe else { return }
                 if scale > 1.0 {
                     commitPan(val: val, geo: geo)
                 } else {
@@ -445,17 +451,14 @@ struct PPLReaderView: View {
         let vel = val.velocity
         guard abs(vel.width) > 30 || abs(vel.height) > 30 else { return }
 
-        momentumTask = Task { @MainActor in
-            var vx = vel.width  * 0.012
-            var vy = vel.height * 0.012
-            repeat {
-                try? await Task.sleep(nanoseconds: 16_000_000) // ~60 fps
-                guard !Task.isCancelled else { return }
-                vx *= 0.90; vy *= 0.90
-                offset.width  = max(-geo.size.width  * (scale - 1), min(geo.size.width  * (scale - 1), offset.width  + vx))
-                offset.height = max(-geo.size.height * (scale - 1), min(geo.size.height * (scale - 1), offset.height + vy))
-                updatePPL(in: geo.size)
-            } while abs(vx) > 0.5 || abs(vy) > 0.5
+        momentumAnimator.start(
+            velocity: vel,
+            currentOffset: offset,
+            scale: scale,
+            geoSize: geo.size
+        ) { newOffset in
+            offset = newOffset
+            updatePPL(in: geo.size)
         }
     }
 
@@ -470,6 +473,7 @@ struct PPLReaderView: View {
     // MARK: - Tap Handling
 
     private func handleDoubleTap(at location: CGPoint, geo: GeometryProxy) {
+        guard !isCommittingSwipe else { return }
         if scale > 1.0 {
             withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                 scale = 1.0
@@ -501,6 +505,7 @@ struct PPLReaderView: View {
     }
 
     private func handleSingleTap(at location: CGPoint, geo: GeometryProxy) {
+        guard !isCommittingSwipe else { return }
         guard scale <= 1.0 || isZoomLockEnabled || isGuidedReadingActive else { return }
         let w = geo.size.width
         let isLandscape = geo.size.width > geo.size.height
@@ -553,33 +558,28 @@ struct PPLReaderView: View {
 
     private func nextPage(geo: CGSize, targetDual: Bool) {
         let isSpread     = bufferManager.currentImage.map { isWideSpread($0) } ?? false
-        let nextIsSpread = bufferManager.nextImage.map   { isWideSpread($0) } ?? false
         let isPortrait   = geo.height > geo.width
 
         if isPortrait && isSpread && autoSplitPortraitSpreads {
             if splitHalf == 0 { splitHalf = 1; return } else { splitHalf = 0 }
         }
 
-        // Always base hop arithmetic on the canonical lead in dual-page mode so we never sit on a
-        // right-slot index and stall for a tap. This gives the natural
-        // "every tap = one spread forward" feel the user expects.
-        // In single-page mode, just use the current page index.
-        let lead = targetDual
-            ? PageBufferManager.canonicalLeadIndex(for: currentPageIndex, isMangaMode: isMangaMode)
-            : currentPageIndex
-        let isCover = targetDual && lead == 0
+        if targetDual && !bufferManager.activeSpreads.isEmpty {
+            let nextIndex = bufferManager.currentSpreadIndex + 1
+            if nextIndex < bufferManager.activeSpreads.count {
+                Haptics.shared.playImpact(style: .light)
+                currentPageIndex = bufferManager.activeSpreads[nextIndex].leadIndex
+            } else {
+                Haptics.shared.playImpact(style: .rigid)
+                NotificationCenter.default.post(name: NSNotification.Name("Reader_EndOfBookReached"), object: nil)
+            }
+            return
+        }
 
-        // In dual-page mode hop by 2 (one full spread) unless the current or next
-        // page is a wide physical spread — those always occupy a solo slot.
-        let hop: Int = (targetDual && !isSpread && !nextIsSpread && !isCover) ? 2 : 1
-        let next = lead + hop
-
+        let next = currentPageIndex + 1
         if next < pages.count {
             Haptics.shared.playImpact(style: .light)
             currentPageIndex = next
-        } else if lead < pages.count - 1 {
-            Haptics.shared.playImpact(style: .light)
-            currentPageIndex = pages.count - 1
         } else {
             Haptics.shared.playImpact(style: .rigid)
             NotificationCenter.default.post(name: NSNotification.Name("Reader_EndOfBookReached"), object: nil)
@@ -588,27 +588,30 @@ struct PPLReaderView: View {
 
     private func prevPage(geo: CGSize, targetDual: Bool) {
         let isSpread     = bufferManager.currentImage.map { isWideSpread($0) } ?? false
-        let prevIsSpread = bufferManager.prevImage.map    { isWideSpread($0) } ?? false
         let isPortrait   = geo.height > geo.width
 
         if isPortrait && isSpread && autoSplitPortraitSpreads {
             if splitHalf == 1 { splitHalf = 0; return } else { splitHalf = 1 }
         }
 
-        // Always base hop arithmetic on the canonical lead in dual-page mode — same reasoning as nextPage.
-        let lead = targetDual
-            ? PageBufferManager.canonicalLeadIndex(for: currentPageIndex, isMangaMode: isMangaMode)
-            : currentPageIndex
-        let isCover = targetDual && lead == 0
-        guard lead > 0 else {
-            Haptics.shared.playImpact(style: .rigid)
+        if targetDual && !bufferManager.activeSpreads.isEmpty {
+            let prevIndex = bufferManager.currentSpreadIndex - 1
+            if prevIndex >= 0 {
+                Haptics.shared.playImpact(style: .light)
+                currentPageIndex = bufferManager.activeSpreads[prevIndex].leadIndex
+            } else {
+                Haptics.shared.playImpact(style: .rigid)
+            }
             return
         }
 
-        // In dual-page mode hop back by 2 (one full spread), respecting wide pages.
-        let hop: Int = (targetDual && !isSpread && !prevIsSpread && !isCover) ? 2 : 1
-        Haptics.shared.playImpact(style: .light)
-        currentPageIndex = max(0, lead - hop)
+        let prev = currentPageIndex - 1
+        if prev >= 0 {
+            Haptics.shared.playImpact(style: .light)
+            currentPageIndex = prev
+        } else {
+            Haptics.shared.playImpact(style: .rigid)
+        }
     }
 
     // MARK: - Buffer Setup
@@ -631,13 +634,13 @@ struct PPLReaderView: View {
                 isMangaMode: isMangaMode
             )
         } else {
-            bufferManager.setup(pages: pages)
+            bufferManager.setup(pages: pages, isMangaMode: isMangaMode)
             if targetDual {
-                let lead = PageBufferManager.canonicalLeadIndex(
-                    for: currentPageIndex, isMangaMode: isMangaMode)
-                bufferManager.renderDual(
-                    leadIndex: lead, pages: pages,
-                    isMangaMode: isMangaMode, bounds: geo.size)
+                if let targetIdx = bufferManager.activeSpreads.firstIndex(where: { $0.leadIndex == currentPageIndex }) {
+                    bufferManager.renderDual(spreadIndex: targetIdx, bounds: geo.size)
+                } else {
+                    bufferManager.renderDual(spreadIndex: 0, bounds: geo.size)
+                }
             } else {
                 bufferManager.render(pageIndex: currentPageIndex, bounds: geo.size)
             }
@@ -658,9 +661,9 @@ struct PPLReaderView: View {
     }
 
     private func advanceBuffer(to index: Int, geo: GeometryProxy, dual: Bool) {
-        if dual {
-            let lead = PageBufferManager.canonicalLeadIndex(for: index, isMangaMode: isMangaMode)
-            bufferManager.renderDual(leadIndex: lead, pages: pages, isMangaMode: isMangaMode, bounds: geo.size)
+        if dual && !bufferManager.activeSpreads.isEmpty {
+            let targetIdx = bufferManager.activeSpreads.firstIndex(where: { $0.leadIndex == index }) ?? bufferManager.currentSpreadIndex
+            bufferManager.renderDual(spreadIndex: targetIdx, bounds: geo.size)
         } else {
             bufferManager.render(pageIndex: index, bounds: geo.size)
         }
@@ -670,8 +673,7 @@ struct PPLReaderView: View {
         guard size.width > 0, size.height > 0 else { return }
         // Cancel any in-flight momentum or swipe-commit task so stale geometry
         // can't mutate state after the screen has already rotated.
-        momentumTask?.cancel()
-        momentumTask = nil
+        momentumAnimator.stop()
         isCommittingSwipe = false
         withAnimation(.easeOut(duration: 0.15)) {
             scale = 1.0
@@ -695,9 +697,9 @@ struct PPLReaderView: View {
         bufferManager.prevImage = nil
         bufferManager.prevSpread = nil
 
-        if dual {
-            let lead = PageBufferManager.canonicalLeadIndex(for: currentPageIndex, isMangaMode: isMangaMode)
-            bufferManager.renderDual(leadIndex: lead, pages: pages, isMangaMode: isMangaMode, bounds: size)
+        if dual && !bufferManager.activeSpreads.isEmpty {
+            let targetIdx = bufferManager.activeSpreads.firstIndex(where: { $0.leadIndex == currentPageIndex }) ?? bufferManager.currentSpreadIndex
+            bufferManager.renderDual(spreadIndex: targetIdx, bounds: size)
         } else {
             bufferManager.render(pageIndex: currentPageIndex, bounds: size)
         }
@@ -771,6 +773,77 @@ struct PPLReaderView: View {
                     withAnimation(.easeInOut(duration: 0.25)) { bufferManager.lockedRect = guidedPanels[lastIdx] }
                 }
             }
+        }
+    }
+}
+
+// ── Momentum DisplayLink Proxy ────────────────────────────────────────────────
+@MainActor
+private class MomentumDisplayLinkProxy: NSObject {
+    private weak var target: MomentumAnimator?
+    
+    init(target: MomentumAnimator) {
+        self.target = target
+        super.init()
+    }
+    
+    @objc func tick(_ dl: CADisplayLink) {
+        target?.tick(dl)
+    }
+}
+
+// ── Momentum Animator Class ──────────────────────────────────────────────────
+@MainActor
+class MomentumAnimator: NSObject {
+    private var displayLink: CADisplayLink?
+    private var vx: CGFloat = 0
+    private var vy: CGFloat = 0
+    private var scale: CGFloat = 1.0
+    private var geoSize: CGSize = .zero
+    
+    var offsetWidth: CGFloat = 0
+    var offsetHeight: CGFloat = 0
+    
+    var onTick: ((CGSize) -> Void)?
+    
+    func start(velocity: CGSize, currentOffset: CGSize, scale: CGFloat, geoSize: CGSize, onTick: @escaping (CGSize) -> Void) {
+        stop()
+        
+        self.vx = velocity.width * 0.012
+        self.vy = velocity.height * 0.012
+        self.offsetWidth = currentOffset.width
+        self.offsetHeight = currentOffset.height
+        self.scale = scale
+        self.geoSize = geoSize
+        self.onTick = onTick
+        
+        let proxy = MomentumDisplayLinkProxy(target: self)
+        let dl = CADisplayLink(target: proxy, selector: #selector(MomentumDisplayLinkProxy.tick(_:)))
+        if #available(iOS 15.0, *) {
+            dl.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
+        }
+        dl.add(to: .main, forMode: .common)
+        self.displayLink = dl
+    }
+    
+    func stop() {
+        displayLink?.invalidate()
+        displayLink = nil
+    }
+    
+    fileprivate func tick(_ dl: CADisplayLink) {
+        let dt = CGFloat(dl.duration)
+        let decay = pow(0.90, dt / (1.0 / 60.0))
+        vx *= decay
+        vy *= decay
+        
+        offsetWidth  = max(-geoSize.width  * (scale - 1), min(geoSize.width  * (scale - 1), offsetWidth  + vx))
+        offsetHeight = max(-geoSize.height * (scale - 1), min(geoSize.height * (scale - 1), offsetHeight + vy))
+        
+        onTick?(CGSize(width: offsetWidth, height: offsetHeight))
+        
+        if abs(vx) <= 0.5 && abs(vy) <= 0.5 {
+            stop()
         }
     }
 }

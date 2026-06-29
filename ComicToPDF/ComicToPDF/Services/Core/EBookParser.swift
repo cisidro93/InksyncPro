@@ -92,6 +92,7 @@ actor EBookParser {
             return tempFileURL
         } catch {
             Logger.shared.log("EBookParser: Failed to extract cover image from \(url.lastPathComponent) at \(href): \(error.localizedDescription)", category: "EBook", type: .error)
+            try? fileManager.removeItem(at: tempFileURL)
             return nil
         }
     }

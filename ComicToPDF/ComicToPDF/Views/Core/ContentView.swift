@@ -44,6 +44,9 @@ struct ContentView: View {
     @State private var showingGlobalError = false
     @State private var globalErrorMessage = ""
     @State private var globalErrorCategory = "System"
+    
+    // QoL Notification Toast State
+    @State private var activeToast: ToastMessage? = nil
 
     var body: some View {
         ZStack {
@@ -82,14 +85,16 @@ struct ContentView: View {
             }
             
             // iPad Progress Panel Overlay
-            VStack {
-                Spacer()
-                HStack {
+            if sizeClass == .regular {
+                VStack {
                     Spacer()
-                    iPadProgressPanel
-                        .frame(width: 320)
-                        .padding(.trailing, 24)
-                        .padding(.bottom, 100) // Above OmniDock
+                    HStack {
+                        Spacer()
+                        iPadProgressPanel
+                            .frame(width: 320)
+                            .padding(.trailing, 24)
+                            .padding(.bottom, 100) // Above OmniDock
+                    }
                 }
             }
         }
@@ -122,6 +127,7 @@ struct ContentView: View {
         .environmentObject(PeerManager.shared)
         .environment(\.dynamicTypeSize, settingsManager.conversionSettings.textSize.swiftUIValue)
         .sheet(item: $pdfToShare) { pdf in ShareSheet(activityItems: [pdf.url]) }
+        .modifier(ToastHUDModifier(activeToast: $activeToast))
         .alert(item: $taskEngine.appAlert) { alert in
             Alert(title: Text(alert.title), message: Text(alert.message), dismissButton: .default(Text("OK")))
         }
@@ -131,14 +137,17 @@ struct ContentView: View {
             PageModelStore.shared.initialize(with: modelContext)
             
             Task { @MainActor in
+                await LibraryDatabaseService.shared.bootstrap()
+                
                 MigrationService.shared.migrateLegacyDataIfNeeded(context: modelContext)
-                let _ = MigrationService.shared.performSmartGrouping(context: modelContext)
                 
                 // Always fetch the latest SwiftData on startup to ensure conversionManager matches the DB.
-                if let (sdPdfs, sdCols) = try? await MigrationService.shared.fetchSwiftDataLegacyBridge() {
-                    conversionManager.convertedPDFs = sdPdfs.map { $0.toDTO() }
-                    conversionManager.collections = sdCols.map { $0.toDTO() }
-                }
+                await LibraryService.shared.loadLibrary()
+                
+                // Run smart grouping asynchronously on background actor context to avoid blocking the Main Actor on launch.
+                await LibraryService.shared.runSmartGrouping()
+                
+                conversionManager.scanLibrary()
                 
                 await SandboxCleanupManager.shared.passiveScan()
             }
@@ -325,6 +334,127 @@ struct ContentView: View {
                 .animation(.spring(response: 0.4, dampingFraction: 0.8), value: isActive)
             }
         }
+    }
+}
+
+struct ToastHUDView: View {
+    let toast: ToastMessage
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: toast.systemImage)
+                .font(.system(size: 18, weight: .bold))
+                .foregroundColor(toast.type.color)
+            
+            VStack(alignment: .leading, spacing: 2) {
+                Text(toast.title)
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundColor(.white)
+                Text(toast.message)
+                    .font(.system(size: 11))
+                    .foregroundColor(.gray)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+            }
+            
+            Spacer()
+            
+            if toast.action != nil {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundColor(.gray)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .frame(width: 340)
+        .background(Color(white: 0.1).opacity(0.95))
+        .cornerRadius(16)
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(Color.white.opacity(0.1), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.35), radius: 10, x: 0, y: 5)
+    }
+}
+
+struct ToastHUDModifier: ViewModifier {
+    @ObservedObject var taskEngine = TaskEngine.shared
+    @Binding var activeToast: ToastMessage?
+    
+    func body(content: Content) -> some View {
+        content
+            .overlay(alignment: .top) {
+                if let toast = activeToast {
+                    ToastHUDView(toast: toast)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                        .onTapGesture {
+                            toast.action?()
+                            withAnimation(.spring()) { activeToast = nil }
+                        }
+                        .onAppear {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) {
+                                if activeToast == toast {
+                                    withAnimation(.spring()) { activeToast = nil }
+                                }
+                            }
+                        }
+                        .padding(.top, 24)
+                }
+            }
+            .onChange(of: taskEngine.statusMessage) { _, newMessage in
+                if let msg = newMessage {
+                    if msg.starts(with: "✅") {
+                        let generator = UINotificationFeedbackGenerator()
+                        generator.notificationOccurred(.success)
+                        
+                        let sortedItems = LibraryService.shared.items.sorted { $0.lastModified > $1.lastModified }
+                        let latestBook = sortedItems.first
+                        
+                        withAnimation(.spring()) {
+                            activeToast = ToastMessage(
+                                title: "Complete",
+                                message: msg.replacingOccurrences(of: "✅ ", with: ""),
+                                systemImage: "checkmark.circle.fill",
+                                type: .success,
+                                action: {
+                                    if let book = latestBook {
+                                        NotificationCenter.default.post(name: .openMergedBook, object: book)
+                                    }
+                                }
+                            )
+                        }
+                    } else if msg.starts(with: "Error") || msg.starts(with: "Merge Error") {
+                        let generator = UINotificationFeedbackGenerator()
+                        generator.notificationOccurred(.error)
+                        
+                        withAnimation(.spring()) {
+                            activeToast = ToastMessage(
+                                title: "Failed",
+                                message: msg,
+                                systemImage: "exclamationmark.triangle.fill",
+                                type: .warning
+                            )
+                        }
+                    }
+                }
+            }
+            .onChange(of: taskEngine.appAlert) { _, newAlert in
+                if let alert = newAlert {
+                    let generator = UINotificationFeedbackGenerator()
+                    generator.notificationOccurred(.warning)
+                    
+                    withAnimation(.spring()) {
+                        activeToast = ToastMessage(
+                            title: alert.title,
+                            message: alert.message,
+                            systemImage: "exclamationmark.triangle.fill",
+                            type: .warning
+                        )
+                    }
+                    taskEngine.appAlert = nil
+                }
+            }
     }
 }
 

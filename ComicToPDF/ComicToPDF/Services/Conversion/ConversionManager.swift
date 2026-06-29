@@ -5,8 +5,18 @@ import Combine
 
 @MainActor
 class ConversionManager: ObservableObject {
-    @Published var convertedPDFs: [ConvertedPDF] = []
-    @Published var collections: [PDFCollection] = []
+    var convertedPDFs: [ConvertedPDF] {
+        get { LibraryService.shared.items }
+        set { LibraryService.shared.items = newValue }
+    }
+    var collections: [PDFCollection] {
+        get { LibraryService.shared.collections }
+        set { LibraryService.shared.collections = newValue }
+    }
+    var virtualOmnibuses: [VirtualOmnibus] {
+        get { LibraryService.shared.virtualOmnibuses }
+        set { LibraryService.shared.virtualOmnibuses = newValue; LibraryService.shared.saveVirtualOmnibuses() }
+    }
     // MARK: - App Config Shifted to AppSettingsManager
     
     // MARK: - Series Grouping Prompt (Layer 3)
@@ -31,7 +41,7 @@ class ConversionManager: ObservableObject {
     // Thumbnail loaders fire this subject; the pipeline coalesces bursts into a single
     // objectWillChange pulse at most every 150ms — preventing 200 full-tree SwiftUI diffs
     // during a grid scroll where cells load covers concurrently.
-    let thumbnailReadySubject = PassthroughSubject<Void, Never>()
+    let thumbnailReadySubject = PassthroughSubject<UUID, Never>()
     private var thumbnailPulseCancellable: AnyCancellable?
     
     // UI State (Forwarded to TaskEngine)
@@ -89,17 +99,20 @@ class ConversionManager: ObservableObject {
         performStartupOptimization()
         migrateCoversToDisk()  // @MainActor class — direct call, no Task wrapper needed
         
-        // H2: Wire the debounced thumbnail pulse. Thumbnail loaders fire thumbnailReadySubject;
-        // this pipeline coalesces bursts into a single objectWillChange at most every 150ms.
-        thumbnailPulseCancellable = thumbnailReadySubject
-            .debounce(for: .milliseconds(150), scheduler: RunLoop.main)
-            .sink { [weak self] in self?.objectWillChange.send() }
+        // Removed global thumbnailPulseCancellable to prevent full-tree invalidations.
+        // Grid cells now observe thumbnailReadySubject locally for their specific PDF ID.
         
         NotificationCenter.default.addObserver(forName: .libraryNeedsRescan, object: nil, queue: .main) { [weak self] notification in
             let modeRaw = notification.userInfo?["mode"] as? String
             let mode: AppUIMode = (modeRaw == AppUIMode.go.rawValue) ? .go : .pro
             Task { @MainActor [weak self] in
                 self?.scanLibrary(addedByMode: mode)
+            }
+        }
+        
+        NotificationCenter.default.addObserver(forName: .libraryUpdated, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.scanLibrary(addedByMode: .pro)
             }
         }
         
@@ -129,10 +142,18 @@ class ConversionManager: ObservableObject {
                 self?.objectWillChange.send()
             }
 
-        // PERF M2: Rebuild visible/pro caches whenever the library array changes.
-        librarySubscription = $convertedPDFs
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in self?.rebuildVisiblePDFs() }
+        // PERF M2: Rebuild visible/pro caches and relay when library arrays, virtual omnibuses, or vault state change.
+        librarySubscription = Publishers.CombineLatest4(
+            LibraryService.shared.$items,
+            LibraryService.shared.$collections,
+            LibraryService.shared.$virtualOmnibuses,
+            AppSettingsManager.shared.$isVaultUnlocked
+        )
+        .receive(on: DispatchQueue.main)
+        .sink { [weak self] _, _, _, _ in
+            self?.rebuildVisiblePDFs()
+            self?.objectWillChange.send()
+        }
 
         // ── Cloud Cover Ready: wire CloudCoverExtractor → thumbnailCache ──────
         // CloudCoverExtractor writes covers to disk but has no reference to

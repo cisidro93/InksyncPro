@@ -18,7 +18,7 @@ class PageEditorViewModel: ObservableObject {
     private var tempDir: URL?
     private var hasLoaded = false // ✅ Prevents double-triggering
     
-    func loadPages(from pdf: ConvertedPDF) async {
+    func loadPages(from pdf: ConvertedPDF, conversionManager: ConversionManager) async {
         guard !hasLoaded else { return } // Stop if already loaded
         
         self.isLoading = true
@@ -31,11 +31,8 @@ class PageEditorViewModel: ObservableObject {
         self.statusText = "Unpacking..."
         
         do {
-            // Call Surgical Extraction
-            // FIX: Run heavy unzipping on a detached background task
-            let (dir, urls) = try await Task.detached(priority: .userInitiated) {
-                return try await ZipUtilities.extractComic(from: pdf.url)
-            }.value
+            // Call Surgical Extraction using the shared caching session manager
+            let (dir, urls) = try await conversionManager.extractImageFiles(from: pdf.url)
             
             self.tempDir = dir
             self.items = urls.enumerated().map { index, url in
@@ -312,7 +309,7 @@ struct PageManagerView: View {
         }
         .task {
             // Trigger load once
-            await viewModel.loadPages(from: pdf)
+            await viewModel.loadPages(from: pdf, conversionManager: conversionManager)
         }
         .sheet(isPresented: $showingChapters) {
              NavigationStack {
@@ -346,6 +343,9 @@ struct PageManagerView: View {
             MetadataSearchSheet(pdf: pdf)
         }
         } // End NavigationStack
+        .onDisappear {
+            conversionManager.endSession()
+        }
     }
     
     // ✅ Helper to avoid duplicating the view code
@@ -355,7 +355,8 @@ struct PageManagerView: View {
             pdf: pdf,
             pageIndex: binding,
             totalCount: viewModel.items.count,
-            conversionManager: conversionManager
+            conversionManager: conversionManager,
+            shouldEndSessionOnDisappear: false
         )
     }
     
@@ -412,7 +413,7 @@ struct PageManagerView: View {
             viewModel.cleanup()
             
             // Reload
-            await viewModel.loadPages(from: pdf)
+            await viewModel.loadPages(from: pdf, conversionManager: conversionManager)
         } catch {
              viewModel.errorMessage = "Delete failed: \(error.localizedDescription)"
              viewModel.isLoading = false
@@ -500,7 +501,7 @@ struct PageManagerView: View {
         viewModel.isLoading = false
         
         // Refresh
-        await viewModel.loadPages(from: pdf)
+        await viewModel.loadPages(from: pdf, conversionManager: conversionManager)
         
         if !livePDF.chapters.isEmpty {
             showingChapters = true

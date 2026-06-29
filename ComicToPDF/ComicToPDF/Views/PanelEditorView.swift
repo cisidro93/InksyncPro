@@ -16,28 +16,21 @@ struct PanelEditorView: View {
                     
                     Image(uiImage: image)
                         .resizable()
-                        .scaledToFit()
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(
+                        .aspectRatio(contentMode: .fit)
+                        .overlay(
                             GeometryReader { imageReader in
-                                Color.clear
-                                    .onAppear {
-                                        // Optional: capture image frame if needed
-                                    }
-                                    .overlay(
-                                        ZStack {
-                                            ForEach(panels.indices, id: \.self) { index in
-                                                DraggableEditorPanel(
-                                                    rect: $panels[index],
-                                                    isSelected: selectedIndex == index,
-                                                    containerSize: imageReader.size
-                                                )
-                                                .onTapGesture {
-                                                    selectedIndex = index
-                                                }
-                                            }
+                                ZStack {
+                                    ForEach(panels.indices, id: \.self) { index in
+                                        DraggableEditorPanel(
+                                            rect: $panels[index],
+                                            isSelected: selectedIndex == index,
+                                            containerSize: imageReader.size
+                                        )
+                                        .onTapGesture {
+                                            selectedIndex = index
                                         }
-                                    )
+                                    }
+                                }
                             }
                         )
                 }

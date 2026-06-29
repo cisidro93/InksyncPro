@@ -65,7 +65,7 @@ extension ConversionManager {
         // PDF and EPUB each launch their own async Task (handles security scope internally).
         // Generic archives (CBZ/CBR/ZIP) are staged for parallel copy below — we do NOT open
         // their security scope here because the defer would fire before withTaskGroup runs.
-        var copyJobs: [(source: URL, dest: URL)] = []
+        var archiveURLs: [URL] = []
         for url in filesToProcess {
             let ext = url.pathExtension.lowercased()
 
@@ -75,7 +75,10 @@ extension ConversionManager {
                     let accessing = captured.startAccessingSecurityScopedResource()
                     defer { if accessing { captured.stopAccessingSecurityScopedResource() } }
                     do {
-                        let _ = try await ConversionEngine.shared.performPDFImport(url: captured, destFolder: documentsDir)
+                        _ = try await ConversionEngine.shared.performPDFImport(url: captured, destFolder: documentsDir)
+                        await MainActor.run {
+                            self.scanLibrary()
+                        }
                     } catch {
                         Logger.shared.log("Engine Import Failed: \(error)", category: "Import", type: .error)
                         await MainActor.run { self.appAlert = AppAlert(title: "Import Failed", message: error.localizedDescription) }
@@ -107,6 +110,7 @@ extension ConversionManager {
                             at: tempExtractDir, withIntermediateDirectories: true)
                         _ = try EPUBImporter.extractImages(from: captured, to: tempExtractDir)
                         try await ZipUtilities.zipDirectory(tempExtractDir, to: cbzURL)
+                        PhysicalFileSystemRouter.excludeFromBackup(at: cbzURL)
                         // Trigger library scan so the new CBZ appears immediately
                         await MainActor.run {
                             self.scanLibrary()
@@ -128,37 +132,19 @@ extension ConversionManager {
                 continue
             }
 
-            // Generic archive (CBZ/CBR/ZIP) — stage for concurrent copy.
-            // Security scope is opened INSIDE the task group task below, not here.
-            copyJobs.append((source: url, dest: documentsDir.appendingPathComponent(url.lastPathComponent)))
-        }
-
-        // Phase 3: Parallel copy — up to 8 concurrent APFS copy streams.
-        // Security scope is opened and closed inside each task so the entitlement is held
-        // for the full duration of the copy operation and no longer.
-        if !copyJobs.isEmpty {
-            await withTaskGroup(of: Void.self) { group in
-                var inFlight = 0
-                for job in copyJobs {
-                    if inFlight >= 8 { await group.next(); inFlight -= 1 }
-                    let src = job.source, dst = job.dest
-                    group.addTask {
-                        let accessing = src.startAccessingSecurityScopedResource()
-                        defer { if accessing { src.stopAccessingSecurityScopedResource() } }
-                        do {
-                            if FileManager.default.fileExists(atPath: dst.path) { try FileManager.default.removeItem(at: dst) }
-                            try FileManager.default.copyItem(at: src, to: dst)
-                        } catch {
-                            Logger.shared.log("Failed to copy \(src.lastPathComponent): \(error.localizedDescription)", category: "Import", type: .error)
-                        }
-                    }
-                    inFlight += 1
-                }
-                for await _ in group {}
+            // Generic archive (CBZ/CBR/ZIP) — stage for concurrent import
+            if ["cbz", "cbr", "cb7", "cbt", "zip"].contains(ext) {
+                archiveURLs.append(url)
             }
         }
 
-        scanLibrary()
+        // Run the archive imports concurrently via the orchestrator
+        if !archiveURLs.isEmpty {
+            let capturedArchives = archiveURLs
+            Task {
+                _ = await ImportOrchestrator.shared.importFilesAsSeries(urls: capturedArchives, manager: self)
+            }
+        }
     }
     
     // MARK: - Orchestrator Façade Connectors
@@ -235,58 +221,15 @@ extension ConversionManager {
         let cleanName = newName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanName.isEmpty, cleanName != pdf.name else { return }
 
-        let fileManager = FileManager.default
-        let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
-
-        // Always preserve the original file extension. If the user typed a name
-        // without extension (common UI pattern) we re-attach it; if they included
-        // a different extension we respect it. This prevents the file losing its
-        // .cbz/.epub/.pdf suffix, which would break format detection, comic parsers,
-        // and cover extraction on subsequent loads.
-        let originalExt = pdf.url.pathExtension
-        let nameHasExtension = !URL(fileURLWithPath: cleanName).pathExtension.isEmpty
-        let finalName: String
-        if nameHasExtension {
-            finalName = cleanName
-        } else if !originalExt.isEmpty {
-            finalName = cleanName + "." + originalExt
-        } else {
-            finalName = cleanName
-        }
-
-        let newURL = docDir.appendingPathComponent(finalName)
-
-        if fileManager.fileExists(atPath: newURL.path) {
-            Logger.shared.log("Rename failed: File '\(finalName)' already exists", category: "Library")
-            return
-        }
-
-        do {
-            try fileManager.moveItem(at: pdf.url, to: newURL)
-
-            if let idx = convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
-                let updatedPDF = ConvertedPDF(
-                    id: pdf.id,
-                    name: cleanName,
-                    url: newURL,
-                    pageCount: pdf.pageCount,
-                    fileSize: pdf.fileSize,
-                    metadata: pdf.metadata,
-                    collectionId: pdf.collectionId,
-                    isFavorite: pdf.isFavorite,
-                    coverImageData: pdf.coverImageData,
-                    contentHash: pdf.contentHash
-                )
-                convertedPDFs[idx] = updatedPDF
-
-                // UUID is immutable — the thumbnail cache key is unaffected by a rename.
-                // No cache migration is needed.
-
-                saveLibrary()
-                objectWillChange.send()
+        Task {
+            do {
+                try await safelyRenamePhysicalFile(pdf: pdf, newName: cleanName)
+                await MainActor.run {
+                    objectWillChange.send()
+                }
+            } catch {
+                Logger.shared.log("renamePDF failed: \(error.localizedDescription)", category: "Library", type: .error)
             }
-        } catch {
-            Logger.shared.log("Rename Error: \(error)", category: "Library")
         }
     }
 
@@ -316,8 +259,59 @@ extension ConversionManager {
     func updatePDFMetadata(_ pdf: ConvertedPDF, metadata: PDFMetadata) { if let idx = convertedPDFs.firstIndex(where: { $0.id == pdf.id }) { convertedPDFs[idx].metadata = metadata; saveLibrary() } }
 
     /// Physically renames the underlying .cbz, .epub, or .pdf on the iOS Storage and updates the database pointer.
-    func safelyRenamePhysicalFile(pdf: ConvertedPDF, newName: String) throws {
-        try PhysicalFileSystemRouter.shared.safelyRenamePhysicalFile(pdf: pdf, newName: newName, manager: self)
+    func generateRenameFilename(pdf: ConvertedPDF, newSeriesName: String) -> String {
+        let cleanSeries = newSeriesName.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        var volumeBlock = ""
+        if let v = pdf.metadata.volume, !v.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            volumeBlock = " - v\(v.trimmingCharacters(in: .whitespacesAndNewlines))"
+        }
+        
+        var numberBlock = ""
+        let issue = pdf.metadata.issueNumber ?? MetadataHeuristics.extractIssueNumber(from: pdf.name)
+        if let numRaw = issue?.trimmingCharacters(in: .whitespacesAndNewlines), !numRaw.isEmpty {
+            if let intNum = Int(numRaw) {
+                numberBlock = String(format: " - c%03d", intNum)
+            } else {
+                numberBlock = " - c\(numRaw)"
+            }
+        }
+        
+        var titleBlock = ""
+        let title = pdf.metadata.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !title.isEmpty {
+            let oldFilenameStem = pdf.url.deletingPathExtension().lastPathComponent
+            if title != oldFilenameStem && title != pdf.name && title != (pdf.metadata.series ?? "") {
+                titleBlock = " - \(title)"
+            }
+        }
+        
+        var candidateName = "\(cleanSeries)\(volumeBlock)\(numberBlock)\(titleBlock)"
+        candidateName = candidateName.replacingOccurrences(of: "/", with: "-")
+                                     .replacingOccurrences(of: "\\", with: "-")
+                                     .replacingOccurrences(of: ":", with: "-")
+                                     .replacingOccurrences(of: "*", with: "")
+                                     .replacingOccurrences(of: "?", with: "")
+                                     .replacingOccurrences(of: "\"", with: "'")
+                                     .replacingOccurrences(of: "<", with: "(")
+                                     .replacingOccurrences(of: ">", with: ")")
+                                     .replacingOccurrences(of: "|", with: "-")
+        return candidateName.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    func safelyRenamePhysicalFile(pdf: ConvertedPDF, newName: String) async throws {
+        try await PhysicalFileSystemRouter.shared.safelyRenamePhysicalFile(pdf: pdf, newName: newName, manager: self)
+    }
+
+    func safelyRenameSeries(issues: [ConvertedPDF], newSeriesName: String) async {
+        do {
+            try await PhysicalFileSystemRouter.shared.safelyRenameSeries(issues: issues, newSeriesName: newSeriesName, manager: self)
+            await MainActor.run {
+                objectWillChange.send()
+            }
+        } catch {
+            Logger.shared.log("safelyRenameSeries failed: \(error.localizedDescription)", category: "Library", type: .error)
+        }
     }
 
     func extractSmartPanels(from url: URL) async throws -> [Int: [PanelExtractor.Panel]]? {

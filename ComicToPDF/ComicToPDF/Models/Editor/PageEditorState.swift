@@ -2,6 +2,7 @@ import Foundation
 import SwiftUI
 import Combine
 
+@MainActor
 class PageEditorState: ObservableObject {
     @Published var pageModel: PageModel // ✅ Added missing property
     @Published var selectedPanelIndex: Int?
@@ -63,11 +64,15 @@ class PageEditorState: ObservableObject {
     func execute(_ command: PageCommand) {
         // Register undo operation
         undoManager.registerUndo(withTarget: self) { target in
-            command.undo(to: &target.pageModel)
-            // Register redo when undoing
-            target.undoManager.registerUndo(withTarget: target) { redoTarget in
-                command.apply(to: &redoTarget.pageModel)
-                // Cycle continues...
+            MainActor.assumeIsolated {
+                command.undo(to: &target.pageModel)
+                
+                // Register redo when undoing
+                target.undoManager.registerUndo(withTarget: target) { redoTarget in
+                    MainActor.assumeIsolated {
+                        command.apply(to: &redoTarget.pageModel)
+                    }
+                }
             }
         }
         

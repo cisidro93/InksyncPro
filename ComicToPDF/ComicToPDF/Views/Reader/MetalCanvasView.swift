@@ -2,6 +2,33 @@ import SwiftUI
 import MetalKit
 import CoreImage
 
+/// A thread-safe global cache for Metal and CoreImage context resources to prevent expensive recompilations
+private final class MetalCanvasCache: @unchecked Sendable {
+    static let shared = MetalCanvasCache()
+    
+    let device: MTLDevice?
+    let commandQueue: MTLCommandQueue?
+    let ciContext: CIContext?
+    
+    private init() {
+        if let device = MTLCreateSystemDefaultDevice() {
+            self.device = device
+            self.commandQueue = device.makeCommandQueue()
+            
+            let options: [CIContextOption: Any] = [
+                .workingColorSpace: CGColorSpaceCreateDeviceRGB(),
+                .useSoftwareRenderer: false
+            ]
+            self.ciContext = CIContext(mtlDevice: device, options: options)
+        } else {
+            self.device = nil
+            self.commandQueue = nil
+            self.ciContext = nil
+            print("CRITICAL ENGINE ERROR: Metal is not supported on this device.")
+        }
+    }
+}
+
 /// A SwiftUI wrapper for an MTKView heavily optimized for Comic Page Rendering
 struct MetalCanvasView: UIViewRepresentable {
     var image: CGImage?
@@ -12,17 +39,12 @@ struct MetalCanvasView: UIViewRepresentable {
     func makeUIView(context: Context) -> MTKView {
         let mtkView = MTKView()
         
-        // ✅ Direct Hardware Pipeline Initialization
-        if let device = MTLCreateSystemDefaultDevice() {
+        // ✅ Direct Hardware Pipeline Initialization via Global Cache
+        let cache = MetalCanvasCache.shared
+        if let device = cache.device {
             mtkView.device = device
-            context.coordinator.commandQueue = device.makeCommandQueue()
-            
-            // We specify a working color space to handle DCI-P3 comic colors gracefully
-            let options: [CIContextOption: Any] = [
-                .workingColorSpace: CGColorSpaceCreateDeviceRGB(),
-                .useSoftwareRenderer: false
-            ]
-            context.coordinator.ciContext = CIContext(mtlDevice: device, options: options)
+            context.coordinator.commandQueue = cache.commandQueue
+            context.coordinator.ciContext = cache.ciContext
         } else {
             print("CRITICAL ENGINE ERROR: Metal is not supported on this device.")
         }

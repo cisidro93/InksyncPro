@@ -56,7 +56,8 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
                 UTType(filenameExtension: "epub") ?? .epub,
                 UTType(filenameExtension: "cbz") ?? .zip,
                 UTType(filenameExtension: "cbr") ?? .archive,
-                UTType(filenameExtension: "cb7") ?? .archive
+                UTType(filenameExtension: "cb7") ?? .archive,
+                UTType(filenameExtension: "cbt") ?? .archive
             ].compactMap { $0 }
         }
 
@@ -98,15 +99,17 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
         controller.dismiss(animated: true)
         
         let type = self.currentType
+        let existingPaths = Set(LibraryService.shared.items.map { $0.url.lastPathComponent })
+        let existingQueuePaths = Set(ImportQueueManager.shared.stagedURLs.map { $0.lastPathComponent })
         
-        let stagingTask = Task.detached(priority: .userInitiated) { () -> [URL] in
+        let stagingTask = Task.detached(priority: .userInitiated) { [existingPaths, existingQueuePaths] () -> [URL] in
             if type == .json || type == .smartList {
                 return urls
             }
 
             // --- Parallel Staging: Phase 1 enumerate, Phase 2 concurrent copy ---
             let fm = FileManager.default
-            let allowedExts: Set<String> = ["cbz", "cbr", "cb7", "epub", "zip", "pdf"]
+            let allowedExts: Set<String> = ["pdf", "epub", "cbz", "cbr", "cb7", "cbt", "zip"]
 
             let stagingDir = fm.temporaryDirectory.appendingPathComponent("InksyncStaging_\(UUID().uuidString)")
             try? fm.createDirectory(at: stagingDir, withIntermediateDirectories: true)
@@ -149,6 +152,10 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
                                   rsrc.isDirectory == false else { continue }
                             guard allowedExts.contains(fileURL.pathExtension.lowercased()) else { continue }
 
+                            let fileName = fileURL.lastPathComponent
+                            // Skip duplicates already in main library or staged queue
+                            guard !existingPaths.contains(fileName) && !existingQueuePaths.contains(fileName) else { continue }
+
                             // Preserve native structure for SeriesNameParser Context
                             let originalParent = fileURL.deletingLastPathComponent().lastPathComponent
                             let destFolder = stagingDir.appendingPathComponent(originalParent)
@@ -160,11 +167,14 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
                 } else {
                     // Standard single-file selection
                     if allowedExts.contains(url.pathExtension.lowercased()) {
-                        let originalParent = url.deletingLastPathComponent().lastPathComponent
-                        let destFolder = stagingDir.appendingPathComponent(originalParent)
-                        try? fm.createDirectory(at: destFolder, withIntermediateDirectories: true)
-                        jobs.append(CopyJob(source: url,
-                                            dest: destFolder.appendingPathComponent(url.lastPathComponent)))
+                        let fileName = url.lastPathComponent
+                        if !existingPaths.contains(fileName) && !existingQueuePaths.contains(fileName) {
+                            let originalParent = url.deletingLastPathComponent().lastPathComponent
+                            let destFolder = stagingDir.appendingPathComponent(originalParent)
+                            try? fm.createDirectory(at: destFolder, withIntermediateDirectories: true)
+                            jobs.append(CopyJob(source: url,
+                                                dest: destFolder.appendingPathComponent(url.lastPathComponent)))
+                        }
                     }
                 }
             }

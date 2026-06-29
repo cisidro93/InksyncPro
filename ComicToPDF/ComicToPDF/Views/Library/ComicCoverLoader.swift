@@ -33,11 +33,10 @@ struct ComicCoverLoader: View {
                 }
             }
         }
-        .task {
+        .task(id: pdf.id) {
+            image = nil
             // 1. Try in-memory + disk cache first
-            if image == nil {
-                image = await conversionManager.loadCoverThumbnail(for: pdf)
-            }
+            image = await conversionManager.loadCoverThumbnail(for: pdf)
             // 2. If still nil and it's a cloud file, kick off background byte-range extraction
             if image == nil, isCloud {
                 await CloudCoverExtractor.shared.extract(for: [pdf])

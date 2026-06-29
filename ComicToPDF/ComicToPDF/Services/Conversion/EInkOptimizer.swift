@@ -35,7 +35,8 @@ final class EInkOptimizer: @unchecked Sendable {
             && settings.imageEnhancement.sharpness == 0.0
             && settings.imageEnhancement.vibrance == 0.0
             && settings.imageEnhancement.gamma == 1.0
-            && customTargetSize == nil {
+            && customTargetSize == nil
+            && !ImageProcessor.isWideColor(image) {
             return image
         }
         
@@ -85,6 +86,11 @@ final class EInkOptimizer: @unchecked Sendable {
         // 6. CoreImage Unified Filtering (Brightness, Contrast, Sharpness, Grayscale, Dithering)
         workingImage = applyFilters(to: workingImage, settings: settings)
         
+        // 🚨 ENFORCE sRGB Color Space. Wide-color (P3) JPEGs will hard-brick Kindle E-Ink screens.
+        if ImageProcessor.isWideColor(workingImage) {
+            workingImage = ImageProcessor.convertToSRGB(workingImage)
+        }
+        
         return workingImage
     }
     
@@ -122,7 +128,10 @@ final class EInkOptimizer: @unchecked Sendable {
     /// Bakes image orientation into pixel buffers
     private func fixOrientation(of image: UIImage) -> UIImage? {
         if image.imageOrientation == .up { return image }
-        let renderer = UIGraphicsImageRenderer(size: image.size)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = image.scale
+        format.preferredRange = .standard // Forces standard sRGB color space
+        let renderer = UIGraphicsImageRenderer(size: image.size, format: format)
         return renderer.image { _ in image.draw(at: .zero) }
     }
     
@@ -211,6 +220,7 @@ final class EInkOptimizer: @unchecked Sendable {
         
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1.0
+        format.preferredRange = .standard // Forces standard sRGB color space
         
         var drawX: CGFloat = 0
         

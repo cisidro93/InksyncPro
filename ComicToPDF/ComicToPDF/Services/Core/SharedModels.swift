@@ -203,9 +203,7 @@ struct ConvertedPDF: Identifiable, Codable, Hashable, Sendable {
     }
     
     func toPDFDocument() -> PDFDocument {
-        return ConcurrencyLocks.pdfLock.withLock {
-            PDFDocument(url: url) ?? PDFDocument()
-        }
+        return PDFDocument(url: url) ?? PDFDocument()
     }
     
     // âœ… NEW: Explicit Equatable & Hashable for Core Rendering Performance
@@ -585,6 +583,8 @@ struct ConversionSettings: Codable, Equatable, Sendable {
     var trimMargins: Bool = false
     var embedCharacterGlossary: Bool = true // ✅ NEW: Toggle to append glossary page for Kindle
     var linkCoverAsSpread: Bool = false // ✅ NEW: Pair Cover Page with Page 2 as a spread
+    var customAliases: [String: String] = [:]
+    var pencilOnlyDrawing: Bool = false
 
 
     /// Returns `true` when the user has changed at least one meaningful conversion
@@ -752,6 +752,8 @@ struct ConversionSettings: Codable, Equatable, Sendable {
         case outputPipeline   // Canonical export mode
         case isGuidedView     // Legacy -- read-only for migration
         case comicVineAPIKey  // Legacy API key migration only
+        case customAliases
+        case pencilOnlyDrawing
     }
     
     init() {}
@@ -805,6 +807,8 @@ struct ConversionSettings: Codable, Equatable, Sendable {
             KeychainHelper.standard.save(data, service: "com.antigravity.InksyncPro", account: "comicVineAPIKey")
         }
         
+        customAliases = (try? container.decodeIfPresent([String: String].self, forKey: .customAliases)) ?? [:]
+        pencilOnlyDrawing = (try? container.decodeIfPresent(Bool.self, forKey: .pencilOnlyDrawing)) ?? false
     }
     
     func encode(to encoder: Encoder) throws {
@@ -838,6 +842,8 @@ struct ConversionSettings: Codable, Equatable, Sendable {
         try container.encode(deepFetchComicVineIssues, forKey: .deepFetchComicVineIssues)
         // comicVineAPIKey is intentionally not encoded (moved to Keychain)
         // isGuidedView is intentionally not encoded (computed from outputPipeline)
+        try container.encode(customAliases, forKey: .customAliases)
+        try container.encode(pencilOnlyDrawing, forKey: .pencilOnlyDrawing)
     }
 }
 
@@ -1009,10 +1015,14 @@ struct EPUBPanelManifest: Codable {
 }
 
 // MARK: - Global Alert
-struct AppAlert: Identifiable {
+struct AppAlert: Identifiable, Equatable {
     let id = UUID()
     let title: String
     let message: String
+    
+    static func == (lhs: AppAlert, rhs: AppAlert) -> Bool {
+        lhs.id == rhs.id
+    }
 }
 
 // MARK: - Editor Models (Precision Canvas)
@@ -1106,6 +1116,30 @@ enum PageCoordinateSystem: String, Codable, Equatable, Hashable {
     // Linked Library Support
     var sourceModeData: Data?
 
+    @Transient private var cachedSourceMode: SourceMode? = nil
+    @Transient private var lastDecodedData: Data? = nil
+
+    var sourceMode: SourceMode {
+        get {
+            guard let data = sourceModeData else { return .local }
+            if let cached = cachedSourceMode, lastDecodedData == data {
+                return cached
+            }
+            if let decoded = try? JSONDecoder().decode(SourceMode.self, from: data) {
+                cachedSourceMode = decoded
+                lastDecodedData = data
+                return decoded
+            }
+            return .local
+        }
+        set {
+            if let encoded = try? JSONEncoder().encode(newValue) {
+                sourceModeData = encoded
+                cachedSourceMode = newValue
+                lastDecodedData = encoded
+            }
+        }
+    }
     
     // Unified Reader Properties
     var documentSubtype: DocumentSubtype
@@ -1144,8 +1178,10 @@ enum PageCoordinateSystem: String, Codable, Equatable, Hashable {
         self.documentSubtype = .unknown
         self.isOnDevice = false
         self.lastTransferFailed = false
+        self.cachedSourceMode = sourceMode
         if let encoded = try? JSONEncoder().encode(sourceMode) {
             self.sourceModeData = encoded
+            self.lastDecodedData = encoded
         }
     }
     
@@ -1164,9 +1200,7 @@ enum PageCoordinateSystem: String, Codable, Equatable, Hashable {
         pdf.lastModified = self.lastModified
         pdf.panelConfidenceScore = self.panelConfidenceScore
         
-        if let data = self.sourceModeData, let decoded = try? JSONDecoder().decode(SourceMode.self, from: data) {
-            pdf.sourceMode = decoded
-        }
+        pdf.sourceMode = self.sourceMode
         
         return pdf
     }
@@ -1246,5 +1280,22 @@ enum PageCoordinateSystem: String, Codable, Equatable, Hashable {
         self.pageIndex = pageIndex
         self.characterID = characterID
     }
+}
+
+
+// MARK: - Virtual Omnibus Models
+
+struct VirtualOmnibus: Identifiable, Codable, Equatable, Hashable, Sendable {
+    let id: UUID
+    var name: String
+    var fileIDs: [UUID] // Ordered list of comic issue file IDs
+    var coverFileID: UUID? // Optional override cover image file ID
+    var lastReadPageIndex: Int = 0
+    var lastReadFileID: UUID? = nil
+    var addedAt: Date = Date()
+    var modifiedAt: Date = Date()
+    var remoteSyncURL: String? = nil
+    var lastSyncedAt: Date? = nil
+    var parentSeriesID: String? = nil
 }
 
