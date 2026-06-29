@@ -72,6 +72,7 @@ final class LibraryService: ObservableObject {
     /// Saves the virtual omnibuses array to the local database.
     func saveVirtualOmnibuses() {
         let omnibuses = self.virtualOmnibuses
+        Logger.shared.log("🔍 [Flight Recorder] 📦 [Virtual Volume] Saving \(omnibuses.count) virtual volumes to database", category: "Debug")
         Task.detached(priority: .background) {
             await LibraryDatabaseService.shared.saveVirtualOmnibuses(omnibuses)
         }

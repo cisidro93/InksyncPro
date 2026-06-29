@@ -212,13 +212,13 @@ struct SeriesDetailView: View {
     
     var seriesVirtualOmnibuses: [VirtualOmnibus] {
         let allOmnibuses = conversionManager.virtualOmnibuses
-        Logger.shared.log("SeriesDetailView: evaluating seriesVirtualOmnibuses. total: \(allOmnibuses.count), series title: \(series.title), series id: \(series.id)", category: "Library")
+        Logger.shared.log("🔍 [Flight Recorder] 👁️ [Virtual Volume] Evaluating visibility. total omnibuses: \(allOmnibuses.count), series title: '\(series.title)', series ID: '\(series.id)'", category: "Debug")
         
         return allOmnibuses.filter { omnibus in
             // 1. Explicit connection context (parentSeriesID) matches series.id
             if let parent = omnibus.parentSeriesID {
                 let parentMatch = parent.localizedCaseInsensitiveCompare(series.id) == .orderedSame
-                Logger.shared.log("SeriesDetailView: omnibus '\(omnibus.name)' parentSeriesID: '\(parent)', parentMatch: \(parentMatch)", category: "Library")
+                Logger.shared.log("🔍 [Flight Recorder] 👁️ [Virtual Volume] Checked '\(omnibus.name)' - parentSeriesID: '\(parent)', match = \(parentMatch)", category: "Debug")
                 if parentMatch { return true }
             }
             
@@ -226,30 +226,29 @@ struct SeriesDetailView: View {
             let nameMatch = omnibus.name.localizedCaseInsensitiveCompare(series.title) == .orderedSame ||
                             omnibus.name.localizedCaseInsensitiveContains(series.title) ||
                             series.title.localizedCaseInsensitiveContains(omnibus.name)
-            Logger.shared.log("SeriesDetailView: omnibus '\(omnibus.name)' nameMatch: \(nameMatch)", category: "Library")
+            Logger.shared.log("🔍 [Flight Recorder] 👁️ [Virtual Volume] Checked '\(omnibus.name)' - nameMatch = \(nameMatch)", category: "Debug")
             if nameMatch { return true }
             
             // 3. Match if any issue inside the omnibus belongs to this series (case-insensitive)
             let resolvedFiles = omnibus.fileIDs.compactMap { id in
                 conversionManager.convertedPDFs.first(where: { $0.id == id })
             }
-            Logger.shared.log("SeriesDetailView: omnibus '\(omnibus.name)' fileIDs count: \(omnibus.fileIDs.count), resolvedFiles count: \(resolvedFiles.count)", category: "Library")
             
             // 4. Match if this is a custom collection (folder) and any file in the omnibus belongs to it
             if let folderUUID = UUID(uuidString: series.id) {
                 let collectionMatch = resolvedFiles.contains { $0.collectionId == folderUUID }
-                Logger.shared.log("SeriesDetailView: omnibus '\(omnibus.name)' collectionMatch: \(collectionMatch)", category: "Library")
+                Logger.shared.log("🔍 [Flight Recorder] 👁️ [Virtual Volume] Checked '\(omnibus.name)' - collectionMatch = \(collectionMatch)", category: "Debug")
                 return collectionMatch
             }
             
             let fileMatch = resolvedFiles.contains { pdf in
                 let matches = pdf.metadata.series?.localizedCaseInsensitiveCompare(series.title) == .orderedSame
                 if matches {
-                    Logger.shared.log("SeriesDetailView: matched pdf '\(pdf.name)' with series '\(pdf.metadata.series ?? "nil")'", category: "Library")
+                    Logger.shared.log("🔍 [Flight Recorder] 👁️ [Virtual Volume] Matched pdf '\(pdf.name)' with series '\(pdf.metadata.series ?? "nil")'", category: "Debug")
                 }
                 return matches
             }
-            Logger.shared.log("SeriesDetailView: omnibus '\(omnibus.name)' fileMatch: \(fileMatch)", category: "Library")
+            Logger.shared.log("🔍 [Flight Recorder] 👁️ [Virtual Volume] Checked '\(omnibus.name)' - fileMatch = \(fileMatch)", category: "Debug")
             return fileMatch
         }
     }

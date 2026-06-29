@@ -241,7 +241,7 @@ actor LibraryDatabaseService {
     func loadVirtualOmnibuses() async -> [VirtualOmnibus] {
         guard let db = self.db else { return [] }
         do {
-            return try await Task.detached(priority: .userInitiated) {
+            let list = try await Task.detached(priority: .userInitiated) {
                 try db.read { handle in
                     let rows = try handle.fetchAll("SELECT * FROM virtual_omnibuses ORDER BY addedAt DESC")
                     return rows.compactMap { row -> VirtualOmnibus? in
@@ -250,6 +250,8 @@ actor LibraryDatabaseService {
                     }
                 }
             }.value
+            Logger.shared.log("🔍 [Flight Recorder] 💾 [Virtual Volume] Loaded \(list.count) virtual volumes from SQLite", category: "Debug")
+            return list
         } catch {
             Logger.shared.log("LibraryDatabaseService: loadVirtualOmnibuses failed — \(error.localizedDescription)", category: "Import", type: .error)
             return []
