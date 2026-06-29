@@ -43,8 +43,18 @@ struct SeriesGroup: Identifiable, Hashable {
     var coverIssueID: UUID?
     var count: Int
     var issues: [ConvertedPDF] // Mutable to support drag-and-drop
-    var readCount: Int = 0
-    var newCount: Int = 0
+    var readCount: Int
+    var newCount: Int
+
+    init(id: String, title: String, coverIssueID: UUID? = nil, count: Int, issues: [ConvertedPDF], readCount: Int = 0, newCount: Int = 0) {
+        self.id = id
+        self.title = title
+        self.coverIssueID = coverIssueID
+        self.count = count
+        self.issues = issues
+        self.readCount = readCount
+        self.newCount = newCount
+    }
     
     var lastUpdated: Date {
         issues.map { $0.metadata.publicationDate ?? Date.distantPast }.max() ?? Date.distantPast

@@ -68,6 +68,10 @@ class LibraryViewModel: ObservableObject {
         let virtualOmnibusesSnapshot = LibraryService.shared.virtualOmnibuses
         // Snapshot linked drives so the background task doesn't capture @MainActor state.
         let linkedDrives = AppSettingsManager.shared.linkedDrives
+        
+        // Snapshot reading progress map on MainActor before starting background thread
+        let progressMap = ReaderProgressTracker.shared.allProgress
+        let progressSnapshot = Dictionary(uniqueKeysWithValues: progressMap.map { ($0.pdfID, $0) })
 
         rebuilTask = Task.detached(priority: .background) { () async -> Void in
             guard !Task.isCancelled else { return }
@@ -82,7 +86,8 @@ class LibraryViewModel: ObservableObject {
                 currentSearchText: currentSearchText,
                 filter: filter,
                 shelf: shelf,
-                linkedDrives: linkedDrives
+                linkedDrives: linkedDrives,
+                progressSnapshot: progressSnapshot
             )
 
             guard !Task.isCancelled else { return }
@@ -116,7 +121,8 @@ class LibraryViewModel: ObservableObject {
         currentSearchText: String,
         filter: LibraryFilterState,
         shelf: ContentShelf,
-        linkedDrives: [AppSettingsManager.LinkedDriveEntry]
+        linkedDrives: [AppSettingsManager.LinkedDriveEntry],
+        progressSnapshot: [UUID: ReadingProgress]
     ) -> [LibraryListItem] {
         guard !Task.isCancelled else { return [] }
 
@@ -320,13 +326,12 @@ class LibraryViewModel: ObservableObject {
                 group.coverIssueID = cover.id
             }
 
-            // Precompute read and new issue counts on the background thread
-            let progressTracker = ReaderProgressTracker.shared
+            // Precompute read and new issue counts on the background thread using our snapshot
             group.readCount = group.issues.filter {
-                (progressTracker.progress(for: $0.id)?.completionFraction ?? 0.0) >= 0.95
+                (progressSnapshot[$0.id]?.completionFraction ?? 0.0) >= 0.95
             }.count
             group.newCount = group.issues.filter {
-                progressTracker.progress(for: $0.id) == nil
+                progressSnapshot[$0.id] == nil
             }.count
 
             items.append((firstAppearanceIndex[key] ?? 0, LibraryListItem.series(group)))
