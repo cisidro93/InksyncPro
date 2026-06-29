@@ -168,9 +168,30 @@ struct SeriesDetailView: View {
     @State private var collapsedVolumes: Set<String> = []
     @State private var showBatchVolumeAssignment = false
     @State private var showManualVolumeLinker = false
+    @State private var showSeriesDetails = false
     @State private var jumpToVolume: String? = nil
     @State private var cachedVolumeGroups: [(key: String, issues: [ConvertedPDF])] = []
     
+    var seriesWriter: String? {
+        let writers = freshIssues.compactMap { $0.metadata.writer }.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        return writers.first
+    }
+    
+    var seriesArtist: String? {
+        let artists = freshIssues.compactMap { $0.metadata.penciller }.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        return artists.first
+    }
+    
+    var seriesTags: [String] {
+        let allTags = freshIssues.flatMap { $0.metadata.tags }.map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        return Array(Set(allTags)).sorted()
+    }
+    
+    var seriesSummary: String? {
+        let summaries = freshIssues.compactMap { $0.metadata.summary }.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        return summaries.first
+    }
+
     var isCollection: Bool {
         guard let id = UUID(uuidString: series.id) else { return false }
         return conversionManager.collections.contains(where: { $0.id == id })
@@ -1629,6 +1650,8 @@ struct SeriesDetailView: View {
                 }
             }
             .frame(height: 4)
+            
+            seriesDetailsCard
         }
         .padding(.vertical)
         .background(
@@ -2049,6 +2072,101 @@ struct SeriesDetailView: View {
         dragStartIndex = nil
         currentDragIndex = nil
         initialSelectionBeforeDrag.removeAll()
+    }
+    
+    private var seriesDetailsCard: some View {
+        Group {
+            let writer = seriesWriter
+            let artist = seriesArtist
+            let summary = seriesSummary
+            let tags = seriesTags
+            
+            if writer != nil || artist != nil || summary != nil || !tags.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Button {
+                        withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
+                            showSeriesDetails.toggle()
+                        }
+                    } label: {
+                        HStack {
+                            Text("Series Details")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundColor(Theme.text)
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundColor(Theme.orange)
+                                .rotationEffect(.degrees(showSeriesDetails ? 90 : 0))
+                        }
+                        .padding(.vertical, 4)
+                    }
+                    .buttonStyle(.plain)
+                    
+                    if showSeriesDetails {
+                        VStack(alignment: .leading, spacing: 10) {
+                            if let writer = writer {
+                                HStack(alignment: .top, spacing: 6) {
+                                    Text("Writer:")
+                                        .font(.system(size: 12, weight: .bold))
+                                        .foregroundColor(Theme.textSecondary)
+                                    Text(writer)
+                                        .font(.system(size: 12))
+                                        .foregroundColor(Theme.text)
+                                }
+                            }
+                            
+                            if let artist = artist {
+                                HStack(alignment: .top, spacing: 6) {
+                                    Text("Artist:")
+                                        .font(.system(size: 12, weight: .bold))
+                                        .foregroundColor(Theme.textSecondary)
+                                    Text(artist)
+                                        .font(.system(size: 12))
+                                        .foregroundColor(Theme.text)
+                                }
+                            }
+                            
+                            if !tags.isEmpty {
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 6) {
+                                        ForEach(tags, id: \.self) { tag in
+                                            Text(tag)
+                                                .font(.system(size: 9, weight: .semibold))
+                                                .padding(.horizontal, 8)
+                                                .padding(.vertical, 3)
+                                                .background(Color.inkBlue.opacity(0.1))
+                                                .foregroundColor(Color.inkBlue)
+                                                .clipShape(Capsule())
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            if let summary = summary {
+                                Text(summary)
+                                    .font(.system(size: 12))
+                                    .foregroundColor(Theme.textSecondary)
+                                    .lineLimit(5)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .padding(.top, 4)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
+                }
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Theme.surface.opacity(0.4))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .stroke(Color.white.opacity(0.06), lineWidth: 1)
+                        )
+                )
+                .padding(.top, 4)
+            }
+        }
     }
 }
 
