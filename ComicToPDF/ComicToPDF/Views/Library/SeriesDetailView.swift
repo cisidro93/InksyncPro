@@ -211,20 +211,39 @@ struct SeriesDetailView: View {
     }
     
     var seriesVirtualOmnibuses: [VirtualOmnibus] {
-        conversionManager.virtualOmnibuses.filter { omnibus in
+        let allOmnibuses = conversionManager.virtualOmnibuses
+        Logger.shared.log("SeriesDetailView: evaluating seriesVirtualOmnibuses. total: \(allOmnibuses.count), series title: \(series.title), series id: \(series.id)", category: "Library")
+        
+        return allOmnibuses.filter { omnibus in
             // 1. Match by virtual volume name (case-insensitive, substring/contains allowed)
             let nameMatch = omnibus.name.localizedCaseInsensitiveCompare(series.title) == .orderedSame ||
                             omnibus.name.localizedCaseInsensitiveContains(series.title) ||
                             series.title.localizedCaseInsensitiveContains(omnibus.name)
+            Logger.shared.log("SeriesDetailView: omnibus '\(omnibus.name)' nameMatch: \(nameMatch)", category: "Library")
             if nameMatch { return true }
             
             // 2. Match if any issue inside the omnibus belongs to this series (case-insensitive)
             let resolvedFiles = omnibus.fileIDs.compactMap { id in
                 conversionManager.convertedPDFs.first(where: { $0.id == id })
             }
-            return resolvedFiles.contains { pdf in
-                pdf.metadata.series?.localizedCaseInsensitiveCompare(series.title) == .orderedSame
+            Logger.shared.log("SeriesDetailView: omnibus '\(omnibus.name)' fileIDs count: \(omnibus.fileIDs.count), resolvedFiles count: \(resolvedFiles.count)", category: "Library")
+            
+            // 3. Match if this is a custom collection (folder) and any file in the omnibus belongs to it
+            if let folderUUID = UUID(uuidString: series.id) {
+                let collectionMatch = resolvedFiles.contains { $0.collectionId == folderUUID }
+                Logger.shared.log("SeriesDetailView: omnibus '\(omnibus.name)' collectionMatch: \(collectionMatch)", category: "Library")
+                return collectionMatch
             }
+            
+            let fileMatch = resolvedFiles.contains { pdf in
+                let matches = pdf.metadata.series?.localizedCaseInsensitiveCompare(series.title) == .orderedSame
+                if matches {
+                    Logger.shared.log("SeriesDetailView: matched pdf '\(pdf.name)' with series '\(pdf.metadata.series ?? "nil")'", category: "Library")
+                }
+                return matches
+            }
+            Logger.shared.log("SeriesDetailView: omnibus '\(omnibus.name)' fileMatch: \(fileMatch)", category: "Library")
+            return fileMatch
         }
     }
     
