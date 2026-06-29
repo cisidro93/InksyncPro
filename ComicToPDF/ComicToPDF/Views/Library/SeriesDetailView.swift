@@ -179,13 +179,22 @@ struct SeriesDetailView: View {
         cachedVolumeGroups.map { $0.key }
     }
     
+    private func resolvedVolume(for pdf: ConvertedPDF) -> String? {
+        if let vol = pdf.metadata.volume, !vol.isEmpty {
+            return vol
+        }
+        let parsed = DeterministicFilenameParser.parse(filename: pdf.name)
+        return parsed.volume
+    }
+
     var filteredIssues: [ConvertedPDF] {
         if let selectedVolume = selectedVolumeFilter {
             return localIssues.filter { pdf in
+                let vol = resolvedVolume(for: pdf)
                 if selectedVolume == "Ungrouped" {
-                    return pdf.metadata.volume?.isEmpty ?? true
+                    return vol == nil || vol!.isEmpty
                 } else {
-                    return pdf.metadata.volume == selectedVolume
+                    return vol == selectedVolume
                 }
             }
         }
@@ -206,7 +215,7 @@ struct SeriesDetailView: View {
         var ungrouped: [ConvertedPDF] = []
         
         for pdf in localIssues {
-            if let vol = pdf.metadata.volume, !vol.isEmpty {
+            if let vol = resolvedVolume(for: pdf) {
                 groups[vol, default: []].append(pdf)
             } else {
                 ungrouped.append(pdf)
@@ -225,7 +234,7 @@ struct SeriesDetailView: View {
     
     /// True if any issues have volume metadata worth grouping by
     var hasVolumeData: Bool {
-        localIssues.contains { $0.metadata.volume?.isEmpty == false }
+        localIssues.contains { resolvedVolume(for: $0) != nil }
     }
     
     var availableSortOptions: [SeriesSortOption] {
