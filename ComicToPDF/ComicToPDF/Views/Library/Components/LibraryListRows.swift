@@ -192,6 +192,14 @@ struct ModernFileRow: View {
                 self.localCover = loaded
             }
         }
+        .onReceive(conversionManager.thumbnailReadySubject.receive(on: RunLoop.main)) { updatedID in
+            if updatedID == pdf.id {
+                let key = pdf.id.uuidString as NSString
+                if let cached = conversionManager.thumbnailCache.object(forKey: key) {
+                    self.localCover = cached
+                }
+            }
+        }
     }
 }
 
@@ -321,7 +329,7 @@ struct ModernSeriesRow: View {
         .contentShape(Rectangle())
         .hoverEffect(.lift)
         // ✅ PERF: Async thumbnail load — reads back from NSCache after write
-        .task(id: group.id) {
+        .task(id: group.coverIssueID) {
             if let issueID = group.coverIssueID,
                let pdf = conversionManager.convertedPDFs.first(where: { $0.id == issueID }) {
                 let key = issueID.uuidString as NSString
@@ -331,6 +339,14 @@ struct ModernSeriesRow: View {
                 await conversionManager.loadThumbnailAsync(for: pdf)
                 if let loaded = conversionManager.thumbnailCache.object(forKey: key) {
                     self.localCover = loaded
+                }
+            }
+        }
+        .onReceive(conversionManager.thumbnailReadySubject.receive(on: RunLoop.main)) { updatedID in
+            if let coverID = group.coverIssueID, updatedID == coverID {
+                let key = coverID.uuidString as NSString
+                if let cached = conversionManager.thumbnailCache.object(forKey: key) {
+                    self.localCover = cached
                 }
             }
         }

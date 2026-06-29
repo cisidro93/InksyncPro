@@ -128,7 +128,7 @@ class PhysicalFileSystemRouter {
                     manager.convertedPDFs[index].coverImageData = nil
                     // Route through the debounced subject so rapid backfill saves coalesce
                     // into one SwiftUI diff per 150ms window instead of one per cover write.
-                    manager.thumbnailReadySubject.send()
+                    manager.thumbnailReadySubject.send(pdfID)
                 }
             }
         }
@@ -349,7 +349,7 @@ class PhysicalFileSystemRouter {
                 manager.thumbnailCache.setObject(image, forKey: pdf.id.uuidString as NSString)
                 // H2: Fire the debounced subject instead of objectWillChange directly.
                 // Up to 200 concurrent cell loads coalesce into one SwiftUI diff per 150ms window.
-                manager.thumbnailReadySubject.send()
+                manager.thumbnailReadySubject.send(pdf.id)
             }
         } else {
             await ThumbnailGenerationQueue.shared.enqueue(pdf, manager: manager)
@@ -388,7 +388,7 @@ class PhysicalFileSystemRouter {
                 await MainActor.run {
                     manager.thumbnailCache.setObject(image, forKey: keyStr as NSString)
                     // H2: debounced pulse — prevents 200 per-cell full-tree re-renders during scroll
-                    manager.thumbnailReadySubject.send()
+                    manager.thumbnailReadySubject.send(pdf.id)
                 }
             } else {
                 await ThumbnailGenerationQueue.shared.enqueue(pdf, manager: manager)

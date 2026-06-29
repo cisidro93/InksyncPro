@@ -154,6 +154,14 @@ private struct VirtualOmnibusCard: View {
         .task(id: omnibus.id) {
             await loadCover()
         }
+        .onReceive(conversionManager.thumbnailReadySubject.receive(on: RunLoop.main)) { updatedID in
+            let coverID = omnibus.coverFileID ?? omnibus.fileIDs.first
+            if updatedID == coverID {
+                Task {
+                    await loadCover()
+                }
+            }
+        }
         .contextMenu {
             if omnibus.remoteSyncURL != nil && !omnibus.remoteSyncURL!.isEmpty {
                 Button {

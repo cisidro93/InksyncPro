@@ -45,19 +45,13 @@ struct ModernGridFileCell: View {
                                 // the previous double-image approach (blur + crisp) which ran entirely in
                                 // software and caused ~8ms frame drops per cell during scroll.
                                 ZStack {
-                                    // Blurred background: smaller radius (8 vs 18) + drawingGroup = GPU-only
-                                    Image(uiImage: img)
-                                        .resizable()
-                                        .aspectRatio(contentMode: .fill)
-                                        .blur(radius: 8, opaque: true)
-                                        .overlay(Color.black.opacity(0.40))
-                                        .drawingGroup() // ← rasterises blur to GPU texture once
+                                    Color.inkSurfaceRaised
 
                                     // Foreground: actual cover scaled to fit
                                     Image(uiImage: img)
                                         .resizable()
                                         .aspectRatio(contentMode: .fit)
-                                        .shadow(color: .black.opacity(0.45), radius: 6, y: 3)
+                                        .shadow(color: .black.opacity(0.25), radius: 4, y: 2)
                                 }
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                                 .clipped()
@@ -353,6 +347,14 @@ struct ModernGridFileCell: View {
                 await ThumbnailGenerationQueue.shared.enqueue(pdf, manager: conversionManager)
             }
         }
+        .onReceive(conversionManager.thumbnailReadySubject.receive(on: RunLoop.main)) { updatedID in
+            if updatedID == pdf.id {
+                let key = pdf.id.uuidString as NSString
+                if let cached = conversionManager.thumbnailCache.object(forKey: key) {
+                    self.localCover = cached
+                }
+            }
+        }
     }
 
     // MARK: - Placeholder Views
@@ -501,17 +503,7 @@ struct ModernGridSeriesCell: View {
     @State private var opacity: Double = 0.0
     @State private var isHovered = false
 
-    private var cachedReadCount: Int {
-        group.issues.filter {
-            (ReaderProgressTracker.shared.progress(for: $0.id)?.completionFraction ?? 0.0) >= 0.95
-        }.count
-    }
 
-    private var cachedNewCount: Int {
-        group.issues.filter {
-            ReaderProgressTracker.shared.progress(for: $0.id) == nil
-        }.count
-    }
 
     @AppStorage("mangaBadgeColorHex") private var mangaBadgeColorHex = "#ff5a36"
     @AppStorage("comicBadgeColorHex") private var comicBadgeColorHex = "#3d6fff"
@@ -561,7 +553,7 @@ struct ModernGridSeriesCell: View {
                 }
 
                 // ✅ Series Completion Badge — shown when every issue is read
-                if !isBatch && cachedReadCount > 0 && cachedReadCount >= group.count {
+                if !isBatch && group.readCount > 0 && group.readCount >= group.count {
                     VStack {
                         HStack {
                             Image(systemName: "checkmark.seal.fill")
@@ -614,10 +606,9 @@ struct ModernGridSeriesCell: View {
 
                     Spacer()
 
-                    // Reading progress ring
-                    if cachedReadCount > 0 || group.count > 0 {
+                    if group.readCount > 0 || group.count > 0 {
                         SeriesProgressRing(
-                            readCount: cachedReadCount,
+                            readCount: group.readCount,
                             totalCount: group.count
                         )
                         .frame(width: 30, height: 30)
@@ -649,7 +640,7 @@ struct ModernGridSeriesCell: View {
             }
         }
         // Throttled loader — gets the cover of the series' issue #1
-        .task(id: group.id) {
+        .task(id: group.coverIssueID) {
             // Load thumbnail
             guard let issueID = group.coverIssueID,
                   let pdf = group.issues.first(where: { $0.id == issueID }) ?? conversionManager.convertedPDFs.first(where: { $0.id == issueID }) else { return }
@@ -667,6 +658,14 @@ struct ModernGridSeriesCell: View {
             } else {
                 // 3. Fallback: Queue generation
                 await ThumbnailGenerationQueue.shared.enqueue(pdf, manager: conversionManager)
+            }
+        }
+        .onReceive(conversionManager.thumbnailReadySubject.receive(on: RunLoop.main)) { updatedID in
+            if let coverID = group.coverIssueID, updatedID == coverID {
+                let key = coverID.uuidString as NSString
+                if let cached = conversionManager.thumbnailCache.object(forKey: key) {
+                    self.localCover = cached
+                }
             }
         }
     }

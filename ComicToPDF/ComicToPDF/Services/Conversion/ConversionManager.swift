@@ -41,7 +41,7 @@ class ConversionManager: ObservableObject {
     // Thumbnail loaders fire this subject; the pipeline coalesces bursts into a single
     // objectWillChange pulse at most every 150ms — preventing 200 full-tree SwiftUI diffs
     // during a grid scroll where cells load covers concurrently.
-    let thumbnailReadySubject = PassthroughSubject<Void, Never>()
+    let thumbnailReadySubject = PassthroughSubject<UUID, Never>()
     private var thumbnailPulseCancellable: AnyCancellable?
     
     // UI State (Forwarded to TaskEngine)
@@ -99,11 +99,8 @@ class ConversionManager: ObservableObject {
         performStartupOptimization()
         migrateCoversToDisk()  // @MainActor class — direct call, no Task wrapper needed
         
-        // H2: Wire the debounced thumbnail pulse. Thumbnail loaders fire thumbnailReadySubject;
-        // this pipeline coalesces bursts into a single objectWillChange at most every 150ms.
-        thumbnailPulseCancellable = thumbnailReadySubject
-            .debounce(for: .milliseconds(150), scheduler: RunLoop.main)
-            .sink { [weak self] in self?.objectWillChange.send() }
+        // Removed global thumbnailPulseCancellable to prevent full-tree invalidations.
+        // Grid cells now observe thumbnailReadySubject locally for their specific PDF ID.
         
         NotificationCenter.default.addObserver(forName: .libraryNeedsRescan, object: nil, queue: .main) { [weak self] notification in
             let modeRaw = notification.userInfo?["mode"] as? String

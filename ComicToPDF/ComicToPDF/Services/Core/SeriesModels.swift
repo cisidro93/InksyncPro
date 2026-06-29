@@ -43,6 +43,8 @@ struct SeriesGroup: Identifiable, Hashable {
     var coverIssueID: UUID?
     var count: Int
     var issues: [ConvertedPDF] // Mutable to support drag-and-drop
+    var readCount: Int = 0
+    var newCount: Int = 0
     
     var lastUpdated: Date {
         issues.map { $0.metadata.publicationDate ?? Date.distantPast }.max() ?? Date.distantPast
@@ -55,9 +57,11 @@ struct SeriesGroup: Identifiable, Hashable {
         hasher.combine(id)
         hasher.combine(count)
         hasher.combine(coverIssueID)
+        hasher.combine(readCount)
+        hasher.combine(newCount)
     }
     
     static func == (lhs: SeriesGroup, rhs: SeriesGroup) -> Bool {
-        return lhs.id == rhs.id && lhs.count == rhs.count && lhs.coverIssueID == rhs.coverIssueID
+        return lhs.id == rhs.id && lhs.count == rhs.count && lhs.coverIssueID == rhs.coverIssueID && lhs.readCount == rhs.readCount && lhs.newCount == rhs.newCount
     }
 }

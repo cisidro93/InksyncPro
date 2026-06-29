@@ -320,6 +320,15 @@ class LibraryViewModel: ObservableObject {
                 group.coverIssueID = cover.id
             }
 
+            // Precompute read and new issue counts on the background thread
+            let progressTracker = ReaderProgressTracker.shared
+            group.readCount = group.issues.filter {
+                (progressTracker.progress(for: $0.id)?.completionFraction ?? 0.0) >= 0.95
+            }.count
+            group.newCount = group.issues.filter {
+                progressTracker.progress(for: $0.id) == nil
+            }.count
+
             items.append((firstAppearanceIndex[key] ?? 0, LibraryListItem.series(group)))
         }
 
