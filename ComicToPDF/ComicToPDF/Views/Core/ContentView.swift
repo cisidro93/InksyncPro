@@ -69,6 +69,10 @@ struct ContentView: View {
                     .navigationDestination(for: ConvertedPDF.self) { pdf in
                         ConvertView(pdf: pdf).id(pdf.id)
                     }
+                    .navigationDestination(for: SeriesGroup.self) { group in
+                        SeriesDetailView(series: group, selectedPDF: $selectedPDF, useNavigationStack: true)
+                            .environmentObject(conversionManager)
+                    }
                 }
                 .tabVisible(router.selectedTab == 0)
                 

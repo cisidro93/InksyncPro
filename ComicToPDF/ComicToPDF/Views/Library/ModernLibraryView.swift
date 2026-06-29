@@ -759,15 +759,7 @@ struct ModernLibraryView: View {
                 }
             }
         case .series(let group):
-            if let folderUUID = UUID(uuidString: group.id) {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                    viewModel.currentFolderID = folderUUID
-                }
-            } else {
-                if let next = nextUnread(in: group) {
-                    viewModel.handleDetailAction(action: .read, for: next, conversionManager: conversionManager)
-                }
-            }
+            router.path.append(group)
         case .driveFolder:
             break
         }

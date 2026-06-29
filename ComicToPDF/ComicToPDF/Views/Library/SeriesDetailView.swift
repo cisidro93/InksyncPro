@@ -1,5 +1,4 @@
 import SwiftUI
-
 struct SeriesDetailView: View {
     let series: SeriesGroup
     @EnvironmentObject var conversionManager: ConversionManager
@@ -15,20 +14,17 @@ struct SeriesDetailView: View {
     }
     
     @AppStorage("libraryViewStyle") private var viewStyle: LibraryViewStyle = .grid
-    
     @AppStorage("libraryTapAction") private var tapAction: LibraryTapAction = .read
     @AppStorage("defaultSeriesSort") private var sortOption: SeriesSortOption = .issueNumber
     @AppStorage("fastBundleOmnibus") private var fastBundleOmnibus = false
     @AppStorage("manualOmnibusBuildsCount") private var manualOmnibusBuildsCount = 0
-    
     @State private var headerCover: UIImage? = nil
-    
-    // Config Sheet & Prompt State
-    @State private var showingOmnibusPrompt: Bool = false
+    @State private var isSummaryExpanded = false
+    @State private var showingOmnibusPrompt = false
     @State private var pendingConfigSelection: Set<UUID>? = nil
     @State private var mergeConfigSuggestedName: String? = nil
     
-    // Batch Selection
+// Batch Selection
     @State private var selection = Set<UUID>()
     @State private var isSelectionMode: Bool = false
     @State private var showingMergeConfig: Bool = false
@@ -1537,7 +1533,7 @@ struct SeriesDetailView: View {
     }
 
     var headerView: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 16) {
             HStack(alignment: .top, spacing: 16) {
                 if let img = headerCover {
                     Image(uiImage: img)
@@ -1549,7 +1545,6 @@ struct SeriesDetailView: View {
                             RoundedRectangle(cornerRadius: 12, style: .continuous)
                                 .stroke(Color.white.opacity(0.10), lineWidth: 0.5)
                         )
-                        // Dual shadow: crisp near + ambient book-pile depth
                         .shadow(color: .black.opacity(0.40), radius: 6, x: 0, y: 4)
                         .shadow(color: .black.opacity(0.20), radius: 22, x: 0, y: 14)
                 } else {
@@ -1566,14 +1561,16 @@ struct SeriesDetailView: View {
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text(series.title)
-                        .font(.system(size: 20, weight: .bold))
+                        .font(.system(size: 22, weight: .bold))
                         .foregroundStyle(Theme.text)
+                        .lineLimit(3)
 
                     HStack(spacing: 6) {
                         Text("\(freshIssues.count) ISSUES")
                             .font(.system(size: 10, weight: .bold, design: .monospaced))
                             .foregroundStyle(Theme.textSecondary)
                             .tracking(0.8)
+                        
                         if let publisher = freshIssues.first?.metadata.publisher {
                             Text(publisher)
                                 .font(.system(size: 10, weight: .semibold))
@@ -1585,7 +1582,7 @@ struct SeriesDetailView: View {
                         }
                     }
 
-                    // Series-wide reading progress
+                    // Series-wide reading progress status
                     let seriesProgress = readingProgress(for: localIssues)
                     let seriesCompleted = completedCount(for: localIssues)
 
@@ -1626,9 +1623,81 @@ struct SeriesDetailView: View {
                         .padding(.top, 2)
                     }
                 }
-                .padding(.leading)
+                .padding(.leading, 4)
                 Spacer()
             }
+            
+            // Action Bar
+            HStack(spacing: 12) {
+                // Continue Reading / Play Button
+                Button {
+                    if let next = nextUnreadIssue {
+                        pdfToRead = next
+                    } else if let first = localIssues.first {
+                        pdfToRead = first
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "play.fill")
+                        Text(nextUnreadIssue != nil ? "CONTINUE" : "READ AGAIN")
+                            .fontWeight(.bold)
+                    }
+                    .font(.system(size: 12))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .background(
+                        LinearGradient(colors: [Theme.orange, Theme.red], startPoint: .topLeading, endPoint: .bottomTrailing)
+                    )
+                    .cornerRadius(10)
+                    .shadow(color: Theme.orange.opacity(0.3), radius: 5, y: 2)
+                }
+                
+                // Build Kindle Omnibus / Merge
+                Button {
+                    let generator = UIImpactFeedbackGenerator(style: .medium)
+                    generator.impactOccurred()
+                    selection = Set(freshIssues.map { $0.id })
+                    mergeConfigSuggestedName = "\(series.title) Omnibus"
+                    showingMergeConfig = true
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.triangle.2.circlepath.doc")
+                        Text("BUILD OMNIBUS")
+                            .fontWeight(.semibold)
+                    }
+                    .font(.system(size: 11))
+                    .foregroundColor(Theme.text)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .background(Color.white.opacity(0.08))
+                    .cornerRadius(10)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                    )
+                }
+                
+                // Fetch Meta
+                Button {
+                    if let first = freshIssues.first {
+                        pdfToSearchMetadata = first
+                    }
+                } label: {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 12))
+                        .foregroundColor(Theme.text)
+                        .padding(.vertical, 10)
+                        .padding(.horizontal, 14)
+                        .background(Color.white.opacity(0.08))
+                        .cornerRadius(10)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10)
+                                .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                        )
+                }
+            }
+            .padding(.top, 4)
             
             // Series-wide progress bar
             let progress = readingProgress(for: localIssues)
@@ -1663,7 +1732,7 @@ struct SeriesDetailView: View {
         )
     }
     
-    // MARK: - Feature 5: Smart List Template Export
+        // MARK: - Feature 5: Smart List Template Export
     
     private func exportSmartListTemplate() {
         var csv = "volume,start_chapter,end_chapter,series\n"
@@ -2078,97 +2147,114 @@ struct SeriesDetailView: View {
             let artist = seriesArtist
             let summary = seriesSummary
             let tags = seriesTags
+            let seriesProgress = readingProgress(for: localIssues)
+            let seriesCompleted = completedCount(for: localIssues)
             
-            if writer != nil || artist != nil || summary != nil || !tags.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Button {
-                        withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
-                            showSeriesDetails.toggle()
-                        }
-                    } label: {
-                        HStack {
-                            Text("Series Details")
-                                .font(.system(size: 13, weight: .bold))
-                                .foregroundColor(Theme.text)
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 11, weight: .bold))
-                                .foregroundColor(Theme.orange)
-                                .rotationEffect(.degrees(showSeriesDetails ? 90 : 0))
-                        }
-                        .padding(.vertical, 4)
-                    }
-                    .buttonStyle(.plain)
-                    
-                    if showSeriesDetails {
-                        VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 14) {
+                // Metadata details
+                HStack(alignment: .top, spacing: 20) {
+                    if writer != nil || artist != nil {
+                        VStack(alignment: .leading, spacing: 8) {
                             if let writer = writer {
-                                HStack(alignment: .top, spacing: 6) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "pencil.and.outline")
+                                        .font(.system(size: 11))
+                                        .foregroundColor(Theme.orange)
                                     Text("Writer:")
-                                        .font(.system(size: 12, weight: .bold))
+                                        .font(.system(size: 11, weight: .bold))
                                         .foregroundColor(Theme.textSecondary)
                                     Text(writer)
                                         .font(.system(size: 12))
                                         .foregroundColor(Theme.text)
+                                        .lineLimit(1)
                                 }
                             }
-                            
                             if let artist = artist {
-                                HStack(alignment: .top, spacing: 6) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "paintbrush.pointed")
+                                        .font(.system(size: 11))
+                                        .foregroundColor(Theme.orange)
                                     Text("Artist:")
-                                        .font(.system(size: 12, weight: .bold))
+                                        .font(.system(size: 11, weight: .bold))
                                         .foregroundColor(Theme.textSecondary)
                                     Text(artist)
                                         .font(.system(size: 12))
                                         .foregroundColor(Theme.text)
+                                        .lineLimit(1)
                                 }
-                            }
-                            
-                            if !tags.isEmpty {
-                                ScrollView(.horizontal, showsIndicators: false) {
-                                    HStack(spacing: 6) {
-                                        ForEach(tags, id: \.self) { tag in
-                                            Text(tag)
-                                                .font(.system(size: 9, weight: .semibold))
-                                                .padding(.horizontal, 8)
-                                                .padding(.vertical, 3)
-                                                .background(Color.inkBlue.opacity(0.1))
-                                                .foregroundColor(Color.inkBlue)
-                                                .clipShape(Capsule())
-                                        }
-                                    }
-                                }
-                            }
-                            
-                            if let summary = summary {
-                                Text(summary)
-                                    .font(.system(size: 12))
-                                    .foregroundColor(Theme.textSecondary)
-                                    .lineLimit(5)
-                                    .fixedSize(horizontal: false, vertical: true)
-                                    .padding(.top, 4)
                             }
                         }
-                        .padding(.vertical, 4)
-                        .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
+                    
+                    Spacer()
+                    
+                    // Quick Stats
+                    VStack(alignment: .trailing, spacing: 4) {
+                        Text("\(Int(seriesProgress * 100))% COMPLETE")
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .foregroundColor(Theme.orange)
+                        Text("\(seriesCompleted) of \(localIssues.count) Completed")
+                            .font(.system(size: 11, design: .rounded))
+                            .foregroundColor(Theme.textSecondary)
                     }
                 }
-                .padding(12)
-                .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Theme.surface.opacity(0.4))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .stroke(Color.white.opacity(0.06), lineWidth: 1)
-                        )
-                )
-                .padding(.top, 4)
+                
+                // Tags
+                if !tags.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            ForEach(tags, id: \.self) { tag in
+                                Text(tag.uppercased())
+                                    .font(.system(size: 8, weight: .bold, design: .monospaced))
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(Color.inkBlue.opacity(0.12))
+                                    .foregroundColor(Color.inkBlue)
+                                    .clipShape(Capsule())
+                            }
+                        }
+                    }
+                }
+                
+                // Synopsis / Description
+                if let summary = summary {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(summary)
+                            .font(.system(size: 12))
+                            .foregroundColor(Theme.textSecondary)
+                            .lineLimit(isSummaryExpanded ? nil : 3)
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                        
+                        Button {
+                            withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
+                                isSummaryExpanded.toggle()
+                            }
+                        } label: {
+                            Text(isSummaryExpanded ? "Read Less" : "Read More")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundColor(Theme.orange)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.top, 4)
+                }
             }
+            .padding(14)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Theme.surface.opacity(0.25))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                    )
+            )
+            .shadow(color: Color.black.opacity(0.1), radius: 10, y: 5)
+            .padding(.top, 4)
         }
     }
-}
-
-// MARK: - Preference Keys for Coordinate Space Tracking
+    
+    // MARK: - Preference Keys for Coordinate Space Tracking
 
 struct CellFramePreferenceKey: PreferenceKey {
     typealias Value = [UUID: CGRect]

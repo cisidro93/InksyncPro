@@ -321,12 +321,7 @@ struct LibraryGridView: View {
                 .buttonStyle(TactileButtonStyle())
             } else {
                 if let folderUUID = UUID(uuidString: group.id) {
-                    // It's a custom Collection folder — drill down natively
-                    Button {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                            onFolderTap(folderUUID)
-                        }
-                    } label: {
+                    NavigationLink(destination: LazyView { SeriesDetailView(series: group, selectedPDF: $selectedPDF, useNavigationStack: useNavigationStack) }) {
                         ModernGridSeriesCell(group: group, isSelected: false, isBatch: false)
                     }
                     .buttonStyle(TactileButtonStyle())
