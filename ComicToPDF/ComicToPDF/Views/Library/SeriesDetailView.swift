@@ -167,6 +167,7 @@ struct SeriesDetailView: View {
     @State private var showVolumeGrouping: Bool = true
     @State private var collapsedVolumes: Set<String> = []
     @State private var showBatchVolumeAssignment = false
+    @State private var showManualVolumeLinker = false
     @State private var jumpToVolume: String? = nil
     @State private var cachedVolumeGroups: [(key: String, issues: [ConvertedPDF])] = []
     
@@ -819,6 +820,12 @@ struct SeriesDetailView: View {
             Divider()
             
             Button {
+                showManualVolumeLinker = true
+            } label: {
+                Label("Link Volumes Manually", systemImage: "link.circle")
+            }
+            
+            Button {
                 exportSmartListTemplate()
             } label: {
                 Label("Export as Smart List (.csv)", systemImage: "square.and.arrow.up")
@@ -1298,6 +1305,10 @@ struct SeriesDetailView: View {
             }
             .sheet(isPresented: $showBatchVolumeAssignment) {
                 BatchVolumeAssignmentSheet(selectedIDs: selection)
+                    .environmentObject(conversionManager)
+            }
+            .sheet(isPresented: $showManualVolumeLinker) {
+                ManualVolumeLinkerView(seriesID: series.id, seriesTitle: series.title)
                     .environmentObject(conversionManager)
             }
             .sheet(isPresented: $showingBatchSeriesAssignment) {
