@@ -15,6 +15,8 @@ class AppRouter: ObservableObject {
     @Published var path = NavigationPath()
     
     @Published var selectedTab: Int = 0
+    @Published var isSeriesSelectionMode = false
+    @Published var seriesSelectionCount = 0
     
     func presentSheet(_ sheet: LibrarySheetDestination) {
         Logger.shared.log("AppRouter: presentSheet(\(sheet))", category: "Navigation", type: .info)

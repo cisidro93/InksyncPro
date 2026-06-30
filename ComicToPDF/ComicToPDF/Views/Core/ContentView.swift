@@ -103,10 +103,11 @@ struct ContentView: View {
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            if !tabBarHidden && !isBatchMode {
+            if !tabBarHidden {
                 InkTabBar(
                     selectedTab: $router.selectedTab,
                     isHidden: $tabBarHidden,
+                    mode: isBatchMode ? .librarySelection(count: multiSelection.count) : (router.isSeriesSelectionMode ? .seriesSelection(count: router.seriesSelectionCount) : .normal),
                     convertingProgress: conversionManager.conversionProgress,
                     isConverting: conversionManager.isConverting,
                     convertingMessage: conversionManager.processingStatus,

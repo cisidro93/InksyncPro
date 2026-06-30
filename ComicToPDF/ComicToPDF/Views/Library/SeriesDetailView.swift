@@ -1139,6 +1139,60 @@ struct SeriesDetailView: View {
                     metadataSessionID = UUID()
                 }
             }
+            .onChange(of: isSelectionMode) { _, newValue in
+                AppRouter.shared.isSeriesSelectionMode = newValue
+            }
+            .onChange(of: selection) { _, newValue in
+                AppRouter.shared.seriesSelectionCount = newValue.count
+            }
+            .onDisappear {
+                AppRouter.shared.isSeriesSelectionMode = false
+                AppRouter.shared.seriesSelectionCount = 0
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InkTabBar_CancelAction"))) { _ in
+                isSelectionMode = false
+                selection.removeAll()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InkTabBar_MetadataAction"))) { _ in
+                showBatchMetadataEditor = true
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InkTabBar_AssignVolumeAction"))) { _ in
+                showBatchVolumeAssignment = true
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InkTabBar_MoveToSeriesAction"))) { _ in
+                showingBatchSeriesAssignment = true
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InkTabBar_CreateVirtualVolumeAction"))) { _ in
+                let items = freshIssues.filter { selection.contains($0.id) }
+                let sortedItems = items.sorted {
+                    let n1 = Double($0.metadata.issueNumber ?? "")
+                    let n2 = Double($1.metadata.issueNumber ?? "")
+                    if let v1 = n1, let v2 = n2 { return v1 < v2 }
+                    if n1 != nil && n2 == nil { return true }
+                    if n1 == nil && n2 != nil { return false }
+                    return $0.name.localizedStandardCompare($1.name) == .orderedAscending
+                }
+                let sortedIDs = sortedItems.map { $0.id }
+                
+                let suggestedName: String
+                if let firstSeries = sortedItems.first(where: { $0.metadata.series?.isEmpty == false })?.metadata.series {
+                    if let sharedVolume = sortedItems.first(where: { $0.metadata.volume?.isEmpty == false })?.metadata.volume {
+                        suggestedName = "\(firstSeries) Vol. \(sharedVolume)"
+                    } else {
+                        suggestedName = "\(firstSeries) Virtual Volume"
+                    }
+                } else {
+                    suggestedName = "New Virtual Volume"
+                }
+                
+                AppRouter.shared.presentSheet(.virtualOmnibusEditor(nil, initialFileIDs: sortedIDs, suggestedName: suggestedName, parentSeriesID: series.id))
+                isSelectionMode = false
+                selection.removeAll()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InkTabBar_MergeAction"))) { _ in
+                mergeConfigSuggestedName = "\(series.title) Omnibus"
+                showingMergeConfig = true
+            }
         
         let viewWithSheets = applySheets(view)
         let viewWithAlerts = applyAlerts(viewWithSheets)
@@ -1149,136 +1203,7 @@ struct SeriesDetailView: View {
 
     @ViewBuilder
     private var bottomActionBar: some View {
-        if isSelectionMode {
-            VStack(spacing: 0) {
-                Divider().background(Color.white.opacity(0.1))
-                
-                HStack(spacing: 16) {
-                    Button(action: {
-                        let generator = UIImpactFeedbackGenerator(style: .medium)
-                        generator.impactOccurred()
-                        showBatchMetadataEditor = true
-                    }) {
-                        HStack {
-                            Image(systemName: "sparkles")
-                            Text("Intelligent Metadata")
-                        }
-                        .font(.subheadline.bold())
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 12)
-                        .background(alignment: .center) {
-                            if selection.isEmpty {
-                                Color.gray.opacity(0.3)
-                            } else {
-                                LinearGradient(colors: [Theme.blue, Theme.blue.opacity(0.8)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                            }
-                        }
-                        .clipShape(Capsule())
-                        .shadow(color: selection.isEmpty ? .clear : Theme.blue.opacity(0.3), radius: 5, y: 3)
-                    }
-                    .disabled(selection.isEmpty)
-                    
-                    Spacer()
-                    
-                    VStack(spacing: 2) {
-                        Text("\(selection.count) Selected")
-                            .font(.system(size: 12, weight: .bold))
-                            .foregroundColor(.secondary)
-                        
-                        HStack(spacing: 12) {
-                            Button {
-                                showBatchVolumeAssignment = true
-                            } label: {
-                                Text("Assign Volume")
-                                    .font(.system(size: 10, weight: .semibold))
-                                    .foregroundColor(selection.isEmpty ? .gray : Theme.orange)
-                            }
-                            .disabled(selection.isEmpty)
-                            
-                            Button {
-                                showingBatchSeriesAssignment = true
-                            } label: {
-                                Text("Move to Series")
-                                    .font(.system(size: 10, weight: .semibold))
-                                    .foregroundColor(selection.isEmpty ? .gray : Theme.orange)
-                            }
-                            .disabled(selection.isEmpty)
-                            
-                            Button {
-                                let items = freshIssues.filter { selection.contains($0.id) }
-                                let sortedItems = items.sorted {
-                                    let n1 = Double($0.metadata.issueNumber ?? "")
-                                    let n2 = Double($1.metadata.issueNumber ?? "")
-                                    if let v1 = n1, let v2 = n2 { return v1 < v2 }
-                                    if n1 != nil && n2 == nil { return true }
-                                    if n1 == nil && n2 != nil { return false }
-                                    return $0.name.localizedStandardCompare($1.name) == .orderedAscending
-                                }
-                                let sortedIDs = sortedItems.map { $0.id }
-                                
-                                let suggestedName: String
-                                if let firstSeries = sortedItems.first(where: { $0.metadata.series?.isEmpty == false })?.metadata.series {
-                                    if let sharedVolume = sortedItems.first(where: { $0.metadata.volume?.isEmpty == false })?.metadata.volume {
-                                        suggestedName = "\(firstSeries) Vol. \(sharedVolume)"
-                                    } else {
-                                        suggestedName = "\(firstSeries) Virtual Volume"
-                                    }
-                                } else {
-                                    suggestedName = "New Virtual Volume"
-                                }
-                                
-                                AppRouter.shared.presentSheet(.virtualOmnibusEditor(nil, initialFileIDs: sortedIDs, suggestedName: suggestedName, parentSeriesID: series.id))
-                                isSelectionMode = false
-                                selection.removeAll()
-                            } label: {
-                                Text("Create Virtual Volume")
-                                    .font(.system(size: 10, weight: .semibold))
-                                    .foregroundColor(selection.isEmpty ? .gray : Theme.purple)
-                            }
-                            .disabled(selection.isEmpty)
-                        }
-                    }
-                    
-                    Spacer()
-                    
-                    Button(action: {
-                        let generator = UIImpactFeedbackGenerator(style: .medium)
-                        generator.impactOccurred()
-                        mergeConfigSuggestedName = "\(series.title) Omnibus"
-                        showingMergeConfig = true
-                    }) {
-                        HStack {
-                            Text("Convert & Merge")
-                            Image(systemName: "arrow.triangle.2.circlepath.doc")
-                        }
-                        .font(.subheadline.bold())
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 12)
-                        .background(alignment: .center) {
-                            if selection.count < 2 {
-                                Color.gray.opacity(0.3)
-                            } else {
-                                LinearGradient(colors: [Color.purple, Color.purple.opacity(0.8)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                            }
-                        }
-                        .clipShape(Capsule())
-                        .shadow(color: selection.count < 2 ? .clear : Color.purple.opacity(0.3), radius: 5, y: 3)
-                    }
-                    .disabled(selection.count < 2)
-                }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 16)
-                .background(
-                    Rectangle()
-                        .fill(.ultraThinMaterial)
-                        .ignoresSafeArea(edges: .bottom)
-                        .shadow(color: .black.opacity(0.2), radius: 10, y: -5)
-                )
-            }
-            .transition(.move(edge: .bottom))
-        }
+        EmptyView()
     }
 
     @ViewBuilder
@@ -1294,7 +1219,7 @@ struct SeriesDetailView: View {
         content
             .sheet(isPresented: $showingMergeConfig) {
                 LazyView {
-                    SeriesMergeConfigurationView(sourceFiles: freshIssues.filter { selection.contains($0.id) }, suggestedName: mergeConfigSuggestedName)
+                    SeriesMergeConfigurationView(seriesFiles: freshIssues, initialSelection: selection, suggestedName: mergeConfigSuggestedName)
                         .id(mergeSessionID)
                         .environmentObject(conversionManager)
                         .environmentObject(settingsManager)
@@ -1657,7 +1582,9 @@ struct SeriesDetailView: View {
                 Button {
                     let generator = UIImpactFeedbackGenerator(style: .medium)
                     generator.impactOccurred()
-                    selection = Set(freshIssues.map { $0.id })
+                    if !isSelectionMode || selection.isEmpty {
+                        selection = Set(freshIssues.map { $0.id })
+                    }
                     mergeConfigSuggestedName = "\(series.title) Omnibus"
                     showingMergeConfig = true
                 } label: {

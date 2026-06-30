@@ -20,7 +20,7 @@ struct SeriesMergeConfigurationView: View {
     @EnvironmentObject var settingsManager: AppSettingsManager
     
     // Initial configuration
-    let sourceFiles: [ConvertedPDF]
+    let seriesFiles: [ConvertedPDF]
     let suggestedName: String?
     
     // State ViewModel
@@ -28,12 +28,22 @@ struct SeriesMergeConfigurationView: View {
     @State private var draggedItem: ConvertedPDF? = nil
     
     init(sourceFiles: [ConvertedPDF], suggestedName: String? = nil) {
-        self.sourceFiles = sourceFiles
+        self.seriesFiles = sourceFiles
         self.suggestedName = suggestedName
-        // Default sort by logical name (usually volume/issue number)
         let initialMerge = sourceFiles.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
         let initialName = suggestedName ?? ""
-        
+        _viewModel = StateObject(wrappedValue: SeriesMergeConfigurationViewModel(
+            itemsToMerge: initialMerge,
+            outputName: initialName
+        ))
+    }
+    
+    init(seriesFiles: [ConvertedPDF], initialSelection: Set<UUID>, suggestedName: String? = nil) {
+        self.seriesFiles = seriesFiles
+        self.suggestedName = suggestedName
+        let initialMerge = seriesFiles.filter { initialSelection.contains($0.id) }
+            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        let initialName = suggestedName ?? ""
         _viewModel = StateObject(wrappedValue: SeriesMergeConfigurationViewModel(
             itemsToMerge: initialMerge,
             outputName: initialName
@@ -107,14 +117,78 @@ struct SeriesMergeConfigurationView: View {
                         }
                         .listRowBackground(Color.inkSurface.opacity(0.4))
                         
-                        Section(header: Text("Merge Order"), footer: Text("Drag the handles or tap Edit to reorder. The top file will be the first issue in the merged volume.")) {
+                        Section(header: HStack {
+                            Text("Merge Order")
+                            Spacer()
+                            if !viewModel.itemsToMerge.isEmpty {
+                                Button("Remove All") {
+                                    withAnimation {
+                                        viewModel.itemsToMerge.removeAll()
+                                    }
+                                }
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundColor(.red)
+                                .buttonStyle(.plain)
+                                .textCase(nil)
+                            }
+                        }, footer: Text(viewModel.itemsToMerge.count < 2 ? "⚠️ Please add at least 2 issues to perform a merge." : "Drag the handles or swipe left to remove. The top file will be the first issue in the merged volume.")) {
                             ForEach(viewModel.itemsToMerge) { pdf in
                                 pdfRow(for: pdf)
                                     .onDrop(of: [.text], delegate: ReorderDropDelegate(item: pdf, items: $viewModel.itemsToMerge, draggedItem: $draggedItem))
                             }
                             .onMove(perform: moveItems)
+                            .onDelete(perform: removeItems)
                         }
                         .listRowBackground(Color.inkSurface.opacity(0.4))
+                        
+                        let remainingFiles = seriesFiles.filter { file in
+                            !viewModel.itemsToMerge.contains(where: { $0.id == file.id })
+                        }
+                        if !remainingFiles.isEmpty {
+                            Section(header: Text("Add Other Issues from Series")) {
+                                ForEach(remainingFiles) { pdf in
+                                    HStack {
+                                        if let uiImage = conversionManager.getThumbnail(for: pdf) {
+                                            Image(uiImage: uiImage)
+                                                .resizable()
+                                                .aspectRatio(contentMode: .fill)
+                                                .frame(width: 30, height: 45)
+                                                .cornerRadius(4)
+                                                .clipped()
+                                        } else {
+                                            Rectangle()
+                                                .fill(Color.gray.opacity(0.2))
+                                                .frame(width: 30, height: 45)
+                                                .cornerRadius(4)
+                                                .overlay(Image(systemName: "doc").foregroundColor(.gray))
+                                        }
+                                        
+                                        VStack(alignment: .leading) {
+                                            Text(pdf.name)
+                                                .font(.caption)
+                                                .lineLimit(1)
+                                            Text(pdf.formattedSize)
+                                                .font(.system(size: 10))
+                                                .foregroundColor(.secondary)
+                                        }
+                                        
+                                        Spacer()
+                                        
+                                        Button {
+                                            withAnimation {
+                                                viewModel.itemsToMerge.append(pdf)
+                                            }
+                                        } label: {
+                                            Image(systemName: "plus.circle.fill")
+                                                .font(.title3)
+                                                .foregroundColor(.inkGreen)
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                            }
+                            .listRowBackground(Color.inkSurface.opacity(0.4))
+                        }
                         
                         Section {
                             Button {
@@ -281,6 +355,10 @@ struct SeriesMergeConfigurationView: View {
     
     private func moveItems(from source: IndexSet, to destination: Int) {
         viewModel.itemsToMerge.move(fromOffsets: source, toOffset: destination)
+    }
+    
+    private func removeItems(at offsets: IndexSet) {
+        viewModel.itemsToMerge.remove(atOffsets: offsets)
     }
     
     private func startMerge() {
