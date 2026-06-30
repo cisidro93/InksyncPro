@@ -15,6 +15,7 @@ struct VirtualOmnibusEditorView: View {
     // Search & Suggestion State
     @State private var searchQuery: String = ""
     @State private var suggestions: [ConvertedPDF] = []
+    @State private var selectedFiles: [ConvertedPDF] = []
     
     init(omnibus: VirtualOmnibus? = nil, initialFileIDs: [UUID] = [], suggestedName: String = "", parentSeriesID: String? = nil) {
         self.omnibus = omnibus
@@ -27,11 +28,7 @@ struct VirtualOmnibusEditorView: View {
         self.parentSeriesID = omnibus?.parentSeriesID ?? parentSeriesID
     }
     
-    var selectedFiles: [ConvertedPDF] {
-        fileIDs.compactMap { id in
-            conversionManager.convertedPDFs.first(where: { $0.id == id })
-        }
-    }
+
     
     var searchResults: [ConvertedPDF] {
         if searchQuery.isEmpty {
@@ -115,6 +112,7 @@ struct VirtualOmnibusEditorView: View {
                                         Button {
                                             withAnimation {
                                                 fileIDs.append(pdf.id)
+                                                selectedFiles.append(pdf)
                                                 updateSuggestions()
                                             }
                                         } label: {
@@ -134,6 +132,7 @@ struct VirtualOmnibusEditorView: View {
                                         withAnimation {
                                             for pdf in suggestions {
                                                 fileIDs.append(pdf.id)
+                                                selectedFiles.append(pdf)
                                             }
                                             suggestions.removeAll()
                                         }
@@ -172,9 +171,11 @@ struct VirtualOmnibusEditorView: View {
                                     .listRowBackground(Color.inkSurface)
                                 }
                                 .onMove { indices, newOffset in
-                                    fileIDs.move(fromOffsets: indices, toOffset: newOffset)
+                                    selectedFiles.move(fromOffsets: indices, toOffset: newOffset)
+                                    fileIDs = selectedFiles.map { $0.id }
                                 }
                                 .onDelete { indices in
+                                    selectedFiles.remove(atOffsets: indices)
                                     fileIDs.remove(atOffsets: indices)
                                     updateSuggestions()
                                 }
@@ -228,6 +229,7 @@ struct VirtualOmnibusEditorView: View {
                                             Button {
                                                 withAnimation {
                                                     fileIDs.append(pdf.id)
+                                                    selectedFiles.append(pdf)
                                                     searchQuery = ""
                                                     updateSuggestions()
                                                 }
@@ -270,7 +272,15 @@ struct VirtualOmnibusEditorView: View {
                 }
             }
             .onAppear {
+                selectedFiles = fileIDs.compactMap { id in
+                    conversionManager.convertedPDFs.first(where: { $0.id == id })
+                }
                 updateSuggestions()
+            }
+            .onChange(of: conversionManager.convertedPDFs) { _, newValue in
+                selectedFiles = fileIDs.compactMap { id in
+                    newValue.first(where: { $0.id == id })
+                }
             }
         }
     }
