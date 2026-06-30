@@ -92,6 +92,7 @@ struct InkTabBar: View {
                 } else {
                     HStack(spacing: 12) {
                         Button {
+                            HapticEngine.light()
                             NotificationCenter.default.post(name: NSNotification.Name("InkTabBar_CancelAction"), object: nil)
                         } label: {
                             HStack(spacing: 4) {
@@ -120,6 +121,7 @@ struct InkTabBar: View {
                         }
                     }
                     .padding(.horizontal, 12)
+                    .frame(height: isLandscapePhone ? 26 : 41)
                     .transition(.asymmetric(insertion: .opacity.combined(with: .scale(scale: 0.95)), removal: .opacity))
                 }
             }
@@ -369,7 +371,10 @@ struct InkTabBar: View {
     
     @ViewBuilder
     private func actionButton(systemImage: String, color: Color, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+        Button(action: {
+            HapticEngine.light()
+            action()
+        }) {
             Image(systemName: systemImage)
                 .font(.system(size: 18))
                 .foregroundColor(color)

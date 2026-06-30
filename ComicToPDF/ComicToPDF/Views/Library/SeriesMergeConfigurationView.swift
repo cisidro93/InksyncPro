@@ -122,6 +122,7 @@ struct SeriesMergeConfigurationView: View {
                             Spacer()
                             if !viewModel.itemsToMerge.isEmpty {
                                 Button("Remove All") {
+                                    HapticEngine.warning()
                                     withAnimation {
                                         viewModel.itemsToMerge.removeAll()
                                     }
@@ -175,6 +176,7 @@ struct SeriesMergeConfigurationView: View {
                                         Spacer()
                                         
                                         Button {
+                                            HapticEngine.light()
                                             withAnimation {
                                                 viewModel.itemsToMerge.append(pdf)
                                             }
@@ -354,14 +356,17 @@ struct SeriesMergeConfigurationView: View {
     }
     
     private func moveItems(from source: IndexSet, to destination: Int) {
+        HapticEngine.light()
         viewModel.itemsToMerge.move(fromOffsets: source, toOffset: destination)
     }
     
     private func removeItems(at offsets: IndexSet) {
+        HapticEngine.medium()
         viewModel.itemsToMerge.remove(atOffsets: offsets)
     }
     
     private func startMerge() {
+        HapticEngine.medium()
         let files = viewModel.itemsToMerge
         let name = viewModel.outputName.trimmingCharacters(in: .whitespaces)
         let mode = viewModel.mangaMode
