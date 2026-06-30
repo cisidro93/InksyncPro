@@ -1396,7 +1396,6 @@ struct ModernLibraryView: View {
     @ViewBuilder private var batchBottomToolbar: some View {
         EmptyView()
     }
-    }
     
     private func handleDropApplied() {
         let livePDFs = settingsManager.isVaultUnlocked
