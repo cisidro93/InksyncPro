@@ -62,6 +62,7 @@ struct PDFGenerator: Sendable {
         var tocLinks: [(rect: CGRect, targetPage: Int)] = []
         
         try renderer.writePDF(to: outputURL) { context in
+            var globalPageIndex = 0
             for (index, imageURL) in sourceImages.enumerated() {
                 autoreleasepool {
                     let image: UIImage?
@@ -76,65 +77,94 @@ struct PDFGenerator: Sendable {
                         return
                     }
                     
-                    // Apply E-Ink Filtering and Scaling
-                    let optimizedImage = EInkOptimizer.shared.processImage(
-                        safeImage,
-                        settings: settings,
-                        isOddPage: index % 2 == 0
-                    )
+                    // A. Check for Webtoon Slicing or Spread Slicing
+                    var imagesToProcess: [UIImage] = []
+                    var isSliced = false
                     
-                    let imgSize = optimizedImage.size
-                    let isLandscape = imgSize.width > imgSize.height
-                    let standardIsLandscape = standardSize.width > standardSize.height
+                    let width = safeImage.size.width
+                    let height = safeImage.size.height
                     
-                    let targetSize: CGSize
-                    if isLandscape && !standardIsLandscape {
-                        // Double page spread: scale width proportional to height
-                        let scaleHeight = standardSize.height
-                        let scaleWidth = scaleHeight * (imgSize.width / imgSize.height)
-                        targetSize = CGSize(width: scaleWidth, height: scaleHeight)
-                    } else if !isLandscape && standardIsLandscape {
-                        // Standard is landscape, but page is portrait: scale height proportional to width
-                        let scaleWidth = standardSize.width
-                        let scaleHeight = scaleWidth * (imgSize.height / imgSize.width)
-                        targetSize = CGSize(width: scaleWidth, height: scaleHeight)
-                    } else {
-                        targetSize = standardSize
+                    if settings.splitWebtoon && height > width * 1.5 {
+                        let slices = ImageProcessor.sliceWebtoon(image: safeImage, targetAspectRatio: 1.33)
+                        if slices.count > 1 {
+                            imagesToProcess = slices
+                            isSliced = true
+                        }
+                    } else if settings.splitSpreads && width > height * 1.1 {
+                        let slices = ImageProcessor.sliceSpread(image: safeImage, isManga: settings.mangaMode)
+                        if slices.count > 1 {
+                            imagesToProcess = slices
+                            isSliced = true
+                        }
                     }
                     
-                    let pageRect = CGRect(origin: .zero, size: targetSize)
-                    
-                    context.beginPage(withBounds: pageRect, pageInfo: [:])
-                    
-                    // Add Internal Anchor for Hyperlinking
-                    let displayPageNum = index + 1
-                    if let url = URL(string: "page://\(displayPageNum)") {
-                        context.setURL(url, for: pageRect)
+                    if !isSliced {
+                        imagesToProcess = [safeImage]
                     }
                     
-                    // Aspect Fit Calculation
-                    let hRatio = targetSize.width / imgSize.width
-                    let vRatio = targetSize.height / imgSize.height
-                    let scale = min(hRatio, vRatio)
-                    
-                    let drawnSize = CGSize(width: imgSize.width * scale, height: imgSize.height * scale)
-                    let origin = CGPoint(
-                        x: (targetSize.width - drawnSize.width) / 2.0,
-                        y: (targetSize.height - drawnSize.height) / 2.0
-                    )
-                    
-                    // Draw white background
-                    UIColor.white.setFill()
-                    context.fill(pageRect)
-                    
-                    // ✅ Fix (KCC Optimization): 
-                    // UIGraphicsPDFRenderer defaults to JPEG wrappers for UIImages which bloats 
-                    // B&W manga from 200MB to 800MB+. We forcefully coerce the image to PNG Data first.
-                    if let pngData = optimizedImage.pngData(), let pngImage = UIImage(data: pngData) {
-                        pngImage.draw(in: CGRect(origin: origin, size: drawnSize))
-                    } else {
-                        // Fallback
-                        optimizedImage.draw(in: CGRect(origin: origin, size: drawnSize))
+                    for slice in imagesToProcess {
+                        // Apply E-Ink Filtering and Scaling
+                        let optimizedImage = EInkOptimizer.shared.processImage(
+                            slice,
+                            settings: settings,
+                            isOddPage: globalPageIndex % 2 == 0
+                        )
+                        
+                        let imgSize = optimizedImage.size
+                        let isLandscape = imgSize.width > imgSize.height
+                        let standardIsLandscape = standardSize.width > standardSize.height
+                        
+                        let targetSize: CGSize
+                        if isLandscape && !standardIsLandscape {
+                            // Double page spread: scale width proportional to height
+                            let scaleHeight = standardSize.height
+                            let scaleWidth = scaleHeight * (imgSize.width / imgSize.height)
+                            targetSize = CGSize(width: scaleWidth, height: scaleHeight)
+                        } else if !isLandscape && standardIsLandscape {
+                            // Standard is landscape, but page is portrait: scale height proportional to width
+                            let scaleWidth = standardSize.width
+                            let scaleHeight = scaleWidth * (imgSize.height / imgSize.width)
+                            targetSize = CGSize(width: scaleWidth, height: scaleHeight)
+                        } else {
+                            targetSize = standardSize
+                        }
+                        
+                        let pageRect = CGRect(origin: .zero, size: targetSize)
+                        
+                        context.beginPage(withBounds: pageRect, pageInfo: [:])
+                        
+                        // Add Internal Anchor for Hyperlinking
+                        let displayPageNum = globalPageIndex + 1
+                        if let url = URL(string: "page://\(displayPageNum)") {
+                            context.setURL(url, for: pageRect)
+                        }
+                        
+                        // Aspect Fit Calculation
+                        let hRatio = targetSize.width / imgSize.width
+                        let vRatio = targetSize.height / imgSize.height
+                        let scale = min(hRatio, vRatio)
+                        
+                        let drawnSize = CGSize(width: imgSize.width * scale, height: imgSize.height * scale)
+                        let origin = CGPoint(
+                            x: (targetSize.width - drawnSize.width) / 2.0,
+                            y: (targetSize.height - drawnSize.height) / 2.0
+                        )
+                        
+                        // Draw white background
+                        UIColor.white.setFill()
+                        context.fill(pageRect)
+                        
+                        // ✅ Fix (KCC Optimization): 
+                        // UIGraphicsPDFRenderer defaults to JPEG wrappers for UIImages which bloats 
+                        // B&W manga from 200MB to 800MB+. We forcefully coerce the image to PNG Data first.
+                        if let pngData = optimizedImage.pngData(), let pngImage = UIImage(data: pngData) {
+                            pngImage.draw(in: CGRect(origin: origin, size: drawnSize))
+                        } else {
+                            // Fallback
+                            optimizedImage.draw(in: CGRect(origin: origin, size: drawnSize))
+                        }
+                        
+                        globalPageIndex += 1
                     }
                     
                     // Progress

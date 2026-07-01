@@ -71,34 +71,24 @@ final class ConversionOrchestrator: Sendable {
                 await MainActor.run { manager.isConverting = false; manager.conversionProgress = 1.0; manager.statusMessage = "✅ Conversion Complete!"; manager.scanLibrary() }
                 Logger.shared.log("Conversion Successful: \(pdf.name) -> PDF", category: "Converter")
             } else if jobSettings.outputFormat == .cbz {
-                let fileManager = FileManager.default
                 let pName = pdf.name.replacingOccurrences(of: ".cbz", with: "").replacingOccurrences(of: ".pdf", with: "").replacingOccurrences(of: ".zip", with: "") + "_Converted.cbz"
                 let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? URL(fileURLWithPath: NSTemporaryDirectory())
                 let outputURL = docDir.appendingPathComponent(pName)
                 
                 await MainActor.run { manager.processingStatus = "Extracting Images..." }
-                let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-                try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
-                defer { try? fileManager.removeItem(at: tempDir) }
-                
                 let imageURLs = try await manager.extractImageURLs(from: resolvedSourceURL)
-                for (idx, url) in imageURLs.enumerated() {
-                    let ext = url.pathExtension.isEmpty ? "jpg" : url.pathExtension
-                    let dest = tempDir.appendingPathComponent(String(format: "page_%04d.%@", idx, ext))
-                    
-                    if idx == 0, let overrideData = coverOverrideData {
-                         try? overrideData.write(to: dest)
-                    } else {
-                         try fileManager.copyItem(at: url, to: dest)
-                    }
-                    
-                    let p = Double(idx) / Double(imageURLs.count)
-                    await MainActor.run { manager.conversionProgress = p; manager.processingStatus = "Packaging CBZ..." }
-                }
                 
-                if fileManager.fileExists(atPath: outputURL.path) { try fileManager.removeItem(at: outputURL) }
-                try await ZipUtilities.zipDirectory(tempDir, to: outputURL)
-                PhysicalFileSystemRouter.excludeFromBackup(at: outputURL)
+                try await CBZProcessor.processAndPackage(
+                    from: imageURLs,
+                    to: outputURL,
+                    settings: jobSettings,
+                    coverOverrideData: coverOverrideData
+                ) { p in
+                    Task { @MainActor in
+                        manager.conversionProgress = p
+                        manager.processingStatus = "Converting CBZ (\(Int(p * 100))%)"
+                    }
+                }
                 
                 await MainActor.run { manager.isConverting = false; manager.conversionProgress = 1.0; manager.statusMessage = "✅ Conversion Complete!"; manager.scanLibrary() }
                 Logger.shared.log("Conversion Successful: \(pdf.name) -> CBZ", category: "Converter")
@@ -213,29 +203,22 @@ final class ConversionOrchestrator: Sendable {
                     PhysicalFileSystemRouter.excludeFromBackup(at: outputURL)
                     await MainActor.run { manager.scanLibrary() }
                 } else if jobSettings.outputFormat == .cbz {
-                    let fileManager = FileManager.default
                     let pName = pdf.name.replacingOccurrences(of: ".cbz", with: "").replacingOccurrences(of: ".pdf", with: "").replacingOccurrences(of: ".zip", with: "") + "_Converted.cbz"
                     let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? URL(fileURLWithPath: NSTemporaryDirectory())
                     let outputURL = docDir.appendingPathComponent(pName)
-                    let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-                    try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
-                    defer { try? fileManager.removeItem(at: tempDir) }
                     
                     let imageURLs = try await manager.extractImageURLs(from: resolvedSourceURL)
-                    for (idx, url) in imageURLs.enumerated() {
-                        let ext = url.pathExtension.isEmpty ? "jpg" : url.pathExtension
-                        let dest = tempDir.appendingPathComponent(String(format: "page_%04d.%@", idx, ext))
-                        if idx == 0, let overrideData = coverOverrideData {
-                            try? overrideData.write(to: dest)
-                        } else {
-                            try fileManager.copyItem(at: url, to: dest)
+                    try await CBZProcessor.processAndPackage(
+                        from: imageURLs,
+                        to: outputURL,
+                        settings: jobSettings,
+                        coverOverrideData: coverOverrideData
+                    ) { p in
+                        Task { @MainActor in
+                            manager.conversionProgress = p
+                            manager.processingStatus = "Converting \(currentNum) of \(total) (\(Int(p * 100))%)"
                         }
-                        let p = Double(idx) / Double(imageURLs.count)
-                        await MainActor.run { manager.conversionProgress = p; manager.processingStatus = "Converting \(currentNum) of \(total) (\(Int(p * 100))%)" }
                     }
-                    if fileManager.fileExists(atPath: outputURL.path) { try fileManager.removeItem(at: outputURL) }
-                    try await ZipUtilities.zipDirectory(tempDir, to: outputURL)
-                    PhysicalFileSystemRouter.excludeFromBackup(at: outputURL)
                     await MainActor.run { manager.scanLibrary() }
                 } else if jobSettings.outputPipeline == .proPanel {
                     await MainActor.run { manager.processingStatus = "Reading panels for \(pdf.name)..." }
@@ -395,21 +378,20 @@ final class ConversionOrchestrator: Sendable {
                         PhysicalFileSystemRouter.excludeFromBackup(at: finalOutputURL)
                     } else {
                         let finalBatchImages = batchImages
-                        let task = Task.detached {
-                            let fm = FileManager.default
-                            let tempDir = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-                            try fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
-                            defer { try? fm.removeItem(at: tempDir) }
-                            
-                            for (idx, url) in finalBatchImages.enumerated() {
-                                let pathExt = url.pathExtension.isEmpty ? "jpg" : url.pathExtension
-                                let dest = tempDir.appendingPathComponent(String(format: "page_%04d.%@", idx, pathExt))
-                                try fm.copyItem(at: url, to: dest)
+                        let settings = jobSettings
+                        let totalBatches = batches.count
+                        try await CBZProcessor.processAndPackage(
+                            from: finalBatchImages,
+                            to: finalOutputURL,
+                            settings: settings,
+                            coverOverrideData: nil
+                        ) { progress in
+                            let baseProgress = Double(batchIndex) / Double(totalBatches)
+                            let currentPartProgress = progress / Double(totalBatches)
+                            Task { @MainActor in
+                                TaskEngine.shared.conversionProgress = 0.5 + (0.5 * (baseProgress + currentPartProgress))
                             }
-                            try await ZipUtilities.zipDirectory(tempDir, to: finalOutputURL)
                         }
-                        try await task.value
-                        PhysicalFileSystemRouter.excludeFromBackup(at: finalOutputURL)
                     }
                     
                     let finalFileSize = (try? finalOutputURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
