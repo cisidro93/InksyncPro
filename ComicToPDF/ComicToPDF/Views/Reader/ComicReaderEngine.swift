@@ -860,7 +860,6 @@ struct ComicReaderEngine: View {
     @StateObject private var readingRoom = ReadingRoomSession()
     /// Phase 4A: Auto-hide chrome — cancellable idle timer.
     @State private var chromeIdleTask: Task<Void, Never>? = nil
-    @FocusState private var isReaderFocused: Bool
     
     var isMangaComic: Bool {
         pdf.metadata.isManga == true || pdf.contentType == .manga
@@ -953,6 +952,28 @@ struct ComicReaderEngine: View {
             filterHUDView
             settingsHUDView
             achievementToastView
+            
+            KeyCommandHandler { command in
+                let input = command.input
+                if input == UIKeyCommand.inputLeftArrow {
+                    if readingMode == .mangaRTL {
+                        nextPage()
+                    } else {
+                        prevPage()
+                    }
+                } else if input == UIKeyCommand.inputRightArrow {
+                    if readingMode == .mangaRTL {
+                        prevPage()
+                    } else {
+                        nextPage()
+                    }
+                } else if input == " " {
+                    nextPage()
+                } else if input == "\u{1B}" {
+                    saveProgressAndDismiss()
+                }
+            }
+            .frame(width: 0, height: 0)
             // Phase 3: Live Reading Room overlay (peer avatars + reactions + HUD pill)
             if readingRoom.isHosting {
                 ReadingRoomOverlay(
@@ -997,7 +1018,6 @@ struct ComicReaderEngine: View {
                 }
                 ambientPageColor = .clear
             }
-            isReaderFocused = true
             BackTapManager.shared.isEnabled = backTapEnabled
         }
         // Auto two-up: rotate device → automatically flip reading mode so the
@@ -1073,33 +1093,6 @@ struct ComicReaderEngine: View {
                 issueNumber: Int(pdf.metadata.issueNumber ?? "") ?? 1,
                 pageIndex: currentIndex
             )
-        }
-        .focusable()
-        .focused($isReaderFocused)
-        .focusEffectDisabled()
-        .onKeyPress(.leftArrow) {
-            if readingMode == .mangaRTL {
-                nextPage()
-            } else {
-                prevPage()
-            }
-            return .handled
-        }
-        .onKeyPress(.rightArrow) {
-            if readingMode == .mangaRTL {
-                prevPage()
-            } else {
-                nextPage()
-            }
-            return .handled
-        }
-        .onKeyPress(.space) {
-            nextPage()
-            return .handled
-        }
-        .onKeyPress(.escape) {
-            saveProgressAndDismiss()
-            return .handled
         }
         .onDisappear {
             BackTapManager.shared.isEnabled = false
@@ -1581,7 +1574,9 @@ struct ComicPageView: View {
     
     @State private var image: UIImage? = nil
     @State private var currentScale: CGFloat = 1.0
+    @State private var lastScale: CGFloat = 1.0
     @State private var offset: CGSize = .zero
+    @State private var lastOffset: CGSize = .zero
     @State private var shareItem: UIImage? = nil
     @State private var showShareSheet = false
 
@@ -1603,6 +1598,24 @@ struct ComicPageView: View {
         }
     }
 
+    private func validateAndClampOffset(containerSize: CGSize, renderedSize: CGSize) {
+        let maxW = max(0, (renderedSize.width * currentScale - containerSize.width) / 2)
+        let maxH = max(0, (renderedSize.height * currentScale - containerSize.height) / 2)
+        
+        var newW = offset.width
+        var newH = offset.height
+        
+        if newW > maxW { newW = maxW }
+        if newW < -maxW { newW = -maxW }
+        if newH > maxH { newH = maxH }
+        if newH < -maxH { newH = -maxH }
+        
+        withAnimation(.easeOut(duration: 0.15)) {
+            offset = CGSize(width: newW, height: newH)
+            lastOffset = offset
+        }
+    }
+
     var body: some View {
         Group {
             if let image = image {
@@ -1621,20 +1634,32 @@ struct ComicPageView: View {
                             .gesture(
                                 SimultaneousGesture(
                                     MagnificationGesture()
-                                        .onChanged { val in currentScale = max(1.0, val) }
-                                        .onEnded   { _ in
-                                            withAnimation(.spring()) {
-                                                currentScale = 1.0
-                                                offset = .zero
-                                            }
+                                        .onChanged { val in
+                                            let nextScale = lastScale * val
+                                            currentScale = min(max(1.0, nextScale), 6.0)
+                                        }
+                                        .onEnded { _ in
+                                            lastScale = currentScale
+                                            validateAndClampOffset(containerSize: geo.size, renderedSize: rendered)
                                         },
                                     DragGesture()
                                         .onChanged { val in
-                                            if currentScale > 1.0 { offset = val.translation }
+                                            if currentScale > 1.0 {
+                                                offset = CGSize(
+                                                    width: lastOffset.width + val.translation.width,
+                                                    height: lastOffset.height + val.translation.height
+                                                )
+                                            }
                                         }
                                         .onEnded { _ in
-                                            if currentScale <= 1.0 {
-                                                withAnimation(.spring()) { offset = .zero }
+                                            if currentScale > 1.0 {
+                                                lastOffset = offset
+                                                validateAndClampOffset(containerSize: geo.size, renderedSize: rendered)
+                                            } else {
+                                                withAnimation(.spring()) {
+                                                    offset = .zero
+                                                    lastOffset = .zero
+                                                }
                                             }
                                         }
                                 )
@@ -1643,18 +1668,33 @@ struct ComicPageView: View {
                                 withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
                                     if currentScale > 1.0 {
                                         currentScale = 1.0
+                                        lastScale = 1.0
                                         offset = .zero
+                                        lastOffset = .zero
                                     } else {
                                         currentScale = 2.5
+                                        lastScale = 2.5
                                         let centerX = geo.size.width / 2
                                         let centerY = geo.size.height / 2
-                                        // Calculate offset to bring the tapped point to the center of the screen
                                         let dx = (centerX - loc.x) * (currentScale - 1)
                                         let dy = (centerY - loc.y) * (currentScale - 1)
-                                        offset = CGSize(width: dx, height: dy)
+                                        
+                                        let maxW = max(0, (rendered.width * currentScale - geo.size.width) / 2)
+                                        let maxH = max(0, (rendered.height * currentScale - geo.size.height) / 2)
+                                        offset = CGSize(
+                                            width: min(maxW, max(-maxW, dx)),
+                                            height: min(maxH, max(-maxH, dy))
+                                        )
+                                        lastOffset = offset
                                     }
                                 }
                             }
+                    }
+                    .onDisappear {
+                        currentScale = 1.0
+                        lastScale = 1.0
+                        offset = .zero
+                        lastOffset = .zero
                     }
                     // Phase 4A: long-press context menu (Save / Share / Bookmark)
                     .contextMenu {
@@ -2040,6 +2080,60 @@ struct VisualComicScrubber: View {
                 .background(.ultraThinMaterial, in: Capsule())
                 .overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 0.5))
         }
+    }
+}
+
+// MARK: - Transparent UIKeyCommand Responder
+struct KeyCommandHandler: UIViewControllerRepresentable {
+    let onKeyPress: (UIKeyCommand) -> Void
+    
+    class Coordinator: NSObject {
+        var onKeyPress: ((UIKeyCommand) -> Void)?
+        
+        @objc func handleKeyCommand(_ sender: UIKeyCommand) {
+            onKeyPress?(sender)
+        }
+    }
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+    
+    func makeUIViewController(context: Context) -> UIKeyCommandViewController {
+        let vc = UIKeyCommandViewController()
+        context.coordinator.onKeyPress = onKeyPress
+        vc.coordinator = context.coordinator
+        return vc
+    }
+    
+    func updateUIViewController(_ uiViewController: UIKeyCommandViewController, context: Context) {
+        context.coordinator.onKeyPress = onKeyPress
+    }
+}
+
+class UIKeyCommandViewController: UIViewController {
+    weak var coordinator: KeyCommandHandler.Coordinator?
+    
+    override var canBecomeFirstResponder: Bool {
+        true
+    }
+    
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        becomeFirstResponder()
+    }
+    
+    override var keyCommands: [UIKeyCommand]? {
+        [
+            UIKeyCommand(input: UIKeyCommand.inputLeftArrow, modifierFlags: [], action: #selector(keyTriggered)),
+            UIKeyCommand(input: UIKeyCommand.inputRightArrow, modifierFlags: [], action: #selector(keyTriggered)),
+            UIKeyCommand(input: " ", modifierFlags: [], action: #selector(keyTriggered)),
+            UIKeyCommand(input: "\u{1B}", modifierFlags: [], action: #selector(keyTriggered)) // Escape
+        ]
+    }
+    
+    @objc func keyTriggered(_ sender: UIKeyCommand) {
+        coordinator?.handleKeyCommand(sender)
     }
 }
 
