@@ -28,6 +28,18 @@ struct SeriesMergeConfigurationView: View {
     @State private var draggedItem: ConvertedPDF? = nil
     @State private var remainingSearchQuery = ""
     
+    // Range Selection Input
+    @State private var rangeStart = ""
+    @State private var rangeEnd = ""
+    
+    // Auto-Suggestion State
+    @State private var dismissedNextSuggestionID: UUID? = nil
+    
+    // Volume Pattern State
+    @State private var showPatternSuggestionAlert = false
+    @State private var patternSuggestedIssues: [ConvertedPDF] = []
+    @State private var patternSuggestedVolumeNumber = 0
+    
     init(sourceFiles: [ConvertedPDF], suggestedName: String? = nil) {
         self.seriesFiles = sourceFiles
         self.suggestedName = suggestedName
@@ -153,6 +165,7 @@ struct SeriesMergeConfigurationView: View {
                         
                         if !allRemainingFiles.isEmpty {
                             Section(header: Text("Add Other Issues from Series")) {
+                                // 1. Quick Search Bar
                                 HStack {
                                     Image(systemName: "magnifyingglass")
                                         .foregroundColor(.secondary)
@@ -171,6 +184,76 @@ struct SeriesMergeConfigurationView: View {
                                         }
                                         .buttonStyle(.plain)
                                     }
+                                }
+                                
+                                // 2. Range-based Selection Row
+                                HStack(spacing: 8) {
+                                    Image(systemName: "arrow.left.and.right")
+                                        .foregroundColor(.secondary)
+                                        .font(.caption)
+                                    Text("Range:")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                    
+                                    TextField("From #", text: $rangeStart)
+                                        .textFieldStyle(.roundedBorder)
+                                        .frame(width: 55)
+                                        .keyboardType(.numberPad)
+                                        .multilineTextAlignment(.center)
+                                        .font(.caption)
+                                    
+                                    TextField("To #", text: $rangeEnd)
+                                        .textFieldStyle(.roundedBorder)
+                                        .frame(width: 55)
+                                        .keyboardType(.numberPad)
+                                        .multilineTextAlignment(.center)
+                                        .font(.caption)
+                                    
+                                    Spacer()
+                                    
+                                    Button("Select Range") {
+                                        HapticEngine.medium()
+                                        selectRangeAction()
+                                    }
+                                    .font(.caption.bold())
+                                    .foregroundColor(.inkBlue)
+                                    .buttonStyle(.plain)
+                                    .disabled(rangeStart.isEmpty || rangeEnd.isEmpty)
+                                }
+                                .padding(.vertical, 2)
+                                
+                                // 3. Next-Issue Auto-suggestion Row
+                                if let suggestion = nextSuggestedIssue, let lastFileID = viewModel.itemsToMerge.last?.id {
+                                    HStack {
+                                        Image(systemName: "lightbulb.fill")
+                                            .foregroundColor(.yellow)
+                                            .font(.caption)
+                                        Text("Next Suggestion: \(suggestion.name)")
+                                            .font(.caption)
+                                            .foregroundColor(.primary)
+                                            .lineLimit(1)
+                                        Spacer()
+                                        Button("Add") {
+                                            HapticEngine.light()
+                                            withAnimation {
+                                                viewModel.itemsToMerge.append(suggestion)
+                                            }
+                                        }
+                                        .font(.caption.bold())
+                                        .foregroundColor(.inkGreen)
+                                        .buttonStyle(.plain)
+                                        
+                                        Button {
+                                            HapticEngine.light()
+                                            dismissedNextSuggestionID = lastFileID
+                                        } label: {
+                                            Image(systemName: "xmark.circle.fill")
+                                                .foregroundColor(.secondary)
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                    .padding(.vertical, 4)
+                                    .listRowBackground(Color.yellow.opacity(0.10))
                                 }
                                 
                                 if remainingFiles.isEmpty {
@@ -268,6 +351,20 @@ struct SeriesMergeConfigurationView: View {
                         EditButton()
                     }
                 }
+            }
+            .alert("Build Volume \(patternSuggestedVolumeNumber)?", isPresented: $showPatternSuggestionAlert) {
+                Button("Yes") {
+                    HapticEngine.light()
+                    withAnimation {
+                        viewModel.itemsToMerge = patternSuggestedIssues
+                    }
+                }
+                Button("No", role: .cancel) { }
+            } message: {
+                Text("We noticed that Volume 1 and Volume 2 each contain \(patternSuggestedIssues.count) issues. Would you like to auto-populate the next \(patternSuggestedIssues.count) issues for Volume \(patternSuggestedVolumeNumber)?")
+            }
+            .onAppear {
+                checkVolumePatterns()
             }
         }
     }
@@ -425,7 +522,7 @@ struct SeriesMergeConfigurationView: View {
         }
     }
     
-    // MARK: - Search Filtering Helpers
+    // MARK: - Search & Auto-selection Filtering Helpers
     
     private func matchesSearchQuery(name: String, query: String) -> Bool {
         let cleanQuery = query.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
@@ -469,5 +566,103 @@ struct SeriesMergeConfigurationView: View {
             }
         }
         return false
+    }
+    
+    private func parseIssueNumber(from filename: String) -> Int? {
+        let parsed = DeterministicFilenameParser.parse(filename: filename)
+        if let issueStr = parsed.issue, let issueNum = Int(issueStr) {
+            return issueNum
+        }
+        
+        let pattern = #"(?:issue|i|ch|chapter|v|vol|volume|#)?\s*[-.]?\s*0*(\d+)"#
+        if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) {
+            let range = NSRange(filename.startIndex..<filename.endIndex, in: filename)
+            let matches = regex.matches(in: filename, options: [], range: range)
+            if let lastMatch = matches.last, lastMatch.numberOfRanges > 1 {
+                if let numRange = Range(lastMatch.range(at: 1), in: filename), let num = Int(filename[numRange]) {
+                    return num
+                }
+            }
+        }
+        return nil
+    }
+    
+    private var nextSuggestedIssue: ConvertedPDF? {
+        guard let lastFile = viewModel.itemsToMerge.last else { return nil }
+        if let dismissed = dismissedNextSuggestionID, dismissed == lastFile.id { return nil }
+        
+        guard let lastNum = parseIssueNumber(from: lastFile.name) else { return nil }
+        let nextNum = lastNum + 1
+        
+        let allRemaining = seriesFiles.filter { file in
+            !viewModel.itemsToMerge.contains(where: { $0.id == file.id })
+        }
+        
+        return allRemaining.first { file in
+            if let num = parseIssueNumber(from: file.name) {
+                return num == nextNum
+            }
+            return false
+        }
+    }
+    
+    private func selectRangeAction() {
+        guard let start = Int(rangeStart), let end = Int(rangeEnd), start <= end else { return }
+        
+        let allRemaining = seriesFiles.filter { file in
+            !viewModel.itemsToMerge.contains(where: { $0.id == file.id })
+        }
+        
+        let matches = allRemaining.filter { file in
+            if let num = parseIssueNumber(from: file.name) {
+                return num >= start && num <= end
+            }
+            return false
+        }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        
+        withAnimation {
+            viewModel.itemsToMerge.append(contentsOf: matches)
+        }
+        
+        rangeStart = ""
+        rangeEnd = ""
+    }
+    
+    private func checkVolumePatterns() {
+        // Only run pattern suggestion if itemsToMerge has not been pre-loaded with a custom user selection from detail screen
+        guard viewModel.itemsToMerge.count == seriesFiles.count || viewModel.itemsToMerge.isEmpty else { return }
+        
+        var volumeCounts: [Int: Int] = [:]
+        for file in seriesFiles {
+            if let volStr = resolvedVolume(for: file), let volNum = Int(volStr) {
+                volumeCounts[volNum, default: 0] += 1
+            }
+        }
+        
+        guard let count1 = volumeCounts[1], let count2 = volumeCounts[2], count1 == count2, count1 > 0 else {
+            return
+        }
+        
+        let patternSize = count1
+        let maxVolume = volumeCounts.keys.max() ?? 2
+        let nextVolume = maxVolume + 1
+        
+        if let existingCount = volumeCounts[nextVolume], existingCount > 0 {
+            return
+        }
+        
+        let unmergedIssues = seriesFiles.filter { file in
+            if let volStr = resolvedVolume(for: file), let volNum = Int(volStr) {
+                return volNum >= nextVolume || volNum == 0
+            }
+            return true
+        }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        
+        guard unmergedIssues.count >= patternSize else { return }
+        
+        let suggested = Array(unmergedIssues.prefix(patternSize))
+        self.patternSuggestedIssues = suggested
+        self.patternSuggestedVolumeNumber = nextVolume
+        self.showPatternSuggestionAlert = true
     }
 }
