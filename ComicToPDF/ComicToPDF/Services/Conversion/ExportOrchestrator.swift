@@ -22,6 +22,9 @@ class ExportOrchestrator {
             return nil
         }
         defer { if needsSourceCleanup { try? fileManager.removeItem(at: localSourceURL) } }
+        
+        let didAccess = localSourceURL.startAccessingSecurityScopedResource()
+        defer { if didAccess { localSourceURL.stopAccessingSecurityScopedResource() } }
 
         if pdf.contentType == .book {
             let exportURL = tempDir.appendingPathComponent(pdf.name)
@@ -136,6 +139,9 @@ class ExportOrchestrator {
             return nil
         }
         defer { if needsSourceCleanup { try? fileManager.removeItem(at: localSourceURL) } }
+        
+        let didAccess = localSourceURL.startAccessingSecurityScopedResource()
+        defer { if didAccess { localSourceURL.stopAccessingSecurityScopedResource() } }
 
         if pdf.contentType == .book {
             do {

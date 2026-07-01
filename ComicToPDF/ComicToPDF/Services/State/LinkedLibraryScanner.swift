@@ -479,7 +479,10 @@ final class LinkedLibraryScanner: ObservableObject {
         let existingPaths = Set(manager.convertedPDFs.filter { $0.isLinked }.map { $0.url.path })
 
         // Process files on a userInitiated detached background task
-        var newPDFs = await Task.detached(priority: .userInitiated) { () -> [ConvertedPDF] in
+        var newPDFs = await Task.detached(priority: .userInitiated) { [rootURL] () -> [ConvertedPDF] in
+            let accessing = rootURL.startAccessingSecurityScopedResource()
+            defer { if accessing { rootURL.stopAccessingSecurityScopedResource() } }
+            
             var tempPDFs: [ConvertedPDF] = []
             for fileURL in files {
                 // Deduplicate check
