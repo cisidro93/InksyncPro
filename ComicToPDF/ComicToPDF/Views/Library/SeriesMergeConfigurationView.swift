@@ -568,9 +568,17 @@ struct SeriesMergeConfigurationView: View {
         return false
     }
     
+    private func resolvedVolume(for pdf: ConvertedPDF) -> String? {
+        if let vol = pdf.metadata.volume, !vol.isEmpty {
+            return vol
+        }
+        let parsed = DeterministicFilenameParser.parse(filename: pdf.name)
+        return parsed.volume
+    }
+
     private func parseIssueNumber(from filename: String) -> Int? {
         let parsed = DeterministicFilenameParser.parse(filename: filename)
-        if let issueStr = parsed.issue, let issueNum = Int(issueStr) {
+        if let issueStr = parsed.issueNumber, let issueNum = Int(issueStr) {
             return issueNum
         }
         
