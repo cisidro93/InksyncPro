@@ -98,6 +98,7 @@ final class ComicImageCache: ObservableObject {
     
     @Published var isLoading = true
     @Published var loadError: String? = nil   // Non-nil = show error view with exit button
+    @Published var isLandscapeArray: [Bool] = []
     var pageCount: Int = 0
     let isPDF: Bool
     let isStream: Bool
@@ -121,6 +122,7 @@ final class ComicImageCache: ObservableObject {
                 self.virtualCoordinator = coord
                 self.pageCount = coord.totalPageCount
                 self.isLoading = false
+                self.scanPageOrientations(resolvedURL: nil)
             } else {
                 self.virtualCoordinator = nil
                 self.pageCount = 0
@@ -215,8 +217,10 @@ final class ComicImageCache: ObservableObject {
                     }
                 }
                 await MainActor.run { [weak self] in
-                    self?.pageCount = count
-                    self?.isLoading = false
+                    guard let self = self else { return }
+                    self.pageCount = count
+                    self.isLoading = false
+                    self.scanPageOrientations(resolvedURL: resolvedURL)
                 }
             }
         } else if isPreExtracted {
@@ -253,6 +257,8 @@ final class ComicImageCache: ObservableObject {
                         self.isLoading = false
                         if imageURLs.isEmpty {
                             self.loadError = "The archive contained no readable images."
+                        } else {
+                            self.scanPageOrientations(resolvedURL: resolvedURL)
                         }
                     }
                 } catch {
@@ -301,10 +307,12 @@ final class ComicImageCache: ObservableObject {
                     }
                 }
                 await MainActor.run { [weak self] in
-                    self?.cbzURL = resolvedURL
-                    self?.entries = sortedEntries
-                    self?.pageCount = sortedEntries.count
-                    self?.isLoading = false
+                    guard let self = self else { return }
+                    self.cbzURL = resolvedURL
+                    self.entries = sortedEntries
+                    self.pageCount = sortedEntries.count
+                    self.isLoading = false
+                    self.scanPageOrientations(resolvedURL: resolvedURL)
                 }
             }
         }
@@ -320,6 +328,135 @@ final class ComicImageCache: ObservableObject {
         }
         if !isPDF && !isStream && !isPreExtracted {
             Task { await ArchiveManager.shared.clearCache() }
+        }
+    }
+    
+    private func scanPageOrientations(resolvedURL: URL?) {
+        let total = self.pageCount
+        guard total > 0 else { return }
+        
+        self.isLandscapeArray = Array(repeating: false, count: total)
+        
+        let isPDF = self.isPDF
+        let isPreExtracted = self.isPreExtracted
+        let virtualCoordinator = self.virtualCoordinator
+        let imageURLs = self.extractedImageURLs
+        let entries = self.entries
+        
+        Task.detached(priority: .utility) { [weak self] in
+            guard let self = self else { return }
+            var array = Array(repeating: false, count: total)
+            
+            if isPDF, let resolved = resolvedURL {
+                if let doc = PDFDocument(url: resolved) {
+                    for i in 0..<min(total, doc.pageCount) {
+                        if let page = doc.page(at: i) {
+                            let bounds = page.bounds(for: .mediaBox)
+                            array[i] = bounds.width > bounds.height * 1.15
+                        }
+                    }
+                }
+            } else if isPreExtracted {
+                await withTaskGroup(of: (Int, Bool).self) { group in
+                    for i in 0..<min(total, imageURLs.count) {
+                        let url = imageURLs[i]
+                        group.addTask {
+                            if let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+                               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] {
+                                let w = properties[kCGImagePropertyPixelWidth] as? CGFloat ?? 0
+                                let h = properties[kCGImagePropertyPixelHeight] as? CGFloat ?? 0
+                                return (i, w > h * 1.15)
+                            }
+                            return (i, false)
+                        }
+                    }
+                    for await (index, isL) in group {
+                        array[index] = isL
+                    }
+                }
+            } else if let coordinator = virtualCoordinator {
+                await withTaskGroup(of: (Int, Bool).self) { group in
+                    for i in 0..<total {
+                        group.addTask {
+                            if let resolved = coordinator.resolvePage(at: i) {
+                                let file = resolved.file
+                                let localIdx = resolved.localPageIndex
+                                let fileExt = file.url.pathExtension.lowercased()
+                                
+                                let fileURL: URL
+                                if case .linked(let bm) = file.sourceMode,
+                                   let url = try? BookmarkResolver.shared.resolve(bm) {
+                                    fileURL = url
+                                } else {
+                                    fileURL = file.url
+                                }
+                                
+                                if fileExt == "pdf" {
+                                    if let doc = PDFDocument(url: fileURL), localIdx < doc.pageCount,
+                                       let page = doc.page(at: localIdx) {
+                                        let bounds = page.bounds(for: .mediaBox)
+                                        return (i, bounds.width > bounds.height * 1.15)
+                                    }
+                                } else {
+                                    if let archive = try? Archive(url: fileURL, accessMode: .read, pathEncoding: .utf8) {
+                                        let imageExtensions: Set<String> = ["jpg", "jpeg", "png", "webp", "gif", "heic"]
+                                        let sorted = archive.filter { entry in
+                                            let name = (entry.path as NSString).lastPathComponent
+                                            guard !entry.path.contains("__MACOSX"), !name.hasPrefix("._"), name != ".DS_Store", !entry.path.hasSuffix("/") else { return false }
+                                            let ext = (name as NSString).pathExtension.lowercased()
+                                            return imageExtensions.contains(ext)
+                                        }.sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
+                                        
+                                        if localIdx < sorted.count {
+                                            let entryPath = sorted[localIdx].path
+                                            if let data = try? ArchiveManager.shared.extractEntry(from: fileURL, path: entryPath),
+                                               let source = CGImageSourceCreateWithData(data as CFData, nil),
+                                               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] {
+                                                let w = properties[kCGImagePropertyPixelWidth] as? CGFloat ?? 0
+                                                let h = properties[kCGImagePropertyPixelHeight] as? CGFloat ?? 0
+                                                return (i, w > h * 1.15)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            return (i, false)
+                        }
+                    }
+                    for await (index, isL) in group {
+                        array[index] = isL
+                    }
+                }
+            } else if let resolved = resolvedURL {
+                await withTaskGroup(of: (Int, Bool).self) { group in
+                    for i in 0..<min(total, entries.count) {
+                        let entryPath = entries[i].path
+                        group.addTask {
+                            do {
+                                let data = try await ArchiveManager.shared.extractEntry(from: resolved, path: entryPath)
+                                if let source = CGImageSourceCreateWithData(data as CFData, nil),
+                                   let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] {
+                                    let w = properties[kCGImagePropertyPixelWidth] as? CGFloat ?? 0
+                                    let h = properties[kCGImagePropertyPixelHeight] as? CGFloat ?? 0
+                                    return (i, w > h * 1.15)
+                                }
+                            } catch {}
+                            return (i, false)
+                        }
+                    }
+                    for await (index, isL) in group {
+                        array[index] = isL
+                    }
+                }
+            }
+            
+            await MainActor.run {
+                self.isLandscapeArray = array
+                NotificationCenter.default.post(
+                    name: NSNotification.Name("ComicImageCache.OrientationsScanned"),
+                    object: self
+                )
+            }
         }
     }
     

@@ -361,20 +361,50 @@ struct TwoUpBookPager: View {
         var allSpreads: [[Int]] = []
         guard cache.pageCount > 0 else { return [[0]] }
         
-        if cache.pageCount > 1 {
-            allSpreads.append([0]) // Page 0 is the cover, keep it solo
-            var i = 1
-            while i < cache.pageCount {
+        let landscapeArray = cache.isLandscapeArray
+        guard landscapeArray.count == cache.pageCount else {
+            // Fallback while scanning is in progress
+            if cache.pageCount > 1 {
+                allSpreads.append([0]) // Page 0 is the cover, keep it solo
+                var i = 1
+                while i < cache.pageCount {
+                    if i + 1 < cache.pageCount {
+                        allSpreads.append([i, i + 1])
+                        i += 2
+                    } else {
+                        allSpreads.append([i])
+                        i += 1
+                    }
+                }
+            } else {
+                allSpreads.append([0])
+            }
+            return allSpreads.isEmpty ? [[0]] : allSpreads
+        }
+        
+        // Scan completed: group spreads dynamically!
+        allSpreads.append([0]) // Page 0 is the cover, keep it solo
+        var i = 1
+        while i < cache.pageCount {
+            let isL = landscapeArray[i]
+            if isL {
+                allSpreads.append([i])
+                i += 1
+            } else {
                 if i + 1 < cache.pageCount {
-                    allSpreads.append([i, i + 1])
-                    i += 2
+                    let nextIsL = landscapeArray[i + 1]
+                    if nextIsL {
+                        allSpreads.append([i])
+                        i += 1
+                    } else {
+                        allSpreads.append([i, i + 1])
+                        i += 2
+                    }
                 } else {
                     allSpreads.append([i])
                     i += 1
                 }
             }
-        } else {
-            allSpreads.append([0])
         }
         return allSpreads.isEmpty ? [[0]] : allSpreads
     }
@@ -384,6 +414,10 @@ struct TwoUpBookPager: View {
     }
 
     private func isLandscapePage(_ absIdx: Int) -> Bool {
+        let landscapeArray = cache.isLandscapeArray
+        if absIdx >= 0 && absIdx < landscapeArray.count {
+            return landscapeArray[absIdx]
+        }
         guard let size = cache.peekImageSize(at: absIdx) else { return false }
         return (size.width / max(1, size.height)) > 1.15
     }
@@ -421,6 +455,10 @@ struct TwoUpBookPager: View {
             updateSpreadIdx(from: newVal)
         }
         .onReceive(NotificationCenter.default.publisher(for: .comicImageCacheImageLoaded)) { _ in
+            forceUpdateTick += 1
+            updateSpreadIdx(from: currentIndex)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ComicImageCache.OrientationsScanned"))) { _ in
             forceUpdateTick += 1
             updateSpreadIdx(from: currentIndex)
         }
