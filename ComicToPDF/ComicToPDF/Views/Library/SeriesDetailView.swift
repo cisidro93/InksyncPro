@@ -64,6 +64,46 @@ struct SeriesDetailView: View {
         case titleAsc = "Title (A-Z)"
         case titleDesc = "Title (Z-A)"
         case dateNewest = "Date Added (Newest)"
+// Batch Selection
+    @State private var selection = Set<UUID>()
+    @State private var isSelectionMode: Bool = false
+    @State private var showingMergeConfig: Bool = false
+    @State private var mergeSessionID = UUID()
+    @State private var metadataSessionID = UUID()
+    @State private var showBatchMetadataEditor: Bool = false
+    @State private var showingBatchSeriesAssignment: Bool = false
+    
+    // Drag-to-select Gestures & Coordinate Tracking
+    @State private var cellFrames: [UUID: CGRect] = [:]
+    @State private var scrollOffset: CGFloat = 0
+    @State private var dragStartIndex: Int? = nil
+    @State private var currentDragIndex: Int? = nil
+    @State private var isDragSelecting: Bool = true
+    @State private var initialSelectionBeforeDrag = Set<UUID>()
+    @State private var lastDragLocation: CGPoint = .zero
+    @State private var autoScrollTask: Task<Void, Never>? = nil
+
+    // Context Menu State
+    @State private var pdfToRename: ConvertedPDF?
+    @State private var renameText = ""
+    @State private var pdfToExport: ConvertedPDF?
+    @State private var pdfToSearchMetadata: ConvertedPDF?
+    @State private var pdfToAssignSeries: ConvertedPDF?
+    @State private var assignSeriesText = ""
+    @State private var pdfToRead: ConvertedPDF? // Added for Reader
+    @State private var pdfToDetails: ConvertedPDF? // Details sheet (non-nav-stack path)
+    @State private var pdfToDelete: ConvertedPDF? // QoL: Delete confirmation gate
+    
+    // Action Sheet Support
+    @State private var pendingActionPDF: ConvertedPDF? = nil
+    @State private var showingActionSheet: Bool = false
+
+    enum SeriesSortOption: String, CaseIterable, Identifiable {
+        case manual = "Custom Order"
+        case issueNumber = "Issue Number"
+        case titleAsc = "Title (A-Z)"
+        case titleDesc = "Title (Z-A)"
+        case dateNewest = "Date Added (Newest)"
         case dateOldest = "Date Added (Oldest)"
         case sizeLargest = "Size (Largest)"
         case sizeSmallest = "Size (Smallest)"
@@ -73,6 +113,7 @@ struct SeriesDetailView: View {
     @State private var showBookmarksOnly = false // Added for filtering
     @State private var showingRenameSeriesAlert = false
     @State private var pendingRenameSeriesName = ""
+    @AppStorage("hideMergedIssuesInSeries") private var hideMergedIssues = false
 
     var freshIssues: [ConvertedPDF] {
         let allPDFs = conversionManager.convertedPDFs
@@ -195,8 +236,16 @@ struct SeriesDetailView: View {
     }
 
     var filteredIssues: [ConvertedPDF] {
+        let baseIssues: [ConvertedPDF]
+        if hideMergedIssues {
+            let mergedSourceIDs = Set(localIssues.flatMap { $0.metadata.sourceFileIDs ?? [] })
+            baseIssues = localIssues.filter { !mergedSourceIDs.contains($0.id) }
+        } else {
+            baseIssues = localIssues
+        }
+        
         if let selectedVolume = selectedVolumeFilter {
-            return localIssues.filter { pdf in
+            return baseIssues.filter { pdf in
                 let vol = resolvedVolume(for: pdf)
                 if selectedVolume == "Ungrouped" {
                     return vol == nil || vol!.isEmpty
@@ -205,7 +254,7 @@ struct SeriesDetailView: View {
                 }
             }
         }
-        return localIssues
+        return baseIssues
     }
     
     /// Groups issues by their volume metadata for collapsible rendering (read from cached State to prevent thread bottlenecking)
@@ -221,7 +270,12 @@ struct SeriesDetailView: View {
         var groups: [String: [ConvertedPDF]] = [:]
         var ungrouped: [ConvertedPDF] = []
         
+        let mergedSourceIDs = Set(localIssues.flatMap { $0.metadata.sourceFileIDs ?? [] })
+        
         for pdf in localIssues {
+            if hideMergedIssues && mergedSourceIDs.contains(pdf.id) {
+                continue
+            }
             if let vol = resolvedVolume(for: pdf) {
                 groups[vol, default: []].append(pdf)
             } else {
@@ -478,7 +532,7 @@ struct SeriesDetailView: View {
             } label: {
                 HStack(spacing: 12) {
                     Image(systemName: "play.circle.fill")
-                        .font(.system(size: 28))
+                        .font(.system(size: 28) )
                         .foregroundStyle(
                             LinearGradient(colors: [Theme.orange, Theme.red],
                                            startPoint: .topLeading, endPoint: .bottomTrailing)
@@ -780,6 +834,20 @@ struct SeriesDetailView: View {
                         } label: {
                             Image(systemName: showVolumeGrouping ? "rectangle.3.group.fill" : "rectangle.3.group")
                                 .foregroundColor(showVolumeGrouping ? Theme.orange : .blue)
+                        }
+                    }
+                    
+                    // Filter Merged Issues Toggle
+                    if localIssues.contains(where: { !($0.metadata.sourceFileIDs ?? []).isEmpty }) {
+                        Button {
+                            HapticEngine.light()
+                            withAnimation {
+                                hideMergedIssues.toggle()
+                                updateVolumeGroups()
+                            }
+                        } label: {
+                            Image(systemName: hideMergedIssues ? "eye.slash" : "eye")
+                                .foregroundColor(hideMergedIssues ? Theme.orange : .blue)
                         }
                     }
 
@@ -1392,6 +1460,14 @@ struct SeriesDetailView: View {
                 } label: {
                     HStack {
                         LibraryPDFRowWithCover(pdf: pdf, isSelected: false)
+                        
+                        if conversionManager.convertedPDFs.contains(where: { $0.metadata.sourceFileIDs?.contains(pdf.id) == true }) {
+                            Image(systemName: "link")
+                                .font(.footnote)
+                                .foregroundColor(Theme.orange)
+                                .padding(.trailing, 8)
+                        }
+                        
                         Spacer()
                         Image(systemName: selection.contains(pdf.id) ? "checkmark.circle.fill" : "circle")
                             .foregroundColor(selection.contains(pdf.id) ? .blue : .gray)
@@ -1445,7 +1521,16 @@ struct SeriesDetailView: View {
                         }
                     }
                 } label: {
-                    LibraryPDFRowWithCover(pdf: pdf, isSelected: selectedPDF?.id == pdf.id)
+                    HStack {
+                        LibraryPDFRowWithCover(pdf: pdf, isSelected: selectedPDF?.id == pdf.id)
+                        
+                        if conversionManager.convertedPDFs.contains(where: { $0.metadata.sourceFileIDs?.contains(pdf.id) == true }) {
+                            Image(systemName: "link")
+                                .font(.footnote)
+                                .foregroundColor(Theme.orange)
+                                .padding(.trailing, 8)
+                        }
+                    }
                 }
                 .buttonStyle(CellButtonStyle())
             }
@@ -1659,80 +1744,6 @@ struct SeriesDetailView: View {
         )
     }
     
-        // MARK: - Feature 5: Smart List Template Export
-    
-    private func exportSmartListTemplate() {
-        var csv = "volume,start_chapter,end_chapter,series\n"
-        
-        if hasVolumeData {
-            for group in volumeGroups {
-                guard group.key != "Ungrouped" else { continue }
-                let issueNumbers = group.issues.compactMap { $0.metadata.issueNumber }.compactMap { Int($0) }.sorted()
-                if let first = issueNumbers.first, let last = issueNumbers.last {
-                    csv += "\(group.key),\(first),\(last),\(series.title)\n"
-                }
-            }
-        } else {
-            for pdf in localIssues {
-                let issue = pdf.metadata.issueNumber ?? ""
-                let vol = pdf.metadata.volume ?? ""
-                csv += "\(vol),\(issue),\(issue),\(series.title)\n"
-            }
-        }
-        
-        let filename = "\(series.title.replacingOccurrences(of: " ", with: "_"))_SmartList.csv"
-        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
-        try? csv.write(to: tempURL, atomically: true, encoding: .utf8)
-        
-        let activityVC = UIActivityViewController(activityItems: [tempURL], applicationActivities: nil)
-        
-        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-           let rootVC = windowScene.windows.first?.rootViewController {
-            var topVC = rootVC
-            while let presented = topVC.presentedViewController { topVC = presented }
-            
-            // iPad requires popover source
-            if let popover = activityVC.popoverPresentationController {
-                popover.sourceView = topVC.view
-                popover.sourceRect = CGRect(x: topVC.view.bounds.midX, y: topVC.view.bounds.midY, width: 0, height: 0)
-                popover.permittedArrowDirections = []
-            }
-            topVC.present(activityVC, animated: true)
-        }
-    }
-
-    @ViewBuilder
-    private func swipeActionsLeading(_ pdf: ConvertedPDF) -> some View {
-        Button {
-            pdfToExport = pdf
-        } label: { Label("Export", systemImage: "square.and.arrow.up") }
-        .tint(.green)
-    
-        Button {
-            pdfToSearchMetadata = pdf
-        } label: { Label("Metadata", systemImage: "info.circle") }
-        .tint(.blue)
-        
-        Button {
-            renameText = pdf.name
-            pdfToRename = pdf
-        } label: { Label("Rename", systemImage: "pencil") }
-        .tint(.orange)
-        
-        Button {
-            Task { await conversionManager.embedPanels(for: pdf) }
-        } label: { Label("Embed", systemImage: "flame") }
-        .tint(.purple)
-    }
-    
-    @ViewBuilder
-    private func swipeActionsTrailing(_ pdf: ConvertedPDF) -> some View {
-        Button(role: .destructive) { pdfToDelete = pdf } label: { Label("Delete", systemImage: "trash") }
-    }
-    
-    @ViewBuilder
-    private func primaryContextMenuItems(_ pdf: ConvertedPDF) -> some View {
-        Button {
             pdfToRead = pdf
         } label: { Label("Read / Preview", systemImage: "book.pages") }
         

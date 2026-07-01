@@ -39,6 +39,7 @@ struct SeriesMergeConfigurationView: View {
     @State private var showPatternSuggestionAlert = false
     @State private var patternSuggestedIssues: [ConvertedPDF] = []
     @State private var patternSuggestedVolumeNumber = 0
+    @State private var deleteSourceFilesAfterMerge = false
     
     init(sourceFiles: [ConvertedPDF], suggestedName: String? = nil) {
         self.seriesFiles = sourceFiles
@@ -77,6 +78,7 @@ struct SeriesMergeConfigurationView: View {
                             TextField("New Volume Name (e.g., Volume 1)", text: $viewModel.outputName)
                             Toggle("Manga Mode (Right-to-Left)", isOn: $viewModel.mangaMode)
                             Toggle("Link Cover Page as Spread", isOn: $settingsManager.conversionSettings.linkCoverAsSpread)
+                            Toggle("Delete original files after merge", isOn: $deleteSourceFilesAfterMerge)
                             
                             Picker("Image Quality", selection: $settingsManager.conversionSettings.compressionQuality) {
                                 ForEach(CompressionPreset.allCases, id: \.self) { preset in
@@ -515,6 +517,12 @@ struct SeriesMergeConfigurationView: View {
                 if let newBook = mergedBooks.first {
                     print("Merged Book generated natively: \(newBook.name)")
                     NotificationCenter.default.post(name: Notification.Name("OpenMergedBook"), object: newBook)
+                    
+                    if deleteSourceFilesAfterMerge {
+                        for file in files {
+                            conversionManager.deletePDF(file)
+                        }
+                    }
                 }
                 viewModel.isProcessing = false
                 dismiss()

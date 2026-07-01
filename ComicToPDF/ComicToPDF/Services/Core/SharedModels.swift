@@ -290,6 +290,7 @@ struct PDFMetadata: Codable, Equatable, Hashable, Sendable {
     var publisher: String?
     var publicationDate: Date?
     var summary: String?
+    var sourceFileIDs: [UUID]? = nil
     // âœ… Rich Metadata
     var writer: String?
     var penciller: String?
