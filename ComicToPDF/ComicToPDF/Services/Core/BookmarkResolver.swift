@@ -73,7 +73,7 @@ actor BookmarkResolver {
     }
 
     /// Resolve a linked ConvertedPDF's URL, or return its url directly if local.
-    func resolveIfLinked(_ pdf: borrowing ConvertedPDF) throws -> URL {
+    nonisolated func resolveIfLinked(_ pdf: borrowing ConvertedPDF) throws -> URL {
         if case .linked(let bm) = pdf.sourceMode {
             return try resolve(bm)
         }
