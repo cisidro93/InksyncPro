@@ -415,7 +415,7 @@ final class ConversionOrchestrator: Sendable {
                         url: finalOutputURL,
                         pageCount: batch.count,
                         fileSize: finalFileSize,
-                        metadata: PDFMetadata(title: outputFilename, series: overrideSeries, isManga: jobSettings.mangaMode, sourceFileIDs: sourceFiles.map { $0.id }),
+                        metadata: PDFMetadata(title: outputFilename, series: overrideSeries, sourceFileIDs: sourceFiles.map { $0.id }, isManga: jobSettings.mangaMode),
                         collectionId: sourceFiles.first?.collectionId,
                         contentType: sourceFiles.first?.contentType ?? .comic,
                         addedByMode: inferredMode
@@ -514,7 +514,7 @@ final class ConversionOrchestrator: Sendable {
                     url: finalOutputURL,
                     pageCount: totalPages,
                     fileSize: finalFileSize,
-                    metadata: PDFMetadata(title: outputFilename, series: overrideSeries, isManga: mangaMode, sourceFileIDs: sourceFiles.map { $0.id }),
+                    metadata: PDFMetadata(title: outputFilename, series: overrideSeries, sourceFileIDs: sourceFiles.map { $0.id }, isManga: mangaMode),
                     collectionId: sourceFiles.first?.collectionId,
                     contentType: sourceFiles.first?.contentType ?? .comic,
                     addedByMode: inferredMode
