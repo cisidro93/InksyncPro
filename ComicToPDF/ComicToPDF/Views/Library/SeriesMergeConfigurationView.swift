@@ -144,7 +144,7 @@ struct SeriesMergeConfigurationView: View {
                         
                         let remainingFiles = seriesFiles.filter { file in
                             !viewModel.itemsToMerge.contains(where: { $0.id == file.id })
-                        }
+                        }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
                         if !remainingFiles.isEmpty {
                             Section(header: Text("Add Other Issues from Series")) {
                                 ForEach(remainingFiles) { pdf in
