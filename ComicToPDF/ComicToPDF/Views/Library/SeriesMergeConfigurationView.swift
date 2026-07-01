@@ -26,6 +26,7 @@ struct SeriesMergeConfigurationView: View {
     // State ViewModel
     @StateObject private var viewModel: SeriesMergeConfigurationViewModel
     @State private var draggedItem: ConvertedPDF? = nil
+    @State private var remainingSearchQuery = ""
     
     init(sourceFiles: [ConvertedPDF], suggestedName: String? = nil) {
         self.seriesFiles = sourceFiles
@@ -142,50 +143,82 @@ struct SeriesMergeConfigurationView: View {
                         }
                         .listRowBackground(Color.inkSurface.opacity(0.4))
                         
-                        let remainingFiles = seriesFiles.filter { file in
+                        let allRemainingFiles = seriesFiles.filter { file in
                             !viewModel.itemsToMerge.contains(where: { $0.id == file.id })
+                        }
+                        let remainingFiles = allRemainingFiles.filter { file in
+                            if remainingSearchQuery.isEmpty { return true }
+                            return matchesSearchQuery(name: file.name, query: remainingSearchQuery)
                         }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
-                        if !remainingFiles.isEmpty {
+                        
+                        if !allRemainingFiles.isEmpty {
                             Section(header: Text("Add Other Issues from Series")) {
-                                ForEach(remainingFiles) { pdf in
-                                    HStack {
-                                        if let uiImage = conversionManager.getThumbnail(for: pdf) {
-                                            Image(uiImage: uiImage)
-                                                .resizable()
-                                                .aspectRatio(contentMode: .fill)
-                                                .frame(width: 30, height: 45)
-                                                .cornerRadius(4)
-                                                .clipped()
-                                        } else {
-                                            Rectangle()
-                                                .fill(Color.gray.opacity(0.2))
-                                                .frame(width: 30, height: 45)
-                                                .cornerRadius(4)
-                                                .overlay(Image(systemName: "doc").foregroundColor(.gray))
-                                        }
-                                        
-                                        VStack(alignment: .leading) {
-                                            Text(pdf.name)
-                                                .font(.caption)
-                                                .lineLimit(1)
-                                            Text(pdf.formattedSize)
-                                                .font(.system(size: 10))
-                                                .foregroundColor(.secondary)
-                                        }
-                                        
-                                        Spacer()
-                                        
+                                HStack {
+                                    Image(systemName: "magnifyingglass")
+                                        .foregroundColor(.secondary)
+                                    TextField("Search issue/chapter number...", text: $remainingSearchQuery)
+                                        .textFieldStyle(.plain)
+                                        .textInputAutocapitalization(.never)
+                                        .disableAutocorrection(true)
+                                    
+                                    if !remainingSearchQuery.isEmpty {
                                         Button {
                                             HapticEngine.light()
-                                            withAnimation {
-                                                viewModel.itemsToMerge.append(pdf)
-                                            }
+                                            remainingSearchQuery = ""
                                         } label: {
-                                            Image(systemName: "plus.circle.fill")
-                                                .font(.title3)
-                                                .foregroundColor(.inkGreen)
+                                            Image(systemName: "xmark.circle.fill")
+                                                .foregroundColor(.secondary)
                                         }
                                         .buttonStyle(.plain)
+                                    }
+                                }
+                                
+                                if remainingFiles.isEmpty {
+                                    Text("No matching issues found")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                        .italic()
+                                } else {
+                                    ForEach(remainingFiles) { pdf in
+                                        HStack {
+                                            if let uiImage = conversionManager.getThumbnail(for: pdf) {
+                                                Image(uiImage: uiImage)
+                                                    .resizable()
+                                                    .aspectRatio(contentMode: .fill)
+                                                    .frame(width: 30, height: 45)
+                                                    .cornerRadius(4)
+                                                    .clipped()
+                                            } else {
+                                                Rectangle()
+                                                    .fill(Color.gray.opacity(0.2))
+                                                    .frame(width: 30, height: 45)
+                                                    .cornerRadius(4)
+                                                    .overlay(Image(systemName: "doc").foregroundColor(.gray))
+                                            }
+                                            
+                                            VStack(alignment: .leading) {
+                                                Text(pdf.name)
+                                                    .font(.caption)
+                                                    .lineLimit(1)
+                                                Text(pdf.formattedSize)
+                                                    .font(.system(size: 10))
+                                                    .foregroundColor(.secondary)
+                                            }
+                                            
+                                            Spacer()
+                                            
+                                            Button {
+                                                HapticEngine.light()
+                                                withAnimation {
+                                                    viewModel.itemsToMerge.append(pdf)
+                                                }
+                                            } label: {
+                                                Image(systemName: "plus.circle.fill")
+                                                    .font(.title3)
+                                                    .foregroundColor(.inkGreen)
+                                            }
+                                            .buttonStyle(.plain)
+                                        }
                                     }
                                 }
                             }
@@ -390,5 +423,51 @@ struct SeriesMergeConfigurationView: View {
                 dismiss()
             }
         }
+    }
+    
+    // MARK: - Search Filtering Helpers
+    
+    private func matchesSearchQuery(name: String, query: String) -> Bool {
+        let cleanQuery = query.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        if cleanQuery.isEmpty { return true }
+        
+        let lowerName = name.lowercased()
+        
+        // 1. Direct substring match
+        if lowerName.contains(cleanQuery) { return true }
+        
+        // 2. Intelligent number/prefix expansion (e.g. matching "ch 04", "i04", "issue 4", "chapter 4")
+        let pattern = #"(ch|chapter|i|issue|vol|volume|v)\s*[-.]?\s*0*(\d+)"#
+        if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) {
+            let range = NSRange(cleanQuery.startIndex..<cleanQuery.endIndex, in: cleanQuery)
+            if let match = regex.firstMatch(in: cleanQuery, options: [], range: range) {
+                if let numRange = Range(match.range(at: 2), in: cleanQuery) {
+                    let numberString = String(cleanQuery[numRange])
+                    return matchesNumberInFilename(lowerName: lowerName, numberString: numberString)
+                }
+            }
+        }
+        
+        // 3. Fallback: if query is just a plain number (e.g. "4"), look for occurrences of that number in the filename boundaries
+        if let queryNum = Int(cleanQuery) {
+            return matchesNumberInFilename(lowerName: lowerName, numberString: String(queryNum))
+        }
+        
+        return false
+    }
+    
+    private func matchesNumberInFilename(lowerName: String, numberString: String) -> Bool {
+        let digitPattern = #"\d+"#
+        guard let regex = try? NSRegularExpression(pattern: digitPattern, options: []) else { return false }
+        let nsString = lowerName as NSString
+        let matches = regex.matches(in: lowerName, options: [], range: NSRange(location: 0, length: nsString.length))
+        
+        for m in matches {
+            let foundDigits = nsString.substring(with: m.range)
+            if Int(foundDigits) == Int(numberString) {
+                return true
+            }
+        }
+        return false
     }
 }
