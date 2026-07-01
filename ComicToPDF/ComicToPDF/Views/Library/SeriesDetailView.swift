@@ -1703,25 +1703,29 @@ struct SeriesDetailView: View {
         )
     }
     
-        // MARK: - Feature 5: Smart List Template Export
+    // MARK: - Feature 5: Smart List Template Export
+    
+    private func escapeCSVField(_ field: String) -> String {
+        var clean = field
+        if clean.contains(",") || clean.contains("\"") || clean.contains("\n") {
+            clean = clean.replacingOccurrences(of: "\"", with: "\"\"")
+            return "\"\(clean)\""
+        }
+        return clean
+    }
     
     private func exportSmartListTemplate() {
         var csv = "volume,start_chapter,end_chapter,series\n"
         
-        if hasVolumeData {
-            for group in volumeGroups {
-                guard group.key != "Ungrouped" else { continue }
-                let issueNumbers = group.issues.compactMap { $0.metadata.issueNumber }.compactMap { Int($0) }.sorted()
-                if let first = issueNumbers.first, let last = issueNumbers.last {
-                    csv += "\(group.key),\(first),\(last),\(series.title)\n"
-                }
-            }
-        } else {
-            for pdf in localIssues {
-                let issue = pdf.metadata.issueNumber ?? ""
-                let vol = pdf.metadata.volume ?? ""
-                csv += "\(vol),\(issue),\(issue),\(series.title)\n"
-            }
+        for pdf in localIssues {
+            let issue = pdf.metadata.issueNumber ?? ""
+            let vol = pdf.metadata.volume ?? ""
+            
+            let escapedVol = escapeCSVField(vol)
+            let escapedIssue = escapeCSVField(issue)
+            let escapedSeries = escapeCSVField(series.title)
+            
+            csv += "\(escapedVol),\(escapedIssue),\(escapedIssue),\(escapedSeries)\n"
         }
         
         let filename = "\(series.title.replacingOccurrences(of: " ", with: "_"))_SmartList.csv"
