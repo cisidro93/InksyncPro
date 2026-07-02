@@ -106,6 +106,7 @@ final class ComicImageCache: ObservableObject {
     
     init(pdf: ConvertedPDF, prefetchLimit: Int = 2) {
         self.prefetchLimit = prefetchLimit
+        self.cache.totalCostLimit = 150 * 1024 * 1024 // 150 MB absolute RAM cap
         let scheme = pdf.url.scheme?.lowercased() ?? ""
         
         if scheme == "virtual-omnibus" {
@@ -619,7 +620,9 @@ final class ComicImageCache: ObservableObject {
             if let img {
                 await MainActor.run { [weak self] in
                     guard let self = self else { return }
-                    self.cache.setObject(img, forKey: NSNumber(value: index))
+                    let bitsPerPixel = img.cgImage?.bitsPerPixel ?? 32
+                    let cost = Int(img.size.width * img.size.height * CGFloat(bitsPerPixel) / 8)
+                    self.cache.setObject(img, forKey: NSNumber(value: index), cost: cost)
                     self.stopFetching(index)
                     self.updateLRUOnMain(index)
                     NotificationCenter.default.post(
@@ -664,7 +667,9 @@ final class ComicImageCache: ObservableObject {
             if let img {
                 await MainActor.run { [weak self] in
                     guard let self = self else { return }
-                    self.cache.setObject(img, forKey: NSNumber(value: index))
+                    let bitsPerPixel = img.cgImage?.bitsPerPixel ?? 32
+                    let cost = Int(img.size.width * img.size.height * CGFloat(bitsPerPixel) / 8)
+                    self.cache.setObject(img, forKey: NSNumber(value: index), cost: cost)
                     self.stopFetching(index)
                     self.updateLRUOnMain(index)
                     NotificationCenter.default.post(
@@ -790,7 +795,9 @@ final class ComicImageCache: ObservableObject {
                 
                 await MainActor.run { [weak self] in
                     guard let self = self else { return }
-                    self.cache.setObject(image, forKey: NSNumber(value: index))
+                    let bitsPerPixel = image.cgImage?.bitsPerPixel ?? 32
+                    let cost = Int(image.size.width * image.size.height * CGFloat(bitsPerPixel) / 8)
+                    self.cache.setObject(image, forKey: NSNumber(value: index), cost: cost)
                     self.stopFetching(index)
                     self.updateLRUOnMain(index)
                     NotificationCenter.default.post(
