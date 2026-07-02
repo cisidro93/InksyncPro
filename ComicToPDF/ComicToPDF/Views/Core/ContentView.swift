@@ -50,7 +50,7 @@ struct ContentView: View {
 
     var body: some View {
         ZStack {
-            NeuralExpressiveBackground()
+            NeuralExpressiveBackground(isAnimating: selectedPDF == nil)
             
             ZStack {
                 // Tab 0: Library

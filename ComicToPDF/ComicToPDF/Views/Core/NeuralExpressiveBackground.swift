@@ -3,7 +3,22 @@ import SwiftUI
 /// A high-performance, dynamic neural mesh gradient view.
 /// Animates multiple blurred, overlapping color blobs to create a breathing "AI aura" background.
 struct NeuralExpressiveBackground: View {
+    let isAnimating: Bool
     @State private var animate = false
+
+    init(isAnimating: Bool = true) {
+        self.isAnimating = isAnimating
+    }
+
+    private func startAnimation() {
+        animate = false
+        withAnimation(
+            .easeInOut(duration: 8.0)
+            .repeatForever(autoreverses: true)
+        ) {
+            animate = true
+        }
+    }
 
     var body: some View {
         GeometryReader { geo in
@@ -41,11 +56,19 @@ struct NeuralExpressiveBackground: View {
             .blur(radius: 64)
             .drawingGroup() // Optimises rendering on iOS GPUs
             .onAppear {
-                withAnimation(
-                    .easeInOut(duration: 8.0)
-                    .repeatForever(autoreverses: true)
-                ) {
-                    animate = true
+                if isAnimating {
+                    startAnimation()
+                }
+            }
+            .onChange(of: isAnimating) { _, newValue in
+                if newValue {
+                    startAnimation()
+                } else {
+                    var transaction = Transaction()
+                    transaction.disablesAnimations = true
+                    withTransaction(transaction) {
+                        animate = false
+                    }
                 }
             }
         }
