@@ -842,6 +842,9 @@ struct ComicReaderEngine: View {
     @EnvironmentObject var conversionManager: ConversionManager
     
     @StateObject private var cache: ComicImageCache
+    @StateObject private var velocityEngine = ReaderVelocityEngine()
+    @State private var pageEntryTime = Date()
+    @AppStorage("hasSeenReaderOnboarding") private var hasSeenReaderOnboarding = false
     @State private var chromeVisible = false
     @State private var currentIndex: Int = 0
     @State private var readingMode: ComicReadingMode = .pageHorizontal
@@ -988,8 +991,13 @@ struct ComicReaderEngine: View {
                 )
                 .zIndex(15)
             }
+            
+            if !hasSeenReaderOnboarding {
+                readerOnboardingOverlay
+            }
         }
         .onAppear {
+            pageEntryTime = Date()
             if let saved = ReaderProgressTracker.shared.progress(for: pdf.id) {
                 currentIndex = saved.currentPageIndex
                 if let filterString = saved.colorFilter,
@@ -1039,7 +1047,12 @@ struct ComicReaderEngine: View {
                 syncReadingModeToOrientation()
             }
         }
-        .onChange(of: currentIndex) { _, newIndex in
+        .onChange(of: currentIndex) { oldIndex, newIndex in
+            let elapsed = Date().timeIntervalSince(pageEntryTime)
+            pageEntryTime = Date()
+            let remainingPages = max(0, cache.pageCount - 1 - newIndex)
+            velocityEngine.recordPageDuration(elapsed, remainingPages: remainingPages)
+
             // Panels-style ambient colour — sample edge pixels on page change
             extractAmbientColor(for: newIndex)
             // Notify narration engine of manual page changes (distinct from narration-driven advances)
@@ -1385,7 +1398,7 @@ struct ComicReaderEngine: View {
     @ViewBuilder private var readerChromeView: some View {
         ReaderChrome(
             title: pdf.name,
-            pageText: "\(currentIndex + 1) / \(cache.pageCount)",
+            pageText: "\(currentIndex + 1) / \(cache.pageCount)  •  \(velocityEngine.estimatedTimeRemaining)",
             isVisible: $chromeVisible,
             onBack: saveProgressAndDismiss,
             onBookmark: {
@@ -1419,6 +1432,13 @@ struct ComicReaderEngine: View {
             onEnhanceToggle: { withAnimation(.easeInOut) { showingFilterHUD.toggle() } },
             isSettingsActive: readingMode != .pageHorizontal,
             currentModeLabel: readingMode != .pageHorizontal ? readingMode.hudLabel : nil,
+            isAutoCropEnabled: isAutoCropEnabled,
+            onCropToggle: {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                    isAutoCropEnabled.toggle()
+                }
+                HapticEngine.light()
+            },
             ambientColor: ambientPageColor,
             isInRoom: readingRoom.isHosting,
             roomPeerCount: readingRoom.peers.count,
@@ -1525,6 +1545,136 @@ struct ComicReaderEngine: View {
             narrationEngine.isMangaMode = (readingMode == .mangaRTL)
             narrationEngine.startNarrating(from: currentIndex)
         }
+    }
+
+    @ViewBuilder
+    private var readerOnboardingOverlay: some View {
+        ZStack {
+            // Dark glassmorphism background overlay
+            Color.black.opacity(0.85)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    // Prevent dismiss on random background tap unless desired
+                }
+            
+            GeometryReader { geo in
+                let w = geo.size.width
+                let h = geo.size.height
+                
+                ZStack {
+                    // Tap Zone Outlines
+                    HStack(spacing: 0) {
+                        // Left Zone (Page Back)
+                        VStack {
+                            Spacer()
+                            Image(systemName: "arrow.left.circle")
+                                .font(.system(size: 32))
+                                .foregroundColor(.white.opacity(0.6))
+                                .padding(.bottom, 8)
+                            Text("Page Back")
+                                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                .foregroundColor(.white)
+                            Text("Tap left 20% of screen")
+                                .font(.system(size: 11))
+                                .foregroundColor(.white.opacity(0.5))
+                            Spacer()
+                        }
+                        .frame(width: w * 0.2)
+                        .background(Color.white.opacity(0.03))
+                        .overlay(
+                            Rectangle()
+                                .strokeBorder(style: StrokeStyle(lineWidth: 1, lineCap: .round, lineJoin: .round, miterLimit: 10, dash: [4, 4], dashPhase: 0))
+                                .foregroundColor(.white.opacity(0.2))
+                        )
+                        
+                        // Center Zone (Menu Chrome)
+                        VStack {
+                            Spacer()
+                            Image(systemName: "hand.tap")
+                                .font(.system(size: 32))
+                                .foregroundColor(.white.opacity(0.6))
+                                .padding(.bottom, 8)
+                            Text("Reader Controls")
+                                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                .foregroundColor(.white)
+                            Text("Tap center zone to toggle controls")
+                                .font(.system(size: 11))
+                                .foregroundColor(.white.opacity(0.5))
+                            Spacer()
+                        }
+                        .frame(width: w * 0.6)
+                        .background(Color.white.opacity(0.01))
+                        
+                        // Right Zone (Page Forward)
+                        VStack {
+                            Spacer()
+                            Image(systemName: "arrow.right.circle")
+                                .font(.system(size: 32))
+                                .foregroundColor(.white.opacity(0.6))
+                                .padding(.bottom, 8)
+                            Text("Page Forward")
+                                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                .foregroundColor(.white)
+                            Text("Tap right 20% of screen")
+                                .font(.system(size: 11))
+                                .foregroundColor(.white.opacity(0.5))
+                            Spacer()
+                        }
+                        .frame(width: w * 0.2)
+                        .background(Color.white.opacity(0.03))
+                        .overlay(
+                            Rectangle()
+                                .strokeBorder(style: StrokeStyle(lineWidth: 1, lineCap: .round, lineJoin: .round, miterLimit: 10, dash: [4, 4], dashPhase: 0))
+                                .foregroundColor(.white.opacity(0.2))
+                        )
+                    }
+                    
+                    // Gesture Annotations overlay in the middle
+                    VStack(spacing: 24) {
+                        Spacer()
+                        
+                        VStack(spacing: 6) {
+                            Text("QUICK GESTURES")
+                                .font(.system(size: 12, weight: .bold, design: .rounded))
+                                .foregroundColor(.yellow)
+                                .tracking(1.5)
+                            
+                            HStack(spacing: 20) {
+                                Label("Double-Tap to Zoom", systemImage: "magnifyingglass.circle")
+                                Label("Drag left edge for Brightness", systemImage: "sun.max.circle")
+                            }
+                            .font(.system(size: 13))
+                            .foregroundColor(.white.opacity(0.8))
+                        }
+                        .padding(.vertical, 16)
+                        .padding(.horizontal, 24)
+                        .background(.ultraThinMaterial)
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .shadow(radius: 10)
+                        
+                        // "Got It" Button
+                        Button {
+                            withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                                hasSeenReaderOnboarding = true
+                            }
+                            HapticEngine.success()
+                        } label: {
+                            Text("Got It")
+                                .font(.system(size: 16, weight: .bold, design: .rounded))
+                                .foregroundColor(.black)
+                                .padding(.horizontal, 48)
+                                .padding(.vertical, 14)
+                                .background(Color.white)
+                                .clipShape(Capsule())
+                                .shadow(radius: 8)
+                        }
+                        .padding(.bottom, h * 0.1)
+                    }
+                }
+            }
+        }
+        .transition(.opacity.combined(with: .scale(scale: 0.95)))
+        .zIndex(100)
     }
 
 } // end ComicReaderEngine

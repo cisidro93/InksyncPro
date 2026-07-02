@@ -50,6 +50,7 @@ struct ReaderChrome: View {
     // PDF tools
     var isPDF: Bool = false
     var isReflowActive: Bool = false
+    var isAutoCropEnabled: Bool = false
     var onCropToggle: (() -> Void)? = nil
     var onReflowToggle: (() -> Void)? = nil
 
@@ -156,9 +157,10 @@ struct ReaderChrome: View {
                     chromeButton(icon: "text.alignleft", active: isReflowActive, activeColor: .white) {
                         onReflowToggle?()
                     }
-                    chromeButton(icon: "crop", active: false, activeColor: .white) {
-                        onCropToggle?()
-                    }
+                }
+
+                chromeButton(icon: "crop", active: isAutoCropEnabled, activeColor: .white) {
+                    onCropToggle?()
                 }
 
                 chromeButton(
