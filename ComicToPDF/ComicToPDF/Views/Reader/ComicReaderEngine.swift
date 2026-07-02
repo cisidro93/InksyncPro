@@ -1429,10 +1429,6 @@ struct ComicReaderEngine: View {
             isNarrating: narrationEngine.isNarrating,
             isNarrationOCRing: narrationEngine.isOCRing,
             onNarrationToggle: handleNarrationToggle,
-            isEnhanced: activeFilterPreset != .original,
-            onEnhanceToggle: { withAnimation(.easeInOut) { showingFilterHUD.toggle() } },
-            isSettingsActive: readingMode != .pageHorizontal,
-            currentModeLabel: readingMode != .pageHorizontal ? readingMode.hudLabel : nil,
             isAutoCropEnabled: isAutoCropEnabled,
             onCropToggle: {
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
@@ -1440,6 +1436,10 @@ struct ComicReaderEngine: View {
                 }
                 HapticEngine.light()
             },
+            isEnhanced: activeFilterPreset != .original,
+            onEnhanceToggle: { withAnimation(.easeInOut) { showingFilterHUD.toggle() } },
+            isSettingsActive: readingMode != .pageHorizontal,
+            currentModeLabel: readingMode != .pageHorizontal ? readingMode.hudLabel : nil,
             ambientColor: ambientPageColor,
             isInRoom: readingRoom.isHosting,
             roomPeerCount: readingRoom.peers.count,
