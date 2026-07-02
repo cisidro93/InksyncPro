@@ -911,6 +911,7 @@ struct BookReaderEngine: View {
             onDismiss()
             return .handled
         }
+        .preferredColorScheme(prefs.activeTheme.isDark ? .dark : .light)
     }
 
 

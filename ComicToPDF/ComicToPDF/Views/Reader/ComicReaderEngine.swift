@@ -1147,6 +1147,7 @@ struct ComicReaderEngine: View {
                   loadedIndex == currentIndex else { return }
             extractAmbientColor(for: currentIndex)
         }
+        .preferredColorScheme(.dark)
     } // closes GeometryReader
 } // end body
 
