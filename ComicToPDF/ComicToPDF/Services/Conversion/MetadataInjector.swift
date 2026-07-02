@@ -146,6 +146,45 @@ final class MetadataInjector: Sendable {
                                     modified = true
                                 }
                             }
+                    }
+                    
+                    // Ensure primary-writing-mode and spine progression direction align with the manga metadata or spine state.
+                    let isRTL = metadata.isManga ?? opfString.contains("page-progression-direction=\"rtl\"")
+                    let targetWritingMode = isRTL ? "horizontal-rl" : "horizontal-lr"
+                    
+                    let writingModePattern = "<meta name=\"primary-writing-mode\" content=\"[^\"]*\"\\s*/>|<meta property=\"primary-writing-mode\"[^>]*>.*?</meta>"
+                    if let regex = try? NSRegularExpression(pattern: writingModePattern, options: []) {
+                        let range = NSRange(opfString.startIndex..<opfString.endIndex, in: opfString)
+                        let replaced = regex.stringByReplacingMatches(in: opfString, options: [], range: range, withTemplate: "<meta name=\"primary-writing-mode\" content=\"\(targetWritingMode)\"/>")
+                        if replaced != opfString {
+                            opfString = replaced
+                            modified = true
+                        } else if !opfString.contains("name=\"primary-writing-mode\"") {
+                            if let range = opfString.range(of: "</metadata>") {
+                                let tag = "\n    <meta name=\"primary-writing-mode\" content=\"\(targetWritingMode)\"/>"
+                                opfString.insert(contentsOf: tag, at: range.lowerBound)
+                                modified = true
+                            }
+                        }
+                    }
+                    
+                    let spinePattern = "<spine([^>]*?)page-progression-direction=\"[^\"]*\""
+                    if let regex = try? NSRegularExpression(pattern: spinePattern, options: []) {
+                        let range = NSRange(opfString.startIndex..<opfString.endIndex, in: opfString)
+                        let replaced = regex.stringByReplacingMatches(in: opfString, options: [], range: range, withTemplate: "<spine$1page-progression-direction=\"\(isRTL ? "rtl" : "ltr")\"")
+                        if replaced != opfString {
+                            opfString = replaced
+                            modified = true
+                        }
+                    } else {
+                        if let range = opfString.range(of: "<spine") {
+                            if let tagEnd = opfString[range.upperBound...].range(of: ">") {
+                                let tagContent = opfString[range.upperBound..<tagEnd.lowerBound]
+                                if !tagContent.contains("page-progression-direction") {
+                                    opfString.insert(contentsOf: " page-progression-direction=\"\(isRTL ? "rtl" : "ltr")\"", at: tagEnd.lowerBound)
+                                    modified = true
+                                }
+                            }
                         }
                     }
                     

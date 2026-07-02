@@ -109,6 +109,7 @@ public struct EPUBManifestBuilder {
                 <meta name="fixed-layout" content="true"/>
                 <meta name="original-resolution" content="\(originalResolution)"/>
                 <meta name="cover" content="\(coverMetaID)"/>
+                <meta name="primary-writing-mode" content="\(isManga ? "horizontal-rl" : "horizontal-lr")"/>
             </metadata>
             <manifest>
                 \(manifestItems.joined(separator: "\n        "))
