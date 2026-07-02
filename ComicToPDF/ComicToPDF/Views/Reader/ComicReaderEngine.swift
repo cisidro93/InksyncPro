@@ -844,6 +844,7 @@ struct ComicReaderEngine: View {
     @StateObject private var cache: ComicImageCache
     @StateObject private var velocityEngine = ReaderVelocityEngine()
     @State private var pageEntryTime = Date()
+    @AppStorage("isAutoCropEnabled") private var isAutoCropEnabled = false
     @AppStorage("hasSeenReaderOnboarding") private var hasSeenReaderOnboarding = false
     @State private var chromeVisible = false
     @State private var currentIndex: Int = 0

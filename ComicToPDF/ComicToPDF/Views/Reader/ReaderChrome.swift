@@ -76,6 +76,80 @@ struct ReaderChrome: View {
     // Scrubber interaction state
     @State private var isScrubbing: Bool = false
 
+    init(
+        title: String,
+        pageText: String,
+        isVisible: Binding<Bool>,
+        onBack: @escaping () -> Void,
+        onBookmark: @escaping () -> Void,
+        onBookmarkActive: Bool = false,
+        onSettingsToggle: @escaping () -> Void,
+        onTOCToggle: (() -> Void)? = nil,
+        onAnnotationsToggle: (() -> Void)? = nil,
+        onCharacterMapToggle: (() -> Void)? = nil,
+        currentProgress: Binding<Double>,
+        totalPages: Int,
+        customScrubber: AnyView? = nil,
+        timeRemainingText: String? = nil,
+        onProgressModeToggle: (() -> Void)? = nil,
+        hasTTS: Bool = false,
+        isSpeaking: Bool = false,
+        onTTSToggle: (() -> Void)? = nil,
+        isNarrating: Bool = false,
+        isNarrationOCRing: Bool = false,
+        onNarrationToggle: (() -> Void)? = nil,
+        isPDF: Bool = false,
+        isReflowActive: Bool = false,
+        isAutoCropEnabled: Bool = false,
+        onCropToggle: (() -> Void)? = nil,
+        onReflowToggle: (() -> Void)? = nil,
+        isEnhanced: Bool = false,
+        onEnhanceToggle: (() -> Void)? = nil,
+        isSettingsActive: Bool = false,
+        currentModeLabel: String? = nil,
+        ambientColor: Color = .clear,
+        isInRoom: Bool = false,
+        roomPeerCount: Int = 0,
+        onRoomToggle: (() -> Void)? = nil,
+        onSwipeDown: (() -> Void)? = nil
+    ) {
+        self.title = title
+        self.pageText = pageText
+        self._isVisible = isVisible
+        self.onBack = onBack
+        self.onBookmark = onBookmark
+        self.onBookmarkActive = onBookmarkActive
+        self.onSettingsToggle = onSettingsToggle
+        self.onTOCToggle = onTOCToggle
+        self.onAnnotationsToggle = onAnnotationsToggle
+        self.onCharacterMapToggle = onCharacterMapToggle
+        self._currentProgress = currentProgress
+        self.totalPages = totalPages
+        self.customScrubber = customScrubber
+        self.timeRemainingText = timeRemainingText
+        self.onProgressModeToggle = onProgressModeToggle
+        self.hasTTS = hasTTS
+        self.isSpeaking = isSpeaking
+        self.onTTSToggle = onTTSToggle
+        self.isNarrating = isNarrating
+        self.isNarrationOCRing = isNarrationOCRing
+        self.onNarrationToggle = onNarrationToggle
+        self.isPDF = isPDF
+        self.isReflowActive = isReflowActive
+        self.isAutoCropEnabled = isAutoCropEnabled
+        self.onCropToggle = onCropToggle
+        self.onReflowToggle = onReflowToggle
+        self.isEnhanced = isEnhanced
+        self.onEnhanceToggle = onEnhanceToggle
+        self.isSettingsActive = isSettingsActive
+        self.currentModeLabel = currentModeLabel
+        self.ambientColor = ambientColor
+        self.isInRoom = isInRoom
+        self.roomPeerCount = roomPeerCount
+        self.onRoomToggle = onRoomToggle
+        self.onSwipeDown = onSwipeDown
+    }
+
     // MARK: - Body
 
     var body: some View {
