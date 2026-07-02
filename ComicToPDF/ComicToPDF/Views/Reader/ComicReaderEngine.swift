@@ -844,6 +844,7 @@ struct ComicReaderEngine: View {
     @StateObject private var cache: ComicImageCache
     @StateObject private var velocityEngine = ReaderVelocityEngine()
     @State private var pageEntryTime = Date()
+    @State private var maxPageIndexVisited = 0
     @AppStorage("isAutoCropEnabled") private var isAutoCropEnabled = false
     @AppStorage("hasSeenReaderOnboarding") private var hasSeenReaderOnboarding = false
     @State private var chromeVisible = false
@@ -1033,6 +1034,7 @@ struct ComicReaderEngine: View {
                 ambientPageColor = .clear
             }
             BackTapManager.shared.isEnabled = backTapEnabled
+            maxPageIndexVisited = currentIndex
         }
         // Auto two-up: rotate device → automatically flip reading mode so the
         // user doesn't need to discover the mode-toggle button in the chrome.
@@ -1051,8 +1053,11 @@ struct ComicReaderEngine: View {
         .onChange(of: currentIndex) { oldIndex, newIndex in
             let elapsed = Date().timeIntervalSince(pageEntryTime)
             pageEntryTime = Date()
-            let remainingPages = max(0, cache.pageCount - 1 - newIndex)
-            velocityEngine.recordPageDuration(elapsed, remainingPages: remainingPages)
+            if newIndex > maxPageIndexVisited {
+                maxPageIndexVisited = newIndex
+                let remainingPages = max(0, cache.pageCount - 1 - newIndex)
+                velocityEngine.recordPageDuration(elapsed, remainingPages: remainingPages)
+            }
 
             // Panels-style ambient colour — sample edge pixels on page change
             extractAmbientColor(for: newIndex)
