@@ -1578,6 +1578,8 @@ struct ComicPageView: View {
     var onBookmark: (() -> Void)? = nil
     
     @State private var image: UIImage? = nil
+    @State private var displayImage: UIImage? = nil
+    @AppStorage("isAutoCropEnabled") private var isAutoCropEnabled = false
     @State private var currentScale: CGFloat = 1.0
     @State private var lastScale: CGFloat = 1.0
     @State private var offset: CGSize = .zero
@@ -1621,16 +1623,35 @@ struct ComicPageView: View {
         }
     }
 
+    private func updateDisplayImage() {
+        guard let sourceImage = image else {
+            displayImage = nil
+            return
+        }
+        if isAutoCropEnabled {
+            Task.detached(priority: .userInitiated) {
+                let cropRect = SmartCropper.suggestCrop(for: sourceImage)
+                let cropped = cropRect.flatMap { ImageProcessor.crop(image: sourceImage, to: $0) }
+                
+                await MainActor.run {
+                    self.displayImage = cropped ?? sourceImage
+                }
+            }
+        } else {
+            displayImage = sourceImage
+        }
+    }
+
     var body: some View {
         Group {
-            if let image = image {
+            if let img = displayImage ?? image {
                 GeometryReader { geo in
-                    let rendered = renderSize(for: image, in: geo.size)
+                    let rendered = renderSize(for: img, in: geo.size)
 
                     ZStack {
                         Color.black.ignoresSafeArea()
 
-                        Image(uiImage: image)
+                        Image(uiImage: img)
                             .resizable()
                             .frame(width: rendered.width, height: rendered.height)
                             .scaleEffect(currentScale)
@@ -1711,7 +1732,7 @@ struct ComicPageView: View {
                             }
                         }
                         Button {
-                            shareItem = image
+                            shareItem = displayImage ?? image
                             showShareSheet = true
                         } label: {
                             Label("Share Page", systemImage: "square.and.arrow.up")
@@ -1726,7 +1747,7 @@ struct ComicPageView: View {
                         }
                     } preview: {
                         // System shows a scaled preview of the page in the context menu blur
-                        Image(uiImage: image)
+                        Image(uiImage: displayImage ?? image ?? UIImage())
                             .resizable()
                             .scaledToFit()
                             .frame(maxWidth: 280)
@@ -1751,6 +1772,12 @@ struct ComicPageView: View {
             }
         }
         .id(index)
+        .onChange(of: image) { _, _ in
+            updateDisplayImage()
+        }
+        .onChange(of: isAutoCropEnabled) { _, _ in
+            updateDisplayImage()
+        }
         .onReceive(NotificationCenter.default.publisher(for: .comicImageCacheImageLoaded)) { notification in
             guard let userInfo = notification.userInfo,
                   let loadedIndex = userInfo["index"] as? Int,
