@@ -1737,6 +1737,7 @@ struct ComicPageView: View {
     @State private var lastOffset: CGSize = .zero
     @State private var shareItem: UIImage? = nil
     @State private var showShareSheet = false
+    @State private var cropTask: Task<Void, Never>? = nil
 
     /// Compute the rendered width/height that fits the image inside `container`
     /// without overflowing, preserving aspect ratio.
@@ -1775,14 +1776,20 @@ struct ComicPageView: View {
     }
 
     private func updateDisplayImage() {
+        cropTask?.cancel()
+        cropTask = nil
+        
         guard let sourceImage = image else {
             displayImage = nil
             return
         }
         if isAutoCropEnabled {
-            Task.detached(priority: .userInitiated) {
+            cropTask = Task.detached(priority: .userInitiated) {
                 let cropRect = SmartCropper.suggestCrop(for: sourceImage)
+                guard !Task.isCancelled else { return }
+                
                 let cropped = cropRect.flatMap { ImageProcessor.crop(image: sourceImage, to: $0) }
+                guard !Task.isCancelled else { return }
                 
                 await MainActor.run {
                     self.displayImage = cropped ?? sourceImage
@@ -1868,6 +1875,8 @@ struct ComicPageView: View {
                             }
                     }
                     .onDisappear {
+                        cropTask?.cancel()
+                        cropTask = nil
                         currentScale = 1.0
                         lastScale = 1.0
                         offset = .zero
