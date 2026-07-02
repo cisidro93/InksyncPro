@@ -857,6 +857,7 @@ struct ComicReaderEngine: View {
     @State private var chromeVisible = false
     @State private var currentIndex: Int = 0
     @State private var readingMode: ComicReadingMode = .pageHorizontal
+    @State private var prefersRTL: Bool = false
     @State private var activeFilterPreset: ReadingFilterPreset = .original
     @State private var showingFilterHUD = false
     @State private var showingSettingsHUD = false
@@ -895,6 +896,7 @@ struct ComicReaderEngine: View {
         // Phase 4B: iPad defaults to two-page spread; manga always opens RTL regardless of device.
         let defaultMode: ComicReadingMode = isMangaComic ? .mangaRTL : (isiPad ? .pageTwoUp : .pageHorizontal)
         self._readingMode = State(initialValue: defaultMode)
+        self._prefersRTL = State(initialValue: isMangaComic)
     }
 
     var body: some View {
@@ -1116,10 +1118,18 @@ struct ComicReaderEngine: View {
             activity.becomeCurrent()
         }
         .onChange(of: readingMode) { _, newMode in
-            let isManga = (newMode == .mangaRTL)
-            if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
-                conversionManager.convertedPDFs[idx].metadata.isManga = isManga
-                conversionManager.saveLibrary()
+            if newMode == .mangaRTL {
+                prefersRTL = true
+                if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                    conversionManager.convertedPDFs[idx].metadata.isManga = true
+                    conversionManager.saveLibrary()
+                }
+            } else if newMode == .pageHorizontal {
+                prefersRTL = false
+                if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                    conversionManager.convertedPDFs[idx].metadata.isManga = false
+                    conversionManager.saveLibrary()
+                }
             }
         }
         .sheet(isPresented: $showingCharacterMap) {
@@ -1207,7 +1217,7 @@ struct ComicReaderEngine: View {
             currentIndex: $currentIndex,
             cache: cache,
             activeFilterPreset: activeFilterPreset,
-            isMangaRTL: readingMode == .mangaRTL || pdf.metadata.isManga == true,
+            isMangaRTL: prefersRTL || pdf.metadata.isManga == true,
             onChromeTap: { chromeVisible.toggle() },
             onFlipPastEnd: { attemptComicSeriesContinuation() }
         )
@@ -1291,8 +1301,7 @@ struct ComicReaderEngine: View {
             } else if orientation.isPortrait {
                 // Portrait → restore single-page (manga keeps RTL)
                 if readingMode == .pageTwoUp {
-                    let isMangaComic = pdf.metadata.isManga == true || pdf.contentType == .manga
-                    readingMode = isMangaComic ? .mangaRTL : .pageHorizontal
+                    readingMode = prefersRTL ? .mangaRTL : .pageHorizontal
                 }
             }
             // .faceUp / .faceDown / .unknown → leave mode unchanged

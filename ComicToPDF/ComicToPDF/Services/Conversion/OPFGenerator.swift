@@ -1,7 +1,7 @@
 import Foundation
 
 class OPFGenerator {
-    static func generateHardenedMetadata(title: String, width: Int? = nil, height: Int? = nil) -> String {
+    static func generateHardenedMetadata(title: String, width: Int? = nil, height: Int? = nil, isManga: Bool = true) -> String {
         var resolutionTag = ""
         if let w = width, let h = height {
             resolutionTag = "\n            <meta name=\"original-resolution\" content=\"\(w)x\(h)\"/>"
@@ -21,7 +21,7 @@ class OPFGenerator {
             <meta name="amzn:kindle:book-type" content="image-based"/>
             <meta name="zero-gutter" content="true"/>
             <meta name="zero-margin" content="true"/>
-            <meta name="primary-writing-mode" content="horizontal-rl"/>
+            <meta name="primary-writing-mode" content="\(isManga ? "horizontal-rl" : "horizontal-lr")"/>
             
             <meta property="rendition:layout">pre-paginated</meta>
             <meta property="rendition:spread">auto</meta>

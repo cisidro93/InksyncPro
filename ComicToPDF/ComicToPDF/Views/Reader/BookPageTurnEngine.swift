@@ -472,28 +472,28 @@ struct TwoUpBookPager: View {
         GeometryReader { geo in
             if pages.count == 1 && isLandscapePage(pages[0]) {
                 // Native landscape — fills the full frame solo
-                TwoUpPageCell(index: pages[0], cache: cache, activeFilterPreset: activeFilterPreset)
+                TwoUpPageCell(index: pages[0], cache: cache, activeFilterPreset: activeFilterPreset, alignment: .center)
                     .frame(width: geo.size.width, height: geo.size.height)
             } else if isMangaRTL {
                 // Manga RTL: higher page number (right panel) on left of screen
                 HStack(spacing: 0) {
                     if pages.count == 2 {
-                        TwoUpPageCell(index: pages[1], cache: cache, activeFilterPreset: activeFilterPreset)
+                        TwoUpPageCell(index: pages[1], cache: cache, activeFilterPreset: activeFilterPreset, alignment: .trailing)
                             .frame(width: geo.size.width / 2, height: geo.size.height)
                     } else {
                         Color.black
                             .frame(width: geo.size.width / 2, height: geo.size.height)
                     }
-                    TwoUpPageCell(index: pages[0], cache: cache, activeFilterPreset: activeFilterPreset)
+                    TwoUpPageCell(index: pages[0], cache: cache, activeFilterPreset: activeFilterPreset, alignment: .leading)
                         .frame(width: geo.size.width / 2, height: geo.size.height)
                 }
             } else {
                 // Standard LTR two-page spread
                 HStack(spacing: 0) {
-                    TwoUpPageCell(index: pages[0], cache: cache, activeFilterPreset: activeFilterPreset)
+                    TwoUpPageCell(index: pages[0], cache: cache, activeFilterPreset: activeFilterPreset, alignment: .trailing)
                         .frame(width: geo.size.width / 2, height: geo.size.height)
                     if pages.count == 2 {
-                        TwoUpPageCell(index: pages[1], cache: cache, activeFilterPreset: activeFilterPreset)
+                        TwoUpPageCell(index: pages[1], cache: cache, activeFilterPreset: activeFilterPreset, alignment: .leading)
                             .frame(width: geo.size.width / 2, height: geo.size.height)
                     } else {
                         Color.black
@@ -510,6 +510,7 @@ struct TwoUpPageCell: View {
     let index: Int
     let cache: ComicImageCache
     let activeFilterPreset: ReadingFilterPreset
+    var alignment: Alignment = .center
     
     @State private var image: UIImage? = nil
     
@@ -521,7 +522,7 @@ struct TwoUpPageCell: View {
                     .resizable()
                     .applyFilterPreset(activeFilterPreset)
                     .aspectRatio(contentMode: .fit)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
                     .transition(.opacity)
             } else {
                 ProgressView()

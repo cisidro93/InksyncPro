@@ -232,7 +232,8 @@ class EPUBGenerator {
     
     private func generateContentOPF() throws {
         let titleBlock = metadata.title.isEmpty ? "Comic Book" : metadata.title
-        let hardenedMetadata = OPFGenerator.generateHardenedMetadata(title: titleBlock)
+        let isManga = settings.readingDirection == .rtl
+        let hardenedMetadata = OPFGenerator.generateHardenedMetadata(title: titleBlock, isManga: isManga)
         
         let contentOPF = """
         <?xml version="1.0" encoding="UTF-8"?>
