@@ -146,6 +146,7 @@ final class MetadataInjector: Sendable {
                                     modified = true
                                 }
                             }
+                        }
                     }
                     
                     // Ensure primary-writing-mode and spine progression direction align with the manga metadata or spine state.
