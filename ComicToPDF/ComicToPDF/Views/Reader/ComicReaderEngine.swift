@@ -409,7 +409,7 @@ final class ComicImageCache: ObservableObject {
                                         
                                         if localIdx < sorted.count {
                                             let entryPath = sorted[localIdx].path
-                                            if let data = try? ArchiveManager.shared.extractEntry(from: fileURL, path: entryPath),
+                                            if let data = try? await ArchiveManager.shared.extractEntry(from: fileURL, path: entryPath),
                                                let source = CGImageSourceCreateWithData(data as CFData, nil),
                                                let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] {
                                                 let w = properties[kCGImagePropertyPixelWidth] as? CGFloat ?? 0
