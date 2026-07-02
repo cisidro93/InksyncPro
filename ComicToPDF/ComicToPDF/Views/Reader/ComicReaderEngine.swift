@@ -343,7 +343,7 @@ final class ComicImageCache: ObservableObject {
         
         let entryPaths = self.entries.map { $0.path }
         
-        var resolvedPages: [(url: URL, localIndex: Int, sourceMode: PDFSourceMode)] = []
+        var resolvedPages: [(url: URL, localIndex: Int, sourceMode: SourceMode)] = []
         if let coordinator = self.virtualCoordinator {
             for i in 0..<total {
                 if let resolved = coordinator.resolvePage(at: i) {
