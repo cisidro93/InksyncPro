@@ -320,7 +320,7 @@ struct LibraryGridView: View {
                 }
                 .buttonStyle(TactileButtonStyle())
             } else {
-                if let folderUUID = UUID(uuidString: group.id) {
+                if UUID(uuidString: group.id) != nil {
                     NavigationLink(destination: LazyView { SeriesDetailView(series: group, selectedPDF: $selectedPDF, useNavigationStack: useNavigationStack) }) {
                         ModernGridSeriesCell(group: group, isSelected: false, isBatch: false)
                     }
