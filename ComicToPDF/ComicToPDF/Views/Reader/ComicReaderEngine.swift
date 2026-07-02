@@ -956,6 +956,7 @@ struct ComicReaderEngine: View {
                                 }
                                 // Phase 4A: start / reset 4-second auto-hide timer
                                 if chromeVisible { startChromeIdleTimer() }
+                                NotificationCenter.default.post(name: NSNotification.Name("Reader_ForceKeyFocus"), object: nil)
                             },
                             onFlipPastEnd: { attemptComicSeriesContinuation() }
                         )
@@ -990,7 +991,8 @@ struct ComicReaderEngine: View {
                     saveProgressAndDismiss()
                 }
             }
-            .frame(width: 0, height: 0)
+            .frame(width: 1, height: 1)
+            .opacity(0.01)
             // Phase 3: Live Reading Room overlay (peer avatars + reactions + HUD pill)
             if readingRoom.isHosting {
                 ReadingRoomOverlay(
@@ -1042,6 +1044,7 @@ struct ComicReaderEngine: View {
             }
             BackTapManager.shared.isEnabled = backTapEnabled
             maxPageIndexVisited = currentIndex
+            NotificationCenter.default.post(name: NSNotification.Name("Reader_ForceKeyFocus"), object: nil)
         }
         // Auto two-up: rotate device → automatically flip reading mode so the
         // user doesn't need to discover the mode-toggle button in the chrome.
@@ -1065,6 +1068,7 @@ struct ComicReaderEngine: View {
                 let remainingPages = max(0, cache.pageCount - 1 - newIndex)
                 velocityEngine.recordPageDuration(elapsed, remainingPages: remainingPages)
             }
+            NotificationCenter.default.post(name: NSNotification.Name("Reader_ForceKeyFocus"), object: nil)
 
             // Panels-style ambient colour — sample edge pixels on page change
             extractAmbientColor(for: newIndex)
@@ -2312,6 +2316,11 @@ struct KeyCommandHandler: UIViewControllerRepresentable {
     
     func updateUIViewController(_ uiViewController: UIKeyCommandViewController, context: Context) {
         context.coordinator.onKeyPress = onKeyPress
+        DispatchQueue.main.async {
+            if !uiViewController.isFirstResponder {
+                uiViewController.becomeFirstResponder()
+            }
+        }
     }
 }
 
@@ -2322,8 +2331,38 @@ class UIKeyCommandViewController: UIViewController {
         true
     }
     
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        becomeFirstResponder()
+    }
+    
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
+        becomeFirstResponder()
+    }
+    
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(forceBecomeFirstResponder),
+            name: UIApplication.didBecomeActiveNotification,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(forceBecomeFirstResponder),
+            name: NSNotification.Name("Reader_ForceKeyFocus"),
+            object: nil
+        )
+    }
+    
+    @objc private func forceBecomeFirstResponder() {
+        becomeFirstResponder()
+    }
+    
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        super.touchesBegan(touches, with: event)
         becomeFirstResponder()
     }
     
