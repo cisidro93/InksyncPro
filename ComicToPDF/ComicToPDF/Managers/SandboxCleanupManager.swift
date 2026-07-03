@@ -227,4 +227,40 @@ class SandboxCleanupManager: ObservableObject {
     func formattedSize(_ bytes: Int64) -> String {
         ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
     }
+
+    /// Automatically scans and purges temp/cache directories if free space drops below 1.0 GB.
+    func autoCleanupIfStorageLow() async {
+        let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        guard let attrs = try? FileManager.default.attributesOfFileSystem(forPath: documentsDir.path),
+              let freeSpace = attrs[.systemFreeSize] as? Int64 else { return }
+        
+        let oneGigabyte: Int64 = 1 * 1024 * 1024 * 1024
+        
+        if freeSpace < oneGigabyte {
+            Logger.shared.log("Storage space is low (\(ByteCountFormatter.string(fromByteCount: freeSpace, countStyle: .file)) < 1.0 GB). Running automatic sandbox cleanup...", category: "System", type: .warning)
+            
+            // Scan for items that are safe to delete passively
+            let tempItems = await Self.scanTempDirectory()
+            let cacheItems = await Self.scanSourceCache()
+            
+            let itemsToDelete = tempItems + cacheItems
+            if !itemsToDelete.isEmpty {
+                let deletedCount = await Task.detached(priority: .background) {
+                    var deleted = 0
+                    for item in itemsToDelete {
+                        do {
+                            try FileManager.default.removeItem(at: item.url)
+                            deleted += 1
+                        } catch {}
+                    }
+                    return deleted
+                }.value
+                
+                Logger.shared.log("Auto-cleanup completed: deleted \(deletedCount) temporary and cached items to reclaim storage.", category: "System", type: .success)
+                
+                // Refresh local reclaimable properties
+                await scanForCleanup()
+            }
+        }
+    }
 }

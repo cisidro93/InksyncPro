@@ -29,7 +29,12 @@ actor ImportOrchestrator {
     
     func importFolderStructure(from folderURL: URL, manager: ConversionManager) async {
         await MainActor.run { manager.isConverting = true; manager.processingStatus = "Preparing Folder Sync..." }
-        defer { Task { await MainActor.run { manager.isConverting = false; manager.processingStatus = "" } } }
+        defer {
+            Task {
+                await SandboxCleanupManager.shared.autoCleanupIfStorageLow()
+                await MainActor.run { manager.isConverting = false; manager.processingStatus = "" }
+            }
+        }
         
         let existingPaths = await MainActor.run { Set(manager.convertedPDFs.map { $0.url.lastPathComponent }) }
 
@@ -191,7 +196,12 @@ actor ImportOrchestrator {
     
     func importFilesAsSeries(urls: [URL], manager: ConversionManager, overrides: [URL: PDFMetadata] = [:]) async -> [ConvertedPDF] {
         await MainActor.run { manager.isConverting = true; manager.processingStatus = "Preparing Import..." }
-        defer { Task { await MainActor.run { manager.isConverting = false; manager.processingStatus = "" } } }
+        defer {
+            Task {
+                await SandboxCleanupManager.shared.autoCleanupIfStorageLow()
+                await MainActor.run { manager.isConverting = false; manager.processingStatus = "" }
+            }
+        }
         
         // ── Smart Duplicate Fingerprinting ──────────────────────────────────────────
         // Build TWO lookup sets from the live library (both sourced from the model, not disk):
@@ -575,7 +585,12 @@ actor ImportOrchestrator {
         guard !localFolders.isEmpty else { return }
         
         await MainActor.run { manager.isConverting = true; manager.processingStatus = "Background Folder Sync..." }
-        defer { Task { await MainActor.run { manager.isConverting = false; manager.processingStatus = "" } } }
+        defer {
+            Task {
+                await SandboxCleanupManager.shared.autoCleanupIfStorageLow()
+                await MainActor.run { manager.isConverting = false; manager.processingStatus = "" }
+            }
+        }
         
         let existingPaths = await MainActor.run { Set(manager.convertedPDFs.map { $0.url.lastPathComponent }) }
         

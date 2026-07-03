@@ -155,6 +155,7 @@ struct ContentView: View {
                 conversionManager.scanLibrary()
                 
                 await SandboxCleanupManager.shared.passiveScan()
+                await SandboxCleanupManager.shared.autoCleanupIfStorageLow()
             }
         }
         .sheet(item: $conversionManager.pendingSeriesGroup) { group in
@@ -209,8 +210,11 @@ struct ContentView: View {
             Text("\(globalErrorMessage)\n\nA trace has been recorded. Navigate to Settings ➔ Logs and filter by '\(globalErrorCategory)' to export the failure context to Support.")
         }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
-            Task { await ReaderImageFilterEngine.shared.purgeCache() }
-            Logger.shared.log("⚠️ Memory warning received — purged ReaderImageFilterEngine cache.", category: "Memory", type: .warning)
+            Task {
+                await ReaderImageFilterEngine.shared.purgeCache()
+                await SandboxCleanupManager.shared.autoCleanupIfStorageLow()
+            }
+            Logger.shared.log("⚠️ Memory warning received — purged ReaderImageFilterEngine cache and verified disk storage limits.", category: "Memory", type: .warning)
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("SwitchToLibraryTab"))) { _ in
             // No-op
