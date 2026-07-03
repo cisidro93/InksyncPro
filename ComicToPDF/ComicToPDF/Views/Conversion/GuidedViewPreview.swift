@@ -145,7 +145,12 @@ struct GuidedViewPreview: View {
     func cropImage(_ image: UIImage, to normalizedRect: CGRect) -> UIImage {
         let width = image.size.width
         let height = image.size.height
-        let cropRect = CGRect(x: normalizedRect.minX * width, y: normalizedRect.minY * height, width: normalizedRect.width * width, height: normalizedRect.height * height)
+        let cropRect = CGRect(
+            x: normalizedRect.minX * width,
+            y: (1.0 - normalizedRect.maxY) * height,
+            width: normalizedRect.width * width,
+            height: normalizedRect.height * height
+        )
         if cropRect.width <= 0 || cropRect.height <= 0 || cropRect.isInfinite || cropRect.isEmpty { return image }
         let intersection = cropRect.intersection(CGRect(x: 0, y: 0, width: width, height: height))
         if let cgImage = image.cgImage?.cropping(to: intersection) {
