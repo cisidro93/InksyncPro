@@ -42,7 +42,6 @@ extension View {
 
 enum ComicReadingMode: String, CaseIterable, Codable {
     case pageHorizontal   // Single page, horizontal swipe (default)
-    case pageTwoUp        // Two-page spread, landscape
     case panelNavigation  // Panel-by-panel using pageModels Vision data
     case webtoonScroll    // Continuous vertical scroll
     case mangaRTL         // Single page, horizontal swipe, right-to-left
@@ -857,7 +856,7 @@ struct ComicReaderEngine: View {
     @State private var chromeVisible = false
     @State private var currentIndex: Int = 0
     @State private var readingMode: ComicReadingMode = .pageHorizontal
-    @State private var prefersRTL: Bool = false
+    @AppStorage("prefersTwoUpSpreads") private var prefersTwoUpSpreads = true
     @State private var activeFilterPreset: ReadingFilterPreset = .original
     @State private var showingFilterHUD = false
     @State private var showingSettingsHUD = false
@@ -869,9 +868,6 @@ struct ComicReaderEngine: View {
     @State private var ambientPageColor: Color = .clear
     /// Tracks in-flight ambient colour extraction so it can be cancelled on rapid page swipes.
     @State private var ambientColorTask: Task<Void, Never>? = nil
-    /// Debounce task — prevents rapid mode flips when the notification fires
-    /// multiple times during the iPhone rotation animation (portrait→landscape).
-    @State private var orientationTask: Task<Void, Never>? = nil
     /// AI Narration Engine — connects to the image cache on appear
     @StateObject private var narrationEngine = NarrationEngine()
     /// Phase 3: Live Reading Room — MultipeerConnectivity co-reading session.
@@ -883,6 +879,13 @@ struct ComicReaderEngine: View {
         pdf.metadata.isManga == true || pdf.contentType == .manga
     }
     
+    func shouldShowTwoUpSpread(for size: CGSize) -> Bool {
+        guard prefersTwoUpSpreads else { return false }
+        // Spread layouts are page-based only (not webtoon vertical scroll, nor panel navigation)
+        guard readingMode == .pageHorizontal || readingMode == .mangaRTL || readingMode == .pageSlide || readingMode == .pageFade else { return false }
+        return size.width > size.height
+    }
+    
     init(pdf: ConvertedPDF, onDismiss: @escaping () -> Void, allBooks: [ConvertedPDF] = []) {
         self.pdf = pdf
         self.onDismiss = onDismiss
@@ -892,11 +895,8 @@ struct ComicReaderEngine: View {
             prefetchLimit: AppSettingsManager.shared.conversionSettings.readingPrefetchLimit
         ))
         let isMangaComic = pdf.metadata.isManga == true || pdf.contentType == .manga
-        let isiPad = UIDevice.current.userInterfaceIdiom == .pad
-        // Phase 4B: iPad defaults to two-page spread; manga always opens RTL regardless of device.
-        let defaultMode: ComicReadingMode = isMangaComic ? .mangaRTL : (isiPad ? .pageTwoUp : .pageHorizontal)
+        let defaultMode: ComicReadingMode = isMangaComic ? .mangaRTL : .pageHorizontal
         self._readingMode = State(initialValue: defaultMode)
-        self._prefersRTL = State(initialValue: isMangaComic)
     }
 
     var body: some View {
@@ -940,7 +940,7 @@ struct ComicReaderEngine: View {
                 Group {
                     if readingMode == .webtoonScroll {
                         webtoonView
-                    } else if readingMode == .pageTwoUp {
+                    } else if shouldShowTwoUpSpread(for: geo.size) {
                         twoUpView
                     } else if readingMode == .panelNavigation {
                         guidedView
@@ -1019,8 +1019,11 @@ struct ComicReaderEngine: View {
                 }
                 if let prefersManga = saved.prefersMangaMode, prefersManga {
                     readingMode = .mangaRTL
-                } else if let wasDual = saved.wasInDualPageMode, wasDual {
-                    readingMode = .pageTwoUp
+                } else {
+                    readingMode = .pageHorizontal
+                }
+                if let wasDual = saved.wasInDualPageMode {
+                    prefersTwoUpSpreads = wasDual
                 }
             } else {
                 let isMangaComic = pdf.metadata.isManga == true || pdf.contentType == .manga
@@ -1035,9 +1038,6 @@ struct ComicReaderEngine: View {
             narrationEngine.onPageComplete = { nextIndex in
                 withAnimation { currentIndex = nextIndex }
             }
-            // On appear, honour the current physical orientation immediately
-            // so opening in landscape already shows two pages.
-            syncReadingModeToOrientation()
             if essentialReaderMode {
                 if readingMode == .pageHorizontal || readingMode == .mangaRTL {
                     readingMode = .pageSlide
@@ -1047,20 +1047,6 @@ struct ComicReaderEngine: View {
             BackTapManager.shared.isEnabled = backTapEnabled
             maxPageIndexVisited = currentIndex
             NotificationCenter.default.post(name: NSNotification.Name("Reader_ForceKeyFocus"), object: nil)
-        }
-        // Auto two-up: rotate device → automatically flip reading mode so the
-        // user doesn't need to discover the mode-toggle button in the chrome.
-        // Webtoon and panel-navigation are intentional choices; never override them.
-        // Debounced orientation sync — the notification fires 2-3× per rotation
-        // on iPhone. Without debounce, readingMode flips rapidly which destroys
-        // and recreates TwoUpBookPager while BookFlipGesture Tasks are in flight.
-        .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
-            orientationTask?.cancel()
-            orientationTask = Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 300_000_000) // 300 ms — lets rotation settle
-                guard !Task.isCancelled else { return }
-                syncReadingModeToOrientation()
-            }
         }
         .onChange(of: currentIndex) { oldIndex, newIndex in
             let elapsed = Date().timeIntervalSince(pageEntryTime)
@@ -1080,16 +1066,6 @@ struct ComicReaderEngine: View {
             }
             // Phase 3: broadcast page change to any connected reading room peers
             readingRoom.broadcastPage(newIndex, totalPages: cache.pageCount)
-        }
-        // Once the archive finishes loading, honour the current orientation.
-        // syncReadingModeToOrientation() is a no-op while isLoading == true,
-        // so this catch-up call is needed for comics opened in landscape.
-        // IMPORTANT: Only fire in landscape — in portrait the user's saved
-        // readingMode preference (e.g. pageTwoUp restored from progress) is
-        // authoritative and must not be overridden.
-        .onChange(of: cache.isLoading) { _, isLoading in
-            guard !isLoading, UIDevice.current.orientation.isLandscape else { return }
-            syncReadingModeToOrientation()
         }
         .onChange(of: essentialReaderMode) { _, isSpeed in
             if isSpeed {
@@ -1119,13 +1095,11 @@ struct ComicReaderEngine: View {
         }
         .onChange(of: readingMode) { _, newMode in
             if newMode == .mangaRTL {
-                prefersRTL = true
                 if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
                     conversionManager.convertedPDFs[idx].metadata.isManga = true
                     conversionManager.saveLibrary()
                 }
             } else if newMode == .pageHorizontal {
-                prefersRTL = false
                 if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
                     conversionManager.convertedPDFs[idx].metadata.isManga = false
                     conversionManager.saveLibrary()
@@ -1217,7 +1191,7 @@ struct ComicReaderEngine: View {
             currentIndex: $currentIndex,
             cache: cache,
             activeFilterPreset: activeFilterPreset,
-            isMangaRTL: prefersRTL || pdf.metadata.isManga == true,
+            isMangaRTL: readingMode == .mangaRTL || pdf.metadata.isManga == true,
             onChromeTap: { chromeVisible.toggle() },
             onFlipPastEnd: { attemptComicSeriesContinuation() }
         )
@@ -1276,37 +1250,7 @@ struct ComicReaderEngine: View {
         }
     }
 
-    // MARK: - Orientation Helper
 
-    /// Switches between single-page and two-up based on physical device orientation.
-    /// Intentional modes (webtoon, panel navigation) are never auto-overridden.
-    private func syncReadingModeToOrientation() {
-        // Do not switch mode while the archive is still being indexed: creating
-        // TwoUpBookPager with pageCount == 0 produces an empty TabView that
-        // never recovers because spreadIdx.onChange fires before entries are loaded.
-        guard !cache.isLoading else { return }
-
-        let orientation = UIDevice.current.orientation
-        let isLandscape = orientation.isLandscape
-
-        // Respect modes the user deliberately chose — don't hijack them.
-        guard readingMode != .webtoonScroll, readingMode != .panelNavigation else { return }
-
-        withAnimation(.easeInOut(duration: 0.2)) {
-            if isLandscape {
-                // Landscape → two-page spread
-                if readingMode != .pageTwoUp {
-                    readingMode = .pageTwoUp
-                }
-            } else if orientation.isPortrait {
-                // Portrait → restore single-page (manga keeps RTL)
-                if readingMode == .pageTwoUp {
-                    readingMode = prefersRTL ? .mangaRTL : .pageHorizontal
-                }
-            }
-            // .faceUp / .faceDown / .unknown → leave mode unchanged
-        }
-    }
 
     // MARK: - Ambient Colour Extraction
 
@@ -1509,6 +1453,7 @@ struct ComicReaderEngine: View {
                 ReaderSettingsHUD(
                     readingMode: $readingMode,
                     activeFilterPreset: $activeFilterPreset,
+                    prefersTwoUpSpreads: $prefersTwoUpSpreads,
                     onDismiss: {
                         withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { showingSettingsHUD = false }
                     }
@@ -1541,7 +1486,7 @@ struct ComicReaderEngine: View {
         progress.prefersMangaMode = (readingMode == .mangaRTL)
         progress.colorFilter = activeFilterPreset.rawValue
         progress.lastCanonicalLeadIndex = currentIndex
-        progress.wasInDualPageMode = (readingMode == .pageTwoUp)
+        progress.wasInDualPageMode = prefersTwoUpSpreads
         if !progress.readingSessionDates.contains(where: { Calendar.current.isDateInToday($0) }) {
             progress.readingSessionDates.append(Date())
         }
