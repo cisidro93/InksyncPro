@@ -22,6 +22,17 @@ actor ThumbnailDaemon {
             try? fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
         }
         self.cacheDirectory = tempDir
+
+        // Listen to memory warnings to clear cache dynamically and protect low-end devices
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.didReceiveMemoryWarningNotification,
+            object: nil,
+            queue: nil
+        ) { _ in
+            Task {
+                await ThumbnailDaemon.shared.clearMemoryCache()
+            }
+        }
     }
     
     /// Starts a low-priority background crawl to extract missing thumbnails for a given list of PDFs.
@@ -123,5 +134,11 @@ actor ThumbnailDaemon {
         memoryCache.removeValue(forKey: pdfID)
         let cachedURL = cacheDirectory.appendingPathComponent("\(pdfID.uuidString).webp")
         try? FileManager.default.removeItem(at: cachedURL)
+    }
+
+    /// Clear all thumbnails currently held in memory to reclaim system resources.
+    func clearMemoryCache() {
+        memoryCache.removeAll()
+        Logger.shared.log("ThumbnailDaemon: Purged in-memory cache due to memory pressure", category: "System")
     }
 }

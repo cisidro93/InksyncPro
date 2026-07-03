@@ -885,6 +885,65 @@ struct ComicReaderEngine: View {
         guard readingMode == .pageHorizontal || readingMode == .mangaRTL || readingMode == .pageSlide || readingMode == .pageFade else { return false }
         return size.width > size.height
     }
+
+    private var isCurrentlyTwoUp: Bool {
+        guard prefersTwoUpSpreads else { return false }
+        guard readingMode == .pageHorizontal || readingMode == .mangaRTL || readingMode == .pageSlide || readingMode == .pageFade else { return false }
+        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
+            return windowScene.interfaceOrientation.isLandscape
+        }
+        return false
+    }
+
+    private func computeSpreads() -> [[Int]] {
+        var allSpreads: [[Int]] = []
+        let landscapeArray = cache.isLandscapeArray
+
+        guard landscapeArray.count == cache.pageCount else {
+            // Fallback while scanning is in progress
+            if cache.pageCount > 1 {
+                allSpreads.append([0]) // Page 0 is the cover, keep it solo
+                var i = 1
+                while i < cache.pageCount {
+                    if i + 1 < cache.pageCount {
+                        allSpreads.append([i, i + 1])
+                        i += 2
+                    } else {
+                        allSpreads.append([i])
+                        i += 1
+                    }
+                }
+            } else {
+                allSpreads.append([0])
+            }
+            return allSpreads
+        }
+
+        allSpreads.append([0]) // Page 0 is the cover, keep it solo
+        var i = 1
+        while i < cache.pageCount {
+            let isL = landscapeArray[i]
+            if isL {
+                allSpreads.append([i])
+                i += 1
+            } else {
+                if i + 1 < cache.pageCount {
+                    let nextIsL = landscapeArray[i + 1]
+                    if nextIsL {
+                        allSpreads.append([i])
+                        i += 1
+                    } else {
+                        allSpreads.append([i, i + 1])
+                        i += 2
+                    }
+                } else {
+                    allSpreads.append([i])
+                    i += 1
+                }
+            }
+        }
+        return allSpreads
+    }
     
     init(pdf: ConvertedPDF, onDismiss: @escaping () -> Void, allBooks: [ConvertedPDF] = []) {
         self.pdf = pdf
@@ -1201,16 +1260,48 @@ struct ComicReaderEngine: View {
     // MARK: - Navigation helpers
     
     private func nextPage() {
-        if currentIndex < cache.pageCount - 1 {
-            currentIndex += 1
+        if isCurrentlyTwoUp {
+            let spreads = computeSpreads()
+            if let currentSpreadIdx = spreads.firstIndex(where: { $0.contains(currentIndex) }) {
+                let nextSpreadIdx = currentSpreadIdx + 1
+                if nextSpreadIdx < spreads.count {
+                    currentIndex = spreads[nextSpreadIdx].first ?? currentIndex
+                } else {
+                    attemptComicSeriesContinuation()
+                }
+            } else {
+                if currentIndex < cache.pageCount - 1 {
+                    currentIndex += 1
+                } else {
+                    attemptComicSeriesContinuation()
+                }
+            }
         } else {
-            attemptComicSeriesContinuation()
+            if currentIndex < cache.pageCount - 1 {
+                currentIndex += 1
+            } else {
+                attemptComicSeriesContinuation()
+            }
         }
     }
 
     private func prevPage() {
-        if currentIndex > 0 {
-            currentIndex -= 1
+        if isCurrentlyTwoUp {
+            let spreads = computeSpreads()
+            if let currentSpreadIdx = spreads.firstIndex(where: { $0.contains(currentIndex) }) {
+                let prevSpreadIdx = currentSpreadIdx - 1
+                if prevSpreadIdx >= 0 {
+                    currentIndex = spreads[prevSpreadIdx].first ?? currentIndex
+                }
+            } else {
+                if currentIndex > 0 {
+                    currentIndex -= 1
+                }
+            }
+        } else {
+            if currentIndex > 0 {
+                currentIndex -= 1
+            }
         }
     }
 
