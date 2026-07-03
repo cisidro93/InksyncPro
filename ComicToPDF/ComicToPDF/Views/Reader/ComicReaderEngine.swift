@@ -1881,37 +1881,28 @@ struct ComicPageView: View {
                             .offset(offset)
                             .position(x: geo.size.width / 2, y: geo.size.height / 2)
                             .gesture(
-                                SimultaneousGesture(
-                                    MagnificationGesture()
-                                        .onChanged { val in
-                                            let nextScale = lastScale * val
-                                            currentScale = min(max(1.0, nextScale), 6.0)
-                                        }
-                                        .onEnded { _ in
-                                            lastScale = currentScale
-                                            validateAndClampOffset(containerSize: geo.size, renderedSize: rendered)
-                                        },
-                                    DragGesture()
-                                        .onChanged { val in
-                                            if currentScale > 1.0 {
-                                                offset = CGSize(
-                                                    width: lastOffset.width + val.translation.width,
-                                                    height: lastOffset.height + val.translation.height
-                                                )
-                                            }
-                                        }
-                                        .onEnded { _ in
-                                            if currentScale > 1.0 {
-                                                lastOffset = offset
-                                                validateAndClampOffset(containerSize: geo.size, renderedSize: rendered)
-                                            } else {
-                                                withAnimation(.spring()) {
-                                                    offset = .zero
-                                                    lastOffset = .zero
-                                                }
-                                            }
-                                        }
-                                )
+                                MagnificationGesture()
+                                    .onChanged { val in
+                                        let nextScale = lastScale * val
+                                        currentScale = min(max(1.0, nextScale), 6.0)
+                                    }
+                                    .onEnded { _ in
+                                        lastScale = currentScale
+                                        validateAndClampOffset(containerSize: geo.size, renderedSize: rendered)
+                                    }
+                            )
+                            .dragGestureOnlyIfZoomed(
+                                currentScale: currentScale,
+                                onChanged: { val in
+                                    offset = CGSize(
+                                        width: lastOffset.width + val.translation.width,
+                                        height: lastOffset.height + val.translation.height
+                                    )
+                                },
+                                onEnded: { _ in
+                                    lastOffset = offset
+                                    validateAndClampOffset(containerSize: geo.size, renderedSize: rendered)
+                                }
                             )
                             .onTapGesture(count: 2) { loc in
                                 withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
@@ -2428,4 +2419,24 @@ class UIKeyCommandViewController: UIViewController {
         coordinator?.handleKeyCommand(sender)
     }
 }
+
+extension View {
+    @ViewBuilder
+    func dragGestureOnlyIfZoomed(
+        currentScale: CGFloat,
+        onChanged: @escaping (DragGesture.Value) -> Void,
+        onEnded: @escaping (DragGesture.Value) -> Void
+    ) -> some View {
+        if currentScale > 1.0 {
+            self.gesture(
+                DragGesture()
+                    .onChanged(onChanged)
+                    .onEnded(onEnded)
+            )
+        } else {
+            self
+        }
+    }
+}
+
 
