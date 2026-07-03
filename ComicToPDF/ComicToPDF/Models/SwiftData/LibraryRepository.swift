@@ -7,7 +7,16 @@ actor LibraryModelActor {
     
     /// Fetches all documents, re-anchors sandboxed paths, and prunes orphaned metadata (annotations, collections, memories).
     /// Returns Sendable ConvertedPDF structs to safely cross the actor boundary.
-    func fetchAllDocuments() throws -> [ConvertedPDF] {
+    /// Fast fetch of documents without heavy file checks or self-healing.
+    func fetchDocumentsFast() throws -> [ConvertedPDF] {
+        let descriptor = FetchDescriptor<SDConvertedPDF>()
+        let documents = try modelContext.fetch(descriptor)
+        return documents.map { $0.toDTO() }
+    }
+
+    /// Runs all slow file-check, re-anchoring, self-healing, cascade-delete, and other cleaning logic.
+    /// Returns true if any database modifications were saved.
+    func performSelfHealingAndCleanup() throws -> Bool {
         let descriptor = FetchDescriptor<SDConvertedPDF>()
         let documents = try modelContext.fetch(descriptor)
         
@@ -124,7 +133,7 @@ actor LibraryModelActor {
                 didUpdate = true
             }
         }
-
+        
         // ── One-time self-healing pass for series names and content type classification ──
         for doc in validDocs {
             // 1. Strip leading sequential prefixes from series name
@@ -201,7 +210,11 @@ actor LibraryModelActor {
             UserDefaults.standard.set(currentSandboxPath, forKey: "lastSandboxDocumentsPath")
         }
         
-        return validDocs.map { $0.toDTO() }
+        return didUpdate
+    }
+
+    func fetchAllDocuments() throws -> [ConvertedPDF] {
+        try fetchDocumentsFast()
     }
     
     /// Fetches all collection series shells as Sendable DTO structs.
@@ -324,11 +337,16 @@ final class LibraryRepository: Sendable {
         self.actor = LibraryModelActor(modelContainer: container)
     }
     
-    /// Asynchronously fetches all library items and collections from SwiftData background context.
+    /// Asynchronously fetches all library items and collections from SwiftData background context using fast loading.
     func loadLibrary() async throws -> ([ConvertedPDF], [PDFCollection]) {
-        let pdfs = try await actor.fetchAllDocuments()
+        let pdfs = try await actor.fetchDocumentsFast()
         let cols = try await actor.fetchAllCollections()
         return (pdfs, cols)
+    }
+    
+    /// Runs all slow file-check, re-anchoring, self-healing, cascade-delete, and other cleaning logic in the background.
+    func performSelfHealingAndCleanup() async throws -> Bool {
+        try await actor.performSelfHealingAndCleanup()
     }
     
     /// Runs direct background batch insertion for newly imported items.
