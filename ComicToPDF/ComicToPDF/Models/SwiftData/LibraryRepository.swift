@@ -179,17 +179,9 @@ actor LibraryModelActor {
             }
         }
         
-        // ── Prune orphaned SDPDFCollection series shells ─────────────────────
-        let survivingCollectionIDs = Set(validDocs.compactMap { $0.collectionId })
-        var validCols: [SDPDFCollection] = []
-        for col in sdCols {
-            if survivingCollectionIDs.contains(col.id) {
-                validCols.append(col)
-            } else {
-                modelContext.delete(col)
-                didUpdate = true
-            }
-        }
+        // ── Keep empty/manually created collections valid ─────────────────────
+        // We preserve all existing collections in the database.
+        let validCols = sdCols
         
         // ── Prune orphaned SDSeriesMemory records ─────────────────────────
         let liveSeriesNames = Set(validCols.map { $0.name.lowercased().trimmingCharacters(in: .whitespaces) })
