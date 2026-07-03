@@ -1772,6 +1772,9 @@ struct WebtoonImageCell: View {
                 }
             }
         }
+        .onDisappear {
+            image = nil
+        }
         .onReceive(NotificationCenter.default.publisher(for: .comicImageCacheImageLoaded)) { notification in
             guard let userInfo = notification.userInfo,
                   let loadedIndex = userInfo["index"] as? Int,
