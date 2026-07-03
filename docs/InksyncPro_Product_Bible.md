@@ -54,9 +54,9 @@ The user experience philosophy: **the app should feel like a beautifully crafted
 - **Reading Mode Quick Picker:** A bottom-anchored frosted capsule that pops up on swipe-up gestures when the chrome is hidden, letting users instantly switch and persist per-book layouts:
   - *Normal* (Horizontal LTR page turns)
   - *Manga* (Native RTL reading and tracking)
-  - *Webtoon* (Continuous vertical scrolling with page redraw isolation)
+  - *Webtoon* (Continuous vertical scrolling with page redraw isolation and **off-screen image disposal via `.onDisappear` cell recycling** to keep memory consumption at an active $O(1)$ footprint)
 
-- **Panel Navigation (Guided View):** Intelligent, Vision-framework-powered panel detection (`EnsemblePanelDetector`). Provides a curated, panel-by-panel guided reading experience with graceful fallbacks and frosted HUD overlays.
+- **Panel Navigation (Guided View):** Intelligent, Vision-framework-powered panel detection (`EnsemblePanelDetector`). Provides a curated, panel-by-panel guided reading experience with graceful fallbacks and frosted HUD overlays. **Pure-Text Safety:** If a page contains a high concentration of text blocks (15+) and no detected structural rectangles, it is classified as a pure text/index page and panel segmentation is skipped, allowing it to be read intact as a full-page spread.
 
 - **Manga Native:** Fully supports right-to-left orientation and specifically tracks books requiring this mode.
 
@@ -123,7 +123,7 @@ img { display: block; width: 100%; height: 100%; }
 
 - **Color Space Safety:** `UIGraphicsImageRenderer` output **must** be forced to `.standard` (sRGB) color space. Exporting badged covers or merged graphics in wide-gamut (P3) color spaces will silently crash E-Ink devices upon loading.
 
-- **Hardware Grayscale & Dithering:** Strips color saturation and applies a 15% contrast boost via `CIColorControls` to enhance text legibility, combined with `CIColorPosterize` 16-level ordered dithering to match Kindle and e-reader panels.
+- **Hardware Grayscale & Dithering:** Strips color saturation and applies a 15% contrast boost via `CIColorControls` to enhance text legibility, combined with a **high-quality sequential Floyd-Steinberg error diffusion algorithm** to produce smooth 16-level grayscale transitions on E-Ink panels and prevent harsh gray banding.
 
 ---
 
@@ -136,8 +136,9 @@ All import operations follow a strict sequence:
 1. **Security Scope:** `url.startAccessingSecurityScopedResource()` called *before* any file operation. Scope is held open for the full duration of extraction and released immediately after.
 2. **Background Extraction:** All archive extraction (ZIP via ZIPFoundation, RAR via libunrar) runs on `DispatchQueue.global(qos: .userInitiated)` via `withCheckedThrowingContinuation` — never on the Swift cooperative thread pool or the main actor.
 3. **Temp Directory Lifecycle:** Every temp directory created during import or conversion is tracked and removed with `defer { try? fileManager.removeItem(at: tempDir) }` regardless of success or failure. Per-entry temp files use UUID names to prevent cross-file data corruption.
-4. **Atomic Writes:** Final output files are written atomically. On EPUB rebuild, the new archive is built in a temp path and swapped with `FileManager.moveItem` — never written directly over the live file.
-5. **Library Scan:** `scanLibrary()` is called on `@MainActor` after all copy/import tasks complete.
+4. **Automatic Disk Capacity Safeguards:** Monitors system free space dynamically during launches, low memory warnings, and conversion operations. If available storage falls below 1.0 GB, `SandboxCleanupManager` automatically purges orphaned temp files and import cache folders to reclaim disk space.
+5. **Atomic Writes:** Final output files are written atomically. On EPUB rebuild, the new archive is built in a temp path and swapped with `FileManager.moveItem` — never written directly over the live file.
+6. **Library Scan:** `scanLibrary()` is called on `@MainActor` after all copy/import tasks complete.
 
 #### 4.2 Supported Formats
 
