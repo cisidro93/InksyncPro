@@ -433,6 +433,7 @@ final class PDFToEPUBConverter: Sendable {
                 <meta name="original-resolution" content="1000x1500"/>
                 <meta name="orientation-lock" content="none"/>
                 <meta name="book-type" content="comic"/>
+                <meta name="cdetype" content="pdoc"/>
                 <!-- Suppresses "Learning reading speed" — signals image-based content to Kindle firmware -->
                 <meta name="amzn:kindle:book-type" content="image-based"/>
                 <meta name="zero-gutter" content="true"/>
