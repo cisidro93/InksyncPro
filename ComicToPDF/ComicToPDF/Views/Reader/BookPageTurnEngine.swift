@@ -470,8 +470,8 @@ struct TwoUpBookPager: View {
         let pages = sIdx < currentSpreads.count ? currentSpreads[sIdx] : [0]
         
         GeometryReader { geo in
-            if pages.count == 1 && isLandscapePage(pages[0]) {
-                // Native landscape — fills the full frame solo
+            if pages.count == 1 {
+                // Solo page (e.g. cover page 0, native landscape pages, or last odd page) — centered in the full frame
                 TwoUpPageCell(index: pages[0], cache: cache, activeFilterPreset: activeFilterPreset, alignment: .center)
                     .frame(width: geo.size.width, height: geo.size.height)
             } else if isMangaRTL {

@@ -1017,10 +1017,10 @@ struct ComicReaderEngine: View {
                    let filterPreset = ReadingFilterPreset(rawValue: filterString) {
                     activeFilterPreset = filterPreset
                 }
-                if let prefersManga = saved.prefersMangaMode, prefersManga {
-                    readingMode = .mangaRTL
+                if let prefersManga = saved.prefersMangaMode {
+                    readingMode = prefersManga ? .mangaRTL : .pageHorizontal
                 } else {
-                    readingMode = .pageHorizontal
+                    readingMode = isMangaComic ? .mangaRTL : .pageHorizontal
                 }
                 if let wasDual = saved.wasInDualPageMode {
                     prefersTwoUpSpreads = wasDual
