@@ -5,6 +5,7 @@ import ImageIO
 
 extension Notification.Name {
     static let comicImageCacheImageLoaded = Notification.Name("InksyncPro.ComicImageCache.imageLoaded")
+    static let readerZoomStateChanged = Notification.Name("InksyncPro.ComicReader.zoomStateChanged")
 }
 
 extension View {
@@ -1993,6 +1994,17 @@ struct ComicPageView: View {
         }
         .onChange(of: isAutoCropEnabled) { _, _ in
             updateDisplayImage()
+        }
+        .onChange(of: currentScale) { oldScale, newScale in
+            let wasZoomed = oldScale > 1.0
+            let isZoomed = newScale > 1.0
+            if wasZoomed != isZoomed {
+                NotificationCenter.default.post(
+                    name: .readerZoomStateChanged,
+                    object: nil,
+                    userInfo: ["isZoomed": isZoomed]
+                )
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .comicImageCacheImageLoaded)) { notification in
             guard let userInfo = notification.userInfo,
