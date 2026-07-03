@@ -57,6 +57,18 @@ final class ComicImageCache: ObservableObject {
     private let fetchingQueueLock = NSLock()
     private var fetchingQueue: Set<Int> = [] // Track pending extractions
     
+    private var lastRequestedIndex: Int = 0
+    private var readingDirection: Int = 1 // 1 for forward, -1 for backward
+    private var inFlightPrefetchTasks: [Int: Task<Void, Never>] = [:]
+    
+    private func storePrefetchTask(_ task: Task<Void, Never>, for index: Int) {
+        inFlightPrefetchTasks[index] = task
+    }
+    
+    private func removePrefetchTask(_ index: Int) {
+        inFlightPrefetchTasks.removeValue(forKey: index)
+    }
+    
     private func isFetching(_ index: Int) -> Bool {
         fetchingQueueLock.lock()
         defer { fetchingQueueLock.unlock() }
@@ -474,6 +486,11 @@ final class ComicImageCache: ObservableObject {
     func getImage(at index: Int) -> UIImage? {
         guard index >= 0 && index < pageCount else { return nil }
         
+        if index != lastRequestedIndex {
+            readingDirection = index > lastRequestedIndex ? 1 : -1
+            lastRequestedIndex = index
+        }
+        
         if let cachedImage = cache.object(forKey: NSNumber(value: index)) {
             updateLRUOnMain(index)
             return cachedImage
@@ -516,7 +533,7 @@ final class ComicImageCache: ObservableObject {
         let bounds = UIScreen.main.bounds
         let scale = UIScreen.main.scale
         
-        Task.detached(priority: priority) { [weak self] in
+        let task = Task.detached(priority: priority) { [weak self] in
             guard let self = self else { return }
             
             // Resolve external bookmark for linked files if needed
@@ -533,6 +550,14 @@ final class ComicImageCache: ObservableObject {
             
             defer {
                 accessedURL?.stopAccessingSecurityScopedResource()
+            }
+            
+            guard !Task.isCancelled else {
+                await MainActor.run { [weak self] in
+                    self?.stopFetching(index)
+                    self?.removePrefetchTask(index)
+                }
+                return
             }
             
             let img: UIImage?
@@ -576,7 +601,10 @@ final class ComicImageCache: ObservableObject {
                 }
             } else {
                 guard let archive = try? Archive(url: resolvedURL, accessMode: .read, pathEncoding: .utf8) else {
-                    await MainActor.run { self.stopFetching(index) }
+                    await MainActor.run {
+                        self.stopFetching(index)
+                        self.removePrefetchTask(index)
+                    }
                     return
                 }
                 let imageExtensions: Set<String> = ["jpg", "jpeg", "png", "webp", "gif", "heic"]
@@ -617,6 +645,14 @@ final class ComicImageCache: ObservableObject {
                 }
             }
             
+            guard !Task.isCancelled else {
+                await MainActor.run { [weak self] in
+                    self?.stopFetching(index)
+                    self?.removePrefetchTask(index)
+                }
+                return
+            }
+            
             if let img {
                 await MainActor.run { [weak self] in
                     guard let self = self else { return }
@@ -625,6 +661,7 @@ final class ComicImageCache: ObservableObject {
                     self.cache.setObject(img, forKey: NSNumber(value: index), cost: cost)
                     self.stopFetching(index)
                     self.updateLRUOnMain(index)
+                    self.removePrefetchTask(index)
                     NotificationCenter.default.post(
                         name: .comicImageCacheImageLoaded,
                         object: self,
@@ -634,9 +671,12 @@ final class ComicImageCache: ObservableObject {
             } else {
                 await MainActor.run { [weak self] in
                     self?.stopFetching(index)
+                    self?.removePrefetchTask(index)
                 }
             }
         }
+        
+        storePrefetchTask(task, for: index)
     }
     
     private func fetchLocalImageAsync(at index: Int, priority: TaskPriority = .userInitiated) {
@@ -650,7 +690,7 @@ final class ComicImageCache: ObservableObject {
         let bounds = UIScreen.main.bounds
         let scale = UIScreen.main.scale
         
-        Task.detached(priority: priority) { [weak self] in
+        let task = Task.detached(priority: priority) { [weak self] in
             guard let self = self else { return }
             
             let img = await ComicImageCache.extractOrRenderImageBackground(
@@ -664,6 +704,14 @@ final class ComicImageCache: ObservableObject {
                 scale: scale
             )
             
+            guard !Task.isCancelled else {
+                await MainActor.run { [weak self] in
+                    self?.stopFetching(index)
+                    self?.removePrefetchTask(index)
+                }
+                return
+            }
+            
             if let img {
                 await MainActor.run { [weak self] in
                     guard let self = self else { return }
@@ -672,6 +720,7 @@ final class ComicImageCache: ObservableObject {
                     self.cache.setObject(img, forKey: NSNumber(value: index), cost: cost)
                     self.stopFetching(index)
                     self.updateLRUOnMain(index)
+                    self.removePrefetchTask(index)
                     NotificationCenter.default.post(
                         name: .comicImageCacheImageLoaded,
                         object: self,
@@ -681,9 +730,12 @@ final class ComicImageCache: ObservableObject {
             } else {
                 await MainActor.run { [weak self] in
                     self?.stopFetching(index)
+                    self?.removePrefetchTask(index)
                 }
             }
         }
+        
+        storePrefetchTask(task, for: index)
     }
     
     private func updateLRUOnMain(_ index: Int) {
@@ -761,9 +813,46 @@ final class ComicImageCache: ObservableObject {
     }
     
     private func prefetchSurrounding(index: Int) {
-        let range = max(0, index - prefetchLimit)...min(pageCount - 1, index + prefetchLimit)
-        for i in range {
-            if i == index { continue }
+        let direction = readingDirection
+        let cacheCap = maxCacheSize
+        
+        // Define prefetch window based on cache capability and direction
+        var prefetchIndices: Set<Int> = []
+        if cacheCap >= 7 {
+            // High memory headroom: Prefetch 4 ahead, 2 behind
+            if direction >= 0 {
+                prefetchIndices = [index + 1, index + 2, index + 3, index + 4, index - 1, index - 2]
+            } else {
+                prefetchIndices = [index - 1, index - 2, index - 3, index - 4, index + 1, index + 2]
+            }
+        } else if cacheCap >= 5 {
+            // Medium headroom: Prefetch 3 ahead, 1 behind
+            if direction >= 0 {
+                prefetchIndices = [index + 1, index + 2, index + 3, index - 1]
+            } else {
+                prefetchIndices = [index - 1, index - 2, index - 3, index + 1]
+            }
+        } else {
+            // Low headroom: Prefetch 2 ahead
+            if direction >= 0 {
+                prefetchIndices = [index + 1, index + 2]
+            } else {
+                prefetchIndices = [index - 1, index - 2]
+            }
+        }
+        
+        // Cancel tasks that are no longer in the active prefetch window
+        for (idx, task) in inFlightPrefetchTasks {
+            if !prefetchIndices.contains(idx) && idx != index {
+                task.cancel()
+                inFlightPrefetchTasks.removeValue(forKey: idx)
+                stopFetching(idx)
+            }
+        }
+        
+        // Filter out of bounds and trigger prefetch
+        for i in prefetchIndices {
+            guard i >= 0 && i < pageCount else { continue }
             if self.cache.object(forKey: NSNumber(value: i)) == nil && !self.isFetching(i) {
                 if isStream {
                     fetchCloudPageImage(at: i, priority: .utility)
@@ -784,12 +873,24 @@ final class ComicImageCache: ObservableObject {
         let scale = UIScreen.main.scale
         let maxPixelSize = max(bounds.width, bounds.height) * scale
 
-        Task.detached(priority: priority) { [weak self] in
+        let task = Task.detached(priority: priority) { [weak self] in
             guard let self else { return }
             do {
                 let data = try await ZipCentralDirectory.fetchEntryData(entry: entry, manifest: manifest)
+                
+                guard !Task.isCancelled else {
+                    await MainActor.run { [weak self] in
+                        self?.stopFetching(index)
+                        self?.removePrefetchTask(index)
+                    }
+                    return
+                }
+                
                 guard let image = Self.decodeImageData(data, maxPixelSize: maxPixelSize) else {
-                    await MainActor.run { [weak self] in self?.stopFetching(index) }
+                    await MainActor.run { [weak self] in
+                        self?.stopFetching(index)
+                        self?.removePrefetchTask(index)
+                    }
                     return
                 }
                 
@@ -800,6 +901,7 @@ final class ComicImageCache: ObservableObject {
                     self.cache.setObject(image, forKey: NSNumber(value: index), cost: cost)
                     self.stopFetching(index)
                     self.updateLRUOnMain(index)
+                    self.removePrefetchTask(index)
                     NotificationCenter.default.post(
                         name: .comicImageCacheImageLoaded,
                         object: self,
@@ -809,9 +911,12 @@ final class ComicImageCache: ObservableObject {
             } catch {
                 await MainActor.run { [weak self] in
                     self?.stopFetching(index)
+                    self?.removePrefetchTask(index)
                 }
             }
         }
+        
+        storePrefetchTask(task, for: index)
     }
 
     private static nonisolated func decodeImageData(_ data: Data, maxPixelSize: CGFloat) -> UIImage? {
