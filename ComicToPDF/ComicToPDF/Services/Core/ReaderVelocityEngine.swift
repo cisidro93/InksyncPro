@@ -6,6 +6,12 @@ import Combine
 class ReaderVelocityEngine: ObservableObject {
     @Published var estimatedTimeRemaining: String = "Learning speed..."
     
+    var averageDuration: Double? {
+        guard pageDurations.count >= minRequiredSamples else { return nil }
+        let sum = pageDurations.reduce(0.0, +)
+        return sum / Double(pageDurations.count)
+    }
+    
     private var pageDurations: [Double] = []
     private let maxSamples = 15
     private let minValidDuration: Double = 2.0   // Ignore page-flips < 2s

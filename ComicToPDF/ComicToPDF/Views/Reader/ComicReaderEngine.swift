@@ -60,6 +60,7 @@ final class ComicImageCache: ObservableObject {
     private var lastRequestedIndex: Int = 0
     private var readingDirection: Int = 1 // 1 for forward, -1 for backward
     private var inFlightPrefetchTasks: [Int: Task<Void, Never>] = [:]
+    private var averageSecondsPerPage: Double = 8.0
     
     private func storePrefetchTask(_ task: Task<Void, Never>, for index: Int) {
         inFlightPrefetchTasks[index] = task
@@ -67,6 +68,10 @@ final class ComicImageCache: ObservableObject {
     
     private func removePrefetchTask(_ index: Int) {
         inFlightPrefetchTasks.removeValue(forKey: index)
+    }
+    
+    func updateReadingVelocity(secondsPerPage: Double) {
+        self.averageSecondsPerPage = secondsPerPage
     }
     
     private func isFetching(_ index: Int) -> Bool {
@@ -816,28 +821,40 @@ final class ComicImageCache: ObservableObject {
         let direction = readingDirection
         let cacheCap = maxCacheSize
         
-        // Define prefetch window based on cache capability and direction
+        // Dynamic look-ahead factor based on reading velocity
+        let velocityAheadFactor: Int
+        if averageSecondsPerPage < 4.0 {
+            velocityAheadFactor = 2 // Skimming fast: prefetch 2 extra pages ahead
+        } else if averageSecondsPerPage > 15.0 {
+            velocityAheadFactor = -1 // Reading slow: prefetch 1 fewer page ahead
+        } else {
+            velocityAheadFactor = 0
+        }
+        
+        // Base prefetch sizes based on memory capacity
+        let baseAhead = cacheCap >= 7 ? 4 : (cacheCap >= 5 ? 3 : 2)
+        let baseBehind = cacheCap >= 7 ? 2 : (cacheCap >= 5 ? 1 : 0)
+        
+        // Final bounds clamped safely
+        let targetAhead = max(2, min(8, baseAhead + velocityAheadFactor))
+        let targetBehind = baseBehind
+        
         var prefetchIndices: Set<Int> = []
-        if cacheCap >= 7 {
-            // High memory headroom: Prefetch 4 ahead, 2 behind
-            if direction >= 0 {
-                prefetchIndices = [index + 1, index + 2, index + 3, index + 4, index - 1, index - 2]
-            } else {
-                prefetchIndices = [index - 1, index - 2, index - 3, index - 4, index + 1, index + 2]
+        if direction >= 0 {
+            // Forward movement
+            for i in 1...targetAhead {
+                prefetchIndices.insert(index + i)
             }
-        } else if cacheCap >= 5 {
-            // Medium headroom: Prefetch 3 ahead, 1 behind
-            if direction >= 0 {
-                prefetchIndices = [index + 1, index + 2, index + 3, index - 1]
-            } else {
-                prefetchIndices = [index - 1, index - 2, index - 3, index + 1]
+            for i in 1...targetBehind where targetBehind > 0 {
+                prefetchIndices.insert(index - i)
             }
         } else {
-            // Low headroom: Prefetch 2 ahead
-            if direction >= 0 {
-                prefetchIndices = [index + 1, index + 2]
-            } else {
-                prefetchIndices = [index - 1, index - 2]
+            // Backward movement
+            for i in 1...targetAhead {
+                prefetchIndices.insert(index - i)
+            }
+            for i in 1...targetBehind where targetBehind > 0 {
+                prefetchIndices.insert(index + i)
             }
         }
         
@@ -1220,6 +1237,9 @@ struct ComicReaderEngine: View {
                 maxPageIndexVisited = newIndex
                 let remainingPages = max(0, cache.pageCount - 1 - newIndex)
                 velocityEngine.recordPageDuration(elapsed, remainingPages: remainingPages)
+            }
+            if let avgSpeed = velocityEngine.averageDuration {
+                cache.updateReadingVelocity(secondsPerPage: avgSpeed)
             }
             NotificationCenter.default.post(name: NSNotification.Name("Reader_ForceKeyFocus"), object: nil)
 
