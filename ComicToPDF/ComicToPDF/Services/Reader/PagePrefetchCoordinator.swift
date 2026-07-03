@@ -160,21 +160,14 @@ public actor PagePrefetchCoordinator {
                 return cgImage
             }.value
             
-        case .archive(let url, let entries):
+                case .archive(let url, let entries):
             guard index < entries.count else { return nil }
             let entryPath = entries[index]
-            return await Task.detached(priority: .userInitiated) {
-                var cgImage: CGImage? = nil
-                autoreleasepool {
-                    do {
-                        // ZIPFoundation Archive operations
-                        let archive = try ZIPFoundation.Archive(url: url, accessMode: .read)
-                        guard let entry = archive[entryPath] else { return }
-                        var data = Data()
-                        _ = try archive.extract(entry) { chunk in
-                            data.append(chunk)
-                        }
-                        
+            do {
+                let data = try await ArchiveManager.shared.extractEntry(from: url, path: entryPath)
+                return await Task.detached(priority: .userInitiated) {
+                    var cgImage: CGImage? = nil
+                    autoreleasepool {
                         if let source = CGImageSourceCreateWithData(data as CFData, nil) {
                             let maxDim = max(targetSize.width, targetSize.height) * scale
                             let options: [CFString: Any] = [
@@ -185,12 +178,13 @@ public actor PagePrefetchCoordinator {
                             ]
                             cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
                         }
-                    } catch {
-                        Logger.shared.log("Direct ZIP prefetch decompression failed for entry \(entryPath): \(error.localizedDescription)", category: "Prefetch", type: .error)
                     }
-                }
-                return cgImage
-            }.value
+                    return cgImage
+                }.value
+            } catch {
+                Logger.shared.log("Direct ZIP prefetch decompression failed for entry \(entryPath): \(error.localizedDescription)", category: "Prefetch", type: .error)
+                return nil
+            }
         }
     }
     
