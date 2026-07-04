@@ -818,6 +818,9 @@ actor ImportOrchestrator {
         let fileName = url.deletingPathExtension().lastPathComponent
         await MainActor.run { manager.processingStatus = "Importing \(fileName)..." }
         
+        let accessing = url.startAccessingSecurityScopedResource()
+        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+        
         do {
             let tempPDFURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".pdf")
             try FileManager.default.copyItem(at: url, to: tempPDFURL)

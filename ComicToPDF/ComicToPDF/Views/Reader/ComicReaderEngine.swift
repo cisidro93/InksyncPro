@@ -390,6 +390,9 @@ final class ComicImageCache: ObservableObject {
             var array = Array(repeating: false, count: total)
             
             if isPDF, let resolved = resolvedURL {
+                let accessing = resolved.startAccessingSecurityScopedResource()
+                defer { if accessing { resolved.stopAccessingSecurityScopedResource() } }
+                
                 if let doc = PDFDocument(url: resolved) {
                     for i in 0..<min(total, doc.pageCount) {
                         if let page = doc.page(at: i) {
@@ -422,12 +425,19 @@ final class ComicImageCache: ObservableObject {
                         let pageInfo = resolvedPages[i]
                         group.addTask {
                             let fileURL: URL
+                            let isLinked: Bool
                             if case .linked(let bm) = pageInfo.sourceMode,
                                let url = try? BookmarkResolver.shared.resolve(bm) {
                                 fileURL = url
+                                isLinked = true
                             } else {
                                 fileURL = pageInfo.url
+                                isLinked = false
                             }
+                            
+                            let accessing = isLinked ? fileURL.startAccessingSecurityScopedResource() : false
+                            defer { if accessing { fileURL.stopAccessingSecurityScopedResource() } }
+                            
                             let fileExt = fileURL.pathExtension.lowercased()
                             
                             if fileExt == "pdf" {

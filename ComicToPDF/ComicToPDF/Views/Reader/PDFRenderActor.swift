@@ -8,9 +8,9 @@ actor PDFRenderActor {
     
     private init() {}
     
-    
     private var currentDocument: PDFDocument?
     private var currentURL: URL?
+    private var accessingResource = false
     
     /// Loads a PDF document thread-safely. Returns page count.
     func loadDocument(at url: URL) -> Int {
@@ -18,16 +18,24 @@ actor PDFRenderActor {
             return doc.pageCount
         }
         
+        if accessingResource, let oldURL = currentURL {
+            oldURL.stopAccessingSecurityScopedResource()
+            accessingResource = false
+        }
+        
         Logger.shared.log("Loading PDF document from \(url.lastPathComponent)", category: "PDFRenderActor", type: .info)
         
+        let accessing = url.startAccessingSecurityScopedResource()
         let doc = PDFDocument(url: url)
         guard let doc = doc else {
+            if accessing { url.stopAccessingSecurityScopedResource() }
             Logger.shared.log("Failed to load PDF document from \(url.lastPathComponent). Corrupt or inaccessible file.", category: "PDFRenderActor", type: .error)
             return 0
         }
         
         self.currentDocument = doc
         self.currentURL = url
+        self.accessingResource = accessing
         Logger.shared.log("Successfully loaded PDF with \(doc.pageCount) pages.", category: "PDFRenderActor", type: .success)
         return doc.pageCount
     }
@@ -71,8 +79,12 @@ actor PDFRenderActor {
     func clear() {
         if let url = currentURL {
             Logger.shared.log("Releasing PDF document resource for \(url.lastPathComponent)", category: "PDFRenderActor", type: .info)
+            if accessingResource {
+                url.stopAccessingSecurityScopedResource()
+            }
         }
         self.currentDocument = nil
         self.currentURL = nil
+        self.accessingResource = false
     }
 }

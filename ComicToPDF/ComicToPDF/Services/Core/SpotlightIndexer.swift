@@ -193,6 +193,9 @@ final class SpotlightIndexer {
         let series = pdf.metadata.series
         
         Task.detached(priority: .background) {
+            let accessing = url.startAccessingSecurityScopedResource()
+            defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+            
             // Check if file is a local PDF and exists
             guard url.isFileURL, FileManager.default.fileExists(atPath: url.path) else { return }
             

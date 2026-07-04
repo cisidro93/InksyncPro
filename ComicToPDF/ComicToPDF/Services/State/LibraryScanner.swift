@@ -218,17 +218,15 @@ actor LibraryScanner {
         // ── Deduplication & ghost-file pruning ───────────────────────────────
         let allPDFs = await MainActor.run { manager.convertedPDFs }
         
-        var uniquePDFs: [ConvertedPDF] = []
         var seenPaths = Set<String>()
         var missingIDs = Set<UUID>()
-        
-        var didRepairURLs = false
+        var repairedURLs: [UUID: URL] = [:]
 
         // PERF D-M1: yield every 50 files so iCloud-backed fileExists calls
         // (which can block waiting for ubiquity metadata) don't stall the actor
         // thread and delay the first library render.
         var pruneYieldCount = 0
-        for var pdf in allPDFs {
+        for pdf in allPDFs {
             pruneYieldCount += 1
             if pruneYieldCount % 50 == 0 { await Task.yield() }
 
@@ -238,7 +236,6 @@ actor LibraryScanner {
                     continue
                 }
                 seenPaths.insert(pdf.url.path)
-                uniquePDFs.append(pdf)
                 continue
             }
 
@@ -279,8 +276,7 @@ actor LibraryScanner {
             }
 
             if didRepair {
-                pdf.url = resolvedURL
-                didRepairURLs = true
+                repairedURLs[pdf.id] = resolvedURL
             }
 
             if seenPaths.contains(resolvedURL.path) {
@@ -290,17 +286,23 @@ actor LibraryScanner {
 
             if fileManager.fileExists(atPath: resolvedURL.path) {
                 seenPaths.insert(resolvedURL.path)
-                uniquePDFs.append(pdf)
             } else {
                 missingIDs.insert(pdf.id)
             }
         }
 
-        let requiresPrune = !missingIDs.isEmpty || didRepairURLs
+        let requiresPrune = !missingIDs.isEmpty || !repairedURLs.isEmpty
         if requiresPrune {
             await MainActor.run {
-                manager.convertedPDFs = uniquePDFs
-                Logger.shared.log("Library Pruned: Repaired sandbox-shifted URLs and removed \(missingIDs.count) missing files", category: "Library")
+                if !missingIDs.isEmpty {
+                    manager.convertedPDFs.removeAll { missingIDs.contains($0.id) }
+                }
+                for (id, url) in repairedURLs {
+                    if let idx = manager.convertedPDFs.firstIndex(where: { $0.id == id }) {
+                        manager.convertedPDFs[idx].url = url
+                    }
+                }
+                Logger.shared.log("Library Pruned: Repaired \(repairedURLs.count) sandbox-shifted URLs and removed \(missingIDs.count) missing files", category: "Library")
                 manager.saveLibrary()
             }
         }

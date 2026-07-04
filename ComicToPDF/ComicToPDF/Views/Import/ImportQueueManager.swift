@@ -163,20 +163,27 @@ class ImportQueueManager: ObservableObject {
         let optEntries = try? JSONDecoder().decode([QueueEntry].self, from: data)
         guard let entries = optEntries else { return }
 
-        var resolved: [URL] = []
-        for entry in entries {
-            var isStale = false
-            let optURL = try? URL(
-                resolvingBookmarkData: entry.bookmarkData,
-                options: .withoutUI,
-                relativeTo: nil,
-                bookmarkDataIsStale: &isStale
-            )
-            if let url = optURL, !isStale {
-                resolved.append(url)
+        Task {
+            let resolved = await Task.detached(priority: .userInitiated) { () -> [URL] in
+                var urls: [URL] = []
+                for entry in entries {
+                    var isStale = false
+                    let optURL = try? URL(
+                        resolvingBookmarkData: entry.bookmarkData,
+                        options: .withoutUI,
+                        relativeTo: nil,
+                        bookmarkDataIsStale: &isStale
+                    )
+                    if let url = optURL, !isStale {
+                        urls.append(url)
+                    }
+                }
+                return urls
+            }.value
+            
+            await MainActor.run {
+                self.stagedURLs = resolved
             }
-            // Stale bookmarks are silently pruned — file may have moved or been deleted
         }
-        stagedURLs = resolved
     }
 }
