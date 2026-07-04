@@ -52,6 +52,7 @@ final class NarrationEngine: NSObject, ObservableObject {
 
     private let synthesizer = AVSpeechSynthesizer()
     private var ocrCache: [Int: String] = [:]       // page index → extracted text
+    private var textBlocksCache: [Int: [TextBlock]] = [:] // page index -> text blocks
     private var ocrTasks: [Int: Task<Void, Never>] = [:]
     private var autoAdvanceTask: Task<Void, Never>? = nil
     private var totalPages: Int = 0
@@ -72,6 +73,7 @@ final class NarrationEngine: NSObject, ObservableObject {
         self.totalPages = totalPages
         self.imageProvider = imageProvider
         ocrCache.removeAll()
+        textBlocksCache.removeAll()
         ocrTasks.values.forEach { $0.cancel() }
         ocrTasks.removeAll()
     }
@@ -118,6 +120,14 @@ final class NarrationEngine: NSObject, ObservableObject {
         prefetchOCR(around: index)
     }
 
+    /// Fetch or compute text blocks for a page, caching the result.
+    func fetchTextBlocks(for pageIndex: Int) async -> [TextBlock] {
+        if let cached = textBlocksCache[pageIndex] {
+            return cached
+        }
+        return await performOCRAndCache(pageIndex: pageIndex)
+    }
+
     // MARK: - OCR Pipeline
 
     private func speakPage(_ index: Int) {
@@ -133,14 +143,15 @@ final class NarrationEngine: NSObject, ObservableObject {
         isOCRing = true
         let task = Task.detached(priority: .userInitiated) { [weak self] in
             guard let self else { return }
-            let text = await self.performOCR(pageIndex: index)
+            _ = await self.performOCRAndCache(pageIndex: index)
             await MainActor.run { [weak self] in
                 guard let self else { return }
-                self.ocrCache[index] = text
                 self.ocrTasks.removeValue(forKey: index)
                 self.isOCRing = false
                 if self.currentPageIndex == index && self.isNarrating {
-                    self.deliver(text: text, pageIndex: index)
+                    if let text = self.ocrCache[index] {
+                        self.deliver(text: text, pageIndex: index)
+                    }
                 }
             }
         }
@@ -193,52 +204,41 @@ final class NarrationEngine: NSObject, ObservableObject {
 
     // MARK: - OCR (Vision)
 
-    nonisolated private func performOCR(pageIndex: Int) async -> String {
+    nonisolated private func performOCRAndCache(pageIndex: Int) async -> [TextBlock] {
         let (image, isManga) = await MainActor.run(body: { (self.imageProvider?(pageIndex), self.isMangaMode) })
-        guard let image = image,
-              let cgImage = image.cgImage else { return "" }
+        guard let image = image else { return [] }
 
-        return await withCheckedContinuation { continuation in
-            let request = VNRecognizeTextRequest { request, error in
-                guard error == nil,
-                      let observations = request.results as? [VNRecognizedTextObservation] else {
-                    continuation.resume(returning: "")
-                    return
-                }
+        let blocks = await PageOCRService.shared.performOCR(on: image)
 
-                // Sort observations into reading order
-                // Standard: top-to-bottom, then left-to-right within a band
-                // Manga RTL: top-to-bottom, then right-to-left within a band
-                let bandHeight: CGFloat = 0.08   // ~8% of image height per band
-                let sorted = observations.sorted { lhs, rhs in
-                    let lhsBox = lhs.boundingBox
-                    let rhsBox = rhs.boundingBox
-                    // Vision boxes are bottom-origin so we invert Y for sorting
-                    let lhsRow = Int((1.0 - lhsBox.midY) / bandHeight)
-                    let rhsRow = Int((1.0 - rhsBox.midY) / bandHeight)
-                    if lhsRow != rhsRow { return lhsRow < rhsRow }
-                    // Same row band — sort by X (RTL for manga, LTR for standard)
-                    if isManga {
-                        return Task.isCancelled ? false : lhsBox.midX > rhsBox.midX
-                    } else {
-                        return Task.isCancelled ? false : lhsBox.midX < rhsBox.midX
-                    }
-                }
-
-                let lines = sorted.compactMap {
-                    $0.topCandidates(1).first?.string
-                }.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
-
-                continuation.resume(returning: lines.joined(separator: " "))
+        // Sort observations into reading order
+        // Standard: top-to-bottom, then left-to-right within a band
+        // Manga RTL: top-to-bottom, then right-to-left within a band
+        let bandHeight: CGFloat = 0.08   // ~8% of image height per band
+        let sorted = blocks.sorted { lhs, rhs in
+            let lhsBox = lhs.boundingBox
+            let rhsBox = rhs.boundingBox
+            // Vision boxes are bottom-origin so we invert Y for sorting
+            let lhsRow = Int((1.0 - lhsBox.midY) / bandHeight)
+            let rhsRow = Int((1.0 - rhsBox.midY) / bandHeight)
+            if lhsRow != rhsRow { return lhsRow < rhsRow }
+            // Same row band — sort by X (RTL for manga, LTR for standard)
+            if isManga {
+                return Task.isCancelled ? false : lhsBox.midX > rhsBox.midX
+            } else {
+                return Task.isCancelled ? false : lhsBox.midX < rhsBox.midX
             }
-
-            request.recognitionLevel = .accurate
-            request.usesLanguageCorrection = true
-            request.recognitionLanguages = ["en-US"]
-
-            let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
-            try? handler.perform([request])
         }
+
+        let text = sorted.compactMap { $0.text }
+            .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+            .joined(separator: " ")
+
+        await MainActor.run {
+            self.textBlocksCache[pageIndex] = sorted
+            self.ocrCache[pageIndex] = text
+        }
+
+        return sorted
     }
 
     // MARK: - Prefetch
@@ -249,9 +249,8 @@ final class NarrationEngine: NSObject, ObservableObject {
             guard ocrCache[i] == nil, ocrTasks[i] == nil else { continue }
             let task = Task.detached(priority: .background) { [weak self] in
                 guard let self else { return }
-                let text = await self.performOCR(pageIndex: i)
+                _ = await self.performOCRAndCache(pageIndex: i)
                 await MainActor.run { [weak self] in
-                    self?.ocrCache[i] = text
                     self?.ocrTasks.removeValue(forKey: i)
                 }
             }

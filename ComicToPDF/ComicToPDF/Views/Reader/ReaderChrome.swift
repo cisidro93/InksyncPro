@@ -27,6 +27,8 @@ struct ReaderChrome: View {
     var onTOCToggle: (() -> Void)? = nil
     var onAnnotationsToggle: (() -> Void)? = nil
     var onCharacterMapToggle: (() -> Void)? = nil
+    var isDialogueLensEnabled: Bool = false
+    var onDialogueLensToggle: (() -> Void)? = nil
 
     // Scrubber
     @Binding var currentProgress: Double
@@ -87,6 +89,8 @@ struct ReaderChrome: View {
         onTOCToggle: (() -> Void)? = nil,
         onAnnotationsToggle: (() -> Void)? = nil,
         onCharacterMapToggle: (() -> Void)? = nil,
+        isDialogueLensEnabled: Bool = false,
+        onDialogueLensToggle: (() -> Void)? = nil,
         currentProgress: Binding<Double>,
         totalPages: Int,
         customScrubber: AnyView? = nil,
@@ -123,6 +127,8 @@ struct ReaderChrome: View {
         self.onTOCToggle = onTOCToggle
         self.onAnnotationsToggle = onAnnotationsToggle
         self.onCharacterMapToggle = onCharacterMapToggle
+        self.isDialogueLensEnabled = isDialogueLensEnabled
+        self.onDialogueLensToggle = onDialogueLensToggle
         self._currentProgress = currentProgress
         self.totalPages = totalPages
         self.customScrubber = customScrubber
@@ -235,6 +241,15 @@ struct ReaderChrome: View {
 
                 chromeButton(icon: "crop", active: isAutoCropEnabled, activeColor: .white) {
                     onCropToggle?()
+                }
+
+                if let onDialogueLens = onDialogueLensToggle {
+                    chromeButton(
+                        icon: "sparkle.magnifyingglass",
+                        active: isDialogueLensEnabled,
+                        activeColor: .purple,
+                        action: onDialogueLens
+                    )
                 }
 
                 chromeButton(

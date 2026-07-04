@@ -2,6 +2,8 @@ import SwiftUI
 import ZIPFoundation
 import PDFKit
 import ImageIO
+import AVFoundation
+import Vision
 
 extension Notification.Name {
     static let comicImageCacheImageLoaded = Notification.Name("InksyncPro.ComicImageCache.imageLoaded")
@@ -1021,6 +1023,13 @@ struct ComicReaderEngine: View {
     @StateObject private var narrationEngine = NarrationEngine()
     /// Phase 3: Live Reading Room — MultipeerConnectivity co-reading session.
     @StateObject private var readingRoom = ReadingRoomSession()
+    
+    /// AI Dialogue Lens State
+    @State private var isDialogueLensEnabled = false
+    @State private var selectedTextBlock: TextBlock? = nil
+    @State private var currentDialogueBlocks: [TextBlock] = []
+    @State private var isDialogueOCRing = false
+    @ObservedObject private var dialogueSpeechManager = DialogueSpeechManager.shared
     /// Phase 4A: Auto-hide chrome — cancellable idle timer.
     @State private var chromeIdleTask: Task<Void, Never>? = nil
     
@@ -1173,6 +1182,16 @@ struct ComicReaderEngine: View {
                     }
                 }
                 .ignoresSafeArea()
+                .overlay {
+                    if isDialogueLensEnabled {
+                        Color.clear
+                            .contentShape(Rectangle())
+                            .onTapGesture { location in
+                                handleDialogueLensTap(at: location, in: geo.size)
+                            }
+                            .ignoresSafeArea()
+                    }
+                }
             }
 
             brightnessZones
@@ -1180,6 +1199,30 @@ struct ComicReaderEngine: View {
             filterHUDView
             settingsHUDView
             achievementToastView
+            
+            // Dialogue Lens HUD and Loading indicators
+            dialogueHUDView
+            
+            if isDialogueLensEnabled && isDialogueOCRing {
+                VStack {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .purple))
+                            .scaleEffect(0.8)
+                        Text("Scanning text...")
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                            .foregroundColor(.purple)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 0.5))
+                    .padding(.top, 70)
+                    Spacer()
+                }
+                .transition(.opacity)
+                .zIndex(18)
+            }
             
             KeyCommandHandler { command in
                 let input = command.input
@@ -1274,6 +1317,14 @@ struct ComicReaderEngine: View {
             // Notify narration engine of manual page changes (distinct from narration-driven advances)
             if narrationEngine.isNarrating {
                 narrationEngine.didManuallyChangePage(to: newIndex)
+            }
+            
+            if isDialogueLensEnabled {
+                selectedTextBlock = nil
+                DialogueSpeechManager.shared.stop()
+                Task {
+                    await prewarmOCR(for: newIndex)
+                }
             }
             // Phase 3: broadcast page change to any connected reading room peers
             readingRoom.broadcastPage(newIndex, totalPages: cache.pageCount)
@@ -1642,6 +1693,21 @@ struct ComicReaderEngine: View {
             isNarrating: narrationEngine.isNarrating,
             isNarrationOCRing: narrationEngine.isOCRing,
             onNarrationToggle: handleNarrationToggle,
+            isDialogueLensEnabled: isDialogueLensEnabled,
+            onDialogueLensToggle: {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                    isDialogueLensEnabled.toggle()
+                    if isDialogueLensEnabled {
+                        Task {
+                            await prewarmOCR(for: currentIndex)
+                        }
+                    } else {
+                        selectedTextBlock = nil
+                        DialogueSpeechManager.shared.stop()
+                    }
+                }
+                HapticEngine.light()
+            },
             isAutoCropEnabled: isAutoCropEnabled,
             onCropToggle: {
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
@@ -1892,7 +1958,216 @@ struct ComicReaderEngine: View {
         .zIndex(100)
     }
 
+    // MARK: - AI Dialogue Lens Helpers
+
+    private func prewarmOCR(for pageIndex: Int) async {
+        isDialogueOCRing = true
+        let blocks = await narrationEngine.fetchTextBlocks(for: pageIndex)
+        currentDialogueBlocks = blocks
+        isDialogueOCRing = false
+    }
+
+    private func handleDialogueLensTap(at location: CGPoint, in viewSize: CGSize) {
+        guard let image = cache.getImage(at: currentIndex) else { return }
+        
+        let block = textBlock(at: location, in: viewSize, imageSize: image.size, blocks: currentDialogueBlocks)
+        
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+            if let block = block {
+                selectedTextBlock = block
+                HapticEngine.medium()
+            } else {
+                // Tapped outside any text block
+                if selectedTextBlock != nil {
+                    selectedTextBlock = nil
+                    DialogueSpeechManager.shared.stop()
+                } else {
+                    chromeVisible.toggle()
+                }
+            }
+        }
+    }
+
+    private func textBlock(at tapPoint: CGPoint, in viewSize: CGSize, imageSize: CGSize, blocks: [TextBlock]) -> TextBlock? {
+        guard imageSize.width > 0, imageSize.height > 0 else { return nil }
+        
+        let imageRatio = imageSize.width / imageSize.height
+        let viewRatio = viewSize.width / viewSize.height
+        
+        var renderWidth: CGFloat
+        var renderHeight: CGFloat
+        var offsetX: CGFloat = 0
+        var offsetY: CGFloat = 0
+        
+        if imageRatio > viewRatio {
+            renderWidth = viewSize.width
+            renderHeight = viewSize.width / imageRatio
+            offsetY = (viewSize.height - renderHeight) / 2
+        } else {
+            renderHeight = viewSize.height
+            renderWidth = viewSize.height * imageRatio
+            offsetX = (viewSize.width - renderWidth) / 2
+        }
+        
+        let relativeX = tapPoint.x - offsetX
+        let relativeY = tapPoint.y - offsetY
+        
+        guard relativeX >= 0, relativeX <= renderWidth,
+              relativeY >= 0, relativeY <= renderHeight else {
+            return nil
+        }
+        
+        let normalizedX = relativeX / renderWidth
+        let normalizedY = 1.0 - (relativeY / renderHeight) // Vision bottom-origin
+        
+        for block in blocks {
+            let paddedBox = block.boundingBox.insetBy(dx: -0.015, dy: -0.015)
+            if paddedBox.contains(CGPoint(x: normalizedX, y: normalizedY)) {
+                return block
+            }
+        }
+        return nil
+    }
+
+    @ViewBuilder
+    private var dialogueHUDView: some View {
+        if let block = selectedTextBlock {
+            VStack {
+                Spacer()
+                
+                VStack(spacing: 16) {
+                    HStack {
+                        HStack(spacing: 6) {
+                            Image(systemName: "sparkles")
+                                .foregroundColor(.purple)
+                            Text("AI Dialogue HUD")
+                                .font(.system(size: 11, weight: .bold, design: .rounded))
+                                .foregroundColor(.purple)
+                                .tracking(1.0)
+                        }
+                        
+                        Spacer()
+                        
+                        Button {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                selectedTextBlock = nil
+                                DialogueSpeechManager.shared.stop()
+                            }
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 18))
+                                .foregroundColor(.white.opacity(0.4))
+                        }
+                    }
+                    
+                    ScrollView {
+                        Text(block.text)
+                            .font(.system(size: 18, weight: .medium, design: .rounded))
+                            .foregroundColor(.white)
+                            .lineSpacing(6)
+                            .multilineTextAlignment(.leading)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 4)
+                    }
+                    .frame(maxHeight: 120)
+                    
+                    HStack(spacing: 12) {
+                        Button {
+                            if DialogueSpeechManager.shared.isSpeaking {
+                                DialogueSpeechManager.shared.stop()
+                            } else {
+                                DialogueSpeechManager.shared.speak(block.text)
+                            }
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: DialogueSpeechManager.shared.isSpeaking ? "stop.fill" : "play.fill")
+                                    .font(.system(size: 14, weight: .bold))
+                                Text(DialogueSpeechManager.shared.isSpeaking ? "Stop Voice" : "Speak Aloud")
+                                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                            }
+                            .foregroundColor(.black)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .background(Color.white, in: Capsule())
+                        }
+                        
+                        Spacer()
+                        
+                        Text("Page \(currentIndex + 1)")
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                            .foregroundColor(.white.opacity(0.4))
+                    }
+                }
+                .padding(20)
+                .background(
+                    ZStack {
+                        Color.clear.background(.ultraThinMaterial)
+                        Color.purple.opacity(0.08)
+                    }
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .stroke(Color.white.opacity(0.12), lineWidth: 0.5)
+                )
+                .shadow(color: .black.opacity(0.4), radius: 24, y: 12)
+                .frame(maxWidth: hSizeClass == .regular ? 560 : .infinity)
+                .padding(.horizontal, 20)
+                .padding(.bottom, 90)
+            }
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+            .zIndex(20)
+        }
+    }
+
 } // end ComicReaderEngine
+
+// MARK: - DialogueSpeechManager
+
+final class DialogueSpeechManager: NSObject, ObservableObject, AVSpeechSynthesizerDelegate {
+    static let shared = DialogueSpeechManager()
+    
+    private let synthesizer = AVSpeechSynthesizer()
+    @Published var isSpeaking = false
+    
+    override init() {
+        super.init()
+        synthesizer.delegate = self
+        configureAudioSession()
+    }
+    
+    func speak(_ text: String) {
+        stop()
+        let utterance = AVSpeechUtterance(string: text)
+        utterance.voice = AVSpeechSynthesisVoice(language: "en-US")
+        utterance.rate = AVSpeechUtteranceDefaultSpeechRate
+        synthesizer.speak(utterance)
+        isSpeaking = true
+    }
+    
+    func stop() {
+        synthesizer.stopSpeaking(at: .immediate)
+        isSpeaking = false
+    }
+    
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+        isSpeaking = false
+    }
+    
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
+        isSpeaking = false
+    }
+    
+    private func configureAudioSession() {
+        do {
+            try AVAudioSession.sharedInstance().setCategory(
+                .playback,
+                mode: .spokenAudio,
+                options: [.duckOthers, .allowBluetooth]
+            )
+        } catch {}
+    }
+}
 
 struct WebtoonImageCell: View {
     let index: Int
