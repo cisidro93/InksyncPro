@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import PDFKit
+import SwiftData
 
 /// Progressive Reporting Events
 enum ConversionProgressEvent {
