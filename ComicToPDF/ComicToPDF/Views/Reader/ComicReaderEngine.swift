@@ -4,6 +4,7 @@ import PDFKit
 import ImageIO
 import AVFoundation
 import Vision
+import UIKit
 
 extension Notification.Name {
     static let comicImageCacheImageLoaded = Notification.Name("InksyncPro.ComicImageCache.imageLoaded")
@@ -1019,17 +1020,23 @@ struct ComicReaderEngine: View {
     @State private var ambientPageColor: Color = .clear
     /// Tracks in-flight ambient colour extraction so it can be cancelled on rapid page swipes.
     @State private var ambientColorTask: Task<Void, Never>? = nil
-    /// AI Narration Engine — connects to the image cache on appear
-    @StateObject private var narrationEngine = NarrationEngine()
+    /// AI Dialogue Lens Layout-aware OCR Engine
+    @StateObject private var narrationEngine = PageOCREngine()
     /// Phase 3: Live Reading Room — MultipeerConnectivity co-reading session.
     @StateObject private var readingRoom = ReadingRoomSession()
+    
+    /// SwiftData context
+    @Environment(\.modelContext) private var modelContext
+    
+    /// Custom Toast messages
+    @State private var showToast = false
+    @State private var toastMessage = ""
     
     /// AI Dialogue Lens State
     @State private var isDialogueLensEnabled = false
     @State private var selectedTextBlock: TextBlock? = nil
     @State private var currentDialogueBlocks: [TextBlock] = []
     @State private var isDialogueOCRing = false
-    @ObservedObject private var dialogueSpeechManager = DialogueSpeechManager.shared
     /// Phase 4A: Auto-hide chrome — cancellable idle timer.
     @State private var chromeIdleTask: Task<Void, Never>? = nil
     
@@ -1203,6 +1210,20 @@ struct ComicReaderEngine: View {
             // Dialogue Lens HUD and Loading indicators
             dialogueHUDView
             
+            if showToast {
+                Text(toastMessage)
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 10)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 0.5))
+                    .shadow(color: .black.opacity(0.2), radius: 12, y: 4)
+                    .padding(.bottom, 110)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .zIndex(100)
+            }
+            
             if isDialogueLensEnabled && isDialogueOCRing {
                 VStack {
                     HStack(spacing: 8) {
@@ -1282,12 +1303,9 @@ struct ComicReaderEngine: View {
                     readingMode = .mangaRTL
                 }
             }
-            // Connect narration engine to the reader's image cache
+            // Connect OCR engine to the reader's image cache
             narrationEngine.connect(totalPages: cache.pageCount) { [cache] index in
                 cache.getImage(at: index)
-            }
-            narrationEngine.onPageComplete = { nextIndex in
-                withAnimation { currentIndex = nextIndex }
             }
             if essentialReaderMode {
                 if readingMode == .pageHorizontal || readingMode == .mangaRTL {
@@ -1314,14 +1332,8 @@ struct ComicReaderEngine: View {
 
             // Panels-style ambient colour — sample edge pixels on page change
             extractAmbientColor(for: newIndex)
-            // Notify narration engine of manual page changes (distinct from narration-driven advances)
-            if narrationEngine.isNarrating {
-                narrationEngine.didManuallyChangePage(to: newIndex)
-            }
-            
             if isDialogueLensEnabled {
                 selectedTextBlock = nil
-                DialogueSpeechManager.shared.stop()
                 Task {
                     await prewarmOCR(for: newIndex)
                 }
@@ -1682,12 +1694,9 @@ struct ComicReaderEngine: View {
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                     isDialogueLensEnabled.toggle()
                     if isDialogueLensEnabled {
-                        Task {
-                            await prewarmOCR(for: currentIndex)
-                        }
+                        Task { await prewarmOCR(for: currentIndex) }
                     } else {
                         selectedTextBlock = nil
-                        DialogueSpeechManager.shared.stop()
                     }
                 }
                 HapticEngine.light()
@@ -1705,9 +1714,6 @@ struct ComicReaderEngine: View {
                     isMangaMode: readingMode == .mangaRTL
                 )
             ),
-            isNarrating: narrationEngine.isNarrating,
-            isNarrationOCRing: narrationEngine.isOCRing,
-            onNarrationToggle: handleNarrationToggle,
             isAutoCropEnabled: isAutoCropEnabled,
             onCropToggle: {
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
@@ -1815,18 +1821,7 @@ struct ComicReaderEngine: View {
         }
     }
 
-    private func handleNarrationToggle() {
-        if narrationEngine.isNarrating {
-            if narrationEngine.isSpeaking {
-                narrationEngine.togglePause()
-            } else {
-                narrationEngine.stop()
-            }
-        } else {
-            narrationEngine.isMangaMode = (readingMode == .mangaRTL)
-            narrationEngine.startNarrating(from: currentIndex)
-        }
-    }
+
 
     @ViewBuilder
     private var readerOnboardingOverlay: some View {
@@ -1960,6 +1955,21 @@ struct ComicReaderEngine: View {
 
     // MARK: - AI Dialogue Lens Helpers
 
+    private func showToastMessage(_ message: String) {
+        toastMessage = message
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+            showToast = true
+        }
+        Task {
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            withAnimation(.easeOut(duration: 0.3)) {
+                if toastMessage == message {
+                    showToast = false
+                }
+            }
+        }
+    }
+
     private func prewarmOCR(for pageIndex: Int) async {
         isDialogueOCRing = true
         let blocks = await narrationEngine.fetchTextBlocks(for: pageIndex)
@@ -1980,7 +1990,6 @@ struct ComicReaderEngine: View {
                 // Tapped outside any text block
                 if selectedTextBlock != nil {
                     selectedTextBlock = nil
-                    DialogueSpeechManager.shared.stop()
                 } else {
                     chromeVisible.toggle()
                 }
@@ -2051,7 +2060,6 @@ struct ComicReaderEngine: View {
                         Button {
                             withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                                 selectedTextBlock = nil
-                                DialogueSpeechManager.shared.stop()
                             }
                         } label: {
                             Image(systemName: "xmark.circle.fill")
@@ -2073,22 +2081,51 @@ struct ComicReaderEngine: View {
                     
                     HStack(spacing: 12) {
                         Button {
-                            if DialogueSpeechManager.shared.isSpeaking {
-                                DialogueSpeechManager.shared.stop()
-                            } else {
-                                DialogueSpeechManager.shared.speak(block.text)
-                            }
+                            UIPasteboard.general.string = block.text
+                            showToastMessage("Copied to clipboard")
+                            HapticEngine.light()
                         } label: {
                             HStack(spacing: 8) {
-                                Image(systemName: DialogueSpeechManager.shared.isSpeaking ? "stop.fill" : "play.fill")
-                                    .font(.system(size: 14, weight: .bold))
-                                Text(DialogueSpeechManager.shared.isSpeaking ? "Stop Voice" : "Speak Aloud")
+                                Image(systemName: "doc.on.doc.fill")
+                                    .font(.system(size: 13, weight: .bold))
+                                Text("Copy Text")
                                     .font(.system(size: 13, weight: .semibold, design: .rounded))
                             }
                             .foregroundColor(.black)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 10)
                             .background(Color.white, in: Capsule())
+                        }
+                        
+                        Button {
+                            let newHighlight = SDAnnotation(
+                                id: UUID(),
+                                pdfID: pdf.id.uuidString,
+                                pageIndex: currentIndex,
+                                text: block.text,
+                                note: nil,
+                                isReadwiseImport: false,
+                                readwiseBookTitle: pdf.name,
+                                readwiseAuthor: nil,
+                                createdAt: Date()
+                            )
+                            newHighlight.kindRaw = "highlight"
+                            modelContext.insert(newHighlight)
+                            try? modelContext.save()
+                            showToastMessage("Saved to Notebook")
+                            HapticEngine.light()
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: "notebook.fill")
+                                    .font(.system(size: 13, weight: .bold))
+                                Text("Save to Notes")
+                                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                            }
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .background(Color.purple.opacity(0.6), in: Capsule())
+                            .overlay(Capsule().stroke(Color.purple, lineWidth: 1))
                         }
                         
                         Spacer()
@@ -2122,57 +2159,7 @@ struct ComicReaderEngine: View {
 
 } // end ComicReaderEngine
 
-// MARK: - DialogueSpeechManager
 
-@MainActor
-final class DialogueSpeechManager: NSObject, ObservableObject, AVSpeechSynthesizerDelegate {
-    static let shared = DialogueSpeechManager()
-    
-    private let synthesizer = AVSpeechSynthesizer()
-    @Published var isSpeaking = false
-    
-    override init() {
-        super.init()
-        synthesizer.delegate = self
-        configureAudioSession()
-    }
-    
-    func speak(_ text: String) {
-        stop()
-        let utterance = AVSpeechUtterance(string: text)
-        utterance.voice = AVSpeechSynthesisVoice(language: "en-US")
-        utterance.rate = AVSpeechUtteranceDefaultSpeechRate
-        synthesizer.speak(utterance)
-        isSpeaking = true
-    }
-    
-    func stop() {
-        synthesizer.stopSpeaking(at: .immediate)
-        isSpeaking = false
-    }
-    
-    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
-        Task { @MainActor in
-            self.isSpeaking = false
-        }
-    }
-    
-    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
-        Task { @MainActor in
-            self.isSpeaking = false
-        }
-    }
-    
-    private func configureAudioSession() {
-        do {
-            try AVAudioSession.sharedInstance().setCategory(
-                .playback,
-                mode: .spokenAudio,
-                options: [.duckOthers, .allowBluetooth]
-            )
-        } catch {}
-    }
-}
 
 struct WebtoonImageCell: View {
     let index: Int

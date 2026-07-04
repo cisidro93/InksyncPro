@@ -4,39 +4,11 @@ import PDFKit
 import ZIPFoundation
 import AVFoundation
 import CoreTransferable
+import UIKit
 
 
 @MainActor
-class TTSManager: NSObject, ObservableObject, AVSpeechSynthesizerDelegate {
-    static let shared = TTSManager()
-    let synthesizer = AVSpeechSynthesizer()
-    @Published var isSpeaking = false
-    
-    override init() {
-        super.init()
-        synthesizer.delegate = self
-    }
-    
-    func speak(text: String) {
-        if synthesizer.isSpeaking { stop() }
-        let utterance = AVSpeechUtterance(string: text)
-        utterance.rate = 0.5
-        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
-        try? AVAudioSession.sharedInstance().setActive(true)
-        synthesizer.speak(utterance)
-        isSpeaking = true
-    }
-    
-    func stop() {
-        synthesizer.stopSpeaking(at: .immediate)
-        isSpeaking = false
-        try? AVAudioSession.sharedInstance().setActive(false)
-    }
-    
-    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
-        Task { @MainActor in self.isSpeaking = false }
-    }
-}
+
 
 struct SearchResult: Identifiable {
     let id = UUID()
@@ -709,7 +681,6 @@ struct BookReaderEngine: View {
     var allBooks: [ConvertedPDF] = []
     
     @StateObject private var vm: BookReaderViewModel
-    @ObservedObject private var tts = TTSManager.shared
     @State private var webViewReference: WKWebView?
     @State private var chromeVisible = false
     @State private var showAnnotations = false
@@ -719,6 +690,10 @@ struct BookReaderEngine: View {
     @ObservedObject private var prefs = EBookPreferences.shared
     @State private var extractedTextParams: String = "Chapter reading is not extracted to string yet."
     @State private var lastBrightnessDragValue: CGFloat = 0
+    
+    // Custom Toast messages
+    @State private var showToast = false
+    @State private var toastMessage = ""
     @FocusState private var isReaderFocused: Bool
     
     init(pdf: ConvertedPDF, onDismiss: @escaping () -> Void, allBooks: [ConvertedPDF] = []) {
@@ -841,20 +816,31 @@ struct BookReaderEngine: View {
                     }
                 ),
                 totalPages: vm.chapterHtmlFiles.count,
-                hasTTS: true,
-                isSpeaking: tts.isSpeaking,
-                onTTSToggle: {
-                    if tts.isSpeaking {
-                        tts.stop()
-                    } else {
-                        webViewReference?.evaluateJavaScript("document.body.innerText") { result, _ in
-                            if let text = result as? String, !text.isEmpty {
-                                tts.speak(text: text)
-                            }
+                hasCopyAction: true,
+                onCopyToggle: {
+                    webViewReference?.evaluateJavaScript("document.body.innerText") { result, _ in
+                        if let text = result as? String, !text.isEmpty {
+                            UIPasteboard.general.string = text
+                            showToastMessage("Chapter copied to clipboard")
+                            Haptics.shared.playImpact(style: .light)
                         }
                     }
                 }
             )
+            
+            if showToast {
+                Text(toastMessage)
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 10)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 0.5))
+                    .shadow(color: .black.opacity(0.2), radius: 12, y: 4)
+                    .padding(.bottom, 110)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .zIndex(100)
+            }
         }
         .onAppear {
             if let saved = ReaderProgressTracker.shared.progress(for: pdf.id), let ch = saved.currentChapterIndex {
@@ -866,7 +852,6 @@ struct BookReaderEngine: View {
             isReaderFocused = true
         }
         .onDisappear {
-            tts.stop()
             ReaderProgressTracker.shared.update(ReadingProgress(
                 pdfID: pdf.id, lastOpenedAt: Date(), currentPageIndex: vm.currentChapterIndex,
                 currentChapterIndex: vm.currentChapterIndex, currentChapterOffset: 0.0,
@@ -912,6 +897,21 @@ struct BookReaderEngine: View {
             return .handled
         }
         .preferredColorScheme(prefs.activeTheme.isDark ? .dark : .light)
+    }
+
+    private func showToastMessage(_ message: String) {
+        toastMessage = message
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+            showToast = true
+        }
+        Task {
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            withAnimation(.easeOut(duration: 0.3)) {
+                if toastMessage == message {
+                    showToast = false
+                }
+            }
+        }
     }
 
 

@@ -39,15 +39,9 @@ struct ReaderChrome: View {
     var timeRemainingText: String? = nil
     var onProgressModeToggle: (() -> Void)? = nil
 
-    // TTS / Narration
-    var hasTTS: Bool = false
-    var isSpeaking: Bool = false
-    var onTTSToggle: (() -> Void)? = nil
-
-    // Narration (AI read-aloud mode)
-    var isNarrating: Bool = false
-    var isNarrationOCRing: Bool = false
-    var onNarrationToggle: (() -> Void)? = nil
+    // Copy Text Action (replaces TTS)
+    var hasCopyAction: Bool = false
+    var onCopyToggle: (() -> Void)? = nil
 
     // PDF tools
     var isPDF: Bool = false
@@ -96,12 +90,8 @@ struct ReaderChrome: View {
         customScrubber: AnyView? = nil,
         timeRemainingText: String? = nil,
         onProgressModeToggle: (() -> Void)? = nil,
-        hasTTS: Bool = false,
-        isSpeaking: Bool = false,
-        onTTSToggle: (() -> Void)? = nil,
-        isNarrating: Bool = false,
-        isNarrationOCRing: Bool = false,
-        onNarrationToggle: (() -> Void)? = nil,
+        hasCopyAction: Bool = false,
+        onCopyToggle: (() -> Void)? = nil,
         isPDF: Bool = false,
         isReflowActive: Bool = false,
         isAutoCropEnabled: Bool = false,
@@ -134,12 +124,8 @@ struct ReaderChrome: View {
         self.customScrubber = customScrubber
         self.timeRemainingText = timeRemainingText
         self.onProgressModeToggle = onProgressModeToggle
-        self.hasTTS = hasTTS
-        self.isSpeaking = isSpeaking
-        self.onTTSToggle = onTTSToggle
-        self.isNarrating = isNarrating
-        self.isNarrationOCRing = isNarrationOCRing
-        self.onNarrationToggle = onNarrationToggle
+        self.hasCopyAction = hasCopyAction
+        self.onCopyToggle = onCopyToggle
         self.isPDF = isPDF
         self.isReflowActive = isReflowActive
         self.isAutoCropEnabled = isAutoCropEnabled
@@ -366,40 +352,13 @@ struct ReaderChrome: View {
                         onBookmark()
                     }
 
-                    if hasTTS {
+                    if hasCopyAction {
                         barButton(
-                            icon: isSpeaking ? "waveform" : "headphones",
-                            tint: isSpeaking ? .orange : .white
+                            icon: "doc.on.doc",
+                            tint: .white
                         ) {
                             Haptics.shared.playImpact(style: .light)
-                            onTTSToggle?()
-                        }
-                    }
-
-                    if onNarrationToggle != nil {
-                        Button {
-                            Haptics.shared.playImpact(style: .light)
-                            onNarrationToggle?()
-                        } label: {
-                            ZStack {
-                                if isNarrationOCRing {
-                                    ProgressView()
-                                        .progressViewStyle(CircularProgressViewStyle(tint: .orange))
-                                        .scaleEffect(0.7)
-                                        .frame(width: 44, height: 44)
-                                } else if isNarrating {
-                                    NarrationWaveformView(isActive: true, barColor: .orange)
-                                        .frame(width: 44, height: 44)
-                                } else {
-                                    Image(systemName: "waveform.and.mic")
-                                        .font(.system(size: 17, weight: .medium))
-                                        .foregroundColor(.white.opacity(0.85))
-                                        .frame(width: 44, height: 44)
-                                }
-                            }
-                            .background(isNarrating ? Color.orange.opacity(0.18) : Color.clear)
-                            .clipShape(Circle())
-                            .contentShape(Rectangle())
+                            onCopyToggle?()
                         }
                     }
                 }

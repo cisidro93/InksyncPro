@@ -359,7 +359,7 @@ struct EBookReaderView: View {
                                         )
                                     Spacer()
                                     if idx == currentIndex {
-                                        Image(systemName: "speaker.wave.2.fill")
+                                        Image(systemName: "book.fill")
                                             .font(.system(size: 10))
                                             .foregroundStyle(Color(hex: "#7B5EA7").opacity(0.7))
                                     }
