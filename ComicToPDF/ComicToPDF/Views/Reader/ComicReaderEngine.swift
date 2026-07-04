@@ -2018,8 +2018,9 @@ struct ComicPageView: View {
     }
 
     var body: some View {
+        let currentImage = image ?? cache.getImage(at: index)
         Group {
-            if let img = displayImage ?? image {
+            if let img = displayImage ?? currentImage {
                 GeometryReader { geo in
                     let rendered = renderSize(for: img, in: geo.size)
 
@@ -2134,12 +2135,14 @@ struct ComicPageView: View {
                         .progressViewStyle(CircularProgressViewStyle(tint: .white.opacity(0.5)))
                         .scaleEffect(1.5)
                 }
-                .onAppear {
-                    image = cache.getImage(at: index)
-                }
             }
         }
         .id(index)
+        .onAppear {
+            if image == nil {
+                image = cache.getImage(at: index)
+            }
+        }
         .onChange(of: image) { _, _ in
             updateDisplayImage()
         }

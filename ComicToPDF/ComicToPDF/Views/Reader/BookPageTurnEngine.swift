@@ -112,7 +112,16 @@ struct PageCurlReader: UIViewControllerRepresentable {
         }
         
         if let currentVC = uiViewController.viewControllers?.first as? PageContentViewController {
-            if currentVC.index != targetControllerIndex || currentVC.isTwoUp != isTwoUp || currentVC.activeFilterPreset != activeFilterPreset {
+            let spreadsChanged: Bool
+            if isTwoUp {
+                let currentSpreads = currentVC.spreads
+                let newSpreads = computeSpreads()
+                spreadsChanged = currentSpreads != newSpreads
+            } else {
+                spreadsChanged = false
+            }
+            
+            if currentVC.index != targetControllerIndex || currentVC.isTwoUp != isTwoUp || currentVC.activeFilterPreset != activeFilterPreset || spreadsChanged {
                 let vc = context.coordinator.makeViewController(for: targetControllerIndex)
                 let direction: UIPageViewController.NavigationDirection = targetControllerIndex >= currentVC.index ? .forward : .reverse
                 uiViewController.setViewControllers([vc], direction: direction, animated: false, completion: nil)
@@ -334,14 +343,17 @@ class PageContentViewController: UIViewController {
     let isTwoUp: Bool
     let activeFilterPreset: ReadingFilterPreset
     let content: AnyView
+    let spreads: [[Int]]
     
     init(index: Int, parent: PageCurlReader) {
         self.index = index
         self.isTwoUp = parent.isTwoUp
         self.activeFilterPreset = parent.activeFilterPreset
         
+        let spreads = parent.computeSpreads()
+        self.spreads = spreads
+        
         if parent.isTwoUp {
-            let spreads = parent.computeSpreads()
             let pages = index < spreads.count ? spreads[index] : [0]
             
             let spreadView = GeometryReader { geo in
