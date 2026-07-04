@@ -2124,6 +2124,7 @@ struct ComicReaderEngine: View {
 
 // MARK: - DialogueSpeechManager
 
+@MainActor
 final class DialogueSpeechManager: NSObject, ObservableObject, AVSpeechSynthesizerDelegate {
     static let shared = DialogueSpeechManager()
     
