@@ -1677,6 +1677,21 @@ struct ComicReaderEngine: View {
             onCharacterMapToggle: {
                 showingCharacterMap.toggle()
             },
+            isDialogueLensEnabled: isDialogueLensEnabled,
+            onDialogueLensToggle: {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                    isDialogueLensEnabled.toggle()
+                    if isDialogueLensEnabled {
+                        Task {
+                            await prewarmOCR(for: currentIndex)
+                        }
+                    } else {
+                        selectedTextBlock = nil
+                        DialogueSpeechManager.shared.stop()
+                    }
+                }
+                HapticEngine.light()
+            },
             currentProgress: Binding(
                 get: { Double(currentIndex) / Double(max(1, cache.pageCount - 1)) },
                 set: { currentIndex = Int($0 * Double(max(1, cache.pageCount - 1))) }
@@ -1693,21 +1708,6 @@ struct ComicReaderEngine: View {
             isNarrating: narrationEngine.isNarrating,
             isNarrationOCRing: narrationEngine.isOCRing,
             onNarrationToggle: handleNarrationToggle,
-            isDialogueLensEnabled: isDialogueLensEnabled,
-            onDialogueLensToggle: {
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                    isDialogueLensEnabled.toggle()
-                    if isDialogueLensEnabled {
-                        Task {
-                            await prewarmOCR(for: currentIndex)
-                        }
-                    } else {
-                        selectedTextBlock = nil
-                        DialogueSpeechManager.shared.stop()
-                    }
-                }
-                HapticEngine.light()
-            },
             isAutoCropEnabled: isAutoCropEnabled,
             onCropToggle: {
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
