@@ -394,11 +394,9 @@ final class EInkOptimizer: @unchecked Sendable {
         let bytesPerPixel = 1
         let bytesPerRow = width * bytesPerPixel
         
-        // Allocate Gray8 buffer
-        var rawBytes = [UInt8](repeating: 0, count: width * height)
-        
+        // Pass nil to data to let CGContext allocate and own the memory safely
         guard let context = CGContext(
-            data: &rawBytes,
+            data: nil,
             width: width,
             height: height,
             bitsPerComponent: 8,
@@ -408,6 +406,9 @@ final class EInkOptimizer: @unchecked Sendable {
         ) else { return nil }
         
         context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+        
+        guard let rawPointer = context.data else { return nil }
+        let rawBytes = rawPointer.assumingMemoryBound(to: UInt8.self)
         
         // Error buffer to store distributed errors
         var errors = [Float](repeating: 0.0, count: width * height)
@@ -447,16 +448,6 @@ final class EInkOptimizer: @unchecked Sendable {
             }
         }
         
-        guard let finalContext = CGContext(
-            data: &rawBytes,
-            width: width,
-            height: height,
-            bitsPerComponent: 8,
-            bytesPerRow: bytesPerRow,
-            space: colorSpace,
-            bitmapInfo: CGImageAlphaInfo.none.rawValue
-        ) else { return nil }
-        
-        return finalContext.makeImage()
+        return context.makeImage()
     }
 }

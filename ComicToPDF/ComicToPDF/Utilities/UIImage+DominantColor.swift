@@ -23,9 +23,9 @@ extension UIImage {
         let rect = CGRect(origin: .zero, size: size)
 
         let colorSpace = CGColorSpaceCreateDeviceRGB()
-        var rawData = [UInt8](repeating: 0, count: 4 * Int(size.width) * Int(size.height))
+        // Pass nil to data to let CGContext allocate and own the memory safely
         guard let context = CGContext(
-            data: &rawData,
+            data: nil,
             width: Int(size.width),
             height: Int(size.height),
             bitsPerComponent: 8,
@@ -35,6 +35,9 @@ extension UIImage {
         ) else { return .clear }
 
         context.draw(cgImage, in: rect)
+
+        guard let rawPointer = context.data else { return .clear }
+        let rawData = rawPointer.assumingMemoryBound(to: UInt8.self)
 
         var totalR: CGFloat = 0
         var totalG: CGFloat = 0
