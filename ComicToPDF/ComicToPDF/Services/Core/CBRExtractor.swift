@@ -73,6 +73,7 @@ struct CBRExtractor {
                         // List all entries
                         let entries = try archive.entries()
                         var urls: [URL] = []
+                        var fileIndex = 0
 
                         for entry in entries {
                             let flatName = (entry.fileName as NSString).lastPathComponent
@@ -86,14 +87,16 @@ struct CBRExtractor {
                             let ext = (flatName as NSString).pathExtension.lowercased()
                             guard imageExtensions.contains(ext) else { continue }
 
-                            // Flatten the path — all images land directly in tempDir
-                            let destURL = tempDir.appendingPathComponent(flatName)
+                            // Flatten the path — all images land directly in tempDir with sequential indexing
+                            let paddedName = String(format: "%04d_%@", fileIndex, flatName)
+                            let destURL = tempDir.appendingPathComponent(paddedName)
 
                             try autoreleasepool {
                                 // Extract entry to Data then persist atomically
                                 let data = try archive.extract(entry)
                                 try data.write(to: destURL, options: .atomic)
                                 urls.append(destURL)
+                                fileIndex += 1
                             }
                         }
                         return urls

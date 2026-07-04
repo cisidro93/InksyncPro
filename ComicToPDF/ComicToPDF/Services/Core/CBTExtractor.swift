@@ -243,6 +243,7 @@ struct CBTExtractor {
         var offset = 0
         var imageURLs: [URL] = []
         var consecutiveZeroBlocks = 0
+        var fileIndex = 0
 
         while offset + blockSize <= data.count {
             let headerBlock = data[offset ..< offset + blockSize]
@@ -323,9 +324,11 @@ struct CBTExtractor {
 
             if imageExtensions.contains(ext), dataEnd <= data.count {
                 let fileData = data[dataStart ..< dataEnd]
-                let destURL = destDir.appendingPathComponent(flatName)
+                let paddedName = String(format: "%04d_%@", fileIndex, flatName)
+                let destURL = destDir.appendingPathComponent(paddedName)
                 try fileData.write(to: destURL, options: .atomic)
                 imageURLs.append(destURL)
+                fileIndex += 1
             }
 
             try advanceOffset()
