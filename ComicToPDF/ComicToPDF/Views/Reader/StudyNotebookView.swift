@@ -36,6 +36,7 @@ struct StudyNotebookView: View {
     @State private var highlightSortNewest = true
     @State private var selectedTagFilter: String? = nil
     @State private var activeHighlightToEdit: SDAnnotation? = nil
+    @State private var showWritingAssistant = false
     
     // ✅ Speech-to-Text Subsystem
     @StateObject private var speechManager = SpeechRecognitionManager.shared
@@ -114,6 +115,18 @@ struct StudyNotebookView: View {
                             .foregroundColor(.purple)
                             .padding(8)
                             .background(Color.purple.opacity(0.1))
+                            .clipShape(Circle())
+                    }
+                    
+                    // Spelling & Grammar Assistant
+                    Button {
+                        showWritingAssistant = true
+                    } label: {
+                        Image(systemName: "checkmark.bubble.fill")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(.blue)
+                            .padding(8)
+                            .background(Color.blue.opacity(0.1))
                             .clipShape(Circle())
                     }
                     
@@ -244,6 +257,11 @@ struct StudyNotebookView: View {
             if newVal == nil {
                 refreshHighlights()
             }
+        }
+        .sheet(isPresented: $showWritingAssistant) {
+            WritingAssistantSheet(text: $localNotes)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
         }
         .onAppear {
             Logger.shared.log("StudyNotebook appeared for book: '\(bookTitle)'", category: "Notebook", type: .info)
