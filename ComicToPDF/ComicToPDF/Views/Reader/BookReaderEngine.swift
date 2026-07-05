@@ -346,6 +346,31 @@ struct EPUBWebView: UIViewRepresentable {
             }
         }
 
+        // Intercept navigation for Footnotes, External links, and Chapters
+        func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) {
+            if navigationAction.navigationType == .linkActivated {
+                if let url = navigationAction.request.url {
+                    if url.scheme == "http" || url.scheme == "https" {
+                        UIApplication.shared.open(url)
+                    } else if let fragment = url.fragment {
+                        // Internal anchor (e.g., footnote)
+                        let js = """
+                        var el = document.getElementById('\(fragment)') || document.getElementsByName('\(fragment)')[0];
+                        if (el) {
+                            var targetOffset = el.getBoundingClientRect().left + window.pageXOffset;
+                            var pageIndex = Math.floor(targetOffset / window.innerWidth);
+                            window.scrollTo({ left: pageIndex * window.innerWidth, behavior: 'smooth' });
+                        }
+                        """
+                        webView.evaluateJavaScript(js, completionHandler: nil)
+                    }
+                }
+                decisionHandler(.cancel)
+            } else {
+                decisionHandler(.allow)
+            }
+        }
+
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             parent.onPageLoaded?(webView)
         }
