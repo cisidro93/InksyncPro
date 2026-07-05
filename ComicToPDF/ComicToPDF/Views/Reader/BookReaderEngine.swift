@@ -472,6 +472,21 @@ struct EPUBWebView: UIViewRepresentable {
                 }
             };
 
+            // ── Auto Scroll ──────────────────────────────────────────────────
+            var scrollTimer = null;
+            window.startInksyncAutoScroll = function(speed) {
+                if (scrollTimer) clearInterval(scrollTimer);
+                scrollTimer = setInterval(function() {
+                    window.scrollBy(0, speed);
+                }, 16);
+            };
+            window.stopInksyncAutoScroll = function() {
+                if (scrollTimer) {
+                    clearInterval(scrollTimer);
+                    scrollTimer = null;
+                }
+            };
+
             // ── Navigation (swipe + tap) bridge ──────────────────────────────
             var _sx = 0, _sy = 0;
             document.addEventListener('touchstart', function(e) {
@@ -538,7 +553,7 @@ struct EPUBWebView: UIViewRepresentable {
 
     func updateUIView(_ webView: WKWebView, context: Context) {
         let contentHash = htmlContent.hashValue
-        let prefsState = "\(prefs.themeRaw)_\(prefs.fontSize)_\(prefs.fontFamily)_\(prefs.lineHeight)_\(prefs.letterSpacing)_\(prefs.wordSpacing)_\(prefs.textAlign)_\(prefs.paginationMode)_\(prefs.columnCount)_\(prefs.textMargin)_\(prefs.hyphenation)"
+        let prefsState = "\(prefs.themeRaw)_\(prefs.fontSize)_\(prefs.fontFamily)_\(prefs.lineHeight)_\(prefs.letterSpacing)_\(prefs.wordSpacing)_\(prefs.textAlign)_\(prefs.paginationMode)_\(prefs.columnCount)_\(prefs.textMargin)_\(prefs.hyphenation)_\(prefs.autoScroll)_\(prefs.autoScrollSpeed)"
         let newHash = contentHash ^ prefsState.hashValue
         
         guard context.coordinator.lastContentHash != newHash else { return }
@@ -569,6 +584,14 @@ struct EPUBWebView: UIViewRepresentable {
         webView.scrollView.isPagingEnabled = prefs.paginationMode == EBookPaginationMode.paged.rawValue
         webView.scrollView.showsVerticalScrollIndicator = prefs.paginationMode == EBookPaginationMode.continuous.rawValue
         webView.scrollView.alwaysBounceVertical = prefs.paginationMode == EBookPaginationMode.continuous.rawValue
+
+        // Apply auto-scroll logic
+        if prefs.autoScroll && prefs.paginationMode == EBookPaginationMode.continuous.rawValue {
+            let speed = prefs.autoScrollSpeed * 1.5
+            webView.evaluateJavaScript("window.startInksyncAutoScroll(\(speed));", completionHandler: nil)
+        } else {
+            webView.evaluateJavaScript("window.stopInksyncAutoScroll();", completionHandler: nil)
+        }
     }
 
     /// Builds the full CSS + JS block as a pure string.

@@ -747,71 +747,83 @@ struct EBookWebReader: UIViewRepresentable {
         }
         guard FileManager.default.fileExists(atPath: contentURL.path) else { return }
 
-        let currentStateHash = "\(prefs.themeRaw)_\(prefs.customThemeBg)_\(prefs.customThemeText)_\(prefs.fontSize)_\(prefs.fontFamily)_\(prefs.lineHeight)_\(prefs.letterSpacing)_\(prefs.wordSpacing)_\(prefs.hyphenation)_\(prefs.textMargin)_\(prefs.paragraphSpacing)_\(prefs.paragraphIndent)_\(prefs.paginationMode)_\(prefs.textAlign)"
-        if context.coordinator.lastLoadedHref == spineItem.href &&
-           context.coordinator.lastTheme == currentStateHash { return }
+        let currentStateHash = "\(prefs.themeRaw)_\(prefs.customThemeBg)_\(prefs.customThemeText)_\(prefs.fontSize)_\(prefs.fontFamily)_\(prefs.lineHeight)_\(prefs.letterSpacing)_\(prefs.wordSpacing)_\(prefs.hyphenation)_\(prefs.textMargin)_\(prefs.paragraphSpacing)_\(prefs.paragraphIndent)_\(prefs.paginationMode)_\(prefs.textAlign)_\(prefs.autoScroll)_\(prefs.autoScrollSpeed)"
+        
+        let contentChanged = context.coordinator.lastLoadedHref != spineItem.href
+        let themeChanged = context.coordinator.lastTheme != currentStateHash
+
+        guard contentChanged || themeChanged else { return }
         context.coordinator.lastLoadedHref = spineItem.href
         context.coordinator.lastTheme = currentStateHash
 
-        // Capture value-type snapshots so the detached task never touches ObservableObject
-        let capturedURL  = contentURL
-        let capturedDir  = dir
-        let capturedPage = initialPage
+        if contentChanged {
+            // Capture value-type snapshots so the detached task never touches ObservableObject
+            let capturedURL  = contentURL
+            let capturedDir  = dir
+            let capturedPage = initialPage
 
-        // CSS is pure string computation — compute on main before the task
-        let cssToInject  = buildReaderCSS(prefs: prefs, colorScheme: colorScheme, initialPage: capturedPage)
+            // CSS is pure string computation — compute on main before the task
+            let cssToInject  = buildReaderCSS(prefs: prefs, colorScheme: colorScheme, initialPage: capturedPage)
 
-        // Cancel any in-flight load from a previous chapter swipe
-        context.coordinator.loadTask?.cancel()
-        context.coordinator.loadTask = Task {
-            guard !Task.isCancelled else { return }
+            // Cancel any in-flight load from a previous chapter swipe
+            context.coordinator.loadTask?.cancel()
+            context.coordinator.loadTask = Task {
+                guard !Task.isCancelled else { return }
 
-            // Heavy I/O + string ops on a background thread
-            let styledHTML: String? = await Task.detached(priority: .userInitiated) {
-                var rawHTML: String?
-                var enc: String.Encoding = .utf8
-                let optString = try? String(contentsOf: capturedURL, usedEncoding: &enc)
-                if let html = optString {
-                    rawHTML = html
-                } else {
-                    let optData = try? Data(contentsOf: capturedURL)
-                    if let data = optData {
-                        rawHTML = String(data: data, encoding: .isoLatin1)
-                               ?? String(data: data, encoding: .ascii)
+                // Heavy I/O + string ops on a background thread
+                let styledHTML: String? = await Task.detached(priority: .userInitiated) {
+                    var rawHTML: String?
+                    var enc: String.Encoding = .utf8
+                    let optString = try? String(contentsOf: capturedURL, usedEncoding: &enc)
+                    if let html = optString {
+                        rawHTML = html
+                    } else {
+                        let optData = try? Data(contentsOf: capturedURL)
+                        if let data = optData {
+                            rawHTML = String(data: data, encoding: .isoLatin1)
+                                   ?? String(data: data, encoding: .ascii)
+                        }
                     }
+                    guard var html = rawHTML else { return nil }
+
+                    // Strip legacy charset tags
+                    let pattern = "<meta[^>]*charset[^>]*>"
+                    let optRegex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive)
+                    if let regex = optRegex {
+                        html = regex.stringByReplacingMatches(
+                            in: html, range: NSRange(html.startIndex..., in: html), withTemplate: ""
+                        )
+                    }
+
+                    // Inject pre-computed CSS
+                    if let range = html.range(of: "</head>", options: .caseInsensitive) {
+                        return html.replacingCharacters(in: range, with: cssToInject + "</head>")
+                    }
+                    return cssToInject + html
+                }.value
+
+                guard !Task.isCancelled, let html = styledHTML else { return }
+
+                // Back on main: write injected file + load
+                await MainActor.run {
+                    let hrefHash = abs(capturedURL.lastPathComponent.hashValue)
+                    let injectedURL = capturedURL.deletingLastPathComponent()
+                        .appendingPathComponent("__inksync_\(hrefHash).injected.html")
+                    try? html.write(to: injectedURL, atomically: true, encoding: .utf8)
+                    wv.loadFileURL(injectedURL, allowingReadAccessTo: capturedDir)
                 }
-                guard var html = rawHTML else { return nil }
-
-                // Strip legacy charset tags
-                let pattern = "<meta[^>]*charset[^>]*>"
-                let optRegex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive)
-                if let regex = optRegex {
-                    html = regex.stringByReplacingMatches(
-                        in: html, range: NSRange(html.startIndex..., in: html), withTemplate: ""
-                    )
-                }
-
-                // Inject pre-computed CSS
-                if let range = html.range(of: "</head>", options: .caseInsensitive) {
-                    return html.replacingCharacters(in: range, with: cssToInject + "</head>")
-                }
-                return cssToInject + html
-            }.value
-
-            guard !Task.isCancelled, let html = styledHTML else { return }
-
-            // Back on main: write injected file + load
-            await MainActor.run {
-                // Use a per-spine-item path keyed by the href hash so concurrent
-                // chapter swipes never overwrite each other's injected file.
-                // Previously both tasks wrote to the same "chapter.injected.html",
-                // causing the WKWebView to load corrupted / wrong-chapter HTML.
-                let hrefHash = abs(capturedURL.lastPathComponent.hashValue)
-                let injectedURL = capturedURL.deletingLastPathComponent()
-                    .appendingPathComponent("__inksync_\(hrefHash).injected.html")
-                try? html.write(to: injectedURL, atomically: true, encoding: .utf8)
-                wv.loadFileURL(injectedURL, allowingReadAccessTo: capturedDir)
             }
+        } else {
+            // Preferences/Theme changed inside the same chapter — update stylesheet directly in DOM without reloading!
+            injectLiveCSS(into: wv)
+        }
+
+        // Apply auto-scroll logic
+        if prefs.autoScroll && prefs.paginationMode == EBookPaginationMode.continuous.rawValue {
+            let speed = prefs.autoScrollSpeed * 1.5
+            wv.evaluateJavaScript("window.startInksyncAutoScroll(\(speed));", completionHandler: nil)
+        } else {
+            wv.evaluateJavaScript("window.stopInksyncAutoScroll();", completionHandler: nil)
         }
     }
 
@@ -1029,6 +1041,21 @@ struct EBookWebReader: UIViewRepresentable {
             }
         };
 
+        // ── Auto Scroll ──────────────────────────────────────────────────
+        var scrollTimer = null;
+        window.startInksyncAutoScroll = function(speed) {
+            if (scrollTimer) clearInterval(scrollTimer);
+            scrollTimer = setInterval(function() {
+                window.scrollBy(0, speed);
+            }, 16);
+        };
+        window.stopInksyncAutoScroll = function() {
+            if (scrollTimer) {
+                clearInterval(scrollTimer);
+                scrollTimer = null;
+            }
+        };
+
         // Make text selectable (required in paged/column mode)
         document.addEventListener('DOMContentLoaded', function() {
             document.body.style.webkitUserSelect = 'text';
@@ -1036,6 +1063,78 @@ struct EBookWebReader: UIViewRepresentable {
         });
         </script>
         """
+    }
+
+    /// Injects a live CSS update into the existing WebView DOM — no reload required.
+    private func injectLiveCSS(into webView: WKWebView) {
+        let isPaged = prefs.paginationMode == EBookPaginationMode.paged.rawValue
+        
+        let bg            = prefs.activeTheme.cssBackground
+        let fg            = prefs.activeTheme.cssText
+        let link          = prefs.activeTheme.cssLink
+        let ff            = prefs.fontFamily
+        let fs            = Int(prefs.fontSize)
+        let lh            = String(format: "%.2f", prefs.lineHeight)
+        let ls            = String(format: "%.4fem", prefs.letterSpacing)
+        let ws            = String(format: "%.4fem", prefs.wordSpacing)
+        let hyph          = prefs.hyphenation ? "auto" : "manual"
+        let align         = prefs.textAlign
+        let margin        = prefs.textMargin
+        
+        let deviceIsPad = UIDevice.current.userInterfaceIdiom == .pad
+        let defaultColumns = deviceIsPad ? 2 : 1
+        let cols = prefs.columnCount == 0 ? defaultColumns : prefs.columnCount
+        
+        let gap = cols == 2 ? 16 : Int(margin * 2)
+        
+        let pagedCSS = isPaged ? """
+            column-count: \(cols) !important;
+            column-gap: \(gap)px !important;
+            column-fill: auto !important;
+            column-rule: 1px solid rgba(128, 128, 128, 0.15) !important;
+        """ : ""
+
+        let maxSpreadWidthCSS = (isPaged && cols == 2) ? """
+            max-width: calc(1.42 * (100vh - 120px) + \(gap)px) !important;
+            margin-left: auto !important;
+            margin-right: auto !important;
+        """ : ""
+
+        let paddingLeft = (isPaged && cols == 2) ? 0 : margin
+        let paddingRight = (isPaged && cols == 2) ? 0 : margin
+
+        let css = """
+        @import url('https://fonts.googleapis.com/css2?family=Literata:ital,opsz,wght@0,7..72,200..900;1,7..72,200..900&family=Merriweather:ital,wght@0,300;0,400;0,700;0,900;1,300;1,400;1,700;1,900&family=Source+Serif+4:ital,opsz,wght@0,8..60,200..900;1,8..60,200..900&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400;1,700&display=swap');
+        @import url('https://cdn.jsdelivr.net/npm/open-dyslexic@1.0.3/open-dyslexic.css');
+        body {
+            font-family: \(ff) !important;
+            font-size: \(fs)px !important;
+            line-height: \(lh) !important;
+            background-color: \(bg) !important;
+            color: \(fg) !important;
+            letter-spacing: \(ls) !important;
+            word-spacing: \(ws) !important;
+            text-align: \(align) !important;
+            -webkit-hyphens: \(hyph) !important;
+            hyphens: \(hyph) !important;
+            \(pagedCSS)
+            \(maxSpreadWidthCSS)
+            padding-left: \(paddingLeft)px !important;
+            padding-right: \(paddingRight)px !important;
+        }
+        body, p, div, span, li, td, th, h1, h2, h3, h4, h5, h6 { color: \(fg) !important; }
+        a { color: \(link) !important; }
+        html { background-color: \(bg) !important; }
+        """
+
+        let js = """
+        (function() {
+            var el = document.getElementById('__inksync_live__');
+            if (!el) { el = document.createElement('style'); el.id = '__inksync_live__'; document.head.appendChild(el); }
+            el.textContent = \("`\(css.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "`", with: "\\`"))`");
+        })();
+        """
+        webView.evaluateJavaScript(js)
     }
 
     
