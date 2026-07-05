@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import NaturalLanguage
 
 @MainActor
 struct WritingAssistantSheet: View {
@@ -348,6 +349,86 @@ struct WritingAssistantSheet: View {
                             originalText: matchedSegment,
                             suggestions: [suggestion],
                             description: "Punctuation spacing missing",
+                            range: match.range
+                        ))
+                    }
+                }
+            }
+        }
+        
+        // 4. NLP Proper Noun Capitalization Check
+        let tagger = NLTagger(tagSchemes: [.nameType])
+        tagger.string = textState
+        let tagOptions: NLTagger.Options = [.omitWhitespace, .omitPunctuation, .joinNames]
+        
+        tagger.enumerateTags(in: textState.startIndex..<textState.endIndex, unit: .word, scheme: .nameType, options: tagOptions) { tag, tokenRange in
+            if let tag = tag {
+                let matchedWord = String(textState[tokenRange])
+                if let firstChar = matchedWord.first, firstChar.isLowercase {
+                    let capitalized = matchedWord.prefix(1).uppercased() + matchedWord.dropFirst()
+                    let nsRange = NSRange(tokenRange, in: textState)
+                    
+                    if !newIssues.contains(where: { $0.range.intersection(nsRange) != nil }) {
+                        newIssues.append(AssistantIssue(
+                            type: .grammar,
+                            originalText: matchedWord,
+                            suggestions: [capitalized],
+                            description: "Proper noun capitalization missing (\(tag.rawValue))",
+                            range: nsRange
+                        ))
+                    }
+                }
+            }
+            return true
+        }
+        
+        // 5. Duplicate adjacent word finder (e.g., "the the")
+        let duplicateWordPattern = "\\b([a-zA-Z]+)\\s+\\1\\b"
+        if let dupRegex = try? NSRegularExpression(pattern: duplicateWordPattern, options: [.caseInsensitive]) {
+            let nsText = textState as NSString
+            let range = NSRange(location: 0, length: nsText.length)
+            let matches = dupRegex.matches(in: textState, options: [], range: range)
+            for match in matches {
+                let matchedSegment = nsText.substring(with: match.range)
+                let singleWord = matchedSegment.components(separatedBy: .whitespacesAndNewlines).first ?? ""
+                if !newIssues.contains(where: { $0.range.intersection(match.range) != nil }) {
+                    newIssues.append(AssistantIssue(
+                        type: .grammar,
+                        originalText: matchedSegment,
+                        suggestions: [singleWord],
+                        description: "Duplicate word detected",
+                        range: match.range
+                    ))
+                }
+            }
+        }
+        
+        // 6. Common phrasing & grammatical errors
+        let phrasingMap = [
+            "could of": "could have",
+            "should of": "should have",
+            "would of": "would have",
+            "alot": "a lot",
+            "everyday": "every day",
+            "their is": "there is",
+            "their are": "there are",
+            "point of view": "perspective"
+        ]
+        
+        for (wrong, right) in phrasingMap {
+            let regexStr = "\\b\(wrong)\\b"
+            if let regex = try? NSRegularExpression(pattern: regexStr, options: [.caseInsensitive]) {
+                let nsText = textState as NSString
+                let range = NSRange(location: 0, length: nsText.length)
+                let matches = regex.matches(in: textState, options: [], range: range)
+                for match in matches {
+                    let matchedPhrase = nsText.substring(with: match.range)
+                    if !newIssues.contains(where: { $0.range.intersection(match.range) != nil }) {
+                        newIssues.append(AssistantIssue(
+                            type: .grammar,
+                            originalText: matchedPhrase,
+                            suggestions: [right],
+                            description: "Grammar phrasing issue",
                             range: match.range
                         ))
                     }
