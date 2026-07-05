@@ -311,6 +311,10 @@ struct EPUBWebView: UIViewRepresentable {
     var onPageLoaded: ((WKWebView) -> Void)?
     /// Fired when user taps the center third of the page (toggles chrome)
     var onCenterTap: (() -> Void)? = nil
+    /// Fired when user taps the left third of the page (turns page back)
+    var onLeftTap: (() -> Void)? = nil
+    /// Fired when user taps the right third of the page (turns page forward)
+    var onRightTap: (() -> Void)? = nil
     /// Fired when a forward swipe reaches the end of the last column
     var onNextChapter: (() -> Void)? = nil
     /// Fired when a backward swipe is at the first column
@@ -333,6 +337,8 @@ struct EPUBWebView: UIViewRepresentable {
             } else if message.name == "nav", let body = message.body as? String {
                 switch body {
                 case "center": parent.onCenterTap?()
+                case "left":   parent.onLeftTap?()
+                case "right":  parent.onRightTap?()
                 case "next":   parent.onNextChapter?()
                 case "prev":   parent.onPrevChapter?()
                 default: break
@@ -364,7 +370,7 @@ struct EPUBWebView: UIViewRepresentable {
         // Use WeakProxy — WKUserContentController strongly retains handlers by default.
         let proxy = WeakScriptMessageProxy(context.coordinator)
         config.userContentController.add(proxy, name: "highlightHandler")
-        // `nav` bridge: center tap (toggle chrome), next/prev chapter boundary swipes
+        // `nav` bridge: center/left/right tap, next/prev chapter boundary swipes
         config.userContentController.add(proxy, name: "nav")
 
         // CSS + JS Injection (runs once after each page load, not on every SwiftUI update)
@@ -372,65 +378,9 @@ struct EPUBWebView: UIViewRepresentable {
             source: """
             var meta = document.createElement('meta');
             meta.name = 'viewport';
-            meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
+            meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover';
             var head = document.getElementsByTagName('head')[0];
             head.appendChild(meta);
-
-            var style = document.createElement('style');
-            style.innerHTML = `
-                html {
-                    overflow-y: \(prefs.paginationMode == EBookPaginationMode.continuous.rawValue ? "scroll" : "hidden") !important;
-                    height: 100vh !important;
-                }
-                body {
-                    font-family: '\(prefs.fontFamily)' !important;
-                    font-size: \(prefs.fontSize)px !important;
-                    line-height: \(prefs.lineHeight) !important;
-                    background-color: \(prefs.activeTheme.cssBackground) !important;
-                    color: \(prefs.activeTheme.cssText) !important;
-                    letter-spacing: \(String(format: "%.4f", prefs.letterSpacing))em !important;
-                    word-spacing: \(String(format: "%.4f", prefs.wordSpacing))em !important;
-                    -webkit-user-select: text !important;
-                    user-select: text !important;
-
-                    /* Layout */
-                    height: \(prefs.paginationMode == EBookPaginationMode.continuous.rawValue ? "auto" : "calc(100vh - 100px)") !important;
-                    padding-top: 40px !important;
-                    padding-bottom: 60px !important;
-                    padding-left: 0 !important;
-                    padding-right: 0 !important;
-                    margin: 0 !important;
-
-                    \(prefs.paginationMode == EBookPaginationMode.continuous.rawValue ? "" : (prefs.columnCount == 2 ? "column-width: calc(50vw - 30px) !important; column-gap: 60px !important;" : (prefs.columnCount == 1 ? "column-width: 100vw !important; column-gap: 0 !important;" : "column-width: 100vw !important; column-gap: 0 !important;")))
-
-                    /* Typography enhancements */
-                    text-align: \(prefs.textAlign) !important;
-                    -webkit-hyphens: \(prefs.hyphenation ? "auto" : "manual") !important;
-                    hyphens: \(prefs.hyphenation ? "auto" : "manual") !important;
-                }
-                @media (prefers-color-scheme: dark) {
-                    body {
-                        background-color: \(prefs.activeTheme.cssBackground(colorScheme: .dark)) !important;
-                        color: \(prefs.activeTheme.cssText(colorScheme: .dark)) !important;
-                    }
-                }
-                \(prefs.paginationMode == EBookPaginationMode.continuous.rawValue || prefs.columnCount != 0 ? "" : """
-                @media (min-width: 768px) and (orientation: landscape) {
-                    body {
-                        column-width: calc(50vw - 30px) !important;
-                        column-gap: 60px !important;
-                    }
-                }
-                """)
-                .content-container {
-                    padding-left: \(prefs.textMargin)px !important;
-                    padding-right: \(prefs.textMargin)px !important;
-                }
-                img, svg, .page, .chunk-container { display: block !important; margin-left: auto !important; margin-right: auto !important; }
-                img { max-width: 100% !important; max-height: 100% !important; border-radius: 4px; object-fit: contain; }
-                .inksync-highlight { background-color: #ffd700; color: inherit; border-radius: 2px; mix-blend-mode: multiply; -webkit-mix-blend-mode: multiply; padding: 0 1px; }
-            `;
-            head.appendChild(style);
 
             // Wrap body content in a container for margins while keeping columns full-width
             if (!document.getElementById('inksync-container')) {
@@ -445,8 +395,6 @@ struct EPUBWebView: UIViewRepresentable {
 
             // Highlight Engine JS
             // Uses DOM Range + <mark> element wrapping.
-            // document.execCommand('hiliteColor') is deprecated and produces no
-            // visual output in WKWebView on iOS 16+, so we use Range.surroundContents().
             window.applyInksyncHighlight = function(colorHex) {
                 var sel = window.getSelection();
                 if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
@@ -476,8 +424,6 @@ struct EPUBWebView: UIViewRepresentable {
             };
 
             // Restore a previously saved highlight on chapter reload.
-            // Uses TreeWalker to locate the text node — window.find() is unreliable
-            // in column/paged mode and execCommand('hiliteColor') is dead in iOS 16+.
             window.restoreInksyncHighlight = function(textToFind, colorHex) {
                 if (!textToFind) return;
                 var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
@@ -502,8 +448,6 @@ struct EPUBWebView: UIViewRepresentable {
             };
 
             // ── Navigation (swipe + tap) bridge ──────────────────────────────
-            // WKWebView absorbs all SwiftUI gesture recognizers, so we must
-            // post navigation messages from JS to toggle chrome and turn chapters.
             var _sx = 0, _sy = 0;
             document.addEventListener('touchstart', function(e) {
                 _sx = e.changedTouches[0].clientX;
@@ -513,21 +457,23 @@ struct EPUBWebView: UIViewRepresentable {
                 var dx = e.changedTouches[0].clientX - _sx;
                 var dy = e.changedTouches[0].clientY - _sy;
                 if (Math.abs(dx) < 8 && Math.abs(dy) < 8) {
-                    // Tap: determine zone
+                    // Tap: determine zone (30% left / 40% center / 30% right)
                     var x = e.changedTouches[0].clientX;
                     var w = window.innerWidth;
-                    if (x > w * 0.35 && x < w * 0.65) {
+                    if (x < w * 0.30) {
+                        window.webkit.messageHandlers.nav.postMessage('left');
+                    } else if (x > w * 0.70) {
+                        window.webkit.messageHandlers.nav.postMessage('right');
+                    } else {
                         window.webkit.messageHandlers.nav.postMessage('center');
                     }
                 } else if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) {
                     // Horizontal swipe
                     if (dx < 0) {
-                        // Forward swipe: check right scroll boundary
                         var sv = document.scrollingElement || document.documentElement;
                         var atEnd = (sv.scrollLeft + window.innerWidth) >= sv.scrollWidth - 4;
                         if (atEnd) window.webkit.messageHandlers.nav.postMessage('next');
                     } else {
-                        // Backward swipe: check left scroll boundary
                         var sv2 = document.scrollingElement || document.documentElement;
                         if (sv2.scrollLeft <= 4) window.webkit.messageHandlers.nav.postMessage('prev');
                     }
@@ -542,8 +488,8 @@ struct EPUBWebView: UIViewRepresentable {
         let webView = HighlightableWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
         webView.isOpaque = false
-        webView.backgroundColor = UIColor(prefs.activeTheme.background)
-        webView.scrollView.backgroundColor = webView.backgroundColor
+        webView.backgroundColor = .clear
+        webView.scrollView.backgroundColor = .clear
         webView.scrollView.isPagingEnabled = prefs.paginationMode == EBookPaginationMode.paged.rawValue
         webView.scrollView.showsHorizontalScrollIndicator = false
         webView.scrollView.showsVerticalScrollIndicator = prefs.paginationMode == EBookPaginationMode.continuous.rawValue
@@ -578,63 +524,180 @@ struct EPUBWebView: UIViewRepresentable {
         context.coordinator.lastContentOnlyHash = contentHash
 
         if contentChanged {
-            // Chapter changed — full reload so WKUserScript reruns with latest values.
-            webView.loadHTMLString(htmlContent, baseURL: baseUrl)
+            // Swift-side HTML preprocessing: pre-inject CSS into head directly
+            var html = htmlContent
+            let css = buildReaderCSS(prefs: prefs)
+            if let range = html.range(of: "</head>", options: .caseInsensitive) {
+                html = html.replacingCharacters(in: range, with: css + "</head>")
+            } else {
+                html = css + html
+            }
+            webView.loadHTMLString(html, baseURL: baseUrl)
         } else {
             // Prefs-only change — inject updated CSS directly into the live DOM.
-            // This avoids losing scroll position and is instant.
             injectLiveCSS(into: webView)
         }
 
         // Always sync native appearance
-        webView.backgroundColor = UIColor(prefs.activeTheme.background)
-        webView.scrollView.backgroundColor = webView.backgroundColor
+        webView.backgroundColor = .clear
+        webView.scrollView.backgroundColor = .clear
         webView.scrollView.isPagingEnabled = prefs.paginationMode == EBookPaginationMode.paged.rawValue
         webView.scrollView.showsVerticalScrollIndicator = prefs.paginationMode == EBookPaginationMode.continuous.rawValue
         webView.scrollView.alwaysBounceVertical = prefs.paginationMode == EBookPaginationMode.continuous.rawValue
     }
 
-    /// Injects a live CSS update into the existing WebView DOM — no reload required.
-    /// Creates or replaces the `__inksync_live__` style tag.
-    private func injectLiveCSS(into webView: WKWebView) {
-        let bg    = prefs.activeTheme.cssBackground
-        let fg    = prefs.activeTheme.cssText
-        let link  = prefs.activeTheme.cssLink
-        let ff    = prefs.fontFamily
-        let fs    = Int(prefs.fontSize)
-        let lh    = String(format: "%.2f", prefs.lineHeight)
-        let ls    = String(format: "%.4f", prefs.letterSpacing)
-        let ws    = String(format: "%.4f", prefs.wordSpacing)
-        let hyph  = prefs.hyphenation ? "auto" : "manual"
-        let align = prefs.textAlign
-        let marg  = prefs.textMargin
+    /// Builds the full CSS + JS block as a pure string.
+    private func buildReaderCSS(prefs: EBookPreferences) -> String {
         let isPaged = prefs.paginationMode == EBookPaginationMode.paged.rawValue
-        let colW: String
-        switch prefs.columnCount {
-        case 2:  colW = "column-width: calc(50vw - 30px) !important; column-gap: 60px !important;"
-        case 1:  colW = "column-width: 100vw !important; column-gap: 0 !important;"
-        default: colW = isPaged ? "column-width: 100vw !important; column-gap: 0 !important;" : ""
+
+        let bgColor       = prefs.activeTheme.cssBackground
+        let textColor     = prefs.activeTheme.cssText
+        let linkColor     = prefs.activeTheme.cssLink
+        let fontFamily    = prefs.fontFamily
+        let fontSize      = Int(prefs.fontSize)
+        let lineHeight    = String(format: "%.2f", prefs.lineHeight)
+        let letterSpacing = String(format: "%.4fem", prefs.letterSpacing)
+        let wordSpacing   = String(format: "%.4fem", prefs.wordSpacing)
+        let hyphenCSS     = prefs.hyphenation ? "auto" : "manual"
+        let textAlign     = prefs.textAlign
+        let margin        = prefs.textMargin
+        let paraSpace     = prefs.paragraphSpacing
+        let paraIndent    = prefs.paragraphIndent
+
+        let overflowCSS = isPaged
+            ? "overflow: hidden !important;"
+            : "overflow-x: hidden !important; overflow-y: auto !important;"
+        let widthCSS = isPaged ? "" : "width: 100vw !important; overflow-x: hidden !important;"
+        
+        let deviceIsPad = UIDevice.current.userInterfaceIdiom == .pad
+        let defaultColumns = deviceIsPad ? 2 : 1
+        let cols = prefs.columnCount == 0 ? defaultColumns : prefs.columnCount
+        
+        let gap = cols == 2 ? 16 : Int(margin * 2)
+        
+        let pagedCSS = isPaged ? """
+            column-count: \(cols) !important;
+            column-gap: \(gap)px !important;
+            column-fill: auto !important;
+            column-rule: 1px solid rgba(128, 128, 128, 0.15) !important;
+        """ : ""
+
+        let maxSpreadWidthCSS = (isPaged && cols == 2) ? """
+            max-width: calc(1.42 * (100vh - 120px) + \(gap)px) !important;
+            margin-left: auto !important;
+            margin-right: auto !important;
+        """ : ""
+
+        let paddingLeft = (isPaged && cols == 2) ? 0 : margin
+        let paddingRight = (isPaged && cols == 2) ? 0 : margin
+
+        return """
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+        <style id="__inksync_live__">
+        @import url('https://fonts.googleapis.com/css2?family=Literata:ital,opsz,wght@0,7..72,200..900;1,7..72,200..900&family=Merriweather:ital,wght@0,300;0,400;0,700;0,900;1,300;1,400;1,700;1,900&family=Source+Serif+4:ital,opsz,wght@0,8..60,200..900;1,8..60,200..900&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400;1,700&display=swap');
+        @import url('https://cdn.jsdelivr.net/npm/open-dyslexic@1.0.3/open-dyslexic.css');
+        *, *::before, *::after { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        html {
+            margin: 0 !important; padding: 0 !important;
+            height: 100vh !important; width: 100vw !important;
+            \(overflowCSS)
+            background-color: \(bgColor) !important;
         }
+        body {
+            color: \(textColor) !important;
+            font-family: \(fontFamily);
+            font-size: \(fontSize)px;
+            line-height: \(lineHeight);
+            text-align: \(textAlign) !important;
+            \(pagedCSS)
+            \(maxSpreadWidthCSS)
+            margin: 0 !important;
+            height: 100vh !important;
+            \(widthCSS)
+            padding-top: 60px !important;
+            padding-bottom: 60px !important;
+            padding-left: \(paddingLeft)px !important;
+            padding-right: \(paddingRight)px !important;
+            box-sizing: border-box !important;
+            word-wrap: break-word;
+            -webkit-text-size-adjust: none;
+            letter-spacing: \(letterSpacing) !important;
+            word-spacing: \(wordSpacing) !important;
+            -webkit-hyphens: \(hyphenCSS) !important;
+            hyphens: \(hyphenCSS) !important;
+        }
+        p { margin-bottom: \(paraSpace)em !important; text-indent: \(paraIndent)em !important; }
+        p, div, span, li, td, th, h1, h2, h3, h4, h5, h6 { color: \(textColor) !important; line-height: \(lineHeight); }
+        img, svg, .page, .chunk-container { display: block !important; margin-left: auto !important; margin-right: auto !important; }
+        img { max-width: 100%; height: auto; border-radius: 4px; object-fit: contain; max-height: calc(100vh - 120px); }
+        a { color: \(linkColor) !important; }
+        blockquote { border-left: 3px solid \(linkColor); margin-left: 0; padding-left: 16px; opacity: 0.85; }
+        mark.inksync-highlight { background-color: #ffd700; color: inherit; border-radius: 2px; mix-blend-mode: multiply; -webkit-mix-blend-mode: multiply; padding: 0 1px; }
+        </style>
+        """
+    }
+
+    /// Injects a live CSS update into the existing WebView DOM — no reload required.
+    private func injectLiveCSS(into webView: WKWebView) {
+        let isPaged = prefs.paginationMode == EBookPaginationMode.paged.rawValue
+        
+        let bg            = prefs.activeTheme.cssBackground
+        let fg            = prefs.activeTheme.cssText
+        let link          = prefs.activeTheme.cssLink
+        let ff            = prefs.fontFamily
+        let fs            = Int(prefs.fontSize)
+        let lh            = String(format: "%.2f", prefs.lineHeight)
+        let ls            = String(format: "%.4fem", prefs.letterSpacing)
+        let ws            = String(format: "%.4fem", prefs.wordSpacing)
+        let hyph          = prefs.hyphenation ? "auto" : "manual"
+        let align         = prefs.textAlign
+        let margin        = prefs.textMargin
+        
+        let deviceIsPad = UIDevice.current.userInterfaceIdiom == .pad
+        let defaultColumns = deviceIsPad ? 2 : 1
+        let cols = prefs.columnCount == 0 ? defaultColumns : prefs.columnCount
+        
+        let gap = cols == 2 ? 16 : Int(margin * 2)
+        
+        let pagedCSS = isPaged ? """
+            column-count: \(cols) !important;
+            column-gap: \(gap)px !important;
+            column-fill: auto !important;
+            column-rule: 1px solid rgba(128, 128, 128, 0.15) !important;
+        """ : ""
+
+        let maxSpreadWidthCSS = (isPaged && cols == 2) ? """
+            max-width: calc(1.42 * (100vh - 120px) + \(gap)px) !important;
+            margin-left: auto !important;
+            margin-right: auto !important;
+        """ : ""
+
+        let paddingLeft = (isPaged && cols == 2) ? 0 : margin
+        let paddingRight = (isPaged && cols == 2) ? 0 : margin
 
         let css = """
+        @import url('https://fonts.googleapis.com/css2?family=Literata:ital,opsz,wght@0,7..72,200..900;1,7..72,200..900&family=Merriweather:ital,wght@0,300;0,400;0,700;0,900;1,300;1,400;1,700;1,900&family=Source+Serif+4:ital,opsz,wght@0,8..60,200..900;1,8..60,200..900&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400;1,700&display=swap');
+        @import url('https://cdn.jsdelivr.net/npm/open-dyslexic@1.0.3/open-dyslexic.css');
         body {
-            font-family: '\(ff)' !important;
+            font-family: \(ff) !important;
             font-size: \(fs)px !important;
             line-height: \(lh) !important;
             background-color: \(bg) !important;
             color: \(fg) !important;
-            letter-spacing: \(ls)em !important;
-            word-spacing: \(ws)em !important;
+            letter-spacing: \(ls) !important;
+            word-spacing: \(ws) !important;
             text-align: \(align) !important;
             -webkit-hyphens: \(hyph) !important;
             hyphens: \(hyph) !important;
-            \(colW)
+            \(pagedCSS)
+            \(maxSpreadWidthCSS)
+            padding-left: \(paddingLeft)px !important;
+            padding-right: \(paddingRight)px !important;
         }
-        body, p, div, span, li { color: \(fg) !important; }
+        body, p, div, span, li, td, th, h1, h2, h3, h4, h5, h6 { color: \(fg) !important; }
         a { color: \(link) !important; }
         html { background-color: \(bg) !important; }
-        .content-container { padding-left: \(marg)px !important; padding-right: \(marg)px !important; }
-        img, svg, .page, .chunk-container { display: block !important; margin-left: auto !important; margin-right: auto !important; }
         """
 
         let js = """
@@ -727,6 +790,8 @@ struct BookReaderEngine: View {
                         }
                     },
                     onCenterTap: { chromeVisible.toggle() },
+                    onLeftTap: { pageBackward() },
+                    onRightTap: { pageForward() },
                     onNextChapter: {
                         let lastIdx = vm.chapterHtmlFiles.count - 1
                         if vm.currentChapterIndex >= lastIdx {

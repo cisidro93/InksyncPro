@@ -822,6 +822,7 @@ struct EBookWebReader: UIViewRepresentable {
             column-count: \(cols) !important;
             column-gap: \(gap)px !important;
             column-fill: auto !important;
+            column-rule: 1px solid rgba(128, 128, 128, 0.15) !important;
         """ : ""
 
         let maxSpreadWidthCSS = (isPaged && cols == 2) ? """
@@ -837,6 +838,8 @@ struct EBookWebReader: UIViewRepresentable {
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
         <style id="__inksync_reader__">
+        @import url('https://fonts.googleapis.com/css2?family=Literata:ital,opsz,wght@0,7..72,200..900;1,7..72,200..900&family=Merriweather:ital,wght@0,300;0,400;0,700;0,900;1,300;1,400;1,700;1,900&family=Source+Serif+4:ital,opsz,wght@0,8..60,200..900;1,8..60,200..900&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400;1,700&display=swap');
+        @import url('https://cdn.jsdelivr.net/npm/open-dyslexic@1.0.3/open-dyslexic.css');
         *, *::before, *::after { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
         html {
             margin: 0 !important; padding: 0 !important;
@@ -891,24 +894,25 @@ struct EBookWebReader: UIViewRepresentable {
             window.webkit.messageHandlers.metrics.postMessage({ current: _currentPage, total: _totalPages });
         }
 
-        function goToPage(page) {
+        function goToPage(page, smooth) {
             _currentPage = Math.max(0, Math.min(page, _totalPages - 1));
-            window.scrollTo({ left: _currentPage * window.innerWidth, behavior: 'instant' });
+            var behavior = smooth ? 'smooth' : 'instant';
+            window.scrollTo({ left: _currentPage * window.innerWidth, behavior: behavior });
             updateMetrics();
         }
 
         window.onload = function() { setTimeout(updateMetrics, 100); };
-        window.addEventListener('resize', function() { updateMetrics(); goToPage(_currentPage); });
+        window.addEventListener('resize', function() { updateMetrics(); goToPage(_currentPage, false); });
 
         var _sx = 0;
         document.addEventListener('touchstart', function(e) { _sx = e.changedTouches[0].clientX; }, {passive:true});
         document.addEventListener('touchend', function(e) {
             var dx = e.changedTouches[0].clientX - _sx;
             if (dx < -40) {
-                if (_currentPage < _totalPages - 1) goToPage(_currentPage + 1);
+                if (_currentPage < _totalPages - 1) goToPage(_currentPage + 1, false);
                 else window.webkit.messageHandlers.nav.postMessage('next');
             } else if (dx > 40) {
-                if (_currentPage > 0) goToPage(_currentPage - 1);
+                if (_currentPage > 0) goToPage(_currentPage - 1, false);
                 else window.webkit.messageHandlers.nav.postMessage('prev');
             }
         }, {passive:true});
@@ -916,11 +920,11 @@ struct EBookWebReader: UIViewRepresentable {
         document.addEventListener('click', function(e) {
             if (e.target.tagName.toLowerCase() === 'a') return;
             var x = e.clientX; var w = window.innerWidth;
-            if (x < w * 0.35) {
-                if (_currentPage > 0) goToPage(_currentPage - 1);
+            if (x < w * 0.30) {
+                if (_currentPage > 0) goToPage(_currentPage - 1, true);
                 else window.webkit.messageHandlers.nav.postMessage('prev');
-            } else if (x > w * 0.65) {
-                if (_currentPage < _totalPages - 1) goToPage(_currentPage + 1);
+            } else if (x > w * 0.70) {
+                if (_currentPage < _totalPages - 1) goToPage(_currentPage + 1, true);
                 else window.webkit.messageHandlers.nav.postMessage('next');
             } else {
                 window.webkit.messageHandlers.nav.postMessage('center');
@@ -929,11 +933,11 @@ struct EBookWebReader: UIViewRepresentable {
 
         document.addEventListener('keydown', function(e) {
             if (e.key === 'ArrowRight' || e.key === 'Space') {
-                if (_currentPage < _totalPages - 1) goToPage(_currentPage + 1);
+                if (_currentPage < _totalPages - 1) goToPage(_currentPage + 1, true);
                 else window.webkit.messageHandlers.nav.postMessage('next');
                 e.preventDefault();
             } else if (e.key === 'ArrowLeft') {
-                if (_currentPage > 0) goToPage(_currentPage - 1);
+                if (_currentPage > 0) goToPage(_currentPage - 1, true);
                 else window.webkit.messageHandlers.nav.postMessage('prev');
                 e.preventDefault();
             }

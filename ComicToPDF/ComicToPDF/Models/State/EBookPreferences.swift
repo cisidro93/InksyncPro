@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 // MARK: - Core Preference Data Engine
 @MainActor
@@ -6,7 +7,23 @@ class EBookPreferences: ObservableObject {
     static let shared = EBookPreferences()
 
     // MARK: - Theme
-    @AppStorage("ebook_theme") var themeRaw: String = EBookTheme.paper.rawValue
+    var themeRaw: String {
+        get {
+            if let saved = UserDefaults.standard.string(forKey: "ebook_theme") {
+                return saved
+            }
+            // Dynamic default: Match system appearance if user hasn't customized it yet
+            if UITraitCollection.current.userInterfaceStyle == .dark {
+                return EBookTheme.night.rawValue
+            } else {
+                return EBookTheme.paper.rawValue
+            }
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: "ebook_theme")
+            objectWillChange.send()
+        }
+    }
 
     // Per-book theme memory: [bookID: themeRaw]
     @AppStorage("ebook_bookThemes") private var bookThemesData: Data = Data()

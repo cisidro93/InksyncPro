@@ -266,6 +266,17 @@ struct PDFKitRepresentedView: UIViewRepresentable {
     @Binding var chromeVisible: Bool
     @Binding var isPencilMode: Bool
     
+    private func makePdfViewTransparent(_ pdfView: PDFView) {
+        pdfView.isOpaque = false
+        pdfView.backgroundColor = .clear
+        for subview in pdfView.subviews {
+            subview.backgroundColor = .clear
+            if let scrollView = subview as? UIScrollView {
+                scrollView.backgroundColor = .clear
+            }
+        }
+    }
+    
     func makeUIView(context: Context) -> UIView {
         let pdfView = HighlightablePDFView()
         pdfView.document = document
@@ -273,6 +284,8 @@ struct PDFKitRepresentedView: UIViewRepresentable {
         pdfView.displayDirection = .vertical
         pdfView.displayMode = pdf.documentSubtype == .magazine ? .singlePageContinuous : .singlePageContinuous
         pdfView.delegate = context.coordinator
+        
+        makePdfViewTransparent(pdfView)
         
         pdfView.onHighlightCreated = { text, bounds in
             guard let page = pdfView.currentPage else { return }
@@ -338,14 +351,17 @@ struct PDFKitRepresentedView: UIViewRepresentable {
         context.coordinator.canvasView?.isUserInteractionEnabled = isPencilMode
         context.coordinator.parent = self
         
-        // Sync outer page change to the PDFView
-        if let pdfView = context.coordinator.pdfView,
-           let document = pdfView.document,
-           let currentPage = pdfView.currentPage {
-            let viewPageIndex = document.index(for: currentPage)
-            if viewPageIndex != currentPageIndex && currentPageIndex >= 0 && currentPageIndex < document.pageCount {
-                if let targetPage = document.page(at: currentPageIndex) {
-                    pdfView.go(to: targetPage)
+        if let pdfView = context.coordinator.pdfView {
+            makePdfViewTransparent(pdfView)
+            
+            // Sync outer page change to the PDFView
+            if let document = pdfView.document,
+               let currentPage = pdfView.currentPage {
+                let viewPageIndex = document.index(for: currentPage)
+                if viewPageIndex != currentPageIndex && currentPageIndex >= 0 && currentPageIndex < document.pageCount {
+                    if let targetPage = document.page(at: currentPageIndex) {
+                        pdfView.go(to: targetPage)
+                    }
                 }
             }
         }
@@ -380,7 +396,26 @@ struct PDFKitRepresentedView: UIViewRepresentable {
         
         @objc func handleTap(_ gesture: UITapGestureRecognizer) {
             guard !parent.isPencilMode else { return }
-            parent.chromeVisible.toggle()
+            
+            let location = gesture.location(in: gesture.view)
+            let width = gesture.view?.bounds.width ?? 0
+            
+            if location.x < width * 0.30 {
+                // Tap left 30% -> Page backward
+                if parent.currentPageIndex > 0 {
+                    parent.currentPageIndex -= 1
+                    HapticEngine.light()
+                }
+            } else if location.x > width * 0.70 {
+                // Tap right 30% -> Page forward
+                if let doc = pdfView?.document, parent.currentPageIndex < doc.pageCount - 1 {
+                    parent.currentPageIndex += 1
+                    HapticEngine.light()
+                }
+            } else {
+                // Center 40% -> Toggle chrome
+                parent.chromeVisible.toggle()
+            }
         }
         
         @objc func pageChanged(_ notification: Notification) {
