@@ -1729,6 +1729,9 @@ struct ComicReaderEngine: View {
             onSettingsToggle: {
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { showingSettingsHUD.toggle() }
             },
+            onAnnotationsToggle: {
+                showAnnotations = true
+            },
             onCharacterMapToggle: {
                 showingCharacterMap.toggle()
             },
@@ -1743,9 +1746,6 @@ struct ComicReaderEngine: View {
                     }
                 }
                 HapticEngine.light()
-            },
-            onAnnotationsToggle: {
-                showAnnotations = true
             },
             currentProgress: Binding(
                 get: { Double(currentIndex) / Double(max(1, cache.pageCount - 1)) },
