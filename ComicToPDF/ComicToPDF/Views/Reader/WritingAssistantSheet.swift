@@ -611,7 +611,7 @@ struct WritingAssistantSheet: View {
     private var computedStats: WritingStats {
         let textState = correctedText
         let sentences = textState.components(separatedBy: CharacterSet(charactersIn: ".!?")).filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-        let words = textState.split { $0.isWhitespace || $0.isNewline || CharacterSet.punctuationCharacters.contains($0.unicodeScalars.first!) }.map(String.init)
+        let words = textState.split { $0.isWhitespace || $0.isNewline || $0.isPunctuation }.map(String.init)
         
         var totalSyllables = 0
         for word in words {
