@@ -55,7 +55,7 @@ final class SleepTimerManager: ObservableObject {
     @Published var remainingSeconds: Int = 0
     @Published var didFire: Bool = false   // observed by reader to dismiss
 
-    private var timer: Timer?
+    private var timerTask: Task<Void, Never>?
     private var initialBrightness: CGFloat = 1.0
     private var totalSeconds: Int = 0
     private let fadeDuration: Int = 120 // 2 minutes
@@ -69,22 +69,29 @@ final class SleepTimerManager: ObservableObject {
         initialBrightness = UIScreen.main.brightness
         isActive = true
         didFire = false
-        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
-            Task { @MainActor [weak self] in
-                guard let self = self else { return }
+        
+        timerTask = Task { @MainActor [weak self] in
+            while true {
+                do {
+                    try await Task.sleep(nanoseconds: 1_000_000_000)
+                } catch {
+                    break
+                }
+                guard let self = self, !Task.isCancelled else { break }
                 if self.remainingSeconds > 1 {
                     self.remainingSeconds -= 1
                     self.updateBrightness()
                 } else {
                     self.fire()
+                    break
                 }
             }
         }
     }
 
     func stop() {
-        timer?.invalidate()
-        timer = nil
+        timerTask?.cancel()
+        timerTask = nil
         if isActive {
             UIScreen.main.brightness = initialBrightness
         }
