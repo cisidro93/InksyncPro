@@ -1036,6 +1036,9 @@ struct ComicReaderEngine: View {
     @State private var showAnnotations = false
     @State private var activeHighlightToEdit: SDAnnotation? = nil
     
+    /// Focus state for Magic Keyboard navigation
+    @FocusState private var isReaderFocused: Bool
+    
     /// AI Dialogue Lens State
     @State private var isDialogueLensEnabled = false
     @State private var selectedTextBlock: TextBlock? = nil
@@ -1320,6 +1323,7 @@ struct ComicReaderEngine: View {
             BackTapManager.shared.isEnabled = backTapEnabled
             maxPageIndexVisited = currentIndex
             NotificationCenter.default.post(name: NSNotification.Name("Reader_ForceKeyFocus"), object: nil)
+            isReaderFocused = true
         }
         .onChange(of: currentIndex) { oldIndex, newIndex in
             let elapsed = Date().timeIntervalSince(pageEntryTime)
@@ -1418,6 +1422,33 @@ struct ComicReaderEngine: View {
             extractAmbientColor(for: currentIndex)
         }
         .preferredColorScheme(.dark)
+        .focusable()
+        .focused($isReaderFocused)
+        .focusEffectDisabled()
+        .onKeyPress(.leftArrow) {
+            if readingMode == .mangaRTL {
+                nextPage()
+            } else {
+                prevPage()
+            }
+            return .handled
+        }
+        .onKeyPress(.rightArrow) {
+            if readingMode == .mangaRTL {
+                prevPage()
+            } else {
+                nextPage()
+            }
+            return .handled
+        }
+        .onKeyPress(.space) {
+            nextPage()
+            return .handled
+        }
+        .onKeyPress(.escape) {
+            saveProgressAndDismiss()
+            return .handled
+        }
     } // closes GeometryReader
 } // end body
 
