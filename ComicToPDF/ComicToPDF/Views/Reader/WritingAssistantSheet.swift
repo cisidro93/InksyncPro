@@ -329,7 +329,9 @@ struct WritingAssistantSheet: View {
         
         for (index, issue) in issues.enumerated() {
             guard let range = Range(issue.range, in: correctedText) else { continue }
-            if let attributedRange = attrStr.range(of: correctedText[range]) {
+            if let start = AttributedString.Index(range.lowerBound, within: attrStr),
+               let end = AttributedString.Index(range.upperBound, within: attrStr) {
+                let attributedRange = start..<end
                 if index == currentIssueIndex {
                     attrStr[attributedRange].backgroundColor = Color.yellow.opacity(0.3)
                     attrStr[attributedRange].underlineStyle = .single
