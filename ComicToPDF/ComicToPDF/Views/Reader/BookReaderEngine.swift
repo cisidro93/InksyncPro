@@ -4,6 +4,7 @@ import PDFKit
 import ZIPFoundation
 import CoreTransferable
 import UIKit
+import SwiftData
 
 
 @MainActor
@@ -664,6 +665,8 @@ struct BookReaderEngine: View {
     @State private var showTOC = false
     @State private var activeHighlightToEdit: SDAnnotation? = nil
     @ObservedObject private var prefs = EBookPreferences.shared
+    
+    @Environment(\.modelContext) private var modelContext
     @State private var extractedTextParams: String = "Chapter reading is not extracted to string yet."
     @State private var lastBrightnessDragValue: CGFloat = 0
     
@@ -706,6 +709,8 @@ struct BookReaderEngine: View {
 
                         // Zettelkasten Integration: Instantly pop up editor for new highlight
                         let sdAnnotation = SDAnnotation(from: highlight)
+                        modelContext.insert(sdAnnotation)
+                        try? modelContext.save()
                         self.activeHighlightToEdit = sdAnnotation
 
                     }, onPageLoaded: { webView in
