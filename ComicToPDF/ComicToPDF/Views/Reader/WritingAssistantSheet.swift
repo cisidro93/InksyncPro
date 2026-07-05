@@ -18,6 +18,7 @@ struct WritingAssistantSheet: View {
         let originalText: String
         let suggestions: [String]
         let description: String
+        let explanation: String
         var range: NSRange
         
         enum IssueType {
@@ -25,10 +26,33 @@ struct WritingAssistantSheet: View {
         }
     }
     
+    private struct WritingStats {
+        var wordCount: Int = 0
+        var sentenceCount: Int = 0
+        var syllableCount: Int = 0
+        var passiveVoiceCount: Int = 0
+        
+        var readingEase: Double {
+            guard wordCount > 0, sentenceCount > 0 else { return 100.0 }
+            let score = 206.835 - 1.015 * (Double(wordCount) / Double(sentenceCount)) - 84.6 * (Double(syllableCount) / Double(wordCount))
+            return max(0, min(100, score))
+        }
+        
+        var readingEaseLabel: String {
+            let score = readingEase
+            if score >= 90 { return "Very Easy (5th Grade)" }
+            else if score >= 80 { return "Easy (6th Grade)" }
+            else if score >= 70 { return "Fairly Easy (7th Grade)" }
+            else if score >= 60 { return "Standard (8th-9th Grade)" }
+            else if score >= 50 { return "Fairly Difficult (High School)" }
+            else if score >= 30 { return "Difficult (College)" }
+            else { return "Very Difficult (Academic/Graduate)" }
+        }
+    }
+    
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                // Header progress or completion seal
                 if issues.isEmpty {
                     completionView
                 } else {
@@ -42,7 +66,6 @@ struct WritingAssistantSheet: View {
                                 .padding(.horizontal)
                                 .padding(.top, 16)
                             
-                            // AttributedString context text display with highlighted errors
                             Text(highlightedText)
                                 .font(.system(size: 15))
                                 .lineSpacing(6)
@@ -56,7 +79,6 @@ struct WritingAssistantSheet: View {
                     
                     Spacer()
                     
-                    // Card View for the current issue
                     if issues.indices.contains(currentIssueIndex) {
                         issueCard(issues[currentIssueIndex])
                             .transition(.asymmetric(
@@ -112,32 +134,88 @@ struct WritingAssistantSheet: View {
     
     private var completionView: some View {
         VStack(spacing: 20) {
-            Spacer()
-            ZStack {
-                Circle()
-                    .fill(Color.green.opacity(0.1))
-                    .frame(width: 100, height: 100)
-                Image(systemName: "checkmark.seal.fill")
-                    .font(.system(size: 52))
-                    .foregroundColor(.green)
+            ScrollView {
+                VStack(spacing: 24) {
+                    ZStack {
+                        Circle()
+                            .fill(Color.green.opacity(0.08))
+                            .frame(width: 80, height: 80)
+                        Image(systemName: "checkmark.seal.fill")
+                            .font(.system(size: 40))
+                            .foregroundColor(.green)
+                    }
+                    .padding(.top, 24)
+                    
+                    Text("Spelling & Grammar Clear!")
+                        .font(.title3.bold())
+                    
+                    // Stats Dashboard Card
+                    let stats = computedStats
+                    VStack(spacing: 16) {
+                        Text("Writing Insights")
+                            .font(.subheadline.bold())
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .foregroundColor(.secondary)
+                            
+                        Divider()
+                        
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Readability Level")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Text(stats.readingEaseLabel)
+                                    .font(.body.bold())
+                                    .foregroundColor(.primary)
+                            }
+                            Spacer()
+                            CircularMetricView(value: stats.readingEase, label: String(format: "%.0f", stats.readingEase))
+                        }
+                        
+                        Divider()
+                        
+                        HStack(spacing: 0) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Words")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Text("\(stats.wordCount)")
+                                    .font(.body.bold())
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Sentences")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Text("\(stats.sentenceCount)")
+                                    .font(.body.bold())
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Passive Voice")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Text("\(stats.passiveVoiceCount)")
+                                    .font(.body.bold())
+                                    .foregroundColor(stats.passiveVoiceCount > 0 ? .orange : .secondary)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                    .padding()
+                    .background(Color(UIColor.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
+                    .shadow(color: .black.opacity(0.04), radius: 8, x: 0, y: 4)
+                    .padding(.horizontal)
+                }
             }
-            
-            Text("Spellcheck Complete")
-                .font(.title2.bold())
-            
-            Text("The spelling and grammar checker has finished scanning your note. No issues found.")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 32)
-            
-            Spacer()
             
             Button {
                 text = correctedText
                 dismiss()
             } label: {
-                Text("Done")
+                Text("Apply & Save Note")
                     .font(.headline)
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
@@ -146,7 +224,7 @@ struct WritingAssistantSheet: View {
             }
             .padding()
         }
-        .frame(maxHeight: .infinity)
+        .background(Color(UIColor.systemGroupedBackground))
     }
     
     @ViewBuilder
@@ -188,12 +266,17 @@ struct WritingAssistantSheet: View {
             }
             
             VStack(alignment: .leading, spacing: 6) {
-                Text("Original Word:")
+                Text("Original Text:")
                     .font(.caption)
                     .foregroundColor(.secondary)
                 Text(issue.originalText)
                     .font(.headline)
                     .foregroundColor(.primary)
+                
+                Text(issue.explanation)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.top, 2)
             }
             
             // Suggestion pills
@@ -203,7 +286,7 @@ struct WritingAssistantSheet: View {
                     .foregroundColor(.secondary)
                 
                 if issue.suggestions.isEmpty {
-                    Text("No suggestions available")
+                    Text("Review this section manually")
                         .font(.subheadline)
                         .italic()
                         .foregroundColor(.secondary)
@@ -286,7 +369,6 @@ struct WritingAssistantSheet: View {
             let misspelledWord = nsStringText.substring(with: misspellingRange)
             searchLocation = misspellingRange.location + misspellingRange.length
             
-            // Skip ignored words
             if ignoredWords.contains(misspelledWord.lowercased()) { continue }
             
             let rawGuesses = checker.guesses(forWordRange: misspellingRange, in: textState, language: "en") ?? []
@@ -297,6 +379,7 @@ struct WritingAssistantSheet: View {
                 originalText: misspelledWord,
                 suggestions: topGuesses,
                 description: "Spelling Error",
+                explanation: "Verify spelling or add this word to your personal dictionary.",
                 range: misspellingRange
             ))
         }
@@ -323,7 +406,8 @@ struct WritingAssistantSheet: View {
                             type: .grammar,
                             originalText: matchedWord,
                             suggestions: [right],
-                            description: "Contraction punctuation missing",
+                            description: "Contraction Error",
+                            explanation: "Missing apostrophe. Contractions require punctuation to link root words.",
                             range: match.range
                         ))
                     }
@@ -348,7 +432,8 @@ struct WritingAssistantSheet: View {
                             type: .grammar,
                             originalText: matchedSegment,
                             suggestions: [suggestion],
-                            description: "Punctuation spacing missing",
+                            description: "Spacing Issue",
+                            explanation: "Add a space after punctuation marks to follow standard English readability formats.",
                             range: match.range
                         ))
                     }
@@ -373,7 +458,8 @@ struct WritingAssistantSheet: View {
                             type: .grammar,
                             originalText: matchedWord,
                             suggestions: [capitalized],
-                            description: "Proper noun capitalization missing (\(tag.rawValue))",
+                            description: "Capitalization Error",
+                            explanation: "Proper nouns (geographical sites, names, and organizations) must start with a capital letter.",
                             range: nsRange
                         ))
                     }
@@ -396,7 +482,8 @@ struct WritingAssistantSheet: View {
                         type: .grammar,
                         originalText: matchedSegment,
                         suggestions: [singleWord],
-                        description: "Duplicate word detected",
+                        description: "Duplicate Word",
+                        explanation: "Duplicate adjacent words detected. Remove one word to resolve redundancy.",
                         range: match.range
                     ))
                 }
@@ -428,7 +515,8 @@ struct WritingAssistantSheet: View {
                             type: .grammar,
                             originalText: matchedPhrase,
                             suggestions: [right],
-                            description: "Grammar phrasing issue",
+                            description: "Grammar / Phrasing",
+                            explanation: "Avoid acoustic homophone errors. Use correct helper verbs or spacing.",
                             range: match.range
                         ))
                     }
@@ -436,16 +524,35 @@ struct WritingAssistantSheet: View {
             }
         }
         
-        // Sort issues by document range order
+        // 7. Passive Voice Informational Warning
+        let passivePattern = "\\b(am|is|are|was|were|be|been|being)\\s+([a-zA-Z]+(ed|en|t))\\b"
+        if let passiveRegex = try? NSRegularExpression(pattern: passivePattern, options: [.caseInsensitive]) {
+            let nsText = textState as NSString
+            let range = NSRange(location: 0, length: nsText.length)
+            let matches = passiveRegex.matches(in: textState, options: [], range: range)
+            for match in matches {
+                let matchedPhrase = nsText.substring(with: match.range)
+                if !newIssues.contains(where: { $0.range.intersection(match.range) != nil }) {
+                    newIssues.append(AssistantIssue(
+                        type: .grammar,
+                        originalText: matchedPhrase,
+                        suggestions: [], // Informational warning, no direct replacements
+                        description: "Passive Voice",
+                        explanation: "Passive voice detected. Consider rewriting in active voice to make your writing more direct.",
+                        range: match.range
+                    ))
+                }
+            }
+        }
+        
         self.issues = newIssues.sorted { $0.range.location < $1.range.location }
         
-        // Cap index
         if currentIssueIndex >= issues.count {
             currentIssueIndex = max(0, issues.count - 1)
         }
     }
     
-    // MARK: - Actions
+    // MARK: - Actions & Stats Helpers
     
     private func applySuggestion(_ issue: AssistantIssue, replacement: String) {
         let nsString = correctedText as NSString
@@ -455,8 +562,6 @@ struct WritingAssistantSheet: View {
         correctedText = newText
         
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-        
-        // Re-analyze document to recalibrate all ranges and errors
         analyzeText()
     }
     
@@ -478,5 +583,76 @@ struct WritingAssistantSheet: View {
             analyzeText()
         }
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
+    }
+    
+    private func countSyllables(in word: String) -> Int {
+        let lowercaseWord = word.lowercased()
+        let vowels = CharacterSet(charactersIn: "aeiouy")
+        var count = 0
+        var lastWasVowel = false
+        
+        for char in lowercaseWord {
+            let isVowel = char.unicodeScalars.first.map { vowels.contains($0) } ?? false
+            if isVowel {
+                if !lastWasVowel { count += 1 }
+                lastWasVowel = true
+            } else {
+                lastWasVowel = false
+            }
+        }
+        
+        if lowercaseWord.hasSuffix("e") { count -= 1 }
+        if lowercaseWord.hasSuffix("es") || lowercaseWord.hasSuffix("ed") { count -= 1 }
+        return max(1, count)
+    }
+    
+    private var computedStats: WritingStats {
+        let textState = correctedText
+        let sentences = textState.components(separatedBy: CharacterSet(charactersIn: ".!?")).filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        let words = textState.split { $0.isWhitespace || $0.isNewline || CharacterSet.punctuationCharacters.contains($0.unicodeScalars.first!) }.map(String.init)
+        
+        var totalSyllables = 0
+        for word in words {
+            totalSyllables += countSyllables(in: word)
+        }
+        
+        let passivePattern = "\\b(am|is|are|was|were|be|been|being)\\s+([a-zA-Z]+(ed|en|t))\\b"
+        var passiveCount = 0
+        if let regex = try? NSRegularExpression(pattern: passivePattern, options: [.caseInsensitive]) {
+            let nsText = textState as NSString
+            let range = NSRange(location: 0, length: nsText.length)
+            passiveCount = regex.numberOfMatches(in: textState, options: [], range: range)
+        }
+        
+        return WritingStats(
+            wordCount: max(1, words.count),
+            sentenceCount: max(1, sentences.count),
+            syllableCount: totalSyllables,
+            passiveVoiceCount: passiveCount
+        )
+    }
+}
+
+// MARK: - Circular Metric View Helper
+struct CircularMetricView: View {
+    let value: Double
+    let label: String
+    
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(Color.primary.opacity(0.08), lineWidth: 4)
+                .frame(width: 44, height: 44)
+            Circle()
+                .trim(from: 0.0, to: CGFloat(value / 100.0))
+                .stroke(
+                    LinearGradient(colors: [.blue, .purple], startPoint: .topLeading, endPoint: .bottomTrailing),
+                    style: StrokeStyle(lineWidth: 4, lineCap: .round)
+                )
+                .frame(width: 44, height: 44)
+                .rotationEffect(Angle(degrees: -90))
+            Text(label)
+                .font(.system(size: 11, weight: .bold, design: .rounded))
+        }
     }
 }
