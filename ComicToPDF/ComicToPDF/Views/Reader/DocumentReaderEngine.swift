@@ -22,6 +22,7 @@ struct DocumentReaderEngine: View {
     @State private var showingSettings = false
     @ObservedObject private var prefs = EBookPreferences.shared
     @FocusState private var isReaderFocused: Bool
+    @State private var lastBrightnessDragValue: CGFloat = 0
     
     var body: some View {
         ZStack {
@@ -61,6 +62,35 @@ struct DocumentReaderEngine: View {
                 }
             }
             .readingFilter(prefs.readingFilter)
+            
+            // Edge Brightness Gesture Zones
+            HStack {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .frame(width: 30)
+                    .gesture(
+                        DragGesture()
+                            .onChanged { value in
+                                let delta = value.translation.height - lastBrightnessDragValue
+                                lastBrightnessDragValue = value.translation.height
+                                UIScreen.main.brightness -= delta * 0.005
+                            }
+                            .onEnded { _ in lastBrightnessDragValue = 0 }
+                    )
+                Spacer()
+                Color.clear
+                    .contentShape(Rectangle())
+                    .frame(width: 30)
+                    .gesture(
+                        DragGesture()
+                            .onChanged { value in
+                                let delta = value.translation.height - lastBrightnessDragValue
+                                lastBrightnessDragValue = value.translation.height
+                                UIScreen.main.brightness -= delta * 0.005
+                            }
+                            .onEnded { _ in lastBrightnessDragValue = 0 }
+                    )
+            }
             
             ReaderChrome(
                 title: pdf.name,
@@ -117,6 +147,7 @@ struct DocumentReaderEngine: View {
                 .transition(.opacity)
             }
         }
+        .overlay { if prefs.showReadingRuler { ReadingRulerOverlay() } }
         .task {
             // Linked Library: Resolve security-scoped URL before opening.
             // PDFDocument reads data lazily on draw, so we hold onto the access scope until disappear.

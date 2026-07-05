@@ -905,6 +905,7 @@ struct BookReaderEngine: View {
                 readingSessionDates: [Date()], estimatedMinutesRemaining: nil
             ))
         }
+        .overlay { if prefs.showReadingRuler { ReadingRulerOverlay() } }
         .sheet(isPresented: $showAnnotations) {
             StudyNotebookView(bookID: pdf.id.uuidString, bookTitle: pdf.name, fileURL: pdf.url)
         }

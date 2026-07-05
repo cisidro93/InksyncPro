@@ -52,7 +52,7 @@ struct EBookReaderView: View {
     @State private var isGoingForward: Bool = true
     
     @State private var activeHighlightToEdit: SDAnnotation? = nil
-    
+    @State private var lastBrightnessDragValue: CGFloat = 0
 
     private var totalChapters: Int { metadata?.spineItems.count ?? 1 }
     private var progressFraction: Double {
@@ -86,31 +86,62 @@ struct EBookReaderView: View {
                     } else if let err = errorMessage {
                         readerErrorView(err)
                     } else if let meta = metadata, !meta.spineItems.isEmpty {
-                        EBookWebReader(
-                            spineItem:   meta.spineItems[currentIndex],
-                            unzipDir:    unzipDir,
-                            prefs:       prefs,
-                            colorScheme: colorScheme,
-                            currentPage: $chapterPage,
-                            initialPage: chapterPage,
-                            totalPages:  $chapterTotalPages,
-                            onNext:      nextChapter,
-                            onPrev:      prevChapter,
-                            onCenterTap: { withAnimation(.easeInOut(duration: 0.2)) { showHUD.toggle() } },
-                            onHighlightCreated: { _ in },
-                            pdfID: pdf?.id
-                        )
-                        // Directional page-turn: slide left for forward, right for back.
-                        // Using .id(currentIndex) forces SwiftUI to create a new view identity
-                        // on every chapter change, guaranteeing the transition fires.
-                        .id(currentIndex)
-                        .transition(
-                            .asymmetric(
-                                insertion: .push(from: isGoingForward ? .trailing : .leading),
-                                removal:   .push(from: isGoingForward ? .leading  : .trailing)
+                        ZStack {
+                            EBookWebReader(
+                                spineItem:   meta.spineItems[currentIndex],
+                                unzipDir:    unzipDir,
+                                prefs:       prefs,
+                                colorScheme: colorScheme,
+                                currentPage: $chapterPage,
+                                initialPage: chapterPage,
+                                totalPages:  $chapterTotalPages,
+                                onNext:      nextChapter,
+                                onPrev:      prevChapter,
+                                onCenterTap: { withAnimation(.easeInOut(duration: 0.2)) { showHUD.toggle() } },
+                                onHighlightCreated: { _ in },
+                                pdfID: pdf?.id
                             )
-                        )
-                        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: currentIndex)
+                            // Directional page-turn: slide left for forward, right for back.
+                            // Using .id(currentIndex) forces SwiftUI to create a new view identity
+                            // on every chapter change, guaranteeing the transition fires.
+                            .id(currentIndex)
+                            .transition(
+                                .asymmetric(
+                                    insertion: .push(from: isGoingForward ? .trailing : .leading),
+                                    removal:   .push(from: isGoingForward ? .leading  : .trailing)
+                                )
+                            )
+                            .animation(.spring(response: 0.35, dampingFraction: 0.85), value: currentIndex)
+                            
+                            // Edge Brightness Gesture Zones
+                            HStack {
+                                Color.clear
+                                    .contentShape(Rectangle())
+                                    .frame(width: 30)
+                                    .gesture(
+                                        DragGesture()
+                                            .onChanged { value in
+                                                let delta = value.translation.height - lastBrightnessDragValue
+                                                lastBrightnessDragValue = value.translation.height
+                                                UIScreen.main.brightness -= delta * 0.005
+                                            }
+                                            .onEnded { _ in lastBrightnessDragValue = 0 }
+                                    )
+                                Spacer()
+                                Color.clear
+                                    .contentShape(Rectangle())
+                                    .frame(width: 30)
+                                    .gesture(
+                                        DragGesture()
+                                            .onChanged { value in
+                                                let delta = value.translation.height - lastBrightnessDragValue
+                                                lastBrightnessDragValue = value.translation.height
+                                                UIScreen.main.brightness -= delta * 0.005
+                                            }
+                                            .onEnded { _ in lastBrightnessDragValue = 0 }
+                                    )
+                            }
+                        }
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
