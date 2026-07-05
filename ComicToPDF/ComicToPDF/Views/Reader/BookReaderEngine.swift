@@ -2,7 +2,6 @@ import SwiftUI
 import WebKit
 import PDFKit
 import ZIPFoundation
-import AVFoundation
 import CoreTransferable
 import UIKit
 
@@ -23,7 +22,6 @@ class BookReaderViewModel: NSObject, ObservableObject, WKNavigationDelegate {
     @Published var currentChapterHTML: String = ""
     @Published var chapterHtmlFiles: [URL] = []
     @Published var currentChapterIndex = 0
-    @Published var isPlayingTTS = false
     @Published var metadata: EBookMetadata?
     @Published var tocItems: [EBookMetadata.SpineItem] = []
     
@@ -34,9 +32,6 @@ class BookReaderViewModel: NSObject, ObservableObject, WKNavigationDelegate {
     let pdf: ConvertedPDF
     private let fileManager = FileManager.default
     nonisolated let tempDirURL: URL
-    
-    // TTS
-    private let speechSynthesizer = AVSpeechSynthesizer()
     
     init(pdf: ConvertedPDF) {
         self.pdf = pdf
@@ -269,25 +264,6 @@ class BookReaderViewModel: NSObject, ObservableObject, WKNavigationDelegate {
         await MainActor.run {
             self.searchResults = results
             self.isSearching = false
-        }
-    }
-    
-    // MARK: TTS
-    
-    func toggleTTS(text: String) {
-        if isPlayingTTS {
-            speechSynthesizer.pauseSpeaking(at: .immediate)
-            isPlayingTTS = false
-        } else {
-            if speechSynthesizer.isPaused {
-                speechSynthesizer.continueSpeaking()
-            } else {
-                let utterance = AVSpeechUtterance(string: text)
-                utterance.rate = AVSpeechUtteranceDefaultSpeechRate
-                utterance.voice = AVSpeechSynthesisVoice(language: "en-US")
-                speechSynthesizer.speak(utterance)
-            }
-            isPlayingTTS = true
         }
     }
 }
