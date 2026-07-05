@@ -1032,6 +1032,10 @@ struct ComicReaderEngine: View {
     @State private var showToast = false
     @State private var toastMessage = ""
     
+    /// Study Notebook and Highlights State
+    @State private var showAnnotations = false
+    @State private var activeHighlightToEdit: SDAnnotation? = nil
+    
     /// AI Dialogue Lens State
     @State private var isDialogueLensEnabled = false
     @State private var selectedTextBlock: TextBlock? = nil
@@ -1387,6 +1391,14 @@ struct ComicReaderEngine: View {
                 pageIndex: currentIndex
             )
         }
+        .sheet(isPresented: $showAnnotations) {
+            StudyNotebookView(bookID: pdf.id.uuidString, bookTitle: pdf.name, fileURL: pdf.url)
+        }
+        .sheet(item: $activeHighlightToEdit) { annotation in
+            AnnotationEditSheet(annotation: annotation)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
         .onDisappear {
             BackTapManager.shared.isEnabled = false
         }
@@ -1700,6 +1712,9 @@ struct ComicReaderEngine: View {
                     }
                 }
                 HapticEngine.light()
+            },
+            onAnnotationsToggle: {
+                showAnnotations = true
             },
             currentProgress: Binding(
                 get: { Double(currentIndex) / Double(max(1, cache.pageCount - 1)) },
@@ -2114,6 +2129,12 @@ struct ComicReaderEngine: View {
                             try? modelContext.save()
                             showToastMessage("Saved to Notebook")
                             HapticEngine.light()
+                            
+                            // Immediately open the annotation editor for notes and tags
+                            withAnimation {
+                                selectedTextBlock = nil
+                                activeHighlightToEdit = newHighlight
+                            }
                         } label: {
                             HStack(spacing: 8) {
                                 Image(systemName: "notebook.fill")

@@ -34,6 +34,8 @@ struct StudyNotebookView: View {
     // Pro Search & Filter State
     @State private var highlightSearchQuery = ""
     @State private var highlightSortNewest = true
+    @State private var selectedTagFilter: String? = nil
+    @State private var activeHighlightToEdit: SDAnnotation? = nil
     
     // ✅ Speech-to-Text Subsystem
     @StateObject private var speechManager = SpeechRecognitionManager.shared
@@ -233,6 +235,16 @@ struct StudyNotebookView: View {
                 pagePreviewModalOverlay
             }
         }
+        .sheet(item: $activeHighlightToEdit) { annotation in
+            AnnotationEditSheet(annotation: annotation)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
+        .onChange(of: activeHighlightToEdit) { _, newVal in
+            if newVal == nil {
+                refreshHighlights()
+            }
+        }
         .onAppear {
             Logger.shared.log("StudyNotebook appeared for book: '\(bookTitle)'", category: "Notebook", type: .info)
             initializeSDAnnotation()
@@ -352,6 +364,17 @@ struct StudyNotebookView: View {
             Logger.shared.log("StudyNotebookView: could not resolve SDConvertedPDF for UUID \(targetPDFID)", category: "Notebook", type: .warning)
         }
     }
+
+    private func refreshHighlights() {
+        var targetPDFID = UUID()
+        if let actualUUID = UUID(uuidString: bookID) {
+            targetPDFID = actualUUID
+        }
+        let hDescriptor = FetchDescriptor<SDAnnotation>(predicate: #Predicate { $0.kindRaw == "highlight" && $0.pdfID == targetPDFID })
+        if let h = try? modelContext.fetch(hDescriptor) {
+            self.bookHighlights = h.sorted { $0.createdAt > $1.createdAt }
+        }
+    }
     
     private func debounceSave() {
         saveTask?.cancel()
@@ -389,8 +412,16 @@ struct StudyNotebookView: View {
         }
     }
 
+    private var allTagsInHighlights: [String] {
+        let all = bookHighlights.flatMap { $0.tags ?? [] }
+        return Array(Set(all)).sorted()
+    }
+
     private var filteredHighlights: [SDAnnotation] {
         var h = bookHighlights
+        if let filter = selectedTagFilter {
+            h = h.filter { $0.tags?.contains(filter) ?? false }
+        }
         if !highlightSearchQuery.isEmpty {
             h = h.filter { $0.selectedText?.localizedCaseInsensitiveContains(highlightSearchQuery) ?? false }
         }
@@ -401,17 +432,29 @@ struct StudyNotebookView: View {
         }
     }
 
-    private func insertHighlightIntoNote(_ highlight: SDAnnotation) {
-        guard let text = highlight.selectedText else {
-            Logger.shared.log("insertHighlightIntoNote: skipped — highlight has no selectedText (id: \(highlight.id))", category: "Notebook", type: .warning)
-            return
+    private func formatHighlightForInsertion(_ highlight: SDAnnotation) -> String {
+        guard let text = highlight.selectedText else { return "" }
+        let pageLink = "[Page \(highlight.pageIndex + 1)](inksync://reader/jump?page=\(highlight.pageIndex))"
+        var md = "\n\n> \(text) (\(pageLink))"
+        if let note = highlight.noteText, !note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            md += "\n> *Thoughts:* \(note)"
         }
-        let quote = "\n\n> \(text) [[Page \(highlight.pageIndex + 1)]]\n\n"
+        if let tags = highlight.tags, !tags.isEmpty {
+            let tagStrs = tags.map { "#\($0)" }.joined(separator: " ")
+            md += "\n> \(tagStrs)"
+        }
+        md += "\n\n"
+        return md
+    }
+
+    private func insertHighlightIntoNote(_ highlight: SDAnnotation) {
+        let citation = formatHighlightForInsertion(highlight)
+        guard !citation.isEmpty else { return }
         withAnimation {
-            localNotes += quote
+            localNotes += citation
             debounceSave()
         }
-        Logger.shared.log("Inserted highlight citation [[Page \(highlight.pageIndex + 1)]] into note for '\(bookTitle)'", category: "Notebook", type: .info)
+        Logger.shared.log("Inserted formatted highlight citation into note for '\(bookTitle)'", category: "Notebook", type: .info)
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
     }
 
@@ -755,6 +798,47 @@ struct StudyNotebookView: View {
                     .background(Color.primary.opacity(0.06))
                     .cornerRadius(6)
                     
+                    // Tag filters scroll list
+                    let tagsList = allTagsInHighlights
+                    if !tagsList.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 6) {
+                                Button {
+                                    withAnimation { selectedTagFilter = nil }
+                                } label: {
+                                    Text("All")
+                                        .font(.system(size: 10, weight: selectedTagFilter == nil ? .bold : .regular))
+                                        .foregroundColor(selectedTagFilter == nil ? .white : .primary)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .background(selectedTagFilter == nil ? Theme.blue : Color.primary.opacity(0.06), in: Capsule())
+                                }
+                                .buttonStyle(.plain)
+                                
+                                ForEach(tagsList, id: \.self) { tag in
+                                    Button {
+                                        withAnimation {
+                                            if selectedTagFilter == tag {
+                                                selectedTagFilter = nil
+                                            } else {
+                                                selectedTagFilter = tag
+                                            }
+                                        }
+                                    } label: {
+                                        Text("#\(tag)")
+                                            .font(.system(size: 10, weight: selectedTagFilter == tag ? .bold : .regular))
+                                            .foregroundColor(selectedTagFilter == tag ? .white : Theme.blue)
+                                            .padding(.horizontal, 8)
+                                            .padding(.vertical, 4)
+                                            .background(selectedTagFilter == tag ? Theme.blue : Theme.blue.opacity(0.1), in: Capsule())
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                            .padding(.vertical, 2)
+                        }
+                    }
+                    
                     HStack {
                         Button {
                             highlightSortNewest = true
@@ -796,6 +880,20 @@ struct StudyNotebookView: View {
                                         .foregroundColor(Theme.text)
                                         .lineSpacing(4)
                                     
+                                    if let tags = highlight.tags, !tags.isEmpty {
+                                        HStack(spacing: 4) {
+                                            ForEach(tags, id: \.self) { tag in
+                                                Text("#\(tag)")
+                                                    .font(.system(size: 9, weight: .bold))
+                                                    .foregroundColor(Theme.blue)
+                                                    .padding(.horizontal, 6)
+                                                    .padding(.vertical, 2)
+                                                    .background(Theme.blue.opacity(0.1), in: Capsule())
+                                            }
+                                        }
+                                        .padding(.vertical, 2)
+                                    }
+                                    
                                     HStack {
                                         Button {
                                             insertHighlightIntoNote(highlight)
@@ -808,6 +906,19 @@ struct StudyNotebookView: View {
                                             .foregroundColor(Theme.blue)
                                         }
                                         .buttonStyle(.borderless)
+                                        
+                                        Button {
+                                            activeHighlightToEdit = highlight
+                                        } label: {
+                                            HStack(spacing: 3) {
+                                                Image(systemName: "square.and.pencil")
+                                                Text("Edit")
+                                            }
+                                            .font(.system(size: 11, weight: .bold))
+                                            .foregroundColor(.secondary)
+                                        }
+                                        .buttonStyle(.borderless)
+                                        .padding(.leading, 8)
                                         
                                         Spacer()
                                         Text("p. \(highlight.pageIndex + 1)")
@@ -823,7 +934,8 @@ struct StudyNotebookView: View {
                                 )
                                 .cornerRadius(8)
                                 .onDrag {
-                                    NSItemProvider(object: (highlight.selectedText ?? "") as NSString)
+                                    let formattedText = formatHighlightForInsertion(highlight)
+                                    return NSItemProvider(object: formattedText as NSString)
                                 }
                             }
                         }
