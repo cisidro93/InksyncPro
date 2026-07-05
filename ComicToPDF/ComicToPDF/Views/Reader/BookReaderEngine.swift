@@ -753,6 +753,7 @@ struct BookReaderEngine: View {
     @State private var showTOC = false
     @State private var activeHighlightToEdit: SDAnnotation? = nil
     @ObservedObject private var prefs = EBookPreferences.shared
+    @ObservedObject private var sleepTimer = SleepTimerManager.shared
     
     @Environment(\.modelContext) private var modelContext
     @State private var extractedTextParams: String = "Chapter reading is not extracted to string yet."
@@ -931,6 +932,9 @@ struct BookReaderEngine: View {
             ))
         }
         .overlay { if prefs.showReadingRuler { ReadingRulerOverlay() } }
+        .onChange(of: sleepTimer.didFire) { _, fired in
+            if fired { onDismiss() }
+        }
         .sheet(isPresented: $showAnnotations) {
             StudyNotebookView(bookID: pdf.id.uuidString, bookTitle: pdf.name, fileURL: pdf.url)
         }

@@ -23,6 +23,7 @@ struct DocumentReaderEngine: View {
     @ObservedObject private var prefs = EBookPreferences.shared
     @FocusState private var isReaderFocused: Bool
     @State private var lastBrightnessDragValue: CGFloat = 0
+    @ObservedObject private var sleepTimer = SleepTimerManager.shared
     
     var body: some View {
         ZStack {
@@ -148,6 +149,17 @@ struct DocumentReaderEngine: View {
             }
         }
         .overlay { if prefs.showReadingRuler { ReadingRulerOverlay() } }
+        .onChange(of: sleepTimer.didFire) { _, fired in
+            if fired {
+                ReaderProgressTracker.shared.update(ReadingProgress(
+                    pdfID: pdf.id, lastOpenedAt: Date(), currentPageIndex: currentPageIndex,
+                    currentChapterIndex: nil, currentChapterOffset: nil,
+                    totalPagesRead: 1, completionFraction: Double(currentPageIndex + 1) / Double(max(1, totalPages)),
+                    readingSessionDates: [Date()], estimatedMinutesRemaining: nil
+                ))
+                onDismiss()
+            }
+        }
         .task {
             // Linked Library: Resolve security-scoped URL before opening.
             // PDFDocument reads data lazily on draw, so we hold onto the access scope until disappear.
