@@ -328,9 +328,9 @@ struct WritingAssistantSheet: View {
         var attrStr = AttributedString(correctedText)
         
         for (index, issue) in issues.enumerated() {
-            let utf16Start = issue.range.location
-            if let start = attrStr.utf16.index(attrStr.utf16.startIndex, offsetBy: utf16Start, limitedBy: attrStr.utf16.endIndex),
-               let end = attrStr.utf16.index(start, offsetBy: issue.range.length, limitedBy: attrStr.utf16.endIndex) {
+            guard let range = Range(issue.range, in: correctedText) else { continue }
+            if let start = AttributedString.Index(range.lowerBound, within: attrStr),
+               let end = AttributedString.Index(range.upperBound, within: attrStr) {
                 let attributedRange = start..<end
                 if index == currentIssueIndex {
                     attrStr[attributedRange].backgroundColor = Color.yellow.opacity(0.3)
