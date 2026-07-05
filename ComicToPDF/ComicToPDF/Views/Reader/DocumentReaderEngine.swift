@@ -253,9 +253,31 @@ struct DocumentReaderEngine: View {
         guard let doc = pdfDocument else { return }
         for i in 0..<doc.pageCount {
             if let page = doc.page(at: i) {
-                var crop = page.bounds(for: .cropBox)
-                crop = crop.insetBy(dx: crop.width * 0.12, dy: crop.height * 0.12)
-                page.setBounds(crop, for: .cropBox)
+                let pageBounds = page.bounds(for: .cropBox)
+                var unionBounds = CGRect.null
+                let charCount = page.numberOfCharacters
+                if charCount > 0 {
+                    for charIndex in 0..<charCount {
+                        let charBounds = page.characterBounds(at: charIndex)
+                        if charBounds.width > 0 && charBounds.height > 0 {
+                            unionBounds = unionBounds.union(charBounds)
+                        }
+                    }
+                }
+                if !unionBounds.isNull {
+                    // Apply a safe inset cushion of 16pt around the text bounds
+                    let croppedRect = unionBounds.insetBy(dx: -16, dy: -16)
+                    // Intersect with the page bounds to keep it within safe bounds
+                    let finalCrop = croppedRect.intersection(pageBounds)
+                    if finalCrop.width > 50 && finalCrop.height > 50 {
+                        page.setBounds(finalCrop, for: .cropBox)
+                    }
+                } else {
+                    // Fallback to a safe margin crop of 8% for image-only/scanned documents
+                    var crop = pageBounds
+                    crop = crop.insetBy(dx: crop.width * 0.08, dy: crop.height * 0.08)
+                    page.setBounds(crop, for: .cropBox)
+                }
             }
         }
         // Force PDFView to re-layout: nil → reassign on next runloop tick.

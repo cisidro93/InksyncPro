@@ -1400,7 +1400,7 @@ struct ComicReaderEngine: View {
         }
         .sheet(item: $activeHighlightToEdit) { annotation in
             AnnotationEditSheet(annotation: annotation)
-                .presentationDetents([.medium, .large])
+                .presentationDetents([.height(180), .medium])
                 .presentationDragIndicator(.visible)
         }
         .onDisappear {

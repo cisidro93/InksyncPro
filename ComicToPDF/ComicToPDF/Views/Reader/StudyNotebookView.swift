@@ -250,7 +250,7 @@ struct StudyNotebookView: View {
         }
         .sheet(item: $activeHighlightToEdit) { annotation in
             AnnotationEditSheet(annotation: annotation)
-                .presentationDetents([.medium, .large])
+                .presentationDetents([.height(180), .medium])
                 .presentationDragIndicator(.visible)
         }
         .onChange(of: activeHighlightToEdit) { _, newVal in

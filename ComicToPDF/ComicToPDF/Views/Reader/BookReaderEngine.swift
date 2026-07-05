@@ -473,18 +473,31 @@ struct EPUBWebView: UIViewRepresentable {
             };
 
             // ── Auto Scroll ──────────────────────────────────────────────────
-            var scrollTimer = null;
+            var scrollActive = false;
+            var scrollSpeed = 1.0;
+            var lastTime = 0;
+
             window.startInksyncAutoScroll = function(speed) {
-                if (scrollTimer) clearInterval(scrollTimer);
-                scrollTimer = setInterval(function() {
-                    window.scrollBy(0, speed);
-                }, 16);
+                scrollSpeed = speed;
+                if (scrollActive) return;
+                scrollActive = true;
+                lastTime = performance.now();
+                
+                function scrollStep(timestamp) {
+                    if (!scrollActive) return;
+                    var delta = timestamp - lastTime;
+                    lastTime = timestamp;
+                    
+                    // Normalize scroll delta to ~16.7ms base speed step
+                    var step = (scrollSpeed * (delta / 16.67));
+                    window.scrollBy(0, step);
+                    
+                    requestAnimationFrame(scrollStep);
+                }
+                requestAnimationFrame(scrollStep);
             };
             window.stopInksyncAutoScroll = function() {
-                if (scrollTimer) {
-                    clearInterval(scrollTimer);
-                    scrollTimer = null;
-                }
+                scrollActive = false;
             };
 
             // ── Navigation (swipe + tap) bridge ──────────────────────────────
@@ -963,7 +976,7 @@ struct BookReaderEngine: View {
         }
         .sheet(item: $activeHighlightToEdit) { annotation in
             AnnotationEditSheet(annotation: annotation)
-                .presentationDetents([.medium, .large])
+                .presentationDetents([.height(180), .medium])
                 .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showTypographyHUD) {
