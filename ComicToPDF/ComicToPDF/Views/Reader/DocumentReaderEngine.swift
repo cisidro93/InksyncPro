@@ -416,6 +416,18 @@ struct PDFKitRepresentedView: UIViewRepresentable {
         context.coordinator.canvasView?.isUserInteractionEnabled = isPencilMode
         context.coordinator.parent = self
         
+        if let canvasView = context.coordinator.canvasView {
+            if isPencilMode {
+                context.coordinator.toolPicker.setVisible(true, forFirstResponder: canvasView)
+                context.coordinator.toolPicker.addObserver(canvasView)
+                canvasView.becomeFirstResponder()
+            } else {
+                context.coordinator.toolPicker.setVisible(false, forFirstResponder: canvasView)
+                context.coordinator.toolPicker.removeObserver(canvasView)
+                canvasView.resignFirstResponder()
+            }
+        }
+        
         if let pdfView = context.coordinator.pdfView {
             makePdfViewTransparent(pdfView)
             
@@ -440,6 +452,11 @@ struct PDFKitRepresentedView: UIViewRepresentable {
     /// repeated opens. Without this, each reader open registers a new observer
     /// and the Coordinator is retained by NotificationCenter indefinitely.
     static func dismantleUIView(_ uiView: UIView, coordinator: Coordinator) {
+        if let canvasView = coordinator.canvasView {
+            coordinator.toolPicker.setVisible(false, forFirstResponder: canvasView)
+            coordinator.toolPicker.removeObserver(canvasView)
+            canvasView.resignFirstResponder()
+        }
         if let pdfView = coordinator.pdfView {
             NotificationCenter.default.removeObserver(coordinator, name: .PDFViewPageChanged, object: pdfView)
         }
