@@ -244,9 +244,8 @@ struct EBookReaderView: View {
                 annotation: annotation,
                 onDelete: {
                     // Remove from AnnotationStore (in-memory + SwiftData via its own context)
-                    if let pid = annotation.pdfID {
-                        AnnotationStore.shared.delete(id: annotation.id, pdfID: pid)
-                    }
+                    let pid = annotation.pdfID
+                    AnnotationStore.shared.delete(id: annotation.id, pdfID: pid)
                     // Also remove from the SwiftUI modelContext (UI layer)
                     modelContext.delete(annotation)
                     try? modelContext.save()
@@ -258,13 +257,12 @@ struct EBookReaderView: View {
                 },
                 onColorSelected: { colorHex in
                     // Update colour in AnnotationStore (in-memory + SwiftData)
-                    if let pid = annotation.pdfID {
-                        let matching = AnnotationStore.shared.annotations(for: pid)
-                            .first(where: { $0.id == annotation.id })
-                        if var updated = matching {
-                            updated.colorHex = colorHex
-                            AnnotationStore.shared.update(updated)
-                        }
+                    let pid = annotation.pdfID
+                    let matching = AnnotationStore.shared.annotations(for: pid)
+                        .first(where: { $0.id == annotation.id })
+                    if var updated = matching {
+                        updated.colorHex = colorHex
+                        AnnotationStore.shared.update(updated)
                     }
                     // Also update the SDAnnotation in the SwiftUI model layer
                     annotation.colorHex = colorHex
