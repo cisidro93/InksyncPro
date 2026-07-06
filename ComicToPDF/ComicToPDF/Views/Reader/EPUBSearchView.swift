@@ -1,4 +1,4 @@
-﻿import SwiftUI
+import SwiftUI
 import WebKit
 
 // ============================================================================
@@ -200,24 +200,16 @@ struct HighlightedSnippetText: View {
     let highlight: String
 
     var body: some View {
-        if let attributed = buildAttributed() {
-            Text(attributed)
+        if let range = text.lowercased().range(of: highlight.lowercased()) {
+            let before = String(text[..<range.lowerBound])
+            let match = String(text[range])
+            let after = String(text[range.upperBound...])
+            
+            (Text(before) + 
+             Text(match).foregroundColor(.orange).fontWeight(.bold) + 
+             Text(after))
         } else {
-            Text(text).foregroundStyle(.primary)
+            Text(text)
         }
-    }
-
-    private func buildAttributed() -> AttributedString? {
-        var attr = AttributedString(text)
-        let lower = text.lowercased()
-        let hLower = highlight.lowercased()
-        guard let range = lower.range(of: hLower) else { return nil }
-        if let attrStart = AttributedString.Index(range.lowerBound, within: attr),
-           let attrEnd   = AttributedString.Index(range.upperBound, within: attr) {
-            attr[attrStart..<attrEnd].backgroundColor = .init(UIColor.systemOrange.withAlphaComponent(0.25))
-            attr[attrStart..<attrEnd].foregroundColor = .init(UIColor.systemOrange)
-            attr[attrStart..<attrEnd].font = .system(.subheadline, weight: .semibold)
-        }
-        return attr
     }
 }
