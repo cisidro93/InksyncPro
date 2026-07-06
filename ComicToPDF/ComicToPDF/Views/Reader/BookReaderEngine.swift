@@ -307,6 +307,7 @@ struct EPUBWebView: UIViewRepresentable {
     @Binding var htmlContent: String
     @Binding var baseUrl: URL
     @ObservedObject var prefs: EBookPreferences
+    @Binding var scrollToLastPageOnLoad: Bool
     var onHighlightCreated: ((String, String) -> Void)?
     var onPageLoaded: ((WKWebView) -> Void)?
     /// Fired when user taps the center third of the page (toggles chrome)
@@ -320,12 +321,13 @@ struct EPUBWebView: UIViewRepresentable {
     /// Fired when a backward swipe is at the first column
     var onPrevChapter: (() -> Void)? = nil
 
-    class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
+    class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate, UIGestureRecognizerDelegate {
         var parent: EPUBWebView
         /// Stable hash of the combined (content + prefs) state — prevents update loops.
         var lastContentHash: Int = 0
         /// Hash of the raw HTML only — used to distinguish content changes from prefs-only changes.
         var lastContentOnlyHash: Int = 0
+        var initialPinchFontSize: Double = 16.0
 
         init(_ parent: EPUBWebView) { self.parent = parent }
 
@@ -373,6 +375,36 @@ struct EPUBWebView: UIViewRepresentable {
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             parent.onPageLoaded?(webView)
+            
+            if parent.scrollToLastPageOnLoad {
+                parent.scrollToLastPageOnLoad = false
+                let js = """
+                setTimeout(function() {
+                    var sv = document.scrollingElement || document.documentElement;
+                    if (document.body.style.columnCount) {
+                        var maxScroll = sv.scrollWidth - window.innerWidth;
+                        window.scrollTo({ left: maxScroll, behavior: 'instant' });
+                    } else {
+                        var maxScroll = sv.scrollHeight - window.innerHeight;
+                        window.scrollTo({ top: maxScroll, behavior: 'instant' });
+                    }
+                }, 100);
+                """
+                webView.evaluateJavaScript(js, completionHandler: nil)
+            }
+        }
+
+        @objc func handlePinch(_ gesture: UIPinchGestureRecognizer) {
+            if gesture.state == .began {
+                initialPinchFontSize = parent.prefs.fontSize
+            } else if gesture.state == .changed {
+                let newSize = initialPinchFontSize * Double(gesture.scale)
+                parent.prefs.fontSize = max(12.0, min(48.0, newSize))
+            }
+        }
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+            return true
         }
 
         /// Recover from Jetsam Out-Of-Memory (OOM) WebKit process crashes.
@@ -555,6 +587,10 @@ struct EPUBWebView: UIViewRepresentable {
             webView.evaluateJavaScript("window.applyInksyncHighlight('#ffd700');")
         }
 
+        let pinch = UIPinchGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handlePinch(_:)))
+        pinch.delegate = context.coordinator
+        webView.addGestureRecognizer(pinch)
+
         return webView
     }
 
@@ -649,14 +685,8 @@ struct EPUBWebView: UIViewRepresentable {
             column-rule: 1px solid rgba(128, 128, 128, 0.15) !important;
         """ : ""
 
-        let maxSpreadWidthCSS = (isPaged && cols == 2) ? """
-            max-width: calc(1.42 * (100vh - 120px) + \(gap)px) !important;
-            margin-left: auto !important;
-            margin-right: auto !important;
-        """ : ""
-
-        let paddingLeft = (isPaged && cols == 2) ? 0 : margin
-        let paddingRight = (isPaged && cols == 2) ? 0 : margin
+        let paddingLeft = margin
+        let paddingRight = margin
 
         return """
         <meta charset="utf-8">
@@ -678,7 +708,6 @@ struct EPUBWebView: UIViewRepresentable {
             line-height: \(lineHeight);
             text-align: \(textAlign) !important;
             \(pagedCSS)
-            \(maxSpreadWidthCSS)
             margin: 0 !important;
             height: 100vh !important;
             \(widthCSS)
@@ -693,6 +722,10 @@ struct EPUBWebView: UIViewRepresentable {
             word-spacing: \(wordSpacing) !important;
             -webkit-hyphens: \(hyphenCSS) !important;
             hyphens: \(hyphenCSS) !important;
+        }
+        div, section, article {
+            column-count: auto !important;
+            column-width: auto !important;
         }
         p { margin-bottom: \(paraSpace)em !important; text-indent: \(paraIndent)em !important; }
         p, div, span, li, td, th, h1, h2, h3, h4, h5, h6 { color: \(textColor) !important; line-height: \(lineHeight); }
@@ -734,14 +767,8 @@ struct EPUBWebView: UIViewRepresentable {
             column-rule: 1px solid rgba(128, 128, 128, 0.15) !important;
         """ : ""
 
-        let maxSpreadWidthCSS = (isPaged && cols == 2) ? """
-            max-width: calc(1.42 * (100vh - 120px) + \(gap)px) !important;
-            margin-left: auto !important;
-            margin-right: auto !important;
-        """ : ""
-
-        let paddingLeft = (isPaged && cols == 2) ? 0 : margin
-        let paddingRight = (isPaged && cols == 2) ? 0 : margin
+        let paddingLeft = margin
+        let paddingRight = margin
 
         let css = """
         @import url('https://fonts.googleapis.com/css2?family=Literata:ital,opsz,wght@0,7..72,200..900;1,7..72,200..900&family=Merriweather:ital,wght@0,300;0,400;0,700;0,900;1,300;1,400;1,700;1,900&family=Source+Serif+4:ital,opsz,wght@0,8..60,200..900;1,8..60,200..900&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400;1,700&display=swap');
@@ -758,9 +785,12 @@ struct EPUBWebView: UIViewRepresentable {
             -webkit-hyphens: \(hyph) !important;
             hyphens: \(hyph) !important;
             \(pagedCSS)
-            \(maxSpreadWidthCSS)
             padding-left: \(paddingLeft)px !important;
             padding-right: \(paddingRight)px !important;
+        }
+        div, section, article {
+            column-count: auto !important;
+            column-width: auto !important;
         }
         body, p, div, span, li, td, th, h1, h2, h3, h4, h5, h6 { color: \(fg) !important; }
         a { color: \(link) !important; }
@@ -784,7 +814,6 @@ struct EPUBWebView: UIViewRepresentable {
 struct BookReaderEngine: View {
     let pdf: ConvertedPDF
     var onDismiss: () -> Void
-    /// All books in the library — used to find the next volume in a series.
     var allBooks: [ConvertedPDF] = []
     
     @StateObject private var vm: BookReaderViewModel
@@ -796,6 +825,7 @@ struct BookReaderEngine: View {
     @State private var activeHighlightToEdit: SDAnnotation? = nil
     @ObservedObject private var prefs = EBookPreferences.shared
     @ObservedObject private var sleepTimer = SleepTimerManager.shared
+    @State private var scrollToLastPageOnLoad = false
     
     @Environment(\.modelContext) private var modelContext
     @State private var extractedTextParams: String = "Chapter reading is not extracted to string yet."
@@ -823,7 +853,7 @@ struct BookReaderEngine: View {
             } else {
                 if !vm.chapterHtmlFiles.isEmpty {
                     let currentChapterURL = vm.chapterHtmlFiles[vm.currentChapterIndex]
-                    EPUBWebView(htmlContent: $vm.currentChapterHTML, baseUrl: .constant(currentChapterURL), prefs: EBookPreferences.shared, onHighlightCreated: { selectedText, _ in
+                    EPUBWebView(htmlContent: $vm.currentChapterHTML, baseUrl: .constant(currentChapterURL), prefs: EBookPreferences.shared, scrollToLastPageOnLoad: $scrollToLastPageOnLoad, onHighlightCreated: { selectedText, _ in
 
                         let highlight = Annotation(
                             pdfID: pdf.id,
@@ -852,7 +882,7 @@ struct BookReaderEngine: View {
                                 let safeText = text.replacingOccurrences(of: "`", with: "\\`")
                                                    .replacingOccurrences(of: "\"", with: "\\\"")
                                                    .replacingOccurrences(of: "\n", with: " ")
-                                let js = "window.restoreInksyncHighlight(`\(safeText)`, '\(color)');"
+                                                   let js = "window.restoreInksyncHighlight(`\(safeText)`, '\(color)');"
                                 webView.evaluateJavaScript(js)
                             }
                         }
@@ -870,6 +900,7 @@ struct BookReaderEngine: View {
                         }
                     },
                     onPrevChapter: {
+                        scrollToLastPageOnLoad = true
                         vm.loadChapter(index: max(0, vm.currentChapterIndex - 1))
                     })
                     .edgesIgnoringSafeArea(.horizontal)

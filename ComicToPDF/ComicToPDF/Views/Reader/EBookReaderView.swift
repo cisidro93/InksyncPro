@@ -721,6 +721,11 @@ struct EBookWebReader: UIViewRepresentable {
         wv.onHighlightRequested = {
             wv.evaluateJavaScript("window.applyInksyncHighlight('#ffd700');")
         }
+
+        let pinch = UIPinchGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handlePinch(_:)))
+        pinch.delegate = context.coordinator
+        wv.addGestureRecognizer(pinch)
+
         return wv
     }
 
@@ -873,14 +878,8 @@ struct EBookWebReader: UIViewRepresentable {
             column-rule: 1px solid rgba(128, 128, 128, 0.15) !important;
         """ : ""
 
-        let maxSpreadWidthCSS = (isPaged && cols == 2) ? """
-            max-width: calc(1.42 * (100vh - 120px) + \(gap)px) !important;
-            margin-left: auto !important;
-            margin-right: auto !important;
-        """ : ""
-
-        let paddingLeft = (isPaged && cols == 2) ? 0 : margin
-        let paddingRight = (isPaged && cols == 2) ? 0 : margin
+        let paddingLeft = margin
+        let paddingRight = margin
 
         return """
         <meta charset="utf-8">
@@ -902,7 +901,6 @@ struct EBookWebReader: UIViewRepresentable {
             line-height: \(lineHeight);
             text-align: \(textAlign) !important;
             \(pagedCSS)
-            \(maxSpreadWidthCSS)
             margin: 0 !important;
             height: 100vh !important;
             \(widthCSS)
@@ -917,6 +915,10 @@ struct EBookWebReader: UIViewRepresentable {
             word-spacing: \(wordSpacing) !important;
             -webkit-hyphens: \(hyphenCSS) !important;
             hyphens: \(hyphenCSS) !important;
+        }
+        div, section, article {
+            column-count: auto !important;
+            column-width: auto !important;
         }
         p { margin-bottom: \(paraSpace)em !important; text-indent: \(paraIndent)em !important; }
         p, div, span, li, td, th, h1, h2, h3, h4, h5, h6 { color: \(textColor) !important; line-height: \(lineHeight); }
@@ -936,9 +938,17 @@ struct EBookWebReader: UIViewRepresentable {
 
         var _currentPage = \(initialPage);
         var _totalPages = 1;
+        var _firstRun = true;
 
         function updateMetrics() {
             _totalPages = Math.max(1, Math.ceil(document.documentElement.scrollWidth / window.innerWidth));
+            if (_firstRun) {
+                _firstRun = false;
+                if (_currentPage === 99999) {
+                    _currentPage = _totalPages - 1;
+                }
+                goToPage(_currentPage, false);
+            }
             window.webkit.messageHandlers.metrics.postMessage({ current: _currentPage, total: _totalPages });
         }
 
@@ -946,7 +956,9 @@ struct EBookWebReader: UIViewRepresentable {
             _currentPage = Math.max(0, Math.min(page, _totalPages - 1));
             var behavior = smooth ? 'smooth' : 'instant';
             window.scrollTo({ left: _currentPage * window.innerWidth, behavior: behavior });
-            updateMetrics();
+            if (!_firstRun) {
+                window.webkit.messageHandlers.metrics.postMessage({ current: _currentPage, total: _totalPages });
+            }
         }
 
         window.onload = function() { setTimeout(updateMetrics, 100); };
@@ -1114,14 +1126,8 @@ struct EBookWebReader: UIViewRepresentable {
             column-rule: 1px solid rgba(128, 128, 128, 0.15) !important;
         """ : ""
 
-        let maxSpreadWidthCSS = (isPaged && cols == 2) ? """
-            max-width: calc(1.42 * (100vh - 120px) + \(gap)px) !important;
-            margin-left: auto !important;
-            margin-right: auto !important;
-        """ : ""
-
-        let paddingLeft = (isPaged && cols == 2) ? 0 : margin
-        let paddingRight = (isPaged && cols == 2) ? 0 : margin
+        let paddingLeft = margin
+        let paddingRight = margin
 
         let css = """
         @import url('https://fonts.googleapis.com/css2?family=Literata:ital,opsz,wght@0,7..72,200..900;1,7..72,200..900&family=Merriweather:ital,wght@0,300;0,400;0,700;0,900;1,300;1,400;1,700;1,900&family=Source+Serif+4:ital,opsz,wght@0,8..60,200..900;1,8..60,200..900&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400;1,700&display=swap');
@@ -1138,9 +1144,12 @@ struct EBookWebReader: UIViewRepresentable {
             -webkit-hyphens: \(hyph) !important;
             hyphens: \(hyph) !important;
             \(pagedCSS)
-            \(maxSpreadWidthCSS)
             padding-left: \(paddingLeft)px !important;
             padding-right: \(paddingRight)px !important;
+        }
+        div, section, article {
+            column-count: auto !important;
+            column-width: auto !important;
         }
         body, p, div, span, li, td, th, h1, h2, h3, h4, h5, h6 { color: \(fg) !important; }
         a { color: \(link) !important; }
@@ -1161,13 +1170,14 @@ struct EBookWebReader: UIViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
     @MainActor
-    final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
+    final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate, UIGestureRecognizerDelegate {
         var parent: EBookWebReader
         var lastLoadedHref: String = ""
         var lastTheme: String = ""
         var lastFontSize: Double = 0
         /// Cancellable reference — cancelled on every new chapter load to prevent stale renders
         var loadTask: Task<Void, Never>?
+        var initialPinchFontSize: Double = 16.0
 
         init(_ parent: EBookWebReader) { self.parent = parent }
 
@@ -1224,6 +1234,19 @@ struct EBookWebReader: UIViewRepresentable {
                 let js = "window.restoreInksyncHighlight(`\(safeText)`, '\(color)');"
                 webView.evaluateJavaScript(js)
             }
+        }
+
+        @objc func handlePinch(_ gesture: UIPinchGestureRecognizer) {
+            if gesture.state == .began {
+                initialPinchFontSize = parent.prefs.fontSize
+            } else if gesture.state == .changed {
+                let newSize = initialPinchFontSize * Double(gesture.scale)
+                parent.prefs.fontSize = max(12.0, min(48.0, newSize))
+            }
+        }
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+            return true
         }
 
         /// Recover from Jetsam Out-Of-Memory (OOM) WebKit process crashes.
