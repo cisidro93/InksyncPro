@@ -20,6 +20,9 @@ struct DocumentReaderEngine: View {
     @State private var isReflowMode = false
     @State private var reflowText: String = "Extracting text..."
     @State private var showingSettings = false
+    @State private var showAnnotations = false
+    @State private var showSearch = false
+    @State private var pdfViewReference: PDFView? = nil
     @ObservedObject private var prefs = EBookPreferences.shared
     @FocusState private var isReaderFocused: Bool
     @State private var lastBrightnessDragValue: CGFloat = 0
@@ -56,7 +59,8 @@ struct DocumentReaderEngine: View {
                                           pdf: pdf,
                                           currentPageIndex: $currentPageIndex,
                                           chromeVisible: $chromeVisible,
-                                          isPencilMode: $isPencilMode)
+                                          isPencilMode: $isPencilMode,
+                                          pdfViewRef: $pdfViewReference)
                     .colorInvertIfDark(theme: prefs.activeTheme)
                 } else {
                     ProgressView("Loading Document...")
@@ -98,12 +102,7 @@ struct DocumentReaderEngine: View {
                 pageText: "\(currentPageIndex + 1) / \(totalPages)",
                 isVisible: $chromeVisible,
                 onBack: {
-                    ReaderProgressTracker.shared.update(ReadingProgress(
-                        pdfID: pdf.id, lastOpenedAt: Date(), currentPageIndex: currentPageIndex,
-                        currentChapterIndex: nil, currentChapterOffset: nil,
-                        totalPagesRead: 1, completionFraction: Double(currentPageIndex + 1) / Double(max(1, totalPages)),
-                        readingSessionDates: [Date()], estimatedMinutesRemaining: nil
-                    ))
+                    savePosition(pageIndex: currentPageIndex)
                     onDismiss()
                 },
                 onBookmark: {
@@ -111,7 +110,9 @@ struct DocumentReaderEngine: View {
                     AnnotationStore.shared.add(bookmark)
                 },
                 onSettingsToggle: { showingSettings = true },
+                onTOCToggle: { showAnnotations = true },
                 onAnnotationsToggle: { isPencilMode.toggle() },
+                onSearchToggle: { showSearch = true },
                 currentProgress: Binding(
                     get: { Double(currentPageIndex) / Double(max(1, totalPages - 1)) },
                     set: {
@@ -183,10 +184,19 @@ struct DocumentReaderEngine: View {
             if isReflowMode { updateReflowText() }
             isReaderFocused = true
         }
-        .onChange(of: currentPageIndex) { old, new in
+        // FIX 3: Save position on every page turn — not just on deliberate back-tap.
+        // This ensures phone-calls, swipe-up app kills, and background terminations
+        // never lose the user's reading position.
+        .onChange(of: currentPageIndex) { _, new in
             if isReflowMode { updateReflowText() }
+            savePosition(pageIndex: new)
+        }
+        // FIX 3b: Also save when the app goes to the background (resign-active).
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in
+            savePosition(pageIndex: currentPageIndex)
         }
         .onDisappear {
+            savePosition(pageIndex: currentPageIndex)
             accessedURL?.stopAccessingSecurityScopedResource()
         }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
@@ -198,6 +208,19 @@ struct DocumentReaderEngine: View {
         .sheet(isPresented: $showingSettings) {
             EBookSettingsPanel(bookID: pdf.id.uuidString)
                 .presentationDetents([.medium, .large])
+        }
+        .sheet(isPresented: $showAnnotations) {
+            StudyNotebookView(
+                bookID: pdf.id.uuidString,
+                bookTitle: pdf.name,
+                fileURL: pdf.url
+            )
+        }
+        .sheet(isPresented: $showSearch) {
+            if let doc = pdfDocument, let pdfV = pdfViewReference {
+                ReaderSearchView(document: doc, pdfView: pdfV)
+                    .presentationDetents([.medium, .large])
+            }
         }
         .focusable()
         .focused($isReaderFocused)
@@ -249,44 +272,61 @@ struct DocumentReaderEngine: View {
         self.reflowText = extracted.isEmpty ? "No extractable text on this page." : extracted
     }
     
+    // FIX 5: Smart crop now runs entirely on a background thread.
+    // The previous implementation iterated every page on the main actor, causing
+    // multi-second UI freezes on large PDFs (500+ pages).
     private func applySmartCrop() {
         guard let doc = pdfDocument else { return }
-        for i in 0..<doc.pageCount {
-            if let page = doc.page(at: i) {
-                let pageBounds = page.bounds(for: .cropBox)
-                var unionBounds = CGRect.null
-                let charCount = page.numberOfCharacters
-                if charCount > 0 {
-                    for charIndex in 0..<charCount {
-                        let charBounds = page.characterBounds(at: charIndex)
-                        if charBounds.width > 0 && charBounds.height > 0 {
-                            unionBounds = unionBounds.union(charBounds)
+        // Temporarily nil-out to signal loading state
+        pdfDocument = nil
+        Task {
+            await Task.detached(priority: .utility) {
+                for i in 0..<doc.pageCount {
+                    guard let page = doc.page(at: i) else { continue }
+                    let pageBounds = page.bounds(for: .cropBox)
+                    var unionBounds = CGRect.null
+                    let charCount = page.numberOfCharacters
+                    if charCount > 0 {
+                        for charIndex in 0..<charCount {
+                            let charBounds = page.characterBounds(at: charIndex)
+                            if charBounds.width > 0 && charBounds.height > 0 {
+                                unionBounds = unionBounds.union(charBounds)
+                            }
                         }
                     }
-                }
-                if !unionBounds.isNull {
-                    // Apply a safe inset cushion of 16pt around the text bounds
-                    let croppedRect = unionBounds.insetBy(dx: -16, dy: -16)
-                    // Intersect with the page bounds to keep it within safe bounds
-                    let finalCrop = croppedRect.intersection(pageBounds)
-                    if finalCrop.width > 50 && finalCrop.height > 50 {
-                        page.setBounds(finalCrop, for: .cropBox)
+                    if !unionBounds.isNull {
+                        let croppedRect = unionBounds.insetBy(dx: -16, dy: -16)
+                        let finalCrop = croppedRect.intersection(pageBounds)
+                        if finalCrop.width > 50 && finalCrop.height > 50 {
+                            page.setBounds(finalCrop, for: .cropBox)
+                        }
+                    } else {
+                        var crop = pageBounds
+                        crop = crop.insetBy(dx: crop.width * 0.08, dy: crop.height * 0.08)
+                        page.setBounds(crop, for: .cropBox)
                     }
-                } else {
-                    // Fallback to a safe margin crop of 8% for image-only/scanned documents
-                    var crop = pageBounds
-                    crop = crop.insetBy(dx: crop.width * 0.08, dy: crop.height * 0.08)
-                    page.setBounds(crop, for: .cropBox)
                 }
+            }.value
+            // Re-assign on MainActor after background work is done
+            await MainActor.run {
+                self.pdfDocument = doc
             }
         }
-        // Force PDFView to re-layout: nil → reassign on next runloop tick.
-        // Task.yield() is deterministic under CPU load (no magic 0.1s delay).
-        pdfDocument = nil
-        Task { @MainActor in
-            await Task.yield()
-            self.pdfDocument = doc
-        }
+    }
+
+    // Shared helper — save position to ReaderProgressTracker.
+    private func savePosition(pageIndex: Int) {
+        ReaderProgressTracker.shared.update(ReadingProgress(
+            pdfID: pdf.id,
+            lastOpenedAt: Date(),
+            currentPageIndex: pageIndex,
+            currentChapterIndex: nil,
+            currentChapterOffset: nil,
+            totalPagesRead: 1,
+            completionFraction: Double(pageIndex + 1) / Double(max(1, totalPages)),
+            readingSessionDates: [Date()],
+            estimatedMinutesRemaining: nil
+        ))
     }
 }
 
@@ -330,6 +370,7 @@ struct PDFKitRepresentedView: UIViewRepresentable {
     @Binding var currentPageIndex: Int
     @Binding var chromeVisible: Bool
     @Binding var isPencilMode: Bool
+    @Binding var pdfViewRef: PDFView?
     
     private func makePdfViewTransparent(_ pdfView: PDFView) {
         pdfView.isOpaque = false
@@ -344,6 +385,9 @@ struct PDFKitRepresentedView: UIViewRepresentable {
     
     func makeUIView(context: Context) -> UIView {
         let pdfView = HighlightablePDFView()
+        DispatchQueue.main.async {
+            self.pdfViewRef = pdfView
+        }
         pdfView.document = document
         pdfView.autoScales = true
         pdfView.displayDirection = .vertical
@@ -376,6 +420,15 @@ struct PDFKitRepresentedView: UIViewRepresentable {
                 bounds: normalizedBounds
             )
             AnnotationStore.shared.add(annotation)
+
+            // Gap C fix: Write the annotation back to the PDF document on disk.
+            // PDFAnnotation is added to the in-memory PDFPage above in customHighlightAction,
+            // but without this write, the highlight is lost when the app is relaunched.
+            // We use a background Task to avoid blocking the main thread.
+            let writeURL = pdf.url
+            Task.detached(priority: .utility) {
+                document.write(to: writeURL)
+            }
         }
         
         let canvasView = PKCanvasView()

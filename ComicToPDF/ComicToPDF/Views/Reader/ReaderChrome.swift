@@ -27,6 +27,7 @@ struct ReaderChrome: View {
     var onTOCToggle: (() -> Void)? = nil
     var onAnnotationsToggle: (() -> Void)? = nil
     var onCharacterMapToggle: (() -> Void)? = nil
+    var onSearchToggle: (() -> Void)? = nil
     var isDialogueLensEnabled: Bool = false
     var onDialogueLensToggle: (() -> Void)? = nil
 
@@ -83,6 +84,7 @@ struct ReaderChrome: View {
         onTOCToggle: (() -> Void)? = nil,
         onAnnotationsToggle: (() -> Void)? = nil,
         onCharacterMapToggle: (() -> Void)? = nil,
+        onSearchToggle: (() -> Void)? = nil,
         isDialogueLensEnabled: Bool = false,
         onDialogueLensToggle: (() -> Void)? = nil,
         currentProgress: Binding<Double>,
@@ -117,6 +119,7 @@ struct ReaderChrome: View {
         self.onTOCToggle = onTOCToggle
         self.onAnnotationsToggle = onAnnotationsToggle
         self.onCharacterMapToggle = onCharacterMapToggle
+        self.onSearchToggle = onSearchToggle
         self.isDialogueLensEnabled = isDialogueLensEnabled
         self.onDialogueLensToggle = onDialogueLensToggle
         self._currentProgress = currentProgress
@@ -235,6 +238,15 @@ struct ReaderChrome: View {
                         active: isDialogueLensEnabled,
                         activeColor: .purple,
                         action: onDialogueLens
+                    )
+                }
+
+                if let onSearch = onSearchToggle {
+                    chromeButton(
+                        icon: "magnifyingglass",
+                        active: false,
+                        activeColor: .white,
+                        action: onSearch
                     )
                 }
 

@@ -1,6 +1,7 @@
 import SwiftUI
 import WebKit
 import ZIPFoundation
+import SwiftData
 
 // MARK: - EBookReaderView
 struct EBookReaderView: View {
@@ -12,6 +13,7 @@ struct EBookReaderView: View {
     var allBooks: [ConvertedPDF] = []
     
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
     @EnvironmentObject var conversionManager: ConversionManager
     @ObservedObject private var prefs = EBookPreferences.shared
     @Environment(\.colorScheme) var colorScheme
@@ -52,7 +54,22 @@ struct EBookReaderView: View {
     @State private var isGoingForward: Bool = true
     
     @State private var activeHighlightToEdit: SDAnnotation? = nil
+    @State private var annotationForFullEdit: SDAnnotation? = nil
     @State private var lastBrightnessDragValue: CGFloat = 0
+    // Gap A: Annotations panel
+    @State private var showAnnotations = false
+    // Gap B: In-reader search
+    @State private var showSearch = false
+    /// Pending search match text — injected via window.find() after chapter navigation.
+    @State private var pendingSearchMatch: String? = nil
+    /// Gap B: Weak reference to the live WKWebView — used to call evaluateJavaScript for window.find().
+    @State private var webViewReference: WKWebView? = nil
+    /// FIX 4: Within-chapter position as a fractional scroll offset (0.0–1.0).
+    /// Saved on every page turn and restored on chapter load, so position
+    /// survives font-size changes and app restarts unlike a column-integer.
+    @State private var chapterScrollFraction: Double = 0.0
+    // Key for persisting the scroll fraction alongside the chapter index
+    private var fractionKey: String { "ebook_fraction_\(fileURL.lastPathComponent.hashValue)" }
 
     private var totalChapters: Int { metadata?.spineItems.count ?? 1 }
     private var progressFraction: Double {
@@ -98,8 +115,40 @@ struct EBookReaderView: View {
                                 onNext:      nextChapter,
                                 onPrev:      prevChapter,
                                 onCenterTap: { withAnimation(.easeInOut(duration: 0.2)) { showHUD.toggle() } },
-                                onHighlightCreated: { _ in },
-                                pdfID: pdf?.id
+                                // FIX 1+2: Persist highlight to AnnotationStore + SwiftData.
+                                // Open the colour-picker popover immediately so the user can
+                                // change the colour — the selected hex is reflected in the DOM
+                                // via the onColorSelected callback in HighlightQuickPopoverView.
+                                onHighlightCreated: { selectedText in
+                                    guard let p = pdf else { return }
+                                    let spineLabel = metadata?.spineItems[safe: currentIndex]?.label ?? "Chapter \(currentIndex + 1)"
+                                    let highlight = Annotation(
+                                        pdfID: p.id,
+                                        pageIndex: currentIndex,
+                                        chapterTitle: spineLabel,
+                                        kind: .highlight,
+                                        createdAt: Date(),
+                                        modifiedAt: Date(),
+                                        colorHex: "#ffd700",
+                                        selectedText: selectedText
+                                    )
+                                    AnnotationStore.shared.add(highlight)
+                                    let sdAnnotation = SDAnnotation(from: highlight)
+                                    modelContext.insert(sdAnnotation)
+                                    try? modelContext.save()
+                                    // Pop the colour picker popover immediately
+                                    activeHighlightToEdit = sdAnnotation
+                                },
+                                pdfID: pdf?.id,
+                                // FIX 4: Pass the saved fractional position so the chapter
+                                // is restored to the exact scroll position, not the chapter start.
+                                initialScrollFraction: UserDefaults.standard.double(forKey: "ebook_fraction_\(fileURL.lastPathComponent.hashValue)"),
+                                onScrollFractionChanged: { fraction in
+                                    chapterScrollFraction = fraction
+                                    saveProgress()
+                                },
+                                // Gap B: Expose the live WKWebView so window.find() can be injected
+                                webViewRef: $webViewReference
                             )
                             // Directional page-turn: slide left for forward, right for back.
                             // Using .id(currentIndex) forces SwiftUI to create a new view identity
@@ -179,9 +228,123 @@ struct EBookReaderView: View {
 
         .task { await loadBook() }
         .onDisappear { cleanup(); saveProgress() }
+        // FIX 4: Save scroll fraction whenever the chapter page changes
+        .onChange(of: chapterPage) { _, _ in saveProgress() }
+        // Also save position when the app goes to the background
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in
+            saveProgress()
+        }
         .overlay { if prefs.showReadingRuler { ReadingRulerOverlay() } }
         .onChange(of: sleepTimer.didFire) { _, fired in
             if fired { if let onExit = onExit { onExit() } else { dismiss() } }
+        }
+        // FIX 1+2: Colour picker popover for EPUB highlights
+        .popover(item: $activeHighlightToEdit) { annotation in
+            HighlightQuickPopoverView(
+                annotation: annotation,
+                onDelete: {
+                    // Remove from AnnotationStore (in-memory + SwiftData via its own context)
+                    if let pid = annotation.pdfID {
+                        AnnotationStore.shared.delete(id: annotation.id, pdfID: pid)
+                    }
+                    // Also remove from the SwiftUI modelContext (UI layer)
+                    modelContext.delete(annotation)
+                    try? modelContext.save()
+                    activeHighlightToEdit = nil
+                },
+                onEditNote: {
+                    annotationForFullEdit = annotation
+                    activeHighlightToEdit = nil
+                },
+                onColorSelected: { colorHex in
+                    // Update colour in AnnotationStore (in-memory + SwiftData)
+                    if let pid = annotation.pdfID {
+                        let matching = AnnotationStore.shared.annotations(for: pid)
+                            .first(where: { $0.id == annotation.id })
+                        if var updated = matching {
+                            updated.colorHex = colorHex
+                            AnnotationStore.shared.update(updated)
+                        }
+                    }
+                    // Also update the SDAnnotation in the SwiftUI model layer
+                    annotation.colorHex = colorHex
+                    try? modelContext.save()
+                }
+            )
+        }
+        .sheet(item: $annotationForFullEdit) { annotation in
+            AnnotationEditSheet(annotation: annotation)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
+        // Gap A: Annotations / highlights panel — same StudyNotebookView used by BookReaderEngine
+        .sheet(isPresented: $showAnnotations) {
+            StudyNotebookView(
+                bookID: pdf?.id.uuidString ?? "",
+                bookTitle: title,
+                fileURL: pdf?.url
+            )
+        }
+        // Gap B: Full-text EPUB search sheet
+        .sheet(isPresented: $showSearch) {
+            if let meta = metadata {
+                EPUBSearchView(
+                    spineItems: meta.spineItems,
+                    unzipDir: unzipDir,
+                    onNavigate: { chapterIdx, matchText in
+                        if chapterIdx == currentIndex {
+                            // Same chapter: inject window.find() immediately
+                            if let wv = webViewReference {
+                                let safe = matchText
+                                    .replacingOccurrences(of: "\\", with: "\\\\")
+                                    .replacingOccurrences(of: "'", with: "\\'")
+                                let js = """
+                                (function() {
+                                    window.getSelection()?.removeAllRanges();
+                                    var found = window.find('\(safe)', false, false, true, false, false, false);
+                                    if (!found) { window.find('\(safe)', false, false, false, false, false, false); }
+                                })();
+                                """
+                                wv.evaluateJavaScript(js)
+                            }
+                        } else {
+                            // 1. Navigate to the right chapter
+                            isGoingForward = chapterIdx >= currentIndex
+                            currentIndex = chapterIdx
+                            chapterPage = 0
+                            saveProgress()
+                            // 2. After navigation, inject window.find() to scroll to + highlight match
+                            // The pending match is picked up in .onChange(of: currentIndex)
+                            pendingSearchMatch = matchText
+                        }
+                    }
+                )
+            }
+        }
+        // Gap B: After chapter navigation, inject window.find() into the live WebView
+        .onChange(of: currentIndex) { _, _ in
+            guard let match = pendingSearchMatch, !match.isEmpty else { return }
+            // Small delay to allow the chapter to finish loading before find()
+            Task {
+                try? await Task.sleep(nanoseconds: 600_000_000) // 0.6s
+                await MainActor.run {
+                    if let wv = webViewReference {
+                        let safe = match
+                            .replacingOccurrences(of: "\\", with: "\\\\")
+                            .replacingOccurrences(of: "'", with: "\\'")
+                        // window.find: scroll to first match and select it
+                        let js = """
+                        (function() {
+                            window.getSelection()?.removeAllRanges();
+                            var found = window.find('\(safe)', false, false, true, false, false, false);
+                            if (!found) { window.find('\(safe)', false, false, false, false, false, false); }
+                        })();
+                        """
+                        wv.evaluateJavaScript(js)
+                    }
+                    pendingSearchMatch = nil
+                }
+            }
         }
     }
     
@@ -247,8 +410,16 @@ struct EBookReaderView: View {
                         Label("Table of Contents", systemImage: "list.bullet.rectangle")
                     }
                     .disabled(metadata?.spineItems.isEmpty ?? true)
+                    // Gap B: In-reader full-text search
+                    Button { showSearch = true } label: {
+                        Label("Search in Book", systemImage: "magnifyingglass")
+                    }
                 }
                 Section("Tools") {
+                    // Gap A: Annotations + highlights panel
+                    Button { showAnnotations = true } label: {
+                        Label("Highlights & Notes", systemImage: "highlighter")
+                    }
                     Button { showShareSheet = true } label: {
                         Label("Share Book", systemImage: "square.and.arrow.up")
                     }
@@ -612,6 +783,22 @@ struct EBookReaderView: View {
         private func saveProgress() {
         UserDefaults.standard.set(currentIndex, forKey: progressKey)
         UserDefaults.standard.set(chapterPage, forKey: pageKey)
+        // FIX 4: Also persist the fractional scroll offset for within-chapter precision
+        UserDefaults.standard.set(chapterScrollFraction, forKey: fractionKey)
+        // Update ReaderProgressTracker with within-chapter offset too
+        if let p = pdf ?? conversionManager.convertedPDFs.first(where: { $0.url.lastPathComponent == fileURL.lastPathComponent }) {
+            let fraction = totalChapters > 1 ? Double(currentIndex) / Double(totalChapters - 1) : 0
+            var progress = ReaderProgressTracker.shared.progress(for: p.id) ?? ReadingProgress(
+                pdfID: p.id, lastOpenedAt: Date(), currentPageIndex: currentIndex,
+                totalPagesRead: 1, completionFraction: fraction, readingSessionDates: []
+            )
+            progress.lastOpenedAt = Date()
+            progress.currentPageIndex = currentIndex
+            progress.currentChapterIndex = currentIndex
+            progress.currentChapterOffset = chapterScrollFraction
+            progress.completionFraction = fraction
+            ReaderProgressTracker.shared.update(progress)
+        }
     }
     
     private func cleanup() {
@@ -702,6 +889,13 @@ struct EBookWebReader: UIViewRepresentable {
     var onHighlightCreated: ((String) -> Void)? = nil
     /// The PDF/book identity — used to restore previously saved highlights on chapter load.
     var pdfID: UUID? = nil
+    /// FIX 4: Scroll fraction to restore within the chapter (0.0–1.0).
+    /// Set from UserDefaults on open; updated via JS bridge on every page turn.
+    var initialScrollFraction: Double = 0.0
+    /// Called back from JS with the current scroll fraction whenever it changes.
+    var onScrollFractionChanged: ((Double) -> Void)? = nil
+    /// Gap B: Binding to share the web view reference for programmatic scripting (e.g. search).
+    @Binding var webViewRef: WKWebView?
 
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
@@ -711,6 +905,9 @@ struct EBookWebReader: UIViewRepresentable {
         config.userContentController.add(proxy, name: "metrics")
         // `highlight` handler: receives selected text when user taps Highlight
         config.userContentController.add(proxy, name: "highlight")
+        // FIX 4: `scrollFraction` handler: receives the fractional scroll offset (0–1)
+        // on every page navigation so we can save and restore within-chapter position.
+        config.userContentController.add(proxy, name: "scrollFraction")
 
         let wv = HighlightableWebView(frame: .zero, configuration: config)
         wv.isOpaque = false
@@ -726,6 +923,10 @@ struct EBookWebReader: UIViewRepresentable {
         pinch.delegate = context.coordinator
         wv.addGestureRecognizer(pinch)
 
+        DispatchQueue.main.async {
+            self.webViewRef = wv
+        }
+
         return wv
     }
 
@@ -738,6 +939,7 @@ struct EBookWebReader: UIViewRepresentable {
         uiView.configuration.userContentController.removeScriptMessageHandler(forName: "nav")
         uiView.configuration.userContentController.removeScriptMessageHandler(forName: "metrics")
         uiView.configuration.userContentController.removeScriptMessageHandler(forName: "highlight")
+        uiView.configuration.userContentController.removeScriptMessageHandler(forName: "scrollFraction")
         uiView.navigationDelegate = nil
     }
     
@@ -1357,6 +1559,9 @@ struct EBookWebReader: UIViewRepresentable {
                 self.parent.totalPages = body["total"] ?? 1
             } else if message.name == "highlight", let text = message.body as? String, !text.isEmpty {
                 self.parent.onHighlightCreated?(text)
+            } else if message.name == "scrollFraction", let fraction = message.body as? Double {
+                // FIX 4: Report the within-chapter scroll fraction back to Swift for persistence.
+                self.parent.onScrollFractionChanged?(fraction)
             }
         }
         
@@ -1384,7 +1589,7 @@ struct EBookWebReader: UIViewRepresentable {
             }
         }
 
-        /// Restore saved highlights after every chapter load.
+        /// Restore saved highlights and scroll position after every chapter load.
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             guard let pdfID = parent.pdfID else { return }
             let chapter = parent.spineItem.href
@@ -1399,6 +1604,27 @@ struct EBookWebReader: UIViewRepresentable {
                 let _ = chapter // suppress unused warning
                 let js = "window.restoreInksyncHighlight(`\(safeText)`, '\(color)');"
                 webView.evaluateJavaScript(js)
+            }
+
+            // FIX 4: Restore the within-chapter fractional scroll position.
+            // We use a 150ms delay to allow the layout engine to complete column
+            // calculation before we scroll; without this, scrollWidth is still 0.
+            let fraction = parent.initialScrollFraction
+            if fraction > 0.01 {
+                let restoreJS = """
+                setTimeout(function() {
+                    var sv = document.scrollingElement || document.documentElement;
+                    var isHoriz = document.body.style.columnCount || window.getComputedStyle(document.body).columnCount !== 'auto';
+                    if (isHoriz) {
+                        window.scrollTo({ left: sv.scrollWidth * \(fraction), behavior: 'instant' });
+                    } else {
+                        window.scrollTo({ top: sv.scrollHeight * \(fraction), behavior: 'instant' });
+                    }
+                    // Report the fraction back to initialise the Swift state correctly
+                    window.webkit.messageHandlers.scrollFraction.postMessage(\(fraction));
+                }, 150);
+                """
+                webView.evaluateJavaScript(restoreJS)
             }
         }
 
