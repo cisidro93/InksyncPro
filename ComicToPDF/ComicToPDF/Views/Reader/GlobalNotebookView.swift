@@ -24,7 +24,7 @@ struct GlobalNotebookView: View {
     @Environment(\.colorScheme) private var colorScheme
     
     // Query all annotations
-    @Query(sort: \SDAnnotation.createdAt, order: .reverse) private var allAnnotations: [SDAnnotation]
+    @Query private var allAnnotations: [SDAnnotation]
     
     @Binding var selectedPDF: ConvertedPDF?
     
@@ -33,7 +33,8 @@ struct GlobalNotebookView: View {
     @State private var selectedColorHex: String? = nil
     @State private var selectedBookID: UUID? = nil
     @State private var typeFilter: AnnotationTypeFilter = .all
-    @State private var activeShareText: String? = nil
+    @State private var isShowingShareSheet = false
+    @State private var shareText = ""
     
     // Color Palette matching the highlight quick colors
     private let highlightColors = [
@@ -45,9 +46,10 @@ struct GlobalNotebookView: View {
         ("#ff9f0a", "Orange")
     ]
     
-    // Filtered annotations derived property
+    // Filtered annotations sorted by creation date (newest first)
     private var filteredAnnotations: [SDAnnotation] {
-        allAnnotations.filter { ann in
+        let sorted = allAnnotations.sorted { $0.createdAt > $1.createdAt }
+        return sorted.filter { ann in
             // Filter by type
             if typeFilter == .highlights && ann.kindRaw != "highlight" { return false }
             if typeFilter == .notes && ann.kindRaw != "note" { return false }
@@ -72,6 +74,20 @@ struct GlobalNotebookView: View {
             }
             
             return true
+        }
+    }
+    
+    // Grouped annotations by Book ID
+    private var groupedAnnotations: [UUID: [SDAnnotation]] {
+        Dictionary(grouping: filteredAnnotations, by: { $0.pdfID })
+    }
+    
+    // Group keys sorted alphabetically by Book name
+    private var sortedGroupedKeys: [UUID] {
+        groupedAnnotations.keys.sorted { key1, key2 in
+            let b1 = conversionManager.convertedPDFs.first(where: { $0.id == key1 })?.name ?? ""
+            let b2 = conversionManager.convertedPDFs.first(where: { $0.id == key2 })?.name ?? ""
+            return b1.localizedCompare(b2) == .orderedAscending
         }
     }
     
@@ -104,16 +120,9 @@ struct GlobalNotebookView: View {
                             // Scrollable list of highlights
                             ScrollView {
                                 LazyVStack(spacing: 16, pinnedViews: [.sectionHeaders]) {
-                                    let grouped = Dictionary(grouping: filteredAnnotations, by: { $0.pdfID })
-                                    let sortedKeys = grouped.keys.sorted { key1, key2 in
-                                        let b1 = conversionManager.convertedPDFs.first(where: { $0.id == key1 })?.name ?? ""
-                                        let b2 = conversionManager.convertedPDFs.first(where: { $0.id == key2 })?.name ?? ""
-                                        return b1 < b2
-                                    }
-                                    
-                                    ForEach(sortedKeys, id: \.self) { pdfID in
+                                    ForEach(sortedGroupedKeys, id: \.self) { pdfID in
                                         if let book = conversionManager.convertedPDFs.first(where: { $0.id == pdfID }),
-                                           let annotations = grouped[pdfID] {
+                                           let annotations = groupedAnnotations[pdfID] {
                                             Section(header: sectionHeader(for: book, count: annotations.count)) {
                                                 ForEach(annotations) { annotation in
                                                     highlightCard(for: annotation, book: book)
@@ -132,8 +141,8 @@ struct GlobalNotebookView: View {
             }
         }
         .navigationBarHidden(true)
-        .sheet(item: $activeShareText) { text in
-            ShareSheet(activityItems: [text])
+        .sheet(isPresented: $isShowingShareSheet) {
+            ShareSheet(activityItems: [shareText])
         }
     }
     
@@ -369,7 +378,7 @@ struct GlobalNotebookView: View {
                 if let author = book.metadata.writer ?? book.metadata.author, !author.isEmpty {
                     Text(author)
                         .font(.system(size: 11, weight: .regular))
-                        .foregroundColor(.inkTextTertiary)
+                        .foregroundColor(.inkTextSecondary)
                         .lineLimit(1)
                 }
             }
@@ -419,7 +428,7 @@ struct GlobalNotebookView: View {
                             .foregroundColor(Color.purple)
                         Text("My Note")
                             .font(.system(size: 11, weight: .bold, design: .rounded))
-                            .foregroundColor(.inkTextTertiary)
+                            .foregroundColor(.inkTextSecondary)
                     }
                     Text(noteText)
                         .font(.system(size: 13))
@@ -439,7 +448,7 @@ struct GlobalNotebookView: View {
                     Text(annotation.chapterTitle ?? "Page \(annotation.pageIndex + 1)")
                         .font(.system(size: 11, weight: .semibold, design: .rounded))
                 }
-                .foregroundColor(.inkTextTertiary)
+                .foregroundColor(.inkTextSecondary)
                 
                 Spacer()
                 
@@ -452,7 +461,7 @@ struct GlobalNotebookView: View {
                     } label: {
                         Image(systemName: "doc.on.doc")
                             .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(.inkTextTertiary)
+                            .foregroundColor(.inkTextSecondary)
                     }
                     .buttonStyle(.plain)
                     
@@ -462,11 +471,12 @@ struct GlobalNotebookView: View {
                         if let t = annotation.selectedText { share += "\"\(t)\"\n" }
                         if let n = annotation.noteText { share += "Note: \(n)\n" }
                         share += "— From \(book.name)"
-                        activeShareText = share
+                        shareText = share
+                        isShowingShareSheet = true
                     } label: {
                         Image(systemName: "square.and.arrow.up")
                             .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(.inkTextTertiary)
+                            .foregroundColor(.inkTextSecondary)
                     }
                     .buttonStyle(.plain)
                     
@@ -575,7 +585,7 @@ struct GlobalNotebookView: View {
             
             Image(systemName: "doc.text.magnifyingglass")
                 .font(.system(size: 40))
-                .foregroundColor(.inkTextTertiary)
+                .foregroundColor(.inkTextSecondary)
             
             Text("No Matching Highlights")
                 .font(.system(size: 15, weight: .bold, design: .rounded))
@@ -618,33 +628,7 @@ struct GlobalNotebookView: View {
         let allPDFs = conversionManager.convertedPDFs
         
         // Map SDAnnotations to Annotation DTOs
-        let annDTOs = allAnns.map { ann -> Annotation in
-            let kind = AnnotationKind(rawValue: ann.kindRaw) ?? .highlight
-            var bounds: CGRect? = nil
-            if let x = ann.boundsX, let y = ann.boundsY, let w = ann.boundsW, let h = ann.boundsH {
-                bounds = CGRect(x: x, y: y, width: w, height: h)
-            }
-            
-            var dto = Annotation(
-                id: ann.id,
-                pdfID: ann.pdfID,
-                pageIndex: ann.pageIndex,
-                chapterTitle: ann.chapterTitle,
-                kind: kind,
-                createdAt: ann.createdAt,
-                modifiedAt: ann.modifiedAt,
-                colorHex: ann.colorHex,
-                selectedText: ann.selectedText,
-                noteText: ann.noteText,
-                tags: ann.tags,
-                bounds: bounds
-            )
-            dto.readwiseBookTitle = ann.readwiseBookTitle
-            dto.reviewCount = ann.reviewCount
-            dto.easeFactor = ann.easeFactor
-            return dto
-        }
-        
+        let annDTOs = allAnns.map { $0.toDTO() }
         let pdfDTOs = allPDFs
         
         Task {
@@ -652,24 +636,12 @@ struct GlobalNotebookView: View {
                 let zipURL = try await ZettelkastenExporter.shared.exportToMarkdownZip(annotations: annDTOs, pdfs: pdfDTOs)
                 
                 await MainActor.run {
-                    activeShareText = zipURL.path // Share the Zipped Zettelkasten Archive
+                    shareText = zipURL.path
+                    isShowingShareSheet = true
                 }
             } catch {
                 Logger.shared.log("Highlights Hub: Zettelkasten zip export FAILED: \(error.localizedDescription)", category: "Notebook", type: .error)
             }
         }
     }
-}
-
-// ShareSheet Helper
-struct ShareSheet: UIViewControllerRepresentable {
-    let activityItems: [Any]
-    var applicationActivities: [UIActivity]? = nil
-
-    func makeUIViewController(context: Context) -> UIActivityViewController {
-        let controller = UIActivityViewController(activityItems: activityItems, applicationActivities: applicationActivities)
-        return controller
-    }
-
-    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
