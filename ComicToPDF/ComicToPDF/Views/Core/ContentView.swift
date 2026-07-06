@@ -86,6 +86,13 @@ struct ContentView: View {
                     .environmentObject(conversionManager)
                     .environmentObject(PeerManager.shared)
                     .tabVisible(router.selectedTab == 2)
+
+                // Tab 3: Notebook / Highlights
+                NavigationStack {
+                    GlobalNotebookView(selectedPDF: $selectedPDF)
+                        .environmentObject(conversionManager)
+                }
+                .tabVisible(router.selectedTab == 3)
             }
             
             // iPad Progress Panel Overlay
