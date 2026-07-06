@@ -23,6 +23,7 @@ struct DocumentReaderEngine: View {
     @State private var showAnnotations = false
     @State private var showSearch = false
     @State private var pdfViewReference: PDFView? = nil
+    @State private var resolvedURL: URL? = nil
     @ObservedObject private var prefs = EBookPreferences.shared
     @FocusState private var isReaderFocused: Bool
     @State private var lastBrightnessDragValue: CGFloat = 0
@@ -177,6 +178,7 @@ struct DocumentReaderEngine: View {
 
             let doc = PDFDocument(url: resolvedURL)
             self.accessedURL = accessed
+            self.resolvedURL = resolvedURL
             pdfDocument = doc
             if let saved = ReaderProgressTracker.shared.progress(for: pdf.id) {
                 currentPageIndex = saved.currentPageIndex
@@ -275,14 +277,20 @@ struct DocumentReaderEngine: View {
     // FIX 5: Smart crop now runs entirely on a background thread.
     // The previous implementation iterated every page on the main actor, causing
     // multi-second UI freezes on large PDFs (500+ pages).
+    // Under Swift 6, we avoid capturing non-Sendable PDFDocument across actor boundaries
+    // by passing the Sendable resolvedURL, creating a background document, and returning
+    // a Sendable [Int: CGRect] dictionary.
     private func applySmartCrop() {
         guard let doc = pdfDocument else { return }
+        let url = resolvedURL ?? pdf.url
         // Temporarily nil-out to signal loading state
         pdfDocument = nil
         Task {
-            await Task.detached(priority: .utility) {
-                for i in 0..<doc.pageCount {
-                    guard let page = doc.page(at: i) else { continue }
+            let cropBoxes = await Task.detached(priority: .utility) { () -> [Int: CGRect] in
+                guard let backgroundDoc = PDFDocument(url: url) else { return [:] }
+                var results = [Int: CGRect]()
+                for i in 0..<backgroundDoc.pageCount {
+                    guard let page = backgroundDoc.page(at: i) else { continue }
                     let pageBounds = page.bounds(for: .cropBox)
                     var unionBounds = CGRect.null
                     let charCount = page.numberOfCharacters
@@ -298,17 +306,24 @@ struct DocumentReaderEngine: View {
                         let croppedRect = unionBounds.insetBy(dx: -16, dy: -16)
                         let finalCrop = croppedRect.intersection(pageBounds)
                         if finalCrop.width > 50 && finalCrop.height > 50 {
-                            page.setBounds(finalCrop, for: .cropBox)
+                            results[i] = finalCrop
                         }
                     } else {
                         var crop = pageBounds
                         crop = crop.insetBy(dx: crop.width * 0.08, dy: crop.height * 0.08)
-                        page.setBounds(crop, for: .cropBox)
+                        results[i] = crop
                     }
                 }
+                return results
             }.value
-            // Re-assign on MainActor after background work is done
+
+            // Re-apply to doc and restore pdfDocument reference on MainActor
             await MainActor.run {
+                for (i, cropBox) in cropBoxes {
+                    if let page = doc.page(at: i) {
+                        page.setBounds(cropBox, for: .cropBox)
+                    }
+                }
                 self.pdfDocument = doc
             }
         }
