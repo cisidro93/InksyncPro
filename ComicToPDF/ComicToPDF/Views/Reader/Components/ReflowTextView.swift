@@ -122,15 +122,13 @@ struct ReflowTextView: UIViewRepresentable {
             let point = gesture.location(in: textView)
             let width = textView.bounds.width
             
-            // Left 30% of the screen turns to the previous page
-            if point.x < width * 0.30 {
+            let zones = parent.prefs.tapZoneStyle.zones
+            if point.x < width * zones.leftEdge {
                 parent.onPrevPage()
             }
-            // Right 30% of the screen turns to the next page
-            else if point.x > width * 0.70 {
+            else if point.x > width * zones.rightEdge {
                 parent.onNextPage()
             }
-            // Center 40% of the screen toggles the reader chrome
             else {
                 parent.onCenterTap()
             }

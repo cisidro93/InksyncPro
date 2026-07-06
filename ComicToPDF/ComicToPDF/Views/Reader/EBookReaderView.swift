@@ -747,7 +747,7 @@ struct EBookWebReader: UIViewRepresentable {
         }
         guard FileManager.default.fileExists(atPath: contentURL.path) else { return }
 
-        let currentStateHash = "\(prefs.themeRaw)_\(prefs.customThemeBg)_\(prefs.customThemeText)_\(prefs.fontSize)_\(prefs.fontFamily)_\(prefs.lineHeight)_\(prefs.letterSpacing)_\(prefs.wordSpacing)_\(prefs.hyphenation)_\(prefs.textMargin)_\(prefs.paragraphSpacing)_\(prefs.paragraphIndent)_\(prefs.paginationMode)_\(prefs.textAlign)_\(prefs.autoScroll)_\(prefs.autoScrollSpeed)"
+        let currentStateHash = "\(prefs.themeRaw)_\(prefs.customThemeBg)_\(prefs.customThemeText)_\(prefs.fontSize)_\(prefs.fontFamily)_\(prefs.lineHeight)_\(prefs.letterSpacing)_\(prefs.wordSpacing)_\(prefs.hyphenation)_\(prefs.textMargin)_\(prefs.paragraphSpacing)_\(prefs.paragraphIndent)_\(prefs.paginationMode)_\(prefs.textAlign)_\(prefs.autoScroll)_\(prefs.autoScrollSpeed)_\(prefs.tapZoneStyleRaw)"
         
         let contentChanged = context.coordinator.lastLoadedHref != spineItem.href
         let themeChanged = context.coordinator.lastTheme != currentStateHash
@@ -817,6 +817,11 @@ struct EBookWebReader: UIViewRepresentable {
             // Preferences/Theme changed inside the same chapter — update stylesheet directly in DOM without reloading!
             injectLiveCSS(into: wv)
         }
+
+        // Dynamically update tap zone boundaries in the WebView DOM
+        let leftEdge = prefs.tapZoneStyle.zones.leftEdge
+        let rightEdge = prefs.tapZoneStyle.zones.rightEdge
+        wv.evaluateJavaScript("window.__inksync_left_edge = \(leftEdge); window.__inksync_right_edge = \(rightEdge);", completionHandler: nil)
 
         // Apply auto-scroll logic
         if prefs.autoScroll && prefs.paginationMode == EBookPaginationMode.continuous.rawValue {
@@ -963,10 +968,12 @@ struct EBookWebReader: UIViewRepresentable {
         document.addEventListener('click', function(e) {
             if (e.target.tagName.toLowerCase() === 'a') return;
             var x = e.clientX; var w = window.innerWidth;
-            if (x < w * 0.30) {
+            var leftEdge = window.__inksync_left_edge || 0.30;
+            var rightEdge = window.__inksync_right_edge || 0.70;
+            if (x < w * leftEdge) {
                 if (_currentPage > 0) goToPage(_currentPage - 1, true);
                 else window.webkit.messageHandlers.nav.postMessage('prev');
-            } else if (x > w * 0.70) {
+            } else if (x > w * rightEdge) {
                 if (_currentPage < _totalPages - 1) goToPage(_currentPage + 1, true);
                 else window.webkit.messageHandlers.nav.postMessage('next');
             } else {

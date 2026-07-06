@@ -510,12 +510,13 @@ struct EPUBWebView: UIViewRepresentable {
                 var dx = e.changedTouches[0].clientX - _sx;
                 var dy = e.changedTouches[0].clientY - _sy;
                 if (Math.abs(dx) < 8 && Math.abs(dy) < 8) {
-                    // Tap: determine zone (30% left / 40% center / 30% right)
                     var x = e.changedTouches[0].clientX;
                     var w = window.innerWidth;
-                    if (x < w * 0.30) {
+                    var leftEdge = window.__inksync_left_edge || 0.30;
+                    var rightEdge = window.__inksync_right_edge || 0.70;
+                    if (x < w * leftEdge) {
                         window.webkit.messageHandlers.nav.postMessage('left');
-                    } else if (x > w * 0.70) {
+                    } else if (x > w * rightEdge) {
                         window.webkit.messageHandlers.nav.postMessage('right');
                     } else {
                         window.webkit.messageHandlers.nav.postMessage('center');
@@ -566,9 +567,14 @@ struct EPUBWebView: UIViewRepresentable {
 
     func updateUIView(_ webView: WKWebView, context: Context) {
         let contentHash = htmlContent.hashValue
-        let prefsState = "\(prefs.themeRaw)_\(prefs.fontSize)_\(prefs.fontFamily)_\(prefs.lineHeight)_\(prefs.letterSpacing)_\(prefs.wordSpacing)_\(prefs.textAlign)_\(prefs.paginationMode)_\(prefs.columnCount)_\(prefs.textMargin)_\(prefs.hyphenation)_\(prefs.autoScroll)_\(prefs.autoScrollSpeed)"
+        let prefsState = "\(prefs.themeRaw)_\(prefs.fontSize)_\(prefs.fontFamily)_\(prefs.lineHeight)_\(prefs.letterSpacing)_\(prefs.wordSpacing)_\(prefs.textAlign)_\(prefs.paginationMode)_\(prefs.columnCount)_\(prefs.textMargin)_\(prefs.hyphenation)_\(prefs.autoScroll)_\(prefs.autoScrollSpeed)_\(prefs.tapZoneStyleRaw)"
         let newHash = contentHash ^ prefsState.hashValue
         
+        // Dynamically update tap zone boundaries in the WebView DOM
+        let leftEdge = prefs.tapZoneStyle.zones.leftEdge
+        let rightEdge = prefs.tapZoneStyle.zones.rightEdge
+        webView.evaluateJavaScript("window.__inksync_left_edge = \(leftEdge); window.__inksync_right_edge = \(rightEdge);", completionHandler: nil)
+
         guard context.coordinator.lastContentHash != newHash else { return }
         
         // True when the chapter HTML itself changed (not just prefs)

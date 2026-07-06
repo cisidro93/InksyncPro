@@ -482,20 +482,22 @@ struct PDFKitRepresentedView: UIViewRepresentable {
             let location = gesture.location(in: gesture.view)
             let width = gesture.view?.bounds.width ?? 0
             
-            if location.x < width * 0.30 {
-                // Tap left 30% -> Page backward
+            let zones = EBookPreferences.shared.tapZoneStyle.zones
+            
+            if location.x < width * zones.leftEdge {
+                // Page backward
                 if parent.currentPageIndex > 0 {
                     parent.currentPageIndex -= 1
                     HapticEngine.light()
                 }
-            } else if location.x > width * 0.70 {
-                // Tap right 30% -> Page forward
+            } else if location.x > width * zones.rightEdge {
+                // Page forward
                 if let doc = pdfView?.document, parent.currentPageIndex < doc.pageCount - 1 {
                     parent.currentPageIndex += 1
                     HapticEngine.light()
                 }
             } else {
-                // Center 40% -> Toggle chrome
+                // Toggle chrome
                 parent.chromeVisible.toggle()
             }
         }

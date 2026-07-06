@@ -70,6 +70,16 @@ class EBookPreferences: ObservableObject {
     // Progress display mode (cycles on tap)
     @AppStorage("ebook_progressMode")   var progressMode: Int = 0  // 0=page, 1=chapter, 2=timeLeft
 
+    // MARK: - Customizable Tap Zones Layout
+    @AppStorage("ebook_tapZoneStyle") var tapZoneStyleRaw: String = TapZoneStyle.classic.rawValue
+    var tapZoneStyle: TapZoneStyle {
+        get { TapZoneStyle(rawValue: tapZoneStyleRaw) ?? .classic }
+        set { 
+            tapZoneStyleRaw = newValue.rawValue
+            objectWillChange.send()
+        }
+    }
+
     // MARK: - Reading Color Filters (Midnight, Amber, Sepia)
     @AppStorage("ebook_readingFilter") var readingFilterRaw: String = ReadingFilter.none.rawValue
     var readingFilter: ReadingFilter {

@@ -633,6 +633,42 @@ struct EBookSettingsPanel: View {
                     )
                 }
             }
+
+            // Tap Zone Layout (KOReader style)
+            ReaderSettingsSection(title: "Tap Navigation Zones", icon: "hand.tap") {
+                HStack(spacing: 8) {
+                    ForEach(TapZoneStyle.allCases, id: \.self) { style in
+                        Button {
+                            withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
+                                prefs.tapZoneStyle = style
+                            }
+                            HapticEngine.light()
+                        } label: {
+                            VStack(spacing: 6) {
+                                Image(systemName: style.icon)
+                                    .font(.system(size: 16, weight: .medium))
+                                Text(style.rawValue.capitalized)
+                                    .font(.system(size: 11, weight: .medium))
+                            }
+                            .foregroundStyle(prefs.tapZoneStyle == style ? Color.orange : Color.inkTextSecondary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .fill(prefs.tapZoneStyle == style ? Color.orange.opacity(0.12) : Color.inkSurfaceRaised)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .stroke(prefs.tapZoneStyle == style ? Color.orange.opacity(0.5) : Color.clear, lineWidth: 1.5)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .animation(.spring(response: 0.25, dampingFraction: 0.75), value: prefs.tapZoneStyle)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+            }
         }
     }
 }
