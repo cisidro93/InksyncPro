@@ -504,6 +504,31 @@ struct EPUBWebView: UIViewRepresentable {
                 }
             };
 
+            window.updateInksyncHighlightColor = function(textToFind, colorHex) {
+                var marks = document.querySelectorAll('mark.inksync-highlight');
+                for (var i = 0; i < marks.length; i++) {
+                    if (marks[i].textContent.trim() === textToFind.trim()) {
+                        marks[i].style.backgroundColor = colorHex;
+                        break;
+                    }
+                }
+            };
+
+            window.removeInksyncHighlight = function(textToFind) {
+                var marks = document.querySelectorAll('mark.inksync-highlight');
+                for (var i = 0; i < marks.length; i++) {
+                    if (marks[i].textContent.trim() === textToFind.trim()) {
+                        var parent = marks[i].parentNode;
+                        while (marks[i].firstChild) {
+                            parent.insertBefore(marks[i].firstChild, marks[i]);
+                        }
+                        parent.removeChild(marks[i]);
+                        parent.normalize();
+                        break;
+                    }
+                }
+            };
+
             // ── Auto Scroll ──────────────────────────────────────────────────
             var scrollActive = false;
             var scrollSpeed = 1.0;
@@ -692,8 +717,79 @@ struct EPUBWebView: UIViewRepresentable {
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
         <style id="__inksync_live__">
-        @import url('https://fonts.googleapis.com/css2?family=Literata:ital,opsz,wght@0,7..72,200..900;1,7..72,200..900&family=Merriweather:ital,wght@0,300;0,400;0,700;0,900;1,300;1,400;1,700;1,900&family=Source+Serif+4:ital,opsz,wght@0,8..60,200..900;1,8..60,200..900&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400;1,700&display=swap');
-        @import url('https://cdn.jsdelivr.net/npm/open-dyslexic@1.0.3/open-dyslexic.css');
+        @import url('https://fonts.googleapis.com/css2?family=Merriweather:ital,wght@0,300;0,400;0,700;0,900;1,300;1,400;1,700;1,900&family=Source+Serif+4:ital,opsz,wght@0,8..60,200..900;1,8..60,200..900&display=swap');
+        @font-face {
+            font-family: 'Literata';
+            src: local('Literata-Regular');
+            font-weight: normal;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Literata';
+            src: local('Literata-Bold');
+            font-weight: bold;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Literata';
+            src: local('Literata-Italic');
+            font-weight: normal;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'Literata';
+            src: local('Literata-BoldItalic');
+            font-weight: bold;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'Atkinson Hyperlegible';
+            src: local('AtkinsonHyperlegible-Regular');
+            font-weight: normal;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Atkinson Hyperlegible';
+            src: local('AtkinsonHyperlegible-Bold');
+            font-weight: bold;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Atkinson Hyperlegible';
+            src: local('AtkinsonHyperlegible-Italic');
+            font-weight: normal;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'Atkinson Hyperlegible';
+            src: local('AtkinsonHyperlegible-BoldItalic');
+            font-weight: bold;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'OpenDyslexic';
+            src: local('OpenDyslexic-Regular');
+            font-weight: normal;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'OpenDyslexic';
+            src: local('OpenDyslexic-Bold');
+            font-weight: bold;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'OpenDyslexic';
+            src: local('OpenDyslexic-Italic');
+            font-weight: normal;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'OpenDyslexic';
+            src: local('OpenDyslexic-BoldItalic');
+            font-weight: bold;
+            font-style: italic;
+        }
         *, *::before, *::after { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
         html {
             margin: 0 !important; padding: 0 !important;
@@ -771,8 +867,79 @@ struct EPUBWebView: UIViewRepresentable {
         let paddingRight = margin
 
         let css = """
-        @import url('https://fonts.googleapis.com/css2?family=Literata:ital,opsz,wght@0,7..72,200..900;1,7..72,200..900&family=Merriweather:ital,wght@0,300;0,400;0,700;0,900;1,300;1,400;1,700;1,900&family=Source+Serif+4:ital,opsz,wght@0,8..60,200..900;1,8..60,200..900&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400;1,700&display=swap');
-        @import url('https://cdn.jsdelivr.net/npm/open-dyslexic@1.0.3/open-dyslexic.css');
+        @import url('https://fonts.googleapis.com/css2?family=Merriweather:ital,wght@0,300;0,400;0,700;0,900;1,300;1,400;1,700;1,900&family=Source+Serif+4:ital,opsz,wght@0,8..60,200..900;1,8..60,200..900&display=swap');
+        @font-face {
+            font-family: 'Literata';
+            src: local('Literata-Regular');
+            font-weight: normal;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Literata';
+            src: local('Literata-Bold');
+            font-weight: bold;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Literata';
+            src: local('Literata-Italic');
+            font-weight: normal;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'Literata';
+            src: local('Literata-BoldItalic');
+            font-weight: bold;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'Atkinson Hyperlegible';
+            src: local('AtkinsonHyperlegible-Regular');
+            font-weight: normal;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Atkinson Hyperlegible';
+            src: local('AtkinsonHyperlegible-Bold');
+            font-weight: bold;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Atkinson Hyperlegible';
+            src: local('AtkinsonHyperlegible-Italic');
+            font-weight: normal;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'Atkinson Hyperlegible';
+            src: local('AtkinsonHyperlegible-BoldItalic');
+            font-weight: bold;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'OpenDyslexic';
+            src: local('OpenDyslexic-Regular');
+            font-weight: normal;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'OpenDyslexic';
+            src: local('OpenDyslexic-Bold');
+            font-weight: bold;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'OpenDyslexic';
+            src: local('OpenDyslexic-Italic');
+            font-weight: normal;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'OpenDyslexic';
+            src: local('OpenDyslexic-BoldItalic');
+            font-weight: bold;
+            font-style: italic;
+        }
         body {
             font-family: \(ff) !important;
             font-size: \(fs)px !important;
@@ -826,6 +993,7 @@ struct BookReaderEngine: View {
     @ObservedObject private var prefs = EBookPreferences.shared
     @ObservedObject private var sleepTimer = SleepTimerManager.shared
     @State private var scrollToLastPageOnLoad = false
+    @State private var annotationForFullEdit: SDAnnotation? = nil
     
     @Environment(\.modelContext) private var modelContext
     @State private var extractedTextParams: String = "Chapter reading is not extracted to string yet."
@@ -1011,9 +1179,33 @@ struct BookReaderEngine: View {
         .sheet(isPresented: $showAnnotations) {
             StudyNotebookView(bookID: pdf.id.uuidString, bookTitle: pdf.name, fileURL: pdf.url)
         }
-        .sheet(item: $activeHighlightToEdit) { annotation in
+        .popover(item: $activeHighlightToEdit) { annotation in
+            HighlightQuickPopoverView(
+                annotation: annotation,
+                onDelete: {
+                    if let webView = webViewReference, let text = annotation.selectedText {
+                        let safeText = text.replacingOccurrences(of: "`", with: "\\`").replacingOccurrences(of: "\"", with: "\\\"").replacingOccurrences(of: "\n", with: " ")
+                        webView.evaluateJavaScript("window.removeInksyncHighlight(`\(safeText)`);")
+                    }
+                    modelContext.delete(annotation)
+                    try? modelContext.save()
+                    activeHighlightToEdit = nil
+                },
+                onEditNote: {
+                    annotationForFullEdit = annotation
+                    activeHighlightToEdit = nil
+                },
+                onColorSelected: { colorHex in
+                    if let webView = webViewReference, let text = annotation.selectedText {
+                        let safeText = text.replacingOccurrences(of: "`", with: "\\`").replacingOccurrences(of: "\"", with: "\\\"").replacingOccurrences(of: "\n", with: " ")
+                        webView.evaluateJavaScript("window.updateInksyncHighlightColor(`\(safeText)`, '\(colorHex)');")
+                    }
+                }
+            )
+        }
+        .sheet(item: $annotationForFullEdit) { annotation in
             AnnotationEditSheet(annotation: annotation)
-                .presentationDetents([.height(180), .medium])
+                .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showTypographyHUD) {
@@ -1414,6 +1606,67 @@ struct AnnotationListView: View {
                 }
             }
         }
+    }
+}
+
+struct HighlightQuickPopoverView: View {
+    @Bindable var annotation: SDAnnotation
+    var onDelete: () -> Void
+    var onEditNote: () -> Void
+    var onColorSelected: (String) -> Void
+    
+    let colors = [
+        ("#FFD60A", Color.yellow),
+        ("#30D158", Color.green),
+        ("#FF375F", Color.pink),
+        ("#0A84FF", Color.blue),
+        ("#BF5AF2", Color.purple)
+    ]
+    
+    var body: some View {
+        VStack(spacing: 12) {
+            // Colors row
+            HStack(spacing: 14) {
+                ForEach(colors, id: \.0) { item in
+                    Circle()
+                        .fill(item.1)
+                        .frame(width: 28, height: 28)
+                        .overlay(
+                            Circle()
+                                .stroke(Color.primary.opacity(0.3), lineWidth: annotation.colorHex == item.0 ? 3 : 0)
+                        )
+                        .onTapGesture {
+                            annotation.colorHex = item.0
+                            annotation.modifiedAt = Date()
+                            try? annotation.modelContext?.save()
+                            onColorSelected(item.0)
+                        }
+                }
+            }
+            .padding(.top, 4)
+            
+            Divider()
+            
+            // Actions row
+            HStack(spacing: 20) {
+                Button(action: onEditNote) {
+                    Label("Add Note", systemImage: "square.and.pencil")
+                        .font(.subheadline)
+                        .foregroundColor(.primary)
+                }
+                
+                Spacer()
+                
+                Button(action: onDelete) {
+                    Label("Delete", systemImage: "trash")
+                        .font(.subheadline)
+                        .foregroundColor(.red)
+                }
+            }
+            .padding(.horizontal, 4)
+        }
+        .padding(12)
+        .frame(width: 260, height: 110)
     }
 }
 
