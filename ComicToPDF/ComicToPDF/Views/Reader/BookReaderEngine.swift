@@ -717,7 +717,6 @@ struct EPUBWebView: UIViewRepresentable {
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
         <style id="__inksync_live__">
-        @import url('https://fonts.googleapis.com/css2?family=Merriweather:ital,wght@0,300;0,400;0,700;0,900;1,300;1,400;1,700;1,900&family=Source+Serif+4:ital,opsz,wght@0,8..60,200..900;1,8..60,200..900&display=swap');
         @font-face {
             font-family: 'Literata';
             src: local('Literata-Regular');
@@ -787,6 +786,54 @@ struct EPUBWebView: UIViewRepresentable {
         @font-face {
             font-family: 'OpenDyslexic';
             src: local('OpenDyslexic-BoldItalic');
+            font-weight: bold;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'Merriweather';
+            src: local('Merriweather-Regular');
+            font-weight: normal;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Merriweather';
+            src: local('Merriweather-Bold');
+            font-weight: bold;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Merriweather';
+            src: local('Merriweather-Italic');
+            font-weight: normal;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'Merriweather';
+            src: local('Merriweather-BoldItalic');
+            font-weight: bold;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'Source Serif 4';
+            src: local('SourceSerif4-Regular');
+            font-weight: normal;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Source Serif 4';
+            src: local('SourceSerif4-Regular');
+            font-weight: bold;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Source Serif 4';
+            src: local('SourceSerif4-Italic');
+            font-weight: normal;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'Source Serif 4';
+            src: local('SourceSerif4-Italic');
             font-weight: bold;
             font-style: italic;
         }
@@ -867,7 +914,6 @@ struct EPUBWebView: UIViewRepresentable {
         let paddingRight = margin
 
         let css = """
-        @import url('https://fonts.googleapis.com/css2?family=Merriweather:ital,wght@0,300;0,400;0,700;0,900;1,300;1,400;1,700;1,900&family=Source+Serif+4:ital,opsz,wght@0,8..60,200..900;1,8..60,200..900&display=swap');
         @font-face {
             font-family: 'Literata';
             src: local('Literata-Regular');
@@ -937,6 +983,54 @@ struct EPUBWebView: UIViewRepresentable {
         @font-face {
             font-family: 'OpenDyslexic';
             src: local('OpenDyslexic-BoldItalic');
+            font-weight: bold;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'Merriweather';
+            src: local('Merriweather-Regular');
+            font-weight: normal;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Merriweather';
+            src: local('Merriweather-Bold');
+            font-weight: bold;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Merriweather';
+            src: local('Merriweather-Italic');
+            font-weight: normal;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'Merriweather';
+            src: local('Merriweather-BoldItalic');
+            font-weight: bold;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'Source Serif 4';
+            src: local('SourceSerif4-Regular');
+            font-weight: normal;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Source Serif 4';
+            src: local('SourceSerif4-Regular');
+            font-weight: bold;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Source Serif 4';
+            src: local('SourceSerif4-Italic');
+            font-weight: normal;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'Source Serif 4';
+            src: local('SourceSerif4-Italic');
             font-weight: bold;
             font-style: italic;
         }
@@ -1202,6 +1296,7 @@ struct BookReaderEngine: View {
                     }
                 }
             )
+            .presentationCompactAdaptation(.popover)
         }
         .sheet(item: $annotationForFullEdit) { annotation in
             AnnotationEditSheet(annotation: annotation)
