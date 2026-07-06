@@ -1070,7 +1070,7 @@ struct EBookWebReader: UIViewRepresentable {
         let defaultColumns = deviceIsPad ? 2 : 1
         let cols = prefs.columnCount == 0 ? defaultColumns : prefs.columnCount
         
-        let gap = cols == 2 ? 16 : Int(margin * 2)
+        let gap = Int(margin * 2)
         
         let pagedCSS = isPaged ? """
             column-count: \(cols) !important;
@@ -1460,7 +1460,7 @@ struct EBookWebReader: UIViewRepresentable {
         let defaultColumns = deviceIsPad ? 2 : 1
         let cols = prefs.columnCount == 0 ? defaultColumns : prefs.columnCount
         
-        let gap = cols == 2 ? 16 : Int(margin * 2)
+        let gap = Int(margin * 2)
         
         let pagedCSS = isPaged ? """
             column-count: \(cols) !important;
