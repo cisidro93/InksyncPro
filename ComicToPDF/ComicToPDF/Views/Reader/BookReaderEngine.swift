@@ -705,6 +705,7 @@ struct EPUBWebView: UIViewRepresentable {
         
         let pagedCSS = isPaged ? """
             column-count: \(cols) !important;
+            column-width: auto !important;
             column-gap: \(gap)px !important;
             column-fill: auto !important;
             column-rule: 1px solid rgba(128, 128, 128, 0.15) !important;
@@ -841,6 +842,7 @@ struct EPUBWebView: UIViewRepresentable {
         html {
             margin: 0 !important; padding: 0 !important;
             height: 100vh !important; width: 100vw !important;
+            column-width: auto !important;
             \(overflowCSS)
             background-color: \(bgColor) !important;
         }
@@ -905,6 +907,7 @@ struct EPUBWebView: UIViewRepresentable {
         
         let pagedCSS = isPaged ? """
             column-count: \(cols) !important;
+            column-width: auto !important;
             column-gap: \(gap)px !important;
             column-fill: auto !important;
             column-rule: 1px solid rgba(128, 128, 128, 0.15) !important;
@@ -1055,7 +1058,7 @@ struct EPUBWebView: UIViewRepresentable {
         }
         body, p, div, span, li, td, th, h1, h2, h3, h4, h5, h6 { color: \(fg) !important; }
         a { color: \(link) !important; }
-        html { background-color: \(bg) !important; }
+        html { background-color: \(bg) !important; column-width: auto !important; }
         """
 
         let js = """
