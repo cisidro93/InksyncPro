@@ -63,10 +63,12 @@ jobs:
     - name: Generate Project
       run: |
         cd ComicToPDF
-        # Stamp the unique build number into Info.plist so Signulous
-        # treats every CI build as a distinct version.
+        # Stamp the unique build number into project.yml Info properties
+        # so xcodegen writes the dynamic build number into the target build settings.
+        sed -i '' "s/CFBundleVersion: \"2\"/CFBundleVersion: \"$BUILD_NUMBER\"/g" project.yml
+        # Stamp Info.plist as fallback
         /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" ComicToPDF/Info.plist
-        echo "Stamped CFBundleVersion = $BUILD_NUMBER"
+        echo "Stamped CFBundleVersion = $BUILD_NUMBER in project.yml and Info.plist"
         xcodegen generate
 
     - name: Build App
