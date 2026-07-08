@@ -1043,9 +1043,9 @@ struct EBookWebReader: UIViewRepresentable {
     private func buildReaderCSS(prefs: EBookPreferences, colorScheme: ColorScheme, initialPage: Int, size: CGSize) -> String {
         let isPaged = prefs.paginationMode == EBookPaginationMode.paged.rawValue
 
-        let bgColor      = prefs.theme == .custom ? prefs.customThemeBg : prefs.theme.cssBackground
-        let textColor    = prefs.theme == .custom ? prefs.customThemeText : prefs.theme.cssText
-        let linkColor    = prefs.theme.cssLink
+        let bgColor      = prefs.activeTheme.cssBackground
+        let textColor    = prefs.activeTheme.cssText
+        let linkColor    = prefs.activeTheme.cssLink
         let fontFamily   = prefs.fontFamily
         let fontSize     = Int(prefs.fontSize)
         let lineHeight   = String(format: "%.2f", prefs.lineHeight)
