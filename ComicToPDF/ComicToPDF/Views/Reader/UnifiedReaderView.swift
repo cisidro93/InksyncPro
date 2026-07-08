@@ -14,7 +14,11 @@ struct UnifiedReaderView: View {
             case .comic, .manga:
                 ComicReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
             case .book:
-                BookReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
+                if pdf.url.pathExtension.lowercased() == "pdf" {
+                    DocumentReaderEngine(pdf: pdf, onDismiss: { dismiss() })
+                } else {
+                    BookReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
+                }
             case .hybrid:
                 DocumentReaderEngine(pdf: pdf, onDismiss: { dismiss() })
             }

@@ -441,7 +441,39 @@ struct ReaderView: View {
                 } else {
                     // ✅ READER CONTENT
                     Group {
-                        if isVerticalScroll {
+                        if fileURL.pathExtension.lowercased() == "pdf" {
+                            PDFKitView(
+                                url: fileURL,
+                                currentPageIndex: $currentPageIndex,
+                                totalPages: $pages,
+                                isVerticalScroll: isVerticalScroll,
+                                isMangaMode: isMangaMode,
+                                isDoublePageMode: autoLandscapeDualPage && geo.size.width > geo.size.height,
+                                loadedDocument: $loadedPDFDocument,
+                                onSingleTap: {
+                                    withAnimation(.easeInOut(duration: 0.2)) { isToolbarVisible.toggle() }
+                                },
+                                onViewCreated: { ref in pdfViewRef = ref },
+                                onHighlightRequested: { _ in }
+                            )
+                            .colorMultiply(.white)
+                            .colorInvertIfDark(theme: EBookPreferences.shared.activeTheme)
+                            
+                            // ✅ PHASE 30: PencilKit Overlay (GoodNotes Parity)
+                            if isDrawingMode {
+                                CanvasInkBearingView(
+                                    canvasView: $canvasView,
+                                    isDrawingMode: isDrawingMode,
+                                    pencilOnly: settingsManager.conversionSettings.pencilOnlyDrawing,
+                                    onDrawingSaved: { drawing in
+                                        // Item 8 — delegated to helper to keep comicReaderContent type-checkable
+                                        saveInkAnnotation(drawing)
+                                    }
+                                )
+                                // Allows native PDF panning with 2 fingers while drawing with Pencil/1 finger
+                                .allowsHitTesting(true)
+                            }
+                        } else if isVerticalScroll {
                             // ✅ WEBTOON MODE: UIScrollView-backed with auto-scroll + position memory
                             ZStack {
                                 WebtoonScrollView(
@@ -464,60 +496,26 @@ struct ReaderView: View {
                             }
                         } else {
                             // ✅ ZERO-LATENCY METAL PPL READER
-                            if fileURL.pathExtension.lowercased() != "pdf" {
-                                if !pages.isEmpty {
-                                    // ⚠️  Do NOT pass isDoublePageOverride here.
-                                     // PPLReaderView already reads @AppStorage("autoLandscapeDualPage")
-                                     // internally. Passing it as a prop AND having the internal
-                                    // observer both fire setupBuffer on toggle creates a race:
-                                    // two concurrent setupDirectArchive() calls clear and repopulate
-                                    // currentImage at the same time → MetalCanvasView GPU crash.
-                                    PPLReaderView(
-                                        pages: pages,
-                                        currentPageIndex: $currentPageIndex,
-                                        pdfID: pdf?.id,
-                                        isMangaMode: isMangaMode,
-                                        isDrawingMode: isDrawingMode,
-                                        startWithGuidedReading: initialReadingMode == "panelNavigation"
-                                    ) {
-                                        withAnimation(.easeInOut(duration: 0.2)) {
-                                            isToolbarVisible.toggle()
-                                        }
-                                    }
-                                    .ignoresSafeArea()
-                                }
-                            } else {
-                                PDFKitView(
-                                    url: fileURL,
+                            if !pages.isEmpty {
+                                // ⚠️  Do NOT pass isDoublePageOverride here.
+                                 // PPLReaderView already reads @AppStorage("autoLandscapeDualPage")
+                                 // internally. Passing it as a prop AND having the internal
+                                // observer both fire setupBuffer on toggle creates a race:
+                                // two concurrent setupDirectArchive() calls clear and repopulate
+                                // currentImage at the same time → MetalCanvasView GPU crash.
+                                PPLReaderView(
+                                    pages: pages,
                                     currentPageIndex: $currentPageIndex,
-                                    totalPages: $pages,
-                                    isVerticalScroll: isVerticalScroll,
+                                    pdfID: pdf?.id,
                                     isMangaMode: isMangaMode,
-                                    isDoublePageMode: autoLandscapeDualPage && geo.size.width > geo.size.height,
-                                    loadedDocument: $loadedPDFDocument,
-                                    onSingleTap: {
-                                        withAnimation(.easeInOut(duration: 0.2)) { isToolbarVisible.toggle() }
-                                    },
-                                    onViewCreated: { ref in pdfViewRef = ref },
-                                    onHighlightRequested: { _ in }
-                                )
-                                .colorMultiply(.white)
-                                .colorInvertIfDark(theme: EBookPreferences.shared.activeTheme)
-                                
-                                // ✅ PHASE 30: PencilKit Overlay (GoodNotes Parity)
-                                if isDrawingMode {
-                                    CanvasInkBearingView(
-                                        canvasView: $canvasView,
-                                        isDrawingMode: isDrawingMode,
-                                        pencilOnly: settingsManager.conversionSettings.pencilOnlyDrawing,
-                                        onDrawingSaved: { drawing in
-                                            // Item 8 — delegated to helper to keep comicReaderContent type-checkable
-                                            saveInkAnnotation(drawing)
-                                        }
-                                    )
-                                    // Allows native PDF panning with 2 fingers while drawing with Pencil/1 finger
-                                    .allowsHitTesting(true)
+                                    isDrawingMode: isDrawingMode,
+                                    startWithGuidedReading: initialReadingMode == "panelNavigation"
+                                ) {
+                                    withAnimation(.easeInOut(duration: 0.2)) {
+                                        isToolbarVisible.toggle()
+                                    }
                                 }
+                                .ignoresSafeArea()
                             }
                         }
                     }
