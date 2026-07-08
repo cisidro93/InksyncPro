@@ -20,20 +20,44 @@ struct SeriesMergeConfigurationView: View {
     @EnvironmentObject var settingsManager: AppSettingsManager
     
     // Initial configuration
-    let sourceFiles: [ConvertedPDF]
+    let seriesFiles: [ConvertedPDF]
     let suggestedName: String?
     
     // State ViewModel
     @StateObject private var viewModel: SeriesMergeConfigurationViewModel
     @State private var draggedItem: ConvertedPDF? = nil
+    @State private var remainingSearchQuery = ""
+    
+    // Range Selection Input
+    @State private var rangeStart = ""
+    @State private var rangeEnd = ""
+    
+    // Auto-Suggestion State
+    @State private var dismissedNextSuggestionID: UUID? = nil
+    
+    // Volume Pattern State
+    @State private var showPatternSuggestionAlert = false
+    @State private var patternSuggestedIssues: [ConvertedPDF] = []
+    @State private var patternSuggestedVolumeNumber = 0
+    @State private var deleteSourceFilesAfterMerge = false
     
     init(sourceFiles: [ConvertedPDF], suggestedName: String? = nil) {
-        self.sourceFiles = sourceFiles
+        self.seriesFiles = sourceFiles
         self.suggestedName = suggestedName
-        // Default sort by logical name (usually volume/issue number)
         let initialMerge = sourceFiles.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
         let initialName = suggestedName ?? ""
-        
+        _viewModel = StateObject(wrappedValue: SeriesMergeConfigurationViewModel(
+            itemsToMerge: initialMerge,
+            outputName: initialName
+        ))
+    }
+    
+    init(seriesFiles: [ConvertedPDF], initialSelection: Set<UUID>, suggestedName: String? = nil) {
+        self.seriesFiles = seriesFiles
+        self.suggestedName = suggestedName
+        let initialMerge = seriesFiles.filter { initialSelection.contains($0.id) }
+            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        let initialName = suggestedName ?? ""
         _viewModel = StateObject(wrappedValue: SeriesMergeConfigurationViewModel(
             itemsToMerge: initialMerge,
             outputName: initialName
@@ -54,6 +78,7 @@ struct SeriesMergeConfigurationView: View {
                             TextField("New Volume Name (e.g., Volume 1)", text: $viewModel.outputName)
                             Toggle("Manga Mode (Right-to-Left)", isOn: $viewModel.mangaMode)
                             Toggle("Link Cover Page as Spread", isOn: $settingsManager.conversionSettings.linkCoverAsSpread)
+                            Toggle("Delete original files after merge", isOn: $deleteSourceFilesAfterMerge)
                             
                             Picker("Image Quality", selection: $settingsManager.conversionSettings.compressionQuality) {
                                 ForEach(CompressionPreset.allCases, id: \.self) { preset in
@@ -107,14 +132,183 @@ struct SeriesMergeConfigurationView: View {
                         }
                         .listRowBackground(Color.inkSurface.opacity(0.4))
                         
-                        Section(header: Text("Merge Order"), footer: Text("Drag the handles or tap Edit to reorder. The top file will be the first issue in the merged volume.")) {
+                        Section(header: HStack {
+                            Text("Merge Order")
+                            Spacer()
+                            if !viewModel.itemsToMerge.isEmpty {
+                                Button("Remove All") {
+                                    HapticEngine.warning()
+                                    withAnimation {
+                                        viewModel.itemsToMerge.removeAll()
+                                    }
+                                }
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundColor(.red)
+                                .buttonStyle(.plain)
+                                .textCase(nil)
+                            }
+                        }, footer: Text(viewModel.itemsToMerge.count < 2 ? "⚠️ Please add at least 2 issues to perform a merge." : "Drag the handles or swipe left to remove. The top file will be the first issue in the merged volume.")) {
                             ForEach(viewModel.itemsToMerge) { pdf in
                                 pdfRow(for: pdf)
                                     .onDrop(of: [.text], delegate: ReorderDropDelegate(item: pdf, items: $viewModel.itemsToMerge, draggedItem: $draggedItem))
                             }
                             .onMove(perform: moveItems)
+                            .onDelete(perform: removeItems)
                         }
                         .listRowBackground(Color.inkSurface.opacity(0.4))
+                        
+                        let allRemainingFiles = seriesFiles.filter { file in
+                            !viewModel.itemsToMerge.contains(where: { $0.id == file.id })
+                        }
+                        let remainingFiles = allRemainingFiles.filter { file in
+                            if remainingSearchQuery.isEmpty { return true }
+                            return matchesSearchQuery(name: file.name, query: remainingSearchQuery)
+                        }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+                        
+                        if !allRemainingFiles.isEmpty {
+                            Section(header: Text("Add Other Issues from Series")) {
+                                // 1. Quick Search Bar
+                                HStack {
+                                    Image(systemName: "magnifyingglass")
+                                        .foregroundColor(.secondary)
+                                    TextField("Search issue/chapter number...", text: $remainingSearchQuery)
+                                        .textFieldStyle(.plain)
+                                        .textInputAutocapitalization(.never)
+                                        .disableAutocorrection(true)
+                                    
+                                    if !remainingSearchQuery.isEmpty {
+                                        Button {
+                                            HapticEngine.light()
+                                            remainingSearchQuery = ""
+                                        } label: {
+                                            Image(systemName: "xmark.circle.fill")
+                                                .foregroundColor(.secondary)
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                                
+                                // 2. Range-based Selection Row
+                                HStack(spacing: 8) {
+                                    Image(systemName: "arrow.left.and.right")
+                                        .foregroundColor(.secondary)
+                                        .font(.caption)
+                                    Text("Range:")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                    
+                                    TextField("From #", text: $rangeStart)
+                                        .textFieldStyle(.roundedBorder)
+                                        .frame(width: 55)
+                                        .keyboardType(.numberPad)
+                                        .multilineTextAlignment(.center)
+                                        .font(.caption)
+                                    
+                                    TextField("To #", text: $rangeEnd)
+                                        .textFieldStyle(.roundedBorder)
+                                        .frame(width: 55)
+                                        .keyboardType(.numberPad)
+                                        .multilineTextAlignment(.center)
+                                        .font(.caption)
+                                    
+                                    Spacer()
+                                    
+                                    Button("Select Range") {
+                                        HapticEngine.medium()
+                                        selectRangeAction()
+                                    }
+                                    .font(.caption.bold())
+                                    .foregroundColor(.inkBlue)
+                                    .buttonStyle(.plain)
+                                    .disabled(rangeStart.isEmpty || rangeEnd.isEmpty)
+                                }
+                                .padding(.vertical, 2)
+                                
+                                // 3. Next-Issue Auto-suggestion Row
+                                if let suggestion = nextSuggestedIssue, let lastFileID = viewModel.itemsToMerge.last?.id {
+                                    HStack {
+                                        Image(systemName: "lightbulb.fill")
+                                            .foregroundColor(.yellow)
+                                            .font(.caption)
+                                        Text("Next Suggestion: \(suggestion.name)")
+                                            .font(.caption)
+                                            .foregroundColor(.primary)
+                                            .lineLimit(1)
+                                        Spacer()
+                                        Button("Add") {
+                                            HapticEngine.light()
+                                            withAnimation {
+                                                viewModel.itemsToMerge.append(suggestion)
+                                            }
+                                        }
+                                        .font(.caption.bold())
+                                        .foregroundColor(.inkGreen)
+                                        .buttonStyle(.plain)
+                                        
+                                        Button {
+                                            HapticEngine.light()
+                                            dismissedNextSuggestionID = lastFileID
+                                        } label: {
+                                            Image(systemName: "xmark.circle.fill")
+                                                .foregroundColor(.secondary)
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                    .padding(.vertical, 4)
+                                    .listRowBackground(Color.yellow.opacity(0.10))
+                                }
+                                
+                                if remainingFiles.isEmpty {
+                                    Text("No matching issues found")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                        .italic()
+                                } else {
+                                    ForEach(remainingFiles) { pdf in
+                                        HStack {
+                                            if let uiImage = conversionManager.getThumbnail(for: pdf) {
+                                                Image(uiImage: uiImage)
+                                                    .resizable()
+                                                    .aspectRatio(contentMode: .fill)
+                                                    .frame(width: 30, height: 45)
+                                                    .cornerRadius(4)
+                                                    .clipped()
+                                            } else {
+                                                Rectangle()
+                                                    .fill(Color.gray.opacity(0.2))
+                                                    .frame(width: 30, height: 45)
+                                                    .cornerRadius(4)
+                                                    .overlay(Image(systemName: "doc").foregroundColor(.gray))
+                                            }
+                                            
+                                            VStack(alignment: .leading) {
+                                                Text(pdf.name)
+                                                    .font(.caption)
+                                                    .lineLimit(1)
+                                                Text(pdf.formattedSize)
+                                                    .font(.system(size: 10))
+                                                    .foregroundColor(.secondary)
+                                            }
+                                            
+                                            Spacer()
+                                            
+                                            Button {
+                                                HapticEngine.light()
+                                                withAnimation {
+                                                    viewModel.itemsToMerge.append(pdf)
+                                                }
+                                            } label: {
+                                                Image(systemName: "plus.circle.fill")
+                                                    .font(.title3)
+                                                    .foregroundColor(.inkGreen)
+                                            }
+                                            .buttonStyle(.plain)
+                                        }
+                                    }
+                                }
+                            }
+                            .listRowBackground(Color.inkSurface.opacity(0.4))
+                        }
                         
                         Section {
                             Button {
@@ -159,6 +353,20 @@ struct SeriesMergeConfigurationView: View {
                         EditButton()
                     }
                 }
+            }
+            .alert("Build Volume \(patternSuggestedVolumeNumber)?", isPresented: $showPatternSuggestionAlert) {
+                Button("Yes") {
+                    HapticEngine.light()
+                    withAnimation {
+                        viewModel.itemsToMerge = patternSuggestedIssues
+                    }
+                }
+                Button("No", role: .cancel) { }
+            } message: {
+                Text("We noticed that Volume 1 and Volume 2 each contain \(patternSuggestedIssues.count) issues. Would you like to auto-populate the next \(patternSuggestedIssues.count) issues for Volume \(patternSuggestedVolumeNumber)?")
+            }
+            .onAppear {
+                checkVolumePatterns()
             }
         }
     }
@@ -213,28 +421,22 @@ struct SeriesMergeConfigurationView: View {
     }
     
     private var estimatedOutputSize: Int64 {
-        let totalPages = viewModel.itemsToMerge.reduce(0) { $0 + $1.pageCount }
-        guard totalPages > 0 else {
-            let total = Double(totalInputSize)
-            let multiplier: Double
+        let total = Double(totalInputSize)
+        let multiplier: Double
+        if settingsManager.conversionSettings.optimizeForDevice {
             switch settingsManager.conversionSettings.compressionQuality {
-            case .high: multiplier = 0.90
-            case .balanced: multiplier = 0.65
-            case .compact: multiplier = 0.40
+            case .high: multiplier = 0.70
+            case .balanced: multiplier = 0.50
+            case .compact: multiplier = 0.30
             }
-            return Int64(total * multiplier)
+        } else {
+            switch settingsManager.conversionSettings.compressionQuality {
+            case .high: multiplier = 0.95
+            case .balanced: multiplier = 0.80
+            case .compact: multiplier = 0.55
+            }
         }
-        
-        let bytesPerPage: Int64
-        switch settingsManager.conversionSettings.compressionQuality {
-        case .high:
-            bytesPerPage = 900 * 1024 // ~900 KB
-        case .balanced:
-            bytesPerPage = 450 * 1024 // ~450 KB
-        case .compact:
-            bytesPerPage = 200 * 1024 // ~200 KB
-        }
-        return Int64(totalPages) * bytesPerPage
+        return Int64(total * multiplier)
     }
     
     private func formatBytes(_ bytes: Int64) -> String {
@@ -255,35 +457,36 @@ struct SeriesMergeConfigurationView: View {
     }
     
     private func estimatedSize(for preset: CompressionPreset) -> String {
-        let totalPages = viewModel.itemsToMerge.reduce(0) { $0 + $1.pageCount }
-        guard totalPages > 0 else {
-            let total = Double(totalInputSize)
-            let multiplier: Double
+        let total = Double(totalInputSize)
+        let multiplier: Double
+        if settingsManager.conversionSettings.optimizeForDevice {
             switch preset {
-            case .high: multiplier = 0.90
-            case .balanced: multiplier = 0.65
-            case .compact: multiplier = 0.40
+            case .high: multiplier = 0.70
+            case .balanced: multiplier = 0.50
+            case .compact: multiplier = 0.30
             }
-            return formatBytes(Int64(total * multiplier))
+        } else {
+            switch preset {
+            case .high: multiplier = 0.95
+            case .balanced: multiplier = 0.80
+            case .compact: multiplier = 0.55
+            }
         }
-        
-        let bytesPerPage: Int64
-        switch preset {
-        case .high:
-            bytesPerPage = 900 * 1024
-        case .balanced:
-            bytesPerPage = 450 * 1024
-        case .compact:
-            bytesPerPage = 200 * 1024
-        }
-        return formatBytes(Int64(totalPages) * bytesPerPage)
+        return formatBytes(Int64(total * multiplier))
     }
     
     private func moveItems(from source: IndexSet, to destination: Int) {
+        HapticEngine.light()
         viewModel.itemsToMerge.move(fromOffsets: source, toOffset: destination)
     }
     
+    private func removeItems(at offsets: IndexSet) {
+        HapticEngine.medium()
+        viewModel.itemsToMerge.remove(atOffsets: offsets)
+    }
+    
     private func startMerge() {
+        HapticEngine.medium()
         let files = viewModel.itemsToMerge
         let name = viewModel.outputName.trimmingCharacters(in: .whitespaces)
         let mode = viewModel.mangaMode
@@ -302,10 +505,168 @@ struct SeriesMergeConfigurationView: View {
                 if let newBook = mergedBooks.first {
                     print("Merged Book generated natively: \(newBook.name)")
                     NotificationCenter.default.post(name: Notification.Name("OpenMergedBook"), object: newBook)
+                    
+                    if deleteSourceFilesAfterMerge {
+                        for file in files {
+                            conversionManager.deletePDF(file)
+                        }
+                    }
                 }
                 viewModel.isProcessing = false
                 dismiss()
             }
         }
+    }
+    
+    // MARK: - Search & Auto-selection Filtering Helpers
+    
+    private func matchesSearchQuery(name: String, query: String) -> Bool {
+        let cleanQuery = query.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        if cleanQuery.isEmpty { return true }
+        
+        let lowerName = name.lowercased()
+        
+        // 1. Direct substring match
+        if lowerName.contains(cleanQuery) { return true }
+        
+        // 2. Intelligent number/prefix expansion (e.g. matching "ch 04", "i04", "issue 4", "chapter 4")
+        let pattern = #"(ch|chapter|i|issue|vol|volume|v)\s*[-.]?\s*0*(\d+)"#
+        if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) {
+            let range = NSRange(cleanQuery.startIndex..<cleanQuery.endIndex, in: cleanQuery)
+            if let match = regex.firstMatch(in: cleanQuery, options: [], range: range) {
+                if let numRange = Range(match.range(at: 2), in: cleanQuery) {
+                    let numberString = String(cleanQuery[numRange])
+                    return matchesNumberInFilename(lowerName: lowerName, numberString: numberString)
+                }
+            }
+        }
+        
+        // 3. Fallback: if query is just a plain number (e.g. "4"), look for occurrences of that number in the filename boundaries
+        if let queryNum = Int(cleanQuery) {
+            return matchesNumberInFilename(lowerName: lowerName, numberString: String(queryNum))
+        }
+        
+        return false
+    }
+    
+    private func matchesNumberInFilename(lowerName: String, numberString: String) -> Bool {
+        let digitPattern = #"\d+"#
+        guard let regex = try? NSRegularExpression(pattern: digitPattern, options: []) else { return false }
+        let nsString = lowerName as NSString
+        let matches = regex.matches(in: lowerName, options: [], range: NSRange(location: 0, length: nsString.length))
+        
+        for m in matches {
+            let foundDigits = nsString.substring(with: m.range)
+            if Int(foundDigits) == Int(numberString) {
+                return true
+            }
+        }
+        return false
+    }
+    
+    private func resolvedVolume(for pdf: ConvertedPDF) -> String? {
+        if let vol = pdf.metadata.volume, !vol.isEmpty {
+            return vol
+        }
+        let parsed = DeterministicFilenameParser.parse(filename: pdf.name)
+        return parsed.volume
+    }
+
+    private func parseIssueNumber(from filename: String) -> Int? {
+        let parsed = DeterministicFilenameParser.parse(filename: filename)
+        if let issueStr = parsed.issueNumber, let issueNum = Int(issueStr) {
+            return issueNum
+        }
+        
+        let pattern = #"(?:issue|i|ch|chapter|v|vol|volume|#)?\s*[-.]?\s*0*(\d+)"#
+        if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) {
+            let range = NSRange(filename.startIndex..<filename.endIndex, in: filename)
+            let matches = regex.matches(in: filename, options: [], range: range)
+            if let lastMatch = matches.last, lastMatch.numberOfRanges > 1 {
+                if let numRange = Range(lastMatch.range(at: 1), in: filename), let num = Int(filename[numRange]) {
+                    return num
+                }
+            }
+        }
+        return nil
+    }
+    
+    private var nextSuggestedIssue: ConvertedPDF? {
+        guard let lastFile = viewModel.itemsToMerge.last else { return nil }
+        if let dismissed = dismissedNextSuggestionID, dismissed == lastFile.id { return nil }
+        
+        guard let lastNum = parseIssueNumber(from: lastFile.name) else { return nil }
+        let nextNum = lastNum + 1
+        
+        let allRemaining = seriesFiles.filter { file in
+            !viewModel.itemsToMerge.contains(where: { $0.id == file.id })
+        }
+        
+        return allRemaining.first { file in
+            if let num = parseIssueNumber(from: file.name) {
+                return num == nextNum
+            }
+            return false
+        }
+    }
+    
+    private func selectRangeAction() {
+        guard let start = Int(rangeStart), let end = Int(rangeEnd), start <= end else { return }
+        
+        let allRemaining = seriesFiles.filter { file in
+            !viewModel.itemsToMerge.contains(where: { $0.id == file.id })
+        }
+        
+        let matches = allRemaining.filter { file in
+            if let num = parseIssueNumber(from: file.name) {
+                return num >= start && num <= end
+            }
+            return false
+        }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        
+        withAnimation {
+            viewModel.itemsToMerge.append(contentsOf: matches)
+        }
+        
+        rangeStart = ""
+        rangeEnd = ""
+    }
+    
+    private func checkVolumePatterns() {
+        // Only run pattern suggestion if itemsToMerge has not been pre-loaded with a custom user selection from detail screen
+        guard viewModel.itemsToMerge.count == seriesFiles.count || viewModel.itemsToMerge.isEmpty else { return }
+        
+        var volumeCounts: [Int: Int] = [:]
+        for file in seriesFiles {
+            if let volStr = resolvedVolume(for: file), let volNum = Int(volStr) {
+                volumeCounts[volNum, default: 0] += 1
+            }
+        }
+        
+        guard let count1 = volumeCounts[1], let count2 = volumeCounts[2], count1 == count2, count1 > 0 else {
+            return
+        }
+        
+        let patternSize = count1
+        let maxVolume = volumeCounts.keys.max() ?? 2
+        let nextVolume = maxVolume + 1
+        
+        if let existingCount = volumeCounts[nextVolume], existingCount > 0 {
+            return
+        }
+        
+        let unmergedIssues = seriesFiles.filter { file in
+            if let volStr = resolvedVolume(for: file), let volNum = Int(volStr) {
+                return volNum >= nextVolume || volNum == 0
+            }
+            return true
+        }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        
+        guard unmergedIssues.count >= patternSize else { return }
+        
+        let suggested = Array(unmergedIssues.prefix(patternSize))
+        self.patternSuggestedIssues = suggested
+        self.patternSuggestedVolumeNumber = nextVolume
+        self.showPatternSuggestionAlert = true
     }
 }

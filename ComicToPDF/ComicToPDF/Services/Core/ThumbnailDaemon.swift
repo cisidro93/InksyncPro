@@ -17,11 +17,28 @@ actor ThumbnailDaemon {
     
     private init() {
         let fm = FileManager.default
-        let tempDir = fm.temporaryDirectory.appendingPathComponent("ThumbnailCache", isDirectory: true)
-        if !fm.fileExists(atPath: tempDir.path) {
-            try? fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? fm.temporaryDirectory
+        let cacheDir = appSupport.appendingPathComponent("ThumbnailCache", isDirectory: true)
+        if !fm.fileExists(atPath: cacheDir.path) {
+            try? fm.createDirectory(at: cacheDir, withIntermediateDirectories: true)
+            // Exclude cache directory from iCloud backups to comply with App Store Guideline 5.1.1
+            var resourceValues = URLResourceValues()
+            resourceValues.isExcludedFromBackup = true
+            var mutableCacheDir = cacheDir
+            try? mutableCacheDir.setResourceValues(resourceValues)
         }
-        self.cacheDirectory = tempDir
+        self.cacheDirectory = cacheDir
+
+        // Listen to memory warnings to clear cache dynamically and protect low-end devices
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.didReceiveMemoryWarningNotification,
+            object: nil,
+            queue: nil
+        ) { _ in
+            Task {
+                await ThumbnailDaemon.shared.clearMemoryCache()
+            }
+        }
     }
     
     /// Starts a low-priority background crawl to extract missing thumbnails for a given list of PDFs.
@@ -42,16 +59,34 @@ actor ThumbnailDaemon {
         let perfClass = ProcessInfo.processInfo.performanceClass
         let maxConcurrency = perfClass == .low ? 2 : 4
 
+        // 1. Pre-warm existing thumbnails from disk asynchronously on background threads
+        var missingPDFs: [ConvertedPDF] = []
+        for pdf in pdfs {
+            let cachedURL = cacheDirectory.appendingPathComponent("\(pdf.id.uuidString).webp")
+            if FileManager.default.fileExists(atPath: cachedURL.path) {
+                // Read from disk asynchronously
+                if let data = try? Data(contentsOf: cachedURL),
+                   let image = UIImage(data: data) {
+                    self.cacheInMemory(image, for: pdf.id)
+                }
+            } else {
+                missingPDFs.append(pdf)
+            }
+        }
+
+        guard !missingPDFs.isEmpty else {
+            isRunning = false
+            return
+        }
+
+        // 2. Extract missing thumbnails using task group
         await withTaskGroup(of: Void.self) { group in
             var inFlight = 0
-            var pending = pdfs.makeIterator()
+            var pending = missingPDFs.makeIterator()
 
             func enqueue() {
                 guard let pdf = pending.next() else { return }
                 let cachedURL = cacheDirectory.appendingPathComponent("\(pdf.id.uuidString).webp")
-
-                // Skip if already on disk (checked before spawning the task to save a slot)
-                guard !FileManager.default.fileExists(atPath: cachedURL.path) else { return }
 
                 group.addTask(priority: .background) {
                     // Resolve URL securely for Linked Libraries
@@ -87,7 +122,7 @@ actor ThumbnailDaemon {
             }
 
             // Seed initial slots
-            for _ in 0..<min(maxConcurrency, pdfs.count) { enqueue() }
+            for _ in 0..<min(maxConcurrency, missingPDFs.count) { enqueue() }
 
             for await _ in group {
                 inFlight -= 1
@@ -123,5 +158,11 @@ actor ThumbnailDaemon {
         memoryCache.removeValue(forKey: pdfID)
         let cachedURL = cacheDirectory.appendingPathComponent("\(pdfID.uuidString).webp")
         try? FileManager.default.removeItem(at: cachedURL)
+    }
+
+    /// Clear all thumbnails currently held in memory to reclaim system resources.
+    func clearMemoryCache() {
+        memoryCache.removeAll()
+        Logger.shared.log("ThumbnailDaemon: Purged in-memory cache due to memory pressure", category: "System")
     }
 }

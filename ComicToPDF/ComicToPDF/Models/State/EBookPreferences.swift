@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 // MARK: - Core Preference Data Engine
 @MainActor
@@ -6,7 +7,23 @@ class EBookPreferences: ObservableObject {
     static let shared = EBookPreferences()
 
     // MARK: - Theme
-    @AppStorage("ebook_theme") var themeRaw: String = EBookTheme.paper.rawValue
+    var themeRaw: String {
+        get {
+            if let saved = UserDefaults.standard.string(forKey: "ebook_theme") {
+                return saved
+            }
+            // Dynamic default: Match system appearance if user hasn't customized it yet
+            if UITraitCollection.current.userInterfaceStyle == .dark {
+                return EBookTheme.night.rawValue
+            } else {
+                return EBookTheme.paper.rawValue
+            }
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: "ebook_theme")
+            objectWillChange.send()
+        }
+    }
 
     // Per-book theme memory: [bookID: themeRaw]
     @AppStorage("ebook_bookThemes") private var bookThemesData: Data = Data()
@@ -52,6 +69,16 @@ class EBookPreferences: ObservableObject {
 
     // Progress display mode (cycles on tap)
     @AppStorage("ebook_progressMode")   var progressMode: Int = 0  // 0=page, 1=chapter, 2=timeLeft
+
+    // MARK: - Customizable Tap Zones Layout
+    @AppStorage("ebook_tapZoneStyle") var tapZoneStyleRaw: String = TapZoneStyle.classic.rawValue
+    var tapZoneStyle: TapZoneStyle {
+        get { TapZoneStyle(rawValue: tapZoneStyleRaw) ?? .classic }
+        set { 
+            tapZoneStyleRaw = newValue.rawValue
+            objectWillChange.send()
+        }
+    }
 
     // MARK: - Reading Color Filters (Midnight, Amber, Sepia)
     @AppStorage("ebook_readingFilter") var readingFilterRaw: String = ReadingFilter.none.rawValue

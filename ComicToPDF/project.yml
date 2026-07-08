@@ -91,6 +91,12 @@ targets:
           - OpenDyslexic-Bold.otf
           - OpenDyslexic-Italic.otf
           - OpenDyslexic-BoldItalic.otf
+          - SourceSerif4-Regular.ttf
+          - SourceSerif4-Italic.ttf
+          - Merriweather-Regular.ttf
+          - Merriweather-Bold.ttf
+          - Merriweather-Italic.ttf
+          - Merriweather-BoldItalic.ttf
         UTImportedTypeDeclarations:
           - UTTypeIdentifier: public.comma-separated-values-text
             UTTypeDescription: CSV File

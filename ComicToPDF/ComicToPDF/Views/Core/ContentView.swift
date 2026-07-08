@@ -50,7 +50,7 @@ struct ContentView: View {
 
     var body: some View {
         ZStack {
-            NeuralExpressiveBackground()
+            NeuralExpressiveBackground(isAnimating: selectedPDF == nil)
             
             ZStack {
                 // Tab 0: Library
@@ -69,6 +69,10 @@ struct ContentView: View {
                     .navigationDestination(for: ConvertedPDF.self) { pdf in
                         ConvertView(pdf: pdf).id(pdf.id)
                     }
+                    .navigationDestination(for: SeriesGroup.self) { group in
+                        SeriesDetailView(series: group, selectedPDF: $selectedPDF, useNavigationStack: true)
+                            .environmentObject(conversionManager)
+                    }
                 }
                 .tabVisible(router.selectedTab == 0)
                 
@@ -82,6 +86,13 @@ struct ContentView: View {
                     .environmentObject(conversionManager)
                     .environmentObject(PeerManager.shared)
                     .tabVisible(router.selectedTab == 2)
+
+                // Tab 3: Notebook / Highlights
+                NavigationStack {
+                    GlobalNotebookView(selectedPDF: $selectedPDF)
+                        .environmentObject(conversionManager)
+                }
+                .tabVisible(router.selectedTab == 3)
             }
             
             // iPad Progress Panel Overlay
@@ -99,10 +110,11 @@ struct ContentView: View {
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            if !tabBarHidden && !isBatchMode {
+            if !tabBarHidden {
                 InkTabBar(
                     selectedTab: $router.selectedTab,
                     isHidden: $tabBarHidden,
+                    mode: isBatchMode ? .librarySelection(count: multiSelection.count) : (router.isSeriesSelectionMode ? .seriesSelection(count: router.seriesSelectionCount) : .normal),
                     convertingProgress: conversionManager.conversionProgress,
                     isConverting: conversionManager.isConverting,
                     convertingMessage: conversionManager.processingStatus,
@@ -150,6 +162,7 @@ struct ContentView: View {
                 conversionManager.scanLibrary()
                 
                 await SandboxCleanupManager.shared.passiveScan()
+                await SandboxCleanupManager.shared.autoCleanupIfStorageLow()
             }
         }
         .sheet(item: $conversionManager.pendingSeriesGroup) { group in
@@ -204,8 +217,11 @@ struct ContentView: View {
             Text("\(globalErrorMessage)\n\nA trace has been recorded. Navigate to Settings ➔ Logs and filter by '\(globalErrorCategory)' to export the failure context to Support.")
         }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
-            Task { await ReaderImageFilterEngine.shared.purgeCache() }
-            Logger.shared.log("⚠️ Memory warning received — purged ReaderImageFilterEngine cache.", category: "Memory", type: .warning)
+            Task {
+                await ReaderImageFilterEngine.shared.purgeCache()
+                await SandboxCleanupManager.shared.autoCleanupIfStorageLow()
+            }
+            Logger.shared.log("⚠️ Memory warning received — purged ReaderImageFilterEngine cache and verified disk storage limits.", category: "Memory", type: .warning)
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("SwitchToLibraryTab"))) { _ in
             // No-op
@@ -221,6 +237,45 @@ struct ContentView: View {
             pdfToShare: $pdfToShare,
             pdfToEdit: $pdfToEdit
         ))
+        .onOpenURL { url in
+            Logger.shared.log("onOpenURL received: \(url.absoluteString)", category: "Import")
+            guard url.isFileURL else { return }
+            
+            let accessing = url.startAccessingSecurityScopedResource()
+            Task.detached(priority: .userInitiated) {
+                defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+                
+                let dest = FileManager.default.temporaryDirectory.appendingPathComponent(url.lastPathComponent)
+                try? FileManager.default.removeItem(at: dest)
+                
+                var coordError: NSError?
+                var copySuccess = false
+                NSFileCoordinator().coordinate(readingItemAt: url, options: .withoutChanges, error: &coordError) { safeURL in
+                    do {
+                        try FileManager.default.copyItem(at: safeURL, to: dest)
+                        copySuccess = true
+                    } catch {
+                        Logger.shared.log("onOpenURL: Copy coordinated file failed: \(error.localizedDescription)", category: "Import", type: .error)
+                    }
+                }
+                
+                if copySuccess {
+                    _ = await ImportQueueManager.shared.stageWithDuplicateCheck([dest])
+                    
+                    Task { @MainActor in
+                        withAnimation(.spring()) {
+                            activeToast = ToastMessage(
+                                title: "Staged for Import",
+                                message: "\(url.lastPathComponent) has been added to import queue.",
+                                systemImage: "doc.badge.plus",
+                                type: .success
+                            )
+                        }
+                        AppRouter.shared.presentSheet(.importQueue)
+                    }
+                }
+            }
+        }
         .onChange(of: showingWebExport) { _, showing in
             if showing {
                 showingWebExport = false

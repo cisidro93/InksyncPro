@@ -290,15 +290,27 @@ struct LinkedDriveBrowserView: View {
             contentType: type
         )
         // Encode a per-file bookmark so the reader can acquire security scope
-        if let bm = try? url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil) {
-            tempPDF.sourceMode = .linked(bookmarkData: bm)
+        if let rootURL = try? BookmarkResolver.shared.resolve(driveEntry.volumeBookmarkData) {
+            let accessing = rootURL.startAccessingSecurityScopedResource()
+            defer { if accessing { rootURL.stopAccessingSecurityScopedResource() } }
+            if let bm = try? url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil) {
+                tempPDF.sourceMode = .linked(bookmarkData: bm)
+            }
         }
         selectedPDF = tempPDF
     }
 
     private func addToLibrary(_ item: BrowseItem) {
         guard case .file(let url) = item.kind else { return }
-        guard let bm = try? url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil) else { return }
+        
+        var bookmarkData: Data? = nil
+        if let rootURL = try? BookmarkResolver.shared.resolve(driveEntry.volumeBookmarkData) {
+            let accessing = rootURL.startAccessingSecurityScopedResource()
+            defer { if accessing { rootURL.stopAccessingSecurityScopedResource() } }
+            bookmarkData = try? url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
+        }
+        
+        guard let bm = bookmarkData else { return }
 
         let stem = url.deletingPathExtension().lastPathComponent
         let fileSize = item.fileSize

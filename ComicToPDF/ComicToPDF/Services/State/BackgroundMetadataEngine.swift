@@ -155,6 +155,9 @@ class BackgroundMetadataEngine: ObservableObject {
             
             // Save progress after each cluster to prevent losing matched metadata if the task is interrupted
             manager.saveLibrary()
+            
+            // Respect API rate limiting guidelines (ComicVine expects ~1 req/sec)
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
         }
         
         finishCleanly(manager: manager, message: "Matched: \(matchCount). Failed: \(failCount).")

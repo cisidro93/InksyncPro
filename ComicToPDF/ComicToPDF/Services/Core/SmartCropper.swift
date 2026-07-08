@@ -87,7 +87,7 @@ struct SmartCropper {
         cropBottom = min(height, cropBottom + padY)
         
         let finalX = CGFloat(cropLeft) / CGFloat(width)
-        let finalY = CGFloat(cropTop) / CGFloat(height)
+        let finalY = 1.0 - (CGFloat(cropBottom) / CGFloat(height))
         let finalW = CGFloat(cropRight - cropLeft) / CGFloat(width)
         let finalH = CGFloat(cropBottom - cropTop) / CGFloat(height)
         

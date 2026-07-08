@@ -1,5 +1,4 @@
 import SwiftUI
-
 struct SeriesDetailView: View {
     let series: SeriesGroup
     @EnvironmentObject var conversionManager: ConversionManager
@@ -15,20 +14,17 @@ struct SeriesDetailView: View {
     }
     
     @AppStorage("libraryViewStyle") private var viewStyle: LibraryViewStyle = .grid
-    
     @AppStorage("libraryTapAction") private var tapAction: LibraryTapAction = .read
     @AppStorage("defaultSeriesSort") private var sortOption: SeriesSortOption = .issueNumber
     @AppStorage("fastBundleOmnibus") private var fastBundleOmnibus = false
     @AppStorage("manualOmnibusBuildsCount") private var manualOmnibusBuildsCount = 0
-    
     @State private var headerCover: UIImage? = nil
-    
-    // Config Sheet & Prompt State
-    @State private var showingOmnibusPrompt: Bool = false
+    @State private var isSummaryExpanded = false
+    @State private var showingOmnibusPrompt = false
     @State private var pendingConfigSelection: Set<UUID>? = nil
     @State private var mergeConfigSuggestedName: String? = nil
     
-    // Batch Selection
+// Batch Selection
     @State private var selection = Set<UUID>()
     @State private var isSelectionMode: Bool = false
     @State private var showingMergeConfig: Bool = false
@@ -77,6 +73,7 @@ struct SeriesDetailView: View {
     @State private var showBookmarksOnly = false // Added for filtering
     @State private var showingRenameSeriesAlert = false
     @State private var pendingRenameSeriesName = ""
+    @AppStorage("hideMergedIssuesInSeries") private var hideMergedIssues = false
 
     var freshIssues: [ConvertedPDF] {
         let allPDFs = conversionManager.convertedPDFs
@@ -199,8 +196,16 @@ struct SeriesDetailView: View {
     }
 
     var filteredIssues: [ConvertedPDF] {
+        let baseIssues: [ConvertedPDF]
+        if hideMergedIssues {
+            let mergedSourceIDs = Set(localIssues.flatMap { $0.metadata.sourceFileIDs ?? [] })
+            baseIssues = localIssues.filter { !mergedSourceIDs.contains($0.id) }
+        } else {
+            baseIssues = localIssues
+        }
+        
         if let selectedVolume = selectedVolumeFilter {
-            return localIssues.filter { pdf in
+            return baseIssues.filter { pdf in
                 let vol = resolvedVolume(for: pdf)
                 if selectedVolume == "Ungrouped" {
                     return vol == nil || vol!.isEmpty
@@ -209,7 +214,7 @@ struct SeriesDetailView: View {
                 }
             }
         }
-        return localIssues
+        return baseIssues
     }
     
     /// Groups issues by their volume metadata for collapsible rendering (read from cached State to prevent thread bottlenecking)
@@ -225,7 +230,12 @@ struct SeriesDetailView: View {
         var groups: [String: [ConvertedPDF]] = [:]
         var ungrouped: [ConvertedPDF] = []
         
+        let mergedSourceIDs = Set(localIssues.flatMap { $0.metadata.sourceFileIDs ?? [] })
+        
         for pdf in localIssues {
+            if hideMergedIssues && mergedSourceIDs.contains(pdf.id) {
+                continue
+            }
             if let vol = resolvedVolume(for: pdf) {
                 groups[vol, default: []].append(pdf)
             } else {
@@ -786,6 +796,19 @@ struct SeriesDetailView: View {
                                 .foregroundColor(showVolumeGrouping ? Theme.orange : .blue)
                         }
                     }
+                    
+                    if localIssues.contains(where: { !($0.metadata.sourceFileIDs ?? []).isEmpty }) {
+                        Button {
+                            HapticEngine.light()
+                            withAnimation {
+                                hideMergedIssues.toggle()
+                                updateVolumeGroups()
+                            }
+                        } label: {
+                            Image(systemName: hideMergedIssues ? "eye.slash" : "eye")
+                                .foregroundColor(hideMergedIssues ? Theme.orange : .blue)
+                        }
+                    }
 
                     sortAndFilterMenu
                     
@@ -1143,6 +1166,60 @@ struct SeriesDetailView: View {
                     metadataSessionID = UUID()
                 }
             }
+            .onChange(of: isSelectionMode) { _, newValue in
+                AppRouter.shared.isSeriesSelectionMode = newValue
+            }
+            .onChange(of: selection) { _, newValue in
+                AppRouter.shared.seriesSelectionCount = newValue.count
+            }
+            .onDisappear {
+                AppRouter.shared.isSeriesSelectionMode = false
+                AppRouter.shared.seriesSelectionCount = 0
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InkTabBar_CancelAction"))) { _ in
+                isSelectionMode = false
+                selection.removeAll()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InkTabBar_MetadataAction"))) { _ in
+                showBatchMetadataEditor = true
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InkTabBar_AssignVolumeAction"))) { _ in
+                showBatchVolumeAssignment = true
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InkTabBar_MoveToSeriesAction"))) { _ in
+                showingBatchSeriesAssignment = true
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InkTabBar_CreateVirtualVolumeAction"))) { _ in
+                let items = freshIssues.filter { selection.contains($0.id) }
+                let sortedItems = items.sorted {
+                    let n1 = Double($0.metadata.issueNumber ?? "")
+                    let n2 = Double($1.metadata.issueNumber ?? "")
+                    if let v1 = n1, let v2 = n2 { return v1 < v2 }
+                    if n1 != nil && n2 == nil { return true }
+                    if n1 == nil && n2 != nil { return false }
+                    return $0.name.localizedStandardCompare($1.name) == .orderedAscending
+                }
+                let sortedIDs = sortedItems.map { $0.id }
+                
+                let suggestedName: String
+                if let firstSeries = sortedItems.first(where: { $0.metadata.series?.isEmpty == false })?.metadata.series {
+                    if let sharedVolume = sortedItems.first(where: { $0.metadata.volume?.isEmpty == false })?.metadata.volume {
+                        suggestedName = "\(firstSeries) Vol. \(sharedVolume)"
+                    } else {
+                        suggestedName = "\(firstSeries) Virtual Volume"
+                    }
+                } else {
+                    suggestedName = "New Virtual Volume"
+                }
+                
+                AppRouter.shared.presentSheet(.virtualOmnibusEditor(nil, initialFileIDs: sortedIDs, suggestedName: suggestedName, parentSeriesID: series.id))
+                isSelectionMode = false
+                selection.removeAll()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InkTabBar_MergeAction"))) { _ in
+                mergeConfigSuggestedName = "\(series.title) Omnibus"
+                showingMergeConfig = true
+            }
         
         let viewWithSheets = applySheets(view)
         let viewWithAlerts = applyAlerts(viewWithSheets)
@@ -1153,136 +1230,7 @@ struct SeriesDetailView: View {
 
     @ViewBuilder
     private var bottomActionBar: some View {
-        if isSelectionMode {
-            VStack(spacing: 0) {
-                Divider().background(Color.white.opacity(0.1))
-                
-                HStack(spacing: 16) {
-                    Button(action: {
-                        let generator = UIImpactFeedbackGenerator(style: .medium)
-                        generator.impactOccurred()
-                        showBatchMetadataEditor = true
-                    }) {
-                        HStack {
-                            Image(systemName: "sparkles")
-                            Text("Intelligent Metadata")
-                        }
-                        .font(.subheadline.bold())
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 12)
-                        .background(alignment: .center) {
-                            if selection.isEmpty {
-                                Color.gray.opacity(0.3)
-                            } else {
-                                LinearGradient(colors: [Theme.blue, Theme.blue.opacity(0.8)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                            }
-                        }
-                        .clipShape(Capsule())
-                        .shadow(color: selection.isEmpty ? .clear : Theme.blue.opacity(0.3), radius: 5, y: 3)
-                    }
-                    .disabled(selection.isEmpty)
-                    
-                    Spacer()
-                    
-                    VStack(spacing: 2) {
-                        Text("\(selection.count) Selected")
-                            .font(.system(size: 12, weight: .bold))
-                            .foregroundColor(.secondary)
-                        
-                        HStack(spacing: 12) {
-                            Button {
-                                showBatchVolumeAssignment = true
-                            } label: {
-                                Text("Assign Volume")
-                                    .font(.system(size: 10, weight: .semibold))
-                                    .foregroundColor(selection.isEmpty ? .gray : Theme.orange)
-                            }
-                            .disabled(selection.isEmpty)
-                            
-                            Button {
-                                showingBatchSeriesAssignment = true
-                            } label: {
-                                Text("Move to Series")
-                                    .font(.system(size: 10, weight: .semibold))
-                                    .foregroundColor(selection.isEmpty ? .gray : Theme.orange)
-                            }
-                            .disabled(selection.isEmpty)
-                            
-                            Button {
-                                let items = freshIssues.filter { selection.contains($0.id) }
-                                let sortedItems = items.sorted {
-                                    let n1 = Double($0.metadata.issueNumber ?? "")
-                                    let n2 = Double($1.metadata.issueNumber ?? "")
-                                    if let v1 = n1, let v2 = n2 { return v1 < v2 }
-                                    if n1 != nil && n2 == nil { return true }
-                                    if n1 == nil && n2 != nil { return false }
-                                    return $0.name.localizedStandardCompare($1.name) == .orderedAscending
-                                }
-                                let sortedIDs = sortedItems.map { $0.id }
-                                
-                                let suggestedName: String
-                                if let firstSeries = sortedItems.first(where: { $0.metadata.series?.isEmpty == false })?.metadata.series {
-                                    if let sharedVolume = sortedItems.first(where: { $0.metadata.volume?.isEmpty == false })?.metadata.volume {
-                                        suggestedName = "\(firstSeries) Vol. \(sharedVolume)"
-                                    } else {
-                                        suggestedName = "\(firstSeries) Virtual Volume"
-                                    }
-                                } else {
-                                    suggestedName = "New Virtual Volume"
-                                }
-                                
-                                AppRouter.shared.presentSheet(.virtualOmnibusEditor(nil, initialFileIDs: sortedIDs, suggestedName: suggestedName, parentSeriesID: series.id))
-                                isSelectionMode = false
-                                selection.removeAll()
-                            } label: {
-                                Text("Create Virtual Volume")
-                                    .font(.system(size: 10, weight: .semibold))
-                                    .foregroundColor(selection.isEmpty ? .gray : Theme.purple)
-                            }
-                            .disabled(selection.isEmpty)
-                        }
-                    }
-                    
-                    Spacer()
-                    
-                    Button(action: {
-                        let generator = UIImpactFeedbackGenerator(style: .medium)
-                        generator.impactOccurred()
-                        mergeConfigSuggestedName = "\(series.title) Omnibus"
-                        showingMergeConfig = true
-                    }) {
-                        HStack {
-                            Text("Convert & Merge")
-                            Image(systemName: "arrow.triangle.2.circlepath.doc")
-                        }
-                        .font(.subheadline.bold())
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 12)
-                        .background(alignment: .center) {
-                            if selection.count < 2 {
-                                Color.gray.opacity(0.3)
-                            } else {
-                                LinearGradient(colors: [Color.purple, Color.purple.opacity(0.8)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                            }
-                        }
-                        .clipShape(Capsule())
-                        .shadow(color: selection.count < 2 ? .clear : Color.purple.opacity(0.3), radius: 5, y: 3)
-                    }
-                    .disabled(selection.count < 2)
-                }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 16)
-                .background(
-                    Rectangle()
-                        .fill(.ultraThinMaterial)
-                        .ignoresSafeArea(edges: .bottom)
-                        .shadow(color: .black.opacity(0.2), radius: 10, y: -5)
-                )
-            }
-            .transition(.move(edge: .bottom))
-        }
+        EmptyView()
     }
 
     @ViewBuilder
@@ -1298,7 +1246,7 @@ struct SeriesDetailView: View {
         content
             .sheet(isPresented: $showingMergeConfig) {
                 LazyView {
-                    SeriesMergeConfigurationView(sourceFiles: freshIssues.filter { selection.contains($0.id) }, suggestedName: mergeConfigSuggestedName)
+                    SeriesMergeConfigurationView(seriesFiles: freshIssues, initialSelection: selection, suggestedName: mergeConfigSuggestedName)
                         .id(mergeSessionID)
                         .environmentObject(conversionManager)
                         .environmentObject(settingsManager)
@@ -1471,6 +1419,14 @@ struct SeriesDetailView: View {
                 } label: {
                     HStack {
                         LibraryPDFRowWithCover(pdf: pdf, isSelected: false)
+                        
+                        if conversionManager.convertedPDFs.contains(where: { $0.metadata.sourceFileIDs?.contains(pdf.id) == true }) {
+                            Image(systemName: "link")
+                                .font(.footnote)
+                                .foregroundColor(Theme.orange)
+                                .padding(.trailing, 8)
+                        }
+                        
                         Spacer()
                         Image(systemName: selection.contains(pdf.id) ? "checkmark.circle.fill" : "circle")
                             .foregroundColor(selection.contains(pdf.id) ? .blue : .gray)
@@ -1524,7 +1480,16 @@ struct SeriesDetailView: View {
                         }
                     }
                 } label: {
-                    LibraryPDFRowWithCover(pdf: pdf, isSelected: selectedPDF?.id == pdf.id)
+                    HStack {
+                        LibraryPDFRowWithCover(pdf: pdf, isSelected: selectedPDF?.id == pdf.id)
+                        
+                        if conversionManager.convertedPDFs.contains(where: { $0.metadata.sourceFileIDs?.contains(pdf.id) == true }) {
+                            Image(systemName: "link")
+                                .font(.footnote)
+                                .foregroundColor(Theme.orange)
+                                .padding(.trailing, 8)
+                        }
+                    }
                 }
                 .buttonStyle(CellButtonStyle())
             }
@@ -1537,7 +1502,7 @@ struct SeriesDetailView: View {
     }
 
     var headerView: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 16) {
             HStack(alignment: .top, spacing: 16) {
                 if let img = headerCover {
                     Image(uiImage: img)
@@ -1549,7 +1514,6 @@ struct SeriesDetailView: View {
                             RoundedRectangle(cornerRadius: 12, style: .continuous)
                                 .stroke(Color.white.opacity(0.10), lineWidth: 0.5)
                         )
-                        // Dual shadow: crisp near + ambient book-pile depth
                         .shadow(color: .black.opacity(0.40), radius: 6, x: 0, y: 4)
                         .shadow(color: .black.opacity(0.20), radius: 22, x: 0, y: 14)
                 } else {
@@ -1566,14 +1530,16 @@ struct SeriesDetailView: View {
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text(series.title)
-                        .font(.system(size: 20, weight: .bold))
+                        .font(.system(size: 22, weight: .bold))
                         .foregroundStyle(Theme.text)
+                        .lineLimit(3)
 
                     HStack(spacing: 6) {
                         Text("\(freshIssues.count) ISSUES")
                             .font(.system(size: 10, weight: .bold, design: .monospaced))
                             .foregroundStyle(Theme.textSecondary)
                             .tracking(0.8)
+                        
                         if let publisher = freshIssues.first?.metadata.publisher {
                             Text(publisher)
                                 .font(.system(size: 10, weight: .semibold))
@@ -1585,7 +1551,7 @@ struct SeriesDetailView: View {
                         }
                     }
 
-                    // Series-wide reading progress
+                    // Series-wide reading progress status
                     let seriesProgress = readingProgress(for: localIssues)
                     let seriesCompleted = completedCount(for: localIssues)
 
@@ -1626,9 +1592,83 @@ struct SeriesDetailView: View {
                         .padding(.top, 2)
                     }
                 }
-                .padding(.leading)
+                .padding(.leading, 4)
                 Spacer()
             }
+            
+            // Action Bar
+            HStack(spacing: 12) {
+                // Continue Reading / Play Button
+                Button {
+                    if let next = nextUnreadIssue {
+                        pdfToRead = next
+                    } else if let first = localIssues.first {
+                        pdfToRead = first
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "play.fill")
+                        Text(nextUnreadIssue != nil ? "CONTINUE" : "READ AGAIN")
+                            .fontWeight(.bold)
+                    }
+                    .font(.system(size: 12))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .background(
+                        LinearGradient(colors: [Theme.orange, Theme.red], startPoint: .topLeading, endPoint: .bottomTrailing)
+                    )
+                    .cornerRadius(10)
+                    .shadow(color: Theme.orange.opacity(0.3), radius: 5, y: 2)
+                }
+                
+                // Build Kindle Omnibus / Merge
+                Button {
+                    let generator = UIImpactFeedbackGenerator(style: .medium)
+                    generator.impactOccurred()
+                    if !isSelectionMode || selection.isEmpty {
+                        selection = Set(freshIssues.map { $0.id })
+                    }
+                    mergeConfigSuggestedName = "\(series.title) Omnibus"
+                    showingMergeConfig = true
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.triangle.2.circlepath.doc")
+                        Text("BUILD OMNIBUS")
+                            .fontWeight(.semibold)
+                    }
+                    .font(.system(size: 11))
+                    .foregroundColor(Theme.text)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .background(Color.white.opacity(0.08))
+                    .cornerRadius(10)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                    )
+                }
+                
+                // Fetch Meta
+                Button {
+                    if let first = freshIssues.first {
+                        pdfToSearchMetadata = first
+                    }
+                } label: {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 12))
+                        .foregroundColor(Theme.text)
+                        .padding(.vertical, 10)
+                        .padding(.horizontal, 14)
+                        .background(Color.white.opacity(0.08))
+                        .cornerRadius(10)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10)
+                                .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                        )
+                }
+            }
+            .padding(.top, 4)
             
             // Series-wide progress bar
             let progress = readingProgress(for: localIssues)
@@ -1665,23 +1705,27 @@ struct SeriesDetailView: View {
     
     // MARK: - Feature 5: Smart List Template Export
     
+    private func escapeCSVField(_ field: String) -> String {
+        var clean = field
+        if clean.contains(",") || clean.contains("\"") || clean.contains("\n") {
+            clean = clean.replacingOccurrences(of: "\"", with: "\"\"")
+            return "\"\(clean)\""
+        }
+        return clean
+    }
+    
     private func exportSmartListTemplate() {
         var csv = "volume,start_chapter,end_chapter,series\n"
         
-        if hasVolumeData {
-            for group in volumeGroups {
-                guard group.key != "Ungrouped" else { continue }
-                let issueNumbers = group.issues.compactMap { $0.metadata.issueNumber }.compactMap { Int($0) }.sorted()
-                if let first = issueNumbers.first, let last = issueNumbers.last {
-                    csv += "\(group.key),\(first),\(last),\(series.title)\n"
-                }
-            }
-        } else {
-            for pdf in localIssues {
-                let issue = pdf.metadata.issueNumber ?? ""
-                let vol = pdf.metadata.volume ?? ""
-                csv += "\(vol),\(issue),\(issue),\(series.title)\n"
-            }
+        for pdf in localIssues {
+            let issue = pdf.metadata.issueNumber ?? ""
+            let vol = pdf.metadata.volume ?? ""
+            
+            let escapedVol = escapeCSVField(vol)
+            let escapedIssue = escapeCSVField(issue)
+            let escapedSeries = escapeCSVField(series.title)
+            
+            csv += "\(escapedVol),\(escapedIssue),\(escapedIssue),\(escapedSeries)\n"
         }
         
         let filename = "\(series.title.replacingOccurrences(of: " ", with: "_"))_SmartList.csv"
@@ -1888,6 +1932,23 @@ struct SeriesDetailView: View {
         
         statusSubmenu(pdf)
         
+        if let sourceIDs = pdf.metadata.sourceFileIDs, !sourceIDs.isEmpty {
+            Button {
+                HapticEngine.medium()
+                withAnimation {
+                    if let index = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                        var updated = conversionManager.convertedPDFs[index]
+                        updated.metadata.sourceFileIDs = nil
+                        conversionManager.convertedPDFs[index] = updated
+                        conversionManager.saveLibrary()
+                        updateVolumeGroups()
+                    }
+                }
+            } label: {
+                Label("Unlink Merged Issues", systemImage: "link.badge.plus")
+            }
+        }
+        
         Button(role: .destructive) { pdfToDelete = pdf } label: { Label("Delete", systemImage: "trash") }
     }
 
@@ -2078,92 +2139,111 @@ struct SeriesDetailView: View {
             let artist = seriesArtist
             let summary = seriesSummary
             let tags = seriesTags
+            let seriesProgress = readingProgress(for: localIssues)
+            let seriesCompleted = completedCount(for: localIssues)
             
-            if writer != nil || artist != nil || summary != nil || !tags.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Button {
-                        withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
-                            showSeriesDetails.toggle()
-                        }
-                    } label: {
-                        HStack {
-                            Text("Series Details")
-                                .font(.system(size: 13, weight: .bold))
-                                .foregroundColor(Theme.text)
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 11, weight: .bold))
-                                .foregroundColor(Theme.orange)
-                                .rotationEffect(.degrees(showSeriesDetails ? 90 : 0))
-                        }
-                        .padding(.vertical, 4)
-                    }
-                    .buttonStyle(.plain)
-                    
-                    if showSeriesDetails {
-                        VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 14) {
+                // Metadata details
+                HStack(alignment: .top, spacing: 20) {
+                    if writer != nil || artist != nil {
+                        VStack(alignment: .leading, spacing: 8) {
                             if let writer = writer {
-                                HStack(alignment: .top, spacing: 6) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "pencil.and.outline")
+                                        .font(.system(size: 11))
+                                        .foregroundColor(Theme.orange)
                                     Text("Writer:")
-                                        .font(.system(size: 12, weight: .bold))
+                                        .font(.system(size: 11, weight: .bold))
                                         .foregroundColor(Theme.textSecondary)
                                     Text(writer)
                                         .font(.system(size: 12))
                                         .foregroundColor(Theme.text)
+                                        .lineLimit(1)
                                 }
                             }
-                            
                             if let artist = artist {
-                                HStack(alignment: .top, spacing: 6) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "paintbrush.pointed")
+                                        .font(.system(size: 11))
+                                        .foregroundColor(Theme.orange)
                                     Text("Artist:")
-                                        .font(.system(size: 12, weight: .bold))
+                                        .font(.system(size: 11, weight: .bold))
                                         .foregroundColor(Theme.textSecondary)
                                     Text(artist)
                                         .font(.system(size: 12))
                                         .foregroundColor(Theme.text)
+                                        .lineLimit(1)
                                 }
-                            }
-                            
-                            if !tags.isEmpty {
-                                ScrollView(.horizontal, showsIndicators: false) {
-                                    HStack(spacing: 6) {
-                                        ForEach(tags, id: \.self) { tag in
-                                            Text(tag)
-                                                .font(.system(size: 9, weight: .semibold))
-                                                .padding(.horizontal, 8)
-                                                .padding(.vertical, 3)
-                                                .background(Color.inkBlue.opacity(0.1))
-                                                .foregroundColor(Color.inkBlue)
-                                                .clipShape(Capsule())
-                                        }
-                                    }
-                                }
-                            }
-                            
-                            if let summary = summary {
-                                Text(summary)
-                                    .font(.system(size: 12))
-                                    .foregroundColor(Theme.textSecondary)
-                                    .lineLimit(5)
-                                    .fixedSize(horizontal: false, vertical: true)
-                                    .padding(.top, 4)
                             }
                         }
-                        .padding(.vertical, 4)
-                        .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
+                    
+                    Spacer()
+                    
+                    // Quick Stats
+                    VStack(alignment: .trailing, spacing: 4) {
+                        Text("\(Int(seriesProgress * 100))% COMPLETE")
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .foregroundColor(Theme.orange)
+                        Text("\(seriesCompleted) of \(localIssues.count) Completed")
+                            .font(.system(size: 11, design: .rounded))
+                            .foregroundColor(Theme.textSecondary)
                     }
                 }
-                .padding(12)
-                .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Theme.surface.opacity(0.4))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .stroke(Color.white.opacity(0.06), lineWidth: 1)
-                        )
-                )
-                .padding(.top, 4)
+                
+                // Tags
+                if !tags.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            ForEach(tags, id: \.self) { tag in
+                                Text(tag.uppercased())
+                                    .font(.system(size: 8, weight: .bold, design: .monospaced))
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(Color.inkBlue.opacity(0.12))
+                                    .foregroundColor(Color.inkBlue)
+                                    .clipShape(Capsule())
+                            }
+                        }
+                    }
+                }
+                
+                // Synopsis / Description
+                if let summary = summary {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(summary)
+                            .font(.system(size: 12))
+                            .foregroundColor(Theme.textSecondary)
+                            .lineLimit(isSummaryExpanded ? nil : 3)
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                        
+                        Button {
+                            withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
+                                isSummaryExpanded.toggle()
+                            }
+                        } label: {
+                            Text(isSummaryExpanded ? "Read Less" : "Read More")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundColor(Theme.orange)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.top, 4)
+                }
             }
+            .padding(14)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Theme.surface.opacity(0.25))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                    )
+            )
+            .shadow(color: Color.black.opacity(0.1), radius: 10, y: 5)
+            .padding(.top, 4)
+
         }
     }
 }
@@ -2184,6 +2264,3 @@ struct ScrollOffsetPreferenceKey: PreferenceKey {
         value = nextValue()
     }
 }
-
-
-

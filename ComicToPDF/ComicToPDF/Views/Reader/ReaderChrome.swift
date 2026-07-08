@@ -27,6 +27,9 @@ struct ReaderChrome: View {
     var onTOCToggle: (() -> Void)? = nil
     var onAnnotationsToggle: (() -> Void)? = nil
     var onCharacterMapToggle: (() -> Void)? = nil
+    var onSearchToggle: (() -> Void)? = nil
+    var isDialogueLensEnabled: Bool = false
+    var onDialogueLensToggle: (() -> Void)? = nil
 
     // Scrubber
     @Binding var currentProgress: Double
@@ -37,19 +40,14 @@ struct ReaderChrome: View {
     var timeRemainingText: String? = nil
     var onProgressModeToggle: (() -> Void)? = nil
 
-    // TTS / Narration
-    var hasTTS: Bool = false
-    var isSpeaking: Bool = false
-    var onTTSToggle: (() -> Void)? = nil
-
-    // Narration (AI read-aloud mode)
-    var isNarrating: Bool = false
-    var isNarrationOCRing: Bool = false
-    var onNarrationToggle: (() -> Void)? = nil
+    // Copy Text Action (replaces TTS)
+    var hasCopyAction: Bool = false
+    var onCopyToggle: (() -> Void)? = nil
 
     // PDF tools
     var isPDF: Bool = false
     var isReflowActive: Bool = false
+    var isAutoCropEnabled: Bool = false
     var onCropToggle: (() -> Void)? = nil
     var onReflowToggle: (() -> Void)? = nil
 
@@ -74,6 +72,78 @@ struct ReaderChrome: View {
 
     // Scrubber interaction state
     @State private var isScrubbing: Bool = false
+
+    init(
+        title: String,
+        pageText: String,
+        isVisible: Binding<Bool>,
+        onBack: @escaping () -> Void,
+        onBookmark: @escaping () -> Void,
+        onBookmarkActive: Bool = false,
+        onSettingsToggle: @escaping () -> Void,
+        onTOCToggle: (() -> Void)? = nil,
+        onAnnotationsToggle: (() -> Void)? = nil,
+        onCharacterMapToggle: (() -> Void)? = nil,
+        onSearchToggle: (() -> Void)? = nil,
+        isDialogueLensEnabled: Bool = false,
+        onDialogueLensToggle: (() -> Void)? = nil,
+        currentProgress: Binding<Double>,
+        totalPages: Int,
+        customScrubber: AnyView? = nil,
+        timeRemainingText: String? = nil,
+        onProgressModeToggle: (() -> Void)? = nil,
+        hasCopyAction: Bool = false,
+        onCopyToggle: (() -> Void)? = nil,
+        isPDF: Bool = false,
+        isReflowActive: Bool = false,
+        isAutoCropEnabled: Bool = false,
+        onCropToggle: (() -> Void)? = nil,
+        onReflowToggle: (() -> Void)? = nil,
+        isEnhanced: Bool = false,
+        onEnhanceToggle: (() -> Void)? = nil,
+        isSettingsActive: Bool = false,
+        currentModeLabel: String? = nil,
+        ambientColor: Color = .clear,
+        isInRoom: Bool = false,
+        roomPeerCount: Int = 0,
+        onRoomToggle: (() -> Void)? = nil,
+        onSwipeDown: (() -> Void)? = nil
+    ) {
+        self.title = title
+        self.pageText = pageText
+        self._isVisible = isVisible
+        self.onBack = onBack
+        self.onBookmark = onBookmark
+        self.onBookmarkActive = onBookmarkActive
+        self.onSettingsToggle = onSettingsToggle
+        self.onTOCToggle = onTOCToggle
+        self.onAnnotationsToggle = onAnnotationsToggle
+        self.onCharacterMapToggle = onCharacterMapToggle
+        self.onSearchToggle = onSearchToggle
+        self.isDialogueLensEnabled = isDialogueLensEnabled
+        self.onDialogueLensToggle = onDialogueLensToggle
+        self._currentProgress = currentProgress
+        self.totalPages = totalPages
+        self.customScrubber = customScrubber
+        self.timeRemainingText = timeRemainingText
+        self.onProgressModeToggle = onProgressModeToggle
+        self.hasCopyAction = hasCopyAction
+        self.onCopyToggle = onCopyToggle
+        self.isPDF = isPDF
+        self.isReflowActive = isReflowActive
+        self.isAutoCropEnabled = isAutoCropEnabled
+        self.onCropToggle = onCropToggle
+        self.onReflowToggle = onReflowToggle
+        self.isEnhanced = isEnhanced
+        self.onEnhanceToggle = onEnhanceToggle
+        self.isSettingsActive = isSettingsActive
+        self.currentModeLabel = currentModeLabel
+        self.ambientColor = ambientColor
+        self.isInRoom = isInRoom
+        self.roomPeerCount = roomPeerCount
+        self.onRoomToggle = onRoomToggle
+        self.onSwipeDown = onSwipeDown
+    }
 
     // MARK: - Body
 
@@ -156,9 +226,28 @@ struct ReaderChrome: View {
                     chromeButton(icon: "text.alignleft", active: isReflowActive, activeColor: .white) {
                         onReflowToggle?()
                     }
-                    chromeButton(icon: "crop", active: false, activeColor: .white) {
-                        onCropToggle?()
-                    }
+                }
+
+                chromeButton(icon: "crop", active: isAutoCropEnabled, activeColor: .white) {
+                    onCropToggle?()
+                }
+
+                if let onDialogueLens = onDialogueLensToggle {
+                    chromeButton(
+                        icon: "sparkle.magnifyingglass",
+                        active: isDialogueLensEnabled,
+                        activeColor: .purple,
+                        action: onDialogueLens
+                    )
+                }
+
+                if let onSearch = onSearchToggle {
+                    chromeButton(
+                        icon: "magnifyingglass",
+                        active: false,
+                        activeColor: .white,
+                        action: onSearch
+                    )
                 }
 
                 chromeButton(
@@ -275,40 +364,13 @@ struct ReaderChrome: View {
                         onBookmark()
                     }
 
-                    if hasTTS {
+                    if hasCopyAction {
                         barButton(
-                            icon: isSpeaking ? "waveform" : "headphones",
-                            tint: isSpeaking ? .orange : .white
+                            icon: "doc.on.doc",
+                            tint: .white
                         ) {
                             Haptics.shared.playImpact(style: .light)
-                            onTTSToggle?()
-                        }
-                    }
-
-                    if onNarrationToggle != nil {
-                        Button {
-                            Haptics.shared.playImpact(style: .light)
-                            onNarrationToggle?()
-                        } label: {
-                            ZStack {
-                                if isNarrationOCRing {
-                                    ProgressView()
-                                        .progressViewStyle(CircularProgressViewStyle(tint: .orange))
-                                        .scaleEffect(0.7)
-                                        .frame(width: 44, height: 44)
-                                } else if isNarrating {
-                                    NarrationWaveformView(isActive: true, barColor: .orange)
-                                        .frame(width: 44, height: 44)
-                                } else {
-                                    Image(systemName: "waveform.and.mic")
-                                        .font(.system(size: 17, weight: .medium))
-                                        .foregroundColor(.white.opacity(0.85))
-                                        .frame(width: 44, height: 44)
-                                }
-                            }
-                            .background(isNarrating ? Color.orange.opacity(0.18) : Color.clear)
-                            .clipShape(Circle())
-                            .contentShape(Rectangle())
+                            onCopyToggle?()
                         }
                     }
                 }

@@ -433,6 +433,7 @@ final class PDFToEPUBConverter: Sendable {
                 <meta name="original-resolution" content="1000x1500"/>
                 <meta name="orientation-lock" content="none"/>
                 <meta name="book-type" content="comic"/>
+                <meta name="cdetype" content="pdoc"/>
                 <!-- Suppresses "Learning reading speed" — signals image-based content to Kindle firmware -->
                 <meta name="amzn:kindle:book-type" content="image-based"/>
                 <meta name="zero-gutter" content="true"/>
@@ -440,6 +441,7 @@ final class PDFToEPUBConverter: Sendable {
                 <meta name="ke-border-color" content="#000000"/>
                 <meta name="ke-border-width" content="0"/>
                 <meta name="cover" content="\(coverMetaID)"/>
+                <meta name="primary-writing-mode" content="\(mangaMode ? "horizontal-rl" : "horizontal-lr")"/>
                 
                 <meta property="rendition:layout">pre-paginated</meta>
                 <meta property="rendition:spread">auto</meta>

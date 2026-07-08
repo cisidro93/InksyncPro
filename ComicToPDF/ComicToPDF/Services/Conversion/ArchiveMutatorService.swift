@@ -81,12 +81,12 @@ class ArchiveMutatorService {
         let newCBZURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".cbz")
         try await ZipUtilities.zipDirectory(tempDir, to: newCBZURL)
         
-        if FileManager.default.fileExists(atPath: pdf.url.path) {
-            try FileManager.default.removeItem(at: pdf.url)
+        if FileManager.default.fileExists(atPath: resolvedURL.path) {
+            try FileManager.default.removeItem(at: resolvedURL)
         }
-        try FileManager.default.moveItem(at: newCBZURL, to: pdf.url)
+        try FileManager.default.moveItem(at: newCBZURL, to: resolvedURL)
         
-        let attr = try FileManager.default.attributesOfItem(atPath: pdf.url.path)
+        let attr = try FileManager.default.attributesOfItem(atPath: resolvedURL.path)
         let newSize = attr[.size] as? Int64 ?? 0
         
         await MainActor.run {
@@ -295,7 +295,18 @@ class ArchiveMutatorService {
         let coversDir = docDir.appendingPathComponent("Covers")
         try? fileManager.createDirectory(at: coversDir, withIntermediateDirectories: true)
         
-        guard let archive = try? Archive(url: pdf.url, accessMode: .read, pathEncoding: .utf8) else {
+        // Resolve security-scoped URL for linked drive files.
+        let resolvedURL: URL
+        var needsStopAccess = false
+        if case .linked(let bm) = pdf.sourceMode, let resolved = try? BookmarkResolver.shared.resolve(bm) {
+            needsStopAccess = resolved.startAccessingSecurityScopedResource()
+            resolvedURL = resolved
+        } else {
+            resolvedURL = pdf.url
+        }
+        defer { if needsStopAccess { resolvedURL.stopAccessingSecurityScopedResource() } }
+
+        guard let archive = try? Archive(url: resolvedURL, accessMode: .read, pathEncoding: .utf8) else {
             throw NSError(domain: "CoverError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not open archive"])
         }
         
@@ -344,13 +355,24 @@ class ArchiveMutatorService {
         let combinedManifest = await manager.getCombinedManifest(for: pdf)
         var newFileOverrides: [Int: [PanelExtractor.Panel]] = [:]
         
+        // Resolve security-scoped URL for linked drive files.
+        let resolvedURL: URL
+        var needsStopAccess = false
+        if case .linked(let bm) = pdf.sourceMode, let resolved = try? BookmarkResolver.shared.resolve(bm) {
+            needsStopAccess = resolved.startAccessingSecurityScopedResource()
+            resolvedURL = resolved
+        } else {
+            resolvedURL = pdf.url
+        }
+        defer { if needsStopAccess { resolvedURL.stopAccessingSecurityScopedResource() } }
+
         let tempID = UUID().uuidString
         let tempDir = fileManager.temporaryDirectory.appendingPathComponent(tempID)
         try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
         defer { try? fileManager.removeItem(at: tempDir) }
         
         try {
-            guard let sourceArchive = try? Archive(url: pdf.url, accessMode: .read, pathEncoding: .utf8),
+            guard let sourceArchive = try? Archive(url: resolvedURL, accessMode: .read, pathEncoding: .utf8),
                   let destArchive = try? Archive(url: outputURL, accessMode: .create, pathEncoding: .utf8) else {
                 throw NSError(domain: "ArchiveError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not open archive"])
             }

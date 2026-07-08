@@ -42,6 +42,7 @@ struct ModernLibraryView: View {
     @State private var isLandscape: Bool = false
     @Environment(\.verticalSizeClass) private var vSizeClass
     @State private var isSearchActive: Bool = false
+    @State private var showingMoreActionsDialog: Bool = false
     @State private var highlightedItemID: String? = nil
     @FocusState private var isLibraryFocused: Bool
 
@@ -296,6 +297,149 @@ struct ModernLibraryView: View {
             .onReceive(NotificationCenter.default.publisher(for: .inksyncOpenBook), perform: handleOpenBook)
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("OPDSDownloadCompleted")), perform: handleOPDSDownloadCompleted)
             .onReceive(NotificationCenter.default.publisher(for: Notification.Name.NSManagedObjectContextDidSave), perform: handleManagedObjectContextDidSave)
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InkTabBar_CancelAction"))) { _ in
+                if isBatchMode {
+                    withAnimation {
+                        isBatchMode = false
+                        multiSelection.removeAll()
+                    }
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InkTabBar_DeleteAction"))) { _ in
+                if isBatchMode {
+                    let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
+                    for item in items { conversionManager.deletePDF(item) }
+                    isBatchMode = false
+                    multiSelection.removeAll()
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InkTabBar_MergeAction"))) { _ in
+                if isBatchMode {
+                    batchMergeItems = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
+                    showingBatchMergeReorder = true
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InkTabBar_GroupAction"))) { _ in
+                if isBatchMode {
+                    let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
+                    AppRouter.shared.presentSheet(.seriesAssignment(nil, isBatch: true, selection: items))
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InkTabBar_TransferAction"))) { _ in
+                if isBatchMode {
+                    let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
+                    for item in items { TransferQueueManager.shared.stageFile(item) }
+                    isBatchMode = false
+                    multiSelection.removeAll()
+                    AppRouter.shared.presentSheet(.wifi)
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InkTabBar_MoreAction"))) { _ in
+                if isBatchMode {
+                    showingMoreActionsDialog = true
+                }
+            }
+            .confirmationDialog("Batch Actions", isPresented: $showingMoreActionsDialog, titleVisibility: .visible) {
+                Button("Fast Convert") {
+                    let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
+                    Task { await conversionManager.convertQueue(items) }
+                    isBatchMode = false
+                    multiSelection.removeAll()
+                }
+                Button("Convert & Merge") {
+                    batchMergeItems = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
+                    showingBatchMergeReorder = true
+                }
+                Button("Create Virtual Volume") {
+                    let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
+                    let sortedItems = items.sorted {
+                        let n1 = Double($0.metadata.issueNumber ?? "")
+                        let n2 = Double($1.metadata.issueNumber ?? "")
+                        if let v1 = n1, let v2 = n2 { return v1 < v2 }
+                        if n1 != nil && n2 == nil { return true }
+                        if n1 == nil && n2 != nil { return false }
+                        return $0.name.localizedStandardCompare($1.name) == .orderedAscending
+                    }
+                    let sortedIDs = sortedItems.map { $0.id }
+                    let suggestedName: String
+                    if let firstSeries = sortedItems.first(where: { $0.metadata.series?.isEmpty == false })?.metadata.series {
+                        if let sharedVolume = sortedItems.first(where: { $0.metadata.volume?.isEmpty == false })?.metadata.volume {
+                            suggestedName = "\(firstSeries) Vol. \(sharedVolume)"
+                        } else {
+                            suggestedName = "\(firstSeries) Virtual Volume"
+                        }
+                    } else {
+                        suggestedName = "New Virtual Volume"
+                    }
+                    AppRouter.shared.presentSheet(.virtualOmnibusEditor(nil, initialFileIDs: sortedIDs, suggestedName: suggestedName))
+                    isBatchMode = false
+                    multiSelection.removeAll()
+                }
+                Button("Legacy PDF Merge") {
+                    AppRouter.shared.presentSheet(.merge)
+                }
+                Button("Intelligent Metadata") {
+                    let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
+                    AppRouter.shared.presentSheet(.batchMetadata(items))
+                }
+                Button("Move to External Drive") {
+                    let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
+                    FolderLinkCoordinator.present { urls in
+                        guard let targetURL = urls.first else { return }
+                        Task {
+                            await MainActor.run { isStorageTransferring = true; transferProgress = 0 }
+                            do {
+                                try await LinkedLibraryScanner.shared.offloadToExternalDrive(
+                                    files: items,
+                                    targetFolderURL: targetURL.url
+                                ) { progress, status in
+                                    DispatchQueue.main.async {
+                                        self.transferProgress = progress
+                                        self.transferStatus = status
+                                    }
+                                }
+                                await MainActor.run {
+                                    isStorageTransferring = false
+                                    isBatchMode = false
+                                    multiSelection.removeAll()
+                                }
+                            } catch {
+                                await MainActor.run {
+                                    isStorageTransferring = false
+                                    conversionManager.appAlert = AppAlert(title: "Transfer Failed", message: error.localizedDescription)
+                                }
+                            }
+                        }
+                    }
+                }
+                Button("Download to iPad") {
+                    let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
+                    Task {
+                        await MainActor.run { isStorageTransferring = true; transferProgress = 0 }
+                        do {
+                            try await LinkedLibraryScanner.shared.downloadToDevice(
+                                files: items
+                            ) { progress, status in
+                                    DispatchQueue.main.async {
+                                        self.transferProgress = progress
+                                        self.transferStatus = status
+                                    }
+                            }
+                            await MainActor.run {
+                                isStorageTransferring = false
+                                isBatchMode = false
+                                multiSelection.removeAll()
+                            }
+                        } catch {
+                            await MainActor.run {
+                                isStorageTransferring = false
+                                conversionManager.appAlert = AppAlert(title: "Download Failed", message: error.localizedDescription)
+                            }
+                        }
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            }
             .overlay(alignment: .bottomTrailing) {
                 if settingsManager.conversionSettings.showEditorDebug {
                     LibraryDebugHUD(
@@ -759,15 +903,7 @@ struct ModernLibraryView: View {
                 }
             }
         case .series(let group):
-            if let folderUUID = UUID(uuidString: group.id) {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                    viewModel.currentFolderID = folderUUID
-                }
-            } else {
-                if let next = nextUnread(in: group) {
-                    viewModel.handleDetailAction(action: .read, for: next, conversionManager: conversionManager)
-                }
-            }
+            router.path.append(group)
         case .driveFolder:
             break
         }
@@ -1258,191 +1394,7 @@ struct ModernLibraryView: View {
     }
 
     @ViewBuilder private var batchBottomToolbar: some View {
-        VStack(spacing: 0) {
-            Divider().background(Theme.text.opacity(0.1))
-            HStack {
-                Button {
-                    handleSelectAll()
-                } label: {
-                    VStack(spacing: 4) {
-                        let totalVisible = viewModel.cachedLibraryItems.reduce(0) { count, item -> Int in
-                            switch item {
-                            case .single: return count + 1
-                            case .series(let grp): return count + grp.issues.count
-                            case .driveFolder: return count
-                            }
-                        }
-                        let isAllSelected = totalVisible > 0 && multiSelection.count >= totalVisible
-                        Image(systemName: isAllSelected ? "checkmark.circle.fill" : "checkmark.circle")
-                            .font(.title3)
-                        Text(isAllSelected ? "Deselect All" : "Select All")
-                            .font(.caption)
-                    }
-                }
-                
-                Spacer()
-                
-                Button(role: .destructive) {
-                    let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
-                    for item in items { conversionManager.deletePDF(item) }
-                    isBatchMode = false
-                    multiSelection.removeAll()
-                } label: { VStack(spacing: 4) { Image(systemName: "trash").font(.title3); Text("Delete").font(.caption) } }
-                .disabled(multiSelection.isEmpty)
-                
-                Spacer()
-                
-                Button {
-                    batchMergeItems = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
-                    showingBatchMergeReorder = true
-                } label: { VStack(spacing: 4) { Image(systemName: "arrow.triangle.2.circlepath.doc").font(.title3); Text("Convert & Merge").font(.caption) } }
-                .disabled(multiSelection.count < 2)
-                
-                Spacer()
-                
-                Button {
-                    let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
-                    AppRouter.shared.presentSheet(.seriesAssignment(nil, isBatch: true, selection: items))
-                } label: { VStack(spacing: 4) { Image(systemName: "rectangle.stack.badge.plus").font(.title3); Text("Group").font(.caption) } }
-                .disabled(multiSelection.isEmpty)
-                
-                Spacer()
-                
-                Button {
-                    let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
-                    for item in items { TransferQueueManager.shared.stageFile(item) }
-                    isBatchMode = false
-                    multiSelection.removeAll()
-                    AppRouter.shared.presentSheet(.wifi)
-                } label: { VStack(spacing: 4) { Image(systemName: "wifi").font(.title3); Text("Transfer").font(.caption) } }
-                .disabled(multiSelection.isEmpty)
-                
-                Spacer()
-                
-                Menu {
-                    Button {
-                        let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
-                        FolderLinkCoordinator.present { urls in
-                            guard let targetURL = urls.first else { return }
-                            Task {
-                                await MainActor.run { isStorageTransferring = true; transferProgress = 0 }
-                                do {
-                                    try await LinkedLibraryScanner.shared.offloadToExternalDrive(
-                                        files: items,
-                                        targetFolderURL: targetURL.url
-                                    ) { progress, status in
-                                        DispatchQueue.main.async {
-                                            self.transferProgress = progress
-                                            self.transferStatus = status
-                                        }
-                                    }
-                                    await MainActor.run {
-                                        isStorageTransferring = false
-                                        isBatchMode = false
-                                        multiSelection.removeAll()
-                                    }
-                                } catch {
-                                    await MainActor.run {
-                                        isStorageTransferring = false
-                                        conversionManager.appAlert = AppAlert(title: "Transfer Failed", message: error.localizedDescription)
-                                    }
-                                }
-                            }
-                        }
-                    } label: { Label("Move to External Drive", systemImage: "externaldrive.fill.badge.plus") }
-                    
-                    Button {
-                        let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
-                        Task {
-                            await MainActor.run { isStorageTransferring = true; transferProgress = 0 }
-                            do {
-                                try await LinkedLibraryScanner.shared.downloadToDevice(
-                                    files: items
-                                ) { progress, status in
-                                    DispatchQueue.main.async {
-                                        self.transferProgress = progress
-                                        self.transferStatus = status
-                                    }
-                                }
-                                await MainActor.run {
-                                    isStorageTransferring = false
-                                    isBatchMode = false
-                                    multiSelection.removeAll()
-                                }
-                            } catch {
-                                await MainActor.run {
-                                    isStorageTransferring = false
-                                    conversionManager.appAlert = AppAlert(title: "Download Failed", message: error.localizedDescription)
-                                }
-                            }
-                        }
-                    } label: { Label("Download to iPad", systemImage: "ipad.and.arrow.forward") }
-                } label: {
-                    VStack(spacing: 4) { Image(systemName: "externaldrive.fill").font(.title3); Text("Storage").font(.caption) }
-                }
-                .disabled(multiSelection.isEmpty)
-                
-                Spacer()
-                
-                Menu {
-                    Button {
-                        let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
-                        Task { await conversionManager.convertQueue(items) }
-                        isBatchMode = false
-                        multiSelection.removeAll()
-                    } label: { Label("Fast Convert", systemImage: "arrow.triangle.2.circlepath") }
-                    
-                    Button {
-                        batchMergeItems = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
-                        showingBatchMergeReorder = true
-                    } label: { Label("Convert & Merge", systemImage: "arrow.triangle.2.circlepath.doc") }
-                    
-                    Button {
-                        let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
-                        let sortedItems = items.sorted {
-                            let n1 = Double($0.metadata.issueNumber ?? "")
-                            let n2 = Double($1.metadata.issueNumber ?? "")
-                            if let v1 = n1, let v2 = n2 { return v1 < v2 }
-                            if n1 != nil && n2 == nil { return true }
-                            if n1 == nil && n2 != nil { return false }
-                            return $0.name.localizedStandardCompare($1.name) == .orderedAscending
-                        }
-                        let sortedIDs = sortedItems.map { $0.id }
-                        
-                        let suggestedName: String
-                        if let firstSeries = sortedItems.first(where: { $0.metadata.series?.isEmpty == false })?.metadata.series {
-                            if let sharedVolume = sortedItems.first(where: { $0.metadata.volume?.isEmpty == false })?.metadata.volume {
-                                suggestedName = "\(firstSeries) Vol. \(sharedVolume)"
-                            } else {
-                                suggestedName = "\(firstSeries) Virtual Volume"
-                            }
-                        } else {
-                            suggestedName = "New Virtual Volume"
-                        }
-                        
-                        AppRouter.shared.presentSheet(.virtualOmnibusEditor(nil, initialFileIDs: sortedIDs, suggestedName: suggestedName))
-                        isBatchMode = false
-                        multiSelection.removeAll()
-                    } label: { Label("Create Virtual Volume", systemImage: "books.vertical.fill") }
-                    
-                    Button { AppRouter.shared.presentSheet(.merge) } label: { Label("Legacy PDF Merge", systemImage: "arrow.triangle.merge") }
-                    Divider()
-                    Button {
-                        let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
-                        AppRouter.shared.presentSheet(.batchMetadata(items))
-                    } label: { Label("Intelligent Metadata", systemImage: "sparkles") }
-                } label: {
-                    VStack(spacing: 4) { Image(systemName: "ellipsis.circle.fill").font(.title3); Text("Actions").font(.caption) }
-                    .foregroundColor(Theme.orange)
-                }
-                .disabled(multiSelection.isEmpty)
-                    
-            }
-            .padding(.horizontal, 10) // Tweak padding slightly to fit 6 icons
-            .padding(.vertical, 12)
-            .background(.ultraThinMaterial)
-            .foregroundColor(Theme.text)
-        }
+        EmptyView()
     }
     
     private func handleDropApplied() {

@@ -34,6 +34,7 @@ struct SettingsView: View {
     // Preset & AI Export State
     @State private var showingPresetAlert = false
     @State private var customPresetName = "Custom Base"
+    @State private var showingDeleteAllAlert = false
     @Environment(\.dismiss) var dismiss
 
     enum FocusableField: Hashable {
@@ -206,6 +207,14 @@ struct SettingsView: View {
                 settingsManager.savePreset(newPreset)
             }
         } message: { Text("Enter a name for your custom export configuration.") }
+        .alert("Delete All Data & Reset?", isPresented: $showingDeleteAllAlert) {
+            Button("Cancel", role: .cancel) { }
+            Button("Delete Everything", role: .destructive) {
+                performFullAppReset()
+            }
+        } message: {
+            Text("This will permanently delete all local library files, databases, reading progress, covers, annotations, and settings. The app will close to complete the reset. Please reopen it manually.")
+        }
         .alert(aiFeedbackTitle, isPresented: $showingAIFeedbackAlert) {
             Button("OK", role: .cancel) { }
         } message: { Text(aiFeedbackMessage) }
@@ -1140,6 +1149,16 @@ struct SettingsView: View {
                     Text("Help & Documentation")
                 }
             }
+            
+            Button(role: .destructive, action: {
+                showingDeleteAllAlert = true
+            }) {
+                HStack {
+                    settingsIcon("trash.fill", color: .red)
+                    Text("Delete All Data & Reset")
+                        .foregroundColor(.red)
+                }
+            }
         } header: { Text("System") }
     }
     @ViewBuilder
@@ -1190,6 +1209,54 @@ struct SettingsView: View {
                 }
             }
         }
+    }
+    
+    private func performFullAppReset() {
+        let fm = FileManager.default
+        
+        // 1. Clear Documents directory
+        if let docDir = fm.urls(for: .documentDirectory, in: .userDomainMask).first {
+            if let items = try? fm.contentsOfDirectory(at: docDir, includingPropertiesForKeys: nil) {
+                for item in items {
+                    try? fm.removeItem(at: item)
+                }
+            }
+        }
+        
+        // 2. Clear Application Support directory
+        if let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+            if let items = try? fm.contentsOfDirectory(at: appSupport, includingPropertiesForKeys: nil) {
+                for item in items {
+                    try? fm.removeItem(at: item)
+                }
+            }
+        }
+        
+        // 3. Clear Caches directory
+        if let cacheDir = fm.urls(for: .cachesDirectory, in: .userDomainMask).first {
+            if let items = try? fm.contentsOfDirectory(at: cacheDir, includingPropertiesForKeys: nil) {
+                for item in items {
+                    try? fm.removeItem(at: item)
+                }
+            }
+        }
+        
+        // 4. Clear Temporary directory
+        let tempDir = fm.temporaryDirectory
+        if let items = try? fm.contentsOfDirectory(at: tempDir, includingPropertiesForKeys: nil) {
+            for item in items {
+                try? fm.removeItem(at: item)
+            }
+        }
+        
+        // 5. Reset UserDefaults
+        if let bundleID = Bundle.main.bundleIdentifier {
+            UserDefaults.standard.removePersistentDomain(forName: bundleID)
+            UserDefaults.standard.synchronize()
+        }
+        
+        // 6. Hard exit to complete reset
+        exit(0)
     }
 }
 

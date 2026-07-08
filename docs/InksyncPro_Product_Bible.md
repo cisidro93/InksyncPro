@@ -54,9 +54,9 @@ The user experience philosophy: **the app should feel like a beautifully crafted
 - **Reading Mode Quick Picker:** A bottom-anchored frosted capsule that pops up on swipe-up gestures when the chrome is hidden, letting users instantly switch and persist per-book layouts:
   - *Normal* (Horizontal LTR page turns)
   - *Manga* (Native RTL reading and tracking)
-  - *Webtoon* (Continuous vertical scrolling with page redraw isolation)
+  - *Webtoon* (Continuous vertical scrolling with page redraw isolation and **off-screen image disposal via `.onDisappear` cell recycling** to keep memory consumption at an active $O(1)$ footprint)
 
-- **Panel Navigation (Guided View):** Intelligent, Vision-framework-powered panel detection (`EnsemblePanelDetector`). Provides a curated, panel-by-panel guided reading experience with graceful fallbacks and frosted HUD overlays.
+- **Panel Navigation (Guided View):** Intelligent, Vision-framework-powered panel detection (`EnsemblePanelDetector`). Provides a curated, panel-by-panel guided reading experience with graceful fallbacks and frosted HUD overlays. **Pure-Text Safety:** If a page contains a high concentration of text blocks (15+) and no detected structural rectangles, it is classified as a pure text/index page and panel segmentation is skipped, allowing it to be read intact as a full-page spread.
 
 - **Manga Native:** Fully supports right-to-left orientation and specifically tracks books requiring this mode.
 
@@ -123,7 +123,7 @@ img { display: block; width: 100%; height: 100%; }
 
 - **Color Space Safety:** `UIGraphicsImageRenderer` output **must** be forced to `.standard` (sRGB) color space. Exporting badged covers or merged graphics in wide-gamut (P3) color spaces will silently crash E-Ink devices upon loading.
 
-- **Hardware Grayscale & Dithering:** Strips color saturation and applies a 15% contrast boost via `CIColorControls` to enhance text legibility, combined with `CIColorPosterize` 16-level ordered dithering to match Kindle and e-reader panels.
+- **Hardware Grayscale & Dithering:** Strips color saturation and applies a 15% contrast boost via `CIColorControls` to enhance text legibility, combined with a **high-quality sequential Floyd-Steinberg error diffusion algorithm** to produce smooth 16-level grayscale transitions on E-Ink panels and prevent harsh gray banding.
 
 ---
 
@@ -136,8 +136,9 @@ All import operations follow a strict sequence:
 1. **Security Scope:** `url.startAccessingSecurityScopedResource()` called *before* any file operation. Scope is held open for the full duration of extraction and released immediately after.
 2. **Background Extraction:** All archive extraction (ZIP via ZIPFoundation, RAR via libunrar) runs on `DispatchQueue.global(qos: .userInitiated)` via `withCheckedThrowingContinuation` — never on the Swift cooperative thread pool or the main actor.
 3. **Temp Directory Lifecycle:** Every temp directory created during import or conversion is tracked and removed with `defer { try? fileManager.removeItem(at: tempDir) }` regardless of success or failure. Per-entry temp files use UUID names to prevent cross-file data corruption.
-4. **Atomic Writes:** Final output files are written atomically. On EPUB rebuild, the new archive is built in a temp path and swapped with `FileManager.moveItem` — never written directly over the live file.
-5. **Library Scan:** `scanLibrary()` is called on `@MainActor` after all copy/import tasks complete.
+4. **Automatic Disk Capacity Safeguards:** Monitors system free space dynamically during launches, low memory warnings, and conversion operations. If available storage falls below 1.0 GB, `SandboxCleanupManager` automatically purges orphaned temp files and import cache folders to reclaim disk space.
+5. **Atomic Writes:** Final output files are written atomically. On EPUB rebuild, the new archive is built in a temp path and swapped with `FileManager.moveItem` — never written directly over the live file.
+6. **Library Scan:** `scanLibrary()` is called on `@MainActor` after all copy/import tasks complete.
 
 #### 4.2 Supported Formats
 
@@ -232,61 +233,66 @@ Before any EPUB output is delivered to the user, it must satisfy:
 The following features and their corresponding code/view files are currently moved to the `V2_Archive` directory (or are otherwise inactive/incomplete) and are not compiled or active in the current MVP build to maintain a clean footprint and avoid scope creep:
 
 ### 1. Incomplete Cloud Integrations
+
 * **Google Drive Provider:** [GoogleDriveProvider.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToZip/ComicToPDF/Services/Network/GoogleDriveProvider.swift) — Contains a prototype for OAuth 2.0 authorization which is not fully completed or compiled in the main application target.
 
 ### 2. Library Gamification & Engagement
+
 * **Badges & Streaks:** Visual indicators for series completion, trophies, and consecutive daily reading streaks.
-  * [GamificationManager.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/GamificationManager.swift)
-  * [GamificationDashboardView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/GamificationDashboardView.swift)
+  - [GamificationManager.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/GamificationManager.swift)
+  - [GamificationDashboardView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/GamificationDashboardView.swift)
 
 ### 3. Universe Metadata Graph
+
 * **Universe Graph:** A visual relationships interface exploring series, characters, and thematic links in the library.
-  * [UniverseGraphView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/UniverseGraphView.swift)
+  - [UniverseGraphView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/UniverseGraphView.swift)
 
 ### 4. Precision Page Editor & Studio Canvas
+
 * **Creative Work Area / Focus List:** Workspace showing sent files specifically queued for annotation/research, avoiding main library clutter.
-* **Precision Canvas & Trimming:** High-fidelity cropping, splitting, margin adjustments, and page trimming.
-* **PencilKit Overlays:** Integrated Apple Pencil drawing/writing zones.
-* **Page Rearrangement & Panel Manipulation:** Tools to rotate, delete, insert, or reorder pages and inspect underlying panel coordinates.
-  * [PrecisionCanvasView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/PrecisionCanvasView.swift)
-  * [PencilKitDrawView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/PencilKitDrawView.swift)
-  * [AdvancedWorkspaceView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/AdvancedWorkspaceView.swift)
-  * [BookContentEditorView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/BookContentEditorView.swift)
-  * [EPUBContentEditorView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/EPUBContentEditorView.swift)
-  * [PDFContentEditorView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/PDFContentEditorView.swift)
-  * [TrimPagesView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/TrimPagesView.swift)
-  * [PageManagerView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/PageManagerView.swift)
-  * [PageManagerGridItem.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/PageManagerGridItem.swift)
-  * [PanelInspectorView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/PanelInspectorView.swift)
-  * [GuidedViewPreview.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/GuidedViewPreview.swift)
+- **Precision Canvas & Trimming:** High-fidelity cropping, splitting, margin adjustments, and page trimming.
+- **PencilKit Overlays:** Integrated Apple Pencil drawing/writing zones.
+- **Page Rearrangement & Panel Manipulation:** Tools to rotate, delete, insert, or reorder pages and inspect underlying panel coordinates.
+  - [PrecisionCanvasView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/PrecisionCanvasView.swift)
+  - [PencilKitDrawView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/PencilKitDrawView.swift)
+  - [AdvancedWorkspaceView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/AdvancedWorkspaceView.swift)
+  - [BookContentEditorView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/BookContentEditorView.swift)
+  - [EPUBContentEditorView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/EPUBContentEditorView.swift)
+  - [PDFContentEditorView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/PDFContentEditorView.swift)
+  - [TrimPagesView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/TrimPagesView.swift)
+  - [PageManagerView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/PageManagerView.swift)
+  - [PageManagerGridItem.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/PageManagerGridItem.swift)
+  - [PanelInspectorView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/PanelInspectorView.swift)
+  - [GuidedViewPreview.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/GuidedViewPreview.swift)
 
 ### 5. Manuscript Outlining & Writing
+
 * **Manuscript Projects:** Kanban outlining cards, outlining board dashboards, draft manuscript compilation interfaces, and outlining corkboards.
-* **Daily Spaced-Repetition Reviews:** User reviews of notes and highlights.
-* **Device Rendering Simulator:** Simulating page rendering across Kindle and e-reader PPI targets inside the editor view.
-  * [EditorDashboardView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/EditorDashboardView.swift)
-  * [ManuscriptEditorWorkspace.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/ManuscriptEditorWorkspace.swift)
-  * [ManuscriptProjectsListView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/ManuscriptProjectsListView.swift)
-  * [WorkspaceComponents.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/WorkspaceComponents.swift)
-  * [CorkboardView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/Components/CorkboardView.swift)
-  * [DailyReviewView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/DailyReviewView.swift)
-  * [DevicePreviewEngine.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/DevicePreviewEngine.swift)
-  * [WorkAreaToolbar.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/WorkAreaToolbar.swift)
-  * [ExtractionViews.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/ExtractionViews.swift)
+- **Daily Spaced-Repetition Reviews:** User reviews of notes and highlights.
+- **Device Rendering Simulator:** Simulating page rendering across Kindle and e-reader PPI targets inside the editor view.
+  - [EditorDashboardView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/EditorDashboardView.swift)
+  - [ManuscriptEditorWorkspace.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/ManuscriptEditorWorkspace.swift)
+  - [ManuscriptProjectsListView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/ManuscriptProjectsListView.swift)
+  - [WorkspaceComponents.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/WorkspaceComponents.swift)
+  - [CorkboardView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/Components/CorkboardView.swift)
+  - [DailyReviewView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/DailyReviewView.swift)
+  - [DevicePreviewEngine.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/DevicePreviewEngine.swift)
+  - [WorkAreaToolbar.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/WorkAreaToolbar.swift)
+  - [ExtractionViews.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/ExtractionViews.swift)
 
 ### 6. Study Notes & Zettelkasten Knowledge Graph
-* **Zettelkasten Graph:** Frosted-glass graph visualization mapping highlight nodes, tags, and topics.
-* **Zettel Kanban Board:** High-performance Kanban column outliner to organize highlights and build outline cards.
-* **Study Notebook:** Hierarchical folders and organizer for highlights, tags, and topics.
-* **Obsidian-Compliant Markdown Exporter:** Headless export routines formatting highlights and panels to Obsidian syntax.
-* **Intelligent Auto-Tagging:** Background NLP analysis mapping extracted keywords.
-  * [GlobalZettelkastenHubView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/GlobalZettelkastenHubView.swift)
-  * [ZettelkastenGraphView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/ZettelkastenGraphView.swift)
-  * [ZettelkastenBoardView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/ZettelkastenBoardView.swift)
-  * [StudyNotebookView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/StudyNotebookView.swift)
-  * [ZettelkastenExporter.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/ZettelkastenExporter.swift)
-  * [SplitStudyWorkspace.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/SplitStudyWorkspace.swift)
 
+* **Zettelkasten Graph:** Frosted-glass graph visualization mapping highlight nodes, tags, and topics.
+- **Zettel Kanban Board:** High-performance Kanban column outliner to organize highlights and build outline cards.
+- **Study Notebook:** Hierarchical folders and organizer for highlights, tags, and topics.
+- **Obsidian-Compliant Markdown Exporter:** Headless export routines formatting highlights and panels to Obsidian syntax.
+- **Intelligent Auto-Tagging:** Background NLP analysis mapping extracted keywords.
+  - [GlobalZettelkastenHubView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/GlobalZettelkastenHubView.swift)
+  - [ZettelkastenGraphView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/ZettelkastenGraphView.swift)
+  - [ZettelkastenBoardView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/ZettelkastenBoardView.swift)
+  - [StudyNotebookView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/StudyNotebookView.swift)
+  - [ZettelkastenExporter.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/ZettelkastenExporter.swift)
+  - [SplitStudyWorkspace.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/SplitStudyWorkspace.swift)
 
 ---
 
@@ -308,7 +314,8 @@ graph TD
     E --> F
 ```
 
-#### Swift Implementation Specifications:
+#### Swift Implementation Specifications
+
 ```swift
 import Foundation
 import SwiftData
@@ -374,7 +381,8 @@ graph TD
     F --> H[Present UI Relink prompt to user]
 ```
 
-#### Swift Implementation Specifications:
+#### Swift Implementation Specifications
+
 ```swift
 import Foundation
 import SwiftData
@@ -453,7 +461,8 @@ graph TD
     D --> F[Trigger @MainActor UI error warning card]
 ```
 
-#### Swift Implementation Specifications:
+#### Swift Implementation Specifications
+
 ```swift
 import Foundation
 import PDFKit
@@ -516,7 +525,8 @@ stateDiagram-v2
     UserPinning --> Idle : Anchor pinned node coordinate / bypass forces
 ```
 
-#### Swift Implementation Specifications:
+#### Swift Implementation Specifications
+
 ```swift
 import SwiftUI
 
@@ -609,7 +619,8 @@ graph TD
     G --> H[Queue files in OfflineVerificationService]
 ```
 
-#### Swift Implementation Specifications:
+#### Swift Implementation Specifications
+
 ```swift
 import Foundation
 
@@ -663,7 +674,8 @@ graph TD
     F --> G[Pass to UIActivityViewController Share Pane]
 ```
 
-#### Swift Implementation Specifications:
+#### Swift Implementation Specifications
+
 ```swift
 import Foundation
 
@@ -713,8 +725,7 @@ actor DiagnosticPackager {
 
 ## Known Limitations & Future Work
 
-- **ThumbnailDaemon cache** should be moved from `Documents/` to `Application Support/` to prevent iCloud sync of cache files.
-- **NSCache warm-on-launch**: When a cover image already exists on disk, the `NSCache` should be pre-warmed on app launch rather than waiting for the first library scroll.
+- **[Completed] ThumbnailDaemon cache**: Relocated from temporary directory to `Application Support/ThumbnailCache/` and explicitly marked with backup exclusion properties to prevent iCloud cache sync.
+- **[Completed] NSCache warm-on-launch**: Pre-warms the in-memory cache directly from local disk caches during app launch crawls, avoiding scroll lag frame-drops.
 - **Dead code audit**: Follow each line of code to identify and remove unreachable paths.
 - **Library UX (iPad):** The main library page needs a premium, non-utilitarian redesign for iPadOS that makes full use of the large canvas.
-

@@ -139,19 +139,25 @@ final class LinkedLibraryScanner: ObservableObject {
         activeSyncDrives.insert(entry.id)
         defer { activeSyncDrives.remove(entry.id) }
 
-        // ✅ iOS CORRECT: Resolve with .withoutUI — suppresses blocking system dialogs.
-        var isStale = false
-        guard let url = try? URL(
-            resolvingBookmarkData: entry.volumeBookmarkData,
-            options: .withoutUI,
-            relativeTo: nil,
-            bookmarkDataIsStale: &isStale
-        ) else {
+        // Move the volume root bookmark resolution to a background thread to prevent UI freezing
+        let volumeData = entry.volumeBookmarkData
+        let (resolvedURL, volumeIsStale) = await Task.detached(priority: .userInitiated) { () -> (URL?, Bool) in
+            var isStale = false
+            let url = try? URL(
+                resolvingBookmarkData: volumeData,
+                options: .withoutUI,
+                relativeTo: nil,
+                bookmarkDataIsStale: &isStale
+            )
+            return (url, isStale)
+        }.value
+
+        guard let url = resolvedURL else {
             Logger.shared.log("LinkedLibraryScanner: Could not resolve bookmark for '\(entry.displayName)'", category: "Drive", type: .warning)
             return
         }
 
-        if isStale {
+        if volumeIsStale {
             Logger.shared.log("LinkedLibraryScanner: Bookmark stale for '\(entry.displayName)' — requesting re-link", category: "Drive", type: .warning)
             NotificationCenter.default.post(name: .bookmarkBecameStale, object: entry.volumeBookmarkData)
         }
@@ -182,22 +188,29 @@ final class LinkedLibraryScanner: ObservableObject {
 
         guard let manager = conversionManager else { return }
 
-        // PERF D-H1: Pre-resolve all linked bookmarks in one pass so the stale-check
-        // loop below does a dictionary lookup instead of an XPC bookmark-agent call
-        // per file. On a 500-file drive this avoids 500 individual XPC round-trips.
-        var resolvedPathCache: [UUID: String] = [:]
-        for pdf in manager.convertedPDFs {
-            guard case .linked(let bm) = pdf.sourceMode else { continue }
-            var fileIsStale = false
-            if let resolved = try? URL(
-                resolvingBookmarkData: bm,
-                options: .withoutUI,
-                relativeTo: nil,
-                bookmarkDataIsStale: &fileIsStale
-            ) {
-                resolvedPathCache[pdf.id] = resolved.path
+        // Move individual book bookmark resolution to background task to avoid UI freezes
+        let linkedItems = manager.convertedPDFs.compactMap { pdf -> (id: UUID, bookmark: Data)? in
+            if case .linked(let bm) = pdf.sourceMode {
+                return (pdf.id, bm)
             }
+            return nil
         }
+
+        let resolvedPathCache = await Task.detached(priority: .userInitiated) { () -> [UUID: String] in
+            var cache: [UUID: String] = [:]
+            for item in linkedItems {
+                var fileIsStale = false
+                if let resolved = try? URL(
+                    resolvingBookmarkData: item.bookmark,
+                    options: .withoutUI,
+                    relativeTo: nil,
+                    bookmarkDataIsStale: &fileIsStale
+                ) {
+                    cache[item.id] = resolved.path
+                }
+            }
+            return cache
+        }.value
 
         // Mark files no longer present on the drive
         for idx in manager.convertedPDFs.indices {
@@ -479,7 +492,10 @@ final class LinkedLibraryScanner: ObservableObject {
         let existingPaths = Set(manager.convertedPDFs.filter { $0.isLinked }.map { $0.url.path })
 
         // Process files on a userInitiated detached background task
-        var newPDFs = await Task.detached(priority: .userInitiated) { () -> [ConvertedPDF] in
+        var newPDFs = await Task.detached(priority: .userInitiated) { [rootURL] () -> [ConvertedPDF] in
+            let accessing = rootURL.startAccessingSecurityScopedResource()
+            defer { if accessing { rootURL.stopAccessingSecurityScopedResource() } }
+            
             var tempPDFs: [ConvertedPDF] = []
             for fileURL in files {
                 // Deduplicate check

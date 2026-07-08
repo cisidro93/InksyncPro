@@ -8,6 +8,7 @@ import SwiftUI
 struct ReaderSettingsHUD: View {
     @Binding var readingMode: ComicReadingMode
     @Binding var activeFilterPreset: ReadingFilterPreset
+    @Binding var prefersTwoUpSpreads: Bool
     var onDismiss: () -> Void
     
     @AppStorage("isAutoCropEnabled") private var isAutoCropEnabled = false
@@ -46,12 +47,18 @@ struct ReaderSettingsHUD: View {
             // ── Page Options ────────────────────────────────────────────────────
             sectionHeader("Page Options")
             
-            VStack(spacing: 3) {
+            VStack(spacing: 12) {
                 toggleRow(
                     title: "Smart Margin Crop",
                     description: "Auto-removes white borders from scanned pages",
                     icon: "crop",
                     isOn: $isAutoCropEnabled
+                )
+                toggleRow(
+                    title: "Two-Page Spread",
+                    description: "Displays side-by-side pages in landscape layout",
+                    icon: "rectangle.split.2x1",
+                    isOn: $prefersTwoUpSpreads
                 )
             }
             .padding(.horizontal, 14)
@@ -271,8 +278,7 @@ extension ComicReadingMode {
     var hudIcon: String {
         switch self {
         case .pageHorizontal:  return "book.pages"
-        case .mangaRTL:        return "arrow.right.to.line"
-        case .pageTwoUp:       return "rectangle.split.2x1"
+        case .mangaRTL:        return "arrow.left.to.line"
         case .panelNavigation: return "viewfinder"
         case .webtoonScroll:   return "arrow.down.doc"
         case .pageSlide:       return "rectangle.on.rectangle.slash"
@@ -284,7 +290,6 @@ extension ComicReadingMode {
         switch self {
         case .pageHorizontal:  return "Standard (3D Curl)"
         case .mangaRTL:        return "Manga (Right-to-Left)"
-        case .pageTwoUp:       return "Two-Page Spread"
         case .panelNavigation: return "Panel Navigation"
         case .webtoonScroll:   return "Webtoon Scroll"
         case .pageSlide:       return "Slide"
@@ -296,7 +301,6 @@ extension ComicReadingMode {
         switch self {
         case .pageHorizontal:  return "Swipe left to advance pages"
         case .mangaRTL:        return "Swipe right to advance pages"
-        case .pageTwoUp:       return "Side-by-side spreads (landscape)"
         case .panelNavigation: return "Auto-zoom per panel using Vision"
         case .webtoonScroll:   return "Continuous vertical strip"
         case .pageSlide:       return "Flat horizontal page slide"
@@ -317,6 +321,7 @@ extension ReadingFilterPreset {
         case .dark:     return Color(red: 0.35, green: 0.25, blue: 0.6)
         case .amber:    return Color(red: 1.0, green: 0.75, blue: 0.0)
         case .sepia:    return Color(red: 0.70, green: 0.55, blue: 0.40)
+        case .custom:   return Color.blue
         }
     }
 }

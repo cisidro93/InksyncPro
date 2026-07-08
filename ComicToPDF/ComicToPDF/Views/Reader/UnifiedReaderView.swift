@@ -21,6 +21,7 @@ struct UnifiedReaderView: View {
         }
         .navigationBarHidden(true)
         .statusBar(hidden: true)
+        .forceProMotion()
     }
 }
 

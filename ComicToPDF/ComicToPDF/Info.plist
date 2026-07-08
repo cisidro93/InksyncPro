@@ -78,7 +78,7 @@
     <true/>
 
     
-    <!-- DOCUMENT TYPES (CBZ) -->
+    <!-- DOCUMENT TYPES (CBZ & CBR) -->
     <key>CFBundleDocumentTypes</key>
     <array>
         <dict>
@@ -88,7 +88,10 @@
             <string>Owner</string>
             <key>LSItemContentTypes</key>
             <array>
+                <string>com.macrabbit.comicbookzip</string>
+                <string>com.macrabbit.comicbookrar</string>
                 <string>com.antigravity.cbz</string>
+                <string>com.antigravity.cbr</string>
                 <string>com.adobe.pdf</string>
                 <string>org.idpf.epub-container</string>
                 <string>org.7-zip.7-zip-archive</string>
@@ -126,6 +129,26 @@
                 </array>
             </dict>
         </dict>
+        <dict>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.data</string>
+                <string>public.archive</string>
+            </array>
+            <key>UTTypeDescription</key>
+            <string>Comic Book Archive (Rar)</string>
+            <key>UTTypeIconFiles</key>
+            <array/>
+            <key>UTTypeIdentifier</key>
+            <string>com.antigravity.cbr</string>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array>
+                    <string>cbr</string>
+                </array>
+            </dict>
+        </dict>
         <!-- Library drag-and-drop payload: internal type used for series grouping gestures -->
         <dict>
             <key>UTTypeConformsTo</key>
@@ -140,6 +163,52 @@
             <string>com.inksyncpro.library.dragpayload</string>
             <key>UTTypeTagSpecification</key>
             <dict/>
+        </dict>
+    </array>
+
+    <key>UTImportedTypeDeclarations</key>
+    <array>
+        <dict>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.data</string>
+                <string>public.archive</string>
+            </array>
+            <key>UTTypeDescription</key>
+            <string>Comic Book Archive Zip</string>
+            <key>UTTypeIconFiles</key>
+            <array/>
+            <key>UTTypeIdentifier</key>
+            <string>com.macrabbit.comicbookzip</string>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array>
+                    <string>cbz</string>
+                    <string>CBZ</string>
+                </array>
+            </dict>
+        </dict>
+        <dict>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.data</string>
+                <string>public.archive</string>
+            </array>
+            <key>UTTypeDescription</key>
+            <string>Comic Book Archive Rar</string>
+            <key>UTTypeIconFiles</key>
+            <array/>
+            <key>UTTypeIdentifier</key>
+            <string>com.macrabbit.comicbookrar</string>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array>
+                    <string>cbr</string>
+                    <string>CBR</string>
+                </array>
+            </dict>
         </dict>
     </array>
 

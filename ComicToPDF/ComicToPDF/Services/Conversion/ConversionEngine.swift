@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import PDFKit
+import SwiftData
 
 /// Progressive Reporting Events
 enum ConversionProgressEvent {
@@ -52,27 +53,50 @@ actor ConversionEngine {
         
         progressSubject.send(.started(file: url))
         
+        // Resolve security-scoped URL for linked drive files if applicable
+        let sourceMode = await MainActor.run { () -> SourceMode in
+            let context = InksyncProApp.sharedModelContainer.mainContext
+            let descriptor = FetchDescriptor<SDConvertedPDF>()
+            if let pdfs = try? context.fetch(descriptor) {
+                let standardizedPath = url.standardizedFileURL.path
+                if let matched = pdfs.first(where: { $0.url.standardizedFileURL.path == standardizedPath }) {
+                    return matched.sourceMode
+                }
+            }
+            return .local
+        }
+
+        var resolvedURL = url
+        var needsStopAccess = false
+        if case .linked(let bm) = sourceMode, let resolved = try? BookmarkResolver.shared.resolve(bm) {
+            needsStopAccess = resolved.startAccessingSecurityScopedResource()
+            resolvedURL = resolved
+        } else {
+            needsStopAccess = url.startAccessingSecurityScopedResource()
+            resolvedURL = url
+        }
+        
+        defer {
+            if needsStopAccess {
+                resolvedURL.stopAccessingSecurityScopedResource()
+            }
+        }
+
         do {
             let resultURL: URL
             
-            // ✅ Linked Library: Wrap file access in BookmarkResolver for linked files
-            // Any URL passed here that is a security-scoped bookmark to an external drive
-            // will have its access held open for the duration of the conversion.
-            let accessing = url.startAccessingSecurityScopedResource()
-            defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-            
-            if url.pathExtension.lowercased() == "pdf" {
-                resultURL = try await convertPDF(url: url, settings: settings)
+            if resolvedURL.pathExtension.lowercased() == "pdf" {
+                resultURL = try await convertPDF(url: resolvedURL, settings: settings)
                 
-            } else if url.pathExtension.lowercased() == "epub" {
+            } else if resolvedURL.pathExtension.lowercased() == "epub" {
                 progressSubject.send(.progress(file: url, current: 50, total: 100, message: "Validating EPUB..."))
-                let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + "_" + url.lastPathComponent)
-                try FileManager.default.copyItem(at: url, to: tempURL)
+                let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + "_" + resolvedURL.lastPathComponent)
+                try FileManager.default.copyItem(at: resolvedURL, to: tempURL)
                 progressSubject.send(.progress(file: url, current: 100, total: 100, message: "Done"))
                 resultURL = tempURL
                 
             } else {
-                resultURL = try await convertArchive(url: url, settings: settings, customOutputName: customOutputName)
+                resultURL = try await convertArchive(url: resolvedURL, settings: settings, customOutputName: customOutputName)
             }
             
             progressSubject.send(.completed(file: url, result: resultURL))

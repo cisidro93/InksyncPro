@@ -139,7 +139,7 @@ struct CBZToEPUBConverter: Sendable {
                             isSliced = true
                         }
                     }
-                } else if width > height * 1.1 {
+                } else if settings.splitSpreads && width > height * 1.1 {
                     // Automatically slice massive double-page spreads into two separate portraits for Kindle!
                     if let rawImage = UIImage(contentsOfFile: srcURL.path) {
                         let slices = ImageProcessor.sliceSpread(image: rawImage, isManga: settings.mangaMode)

@@ -9,11 +9,18 @@ struct InkTabItem {
     let activeIcon: String
 }
 
+enum InkTabBarMode: Equatable {
+    case normal
+    case librarySelection(count: Int)
+    case seriesSelection(count: Int)
+}
+
 // MARK: - Floating Glass Pill Tab Bar
 
 struct InkTabBar: View {
     @Binding var selectedTab: Int
     @Binding var isHidden: Bool
+    var mode: InkTabBarMode = .normal
     var annotationCount: Int = 0
     var convertingProgress: Double = 0
     var isConverting: Bool = false
@@ -43,6 +50,7 @@ struct InkTabBar: View {
         InkTabItem(tag: 0, label: "Library",    icon: "books.vertical",             activeIcon: "books.vertical.fill"),
         InkTabItem(tag: 1, label: "Workspace",  icon: "briefcase",                  activeIcon: "briefcase.fill"),
         InkTabItem(tag: 2, label: "Devices",    icon: "ipad.and.iphone",            activeIcon: "ipad.and.iphone.fill"),
+        InkTabItem(tag: 3, label: "Notebook",   icon: "notebook.toptab",            activeIcon: "notebook.toptab.fill"),
     ]
 
 
@@ -74,9 +82,48 @@ struct InkTabBar: View {
             }
 
             // The floating pill
-            HStack(spacing: 0) {
-                ForEach(visibleTabs, id: \.tag) { tab in
-                    tabButton(tab)
+            ZStack {
+                if case .normal = mode {
+                    HStack(spacing: 0) {
+                        ForEach(visibleTabs, id: \.tag) { tab in
+                            tabButton(tab)
+                        }
+                    }
+                    .transition(.asymmetric(insertion: .opacity.combined(with: .scale(scale: 0.95)), removal: .opacity))
+                } else {
+                    HStack(spacing: 12) {
+                        Button {
+                            HapticEngine.light()
+                            NotificationCenter.default.post(name: NSNotification.Name("InkTabBar_CancelAction"), object: nil)
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.system(size: 14))
+                                Text("Cancel")
+                                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                            }
+                            .foregroundColor(.red)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(Color.red.opacity(0.15), in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        
+                        Spacer()
+                        
+                        Text("\(selectionCount(for: mode)) Selected")
+                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                            .foregroundColor(colorScheme == .dark ? .white : .black)
+                        
+                        Spacer()
+                        
+                        HStack(spacing: 12) {
+                            actionsView(for: mode)
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .frame(height: isLandscapePhone ? 26 : 41)
+                    .transition(.asymmetric(insertion: .opacity.combined(with: .scale(scale: 0.95)), removal: .opacity))
                 }
             }
             .padding(.horizontal, 18)
@@ -244,6 +291,98 @@ struct InkTabBar: View {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
         )
+    }
+
+    private func selectionCount(for mode: InkTabBarMode) -> Int {
+        switch mode {
+        case .normal: return 0
+        case .librarySelection(let count): return count
+        case .seriesSelection(let count): return count
+        }
+    }
+    
+    @ViewBuilder
+    private func actionsView(for mode: InkTabBarMode) -> some View {
+        switch mode {
+        case .normal:
+            EmptyView()
+        case .librarySelection(let count):
+            // Delete
+            actionButton(systemImage: "trash", color: count == 0 ? .gray : .red) {
+                NotificationCenter.default.post(name: NSNotification.Name("InkTabBar_DeleteAction"), object: nil)
+            }
+            .disabled(count == 0)
+            
+            // Convert & Merge
+            actionButton(systemImage: "arrow.triangle.2.circlepath.doc", color: count < 2 ? .gray : .blue) {
+                NotificationCenter.default.post(name: NSNotification.Name("InkTabBar_MergeAction"), object: nil)
+            }
+            .disabled(count < 2)
+            
+            // Group
+            actionButton(systemImage: "rectangle.stack.badge.plus", color: count == 0 ? .gray : .orange) {
+                NotificationCenter.default.post(name: NSNotification.Name("InkTabBar_GroupAction"), object: nil)
+            }
+            .disabled(count == 0)
+            
+            // Transfer
+            actionButton(systemImage: "wifi", color: count == 0 ? .gray : .green) {
+                NotificationCenter.default.post(name: NSNotification.Name("InkTabBar_TransferAction"), object: nil)
+            }
+            .disabled(count == 0)
+            
+            // More
+            actionButton(systemImage: "ellipsis.circle.fill", color: count == 0 ? .gray : .orange) {
+                NotificationCenter.default.post(name: NSNotification.Name("InkTabBar_MoreAction"), object: nil)
+            }
+            .disabled(count == 0)
+            
+        case .seriesSelection(let count):
+            // Intelligent Metadata
+            actionButton(systemImage: "sparkles", color: count == 0 ? .gray : .blue) {
+                NotificationCenter.default.post(name: NSNotification.Name("InkTabBar_MetadataAction"), object: nil)
+            }
+            .disabled(count == 0)
+            
+            // Assign Volume
+            actionButton(systemImage: "folder.badge.plus", color: count == 0 ? .gray : .orange) {
+                NotificationCenter.default.post(name: NSNotification.Name("InkTabBar_AssignVolumeAction"), object: nil)
+            }
+            .disabled(count == 0)
+            
+            // Move to Series
+            actionButton(systemImage: "rectangle.stack.badge.plus", color: count == 0 ? .gray : .orange) {
+                NotificationCenter.default.post(name: NSNotification.Name("InkTabBar_MoveToSeriesAction"), object: nil)
+            }
+            .disabled(count == 0)
+            
+            // Create Virtual Volume
+            actionButton(systemImage: "books.vertical.fill", color: count == 0 ? .gray : .purple) {
+                NotificationCenter.default.post(name: NSNotification.Name("InkTabBar_CreateVirtualVolumeAction"), object: nil)
+            }
+            .disabled(count == 0)
+            
+            // Convert & Merge
+            actionButton(systemImage: "arrow.triangle.2.circlepath.doc", color: count < 2 ? .gray : .purple) {
+                NotificationCenter.default.post(name: NSNotification.Name("InkTabBar_MergeAction"), object: nil)
+            }
+            .disabled(count < 2)
+        }
+    }
+    
+    @ViewBuilder
+    private func actionButton(systemImage: String, color: Color, action: @escaping () -> Void) -> some View {
+        Button(action: {
+            HapticEngine.light()
+            action()
+        }) {
+            Image(systemName: systemImage)
+                .font(.system(size: 18))
+                .foregroundColor(color)
+                .frame(width: 32, height: 32)
+                .background(color.opacity(0.12), in: Circle())
+        }
+        .buttonStyle(.plain)
     }
 }
 

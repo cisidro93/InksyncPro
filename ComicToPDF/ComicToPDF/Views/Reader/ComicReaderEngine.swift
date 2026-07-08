@@ -2,47 +2,66 @@ import SwiftUI
 import ZIPFoundation
 import PDFKit
 import ImageIO
+import AVFoundation
+import Vision
+import UIKit
 
 extension Notification.Name {
     static let comicImageCacheImageLoaded = Notification.Name("InksyncPro.ComicImageCache.imageLoaded")
+    static let readerZoomStateChanged = Notification.Name("InksyncPro.ComicReader.zoomStateChanged")
 }
 
-extension View {
-    @ViewBuilder
-    func applyFilterPreset(_ preset: ReadingFilterPreset) -> some View {
+struct ReadingFilterModifier: ViewModifier {
+    let preset: ReadingFilterPreset
+    
+    @AppStorage("customContrast") private var customContrast: Double = 1.0
+    @AppStorage("customBrightness") private var customBrightness: Double = 0.0
+    @AppStorage("customSaturation") private var customSaturation: Double = 1.0
+
+    func body(content: Content) -> some View {
         switch preset {
         case .original:
-            self
+            content
         case .vintage:
-            self
+            content
                 .contrast(0.9)
                 .saturation(0.7)
                 .colorMultiply(Color(red: 1.0, green: 0.95, blue: 0.9)) // Warm tone
         case .eink:
-            self
+            content
                 .contrast(1.4)
                 .saturation(0.0) // Grayscale
         case .vibrant:
-            self
+            content
                 .contrast(1.1)
                 .saturation(1.4)
         case .dark:
-            self
+            content
                 .colorInvert()
                 .hueRotation(.degrees(180)) // Invert colors preserving hue
         case .amber:
-            self
+            content
                 .colorMultiply(Color(red: 1.0, green: 0.86, blue: 0.65))
         case .sepia:
-            self
+            content
                 .colorMultiply(Color(red: 0.95, green: 0.89, blue: 0.78))
+        case .custom:
+            content
+                .contrast(customContrast)
+                .brightness(customBrightness)
+                .saturation(customSaturation)
         }
+    }
+}
+
+extension View {
+    func applyFilterPreset(_ preset: ReadingFilterPreset) -> some View {
+        modifier(ReadingFilterModifier(preset: preset))
     }
 }
 
 enum ComicReadingMode: String, CaseIterable, Codable {
     case pageHorizontal   // Single page, horizontal swipe (default)
-    case pageTwoUp        // Two-page spread, landscape
     case panelNavigation  // Panel-by-panel using pageModels Vision data
     case webtoonScroll    // Continuous vertical scroll
     case mangaRTL         // Single page, horizontal swipe, right-to-left
@@ -56,6 +75,23 @@ final class ComicImageCache: ObservableObject {
     private var accessQueue: [Int] = []
     private let fetchingQueueLock = NSLock()
     private var fetchingQueue: Set<Int> = [] // Track pending extractions
+    
+    private var lastRequestedIndex: Int = 0
+    private var readingDirection: Int = 1 // 1 for forward, -1 for backward
+    private var inFlightPrefetchTasks: [Int: Task<Void, Never>] = [:]
+    private var averageSecondsPerPage: Double = 8.0
+    
+    private func storePrefetchTask(_ task: Task<Void, Never>, for index: Int) {
+        inFlightPrefetchTasks[index] = task
+    }
+    
+    private func removePrefetchTask(_ index: Int) {
+        inFlightPrefetchTasks.removeValue(forKey: index)
+    }
+    
+    func updateReadingVelocity(secondsPerPage: Double) {
+        self.averageSecondsPerPage = secondsPerPage
+    }
     
     private func isFetching(_ index: Int) -> Bool {
         fetchingQueueLock.lock()
@@ -98,6 +134,7 @@ final class ComicImageCache: ObservableObject {
     
     @Published var isLoading = true
     @Published var loadError: String? = nil   // Non-nil = show error view with exit button
+    @Published var isLandscapeArray: [Bool] = []
     var pageCount: Int = 0
     let isPDF: Bool
     let isStream: Bool
@@ -105,6 +142,7 @@ final class ComicImageCache: ObservableObject {
     
     init(pdf: ConvertedPDF, prefetchLimit: Int = 2) {
         self.prefetchLimit = prefetchLimit
+        self.cache.totalCostLimit = 150 * 1024 * 1024 // 150 MB absolute RAM cap
         let scheme = pdf.url.scheme?.lowercased() ?? ""
         
         if scheme == "virtual-omnibus" {
@@ -121,6 +159,7 @@ final class ComicImageCache: ObservableObject {
                 self.virtualCoordinator = coord
                 self.pageCount = coord.totalPageCount
                 self.isLoading = false
+                self.scanPageOrientations(resolvedURL: nil)
             } else {
                 self.virtualCoordinator = nil
                 self.pageCount = 0
@@ -215,8 +254,10 @@ final class ComicImageCache: ObservableObject {
                     }
                 }
                 await MainActor.run { [weak self] in
-                    self?.pageCount = count
-                    self?.isLoading = false
+                    guard let self = self else { return }
+                    self.pageCount = count
+                    self.isLoading = false
+                    self.scanPageOrientations(resolvedURL: resolvedURL)
                 }
             }
         } else if isPreExtracted {
@@ -253,6 +294,8 @@ final class ComicImageCache: ObservableObject {
                         self.isLoading = false
                         if imageURLs.isEmpty {
                             self.loadError = "The archive contained no readable images."
+                        } else {
+                            self.scanPageOrientations(resolvedURL: resolvedURL)
                         }
                     }
                 } catch {
@@ -301,10 +344,12 @@ final class ComicImageCache: ObservableObject {
                     }
                 }
                 await MainActor.run { [weak self] in
-                    self?.cbzURL = resolvedURL
-                    self?.entries = sortedEntries
-                    self?.pageCount = sortedEntries.count
-                    self?.isLoading = false
+                    guard let self = self else { return }
+                    self.cbzURL = resolvedURL
+                    self.entries = sortedEntries
+                    self.pageCount = sortedEntries.count
+                    self.isLoading = false
+                    self.scanPageOrientations(resolvedURL: resolvedURL)
                 }
             }
         }
@@ -323,6 +368,150 @@ final class ComicImageCache: ObservableObject {
         }
     }
     
+    private func scanPageOrientations(resolvedURL: URL?) {
+        let total = self.pageCount
+        guard total > 0 else { return }
+        
+        self.isLandscapeArray = Array(repeating: false, count: total)
+        
+        let isPDF = self.isPDF
+        let isPreExtracted = self.isPreExtracted
+        let imageURLs = self.extractedImageURLs
+        
+        let entryPaths = self.entries.map { $0.path }
+        
+        var resolvedPages: [(url: URL, localIndex: Int, sourceMode: SourceMode)] = []
+        if let coordinator = self.virtualCoordinator {
+            for i in 0..<total {
+                if let resolved = coordinator.resolvePage(at: i) {
+                    resolvedPages.append((url: resolved.file.url, localIndex: resolved.localPageIndex, sourceMode: resolved.file.sourceMode))
+                }
+            }
+        }
+        
+        Task.detached(priority: .utility) { [weak self] in
+            var array = Array(repeating: false, count: total)
+            
+            if isPDF, let resolved = resolvedURL {
+                let accessing = resolved.startAccessingSecurityScopedResource()
+                defer { if accessing { resolved.stopAccessingSecurityScopedResource() } }
+                
+                if let doc = PDFDocument(url: resolved) {
+                    for i in 0..<min(total, doc.pageCount) {
+                        if let page = doc.page(at: i) {
+                            let bounds = page.bounds(for: .mediaBox)
+                            array[i] = bounds.width > bounds.height * 1.15
+                        }
+                    }
+                }
+            } else if isPreExtracted {
+                await withTaskGroup(of: (Int, Bool).self) { group in
+                    for i in 0..<min(total, imageURLs.count) {
+                        let url = imageURLs[i]
+                        group.addTask {
+                            if let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+                               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] {
+                                let w = properties[kCGImagePropertyPixelWidth] as? CGFloat ?? 0
+                                let h = properties[kCGImagePropertyPixelHeight] as? CGFloat ?? 0
+                                return (i, w > h * 1.15)
+                            }
+                            return (i, false)
+                        }
+                    }
+                    for await (index, isL) in group {
+                        array[index] = isL
+                    }
+                }
+            } else if !resolvedPages.isEmpty {
+                await withTaskGroup(of: (Int, Bool).self) { group in
+                    for i in 0..<resolvedPages.count {
+                        let pageInfo = resolvedPages[i]
+                        group.addTask {
+                            let fileURL: URL
+                            let isLinked: Bool
+                            if case .linked(let bm) = pageInfo.sourceMode,
+                               let url = try? BookmarkResolver.shared.resolve(bm) {
+                                fileURL = url
+                                isLinked = true
+                            } else {
+                                fileURL = pageInfo.url
+                                isLinked = false
+                            }
+                            
+                            let accessing = isLinked ? fileURL.startAccessingSecurityScopedResource() : false
+                            defer { if accessing { fileURL.stopAccessingSecurityScopedResource() } }
+                            
+                            let fileExt = fileURL.pathExtension.lowercased()
+                            
+                            if fileExt == "pdf" {
+                                if let doc = PDFDocument(url: fileURL), pageInfo.localIndex < doc.pageCount,
+                                   let page = doc.page(at: pageInfo.localIndex) {
+                                    let bounds = page.bounds(for: .mediaBox)
+                                    return (i, bounds.width > bounds.height * 1.15)
+                                }
+                            } else {
+                                if let archive = try? Archive(url: fileURL, accessMode: .read, pathEncoding: .utf8) {
+                                    let imageExtensions: Set<String> = ["jpg", "jpeg", "png", "webp", "gif", "heic"]
+                                    let sorted = archive.filter { entry in
+                                        let name = (entry.path as NSString).lastPathComponent
+                                        guard !entry.path.contains("__MACOSX"), !name.hasPrefix("._"), name != ".DS_Store", !entry.path.hasSuffix("/") else { return false }
+                                        let ext = (name as NSString).pathExtension.lowercased()
+                                        return imageExtensions.contains(ext)
+                                    }.sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
+                                    
+                                    if pageInfo.localIndex < sorted.count {
+                                        let entryPath = sorted[pageInfo.localIndex].path
+                                        if let data = try? await ArchiveManager.shared.extractEntry(from: fileURL, path: entryPath),
+                                           let source = CGImageSourceCreateWithData(data as CFData, nil),
+                                           let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] {
+                                            let w = properties[kCGImagePropertyPixelWidth] as? CGFloat ?? 0
+                                            let h = properties[kCGImagePropertyPixelHeight] as? CGFloat ?? 0
+                                            return (i, w > h * 1.15)
+                                        }
+                                    }
+                                }
+                            }
+                            return (i, false)
+                        }
+                    }
+                    for await (index, isL) in group {
+                        array[index] = isL
+                    }
+                }
+            } else if let resolved = resolvedURL {
+                await withTaskGroup(of: (Int, Bool).self) { group in
+                    for i in 0..<min(total, entryPaths.count) {
+                        let entryPath = entryPaths[i]
+                        group.addTask {
+                            do {
+                                let data = try await ArchiveManager.shared.extractEntry(from: resolved, path: entryPath)
+                                if let source = CGImageSourceCreateWithData(data as CFData, nil),
+                                   let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] {
+                                    let w = properties[kCGImagePropertyPixelWidth] as? CGFloat ?? 0
+                                    let h = properties[kCGImagePropertyPixelHeight] as? CGFloat ?? 0
+                                    return (i, w > h * 1.15)
+                                }
+                            } catch {}
+                            return (i, false)
+                        }
+                    }
+                    for await (index, isL) in group {
+                        array[index] = isL
+                    }
+                }
+            }
+            
+            await MainActor.run { [weak self] in
+                guard let self = self else { return }
+                self.isLandscapeArray = array
+                NotificationCenter.default.post(
+                    name: NSNotification.Name("ComicImageCache.OrientationsScanned"),
+                    object: self
+                )
+            }
+        }
+    }
+    
     func setupCloudSource(_ source: CloudPageSource) {
         self.cloudPageSource = source
         self.pageCount = source.pageCount
@@ -330,6 +519,11 @@ final class ComicImageCache: ObservableObject {
     }
     func getImage(at index: Int) -> UIImage? {
         guard index >= 0 && index < pageCount else { return nil }
+        
+        if index != lastRequestedIndex {
+            readingDirection = index > lastRequestedIndex ? 1 : -1
+            lastRequestedIndex = index
+        }
         
         if let cachedImage = cache.object(forKey: NSNumber(value: index)) {
             updateLRUOnMain(index)
@@ -373,7 +567,7 @@ final class ComicImageCache: ObservableObject {
         let bounds = UIScreen.main.bounds
         let scale = UIScreen.main.scale
         
-        Task.detached(priority: priority) { [weak self] in
+        let task = Task.detached(priority: priority) { [weak self] in
             guard let self = self else { return }
             
             // Resolve external bookmark for linked files if needed
@@ -390,6 +584,14 @@ final class ComicImageCache: ObservableObject {
             
             defer {
                 accessedURL?.stopAccessingSecurityScopedResource()
+            }
+            
+            guard !Task.isCancelled else {
+                await MainActor.run { [weak self] in
+                    self?.stopFetching(index)
+                    self?.removePrefetchTask(index)
+                }
+                return
             }
             
             let img: UIImage?
@@ -433,7 +635,10 @@ final class ComicImageCache: ObservableObject {
                 }
             } else {
                 guard let archive = try? Archive(url: resolvedURL, accessMode: .read, pathEncoding: .utf8) else {
-                    await MainActor.run { self.stopFetching(index) }
+                    await MainActor.run {
+                        self.stopFetching(index)
+                        self.removePrefetchTask(index)
+                    }
                     return
                 }
                 let imageExtensions: Set<String> = ["jpg", "jpeg", "png", "webp", "gif", "heic"]
@@ -474,12 +679,23 @@ final class ComicImageCache: ObservableObject {
                 }
             }
             
+            guard !Task.isCancelled else {
+                await MainActor.run { [weak self] in
+                    self?.stopFetching(index)
+                    self?.removePrefetchTask(index)
+                }
+                return
+            }
+            
             if let img {
                 await MainActor.run { [weak self] in
                     guard let self = self else { return }
-                    self.cache.setObject(img, forKey: NSNumber(value: index))
+                    let bitsPerPixel = img.cgImage?.bitsPerPixel ?? 32
+                    let cost = Int(img.size.width * img.size.height * CGFloat(bitsPerPixel) / 8)
+                    self.cache.setObject(img, forKey: NSNumber(value: index), cost: cost)
                     self.stopFetching(index)
                     self.updateLRUOnMain(index)
+                    self.removePrefetchTask(index)
                     NotificationCenter.default.post(
                         name: .comicImageCacheImageLoaded,
                         object: self,
@@ -489,9 +705,12 @@ final class ComicImageCache: ObservableObject {
             } else {
                 await MainActor.run { [weak self] in
                     self?.stopFetching(index)
+                    self?.removePrefetchTask(index)
                 }
             }
         }
+        
+        storePrefetchTask(task, for: index)
     }
     
     private func fetchLocalImageAsync(at index: Int, priority: TaskPriority = .userInitiated) {
@@ -505,7 +724,7 @@ final class ComicImageCache: ObservableObject {
         let bounds = UIScreen.main.bounds
         let scale = UIScreen.main.scale
         
-        Task.detached(priority: priority) { [weak self] in
+        let task = Task.detached(priority: priority) { [weak self] in
             guard let self = self else { return }
             
             let img = await ComicImageCache.extractOrRenderImageBackground(
@@ -519,12 +738,23 @@ final class ComicImageCache: ObservableObject {
                 scale: scale
             )
             
+            guard !Task.isCancelled else {
+                await MainActor.run { [weak self] in
+                    self?.stopFetching(index)
+                    self?.removePrefetchTask(index)
+                }
+                return
+            }
+            
             if let img {
                 await MainActor.run { [weak self] in
                     guard let self = self else { return }
-                    self.cache.setObject(img, forKey: NSNumber(value: index))
+                    let bitsPerPixel = img.cgImage?.bitsPerPixel ?? 32
+                    let cost = Int(img.size.width * img.size.height * CGFloat(bitsPerPixel) / 8)
+                    self.cache.setObject(img, forKey: NSNumber(value: index), cost: cost)
                     self.stopFetching(index)
                     self.updateLRUOnMain(index)
+                    self.removePrefetchTask(index)
                     NotificationCenter.default.post(
                         name: .comicImageCacheImageLoaded,
                         object: self,
@@ -534,9 +764,12 @@ final class ComicImageCache: ObservableObject {
             } else {
                 await MainActor.run { [weak self] in
                     self?.stopFetching(index)
+                    self?.removePrefetchTask(index)
                 }
             }
         }
+        
+        storePrefetchTask(task, for: index)
     }
     
     private func updateLRUOnMain(_ index: Int) {
@@ -614,9 +847,58 @@ final class ComicImageCache: ObservableObject {
     }
     
     private func prefetchSurrounding(index: Int) {
-        let range = max(0, index - prefetchLimit)...min(pageCount - 1, index + prefetchLimit)
-        for i in range {
-            if i == index { continue }
+        let direction = readingDirection
+        let cacheCap = maxCacheSize
+        
+        // Dynamic look-ahead factor based on reading velocity
+        let velocityAheadFactor: Int
+        if averageSecondsPerPage < 4.0 {
+            velocityAheadFactor = 2 // Skimming fast: prefetch 2 extra pages ahead
+        } else if averageSecondsPerPage > 15.0 {
+            velocityAheadFactor = -1 // Reading slow: prefetch 1 fewer page ahead
+        } else {
+            velocityAheadFactor = 0
+        }
+        
+        // Base prefetch sizes based on memory capacity
+        let baseAhead = cacheCap >= 7 ? 4 : (cacheCap >= 5 ? 3 : 2)
+        let baseBehind = cacheCap >= 7 ? 2 : (cacheCap >= 5 ? 1 : 0)
+        
+        // Final bounds clamped safely
+        let targetAhead = max(2, min(8, baseAhead + velocityAheadFactor))
+        let targetBehind = baseBehind
+        
+        var prefetchIndices: Set<Int> = []
+        if direction >= 0 {
+            // Forward movement
+            for i in 1...targetAhead {
+                prefetchIndices.insert(index + i)
+            }
+            for i in 1...targetBehind where targetBehind > 0 {
+                prefetchIndices.insert(index - i)
+            }
+        } else {
+            // Backward movement
+            for i in 1...targetAhead {
+                prefetchIndices.insert(index - i)
+            }
+            for i in 1...targetBehind where targetBehind > 0 {
+                prefetchIndices.insert(index + i)
+            }
+        }
+        
+        // Cancel tasks that are no longer in the active prefetch window
+        for (idx, task) in inFlightPrefetchTasks {
+            if !prefetchIndices.contains(idx) && idx != index {
+                task.cancel()
+                inFlightPrefetchTasks.removeValue(forKey: idx)
+                stopFetching(idx)
+            }
+        }
+        
+        // Filter out of bounds and trigger prefetch
+        for i in prefetchIndices {
+            guard i >= 0 && i < pageCount else { continue }
             if self.cache.object(forKey: NSNumber(value: i)) == nil && !self.isFetching(i) {
                 if isStream {
                     fetchCloudPageImage(at: i, priority: .utility)
@@ -637,20 +919,35 @@ final class ComicImageCache: ObservableObject {
         let scale = UIScreen.main.scale
         let maxPixelSize = max(bounds.width, bounds.height) * scale
 
-        Task.detached(priority: priority) { [weak self] in
+        let task = Task.detached(priority: priority) { [weak self] in
             guard let self else { return }
             do {
                 let data = try await ZipCentralDirectory.fetchEntryData(entry: entry, manifest: manifest)
+                
+                guard !Task.isCancelled else {
+                    await MainActor.run { [weak self] in
+                        self?.stopFetching(index)
+                        self?.removePrefetchTask(index)
+                    }
+                    return
+                }
+                
                 guard let image = Self.decodeImageData(data, maxPixelSize: maxPixelSize) else {
-                    await MainActor.run { [weak self] in self?.stopFetching(index) }
+                    await MainActor.run { [weak self] in
+                        self?.stopFetching(index)
+                        self?.removePrefetchTask(index)
+                    }
                     return
                 }
                 
                 await MainActor.run { [weak self] in
                     guard let self = self else { return }
-                    self.cache.setObject(image, forKey: NSNumber(value: index))
+                    let bitsPerPixel = image.cgImage?.bitsPerPixel ?? 32
+                    let cost = Int(image.size.width * image.size.height * CGFloat(bitsPerPixel) / 8)
+                    self.cache.setObject(image, forKey: NSNumber(value: index), cost: cost)
                     self.stopFetching(index)
                     self.updateLRUOnMain(index)
+                    self.removePrefetchTask(index)
                     NotificationCenter.default.post(
                         name: .comicImageCacheImageLoaded,
                         object: self,
@@ -660,9 +957,12 @@ final class ComicImageCache: ObservableObject {
             } catch {
                 await MainActor.run { [weak self] in
                     self?.stopFetching(index)
+                    self?.removePrefetchTask(index)
                 }
             }
         }
+        
+        storePrefetchTask(task, for: index)
     }
 
     private static nonisolated func decodeImageData(_ data: Data, maxPixelSize: CGFloat) -> UIImage? {
@@ -700,9 +1000,15 @@ struct ComicReaderEngine: View {
     @EnvironmentObject var conversionManager: ConversionManager
     
     @StateObject private var cache: ComicImageCache
+    @StateObject private var velocityEngine = ReaderVelocityEngine()
+    @State private var pageEntryTime = Date()
+    @State private var maxPageIndexVisited = 0
+    @AppStorage("isAutoCropEnabled") private var isAutoCropEnabled = false
+    @AppStorage("hasSeenReaderOnboarding") private var hasSeenReaderOnboarding = false
     @State private var chromeVisible = false
     @State private var currentIndex: Int = 0
     @State private var readingMode: ComicReadingMode = .pageHorizontal
+    @AppStorage("prefersTwoUpSpreads") private var prefersTwoUpSpreads = true
     @State private var activeFilterPreset: ReadingFilterPreset = .original
     @State private var showingFilterHUD = false
     @State private var showingSettingsHUD = false
@@ -714,19 +1020,101 @@ struct ComicReaderEngine: View {
     @State private var ambientPageColor: Color = .clear
     /// Tracks in-flight ambient colour extraction so it can be cancelled on rapid page swipes.
     @State private var ambientColorTask: Task<Void, Never>? = nil
-    /// Debounce task — prevents rapid mode flips when the notification fires
-    /// multiple times during the iPhone rotation animation (portrait→landscape).
-    @State private var orientationTask: Task<Void, Never>? = nil
-    /// AI Narration Engine — connects to the image cache on appear
-    @StateObject private var narrationEngine = NarrationEngine()
+    /// AI Dialogue Lens Layout-aware OCR Engine
+    @StateObject private var narrationEngine = PageOCREngine()
     /// Phase 3: Live Reading Room — MultipeerConnectivity co-reading session.
     @StateObject private var readingRoom = ReadingRoomSession()
+    
+    /// SwiftData context
+    @Environment(\.modelContext) private var modelContext
+    
+    /// Custom Toast messages
+    @State private var showToast = false
+    @State private var toastMessage = ""
+    
+    /// Study Notebook and Highlights State
+    @State private var showAnnotations = false
+    @State private var activeHighlightToEdit: SDAnnotation? = nil
+    
+    /// Focus state for Magic Keyboard navigation
+    @FocusState private var isReaderFocused: Bool
+    
+    /// AI Dialogue Lens State
+    @State private var isDialogueLensEnabled = false
+    @State private var selectedTextBlock: TextBlock? = nil
+    @State private var currentDialogueBlocks: [TextBlock] = []
+    @State private var isDialogueOCRing = false
     /// Phase 4A: Auto-hide chrome — cancellable idle timer.
     @State private var chromeIdleTask: Task<Void, Never>? = nil
-    @FocusState private var isReaderFocused: Bool
     
     var isMangaComic: Bool {
         pdf.metadata.isManga == true || pdf.contentType == .manga
+    }
+    
+    func shouldShowTwoUpSpread(for size: CGSize) -> Bool {
+        guard prefersTwoUpSpreads else { return false }
+        // Spread layouts are page-based only (not webtoon vertical scroll, nor panel navigation)
+        guard readingMode == .pageHorizontal || readingMode == .mangaRTL || readingMode == .pageSlide || readingMode == .pageFade else { return false }
+        return size.width > size.height
+    }
+
+    private var isCurrentlyTwoUp: Bool {
+        guard prefersTwoUpSpreads else { return false }
+        guard readingMode == .pageHorizontal || readingMode == .mangaRTL || readingMode == .pageSlide || readingMode == .pageFade else { return false }
+        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
+            return windowScene.interfaceOrientation.isLandscape
+        }
+        return false
+    }
+
+    private func computeSpreads() -> [[Int]] {
+        var allSpreads: [[Int]] = []
+        let landscapeArray = cache.isLandscapeArray
+
+        guard landscapeArray.count == cache.pageCount else {
+            // Fallback while scanning is in progress
+            if cache.pageCount > 1 {
+                allSpreads.append([0]) // Page 0 is the cover, keep it solo
+                var i = 1
+                while i < cache.pageCount {
+                    if i + 1 < cache.pageCount {
+                        allSpreads.append([i, i + 1])
+                        i += 2
+                    } else {
+                        allSpreads.append([i])
+                        i += 1
+                    }
+                }
+            } else {
+                allSpreads.append([0])
+            }
+            return allSpreads
+        }
+
+        allSpreads.append([0]) // Page 0 is the cover, keep it solo
+        var i = 1
+        while i < cache.pageCount {
+            let isL = landscapeArray[i]
+            if isL {
+                allSpreads.append([i])
+                i += 1
+            } else {
+                if i + 1 < cache.pageCount {
+                    let nextIsL = landscapeArray[i + 1]
+                    if nextIsL {
+                        allSpreads.append([i])
+                        i += 1
+                    } else {
+                        allSpreads.append([i, i + 1])
+                        i += 2
+                    }
+                } else {
+                    allSpreads.append([i])
+                    i += 1
+                }
+            }
+        }
+        return allSpreads
     }
     
     init(pdf: ConvertedPDF, onDismiss: @escaping () -> Void, allBooks: [ConvertedPDF] = []) {
@@ -738,9 +1126,7 @@ struct ComicReaderEngine: View {
             prefetchLimit: AppSettingsManager.shared.conversionSettings.readingPrefetchLimit
         ))
         let isMangaComic = pdf.metadata.isManga == true || pdf.contentType == .manga
-        let isiPad = UIDevice.current.userInterfaceIdiom == .pad
-        // Phase 4B: iPad defaults to two-page spread; manga always opens RTL regardless of device.
-        let defaultMode: ComicReadingMode = isMangaComic ? .mangaRTL : (isiPad ? .pageTwoUp : .pageHorizontal)
+        let defaultMode: ComicReadingMode = isMangaComic ? .mangaRTL : .pageHorizontal
         self._readingMode = State(initialValue: defaultMode)
     }
 
@@ -785,7 +1171,7 @@ struct ComicReaderEngine: View {
                 Group {
                     if readingMode == .webtoonScroll {
                         webtoonView
-                    } else if readingMode == .pageTwoUp {
+                    } else if shouldShowTwoUpSpread(for: geo.size) {
                         twoUpView
                     } else if readingMode == .panelNavigation {
                         guidedView
@@ -803,12 +1189,23 @@ struct ComicReaderEngine: View {
                                 }
                                 // Phase 4A: start / reset 4-second auto-hide timer
                                 if chromeVisible { startChromeIdleTimer() }
+                                NotificationCenter.default.post(name: NSNotification.Name("Reader_ForceKeyFocus"), object: nil)
                             },
                             onFlipPastEnd: { attemptComicSeriesContinuation() }
                         )
                     }
                 }
                 .ignoresSafeArea()
+                .overlay {
+                    if isDialogueLensEnabled {
+                        Color.clear
+                            .contentShape(Rectangle())
+                            .onTapGesture { location in
+                                handleDialogueLensTap(at: location, in: geo.size)
+                            }
+                            .ignoresSafeArea()
+                    }
+                }
             }
 
             brightnessZones
@@ -816,6 +1213,67 @@ struct ComicReaderEngine: View {
             filterHUDView
             settingsHUDView
             achievementToastView
+            
+            // Dialogue Lens HUD and Loading indicators
+            dialogueHUDView
+            
+            if showToast {
+                Text(toastMessage)
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 10)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 0.5))
+                    .shadow(color: .black.opacity(0.2), radius: 12, y: 4)
+                    .padding(.bottom, 110)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .zIndex(100)
+            }
+            
+            if isDialogueLensEnabled && isDialogueOCRing {
+                VStack {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .purple))
+                            .scaleEffect(0.8)
+                        Text("Scanning text...")
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                            .foregroundColor(.purple)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 0.5))
+                    .padding(.top, 70)
+                    Spacer()
+                }
+                .transition(.opacity)
+                .zIndex(18)
+            }
+            
+            KeyCommandHandler { command in
+                let input = command.input
+                if input == UIKeyCommand.inputLeftArrow {
+                    if readingMode == .mangaRTL {
+                        nextPage()
+                    } else {
+                        prevPage()
+                    }
+                } else if input == UIKeyCommand.inputRightArrow {
+                    if readingMode == .mangaRTL {
+                        prevPage()
+                    } else {
+                        nextPage()
+                    }
+                } else if input == " " {
+                    nextPage()
+                } else if input == "\u{1B}" {
+                    saveProgressAndDismiss()
+                }
+            }
+            .frame(width: 1, height: 1)
+            .opacity(0.01)
             // Phase 3: Live Reading Room overlay (peer avatars + reactions + HUD pill)
             if readingRoom.isHosting {
                 ReadingRoomOverlay(
@@ -825,18 +1283,26 @@ struct ComicReaderEngine: View {
                 )
                 .zIndex(15)
             }
+            
+            if !hasSeenReaderOnboarding {
+                readerOnboardingOverlay
+            }
         }
         .onAppear {
+            pageEntryTime = Date()
             if let saved = ReaderProgressTracker.shared.progress(for: pdf.id) {
                 currentIndex = saved.currentPageIndex
                 if let filterString = saved.colorFilter,
                    let filterPreset = ReadingFilterPreset(rawValue: filterString) {
                     activeFilterPreset = filterPreset
                 }
-                if let prefersManga = saved.prefersMangaMode, prefersManga {
-                    readingMode = .mangaRTL
-                } else if let wasDual = saved.wasInDualPageMode, wasDual {
-                    readingMode = .pageTwoUp
+                if let prefersManga = saved.prefersMangaMode {
+                    readingMode = prefersManga ? .mangaRTL : .pageHorizontal
+                } else {
+                    readingMode = isMangaComic ? .mangaRTL : .pageHorizontal
+                }
+                if let wasDual = saved.wasInDualPageMode {
+                    prefersTwoUpSpreads = wasDual
                 }
             } else {
                 let isMangaComic = pdf.metadata.isManga == true || pdf.contentType == .manga
@@ -844,58 +1310,44 @@ struct ComicReaderEngine: View {
                     readingMode = .mangaRTL
                 }
             }
-            // Connect narration engine to the reader's image cache
+            // Connect OCR engine to the reader's image cache
             narrationEngine.connect(totalPages: cache.pageCount) { [cache] index in
                 cache.getImage(at: index)
             }
-            narrationEngine.onPageComplete = { nextIndex in
-                withAnimation { currentIndex = nextIndex }
-            }
-            // On appear, honour the current physical orientation immediately
-            // so opening in landscape already shows two pages.
-            syncReadingModeToOrientation()
             if essentialReaderMode {
                 if readingMode == .pageHorizontal || readingMode == .mangaRTL {
                     readingMode = .pageSlide
                 }
                 ambientPageColor = .clear
             }
-            isReaderFocused = true
             BackTapManager.shared.isEnabled = backTapEnabled
+            maxPageIndexVisited = currentIndex
+            NotificationCenter.default.post(name: NSNotification.Name("Reader_ForceKeyFocus"), object: nil)
+            isReaderFocused = true
         }
-        // Auto two-up: rotate device → automatically flip reading mode so the
-        // user doesn't need to discover the mode-toggle button in the chrome.
-        // Webtoon and panel-navigation are intentional choices; never override them.
-        // Debounced orientation sync — the notification fires 2-3× per rotation
-        // on iPhone. Without debounce, readingMode flips rapidly which destroys
-        // and recreates TwoUpBookPager while BookFlipGesture Tasks are in flight.
-        .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
-            orientationTask?.cancel()
-            orientationTask = Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 300_000_000) // 300 ms — lets rotation settle
-                guard !Task.isCancelled else { return }
-                syncReadingModeToOrientation()
+        .onChange(of: currentIndex) { oldIndex, newIndex in
+            let elapsed = Date().timeIntervalSince(pageEntryTime)
+            pageEntryTime = Date()
+            if newIndex > maxPageIndexVisited {
+                maxPageIndexVisited = newIndex
+                let remainingPages = max(0, cache.pageCount - 1 - newIndex)
+                velocityEngine.recordPageDuration(elapsed, remainingPages: remainingPages)
             }
-        }
-        .onChange(of: currentIndex) { _, newIndex in
+            if let avgSpeed = velocityEngine.averageDuration {
+                cache.updateReadingVelocity(secondsPerPage: avgSpeed)
+            }
+            NotificationCenter.default.post(name: NSNotification.Name("Reader_ForceKeyFocus"), object: nil)
+
             // Panels-style ambient colour — sample edge pixels on page change
             extractAmbientColor(for: newIndex)
-            // Notify narration engine of manual page changes (distinct from narration-driven advances)
-            if narrationEngine.isNarrating {
-                narrationEngine.didManuallyChangePage(to: newIndex)
+            if isDialogueLensEnabled {
+                selectedTextBlock = nil
+                Task {
+                    await prewarmOCR(for: newIndex)
+                }
             }
             // Phase 3: broadcast page change to any connected reading room peers
             readingRoom.broadcastPage(newIndex, totalPages: cache.pageCount)
-        }
-        // Once the archive finishes loading, honour the current orientation.
-        // syncReadingModeToOrientation() is a no-op while isLoading == true,
-        // so this catch-up call is needed for comics opened in landscape.
-        // IMPORTANT: Only fire in landscape — in portrait the user's saved
-        // readingMode preference (e.g. pageTwoUp restored from progress) is
-        // authoritative and must not be overridden.
-        .onChange(of: cache.isLoading) { _, isLoading in
-            guard !isLoading, UIDevice.current.orientation.isLandscape else { return }
-            syncReadingModeToOrientation()
         }
         .onChange(of: essentialReaderMode) { _, isSpeed in
             if isSpeed {
@@ -924,10 +1376,16 @@ struct ComicReaderEngine: View {
             activity.becomeCurrent()
         }
         .onChange(of: readingMode) { _, newMode in
-            let isManga = (newMode == .mangaRTL)
-            if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
-                conversionManager.convertedPDFs[idx].metadata.isManga = isManga
-                conversionManager.saveLibrary()
+            if newMode == .mangaRTL {
+                if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                    conversionManager.convertedPDFs[idx].metadata.isManga = true
+                    conversionManager.saveLibrary()
+                }
+            } else if newMode == .pageHorizontal {
+                if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                    conversionManager.convertedPDFs[idx].metadata.isManga = false
+                    conversionManager.saveLibrary()
+                }
             }
         }
         .sheet(isPresented: $showingCharacterMap) {
@@ -937,6 +1395,33 @@ struct ComicReaderEngine: View {
                 pageIndex: currentIndex
             )
         }
+        .sheet(isPresented: $showAnnotations) {
+            StudyNotebookView(bookID: pdf.id.uuidString, bookTitle: pdf.name, fileURL: pdf.url)
+        }
+        .sheet(item: $activeHighlightToEdit) { annotation in
+            AnnotationEditSheet(annotation: annotation)
+                .presentationDetents([.height(180), .medium])
+                .presentationDragIndicator(.visible)
+        }
+        .onDisappear {
+            BackTapManager.shared.isEnabled = false
+        }
+        .onChange(of: backTapEnabled) { _, newValue in
+            BackTapManager.shared.isEnabled = newValue
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("Reader_NextPage"))) { _ in
+            nextPage()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("Reader_PrevPage"))) { _ in
+            prevPage()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .comicImageCacheImageLoaded)) { notification in
+            guard let userInfo = notification.userInfo,
+                  let loadedIndex = userInfo["index"] as? Int,
+                  loadedIndex == currentIndex else { return }
+            extractAmbientColor(for: currentIndex)
+        }
+        .preferredColorScheme(.dark)
         .focusable()
         .focused($isReaderFocused)
         .focusEffectDisabled()
@@ -963,24 +1448,6 @@ struct ComicReaderEngine: View {
         .onKeyPress(.escape) {
             saveProgressAndDismiss()
             return .handled
-        }
-        .onDisappear {
-            BackTapManager.shared.isEnabled = false
-        }
-        .onChange(of: backTapEnabled) { _, newValue in
-            BackTapManager.shared.isEnabled = newValue
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("Reader_NextPage"))) { _ in
-            nextPage()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("Reader_PrevPage"))) { _ in
-            prevPage()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .comicImageCacheImageLoaded)) { notification in
-            guard let userInfo = notification.userInfo,
-                  let loadedIndex = userInfo["index"] as? Int,
-                  loadedIndex == currentIndex else { return }
-            extractAmbientColor(for: currentIndex)
         }
     } // closes GeometryReader
 } // end body
@@ -1051,16 +1518,48 @@ struct ComicReaderEngine: View {
     // MARK: - Navigation helpers
     
     private func nextPage() {
-        if currentIndex < cache.pageCount - 1 {
-            currentIndex += 1
+        if isCurrentlyTwoUp {
+            let spreads = computeSpreads()
+            if let currentSpreadIdx = spreads.firstIndex(where: { $0.contains(currentIndex) }) {
+                let nextSpreadIdx = currentSpreadIdx + 1
+                if nextSpreadIdx < spreads.count {
+                    currentIndex = spreads[nextSpreadIdx].first ?? currentIndex
+                } else {
+                    attemptComicSeriesContinuation()
+                }
+            } else {
+                if currentIndex < cache.pageCount - 1 {
+                    currentIndex += 1
+                } else {
+                    attemptComicSeriesContinuation()
+                }
+            }
         } else {
-            attemptComicSeriesContinuation()
+            if currentIndex < cache.pageCount - 1 {
+                currentIndex += 1
+            } else {
+                attemptComicSeriesContinuation()
+            }
         }
     }
 
     private func prevPage() {
-        if currentIndex > 0 {
-            currentIndex -= 1
+        if isCurrentlyTwoUp {
+            let spreads = computeSpreads()
+            if let currentSpreadIdx = spreads.firstIndex(where: { $0.contains(currentIndex) }) {
+                let prevSpreadIdx = currentSpreadIdx - 1
+                if prevSpreadIdx >= 0 {
+                    currentIndex = spreads[prevSpreadIdx].first ?? currentIndex
+                }
+            } else {
+                if currentIndex > 0 {
+                    currentIndex -= 1
+                }
+            }
+        } else {
+            if currentIndex > 0 {
+                currentIndex -= 1
+            }
         }
     }
 
@@ -1100,38 +1599,7 @@ struct ComicReaderEngine: View {
         }
     }
 
-    // MARK: - Orientation Helper
 
-    /// Switches between single-page and two-up based on physical device orientation.
-    /// Intentional modes (webtoon, panel navigation) are never auto-overridden.
-    private func syncReadingModeToOrientation() {
-        // Do not switch mode while the archive is still being indexed: creating
-        // TwoUpBookPager with pageCount == 0 produces an empty TabView that
-        // never recovers because spreadIdx.onChange fires before entries are loaded.
-        guard !cache.isLoading else { return }
-
-        let orientation = UIDevice.current.orientation
-        let isLandscape = orientation.isLandscape
-
-        // Respect modes the user deliberately chose — don't hijack them.
-        guard readingMode != .webtoonScroll, readingMode != .panelNavigation else { return }
-
-        withAnimation(.easeInOut(duration: 0.2)) {
-            if isLandscape {
-                // Landscape → two-page spread
-                if readingMode != .pageTwoUp {
-                    readingMode = .pageTwoUp
-                }
-            } else if orientation.isPortrait {
-                // Portrait → restore single-page (manga keeps RTL)
-                if readingMode == .pageTwoUp {
-                    let isMangaComic = pdf.metadata.isManga == true || pdf.contentType == .manga
-                    readingMode = isMangaComic ? .mangaRTL : .pageHorizontal
-                }
-            }
-            // .faceUp / .faceDown / .unknown → leave mode unchanged
-        }
-    }
 
     // MARK: - Ambient Colour Extraction
 
@@ -1250,7 +1718,7 @@ struct ComicReaderEngine: View {
     @ViewBuilder private var readerChromeView: some View {
         ReaderChrome(
             title: pdf.name,
-            pageText: "\(currentIndex + 1) / \(cache.pageCount)",
+            pageText: "\(currentIndex + 1) / \(cache.pageCount)  •  \(velocityEngine.estimatedTimeRemaining)",
             isVisible: $chromeVisible,
             onBack: saveProgressAndDismiss,
             onBookmark: {
@@ -1261,8 +1729,23 @@ struct ComicReaderEngine: View {
             onSettingsToggle: {
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { showingSettingsHUD.toggle() }
             },
+            onAnnotationsToggle: {
+                showAnnotations = true
+            },
             onCharacterMapToggle: {
                 showingCharacterMap.toggle()
+            },
+            isDialogueLensEnabled: isDialogueLensEnabled,
+            onDialogueLensToggle: {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                    isDialogueLensEnabled.toggle()
+                    if isDialogueLensEnabled {
+                        Task { await prewarmOCR(for: currentIndex) }
+                    } else {
+                        selectedTextBlock = nil
+                    }
+                }
+                HapticEngine.light()
             },
             currentProgress: Binding(
                 get: { Double(currentIndex) / Double(max(1, cache.pageCount - 1)) },
@@ -1277,9 +1760,13 @@ struct ComicReaderEngine: View {
                     isMangaMode: readingMode == .mangaRTL
                 )
             ),
-            isNarrating: narrationEngine.isNarrating,
-            isNarrationOCRing: narrationEngine.isOCRing,
-            onNarrationToggle: handleNarrationToggle,
+            isAutoCropEnabled: isAutoCropEnabled,
+            onCropToggle: {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                    isAutoCropEnabled.toggle()
+                }
+                HapticEngine.light()
+            },
             isEnhanced: activeFilterPreset != .original,
             onEnhanceToggle: { withAnimation(.easeInOut) { showingFilterHUD.toggle() } },
             isSettingsActive: readingMode != .pageHorizontal,
@@ -1327,6 +1814,7 @@ struct ComicReaderEngine: View {
                 ReaderSettingsHUD(
                     readingMode: $readingMode,
                     activeFilterPreset: $activeFilterPreset,
+                    prefersTwoUpSpreads: $prefersTwoUpSpreads,
                     onDismiss: {
                         withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { showingSettingsHUD = false }
                     }
@@ -1359,7 +1847,7 @@ struct ComicReaderEngine: View {
         progress.prefersMangaMode = (readingMode == .mangaRTL)
         progress.colorFilter = activeFilterPreset.rawValue
         progress.lastCanonicalLeadIndex = currentIndex
-        progress.wasInDualPageMode = (readingMode == .pageTwoUp)
+        progress.wasInDualPageMode = prefersTwoUpSpreads
         if !progress.readingSessionDates.contains(where: { Calendar.current.isDateInToday($0) }) {
             progress.readingSessionDates.append(Date())
         }
@@ -1379,20 +1867,351 @@ struct ComicReaderEngine: View {
         }
     }
 
-    private func handleNarrationToggle() {
-        if narrationEngine.isNarrating {
-            if narrationEngine.isSpeaking {
-                narrationEngine.togglePause()
-            } else {
-                narrationEngine.stop()
+
+
+    @ViewBuilder
+    private var readerOnboardingOverlay: some View {
+        ZStack {
+            // Dark glassmorphism background overlay
+            Color.black.opacity(0.85)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    // Prevent dismiss on random background tap unless desired
+                }
+            
+            GeometryReader { geo in
+                let w = geo.size.width
+                let h = geo.size.height
+                
+                ZStack {
+                    // Tap Zone Outlines
+                    HStack(spacing: 0) {
+                        // Left Zone (Page Back)
+                        VStack {
+                            Spacer()
+                            Image(systemName: "arrow.left.circle")
+                                .font(.system(size: 32))
+                                .foregroundColor(.white.opacity(0.6))
+                                .padding(.bottom, 8)
+                            Text("Page Back")
+                                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                .foregroundColor(.white)
+                            Text("Tap left 20% of screen")
+                                .font(.system(size: 11))
+                                .foregroundColor(.white.opacity(0.5))
+                            Spacer()
+                        }
+                        .frame(width: w * 0.2)
+                        .background(Color.white.opacity(0.03))
+                        .overlay(
+                            Rectangle()
+                                .strokeBorder(style: StrokeStyle(lineWidth: 1, lineCap: .round, lineJoin: .round, miterLimit: 10, dash: [4, 4], dashPhase: 0))
+                                .foregroundColor(.white.opacity(0.2))
+                        )
+                        
+                        // Center Zone (Menu Chrome)
+                        VStack {
+                            Spacer()
+                            Image(systemName: "hand.tap")
+                                .font(.system(size: 32))
+                                .foregroundColor(.white.opacity(0.6))
+                                .padding(.bottom, 8)
+                            Text("Reader Controls")
+                                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                .foregroundColor(.white)
+                            Text("Tap center zone to toggle controls")
+                                .font(.system(size: 11))
+                                .foregroundColor(.white.opacity(0.5))
+                            Spacer()
+                        }
+                        .frame(width: w * 0.6)
+                        .background(Color.white.opacity(0.01))
+                        
+                        // Right Zone (Page Forward)
+                        VStack {
+                            Spacer()
+                            Image(systemName: "arrow.right.circle")
+                                .font(.system(size: 32))
+                                .foregroundColor(.white.opacity(0.6))
+                                .padding(.bottom, 8)
+                            Text("Page Forward")
+                                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                .foregroundColor(.white)
+                            Text("Tap right 20% of screen")
+                                .font(.system(size: 11))
+                                .foregroundColor(.white.opacity(0.5))
+                            Spacer()
+                        }
+                        .frame(width: w * 0.2)
+                        .background(Color.white.opacity(0.03))
+                        .overlay(
+                            Rectangle()
+                                .strokeBorder(style: StrokeStyle(lineWidth: 1, lineCap: .round, lineJoin: .round, miterLimit: 10, dash: [4, 4], dashPhase: 0))
+                                .foregroundColor(.white.opacity(0.2))
+                        )
+                    }
+                    
+                    // Gesture Annotations overlay in the middle
+                    VStack(spacing: 24) {
+                        Spacer()
+                        
+                        VStack(spacing: 6) {
+                            Text("QUICK GESTURES")
+                                .font(.system(size: 12, weight: .bold, design: .rounded))
+                                .foregroundColor(.yellow)
+                                .tracking(1.5)
+                            
+                            HStack(spacing: 20) {
+                                Label("Double-Tap to Zoom", systemImage: "magnifyingglass.circle")
+                                Label("Drag left edge for Brightness", systemImage: "sun.max.circle")
+                            }
+                            .font(.system(size: 13))
+                            .foregroundColor(.white.opacity(0.8))
+                        }
+                        .padding(.vertical, 16)
+                        .padding(.horizontal, 24)
+                        .background(.ultraThinMaterial)
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .shadow(radius: 10)
+                        
+                        // "Got It" Button
+                        Button {
+                            withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                                hasSeenReaderOnboarding = true
+                            }
+                            HapticEngine.success()
+                        } label: {
+                            Text("Got It")
+                                .font(.system(size: 16, weight: .bold, design: .rounded))
+                                .foregroundColor(.black)
+                                .padding(.horizontal, 48)
+                                .padding(.vertical, 14)
+                                .background(Color.white)
+                                .clipShape(Capsule())
+                                .shadow(radius: 8)
+                        }
+                        .padding(.bottom, h * 0.1)
+                    }
+                }
             }
+        }
+        .transition(.opacity.combined(with: .scale(scale: 0.95)))
+        .zIndex(100)
+    }
+
+    // MARK: - AI Dialogue Lens Helpers
+
+    private func showToastMessage(_ message: String) {
+        toastMessage = message
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+            showToast = true
+        }
+        Task {
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            withAnimation(.easeOut(duration: 0.3)) {
+                if toastMessage == message {
+                    showToast = false
+                }
+            }
+        }
+    }
+
+    private func prewarmOCR(for pageIndex: Int) async {
+        isDialogueOCRing = true
+        let blocks = await narrationEngine.fetchTextBlocks(for: pageIndex)
+        currentDialogueBlocks = blocks
+        isDialogueOCRing = false
+    }
+
+    private func handleDialogueLensTap(at location: CGPoint, in viewSize: CGSize) {
+        guard let image = cache.getImage(at: currentIndex) else { return }
+        
+        let block = textBlock(at: location, in: viewSize, imageSize: image.size, blocks: currentDialogueBlocks)
+        
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+            if let block = block {
+                selectedTextBlock = block
+                HapticEngine.medium()
+            } else {
+                // Tapped outside any text block
+                if selectedTextBlock != nil {
+                    selectedTextBlock = nil
+                } else {
+                    chromeVisible.toggle()
+                }
+            }
+        }
+    }
+
+    private func textBlock(at tapPoint: CGPoint, in viewSize: CGSize, imageSize: CGSize, blocks: [TextBlock]) -> TextBlock? {
+        guard imageSize.width > 0, imageSize.height > 0 else { return nil }
+        
+        let imageRatio = imageSize.width / imageSize.height
+        let viewRatio = viewSize.width / viewSize.height
+        
+        var renderWidth: CGFloat
+        var renderHeight: CGFloat
+        var offsetX: CGFloat = 0
+        var offsetY: CGFloat = 0
+        
+        if imageRatio > viewRatio {
+            renderWidth = viewSize.width
+            renderHeight = viewSize.width / imageRatio
+            offsetY = (viewSize.height - renderHeight) / 2
         } else {
-            narrationEngine.isMangaMode = (readingMode == .mangaRTL)
-            narrationEngine.startNarrating(from: currentIndex)
+            renderHeight = viewSize.height
+            renderWidth = viewSize.height * imageRatio
+            offsetX = (viewSize.width - renderWidth) / 2
+        }
+        
+        let relativeX = tapPoint.x - offsetX
+        let relativeY = tapPoint.y - offsetY
+        
+        guard relativeX >= 0, relativeX <= renderWidth,
+              relativeY >= 0, relativeY <= renderHeight else {
+            return nil
+        }
+        
+        let normalizedX = relativeX / renderWidth
+        let normalizedY = 1.0 - (relativeY / renderHeight) // Vision bottom-origin
+        
+        for block in blocks {
+            let paddedBox = block.boundingBox.insetBy(dx: -0.015, dy: -0.015)
+            if paddedBox.contains(CGPoint(x: normalizedX, y: normalizedY)) {
+                return block
+            }
+        }
+        return nil
+    }
+
+    @ViewBuilder
+    private var dialogueHUDView: some View {
+        if let block = selectedTextBlock {
+            VStack {
+                Spacer()
+                
+                VStack(spacing: 16) {
+                    HStack {
+                        HStack(spacing: 6) {
+                            Image(systemName: "sparkles")
+                                .foregroundColor(.purple)
+                            Text("AI Dialogue HUD")
+                                .font(.system(size: 11, weight: .bold, design: .rounded))
+                                .foregroundColor(.purple)
+                                .tracking(1.0)
+                        }
+                        
+                        Spacer()
+                        
+                        Button {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                selectedTextBlock = nil
+                            }
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 18))
+                                .foregroundColor(.white.opacity(0.4))
+                        }
+                    }
+                    
+                    ScrollView {
+                        Text(block.text)
+                            .font(.system(size: 18, weight: .medium, design: .rounded))
+                            .foregroundColor(.white)
+                            .lineSpacing(6)
+                            .multilineTextAlignment(.leading)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 4)
+                    }
+                    .frame(maxHeight: 120)
+                    
+                    HStack(spacing: 12) {
+                        Button {
+                            UIPasteboard.general.string = block.text
+                            showToastMessage("Copied to clipboard")
+                            HapticEngine.light()
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: "doc.on.doc.fill")
+                                    .font(.system(size: 13, weight: .bold))
+                                Text("Copy Text")
+                                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                            }
+                            .foregroundColor(.black)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .background(Color.white, in: Capsule())
+                        }
+                        
+                        Button {
+                            let newHighlight = SDAnnotation(
+                                id: UUID(),
+                                pdfID: pdf.id.uuidString,
+                                pageIndex: currentIndex,
+                                text: block.text,
+                                note: nil,
+                                isReadwiseImport: false,
+                                readwiseBookTitle: pdf.name,
+                                readwiseAuthor: nil,
+                                createdAt: Date()
+                            )
+                            newHighlight.kindRaw = "highlight"
+                            modelContext.insert(newHighlight)
+                            try? modelContext.save()
+                            showToastMessage("Saved to Notebook")
+                            HapticEngine.light()
+                            
+                            // Immediately open the annotation editor for notes and tags
+                            withAnimation {
+                                selectedTextBlock = nil
+                                activeHighlightToEdit = newHighlight
+                            }
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: "notebook.fill")
+                                    .font(.system(size: 13, weight: .bold))
+                                Text("Save to Notes")
+                                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                            }
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .background(Color.purple.opacity(0.6), in: Capsule())
+                            .overlay(Capsule().stroke(Color.purple, lineWidth: 1))
+                        }
+                        
+                        Spacer()
+                        
+                        Text("Page \(currentIndex + 1)")
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                            .foregroundColor(.white.opacity(0.4))
+                    }
+                }
+                .padding(20)
+                .background(
+                    ZStack {
+                        Color.clear.background(.ultraThinMaterial)
+                        Color.purple.opacity(0.08)
+                    }
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .stroke(Color.white.opacity(0.12), lineWidth: 0.5)
+                )
+                .shadow(color: .black.opacity(0.4), radius: 24, y: 12)
+                .frame(maxWidth: hSizeClass == .regular ? 560 : .infinity)
+                .padding(.horizontal, 20)
+                .padding(.bottom, 90)
+            }
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+            .zIndex(20)
         }
     }
 
 } // end ComicReaderEngine
+
+
 
 struct WebtoonImageCell: View {
     let index: Int
@@ -1424,6 +2243,9 @@ struct WebtoonImageCell: View {
                 }
             }
         }
+        .onDisappear {
+            image = nil
+        }
         .onReceive(NotificationCenter.default.publisher(for: .comicImageCacheImageLoaded)) { notification in
             guard let userInfo = notification.userInfo,
                   let loadedIndex = userInfo["index"] as? Int,
@@ -1443,10 +2265,15 @@ struct ComicPageView: View {
     var onBookmark: (() -> Void)? = nil
     
     @State private var image: UIImage? = nil
+    @State private var displayImage: UIImage? = nil
+    @AppStorage("isAutoCropEnabled") private var isAutoCropEnabled = false
     @State private var currentScale: CGFloat = 1.0
+    @State private var lastScale: CGFloat = 1.0
     @State private var offset: CGSize = .zero
+    @State private var lastOffset: CGSize = .zero
     @State private var shareItem: UIImage? = nil
     @State private var showShareSheet = false
+    @State private var cropTask: Task<Void, Never>? = nil
 
     /// Compute the rendered width/height that fits the image inside `container`
     /// without overflowing, preserving aspect ratio.
@@ -1466,58 +2293,122 @@ struct ComicPageView: View {
         }
     }
 
+    private func validateAndClampOffset(containerSize: CGSize, renderedSize: CGSize) {
+        let maxW = max(0, (renderedSize.width * currentScale - containerSize.width) / 2)
+        let maxH = max(0, (renderedSize.height * currentScale - containerSize.height) / 2)
+        
+        var newW = offset.width
+        var newH = offset.height
+        
+        if newW > maxW { newW = maxW }
+        if newW < -maxW { newW = -maxW }
+        if newH > maxH { newH = maxH }
+        if newH < -maxH { newH = -maxH }
+        
+        withAnimation(.easeOut(duration: 0.15)) {
+            offset = CGSize(width: newW, height: newH)
+            lastOffset = offset
+        }
+    }
+
+    private func updateDisplayImage() {
+        cropTask?.cancel()
+        cropTask = nil
+        
+        guard let sourceImage = image else {
+            displayImage = nil
+            return
+        }
+        if isAutoCropEnabled {
+            cropTask = Task.detached(priority: .userInitiated) {
+                let cropRect = SmartCropper.suggestCrop(for: sourceImage)
+                guard !Task.isCancelled else { return }
+                
+                let cropped = cropRect.flatMap { ImageProcessor.crop(image: sourceImage, to: $0) }
+                guard !Task.isCancelled else { return }
+                
+                await MainActor.run {
+                    self.displayImage = cropped ?? sourceImage
+                }
+            }
+        } else {
+            displayImage = sourceImage
+        }
+    }
+
     var body: some View {
+        let currentImage = image ?? cache.getImage(at: index)
         Group {
-            if let image = image {
+            if let img = displayImage ?? currentImage {
                 GeometryReader { geo in
-                    let rendered = renderSize(for: image, in: geo.size)
+                    let rendered = renderSize(for: img, in: geo.size)
 
                     ZStack {
                         Color.black.ignoresSafeArea()
 
-                        Image(uiImage: image)
+                        Image(uiImage: img)
                             .resizable()
                             .frame(width: rendered.width, height: rendered.height)
                             .scaleEffect(currentScale)
                             .offset(offset)
                             .position(x: geo.size.width / 2, y: geo.size.height / 2)
                             .gesture(
-                                SimultaneousGesture(
-                                    MagnificationGesture()
-                                        .onChanged { val in currentScale = max(1.0, val) }
-                                        .onEnded   { _ in
-                                            withAnimation(.spring()) {
-                                                currentScale = 1.0
-                                                offset = .zero
-                                            }
-                                        },
-                                    DragGesture()
-                                        .onChanged { val in
-                                            if currentScale > 1.0 { offset = val.translation }
-                                        }
-                                        .onEnded { _ in
-                                            if currentScale <= 1.0 {
-                                                withAnimation(.spring()) { offset = .zero }
-                                            }
-                                        }
-                                )
+                                MagnificationGesture()
+                                    .onChanged { val in
+                                        let nextScale = lastScale * val
+                                        currentScale = min(max(1.0, nextScale), 6.0)
+                                    }
+                                    .onEnded { _ in
+                                        lastScale = currentScale
+                                        validateAndClampOffset(containerSize: geo.size, renderedSize: rendered)
+                                    }
+                            )
+                            .dragGestureOnlyIfZoomed(
+                                currentScale: currentScale,
+                                onChanged: { val in
+                                    offset = CGSize(
+                                        width: lastOffset.width + val.translation.width,
+                                        height: lastOffset.height + val.translation.height
+                                    )
+                                },
+                                onEnded: { _ in
+                                    lastOffset = offset
+                                    validateAndClampOffset(containerSize: geo.size, renderedSize: rendered)
+                                }
                             )
                             .onTapGesture(count: 2) { loc in
                                 withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
                                     if currentScale > 1.0 {
                                         currentScale = 1.0
+                                        lastScale = 1.0
                                         offset = .zero
+                                        lastOffset = .zero
                                     } else {
                                         currentScale = 2.5
+                                        lastScale = 2.5
                                         let centerX = geo.size.width / 2
                                         let centerY = geo.size.height / 2
-                                        // Calculate offset to bring the tapped point to the center of the screen
                                         let dx = (centerX - loc.x) * (currentScale - 1)
                                         let dy = (centerY - loc.y) * (currentScale - 1)
-                                        offset = CGSize(width: dx, height: dy)
+                                        
+                                        let maxW = max(0, (rendered.width * currentScale - geo.size.width) / 2)
+                                        let maxH = max(0, (rendered.height * currentScale - geo.size.height) / 2)
+                                        offset = CGSize(
+                                            width: min(maxW, max(-maxW, dx)),
+                                            height: min(maxH, max(-maxH, dy))
+                                        )
+                                        lastOffset = offset
                                     }
                                 }
                             }
+                    }
+                    .onDisappear {
+                        cropTask?.cancel()
+                        cropTask = nil
+                        currentScale = 1.0
+                        lastScale = 1.0
+                        offset = .zero
+                        lastOffset = .zero
                     }
                     // Phase 4A: long-press context menu (Save / Share / Bookmark)
                     .contextMenu {
@@ -1529,7 +2420,7 @@ struct ComicPageView: View {
                             }
                         }
                         Button {
-                            shareItem = image
+                            shareItem = displayImage ?? image
                             showShareSheet = true
                         } label: {
                             Label("Share Page", systemImage: "square.and.arrow.up")
@@ -1544,7 +2435,7 @@ struct ComicPageView: View {
                         }
                     } preview: {
                         // System shows a scaled preview of the page in the context menu blur
-                        Image(uiImage: image)
+                        Image(uiImage: displayImage ?? image ?? UIImage())
                             .resizable()
                             .scaledToFit()
                             .frame(maxWidth: 280)
@@ -1563,12 +2454,31 @@ struct ComicPageView: View {
                         .progressViewStyle(CircularProgressViewStyle(tint: .white.opacity(0.5)))
                         .scaleEffect(1.5)
                 }
-                .onAppear {
-                    image = cache.getImage(at: index)
-                }
             }
         }
         .id(index)
+        .onAppear {
+            if image == nil {
+                image = cache.getImage(at: index)
+            }
+        }
+        .onChange(of: image) { _, _ in
+            updateDisplayImage()
+        }
+        .onChange(of: isAutoCropEnabled) { _, _ in
+            updateDisplayImage()
+        }
+        .onChange(of: currentScale) { oldScale, newScale in
+            let wasZoomed = oldScale > 1.0
+            let isZoomed = newScale > 1.0
+            if wasZoomed != isZoomed {
+                NotificationCenter.default.post(
+                    name: .readerZoomStateChanged,
+                    object: nil,
+                    userInfo: ["isZoomed": isZoomed]
+                )
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .comicImageCacheImageLoaded)) { notification in
             guard let userInfo = notification.userInfo,
                   let loadedIndex = userInfo["index"] as? Int,
@@ -1905,4 +2815,113 @@ struct VisualComicScrubber: View {
         }
     }
 }
+
+// MARK: - Transparent UIKeyCommand Responder
+struct KeyCommandHandler: UIViewControllerRepresentable {
+    let onKeyPress: (UIKeyCommand) -> Void
+    
+    class Coordinator: NSObject {
+        var onKeyPress: ((UIKeyCommand) -> Void)?
+        
+        @objc func handleKeyCommand(_ sender: UIKeyCommand) {
+            onKeyPress?(sender)
+        }
+    }
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+    
+    func makeUIViewController(context: Context) -> UIKeyCommandViewController {
+        let vc = UIKeyCommandViewController()
+        context.coordinator.onKeyPress = onKeyPress
+        vc.coordinator = context.coordinator
+        return vc
+    }
+    
+    func updateUIViewController(_ uiViewController: UIKeyCommandViewController, context: Context) {
+        context.coordinator.onKeyPress = onKeyPress
+        DispatchQueue.main.async {
+            if !uiViewController.isFirstResponder {
+                uiViewController.becomeFirstResponder()
+            }
+        }
+    }
+}
+
+class UIKeyCommandViewController: UIViewController {
+    weak var coordinator: KeyCommandHandler.Coordinator?
+    
+    override var canBecomeFirstResponder: Bool {
+        true
+    }
+    
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        becomeFirstResponder()
+    }
+    
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        becomeFirstResponder()
+    }
+    
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(forceBecomeFirstResponder),
+            name: UIApplication.didBecomeActiveNotification,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(forceBecomeFirstResponder),
+            name: NSNotification.Name("Reader_ForceKeyFocus"),
+            object: nil
+        )
+    }
+    
+    @objc private func forceBecomeFirstResponder() {
+        becomeFirstResponder()
+    }
+    
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        super.touchesBegan(touches, with: event)
+        becomeFirstResponder()
+    }
+    
+    override var keyCommands: [UIKeyCommand]? {
+        [
+            UIKeyCommand(input: UIKeyCommand.inputLeftArrow, modifierFlags: [], action: #selector(keyTriggered)),
+            UIKeyCommand(input: UIKeyCommand.inputRightArrow, modifierFlags: [], action: #selector(keyTriggered)),
+            UIKeyCommand(input: " ", modifierFlags: [], action: #selector(keyTriggered)),
+            UIKeyCommand(input: "\u{1B}", modifierFlags: [], action: #selector(keyTriggered)) // Escape
+        ]
+    }
+    
+    @objc func keyTriggered(_ sender: UIKeyCommand) {
+        coordinator?.handleKeyCommand(sender)
+    }
+}
+
+extension View {
+    @ViewBuilder
+    func dragGestureOnlyIfZoomed(
+        currentScale: CGFloat,
+        onChanged: @escaping (DragGesture.Value) -> Void,
+        onEnded: @escaping (DragGesture.Value) -> Void
+    ) -> some View {
+        if currentScale > 1.0 {
+            self.gesture(
+                DragGesture()
+                    .onChanged(onChanged)
+                    .onEnded(onEnded)
+            )
+        } else {
+            self
+        }
+    }
+}
+
 

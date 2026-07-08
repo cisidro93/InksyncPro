@@ -237,6 +237,17 @@ struct CharacterOverlayView: View {
                     .background(Color.white.opacity(0.1))
                     .padding(.horizontal, 20)
                 
+                // Interactive Node Graph
+                CharacterGraphView(
+                    sourceCharacter: character,
+                    allCharacters: characters,
+                    allRelationships: relationships,
+                    currentIssue: issueNumber,
+                    currentPageIndex: pageIndex,
+                    revealSpoilers: revealSpoilers,
+                    selectedCharacter: $selectedCharacter
+                )
+                
                 // Relationship Graph List
                 Text("Relationships (Spoiler-Safe)")
                     .font(.system(size: 12, weight: .bold))
@@ -315,5 +326,206 @@ struct CharacterOverlayView: View {
         }
         .padding(12)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+    }
+}
+
+// MARK: - Interactive Character Graph View
+private struct CharacterGraphView: View {
+    let sourceCharacter: SDCharacterNode
+    let allCharacters: [SDCharacterNode]
+    let allRelationships: [SDRelationship]
+    let currentIssue: Int
+    let currentPageIndex: Int
+    let revealSpoilers: Bool
+    
+    @Binding var selectedCharacter: SDCharacterNode?
+    
+    // Resolve active relationships
+    private var resolvedRelations: [(target: SDCharacterNode, type: String, isSpoiler: Bool)] {
+        let active = allRelationships.filter {
+            $0.sourceCharacterID == sourceCharacter.id || $0.targetCharacterID == sourceCharacter.id
+        }
+        
+        return active.compactMap { relation in
+            let isSource = relation.sourceCharacterID == sourceCharacter.id
+            let targetID = isSource ? relation.targetCharacterID : relation.sourceCharacterID
+            guard let target = allCharacters.first(where: { $0.id == targetID }) else { return nil }
+            
+            let isSpoiler = !revealSpoilers && (
+                relation.visibleAfterIssueNumber > currentIssue ||
+                (relation.visibleAfterIssueNumber == currentIssue && relation.visibleAfterPageIndex > currentPageIndex)
+            )
+            
+            return (target: target, type: relation.type, isSpoiler: isSpoiler)
+        }
+    }
+    
+    var body: some View {
+        VStack(spacing: 10) {
+            Text("Interactive Relationship Graph")
+                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .foregroundColor(.purple.opacity(0.85))
+                .tracking(1.0)
+                .padding(.top, 14)
+            
+            if resolvedRelations.isEmpty {
+                VStack(spacing: 8) {
+                    Circle()
+                        .fill(Color.white.opacity(0.06))
+                        .frame(width: 80, height: 80)
+                        .overlay(
+                            Text(String(sourceCharacter.name.first ?? "C"))
+                                .font(.system(size: 32, weight: .bold))
+                                .foregroundColor(.white.opacity(0.5))
+                        )
+                    Text("No relationships mapped for this issue progress.")
+                        .font(.caption)
+                        .foregroundColor(.white.opacity(0.4))
+                }
+                .frame(height: 240)
+            } else {
+                ZStack {
+                    // Dashed vector connector lines
+                    GeometryReader { geo in
+                        let center = CGPoint(x: geo.size.width / 2, y: geo.size.height / 2)
+                        let R: CGFloat = 100
+                        
+                        Path { path in
+                            let count = resolvedRelations.count
+                            for i in 0..<count {
+                                let angle = Double(i) * (2.0 * .pi / Double(count)) - (.pi / 2.0)
+                                let endPoint = CGPoint(
+                                    x: center.x + R * CGFloat(cos(angle)),
+                                    y: center.y + R * CGFloat(sin(angle))
+                                )
+                                path.move(to: center)
+                                path.addLine(to: endPoint)
+                            }
+                        }
+                        .stroke(
+                            LinearGradient(
+                                colors: [.purple.opacity(0.6), .blue.opacity(0.2)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            ),
+                            style: StrokeStyle(lineWidth: 1.5, dash: [4, 3])
+                        )
+                        
+                        // Small relationship text badges inside lines
+                        let count = resolvedRelations.count
+                        ForEach(0..<count, id: \.self) { i in
+                            let relation = resolvedRelations[i]
+                            let angle = Double(i) * (2.0 * .pi / Double(count)) - (.pi / 2.0)
+                            let midPoint = CGPoint(
+                                x: center.x + (R * 0.5) * CGFloat(cos(angle)),
+                                y: center.y + (R * 0.5) * CGFloat(sin(angle))
+                            )
+                            
+                            HStack(spacing: 2) {
+                                if relation.isSpoiler {
+                                    Image(systemName: "lock.fill")
+                                        .font(.system(size: 8))
+                                }
+                                Text(relation.isSpoiler ? "Locked" : relation.type.capitalized)
+                            }
+                            .font(.system(size: 8, weight: .bold, design: .rounded))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(
+                                Capsule()
+                                    .fill(relation.isSpoiler ? Color.orange.opacity(0.9) : Color.purple.opacity(0.85))
+                            )
+                            .foregroundColor(.white)
+                            .position(midPoint)
+                        }
+                    }
+                    
+                    // Circular nodes layer
+                    GeometryReader { geo in
+                        let center = CGPoint(x: geo.size.width / 2, y: geo.size.height / 2)
+                        let R: CGFloat = 100
+                        
+                        // Center Node (selectedCharacter)
+                        NodeView(character: sourceCharacter, isCenter: true, isSpoiler: false)
+                            .position(center)
+                        
+                        // Surrounding Nodes
+                        let count = resolvedRelations.count
+                        ForEach(0..<count, id: \.self) { i in
+                            let relation = resolvedRelations[i]
+                            let angle = Double(i) * (2.0 * .pi / Double(count)) - (.pi / 2.0)
+                            let nodePoint = CGPoint(
+                                x: center.x + R * CGFloat(cos(angle)),
+                                y: center.y + R * CGFloat(sin(angle))
+                            )
+                            
+                            Button {
+                                if !relation.isSpoiler {
+                                    withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                                        selectedCharacter = relation.target
+                                    }
+                                    HapticEngine.light()
+                                }
+                            } label: {
+                                NodeView(character: relation.target, isCenter: false, isSpoiler: relation.isSpoiler)
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(relation.isSpoiler)
+                            .position(nodePoint)
+                        }
+                    }
+                }
+                .frame(height: 240)
+            }
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color.white.opacity(0.04))
+        )
+        .padding(.horizontal, 20)
+        .padding(.bottom, 10)
+    }
+}
+
+private struct NodeView: View {
+    let character: SDCharacterNode
+    let isCenter: Bool
+    let isSpoiler: Bool
+    
+    var body: some View {
+        VStack(spacing: 4) {
+            ZStack {
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: isCenter ? [.purple, .blue] : [.white.opacity(0.08), .white.opacity(0.02)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: isCenter ? 52 : 38, height: isCenter ? 52 : 38)
+                    .shadow(color: isCenter ? .purple.opacity(0.4) : .clear, radius: 6)
+                    .overlay(
+                        Circle()
+                            .stroke(isCenter ? Color.white.opacity(0.5) : Color.white.opacity(0.15), lineWidth: 1)
+                    )
+                
+                if isSpoiler {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 11))
+                        .foregroundColor(.white.opacity(0.3))
+                } else {
+                    Text(String(character.name.first ?? "C"))
+                        .font(.system(size: isCenter ? 18 : 13, weight: .bold))
+                        .foregroundColor(.white)
+                }
+            }
+            
+            Text(isSpoiler ? "Locked Relation" : character.name.components(separatedBy: " ").first ?? character.name)
+                .font(.system(size: 9, weight: isCenter ? .bold : .medium, design: .rounded))
+                .foregroundColor(isSpoiler ? .orange.opacity(0.85) : .white)
+                .lineLimit(1)
+                .frame(width: 80)
+        }
     }
 }

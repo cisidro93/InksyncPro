@@ -64,6 +64,13 @@ class EnsemblePanelDetector {
             }
         }
         
+        // Pure Text Check: if we have a lot of text lines but no detected comic panel containers,
+        // it is a text/index page. Returning empty list means the page stays intact.
+        if textAnchors.count > 15 && structuralPanels.isEmpty {
+            Logger.shared.log("AI Ensemble: Pure text page detected (\(textAnchors.count) text anchors, 0 structural panels). Skipping panel generation to preserve full-page text flow.", category: "AI")
+            return []
+        }
+        
         // 3. Deep Scan Fallback (Topological Contour Detection)
         if requiresDeepScan {
             Logger.shared.log("AI Ensemble: Vision coverage insufficient — triggering contour deep scan", category: "AI")

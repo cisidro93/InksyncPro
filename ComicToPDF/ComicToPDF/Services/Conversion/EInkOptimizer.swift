@@ -341,48 +341,14 @@ final class EInkOptimizer: @unchecked Sendable {
             }
         }
         
-        // 6. Ordered Dithering via GPU noise compositing & 16-level posterization
-        if dither {
-            if let noiseFilter = CIFilter(name: "CIRandomGenerator"),
-               let noiseImage = noiseFilter.outputImage?.cropped(to: currentCIImage.extent) {
-                let noiseControls = CIFilter(name: "CIColorControls")
-                noiseControls?.setValue(noiseImage, forKey: kCIInputImageKey)
-                noiseControls?.setValue(0.0, forKey: kCIInputSaturationKey)
-                noiseControls?.setValue(0.04, forKey: kCIInputContrastKey)
-                noiseControls?.setValue(0.0, forKey: kCIInputBrightnessKey)
-                
-                if let processedNoise = noiseControls?.outputImage {
-                    let noiseMatrix = CIFilter(name: "CIColorMatrix")
-                    noiseMatrix?.setValue(processedNoise, forKey: kCIInputImageKey)
-                    let scale: CGFloat = 0.06
-                    let bias = -scale / 2.0
-                    noiseMatrix?.setValue(CIVector(x: scale, y: 0, z: 0, w: 0), forKey: "inputRVector")
-                    noiseMatrix?.setValue(CIVector(x: 0, y: scale, z: 0, w: 0), forKey: "inputGVector")
-                    noiseMatrix?.setValue(CIVector(x: 0, y: 0, z: scale, w: 0), forKey: "inputBVector")
-                    noiseMatrix?.setValue(CIVector(x: bias, y: bias, z: bias, w: 0), forKey: "inputBiasVector")
-                    
-                    if let shiftedNoise = noiseMatrix?.outputImage {
-                        let adder = CIFilter(name: "CIAdditionCompositing")
-                        adder?.setValue(shiftedNoise, forKey: kCIInputImageKey)
-                        adder?.setValue(currentCIImage, forKey: kCIInputBackgroundImageKey)
-                        if let blended = adder?.outputImage {
-                            currentCIImage = blended
-                        }
-                    }
-                }
-            }
-            
-            if let posterizeFilter = CIFilter(name: "CIColorPosterize") {
-                posterizeFilter.setValue(currentCIImage, forKey: kCIInputImageKey)
-                posterizeFilter.setValue(16.0, forKey: "inputLevels")
-                if let posterizedOut = posterizeFilter.outputImage {
-                    currentCIImage = posterizedOut
-                }
-            }
+        guard var finalCGImage = context.createCGImage(currentCIImage, from: currentCIImage.extent) else {
+            return processedImage
         }
         
-        guard let finalCGImage = context.createCGImage(currentCIImage, from: currentCIImage.extent) else {
-            return processedImage
+        if dither {
+            if let dithered = applyFloydSteinbergDithering(to: finalCGImage) {
+                finalCGImage = dithered
+            }
         }
         
         return UIImage(cgImage: finalCGImage)
@@ -417,5 +383,71 @@ final class EInkOptimizer: @unchecked Sendable {
         guard error == kvImageNoError, let result = resultCGImage else { return nil }
         
         return UIImage(cgImage: result.takeRetainedValue())
+    }
+
+    /// Floyd-Steinberg error diffusion dithering for smooth 16-level E-Ink grayscale transitions.
+    private func applyFloydSteinbergDithering(to cgImage: CGImage) -> CGImage? {
+        let width = cgImage.width
+        let height = cgImage.height
+        
+        let colorSpace = CGColorSpaceCreateDeviceGray()
+        let bytesPerPixel = 1
+        let bytesPerRow = width * bytesPerPixel
+        
+        // Pass nil to data to let CGContext allocate and own the memory safely
+        guard let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: bytesPerRow,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.none.rawValue
+        ) else { return nil }
+        
+        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+        
+        guard let rawPointer = context.data else { return nil }
+        let rawBytes = rawPointer.assumingMemoryBound(to: UInt8.self)
+        
+        // Error buffer to store distributed errors
+        var errors = [Float](repeating: 0.0, count: width * height)
+        
+        for y in 0..<height {
+            let rowOffset = y * width
+            let nextRowOffset = (y + 1) * width
+            let hasNextRow = (y + 1) < height
+            
+            for x in 0..<width {
+                let idx = rowOffset + x
+                let oldVal = Float(rawBytes[idx]) + errors[idx]
+                
+                // Clamp error-corrected value to valid range
+                let clampedOldVal = max(0.0, min(255.0, oldVal))
+                
+                // Quantize to nearest of 16 gray levels (each level is spaced by 17: 0, 17, 34, ..., 255)
+                let newVal = round(clampedOldVal / 17.0) * 17.0
+                let quantizedVal = UInt8(max(0.0, min(255.0, newVal)))
+                
+                rawBytes[idx] = quantizedVal
+                let error = clampedOldVal - newVal
+                
+                // Distribute errors using standard Floyd-Steinberg weights
+                if x + 1 < width {
+                    errors[idx + 1] += error * 7.0 / 16.0
+                }
+                if hasNextRow {
+                    if x > 0 {
+                        errors[nextRowOffset + (x - 1)] += error * 3.0 / 16.0
+                    }
+                    errors[nextRowOffset + x] += error * 5.0 / 16.0
+                    if x + 1 < width {
+                        errors[nextRowOffset + (x + 1)] += error * 1.0 / 16.0
+                    }
+                }
+            }
+        }
+        
+        return context.makeImage()
     }
 }
