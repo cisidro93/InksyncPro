@@ -1038,9 +1038,7 @@ struct EBookWebReader: UIViewRepresentable {
         }
     }
 
-    /// Builds the full CSS + JS block as a pure string on the main actor.
-    /// No disk I/O — safe to call synchronously before spawning a background task.
-    private func buildReaderCSS(prefs: EBookPreferences, colorScheme: ColorScheme, initialPage: Int, size: CGSize) -> String {
+    private func computeCSS(prefs: EBookPreferences, size: CGSize) -> String {
         let isPaged = prefs.paginationMode == EBookPaginationMode.paged.rawValue
 
         let bgColor      = prefs.activeTheme.cssBackground
@@ -1062,8 +1060,9 @@ struct EBookWebReader: UIViewRepresentable {
             : "overflow-x: hidden !important; overflow-y: auto !important;"
         let widthCSS = isPaged ? "" : "width: 100vw !important; overflow-x: hidden !important;"
         
+        let isPad = UIDevice.current.userInterfaceIdiom == .pad
         let isLandscape = size.width > size.height
-        let defaultColumns = isLandscape ? 2 : 1
+        let defaultColumns = (isPad && isLandscape) ? 2 : 1
         let cols = prefs.columnCount == 0 ? defaultColumns : prefs.columnCount
         
         let gap = Int(margin * 2)
@@ -1080,9 +1079,6 @@ struct EBookWebReader: UIViewRepresentable {
         let paddingRight = margin
 
         return """
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-        <style id="__inksync_reader__">
         @font-face {
             font-family: 'Literata';
             src: local('Literata-Regular');
@@ -1213,9 +1209,9 @@ struct EBookWebReader: UIViewRepresentable {
         }
         body {
             color: \(textColor) !important;
-            font-family: \(fontFamily);
-            font-size: \(fontSize)px;
-            line-height: \(lineHeight);
+            font-family: \(fontFamily) !important;
+            font-size: \(fontSize)px !important;
+            line-height: \(lineHeight) !important;
             text-align: \(textAlign) !important;
             \(pagedCSS)
             margin: 0 !important;
@@ -1244,6 +1240,19 @@ struct EBookWebReader: UIViewRepresentable {
         a { color: \(linkColor) !important; }
         blockquote { border-left: 3px solid \(linkColor); margin-left: 0; padding-left: 16px; opacity: 0.85; }
         mark.inksync-highlight { background-color: #ffd700; color: inherit; border-radius: 2px; mix-blend-mode: multiply; -webkit-mix-blend-mode: multiply; padding: 0 1px; }
+        """
+    }
+
+    /// Builds the full CSS + JS block as a pure string on the main actor.
+    /// No disk I/O — safe to call synchronously before spawning a background task.
+    private func buildReaderCSS(prefs: EBookPreferences, colorScheme: ColorScheme, initialPage: Int, size: CGSize) -> String {
+        let cssContent = computeCSS(prefs: prefs, size: size)
+        
+        return """
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+        <style id="__inksync_live__">
+        \(cssContent)
         </style>
         <script>
         document.addEventListener('DOMContentLoaded', function() {
@@ -1257,6 +1266,20 @@ struct EBookWebReader: UIViewRepresentable {
         var _totalPages = 1;
         var _firstRun = true;
 
+        function postFraction() {
+            var sv = document.scrollingElement || document.documentElement;
+            var isHoriz = document.body.style.columnCount || window.getComputedStyle(document.body).columnCount !== 'auto';
+            var fraction = 0;
+            if (isHoriz) {
+                var maxScroll = sv.scrollWidth - window.innerWidth;
+                if (maxScroll > 0) fraction = sv.scrollLeft / maxScroll;
+            } else {
+                var maxScroll = sv.scrollHeight - window.innerHeight;
+                if (maxScroll > 0) fraction = sv.scrollTop / maxScroll;
+            }
+            window.webkit.messageHandlers.scrollFraction.postMessage(fraction);
+        }
+
         function updateMetrics() {
             _totalPages = Math.max(1, Math.ceil(document.documentElement.scrollWidth / window.innerWidth));
             if (_firstRun) {
@@ -1265,8 +1288,10 @@ struct EBookWebReader: UIViewRepresentable {
                     _currentPage = _totalPages - 1;
                 }
                 goToPage(_currentPage, false);
+            } else {
+                window.webkit.messageHandlers.metrics.postMessage({ current: _currentPage, total: _totalPages });
+                postFraction();
             }
-            window.webkit.messageHandlers.metrics.postMessage({ current: _currentPage, total: _totalPages });
         }
 
         function goToPage(page, smooth) {
@@ -1276,6 +1301,7 @@ struct EBookWebReader: UIViewRepresentable {
             if (!_firstRun) {
                 window.webkit.messageHandlers.metrics.postMessage({ current: _currentPage, total: _totalPages });
             }
+            postFraction();
         }
 
         window.onload = function() { setTimeout(updateMetrics, 100); };
@@ -1320,6 +1346,12 @@ struct EBookWebReader: UIViewRepresentable {
                 else window.webkit.messageHandlers.nav.postMessage('prev');
                 e.preventDefault();
             }
+        });
+
+        var _scrollTimeout;
+        window.addEventListener('scroll', function() {
+            clearTimeout(_scrollTimeout);
+            _scrollTimeout = setTimeout(postFraction, 100);
         });
 
         // ── Highlight Engine ─────────────────────────────────────────────────
@@ -1440,188 +1472,38 @@ struct EBookWebReader: UIViewRepresentable {
 
     /// Injects a live CSS update into the existing WebView DOM — no reload required.
     private func injectLiveCSS(into webView: WKWebView) {
-        let isPaged = prefs.paginationMode == EBookPaginationMode.paged.rawValue
-        
-        let bg            = prefs.activeTheme.cssBackground
-        let fg            = prefs.activeTheme.cssText
-        let link          = prefs.activeTheme.cssLink
-        let ff            = prefs.fontFamily
-        let fs            = Int(prefs.fontSize)
-        let lh            = String(format: "%.2f", prefs.lineHeight)
-        let ls            = String(format: "%.4fem", prefs.letterSpacing)
-        let ws            = String(format: "%.4fem", prefs.wordSpacing)
-        let hyph          = prefs.hyphenation ? "auto" : "manual"
-        let align         = prefs.textAlign
-        let margin        = prefs.textMargin
-        
-        let size = webView.bounds.size
-        let isLandscape = size.width > size.height
-        let defaultColumns = isLandscape ? 2 : 1
-        let cols = prefs.columnCount == 0 ? defaultColumns : prefs.columnCount
-        
-        let gap = Int(margin * 2)
-        
-        let pagedCSS = isPaged ? """
-            column-count: \(cols) !important;
-            column-width: auto !important;
-            column-gap: \(gap)px !important;
-            column-fill: auto !important;
-            column-rule: 1px solid rgba(128, 128, 128, 0.15) !important;
-        """ : ""
+        let sv = webView.scrollView
+        let isHoriz = prefs.paginationMode == EBookPaginationMode.paged.rawValue
+        let currentFraction: Double
+        if isHoriz {
+            let maxScroll = sv.contentSize.width - sv.bounds.width
+            currentFraction = maxScroll > 0 ? Double(sv.contentOffset.x / maxScroll) : 0.0
+        } else {
+            let maxScroll = sv.contentSize.height - sv.bounds.height
+            currentFraction = maxScroll > 0 ? Double(sv.contentOffset.y / maxScroll) : 0.0
+        }
+        let clampedFraction = max(0.0, min(1.0, currentFraction))
 
-        let paddingLeft = margin
-        let paddingRight = margin
-
-        let css = """
-        @font-face {
-            font-family: 'Literata';
-            src: local('Literata-Regular');
-            font-weight: normal;
-            font-style: normal;
-        }
-        @font-face {
-            font-family: 'Literata';
-            src: local('Literata-Bold');
-            font-weight: bold;
-            font-style: normal;
-        }
-        @font-face {
-            font-family: 'Literata';
-            src: local('Literata-Italic');
-            font-weight: normal;
-            font-style: italic;
-        }
-        @font-face {
-            font-family: 'Literata';
-            src: local('Literata-BoldItalic');
-            font-weight: bold;
-            font-style: italic;
-        }
-        @font-face {
-            font-family: 'Atkinson Hyperlegible';
-            src: local('AtkinsonHyperlegible-Regular');
-            font-weight: normal;
-            font-style: normal;
-        }
-        @font-face {
-            font-family: 'Atkinson Hyperlegible';
-            src: local('AtkinsonHyperlegible-Bold');
-            font-weight: bold;
-            font-style: normal;
-        }
-        @font-face {
-            font-family: 'Atkinson Hyperlegible';
-            src: local('AtkinsonHyperlegible-Italic');
-            font-weight: normal;
-            font-style: italic;
-        }
-        @font-face {
-            font-family: 'Atkinson Hyperlegible';
-            src: local('AtkinsonHyperlegible-BoldItalic');
-            font-weight: bold;
-            font-style: italic;
-        }
-        @font-face {
-            font-family: 'OpenDyslexic';
-            src: local('OpenDyslexic-Regular');
-            font-weight: normal;
-            font-style: normal;
-        }
-        @font-face {
-            font-family: 'OpenDyslexic';
-            src: local('OpenDyslexic-Bold');
-            font-weight: bold;
-            font-style: normal;
-        }
-        @font-face {
-            font-family: 'OpenDyslexic';
-            src: local('OpenDyslexic-Italic');
-            font-weight: normal;
-            font-style: italic;
-        }
-        @font-face {
-            font-family: 'OpenDyslexic';
-            src: local('OpenDyslexic-BoldItalic');
-            font-weight: bold;
-            font-style: italic;
-        }
-        @font-face {
-            font-family: 'Merriweather';
-            src: local('Merriweather-Regular');
-            font-weight: normal;
-            font-style: normal;
-        }
-        @font-face {
-            font-family: 'Merriweather';
-            src: local('Merriweather-Bold');
-            font-weight: bold;
-            font-style: normal;
-        }
-        @font-face {
-            font-family: 'Merriweather';
-            src: local('Merriweather-Italic');
-            font-weight: normal;
-            font-style: italic;
-        }
-        @font-face {
-            font-family: 'Merriweather';
-            src: local('Merriweather-BoldItalic');
-            font-weight: bold;
-            font-style: italic;
-        }
-        @font-face {
-            font-family: 'Source Serif 4';
-            src: local('SourceSerif4-Regular');
-            font-weight: normal;
-            font-style: normal;
-        }
-        @font-face {
-            font-family: 'Source Serif 4';
-            src: local('SourceSerif4-Regular');
-            font-weight: bold;
-            font-style: normal;
-        }
-        @font-face {
-            font-family: 'Source Serif 4';
-            src: local('SourceSerif4-Italic');
-            font-weight: normal;
-            font-style: italic;
-        }
-        @font-face {
-            font-family: 'Source Serif 4';
-            src: local('SourceSerif4-Italic');
-            font-weight: bold;
-            font-style: italic;
-        }
-        body {
-            font-family: \(ff) !important;
-            font-size: \(fs)px !important;
-            line-height: \(lh) !important;
-            background-color: \(bg) !important;
-            color: \(fg) !important;
-            letter-spacing: \(ls) !important;
-            word-spacing: \(ws) !important;
-            text-align: \(align) !important;
-            -webkit-hyphens: \(hyph) !important;
-            hyphens: \(hyph) !important;
-            \(pagedCSS)
-            padding-left: \(paddingLeft)px !important;
-            padding-right: \(paddingRight)px !important;
-        }
-        div, section, article {
-            column-count: auto !important;
-            column-width: auto !important;
-        }
-        body, p, div, span, li, td, th, h1, h2, h3, h4, h5, h6 { color: \(fg) !important; }
-        a { color: \(link) !important; }
-        html { background-color: \(bg) !important; column-width: auto !important; }
-        """
+        let css = computeCSS(prefs: prefs, size: webView.bounds.size)
 
         let js = """
         (function() {
             var el = document.getElementById('__inksync_live__');
             if (!el) { el = document.createElement('style'); el.id = '__inksync_live__'; document.head.appendChild(el); }
-            el.textContent = \("`\(css.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "`", with: "\\`"))`");
+            el.textContent = `\(css.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "`", with: "\\`"))`;
+            
+            // Restore scroll position
+            setTimeout(function() {
+                var sv = document.scrollingElement || document.documentElement;
+                var isHoriz = document.body.style.columnCount || window.getComputedStyle(document.body).columnCount !== 'auto';
+                if (isHoriz) {
+                    var maxScroll = sv.scrollWidth - window.innerWidth;
+                    window.scrollTo({ left: maxScroll * \(clampedFraction), behavior: 'instant' });
+                } else {
+                    var maxScroll = sv.scrollHeight - window.innerHeight;
+                    window.scrollTo({ top: maxScroll * \(clampedFraction), behavior: 'instant' });
+                }
+            }, 100);
         })();
         """
         webView.evaluateJavaScript(js)
@@ -1726,12 +1608,22 @@ struct EBookWebReader: UIViewRepresentable {
                 initialPinchFontSize = parent.prefs.fontSize
             } else if gesture.state == .changed {
                 let newSize = initialPinchFontSize * Double(gesture.scale)
-                parent.prefs.fontSize = max(12.0, min(48.0, newSize))
+                let roundedSize = round(max(12.0, min(48.0, newSize)))
+                if parent.prefs.fontSize != roundedSize {
+                    parent.prefs.fontSize = roundedSize
+                    if let bookID = parent.pdfID?.uuidString, parent.prefs.isTypographyLockedForBook(bookID) {
+                        parent.prefs.lockTypographyForBook(bookID)
+                    }
+                }
             }
         }
 
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
             return true
+        }
+
+        func viewForZooming(in scrollView: UIScrollView) -> UIView? {
+            return nil
         }
 
         /// Recover from Jetsam Out-Of-Memory (OOM) WebKit process crashes.
