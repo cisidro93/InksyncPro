@@ -628,7 +628,7 @@ struct EPUBWebView: UIViewRepresentable {
 
     func updateUIView(_ webView: WKWebView, context: Context) {
         let contentHash = htmlContent.hashValue
-        let prefsState = "\(prefs.themeRaw)_\(prefs.fontSize)_\(prefs.fontFamily)_\(prefs.lineHeight)_\(prefs.letterSpacing)_\(prefs.wordSpacing)_\(prefs.textAlign)_\(prefs.paginationMode)_\(prefs.columnCount)_\(prefs.textMargin)_\(prefs.hyphenation)_\(prefs.autoScroll)_\(prefs.autoScrollSpeed)_\(prefs.tapZoneStyleRaw)"
+        let prefsState = "\(prefs.themeRaw)_\(prefs.fontSize)_\(prefs.fontFamily)_\(prefs.lineHeight)_\(prefs.letterSpacing)_\(prefs.wordSpacing)_\(prefs.textAlign)_\(prefs.paginationMode)_\(prefs.columnCount)_\(prefs.textMargin)_\(prefs.hyphenation)_\(prefs.autoScroll)_\(prefs.autoScrollSpeed)_\(prefs.tapZoneStyleRaw)_\(webView.bounds.width)_\(webView.bounds.height)"
         let newHash = contentHash ^ prefsState.hashValue
         
         // Dynamically update tap zone boundaries in the WebView DOM
@@ -646,7 +646,7 @@ struct EPUBWebView: UIViewRepresentable {
         if contentChanged {
             // Swift-side HTML preprocessing: pre-inject CSS into head directly
             var html = htmlContent
-            let css = buildReaderCSS(prefs: prefs)
+            let css = buildReaderCSS(prefs: prefs, size: webView.bounds.size)
             if let range = html.range(of: "</head>", options: .caseInsensitive) {
                 html = html.replacingCharacters(in: range, with: css + "</head>")
             } else {
@@ -675,7 +675,7 @@ struct EPUBWebView: UIViewRepresentable {
     }
 
     /// Builds the full CSS + JS block as a pure string.
-    private func buildReaderCSS(prefs: EBookPreferences) -> String {
+    private func buildReaderCSS(prefs: EBookPreferences, size: CGSize) -> String {
         let isPaged = prefs.paginationMode == EBookPaginationMode.paged.rawValue
 
         let bgColor       = prefs.activeTheme.cssBackground
@@ -697,8 +697,8 @@ struct EPUBWebView: UIViewRepresentable {
             : "overflow-x: hidden !important; overflow-y: auto !important;"
         let widthCSS = isPaged ? "" : "width: 100vw !important; overflow-x: hidden !important;"
         
-        let deviceIsPad = UIDevice.current.userInterfaceIdiom == .pad
-        let defaultColumns = deviceIsPad ? 2 : 1
+        let isLandscape = size.width > size.height
+        let defaultColumns = isLandscape ? 2 : 1
         let cols = prefs.columnCount == 0 ? defaultColumns : prefs.columnCount
         
         let gap = Int(margin * 2)
@@ -899,8 +899,9 @@ struct EPUBWebView: UIViewRepresentable {
         let align         = prefs.textAlign
         let margin        = prefs.textMargin
         
-        let deviceIsPad = UIDevice.current.userInterfaceIdiom == .pad
-        let defaultColumns = deviceIsPad ? 2 : 1
+        let size = webView.bounds.size
+        let isLandscape = size.width > size.height
+        let defaultColumns = isLandscape ? 2 : 1
         let cols = prefs.columnCount == 0 ? defaultColumns : prefs.columnCount
         
         let gap = Int(margin * 2)

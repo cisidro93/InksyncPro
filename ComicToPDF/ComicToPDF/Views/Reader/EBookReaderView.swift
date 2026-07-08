@@ -953,7 +953,7 @@ struct EBookWebReader: UIViewRepresentable {
         }
         guard FileManager.default.fileExists(atPath: contentURL.path) else { return }
 
-        let currentStateHash = "\(prefs.themeRaw)_\(prefs.customThemeBg)_\(prefs.customThemeText)_\(prefs.fontSize)_\(prefs.fontFamily)_\(prefs.lineHeight)_\(prefs.letterSpacing)_\(prefs.wordSpacing)_\(prefs.hyphenation)_\(prefs.textMargin)_\(prefs.paragraphSpacing)_\(prefs.paragraphIndent)_\(prefs.paginationMode)_\(prefs.textAlign)_\(prefs.autoScroll)_\(prefs.autoScrollSpeed)_\(prefs.tapZoneStyleRaw)"
+        let currentStateHash = "\(prefs.themeRaw)_\(prefs.customThemeBg)_\(prefs.customThemeText)_\(prefs.fontSize)_\(prefs.fontFamily)_\(prefs.lineHeight)_\(prefs.letterSpacing)_\(prefs.wordSpacing)_\(prefs.hyphenation)_\(prefs.textMargin)_\(prefs.paragraphSpacing)_\(prefs.paragraphIndent)_\(prefs.paginationMode)_\(prefs.textAlign)_\(prefs.autoScroll)_\(prefs.autoScrollSpeed)_\(prefs.tapZoneStyleRaw)_\(wv.bounds.width)_\(wv.bounds.height)"
         
         let contentChanged = context.coordinator.lastLoadedHref != spineItem.href
         let themeChanged = context.coordinator.lastTheme != currentStateHash
@@ -969,7 +969,7 @@ struct EBookWebReader: UIViewRepresentable {
             let capturedPage = initialPage
 
             // CSS is pure string computation — compute on main before the task
-            let cssToInject  = buildReaderCSS(prefs: prefs, colorScheme: colorScheme, initialPage: capturedPage)
+            let cssToInject  = buildReaderCSS(prefs: prefs, colorScheme: colorScheme, initialPage: capturedPage, size: wv.bounds.size)
 
             // Cancel any in-flight load from a previous chapter swipe
             context.coordinator.loadTask?.cancel()
@@ -1040,34 +1040,30 @@ struct EBookWebReader: UIViewRepresentable {
 
     /// Builds the full CSS + JS block as a pure string on the main actor.
     /// No disk I/O — safe to call synchronously before spawning a background task.
-    private func buildReaderCSS(prefs: EBookPreferences, colorScheme: ColorScheme, initialPage: Int) -> String {
+    private func buildReaderCSS(prefs: EBookPreferences, colorScheme: ColorScheme, initialPage: Int, size: CGSize) -> String {
         let isPaged = prefs.paginationMode == EBookPaginationMode.paged.rawValue
 
-        // Extract all preference values into local constants so they can be used
-        // inside the multi-line string literal with normal \(...) interpolation.
-        // The previous code used \\(...) which writes literal \(xxx) into the HTML
-        // instead of the actual value — this caused font/size/spacing to have no effect.
-        let bgColor       = prefs.activeTheme.cssBackground
-        let textColor     = prefs.activeTheme.cssText
-        let linkColor     = prefs.activeTheme.cssLink
-        let fontFamily    = prefs.fontFamily
-        let fontSize      = Int(prefs.fontSize)
-        let lineHeight    = String(format: "%.2f", prefs.lineHeight)
+        let bgColor      = prefs.theme == .custom ? prefs.customThemeBg : prefs.theme.cssBackground
+        let textColor    = prefs.theme == .custom ? prefs.customThemeText : prefs.theme.cssText
+        let linkColor    = prefs.theme.cssLink
+        let fontFamily   = prefs.fontFamily
+        let fontSize     = Int(prefs.fontSize)
+        let lineHeight   = String(format: "%.2f", prefs.lineHeight)
         let letterSpacing = String(format: "%.4fem", prefs.letterSpacing)
         let wordSpacing   = String(format: "%.4fem", prefs.wordSpacing)
-        let hyphenCSS     = prefs.hyphenation ? "auto" : "manual"
         let textAlign     = prefs.textAlign
         let margin        = prefs.textMargin
         let paraSpace     = prefs.paragraphSpacing
         let paraIndent    = prefs.paragraphIndent
+        let hyphenCSS     = prefs.hyphenation ? "auto" : "manual"
 
         let overflowCSS = isPaged
             ? "overflow: hidden !important;"
             : "overflow-x: hidden !important; overflow-y: auto !important;"
         let widthCSS = isPaged ? "" : "width: 100vw !important; overflow-x: hidden !important;"
         
-        let deviceIsPad = UIDevice.current.userInterfaceIdiom == .pad
-        let defaultColumns = deviceIsPad ? 2 : 1
+        let isLandscape = size.width > size.height
+        let defaultColumns = isLandscape ? 2 : 1
         let cols = prefs.columnCount == 0 ? defaultColumns : prefs.columnCount
         
         let gap = Int(margin * 2)
@@ -1458,8 +1454,9 @@ struct EBookWebReader: UIViewRepresentable {
         let align         = prefs.textAlign
         let margin        = prefs.textMargin
         
-        let deviceIsPad = UIDevice.current.userInterfaceIdiom == .pad
-        let defaultColumns = deviceIsPad ? 2 : 1
+        let size = webView.bounds.size
+        let isLandscape = size.width > size.height
+        let defaultColumns = isLandscape ? 2 : 1
         let cols = prefs.columnCount == 0 ? defaultColumns : prefs.columnCount
         
         let gap = Int(margin * 2)
