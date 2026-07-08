@@ -1098,7 +1098,7 @@ struct BookReaderEngine: View {
                         scrollToLastPageOnLoad = true
                         vm.loadChapter(index: max(0, vm.currentChapterIndex - 1))
                     })
-                    .edgesIgnoringSafeArea(.horizontal)
+                    .ignoresSafeArea()
                     
                     // Edge Brightness Gesture Zones
                     HStack {

@@ -194,6 +194,7 @@ struct EBookReaderView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .ignoresSafeArea()
             }
             
             // ── HUD Overlays (tap-to-show UI) ─────────────────────────────

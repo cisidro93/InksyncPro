@@ -68,6 +68,7 @@ struct DocumentReaderEngine: View {
                 }
             }
             .readingFilter(prefs.readingFilter)
+            .ignoresSafeArea()
             
             // Edge Brightness Gesture Zones
             HStack {
