@@ -150,6 +150,7 @@ struct EBookReaderView: View {
                                 // Gap B: Expose the live WKWebView so window.find() can be injected
                                 webViewRef: $webViewReference
                             )
+                            .padding(.horizontal, prefs.paginationMode == EBookPaginationMode.paged.rawValue ? prefs.textMargin : 0)
                             // Directional page-turn: slide left for forward, right for back.
                             // Using .id(currentIndex) forces SwiftUI to create a new view identity
                             // on every chapter change, guaranteeing the transition fires.
@@ -1076,8 +1077,8 @@ struct EBookWebReader: UIViewRepresentable {
             column-rule: 1px solid rgba(128, 128, 128, 0.15) !important;
         """ : ""
 
-        let paddingLeft = margin
-        let paddingRight = margin
+        let paddingLeft = isPaged ? 0 : margin
+        let paddingRight = isPaged ? 0 : margin
 
         return """
         @font-face {

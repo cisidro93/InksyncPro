@@ -771,8 +771,8 @@ struct EPUBWebView: UIViewRepresentable {
             column-rule: 1px solid rgba(128, 128, 128, 0.15) !important;
         """ : ""
 
-        let paddingLeft = margin
-        let paddingRight = margin
+        let paddingLeft = isPaged ? 0 : margin
+        let paddingRight = isPaged ? 0 : margin
 
         return """
         @font-face {
@@ -1098,6 +1098,7 @@ struct BookReaderEngine: View {
                         scrollToLastPageOnLoad = true
                         vm.loadChapter(index: max(0, vm.currentChapterIndex - 1))
                     })
+                    .padding(.horizontal, prefs.paginationMode == EBookPaginationMode.paged.rawValue ? prefs.textMargin : 0)
                     .ignoresSafeArea()
                     
                     // Edge Brightness Gesture Zones
