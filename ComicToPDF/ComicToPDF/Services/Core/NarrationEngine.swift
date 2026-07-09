@@ -120,6 +120,14 @@ final class PageOCREngine: ObservableObject {
 
     private func prefetchOCR(around pageIndex: Int) {
         let window = max(0, pageIndex - 1)...min(totalPages - 1, pageIndex + 2)
+        
+        // Cancel and remove out-of-window prefetch tasks to save CPU cycles
+        let outOfWindowKeys = ocrTasks.keys.filter { !window.contains($0) }
+        for i in outOfWindowKeys {
+            ocrTasks[i]?.cancel()
+            ocrTasks.removeValue(forKey: i)
+        }
+        
         for i in window {
             guard ocrCache[i] == nil, ocrTasks[i] == nil else { continue }
             let task = Task.detached(priority: .background) { [weak self] in
