@@ -316,6 +316,29 @@ actor LibraryDatabaseService {
         }
     }
 
+    func clearAllData() async {
+        guard let db = self.db else { return }
+        do {
+            try db.write { handle in
+                _ = try? handle.execute("DELETE FROM library_files;")
+                _ = try? handle.execute("DELETE FROM reading_progress;")
+                _ = try? handle.execute("DELETE FROM annotations;")
+                _ = try? handle.execute("DELETE FROM zettel_notes;")
+                _ = try? handle.execute("DELETE FROM virtual_omnibuses;")
+                _ = try? handle.execute("DELETE FROM library_fts;")
+            }
+            Logger.shared.log("LibraryDatabaseService: Database cleared successfully.", category: "Import")
+        } catch {
+            Logger.shared.log("LibraryDatabaseService: Clear all data failed — \(error.localizedDescription)", category: "Import", type: .error)
+        }
+    }
+
+    func shutdown() {
+        debounceTask?.cancel()
+        coalesceTask?.cancel()
+        db = nil
+    }
+
     // Used by LibraryQueryService (same module, different file — needs internal access)
     func databaseHandle() -> LibraryDB? {
         return self.db

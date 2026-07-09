@@ -210,7 +210,9 @@ struct SettingsView: View {
         .alert("Delete All Data & Reset?", isPresented: $showingDeleteAllAlert) {
             Button("Cancel", role: .cancel) { }
             Button("Delete Everything", role: .destructive) {
-                performFullAppReset()
+                Task {
+                    await performFullAppReset()
+                }
             }
         } message: {
             Text("This will permanently delete all local library files, databases, reading progress, covers, annotations, and settings. The app will close to complete the reset. Please reopen it manually.")
@@ -1211,10 +1213,32 @@ struct SettingsView: View {
         }
     }
     
-    private func performFullAppReset() {
+    private func performFullAppReset() async {
+        // 1. Clear SwiftData records programmatically (prevents locked ghost databases from retaining records on restart)
+        let container = InksyncProApp.sharedModelContainer
+        let context = container.mainContext
+        
+        try? context.delete(model: SDConvertedPDF.self)
+        try? context.delete(model: SDPDFCollection.self)
+        try? context.delete(model: SDRegisteredDevice.self)
+        try? context.delete(model: SDAnnotation.self)
+        try? context.delete(model: SDPageModel.self)
+        try? context.delete(model: SDSeriesMemory.self)
+        try? context.delete(model: SDManuscriptProject.self)
+        try? context.delete(model: SDManuscriptDocument.self)
+        try? context.delete(model: SDOPDSServer.self)
+        try? context.delete(model: SDCharacterNode.self)
+        try? context.delete(model: SDRelationship.self)
+        try? context.delete(model: SDCharacterAppearance.self)
+        try? context.save()
+        
+        // 2. Clear GRDB SQLite records programmatically and shutdown active connection so the file handles are released
+        await LibraryDatabaseService.shared.clearAllData()
+        await LibraryDatabaseService.shared.shutdown()
+
         let fm = FileManager.default
         
-        // 1. Clear Documents directory
+        // 3. Clear Documents directory
         if let docDir = fm.urls(for: .documentDirectory, in: .userDomainMask).first {
             if let items = try? fm.contentsOfDirectory(at: docDir, includingPropertiesForKeys: nil) {
                 for item in items {
@@ -1223,7 +1247,7 @@ struct SettingsView: View {
             }
         }
         
-        // 2. Clear Application Support directory
+        // 4. Clear Application Support directory
         if let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
             if let items = try? fm.contentsOfDirectory(at: appSupport, includingPropertiesForKeys: nil) {
                 for item in items {
@@ -1232,7 +1256,7 @@ struct SettingsView: View {
             }
         }
         
-        // 3. Clear Caches directory
+        // 5. Clear Caches directory
         if let cacheDir = fm.urls(for: .cachesDirectory, in: .userDomainMask).first {
             if let items = try? fm.contentsOfDirectory(at: cacheDir, includingPropertiesForKeys: nil) {
                 for item in items {
@@ -1241,7 +1265,7 @@ struct SettingsView: View {
             }
         }
         
-        // 4. Clear Temporary directory
+        // 6. Clear Temporary directory
         let tempDir = fm.temporaryDirectory
         if let items = try? fm.contentsOfDirectory(at: tempDir, includingPropertiesForKeys: nil) {
             for item in items {
@@ -1249,13 +1273,13 @@ struct SettingsView: View {
             }
         }
         
-        // 5. Reset UserDefaults
+        // 7. Reset UserDefaults
         if let bundleID = Bundle.main.bundleIdentifier {
             UserDefaults.standard.removePersistentDomain(forName: bundleID)
             UserDefaults.standard.synchronize()
         }
         
-        // 6. Hard exit to complete reset
+        // 8. Hard exit to complete reset
         exit(0)
     }
 }
