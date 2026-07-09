@@ -21,15 +21,22 @@ final class InstallGuardService: @unchecked Sendable {
         }
         excludeDirectoryFromBackup(url: supportDir)
 
-        let shouldNuke = !sentinelExists
+        var shouldNuke = !sentinelExists
+        
+        if sentinelExists {
+            if let savedPath = try? String(contentsOf: sentinelURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines),
+               savedPath != supportDir.path {
+                // Sandbox container UUID changed (detected sideload update, restore, or reinstall). Nuke ghost records!
+                shouldNuke = true
+            }
+        }
         
         if shouldNuke {
             performNuke(supportDir: supportDir)
         }
         
-        // Always write (or re-write) the sentinel after every launch so it is always present
-        // for the lifetime of the install. The file content is irrelevant; existence is the signal.
-        writeSentinel(at: sentinelURL)
+        // Always write (or re-write) the sentinel containing the current container path
+        writeSentinel(at: sentinelURL, supportDir: supportDir)
         
         // Auto-complete onboarding flags for clean runs
         userDefaults.set(true, forKey: "hasCompletedOnboarding")
@@ -70,8 +77,8 @@ final class InstallGuardService: @unchecked Sendable {
         Logger.shared.log("InksyncProApp: Fresh install nuke complete. Ghost data eradicated.", category: "Migration", type: .warning)
     }
     
-    private func writeSentinel(at url: URL) {
-        let timestamp = ISO8601DateFormatter().string(from: Date())
+    private func writeSentinel(at url: URL, supportDir: URL) {
+        let content = supportDir.path
         do {
             // Ensure the parent directory exists — on fresh Signulous-signed installs
             // iOS does NOT pre-create applicationSupportDirectory, so the write fails
@@ -81,7 +88,7 @@ final class InstallGuardService: @unchecked Sendable {
             if !fileManager.fileExists(atPath: parentDir.path) {
                 try fileManager.createDirectory(at: parentDir, withIntermediateDirectories: true)
             }
-            try timestamp.write(to: url, atomically: true, encoding: .utf8)
+            try content.write(to: url, atomically: true, encoding: .utf8)
             var mutableSentinelURL = url
             var resourceValues = URLResourceValues()
             resourceValues.isExcludedFromBackup = true
