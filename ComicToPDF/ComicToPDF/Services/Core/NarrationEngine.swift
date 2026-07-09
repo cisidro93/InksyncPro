@@ -79,7 +79,11 @@ final class PageOCREngine: ObservableObject {
         let (image, isManga) = await MainActor.run(body: { (self.imageProvider?(pageIndex), self.isMangaMode) })
         guard let image = image else { return [] }
 
+        guard !Task.isCancelled else { return [] }
+
         let blocks = await PageOCRService.shared.performOCR(on: image)
+
+        guard !Task.isCancelled else { return [] }
 
         // Sort observations into reading order
         // Standard: top-to-bottom, then left-to-right within a band

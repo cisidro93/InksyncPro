@@ -31,6 +31,9 @@ struct InksyncProApp: App {
     
     // ✅ Global Thread-Safe Model Container
     nonisolated static let sharedModelContainer: ModelContainer = {
+        // Ensure nuke guard runs BEFORE the container is initialized and locks SQLite files
+        InstallGuardService.shared.executeGuard()
+        
         let schema = Schema([
             SDConvertedPDF.self,
             SDPDFCollection.self,

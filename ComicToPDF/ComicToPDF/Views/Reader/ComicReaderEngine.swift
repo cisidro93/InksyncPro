@@ -1044,6 +1044,7 @@ struct ComicReaderEngine: View {
     @State private var selectedTextBlock: TextBlock? = nil
     @State private var currentDialogueBlocks: [TextBlock] = []
     @State private var isDialogueOCRing = false
+    @State private var dialogueOCRTask: Task<Void, Never>? = nil
     /// Phase 4A: Auto-hide chrome — cancellable idle timer.
     @State private var chromeIdleTask: Task<Void, Never>? = nil
     
@@ -1342,7 +1343,11 @@ struct ComicReaderEngine: View {
             extractAmbientColor(for: newIndex)
             if isDialogueLensEnabled {
                 selectedTextBlock = nil
-                Task {
+                dialogueOCRTask?.cancel()
+                dialogueOCRTask = Task {
+                    // Debounce by 250ms to allow fast swiping without triggering heavy OCR tasks
+                    try? await Task.sleep(nanoseconds: 250_000_000)
+                    guard !Task.isCancelled else { return }
                     await prewarmOCR(for: newIndex)
                 }
             }
@@ -1740,8 +1745,13 @@ struct ComicReaderEngine: View {
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                     isDialogueLensEnabled.toggle()
                     if isDialogueLensEnabled {
-                        Task { await prewarmOCR(for: currentIndex) }
+                        dialogueOCRTask?.cancel()
+                        dialogueOCRTask = Task {
+                            await prewarmOCR(for: currentIndex)
+                        }
                     } else {
+                        dialogueOCRTask?.cancel()
+                        dialogueOCRTask = nil
                         selectedTextBlock = nil
                     }
                 }

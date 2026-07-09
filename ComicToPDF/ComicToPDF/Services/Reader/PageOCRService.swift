@@ -69,6 +69,7 @@ final class PageOCRService: Sendable {
     // Perform layout-level OCR, returning text blocks with their bounding boxes
     func performOCR(on image: UIImage) async -> [TextBlock] {
         guard let cgImage = image.cgImage else { return [] }
+        guard !Task.isCancelled else { return [] }
         
         return await withCheckedContinuation { continuation in
             let request = VNRecognizeTextRequest { request, error in

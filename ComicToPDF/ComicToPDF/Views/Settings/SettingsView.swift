@@ -1279,6 +1279,12 @@ struct SettingsView: View {
             UserDefaults.standard.synchronize()
         }
         
+        // 7.5. Explicitly delete the sentinel file to trigger nuke on next startup
+        if let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+            let sentinelURL = appSupport.appendingPathComponent(".inksync_install_sentinel_v1", isDirectory: false)
+            try? fm.removeItem(at: sentinelURL)
+        }
+        
         // 8. Hard exit to complete reset
         exit(0)
     }
