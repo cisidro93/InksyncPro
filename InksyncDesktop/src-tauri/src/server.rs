@@ -116,11 +116,40 @@ async fn list_books(State(state): State<Arc<ServerState>>) -> Json<Vec<BookInfo>
 
 async fn upload_file(
     AxumPath(filename): AxumPath<String>,
+    headers: axum::http::HeaderMap,
     State(state): State<Arc<ServerState>>,
     body: axum::body::Bytes,
 ) -> impl IntoResponse {
     let lib_dir = state.library_dir.lock().await.clone();
-    let file_path = lib_dir.join(&filename);
+    
+    // Extract real filename or relative path from headers if available
+    let explicit_name = headers
+        .get("x-file-name")
+        .or_else(|| headers.get("X-File-Name"))
+        .and_then(|val| val.to_str().ok())
+        .map(|s| s.to_string());
+
+    let relative_path = headers
+        .get("x-relative-path")
+        .or_else(|| headers.get("X-Relative-Path"))
+        .and_then(|val| val.to_str().ok())
+        .map(|s| s.to_string());
+
+    let final_filename = relative_path.unwrap_or_else(|| {
+        explicit_name.unwrap_or(filename)
+    });
+    
+    // Prevent directory traversal attacks
+    let safe_filename = final_filename.replace("..", "");
+    let file_path = lib_dir.join(&safe_filename);
+    
+    // Create any parent directories if writing a nested file structure
+    if let Some(parent) = file_path.parent() {
+        if let Err(e) = tokio::fs::create_dir_all(parent).await {
+            eprintln!("Web Server Error: Failed to create directories: {}", e);
+            return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to create directories: {}", e)).into_response();
+        }
+    }
     
     match tokio::fs::write(&file_path, body).await {
         Ok(_) => {
