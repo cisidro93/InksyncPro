@@ -69,6 +69,9 @@ actor LibraryScanner {
                 let filename = fileURL.lastPathComponent
                 let relPath = relativePath(for: fileURL)
                 guard !pathSet.contains(relPath) else { continue }
+                
+                // Skip files currently being uploaded via WiFi
+                guard !ActiveUploadRegistry.shared.isUploading(fileURL) else { continue }
 
                 let fileSize = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
 
@@ -167,7 +170,9 @@ actor LibraryScanner {
             // Materialise the work list as a plain value-type array before crossing into
             // Task.detached isolation. The original code captured a mutable iterator and an
             // Int counter by reference across actor boundaries — a data race in strict concurrency.
-            let workItems: [(id: UUID, url: URL)] = pdfsToProcess.map { ($0.id, $0.url) }
+            let workItems: [(id: UUID, url: URL)] = pdfsToProcess
+                .filter { !ActiveUploadRegistry.shared.isUploading($0.url) }
+                .map { ($0.id, $0.url) }
             let perfClass = ProcessInfo.processInfo.performanceClass
             let maxConcurrency = perfClass == .low ? 2 : 4
 

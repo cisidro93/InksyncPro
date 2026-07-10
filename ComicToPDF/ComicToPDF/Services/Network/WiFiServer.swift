@@ -870,10 +870,10 @@ final class WiFiServer: ObservableObject, Sendable {
 
         context.destinationURL = destURL
 
-        // Duplicate file prevention
+        // Duplicate file prevention: delete existing file to allow overwrite/retry
         if FileManager.default.fileExists(atPath: destURL.path) {
-            Logger.shared.log("WiFi Transfer - Rejected duplicate upload: \(destURL.lastPathComponent)", category: "Network", type: .warning)
-            return false
+            Logger.shared.log("WiFi Transfer - File already exists. Removing existing file to overwrite/retry: \(destURL.lastPathComponent)", category: "Network")
+            try? FileManager.default.removeItem(at: destURL)
         }
 
         FileManager.default.createFile(atPath: destURL.path, contents: nil, attributes: nil)
@@ -881,6 +881,7 @@ final class WiFiServer: ObservableObject, Sendable {
 
         do {
             context.fileHandle = try FileHandle(forWritingTo: destURL)
+            ActiveUploadRegistry.shared.register(destURL)
             self.isUploading = true
             self.currentUploadFilename = destURL.lastPathComponent
             self.uploadProgress = 0.0
@@ -937,6 +938,9 @@ final class WiFiServer: ObservableObject, Sendable {
     }
     
     private func cleanup(context: ConnectionContext) {
+        if let url = context.destinationURL {
+            ActiveUploadRegistry.shared.unregister(url)
+        }
         try? context.fileHandle?.close()
         context.fileHandle = nil
     }
@@ -1819,6 +1823,30 @@ final class WiFiServer: ObservableObject, Sendable {
                 .toast.success { border-left-color: var(--success-color); }
                 .toast.error { border-left-color: var(--error-color); }
                 .toast.warning { border-left-color: var(--warning-color); }
+
+                /* Retry button in queue */
+                .retry-action-btn {
+                    background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+                    color: white;
+                    border: none;
+                    border-radius: 6px;
+                    padding: 4px 10px;
+                    font-size: 11px;
+                    font-weight: 600;
+                    cursor: pointer;
+                    margin-left: 10px;
+                    display: inline-block;
+                    transition: all 0.2s ease-in-out;
+                    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+                }
+                .retry-action-btn:hover {
+                    opacity: 0.9;
+                    transform: translateY(-1px);
+                    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+                }
+                .retry-action-btn:active {
+                    transform: translateY(0);
+                }
             </style>
         </head>
         <body>
@@ -2083,14 +2111,19 @@ final class WiFiServer: ObservableObject, Sendable {
                         div.id = 'queue-item-' + item.id;
                         
                         let statusColorClass = '';
+                        let retryBtn = '';
                         if (item.status === 'completed') statusColorClass = 'completed';
-                        if (item.status === 'failed') statusColorClass = 'failed';
+                        if (item.status === 'failed') {
+                            statusColorClass = 'failed';
+                            retryBtn = ' <button class="retry-action-btn" onclick="retryUpload(\'' + item.id + '\')">Retry</button>';
+                        }
 
                         div.innerHTML = 
                             '<div class="queue-item-meta">' +
                                 '<span class="queue-item-name" title="' + item.file.name + '">' + item.file.name + '</span>' +
                                 '<span class="queue-item-stats">' +
                                     (item.status === 'uploading' ? item.speed + ' • ' + item.eta : item.status.toUpperCase()) +
+                                    retryBtn +
                                 '</span>' +
                             '</div>' +
                             '<div class="progress-bar-container">' +
@@ -2209,6 +2242,18 @@ final class WiFiServer: ObservableObject, Sendable {
                         .catch(err => {
                             console.error("Failed to load library updates dynamically:", err);
                         });
+                }
+
+                function retryUpload(id) {
+                    const item = uploadQueue.find(x => x.id === id);
+                    if (item) {
+                        item.status = 'queued';
+                        item.progress = 0;
+                        item.speed = '';
+                        item.eta = '';
+                        renderQueue();
+                        processQueue();
+                    }
                 }
             </script>
         </body>
