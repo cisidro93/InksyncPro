@@ -879,18 +879,19 @@ final class WiFiServer: ObservableObject, Sendable {
             try? FileManager.default.removeItem(at: destURL)
         }
 
+        ActiveUploadRegistry.shared.register(destURL)
         FileManager.default.createFile(atPath: destURL.path, contents: nil, attributes: nil)
         Logger.shared.log("Starting Upload: \(destURL.lastPathComponent) -> \(destURL.path)", category: "Network")
 
         do {
             context.fileHandle = try FileHandle(forWritingTo: destURL)
-            ActiveUploadRegistry.shared.register(destURL)
             self.isUploading = true
             self.currentUploadFilename = destURL.lastPathComponent
             self.uploadProgress = 0.0
             self.startBackgroundTask()
             return true
         } catch {
+            ActiveUploadRegistry.shared.unregister(destURL)
             Logger.shared.log("WiFi Transfer Failed to open file for writing: \(error.localizedDescription)", category: "Network", type: .error)
             return false
         }

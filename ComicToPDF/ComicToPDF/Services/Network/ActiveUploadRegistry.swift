@@ -9,43 +9,43 @@ final class ActiveUploadRegistry: @unchecked Sendable {
     static let shared = ActiveUploadRegistry()
     
     private let lock = NSLock()
-    private var activeURLs = Set<URL>()
+    private var activePaths = Set<String>()
     
     private init() {}
     
     /// Normalizes the URL by standardizing and resolving symlinks (crucial for iOS sandboxed container paths).
-    private func normalize(_ url: URL) -> URL {
-        return url.standardizedFileURL.resolvingSymlinksInPath()
+    private func normalizePath(_ url: URL) -> String {
+        return url.standardizedFileURL.resolvingSymlinksInPath().path
     }
     
-    /// Registers a URL as actively uploading.
+    /// Registers a URL path as actively uploading.
     func register(_ url: URL) {
-        let normalized = normalize(url)
+        let path = normalizePath(url)
         lock.lock()
-        activeURLs.insert(normalized)
+        activePaths.insert(path)
         lock.unlock()
     }
     
-    /// Unregisters a URL when the upload is complete or failed.
+    /// Unregisters a URL path when the upload is complete or failed.
     func unregister(_ url: URL) {
-        let normalized = normalize(url)
+        let path = normalizePath(url)
         lock.lock()
-        activeURLs.remove(normalized)
+        activePaths.remove(path)
         lock.unlock()
     }
     
-    /// Checks if a given URL is currently being uploaded.
+    /// Checks if a given URL path is currently being uploaded.
     func isUploading(_ url: URL) -> Bool {
-        let normalized = normalize(url)
+        let path = normalizePath(url)
         lock.lock()
         defer { lock.unlock() }
-        return activeURLs.contains(normalized)
+        return activePaths.contains(path)
     }
     
-    /// Flushes all registered URLs. Called on server start/stop to guarantee no stale state.
+    /// Flushes all registered URL paths. Called on server start/stop to guarantee no stale state.
     func clear() {
         lock.lock()
-        activeURLs.removeAll()
+        activePaths.removeAll()
         lock.unlock()
     }
 }
