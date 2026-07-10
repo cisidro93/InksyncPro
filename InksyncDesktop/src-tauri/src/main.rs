@@ -246,10 +246,9 @@ async fn discover_devices() -> Result<Vec<serde_json::Value>, String> {
                     let ip = info.get_addresses().iter().next().map(|ip| ip.to_string()).unwrap_or_default();
                     let port = info.get_port();
                     let alias = info.get_property_val_str("alias")
-                        .flatten()
                         .map(|s| s.to_string())
                         .unwrap_or_else(|| {
-                            info.get_name().replace("._inksync._tcp.local.", "")
+                            info.get_fullname().replace("._inksync._tcp.local.", "")
                         });
                     
                     if !ip.is_empty() {
