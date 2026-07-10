@@ -633,6 +633,7 @@ class PhysicalFileSystemRouter {
     // MARK: - Disclaimer / Warning Image Filter
     
     nonisolated static func isDisclaimerFilename(_ path: String) -> Bool {
+        guard UserDefaults.standard.bool(forKey: "skipDisclaimerPages") else { return false }
         let filename = (path as NSString).lastPathComponent.lowercased()
         let keywords = [
             "credit", "disclaimer", "warning", "scanlation", "copyright",
@@ -648,7 +649,8 @@ class PhysicalFileSystemRouter {
     }
     
     nonisolated static func containsDisclaimerText(in image: UIImage) -> Bool {
-        autoreleasepool {
+        guard UserDefaults.standard.bool(forKey: "skipDisclaimerPages") else { return false }
+        return autoreleasepool {
             guard let cgImage = image.cgImage else { return false }
             let request = VNRecognizeTextRequest()
             request.recognitionLevel = .fast

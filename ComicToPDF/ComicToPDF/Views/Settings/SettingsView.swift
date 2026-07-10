@@ -517,6 +517,11 @@ struct SettingsView: View {
                 settingsIcon("crop", color: .green)
                 Toggle("Smart Border Trimming", isOn: $settingsManager.conversionSettings.trimMargins)
             }
+            
+            HStack {
+                settingsIcon("exclamationmark.triangle.fill", color: .yellow)
+                Toggle("Skip Disclaimer & Warning Pages", isOn: $settingsManager.conversionSettings.skipDisclaimerPages)
+            }
 
             // Read-Ahead Buffer
             HStack {

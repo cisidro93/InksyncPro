@@ -94,6 +94,7 @@ class AppSettingsManager: ObservableObject {
               let config = try? JSONDecoder().decode(EncodedAppConfiguration.self, from: data) else { return }
         
         self.conversionSettings = config.settings
+        UserDefaults.standard.set(config.settings.skipDisclaimerPages, forKey: "skipDisclaimerPages")
         self.conversionPresets = config.presets
         self.kindleDevices = config.devices
         self.sendHistory = config.history

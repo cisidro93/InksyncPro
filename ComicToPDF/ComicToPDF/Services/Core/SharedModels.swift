@@ -586,6 +586,7 @@ struct ConversionSettings: Codable, Equatable, Sendable {
     var linkCoverAsSpread: Bool = false // ✅ NEW: Pair Cover Page with Page 2 as a spread
     var customAliases: [String: String] = [:]
     var pencilOnlyDrawing: Bool = false
+    var skipDisclaimerPages: Bool = false
 
 
     /// Returns `true` when the user has changed at least one meaningful conversion
@@ -755,6 +756,7 @@ struct ConversionSettings: Codable, Equatable, Sendable {
         case comicVineAPIKey  // Legacy API key migration only
         case customAliases
         case pencilOnlyDrawing
+        case skipDisclaimerPages
     }
     
     init() {}
@@ -810,6 +812,7 @@ struct ConversionSettings: Codable, Equatable, Sendable {
         
         customAliases = (try? container.decodeIfPresent([String: String].self, forKey: .customAliases)) ?? [:]
         pencilOnlyDrawing = (try? container.decodeIfPresent(Bool.self, forKey: .pencilOnlyDrawing)) ?? false
+        skipDisclaimerPages = (try? container.decodeIfPresent(Bool.self, forKey: .skipDisclaimerPages)) ?? false
     }
     
     func encode(to encoder: Encoder) throws {
@@ -845,6 +848,7 @@ struct ConversionSettings: Codable, Equatable, Sendable {
         // isGuidedView is intentionally not encoded (computed from outputPipeline)
         try container.encode(customAliases, forKey: .customAliases)
         try container.encode(pencilOnlyDrawing, forKey: .pencilOnlyDrawing)
+        try container.encode(skipDisclaimerPages, forKey: .skipDisclaimerPages)
     }
 }
 
