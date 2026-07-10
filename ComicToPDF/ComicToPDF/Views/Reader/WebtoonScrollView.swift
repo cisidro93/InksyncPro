@@ -103,7 +103,17 @@ struct WebtoonScrollView: UIViewRepresentable {
         private var displayLink: CADisplayLink?
         private var imageViews: [UIImageView] = []
         private var loadTasks: [Int: Task<Void, Never>] = [:]
+        private var metadataTask: Task<Void, Never>?
         private var hasReportedEnd = false
+
+        // Local cache for processed Webtoon images to guarantee fluid scrolling.
+        // NSCache is safe on memory pressure and scales countLimit automatically.
+        private let imageCache: NSCache<NSNumber, UIImage> = {
+            let c = NSCache<NSNumber, UIImage>()
+            c.countLimit = 8
+            c.name = "com.inksyncpro.webtoon.imagecache"
+            return c
+        }()
 
         init(_ parent: WebtoonScrollView) { self.parentView = parent }
 
@@ -134,34 +144,61 @@ struct WebtoonScrollView: UIViewRepresentable {
                 stack.addArrangedSubview(ph)
                 imageViews.append(iv)
 
-                // 1. Fast aspect ratio metadata extraction (prevents layout jitter during scroll)
-                Task.detached(priority: .userInitiated) {
-                    guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-                          let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any],
-                          let width = properties[kCGImagePropertyPixelWidth as String] as? CGFloat,
-                          let height = properties[kCGImagePropertyPixelHeight as String] as? CGFloat,
-                          width > 0 else { return }
-                    
-                    let ratio = height / width
-                    await MainActor.run {
-                        if let superview = iv.superview {
-                            for constraint in superview.constraints where constraint.firstAttribute == .height && constraint.relation == .equal {
-                                constraint.isActive = false
-                            }
-                            superview.heightAnchor.constraint(equalTo: superview.widthAnchor, multiplier: ratio).isActive = true
+                // Async image decode — top 2 pages eagerly, rest lazily
+                // Eagerly loading 5 huge webtoon strips concurrently causes OOM crashes.
+                if index < 2 { loadImage(at: index, url: url, into: iv) }
+            }
+            
+            // Fast aspect ratio metadata extraction running sequentially in a single detached task
+            // to avoid Swift 6 type-inference compiler crashes.
+            // Batch updates are coalesced on the MainActor in a single layout pass.
+            metadataTask?.cancel()
+            metadataTask = Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                
+                let ratios = await Task.detached(priority: .userInitiated) { () -> [Int: CGFloat] in
+                    var results = [Int: CGFloat]()
+                    for (index, url) in pages.enumerated() {
+                        guard !Task.isCancelled else { break }
+                        if let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+                           let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any],
+                           let width = properties[kCGImagePropertyPixelWidth as String] as? CGFloat,
+                           let height = properties[kCGImagePropertyPixelHeight as String] as? CGFloat,
+                           width > 0 {
+                            results[index] = height / width
                         }
                     }
+                    return results
+                }.value
+                
+                guard !Task.isCancelled else { return }
+                
+                // Batch-apply constraints to prevent layout churn during scrolling
+                for (index, ratio) in ratios {
+                    guard index < self.imageViews.count else { continue }
+                    let iv = self.imageViews[index]
+                    if let superview = iv.superview {
+                        for constraint in superview.constraints where constraint.firstAttribute == .height && constraint.relation == .equal {
+                            constraint.isActive = false
+                        }
+                        superview.heightAnchor.constraint(equalTo: superview.widthAnchor, multiplier: ratio).isActive = true
+                    }
                 }
-
-                // 2. Async image decode — top 5 pages eagerly, rest lazily
-                if index < 5 { loadImage(at: index, url: url, into: iv) }
             }
         }
 
         private func loadImage(at index: Int, url: URL, into iv: UIImageView) {
+            // Memory Cache check for zero-latency image reuse
+            if let cached = imageCache.object(forKey: NSNumber(value: index)) {
+                iv.image = cached
+                return
+            }
+            
             guard loadTasks[index] == nil else { return }
-            loadTasks[index] = Task.detached(priority: .userInitiated) {
-                guard let data = try? Data(contentsOf: url),
+            loadTasks[index] = Task.detached(priority: .userInitiated) { [weak self] in
+                guard let self = self else { return }
+                let optData = try? Data(contentsOf: url)
+                guard let data = optData,
                       let img  = UIImage(data: data) else { return }
 
                 let isSmartCrop = UserDefaults.standard.bool(forKey: "isAutoCropEnabled")
@@ -176,10 +213,12 @@ struct WebtoonScrollView: UIViewRepresentable {
                 )
 
                 // Check cancellation BEFORE the await so the guard can actually fire.
-                // Task.isCancelled inside MainActor.run is always false because the
-                // cooperative check is not re-evaluated inside a synchronous block.
                 guard !Task.isCancelled else { return }
-                await MainActor.run { iv.image = processed }
+                await MainActor.run { [weak self] in
+                    guard let self = self else { return }
+                    self.imageCache.setObject(processed, forKey: NSNumber(value: index))
+                    iv.image = processed
+                }
             }
         }
 
@@ -188,8 +227,11 @@ struct WebtoonScrollView: UIViewRepresentable {
         func invalidate() {
             displayLink?.invalidate()
             displayLink = nil
+            metadataTask?.cancel()
+            metadataTask = nil
             for task in loadTasks.values { task.cancel() }
             loadTasks.removeAll()
+            imageCache.removeAllObjects()
         }
 
         private func unloadImage(at index: Int) {
@@ -205,25 +247,27 @@ struct WebtoonScrollView: UIViewRepresentable {
             let midY = sv.contentOffset.y + sv.bounds.height / 2
 
             // Find which image view straddles the midpoint
+            // Uses ph.frame directly (O(1) float math) in the scroll coordinate space,
+            // avoiding heavy layout queries like ph.convert to prevent scrolling jitter.
             for iv in imageViews {
                 guard let ph = iv.superview else { continue }
-                let frame = ph.convert(ph.bounds, to: sv)
-                if frame.contains(CGPoint(x: 0, y: midY)) {
+                let frame = ph.frame
+                if frame.minY <= midY && frame.maxY >= midY {
                     let idx = iv.tag
                     if idx != parentView.currentPageIndex {
                         DispatchQueue.main.async { self.parentView.currentPageIndex = idx }
                     }
-                    // Lazy-load neighbours
-                    for offset in [-2, -1, 0, 1, 2] {
+                    // Lazy-load neighbours (smaller window to save memory)
+                    for offset in [-1, 0, 1] {
                         let ni = idx + offset
                         if ni >= 0 && ni < parentView.pages.count && loadTasks[ni] == nil {
                             loadImage(at: ni, url: parentView.pages[ni], into: imageViews[ni])
                         }
                     }
                     
-                    // Sliding Window Eviction: Unload images outside [-4, +4] radius to prevent OOM memory leak
+                    // Sliding Window Eviction: Unload images outside [-2, +2] radius to prevent OOM memory leak
                     for key in loadTasks.keys {
-                        if abs(key - idx) > 4 {
+                        if abs(key - idx) > 2 {
                             unloadImage(at: key)
                         }
                     }
@@ -255,6 +299,9 @@ struct WebtoonScrollView: UIViewRepresentable {
             if isActive {
                 if displayLink == nil {
                     let dl = CADisplayLink(target: self, selector: #selector(tick(_:)))
+                    if #available(iOS 15.0, *) {
+                        dl.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
+                    }
                     dl.add(to: .main, forMode: .common)
                     displayLink = dl
                 }

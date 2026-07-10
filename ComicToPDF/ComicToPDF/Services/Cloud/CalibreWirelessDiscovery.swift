@@ -13,7 +13,7 @@ struct CalibreHost: Identifiable, Hashable, Sendable {
     var displayName: String { hostname }
 
     /// Builds the TCP URL for the device protocol connection
-    var deviceURL: NWEndpoint { .hostPort(host: NWEndpoint.Host(hostname), port: NWEndpoint.Port(rawValue: devicePort)!) }
+    var deviceURL: NWEndpoint { .hostPort(host: NWEndpoint.Host(hostname), port: NWEndpoint.Port(rawValue: devicePort) ?? .any) }
 }
 
 // MARK: - Calibre Wireless Discovery
@@ -151,8 +151,9 @@ final class CalibreWirelessDiscovery {
         let params = NWParameters.udp
         params.allowLocalEndpointReuse = true
 
+        let portValue = NWEndpoint.Port(rawValue: port) ?? .any
         let conn = NWConnection(
-            to: .hostPort(host: "255.255.255.255", port: NWEndpoint.Port(rawValue: port)!),
+            to: .hostPort(host: "255.255.255.255", port: portValue),
             using: params
         )
         udpConnections.append(conn)
@@ -160,7 +161,7 @@ final class CalibreWirelessDiscovery {
         conn.stateUpdateHandler = { state in
             if case .ready = state {
                 // Send a short probe payload (empty is fine for Calibre)
-                let probe = "InksyncPro".data(using: .utf8)!
+                let probe = "InksyncPro".data(using: .utf8) ?? Data()
                 conn.send(content: probe, completion: .contentProcessed { _ in })
             }
         }

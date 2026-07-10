@@ -2,16 +2,15 @@ import SwiftUI
 import UniformTypeIdentifiers
 import Combine
 import SwiftData
+import CoreData
 
 struct ModernLibraryView: View {
     @EnvironmentObject var conversionManager: ConversionManager
     @EnvironmentObject var settingsManager: AppSettingsManager
+    @Environment(\.horizontalSizeClass) private var hSizeClass
     @ObservedObject private var router = AppRouter.shared
     @StateObject private var viewModel = LibraryViewModel()
-    @ObservedObject private var jobQueue = ConversionJobQueue.shared
-    
-    @Query(sort: \SDConvertedPDF.lastModified, order: .reverse) private var swiftDataPDFs: [SDConvertedPDF]
-    @Query private var swiftDataCollections: [SDPDFCollection]
+    @ObservedObject private var ledger = ConversionLedger.shared
     
     @Binding var selectedPDF: ConvertedPDF?
     @Binding var isBatchMode: Bool
@@ -32,18 +31,21 @@ struct ModernLibraryView: View {
         case grid = "Grid"
     }
     @AppStorage("libraryViewStyle") private var viewStyle: LibraryViewStyle = .grid
+    @AppStorage("dismissCharacterReviewBanner") private var dismissCharacterReviewBanner = false
     @AppStorage("libraryTapAction") private var tapAction: LibraryTapAction = .read
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding: Bool = false
     @AppStorage("libraryHeaderPinMode") private var headerPinModeRaw: String = HeaderPinMode.auto.rawValue
     @State private var scrollToTopTrigger = false
-    @State private var scrollOffset: CGFloat = 0
+    @State private var isScrolledPastHeader: Bool = false
     /// Detected via UIDevice orientation notification — landscape forces the header
     /// into compact mode regardless of pin/scroll state.
     @State private var isLandscape: Bool = false
     @Environment(\.verticalSizeClass) private var vSizeClass
-    @Environment(\.horizontalSizeClass) private var hSizeClass
-    // Phase 4B/4C: iPad sidebar — tracks selected series/collection filter
-    @State private var iPadSidebarSelection: String? = nil
+    @State private var isSearchActive: Bool = false
+    @State private var showingMoreActionsDialog: Bool = false
+    @State private var highlightedItemID: String? = nil
+    @FocusState private var isLibraryFocused: Bool
+
 
     /// Derived header collapse state.
     /// Priority: landscape (always collapsed) → pin lock → scroll threshold.
@@ -51,7 +53,7 @@ struct ModernLibraryView: View {
         // iPhone landscape uses vSizeClass == .compact; iPad landscape is detected via isLandscape
         if vSizeClass == .compact || isLandscape { return true }
         switch HeaderPinMode(rawValue: headerPinModeRaw) ?? .auto {
-        case .auto:            return scrollOffset > 44
+        case .auto:            return isScrolledPastHeader
         case .pinnedExpanded:  return false
         case .pinnedCollapsed: return true
         }
@@ -77,7 +79,7 @@ struct ModernLibraryView: View {
         case location = "Storage (Local / Cloud)"
         var id: String { rawValue }
     }
-    @State private var sortOption: SortOption = .dateAdded
+    @State private var sortOption: SortOption = .name
     
     // 🗑 Removed Native Importer Bypass State
     // PERF D-H3: static let avoids UTType system registry query on every render
@@ -99,15 +101,36 @@ struct ModernLibraryView: View {
     @State private var cachedReviewCount: Int = 0
 
     private func rebuildNativeCache() {
-        let mapped = swiftDataPDFs.map { $0.toDTO() }
+        let mapped = conversionManager.convertedPDFs
+        let mappedCols = conversionManager.collections
+        
         cachedVisiblePDFs = settingsManager.isVaultUnlocked ? mapped : mapped.filter { !$0.isPrivate }
-        cachedCollections = swiftDataCollections.map { $0.toDTO() }
+        cachedCollections = mappedCols
+        
         cachedReviewCount = mapped.filter { pdf in
             let seriesEmpty = pdf.metadata.series?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true
             let authorEmpty = pdf.metadata.author?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true
             let titleEmpty  = pdf.metadata.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             return seriesEmpty || authorEmpty || titleEmpty
         }.count
+        MetadataMatchService.shared.rebuildClusters(pdfs: cachedVisiblePDFs)
+    }
+
+    private var currentFolder: PDFCollection? {
+        guard let id = viewModel.currentFolderID else { return nil }
+        return conversionManager.collections.first(where: { $0.id == id })
+    }
+
+    private var listIdentifier: Int {
+        var hasher = Hasher()
+        hasher.combine(sortOption)
+        hasher.combine(tapAction)
+        hasher.combine(viewModel.currentFolderID)
+        hasher.combine(viewModel.cachedLibraryItems.count)
+        for item in viewModel.cachedLibraryItems {
+            hasher.combine(item.id)
+        }
+        return hasher.finalize()
     }
 
     var body: some View {
@@ -115,81 +138,307 @@ struct ModernLibraryView: View {
             // PERF D-C1 boot fix: seed the cache before the view fully renders
             // so notification-based lookups (Resume, Handoff) fire correctly even
             // if onAppear hasn't run yet (e.g. app launch via Spotlight/widget).
-            .task(id: swiftDataPDFs.count) {
+            .task(id: conversionManager.convertedPDFs.count) {
                 if cachedVisiblePDFs.isEmpty { rebuildNativeCache() }
             }
+            .focusable()
+            .focused($isLibraryFocused)
+            .focusEffectDisabled()
+            .onKeyPress(phases: .down) { press in
+                if press.modifiers.contains(.command) {
+                    if press.key == "f" {
+                        withAnimation(.spring) { isSearchActive.toggle() }
+                        return .handled
+                    }
+                    if press.key == "o" || press.key == "n" {
+                        (onFolderImport ?? handleDefaultImport)()
+                        return .handled
+                    }
+                    if press.key == "a" && isBatchMode {
+                        handleSelectAll()
+                        return .handled
+                    }
+                }
+                
+                if press.key == .escape {
+                    if isSearchActive {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                            viewModel.searchText = ""
+                            isSearchActive = false
+                        }
+                        return .handled
+                    }
+                    if isBatchMode {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                            isBatchMode = false
+                            multiSelection.removeAll()
+                        }
+                        return .handled
+                    }
+                    if highlightedItemID != nil {
+                        highlightedItemID = nil
+                        return .handled
+                    }
+                }
+                
+                if press.key == .leftArrow {
+                    moveHighlight(direction: .left)
+                    return .handled
+                }
+                if press.key == .rightArrow {
+                    moveHighlight(direction: .right)
+                    return .handled
+                }
+                if press.key == .upArrow {
+                    moveHighlight(direction: .up)
+                    return .handled
+                }
+                if press.key == .downArrow {
+                    moveHighlight(direction: .down)
+                    return .handled
+                }
+                if press.key == .return || press.key == .space {
+                    openHighlightedItem()
+                    return .handled
+                }
+                
+                return .ignored
+            }
+    }
+
+    // MARK: - Notification Handlers
+    private func handleOpenMergedBook(_ notification: Notification) {
+        if let newBook = notification.object as? ConvertedPDF {
+            Task {
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                await MainActor.run { AppRouter.shared.presentFullScreen(.read(newBook)) }
+            }
+        }
+    }
+    
+    private func handleHandoffRequested(_ notification: Notification) {
+        if let userInfo = notification.userInfo,
+           let pdfID = userInfo["pdfID"] as? UUID,
+           let pageIndex = userInfo["pageIndex"] as? Int {
+            let targetPDF = cachedVisiblePDFs.first(where: { $0.id == pdfID })
+                ?? conversionManager.convertedPDFs.first(where: { $0.id == pdfID })
+            if let targetPDF = targetPDF {
+                var progress = ReaderProgressTracker.shared.progress(for: targetPDF.id) ?? ReadingProgress(pdfID: targetPDF.id, lastOpenedAt: Date(), currentPageIndex: pageIndex, totalPagesRead: 1, completionFraction: 0, readingSessionDates: [])
+                progress.currentPageIndex = pageIndex
+                ReaderProgressTracker.shared.update(progress)
+                Task {
+                    try? await Task.sleep(nanoseconds: 300_000_000)
+                    await MainActor.run { AppRouter.shared.presentFullScreen(.read(targetPDF)) }
+                }
+            }
+        }
+    }
+    
+    private func handleResumeLastRead(_ notification: Notification) {
+        if let mostRecent = ReaderProgressTracker.shared.recentSessions().first {
+            let pdf = cachedVisiblePDFs.first(where: { $0.id == mostRecent.pdfID })
+                ?? conversionManager.convertedPDFs.first(where: { $0.id == mostRecent.pdfID })
+            if let pdf = pdf {
+                let readingMode = notification.userInfo?["readingMode"] as? String
+                AppRouter.shared.presentFullScreen(.read(pdf, initialReadingMode: readingMode))
+            }
+        }
+    }
+    
+    private func handleOpenBook(_ notification: Notification) {
+        if let searchTitle = notification.userInfo?["searchTitle"] as? String {
+            let pdf = cachedVisiblePDFs.first(where: { $0.name.localizedCaseInsensitiveContains(searchTitle) || $0.metadata.title.localizedCaseInsensitiveContains(searchTitle) })
+            if let pdf = pdf {
+                AppRouter.shared.presentFullScreen(.read(pdf))
+            } else {
+                viewModel.searchText = searchTitle
+            }
+        }
+    }
+    
+    private func handleOPDSDownloadCompleted(_ note: Notification) {
+        if let fileURL = note.userInfo?["fileURL"] as? URL {
+            Task { await conversionManager.processImportedFiles(urls: [fileURL]) }
+        }
+    }
+    
+    private func handleInkTabDoubleTapLibrary(_ notification: Notification) {
+        HapticEngine.selection()
+        NotificationCenter.default.post(name: Notification.Name("Library_ScrollToTop"), object: nil)
+    }
+    
+    private func handleRequestSeriesRename(_ notification: Notification) {
+        guard let group = notification.object as? SeriesGroup else { return }
+        listRenameGroup = group
+        listRenamePendingName = group.title
+    }
+    
+    private func handleInksyncOpenShelf(_ notification: Notification) {
+        router.activeSheet = nil
+        router.activeFullScreen = nil
+    }
+    
+    private func handleManagedObjectContextDidSave(_ notification: Notification) {
+        InksyncProApp.sharedModelContainer.mainContext.processPendingChanges()
+        rebuildNativeCache()
+        viewModel.updateLibraryItemsCache(pdfs: cachedVisiblePDFs, collections: cachedCollections, sortOption: sortOption)
     }
 
     // MARK: - Notification Shell (onReceive + debug overlay)
     @ViewBuilder
     private var shellWithNotifications: some View {
         shellWithChangeHandlers
-            .onReceive(NotificationCenter.default.publisher(for: .openMergedBook)) { notification in
-                if let newBook = notification.object as? ConvertedPDF {
-                    Task {
-                        try? await Task.sleep(nanoseconds: 500_000_000)
-                        await MainActor.run { AppRouter.shared.presentFullScreen(.read(newBook)) }
+            .onReceive(NotificationCenter.default.publisher(for: .openMergedBook), perform: handleOpenMergedBook)
+            .onReceive(NotificationCenter.default.publisher(for: .handoffRequested), perform: handleHandoffRequested)
+            .onReceive(NotificationCenter.default.publisher(for: .inkTabDoubleTapLibrary), perform: handleInkTabDoubleTapLibrary)
+            .onReceive(NotificationCenter.default.publisher(for: .requestSeriesRename), perform: handleRequestSeriesRename)
+            .onReceive(NotificationCenter.default.publisher(for: .inksyncResumeLastRead), perform: handleResumeLastRead)
+            .onReceive(NotificationCenter.default.publisher(for: .inksyncOpenShelf), perform: handleInksyncOpenShelf)
+            .onReceive(NotificationCenter.default.publisher(for: .inksyncOpenBook), perform: handleOpenBook)
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("OPDSDownloadCompleted")), perform: handleOPDSDownloadCompleted)
+            .onReceive(NotificationCenter.default.publisher(for: Notification.Name.NSManagedObjectContextDidSave), perform: handleManagedObjectContextDidSave)
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InkTabBar_CancelAction"))) { _ in
+                if isBatchMode {
+                    withAnimation {
+                        isBatchMode = false
+                        multiSelection.removeAll()
                     }
                 }
             }
-            .onReceive(NotificationCenter.default.publisher(for: .handoffRequested)) { notification in
-                if let userInfo = notification.userInfo,
-                   let pdfID = userInfo["pdfID"] as? UUID,
-                   let pageIndex = userInfo["pageIndex"] as? Int {
-                    // Search cached list first; fall back to conversionManager for cold-launch
-                    let targetPDF = cachedVisiblePDFs.first(where: { $0.id == pdfID })
-                        ?? conversionManager.convertedPDFs.first(where: { $0.id == pdfID })
-                    if let targetPDF = targetPDF {
-                        var progress = ReaderProgressTracker.shared.progress(for: targetPDF.id) ?? ReadingProgress(pdfID: targetPDF.id, lastOpenedAt: Date(), currentPageIndex: pageIndex, totalPagesRead: 1, completionFraction: 0, readingSessionDates: [])
-                        progress.currentPageIndex = pageIndex
-                        ReaderProgressTracker.shared.update(progress)
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InkTabBar_DeleteAction"))) { _ in
+                if isBatchMode {
+                    let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
+                    for item in items { conversionManager.deletePDF(item) }
+                    isBatchMode = false
+                    multiSelection.removeAll()
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InkTabBar_MergeAction"))) { _ in
+                if isBatchMode {
+                    batchMergeItems = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
+                    showingBatchMergeReorder = true
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InkTabBar_GroupAction"))) { _ in
+                if isBatchMode {
+                    let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
+                    AppRouter.shared.presentSheet(.seriesAssignment(nil, isBatch: true, selection: items))
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InkTabBar_TransferAction"))) { _ in
+                if isBatchMode {
+                    let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
+                    for item in items { TransferQueueManager.shared.stageFile(item) }
+                    isBatchMode = false
+                    multiSelection.removeAll()
+                    AppRouter.shared.presentSheet(.wifi)
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InkTabBar_MoreAction"))) { _ in
+                if isBatchMode {
+                    showingMoreActionsDialog = true
+                }
+            }
+            .confirmationDialog("Batch Actions", isPresented: $showingMoreActionsDialog, titleVisibility: .visible) {
+                Button("Fast Convert") {
+                    let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
+                    Task { await conversionManager.convertQueue(items) }
+                    isBatchMode = false
+                    multiSelection.removeAll()
+                }
+                Button("Convert & Merge") {
+                    batchMergeItems = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
+                    showingBatchMergeReorder = true
+                }
+                Button("Create Virtual Volume") {
+                    let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
+                    let sortedItems = items.sorted {
+                        let n1 = Double($0.metadata.issueNumber ?? "")
+                        let n2 = Double($1.metadata.issueNumber ?? "")
+                        if let v1 = n1, let v2 = n2 { return v1 < v2 }
+                        if n1 != nil && n2 == nil { return true }
+                        if n1 == nil && n2 != nil { return false }
+                        return $0.name.localizedStandardCompare($1.name) == .orderedAscending
+                    }
+                    let sortedIDs = sortedItems.map { $0.id }
+                    let suggestedName: String
+                    if let firstSeries = sortedItems.first(where: { $0.metadata.series?.isEmpty == false })?.metadata.series {
+                        if let sharedVolume = sortedItems.first(where: { $0.metadata.volume?.isEmpty == false })?.metadata.volume {
+                            suggestedName = "\(firstSeries) Vol. \(sharedVolume)"
+                        } else {
+                            suggestedName = "\(firstSeries) Virtual Volume"
+                        }
+                    } else {
+                        suggestedName = "New Virtual Volume"
+                    }
+                    AppRouter.shared.presentSheet(.virtualOmnibusEditor(nil, initialFileIDs: sortedIDs, suggestedName: suggestedName))
+                    isBatchMode = false
+                    multiSelection.removeAll()
+                }
+                Button("Legacy PDF Merge") {
+                    AppRouter.shared.presentSheet(.merge)
+                }
+                Button("Intelligent Metadata") {
+                    let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
+                    AppRouter.shared.presentSheet(.batchMetadata(items))
+                }
+                Button("Move to External Drive") {
+                    let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
+                    FolderLinkCoordinator.present { urls in
+                        guard let targetURL = urls.first else { return }
                         Task {
-                            try? await Task.sleep(nanoseconds: 300_000_000)
-                            await MainActor.run { AppRouter.shared.presentFullScreen(.read(targetPDF)) }
+                            await MainActor.run { isStorageTransferring = true; transferProgress = 0 }
+                            do {
+                                try await LinkedLibraryScanner.shared.offloadToExternalDrive(
+                                    files: items,
+                                    targetFolderURL: targetURL.url
+                                ) { progress, status in
+                                    DispatchQueue.main.async {
+                                        self.transferProgress = progress
+                                        self.transferStatus = status
+                                    }
+                                }
+                                await MainActor.run {
+                                    isStorageTransferring = false
+                                    isBatchMode = false
+                                    multiSelection.removeAll()
+                                }
+                            } catch {
+                                await MainActor.run {
+                                    isStorageTransferring = false
+                                    conversionManager.appAlert = AppAlert(title: "Transfer Failed", message: error.localizedDescription)
+                                }
+                            }
                         }
                     }
                 }
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .inkTabDoubleTapLibrary)) { _ in
-                HapticEngine.selection()
-                NotificationCenter.default.post(name: Notification.Name("Library_ScrollToTop"), object: nil)
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .requestSeriesRename)) { notification in
-                guard let group = notification.object as? SeriesGroup else { return }
-                listRenameGroup = group
-                listRenamePendingName = group.title
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .inksyncResumeLastRead)) { notification in
-                if let mostRecent = ReaderProgressTracker.shared.recentSessions().first {
-                    let pdf = cachedVisiblePDFs.first(where: { $0.id == mostRecent.pdfID })
-                        ?? conversionManager.convertedPDFs.first(where: { $0.id == mostRecent.pdfID })
-                    if let pdf = pdf {
-                        let readingMode = notification.userInfo?["readingMode"] as? String
-                        AppRouter.shared.presentFullScreen(.read(pdf, initialReadingMode: readingMode))
+                Button("Download to iPad") {
+                    let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
+                    Task {
+                        await MainActor.run { isStorageTransferring = true; transferProgress = 0 }
+                        do {
+                            try await LinkedLibraryScanner.shared.downloadToDevice(
+                                files: items
+                            ) { progress, status in
+                                    DispatchQueue.main.async {
+                                        self.transferProgress = progress
+                                        self.transferStatus = status
+                                    }
+                            }
+                            await MainActor.run {
+                                isStorageTransferring = false
+                                isBatchMode = false
+                                multiSelection.removeAll()
+                            }
+                        } catch {
+                            await MainActor.run {
+                                isStorageTransferring = false
+                                conversionManager.appAlert = AppAlert(title: "Download Failed", message: error.localizedDescription)
+                            }
+                        }
                     }
                 }
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .inksyncOpenShelf)) { _ in
-                // Close any open sheets or full screen covers to reveal the library shelf
-                router.activeSheet = nil
-                router.activeFullScreen = nil
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .inksyncOpenBook)) { notification in
-                if let searchTitle = notification.userInfo?["searchTitle"] as? String {
-                    let pdf = cachedVisiblePDFs.first(where: { $0.name.localizedCaseInsensitiveContains(searchTitle) || $0.metadata.title.localizedCaseInsensitiveContains(searchTitle) })
-                    if let pdf = pdf {
-                        AppRouter.shared.presentFullScreen(.read(pdf))
-                    } else {
-                        // Just set the search text if not explicitly found, so user can see partial matches
-                        viewModel.searchText = searchTitle
-                    }
-                }
-            }
-            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("OPDSDownloadCompleted"))) { note in
-                // Item 9 — Background OPDS download completed; import into library
-                if let fileURL = note.userInfo?["fileURL"] as? URL {
-                    Task { await conversionManager.processImportedFiles(urls: [fileURL]) }
-                }
+                Button("Cancel", role: .cancel) {}
             }
             .overlay(alignment: .bottomTrailing) {
                 if settingsManager.conversionSettings.showEditorDebug {
@@ -200,7 +449,32 @@ struct ModernLibraryView: View {
                     )
                 }
             }
-    }
+            .navigationTitle("InkSync Pro")
+            .toolbar {
+                ToolbarItemGroup(placement: .primaryAction) {
+                    // Search Toggle
+                    Button {
+                        withAnimation(.spring) { isSearchActive.toggle() }
+                    } label: {
+                        Image(systemName: "magnifyingglass")
+                    }
+                    
+                    // Import / Add File
+                    Button {
+                        (onFolderImport ?? handleDefaultImport)()
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                    
+                    // Control Center Dashboard Trigger
+                    Button(action: {
+                        AppRouter.shared.presentSheet(.controlCenter)
+                    }) {
+                        Image(systemName: "slider.horizontal.3")
+                    }
+                }
+            }
+        }
 
     // MARK: - Change Handler Shell (onAppear + onChange)
     @ViewBuilder
@@ -214,15 +488,7 @@ struct ModernLibraryView: View {
                 // Seed landscape state immediately (handles cold-launch in landscape)
                 let size = UIScreen.main.bounds.size
                 isLandscape = size.width > size.height
-
-                // PERF D-C1: debounce absorbs page-turn bursts; rebuilds DTO map once per 250ms
-                viewModel.swiftDataCancellable = viewModel.swiftDataDidChange
-                    .debounce(for: .milliseconds(250), scheduler: RunLoop.main)
-                    .sink { [weak viewModel] in
-                        guard let vm = viewModel else { return }
-                        self.rebuildNativeCache()
-                        vm.updateLibraryItemsCache(pdfs: self.cachedVisiblePDFs, collections: self.cachedCollections, sortOption: self.sortOption)
-                    }
+                isLibraryFocused = true
             }
             .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
                 let size = UIScreen.main.bounds.size
@@ -230,15 +496,16 @@ struct ModernLibraryView: View {
                     isLandscape = size.width > size.height
                 }
             }
-            // Raw SwiftData row changes: send through the debounced publisher
-            // instead of calling updateLibraryItemsCache directly.
-            .onChange(of: swiftDataPDFs) { viewModel.notifySwiftDataChanged() }
-            // All other triggers are low-frequency and user-initiated — rebuild immediately.
-            .onChange(of: sortOption) {
+            .onChange(of: settingsManager.isVaultUnlocked) {
                 rebuildNativeCache()
                 viewModel.updateLibraryItemsCache(pdfs: cachedVisiblePDFs, collections: cachedCollections, sortOption: sortOption)
             }
-            .onChange(of: swiftDataCollections) {
+            .onChange(of: ImportMonitorManager.shared.isImporting) { _, _ in
+                rebuildNativeCache()
+                viewModel.updateLibraryItemsCache(pdfs: cachedVisiblePDFs, collections: cachedCollections, sortOption: sortOption)
+            }
+            // All other triggers are low-frequency and user-initiated — rebuild immediately.
+            .onChange(of: sortOption) {
                 rebuildNativeCache()
                 viewModel.updateLibraryItemsCache(pdfs: cachedVisiblePDFs, collections: cachedCollections, sortOption: sortOption)
             }
@@ -248,10 +515,33 @@ struct ModernLibraryView: View {
             .onChange(of: viewModel.filterState) {
                 viewModel.updateLibraryItemsCache(pdfs: cachedVisiblePDFs, collections: cachedCollections, sortOption: sortOption)
             }
-            .onChange(of: viewModel.contentShelf) {
+            .onChange(of: viewModel.contentShelf) { _, _ in
                 viewModel.updateLibraryItemsCache(pdfs: cachedVisiblePDFs, collections: cachedCollections, sortOption: sortOption)
             }
-            .onChange(of: viewModel.currentFolderID) {
+            .onChange(of: viewModel.currentFolderID) { _, _ in
+                viewModel.updateLibraryItemsCache(pdfs: cachedVisiblePDFs, collections: cachedCollections, sortOption: sortOption)
+            }
+            .onChange(of: isSearchActive) { _, newVal in
+                if !newVal {
+                    isLibraryFocused = true
+                }
+            }
+            .fullScreenCover(item: $router.activeFullScreen) { dest in
+                switch dest {
+                case .read(let pdf, _):
+                    UnifiedReaderView(pdf: pdf, allBooks: conversionManager.convertedPDFs)
+                case .advancedWorkspace(let pdf):
+                    AdvancedWorkspaceView(pdf: pdf).environmentObject(conversionManager)
+                case .smartCollection(let rule):
+                    SmartCollectionDetailView(rule: rule).environmentObject(conversionManager)
+                }
+            }
+            .sheet(item: $router.activeSheet) { item in
+                destinationSheet(for: item)
+                    .forceProMotion()
+            }
+            .onReceive(conversionManager.objectWillChange.debounce(for: .milliseconds(250), scheduler: RunLoop.main)) { _ in
+                rebuildNativeCache()
                 viewModel.updateLibraryItemsCache(pdfs: cachedVisiblePDFs, collections: cachedCollections, sortOption: sortOption)
             }
     }
@@ -276,13 +566,10 @@ struct ModernLibraryView: View {
                         conversionManager.collections[colIdx].name = newName
                     }
                     
-                    for pdf in group.issues {
-                        if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
-                            conversionManager.convertedPDFs[idx].metadata.series = newName
-                        }
+                    Task {
+                        await conversionManager.safelyRenameSeries(issues: group.issues, newSeriesName: newName)
+                        listRenameGroup = nil
                     }
-                    conversionManager.saveLibrary()
-                    listRenameGroup = nil
                 }
                 Button("Cancel", role: .cancel) { listRenameGroup = nil }
             } message: {
@@ -300,10 +587,7 @@ struct ModernLibraryView: View {
                     }
                 }
             }
-            .alert(item: $conversionManager.appAlert) { alert in
-                Alert(title: Text(alert.title), message: Text(alert.message), dismissButton: .default(Text("OK")))
-            }
-            .onDrop(of: [UTType.fileURL.identifier], isTargeted: nil) { providers in
+            .onDrop(of: [.fileURL], isTargeted: nil) { providers in
                 loadFiles(from: providers)
                 return true
             }
@@ -312,103 +596,57 @@ struct ModernLibraryView: View {
     // MARK: - Root Shell (split out to avoid type-checker timeout)
     @ViewBuilder
     private var rootShell: some View {
-        if hSizeClass == .regular {
-            // Phase 4B/4C: iPad — NavigationSplitView with series sidebar
-            NavigationSplitView(columnVisibility: .constant(.doubleColumn)) {
-                iPadSidebar
-                    .navigationTitle("Library")
-                    .navigationBarTitleDisplayMode(.inline)
-            } detail: {
-                ZStack(alignment: .top) {
-                    Color.clear.ignoresSafeArea()
-                    libraryContent
-                        .safeAreaInset(edge: .bottom) {
-                            if isBatchMode { batchBottomToolbar.transition(.move(edge: .bottom)) }
-                        }
-                        .overlay(alignment: .top) { storageTransferBanner }
-                        .fullScreenCover(item: $router.activeFullScreen) { dest in
-                            switch dest {
-                            case .read(let pdf, _):
-                                UnifiedReaderView(pdf: pdf, allBooks: conversionManager.convertedPDFs)
-                            case .advancedWorkspace(let pdf):
-                                AdvancedWorkspaceView(pdf: pdf).environmentObject(conversionManager)
-                            case .smartCollection(let rule):
-                                SmartCollectionDetailView(rule: rule).environmentObject(conversionManager)
+        ZStack(alignment: .top) {
+            Color.clear.ignoresSafeArea()
+            
+            // Edge-to-edge content
+            libraryContent
+                .safeAreaInset(edge: .bottom) {
+                    if isBatchMode { batchBottomToolbar.transition(.move(edge: .bottom)) }
+                }
+                .overlay(alignment: .top) { storageTransferBanner }
+
+            
+            // Search Overlay
+            if isSearchActive {
+                VStack {
+                    HStack {
+                        Image(systemName: "magnifyingglass").foregroundColor(.gray)
+                        TextField("Search library...", text: $viewModel.searchText)
+                            .textFieldStyle(.plain)
+                            .foregroundColor(.white)
+                        if !viewModel.searchText.isEmpty {
+                            Button(action: { viewModel.searchText = "" }) {
+                                Image(systemName: "xmark.circle.fill").foregroundColor(.gray)
                             }
                         }
-                        .sheet(item: $router.activeSheet) { item in destinationSheet(for: item) }
-                }
-            }
-            .navigationSplitViewStyle(.balanced)
-        } else {
-            // iPhone — existing single-column layout
-            ZStack(alignment: .top) {
-                Color.clear.ignoresSafeArea()
-                libraryContent
-                    .safeAreaInset(edge: .bottom) {
-                        if isBatchMode { batchBottomToolbar.transition(.move(edge: .bottom)) }
-                    }
-                    .overlay(alignment: .top) { storageTransferBanner }
-                    .fullScreenCover(item: $router.activeFullScreen) { dest in
-                        switch dest {
-                        case .read(let pdf, _):
-                            UnifiedReaderView(pdf: pdf, allBooks: conversionManager.convertedPDFs)
-                        case .advancedWorkspace(let pdf):
-                            AdvancedWorkspaceView(pdf: pdf).environmentObject(conversionManager)
-                        case .smartCollection(let rule):
-                            SmartCollectionDetailView(rule: rule).environmentObject(conversionManager)
+                        Button("Cancel") {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                viewModel.searchText = ""
+                                isSearchActive = false
+                            }
                         }
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.inkBlue)
+                        .padding(.leading, 8)
                     }
-                    .sheet(item: $router.activeSheet) { item in destinationSheet(for: item) }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .overlay(Capsule().strokeBorder(Color.white.opacity(0.15)))
+                    .padding(.horizontal, 24)
+                    .padding(.top, 16)
+                    .shadow(color: .black.opacity(0.2), radius: 10, y: 5)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    
+                    Spacer()
+                }
+                .zIndex(100)
             }
         }
     }
 
-    // MARK: - iPad Sidebar (series + collection picker)
-    @ViewBuilder
-    private var iPadSidebar: some View {
-        List(selection: $iPadSidebarSelection) {
-            Section("Browse") {
-                Label("All Books", systemImage: "books.vertical.fill")
-                    .tag("all")
-                Label("Continue Reading", systemImage: "book.open.fill")
-                    .tag("continue")
-                Label("Recently Added", systemImage: "clock.fill")
-                    .tag("recent")
-                Label("Favorites", systemImage: "heart.fill")
-                    .tag("favorites")
-            }
-            if !conversionManager.collections.isEmpty {
-                Section("Collections") {
-                    ForEach(conversionManager.collections) { collection in
-                        Label(collection.name, systemImage: "folder.fill")
-                            .tag(collection.id.uuidString)
-                    }
-                }
-            }
-        }
-        .listStyle(.sidebar)
-        .onChange(of: iPadSidebarSelection) { _, selection in
-            guard let sel = selection else { return }
-            // Reset first so each case starts from a clean state
-            viewModel.currentFolderID = nil
-            viewModel.contentShelf = .all
-            viewModel.filterState = .all
-            switch sel {
-            case "continue":
-                viewModel.filterState = .reading   // currently in-progress books
-            case "recent":
-                sortOption = .dateAdded            // re-sort by newest first
-            case "favorites":
-                sortOption = .favorites            // favorites bubble to top
-            default:
-                if let uuid = UUID(uuidString: sel) {
-                    viewModel.currentFolderID = uuid
-                }
-                // "all" just resets to defaults (already done above)
-            }
-        }
-    }
+
 
     // MARK: - Storage Transfer Banner (extracted to reduce body complexity)
     @ViewBuilder
@@ -457,10 +695,17 @@ struct ModernLibraryView: View {
     @ViewBuilder
     private func destinationSheet(for item: LibrarySheetDestination) -> some View {
         switch item {
-        case .inbox:
+        case .ledger:
+            ConversionLedgerView()
+                .environmentObject(conversionManager)
+            
+        case .importQueue:
+            ImportQueueView()
+                .environmentObject(conversionManager)
+
+        case .metadataInbox:
             NavigationStack {
-                InboxReviewView()
-                    .environmentObject(conversionManager)
+                MetadataInboxView()
                     .toolbar {
                         ToolbarItem(placement: .navigationBarTrailing) {
                             Button("Done") {
@@ -491,6 +736,12 @@ struct ModernLibraryView: View {
         case .reviewMetadata: BatchMetadataFetchView(pdfs: conversionManager.failedMetadataPDFs, conversionManager: conversionManager)
         case .editMetadata(let pdf): AdvancedMetadataEditorView(pdf: pdf)
         case .batchMetadata(let pdfs): BatchMetadataEditorView(selectedPDFs: pdfs)
+        case .metadataSpreadsheet(let pdfs): 
+            if #available(iOS 16.0, *) {
+                MetadataSpreadsheetView(items: pdfs).environmentObject(conversionManager)
+            } else {
+                Text("Grid Editor requires iOS 16+")
+            }
         case .cognitiveBatchRenamer(let pdfs):
             BatchLocalRenamerView(pdfs: pdfs).environmentObject(conversionManager)
  
@@ -523,6 +774,32 @@ struct ModernLibraryView: View {
                         }
                     }
             }
+        case .virtualOmnibusEditor(let omnibus, let initialFileIDs, let suggestedName, let parentSeriesID):
+            VirtualOmnibusEditorView(omnibus: omnibus, initialFileIDs: initialFileIDs, suggestedName: suggestedName, parentSeriesID: parentSeriesID)
+                .environmentObject(conversionManager)
+            
+        case .controlCenter:
+            LibraryControlCenterView(
+                sortOption: Binding(
+                    get: { sortOption },
+                    set: { sortOption = $0; rebuildNativeCache(); viewModel.updateLibraryItemsCache(pdfs: cachedVisiblePDFs, collections: cachedCollections, sortOption: $0) }
+                ),
+                filterState: $viewModel.filterState,
+                viewStyle: $viewStyle,
+                isBatchMode: $isBatchMode,
+                multiSelection: $multiSelection,
+                tapAction: $tapAction
+            )
+            .environmentObject(conversionManager)
+            .environmentObject(settingsManager)
+            .onDisappear {
+                if let pending = AppRouter.shared.pendingSheet {
+                    AppRouter.shared.pendingSheet = nil
+                    DispatchQueue.main.async {
+                        AppRouter.shared.presentSheet(pending)
+                    }
+                }
+            }
         }
     }
     
@@ -552,42 +829,123 @@ struct ModernLibraryView: View {
 
     private func handleVaultToggle() {
         if settingsManager.isVaultUnlocked {
-            withAnimation { settingsManager.isVaultUnlocked = false }
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { settingsManager.isVaultUnlocked = false }
         } else {
             Task {
                 if await SecurityManager.shared.authenticate() {
-                    await MainActor.run { withAnimation { settingsManager.isVaultUnlocked = true } }
+                    await MainActor.run {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                            settingsManager.isVaultUnlocked = true
+                        }
+                    }
                 }
             }
         }
     }
 
+    enum MoveDirection {
+        case up, down, left, right
+    }
+
+    private func moveHighlight(direction: MoveDirection) {
+        let items = viewModel.cachedLibraryItems
+        guard !items.isEmpty else { return }
+        
+        let cols = viewStyle == .grid ? (hSizeClass == .regular ? 5 : 3) : 1
+        
+        // Find current index
+        let currentIndex: Int
+        if let currentID = highlightedItemID,
+           let idx = items.firstIndex(where: { $0.id == currentID }) {
+            currentIndex = idx
+        } else {
+            // No highlight, select first item
+            highlightedItemID = items.first?.id
+            return
+        }
+        
+        let targetIndex: Int
+        switch direction {
+        case .up:
+            targetIndex = max(0, currentIndex - cols)
+        case .down:
+            targetIndex = min(items.count - 1, currentIndex + cols)
+        case .left:
+            targetIndex = max(0, currentIndex - 1)
+        case .right:
+            targetIndex = min(items.count - 1, currentIndex + 1)
+        }
+        
+        if items.indices.contains(targetIndex) {
+            highlightedItemID = items[targetIndex].id
+        }
+    }
+    
+    private func openHighlightedItem() {
+        guard let currentID = highlightedItemID,
+              let item = viewModel.cachedLibraryItems.first(where: { $0.id == currentID }) else { return }
+        
+        switch item {
+        case .single(let pdf):
+            if case .cloud = pdf.sourceMode {
+                if tapAction == .convert {
+                    viewModel.handleDetailAction(action: .convert, for: pdf, conversionManager: conversionManager)
+                } else {
+                    viewModel.handleDetailAction(action: .details, for: pdf, conversionManager: conversionManager)
+                }
+            } else {
+                if tapAction == .read {
+                    viewModel.handleDetailAction(action: .read, for: pdf, conversionManager: conversionManager)
+                } else if tapAction == .convert {
+                    viewModel.handleDetailAction(action: .convert, for: pdf, conversionManager: conversionManager)
+                } else {
+                    viewModel.handleDetailAction(action: .details, for: pdf, conversionManager: conversionManager)
+                }
+            }
+        case .series(let group):
+            router.path.append(group)
+        case .driveFolder:
+            break
+        }
+    }
+
+    private func nextUnread(in group: SeriesGroup) -> ConvertedPDF? {
+        let sorted = group.issues.sorted { a, b in
+            let aNum = Int(a.metadata.issueNumber?.filter(\.isNumber) ?? "") ?? 0
+            let bNum = Int(b.metadata.issueNumber?.filter(\.isNumber) ?? "") ?? 0
+            return aNum < bNum
+        }
+        return sorted.first {
+            (ReaderProgressTracker.shared.progress(for: $0.id)?.completionFraction ?? 0) < 0.95
+        } ?? sorted.first
+    }
+
     // MARK: - Job Banner Helpers
-    private func jobBannerIcon(_ job: ConversionJob) -> String {
+    private func jobBannerIcon(_ job: ConversionJobRecord) -> String {
         switch job.status {
-        case .suspended:       return "pause.circle.fill"
-        case .failed:          return "exclamationmark.circle.fill"
-        case .waitingForDownload: return "arrow.down.circle.fill"
-        default:               return "arrow.triangle.2.circlepath.circle.fill"
+        case .queued:          return "clock"
+        case .running:         return "arrow.triangle.2.circlepath.circle.fill"
+        case .retrying:        return "arrow.clockwise.circle"
+        case .failed, .abandoned: return "exclamationmark.triangle.fill"
+        case .succeeded:       return "checkmark.circle.fill"
         }
     }
 
-    private func jobBannerColor(_ job: ConversionJob) -> Color {
+    private func jobBannerColor(_ job: ConversionJobRecord) -> Color {
         switch job.status {
-        case .failed:    return Theme.red
-        case .suspended: return Theme.orange
-        default:         return Theme.blue
+        case .failed, .abandoned: return Theme.red
+        case .queued, .retrying:  return Theme.orange
+        default:                  return Theme.blue
         }
     }
 
-    private func jobBannerMessage(_ job: ConversionJob) -> String {
+    private func jobBannerMessage(_ job: ConversionJobRecord) -> String {
         switch job.status {
-        case .waitingForDownload: return "Downloading from cloud..."
-        case .extracting:         return "Extracting & converting..."
-        case .merging:            return "Merging volumes..."
-        case .suspended:          return "Conversion paused — tap Resume to continue"
-        case .failed:             return "Download failed — tap Retry to try again"
-        default:                  return ""
+        case .queued:    return "Waiting in queue..."
+        case .running:   return "Converting and packaging..."
+        case .retrying:  return "Retrying..."
+        case .failed, .abandoned: return "Conversion failed: \(job.failureReason ?? "Unknown error")"
+        case .succeeded: return "Complete"
         }
     }
     
@@ -595,10 +953,12 @@ struct ModernLibraryView: View {
         for provider in providers {
             if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
                 provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { (data, error) in
+                    // NSItemProvider completion fires on an arbitrary background thread.
+                    // @MainActor hop is required before touching conversionManager.
                     if let urlData = data as? Data, let url = URL(dataRepresentation: urlData, relativeTo: nil) {
-                        Task { await conversionManager.processImportedFiles(urls: [url]) }
+                        Task { @MainActor in await conversionManager.processImportedFiles(urls: [url]) }
                     } else if let url = data as? URL {
-                        Task { await conversionManager.processImportedFiles(urls: [url]) }
+                        Task { @MainActor in await conversionManager.processImportedFiles(urls: [url]) }
                     }
                 }
             }
@@ -608,47 +968,58 @@ struct ModernLibraryView: View {
     @ViewBuilder
     private var libraryContent: some View {
         VStack(spacing: 0) {
-            // MARK: - Dedicated Header Component
-            LibraryHeaderView(
-                searchText: $viewModel.searchText,
-                sortOption: Binding(get: { sortOption }, set: { sortOption = $0; _ = viewModel.sortPDFs(cachedVisiblePDFs, sortOption: $0) }),
-                filterState: $viewModel.filterState,
-                contentShelf: $viewModel.contentShelf,
-                viewStyle: $viewStyle,
-                tapAction: $tapAction,
-                onSheetTrigger: { (dest: LibrarySheetDestination) in AppRouter.shared.presentSheet(dest) },
-                isBatchMode: $isBatchMode,
-                multiSelection: $multiSelection,
-                batchMergeItems: $batchMergeItems,
-                showingBatchMergeReorder: $showingBatchMergeReorder,
-                onVaultToggle: handleVaultToggle,
-                onSelectAll: handleSelectAll,
-                isCollapsed: isHeaderCollapsed,
-                pinMode: headerPinMode,
-                onPinToggle: {
-                    let next: HeaderPinMode
-                    switch headerPinMode {
-                    case .auto:            next = .pinnedExpanded
-                    case .pinnedExpanded:  next = .pinnedCollapsed
-                    case .pinnedCollapsed: next = .auto
-                    }
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
-                        headerPinModeRaw = next.rawValue
-                    }
-                    HapticEngine.selection()
-                },
-                onCollapseToggle: {
-                    // Drag/tap on the collapse bar: toggle between expanded/collapsed pin states.
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
-                        if isHeaderCollapsed {
-                            headerPinModeRaw = HeaderPinMode.pinnedExpanded.rawValue
-                        } else {
-                            headerPinModeRaw = HeaderPinMode.pinnedCollapsed.rawValue
-                        }
-                    }
-                    HapticEngine.selection()
-                }
+            // MARK: - Legacy Header Removed
+            // The Omni-Dock now handles all navigation and filtering.
+            Spacer().frame(height: 16) // Top padding to prevent overlap with the status bar and branding
+
+            // Apple Books-style persisted Content Shelf tab strip
+            ContentShelfSelector(
+                selected: $viewModel.contentShelf,
+                counts: contentShelfCounts
             )
+            .padding(.bottom, 12)
+
+
+            if !dismissCharacterReviewBanner, MetadataMatchService.shared.activeClusters.contains(where: {
+                if case .matched = $0.status { return false }
+                return true
+            }) {
+                HStack {
+                    Image(systemName: "doc.text.magnifyingglass")
+                        .foregroundColor(.purple)
+                        .font(.system(size: 16))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Metadata Review")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundColor(Theme.text)
+                        Text("Identify your series to activate Character Maps.")
+                            .font(.system(size: 11))
+                            .foregroundColor(Theme.textSecondary)
+                    }
+                    Spacer()
+                    Button("Match Now") {
+                        AppRouter.shared.presentSheet(.metadataInbox)
+                    }
+                    .font(.system(size: 12, weight: .semibold))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Color.purple.opacity(0.2), in: Capsule())
+                    .foregroundColor(.purple)
+                    
+                    Button {
+                        withAnimation { dismissCharacterReviewBanner = true }
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 16))
+                            .foregroundColor(Theme.textTertiary)
+                    }
+                    .padding(.leading, 4)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(.ultraThinMaterial)
+                .overlay(Rectangle().frame(height: 1).foregroundColor(Color.white.opacity(0.1)), alignment: .bottom)
+            }
 
             disconnectedDrivesBanner
             pendingJobsBanner
@@ -656,8 +1027,7 @@ struct ModernLibraryView: View {
             // Daily Brief and Recently Added sections removed for an uncluttered bookshelf view.
 
             // MARK: - Breadcrumb Navigation for Nested Folders
-            if let folderID = viewModel.currentFolderID,
-               let folder = conversionManager.collections.first(where: { $0.id == folderID }) {
+            if let folder = currentFolder {
                 breadcrumbRow(folder: folder)
             }
 
@@ -671,43 +1041,30 @@ struct ModernLibraryView: View {
                     tapAction: $tapAction,
                     selectedPDF: $selectedPDF,
                     onAction: { (action: LibraryRowAction, pdf: ConvertedPDF) in viewModel.handleDetailAction(action: action, for: pdf, conversionManager: conversionManager) },
-                    onImport: { NotificationCenter.default.post(name: NSNotification.Name("ShowImportQueue"), object: nil) },
+                    onImport: onFolderImport ?? handleDefaultImport,
                     onFolderTap: { uuid in viewModel.currentFolderID = uuid },
-                    onDropApplied: {
-                        let livePDFs = settingsManager.isVaultUnlocked
-                            ? conversionManager.convertedPDFs
-                            : conversionManager.convertedPDFs.filter { !$0.isPrivate }
-                        viewModel.updateLibraryItemsCache(
-                            pdfs: livePDFs,
-                            collections: conversionManager.collections,
-                            sortOption: sortOption
-                        )
-                    },
-                    scrollOffset: $scrollOffset
+                    onDropApplied: handleDropApplied,
+                    isScrolledPastHeader: $isScrolledPastHeader,
+                    highlightedItemID: highlightedItemID
                 )
+                .id(listIdentifier)
             } else {
                 LibraryGridView(
                     items: viewModel.cachedLibraryItems,
+                    contentShelf: viewModel.contentShelf,
                     isBatchMode: $isBatchMode,
                     multiSelection: $multiSelection,
                     useNavigationStack: useNavigationStack,
                     tapAction: $tapAction,
                     selectedPDF: $selectedPDF,
                     onAction: { (action: LibraryRowAction, pdf: ConvertedPDF) in viewModel.handleDetailAction(action: action, for: pdf, conversionManager: conversionManager) },
-                    onImport: { NotificationCenter.default.post(name: NSNotification.Name("ShowImportQueue"), object: nil) },
+                    onImport: onFolderImport ?? handleDefaultImport,
                     onFolderTap: { uuid in viewModel.currentFolderID = uuid },
-                    onDropApplied: {
-                        let livePDFs = settingsManager.isVaultUnlocked
-                            ? conversionManager.convertedPDFs
-                            : conversionManager.convertedPDFs.filter { !$0.isPrivate }
-                        viewModel.updateLibraryItemsCache(
-                            pdfs: livePDFs,
-                            collections: conversionManager.collections,
-                            sortOption: sortOption
-                        )
-                    },
-                    scrollOffset: $scrollOffset
+                    onDropApplied: handleDropApplied,
+                    isScrolledPastHeader: $isScrolledPastHeader,
+                    highlightedItemID: highlightedItemID
                 )
+                .id(listIdentifier)
             }
         }
     }
@@ -715,6 +1072,34 @@ struct ModernLibraryView: View {
     // PERF D-H2: reviewCount moved to @State (cachedReviewCount), rebuilt in
     // rebuildNativeCache(). Left as a private accessor for any legacy call sites.
     private var reviewCount: Int { cachedReviewCount }
+
+    private var contentShelfCounts: [ContentShelf: Int] {
+        var counts: [ContentShelf: Int] = [.all: 0, .comics: 0, .manga: 0, .books: 0, .converted: 0]
+        
+        counts[.all] = cachedVisiblePDFs.count
+        
+        for pdf in cachedVisiblePDFs {
+            let nameLower = pdf.name.lowercased()
+            let isConverted = pdf.lastOutputFormat != nil ||
+                              pdf.url.path.contains("/Merged/") ||
+                              nameLower.contains("_converted") ||
+                              nameLower.contains("go merge")
+            
+            if isConverted {
+                counts[.converted, default: 0] += 1
+            }
+            
+            if pdf.contentType == .comic && !(pdf.metadata.isManga ?? false) {
+                counts[.comics, default: 0] += 1
+            } else if pdf.contentType == .manga || (pdf.metadata.isManga ?? false) {
+                counts[.manga, default: 0] += 1
+            } else if pdf.contentType == .book {
+                counts[.books, default: 0] += 1
+            }
+        }
+        
+        return counts
+    }
 
     @ViewBuilder
     private var dailyBriefCard: some View {
@@ -745,19 +1130,24 @@ struct ModernLibraryView: View {
                 }
                 Spacer()
                 
-                // Active status pulse
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(jobQueue.jobs.isEmpty ? Color.inkGreen : Color.inkBlue)
-                        .frame(width: 8, height: 8)
-                    Text(jobQueue.jobs.isEmpty ? "Engine Idle" : "Converting")
-                        .font(.system(size: 11, weight: .medium, design: .monospaced))
-                        .foregroundColor(Color.inkTextSecondary)
+                // Active status pulse Button
+                Button {
+                    AppRouter.shared.presentSheet(.ledger)
+                } label: {
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(!ledger.hasActiveJobs ? Color.inkGreen : Color.inkBlue)
+                            .frame(width: 8, height: 8)
+                        Text(!ledger.hasActiveJobs ? "Engine Idle" : "Converting")
+                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .foregroundColor(Color.inkTextSecondary)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Color.inkBackground.opacity(0.4))
+                    .clipShape(Capsule())
                 }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(Color.inkBackground.opacity(0.4))
-                .clipShape(Capsule())
+                .buttonStyle(.plain)
             }
 
             // Summary Stats Cards (2 Columns)
@@ -779,7 +1169,7 @@ struct ModernLibraryView: View {
                 // Col 2: Metadata Review
                 let reviewNum = reviewCount
                 Button {
-                    AppRouter.shared.presentSheet(.inbox)
+                    withAnimation { AppRouter.shared.selectedTab = 1 }
                 } label: {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Metadata Tasks")
@@ -805,11 +1195,11 @@ struct ModernLibraryView: View {
             }
 
             // Active conversions preview / smart hint
-            if !jobQueue.jobs.isEmpty {
+            if ledger.hasActiveJobs {
                 HStack(spacing: 10) {
                     NeuralWaveformView(speed: 1.6, primaryColor: Color.inkBlue, secondaryColor: Color.inkViolet)
                         .frame(width: 64, height: 28)
-                    Text("Processing \(jobQueue.jobs.count) file\(jobQueue.jobs.count > 1 ? "s" : "")...")
+                    Text("Processing \(ledger.activeJobsCount) file\(ledger.activeJobsCount > 1 ? "s" : "")...")
                         .font(.system(size: 13, weight: .medium))
                         .foregroundColor(Color.inkTextSecondary)
                 }
@@ -819,7 +1209,7 @@ struct ModernLibraryView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             } else if reviewCount > 0 {
                 Button {
-                    AppRouter.shared.presentSheet(.inbox)
+                    withAnimation { AppRouter.shared.selectedTab = 1 }
                 } label: {
                     HStack(spacing: 8) {
                         Image(systemName: "wand.and.stars")
@@ -910,9 +1300,9 @@ struct ModernLibraryView: View {
 
     @ViewBuilder
     private var pendingJobsBanner: some View {
-        let pendingJobs = jobQueue.jobs.filter {
-            $0.status == .suspended || $0.status == .waitingForDownload ||
-            $0.status == .extracting || $0.status == .failed
+        let pendingJobs = ledger.allJobs().filter {
+            $0.status == .queued || $0.status == .running ||
+            $0.status == .retrying || $0.status == .failed || $0.status == .abandoned
         }
         if !pendingJobs.isEmpty {
             VStack(spacing: 8) {
@@ -926,13 +1316,13 @@ struct ModernLibraryView: View {
     }
 
     @ViewBuilder
-    private func pendingJobRow(job: ConversionJob) -> some View {
+    private func pendingJobRow(job: ConversionJobRecord) -> some View {
         VStack(spacing: 8) {
             HStack {
                 Image(systemName: jobBannerIcon(job))
                     .foregroundColor(jobBannerColor(job))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(job.targetFileName)
+                    Text(job.fileName)
                         .font(.system(size: 14, weight: .bold))
                         .foregroundColor(Color.inkTextPrimary)
                         .lineLimit(1)
@@ -941,8 +1331,8 @@ struct ModernLibraryView: View {
                         .foregroundColor(Color.inkTextSecondary)
                 }
                 Spacer()
-                if job.status == .suspended || job.status == .failed {
-                    Button(job.status == .failed ? "Retry" : "Resume") {
+                if job.status == .failed || job.status == .abandoned {
+                    Button("Retry") {
                         retryOrResumeJob(job)
                     }
                     .font(.caption.bold())
@@ -953,7 +1343,7 @@ struct ModernLibraryView: View {
                     .clipShape(Capsule())
                 }
                 Button {
-                    jobQueue.removeJob(pdfID: job.pdfID)
+                    ConversionLedger.shared.removeJob(job.id)
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundColor(Color.inkTextTertiary)
@@ -961,7 +1351,7 @@ struct ModernLibraryView: View {
                 }
             }
 
-            if job.status == .extracting || job.status == .merging || job.status == .waitingForDownload {
+            if job.status == .running {
                 NeuralWaveformView(speed: 1.5, primaryColor: Color.inkBlue, secondaryColor: Color.inkViolet)
                     .frame(height: 24)
                     .padding(.top, 4)
@@ -972,33 +1362,12 @@ struct ModernLibraryView: View {
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(job.status == .failed ? Color.inkRed.opacity(0.3) : Color.inkBorderSubtle, lineWidth: 1)
+                .stroke(job.status == .failed || job.status == .abandoned ? Color.inkRed.opacity(0.3) : Color.inkBorderSubtle, lineWidth: 1)
         )
     }
 
-    private func retryOrResumeJob(_ job: ConversionJob) {
-        if job.status == .failed {
-            jobQueue.updateJobStatus(pdfID: job.pdfID, newStatus: .waitingForDownload)
-            if let pdf = conversionManager.convertedPDFs.first(where: { $0.id == job.pdfID }) {
-                Task { await CloudDownloadManager.shared.downloadAndStore(pdf: pdf, thenConvert: true, manager: conversionManager) }
-            }
-        } else {
-            jobQueue.updateJobStatus(pdfID: job.pdfID, newStatus: .extracting)
-            if let pdf = conversionManager.convertedPDFs.first(where: { $0.id == job.pdfID }) {
-                Task {
-                    if job.isMerge {
-                        await ConversionOrchestrator.shared.convertAndMerge(
-                            sourceFiles: [pdf], outputName: job.outputName ?? "",
-                            mangaMode: job.mangaMode ?? false, manager: conversionManager
-                        )
-                    } else {
-                        await ConversionOrchestrator.shared.convertComic(pdf, mangaMode: job.mangaMode, manager: conversionManager)
-                    }
-                    jobQueue.updateJobStatus(pdfID: job.pdfID, newStatus: .completed)
-                    jobQueue.removeJob(pdfID: job.pdfID)
-                }
-            }
-        }
+    private func retryOrResumeJob(_ job: ConversionJobRecord) {
+        ConversionLedger.shared.retryJob(job.id, manager: conversionManager)
     }
 
     @ViewBuilder
@@ -1025,142 +1394,25 @@ struct ModernLibraryView: View {
     }
 
     @ViewBuilder private var batchBottomToolbar: some View {
-        VStack(spacing: 0) {
-            Divider().background(Theme.text.opacity(0.1))
-            HStack {
-                Button(role: .destructive) {
-                    let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
-                    for item in items { conversionManager.deletePDF(item) }
-                    isBatchMode = false
-                    multiSelection.removeAll()
-                } label: { VStack(spacing: 4) { Image(systemName: "trash").font(.title3); Text("Delete").font(.caption) } }
-                .disabled(multiSelection.isEmpty)
-                
-                Spacer()
-                
-                Button {
-                    batchMergeItems = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
-                    showingBatchMergeReorder = true
-                } label: { VStack(spacing: 4) { Image(systemName: "doc.on.doc.fill").font(.title3); Text("Convert & Merge").font(.caption) } }
-                .disabled(multiSelection.count < 2)
-                
-                Spacer()
-                
-                Button {
-                    let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
-                    AppRouter.shared.presentSheet(.seriesAssignment(nil, isBatch: true, selection: items))
-                } label: { VStack(spacing: 4) { Image(systemName: "rectangle.stack.badge.plus").font(.title3); Text("Group").font(.caption) } }
-                .disabled(multiSelection.isEmpty)
-                
-                Spacer()
-                
-                Button {
-                    let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
-                    for item in items { TransferQueueManager.shared.stageFile(item) }
-                    isBatchMode = false
-                    multiSelection.removeAll()
-                    AppRouter.shared.presentSheet(.wifi)
-                } label: { VStack(spacing: 4) { Image(systemName: "wifi").font(.title3); Text("Transfer").font(.caption) } }
-                .disabled(multiSelection.isEmpty)
-                
-                Spacer()
-                
-                Menu {
-                    Button {
-                        let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
-                        FolderLinkCoordinator.present { urls in
-                            guard let targetURL = urls.first else { return }
-                            Task {
-                                await MainActor.run { isStorageTransferring = true; transferProgress = 0 }
-                                do {
-                                    try await LinkedLibraryScanner.shared.offloadToExternalDrive(
-                                        files: items,
-                                        targetFolderURL: targetURL
-                                    ) { progress, status in
-                                        DispatchQueue.main.async {
-                                            self.transferProgress = progress
-                                            self.transferStatus = status
-                                        }
-                                    }
-                                    await MainActor.run {
-                                        isStorageTransferring = false
-                                        isBatchMode = false
-                                        multiSelection.removeAll()
-                                    }
-                                } catch {
-                                    await MainActor.run {
-                                        isStorageTransferring = false
-                                        conversionManager.appAlert = AppAlert(title: "Transfer Failed", message: error.localizedDescription)
-                                    }
-                                }
-                            }
-                        }
-                    } label: { Label("Move to External Drive", systemImage: "externaldrive.fill.badge.plus") }
-                    
-                    Button {
-                        let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
-                        Task {
-                            await MainActor.run { isStorageTransferring = true; transferProgress = 0 }
-                            do {
-                                try await LinkedLibraryScanner.shared.downloadToDevice(
-                                    files: items
-                                ) { progress, status in
-                                    DispatchQueue.main.async {
-                                        self.transferProgress = progress
-                                        self.transferStatus = status
-                                    }
-                                }
-                                await MainActor.run {
-                                    isStorageTransferring = false
-                                    isBatchMode = false
-                                    multiSelection.removeAll()
-                                }
-                            } catch {
-                                await MainActor.run {
-                                    isStorageTransferring = false
-                                    conversionManager.appAlert = AppAlert(title: "Download Failed", message: error.localizedDescription)
-                                }
-                            }
-                        }
-                    } label: { Label("Download to iPad", systemImage: "ipad.and.arrow.forward") }
-                } label: {
-                    VStack(spacing: 4) { Image(systemName: "externaldrive.fill").font(.title3); Text("Storage").font(.caption) }
-                }
-                .disabled(multiSelection.isEmpty)
-                
-                Spacer()
-                
-                Menu {
-                    Button {
-                        let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
-                        Task { await conversionManager.convertQueue(items) }
-                        isBatchMode = false
-                        multiSelection.removeAll()
-                    } label: { Label("Fast Convert", systemImage: "arrow.triangle.2.circlepath") }
-                    
-                    Button {
-                        batchMergeItems = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
-                        showingBatchMergeReorder = true
-                    } label: { Label("Convert & Merge", systemImage: "doc.on.doc.fill") }
-                    
-                    Button { AppRouter.shared.presentSheet(.merge) } label: { Label("Legacy PDF Merge", systemImage: "arrow.triangle.merge") }
-                    Divider()
-                    Button {
-                        let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
-                        AppRouter.shared.presentSheet(.batchMetadata(items))
-                    } label: { Label("Intelligent Metadata", systemImage: "sparkles") }
-                } label: {
-                    VStack(spacing: 4) { Image(systemName: "ellipsis.circle.fill").font(.title3); Text("Actions").font(.caption) }
-                    .foregroundColor(Theme.orange)
-                }
-                .disabled(multiSelection.isEmpty)
-                    
-            }
-            .padding(.horizontal, 10) // Tweak padding slightly to fit 6 icons
-            .padding(.vertical, 12)
-            .background(.ultraThinMaterial)
-            .foregroundColor(Theme.text)
+        EmptyView()
+    }
+    
+    private func handleDropApplied() {
+        let livePDFs = settingsManager.isVaultUnlocked
+            ? conversionManager.convertedPDFs
+            : conversionManager.convertedPDFs.filter { !$0.isPrivate }
+        viewModel.updateLibraryItemsCache(
+            pdfs: livePDFs,
+            collections: conversionManager.collections,
+            sortOption: sortOption
+        )
+    }
+    
+    private func handleDefaultImport() {
+        ImportCoordinator.present(type: .unified) { urls in
+            Task { await conversionManager.processImportedFiles(urls: urls) }
         }
     }
-}
 
+
+}

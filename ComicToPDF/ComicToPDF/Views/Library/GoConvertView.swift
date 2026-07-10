@@ -92,6 +92,9 @@ private struct GoQuickMergeSheet: View {
                     errorMessage = "Merge completed but output could not be located. Check Settings → Logs."
                 } else {
                     Logger.shared.log("Quick Merge complete", category: "GoUI")
+                    if !ConversionQueueManager.shared.completedGoSourceStems.contains(name) {
+                        ConversionQueueManager.shared.completedGoSourceStems.append(name)
+                    }
                     onMergeComplete(merged)
                     dismiss()
                 }
@@ -471,55 +474,53 @@ struct GoConvertView: View {
                 }
             }
 
-            // Export Pipeline (EPUB only)
-            if settingsManager.conversionSettings.outputFormat == .epub {
-                InkCard(header: "EPUB Export Mode") {
-                    VStack(spacing: 10) {
-                        ForEach(OutputPipeline.allCases) { pipeline in
-                            let pdf = previewPDF ?? dummyPDF
-                            let isDisabled = viewModel.pipelineIsDisabled(pipeline, for: pdf, format: settingsManager.conversionSettings.outputFormat)
-                            Button(action: {
-                                if !isDisabled {
-                                    viewModel.selectedPipeline = pipeline
-                                    viewModel.applyPipeline(pipeline, to: &settingsManager.conversionSettings)
-                                }
-                            }) {
-                                PipelineCardView(
-                                    pipeline: pipeline,
-                                    isDisabled: isDisabled,
-                                    isSelected: viewModel.selectedPipeline == pipeline,
-                                    viewModel: viewModel,
-                                    currentFormat: settingsManager.conversionSettings.outputFormat
-                                )
+            // Export Pipeline
+            InkCard(header: "Conversion Mode") {
+                VStack(spacing: 10) {
+                    ForEach(OutputPipeline.allCases) { pipeline in
+                        let pdf = previewPDF ?? dummyPDF
+                        let isDisabled = viewModel.pipelineIsDisabled(pipeline, for: pdf, format: settingsManager.conversionSettings.outputFormat)
+                        Button(action: {
+                            if !isDisabled {
+                                viewModel.selectedPipeline = pipeline
+                                viewModel.applyPipeline(pipeline, to: &settingsManager.conversionSettings)
                             }
-                            .buttonStyle(PlainButtonStyle())
-                            .disabled(queueManager.isProcessing || isDisabled)
-                            .opacity(isDisabled || queueManager.isProcessing ? 0.55 : 1.0)
+                        }) {
+                            PipelineCardView(
+                                pipeline: pipeline,
+                                isDisabled: isDisabled,
+                               isSelected: viewModel.selectedPipeline == pipeline,
+                                viewModel: viewModel,
+                                currentFormat: settingsManager.conversionSettings.outputFormat
+                            )
                         }
+                        .buttonStyle(PlainButtonStyle())
+                        .disabled(queueManager.isProcessing || isDisabled)
+                        .opacity(isDisabled || queueManager.isProcessing ? 0.55 : 1.0)
+                    }
 
-                        if viewModel.selectedPipeline == .proPanel {
-                            VStack(spacing: 8) {
-                                if previewPDF != nil {
-                                    Button(action: { viewModel.showingPreview = true }) {
-                                        Label("Preview Panel Detection (Page 4)", systemImage: "eye")
-                                            .font(.system(size: 14))
-                                            .frame(maxWidth: .infinity)
-                                            .padding(.vertical, 10)
-                                            .background(Color.inkSurfaceRaised)
-                                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                                            .foregroundColor(.inkTextPrimary)
-                                    }
-                                    .buttonStyle(PlainButtonStyle())
-                                }
-                                Button(action: { viewModel.showingCalibreGuide = true }) {
-                                    Label("How to Sideload to Kindle", systemImage: "questionmark.circle")
-                                        .font(.caption)
-                                        .foregroundColor(.inkBlue)
+                    if viewModel.selectedPipeline == .proPanel {
+                        VStack(spacing: 8) {
+                            if previewPDF != nil {
+                                Button(action: { viewModel.showingPreview = true }) {
+                                    Label("Preview Panel Detection (Page 4)", systemImage: "eye")
+                                        .font(.system(size: 14))
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 10)
+                                        .background(Color.inkSurfaceRaised)
+                                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                                        .foregroundColor(.inkTextPrimary)
                                 }
                                 .buttonStyle(PlainButtonStyle())
                             }
-                            .padding(.top, 4)
+                            Button(action: { viewModel.showingCalibreGuide = true }) {
+                                Label("How to Sideload to Kindle", systemImage: "questionmark.circle")
+                                    .font(.caption)
+                                    .foregroundColor(.inkBlue)
+                            }
+                            .buttonStyle(PlainButtonStyle())
                         }
+                        .padding(.top, 4)
                     }
                 }
             }
@@ -843,24 +844,7 @@ struct CoverThumbnailView: View {
                 self.cover = cached
                 return
             }
-            if let coverURL = conversionManager.getCoverURL(for: pdf),
-               FileManager.default.fileExists(atPath: coverURL.path) {
-                let safeURL = coverURL
-                let generated = await Task.detached(priority: .userInitiated) { () -> UIImage? in
-                    let opts = [kCGImageSourceShouldCache: false] as CFDictionary
-                    guard let src = CGImageSourceCreateWithURL(safeURL as CFURL, opts) else { return nil }
-                    let down = [kCGImageSourceCreateThumbnailFromImageAlways: true,
-                                kCGImageSourceShouldCacheImmediately: true,
-                                kCGImageSourceCreateThumbnailWithTransform: true,
-                                kCGImageSourceThumbnailMaxPixelSize: 120] as CFDictionary
-                    guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, down) else { return nil }
-                    return UIImage(cgImage: cg)
-                }.value
-                if let image = generated {
-                    conversionManager.thumbnailCache.setObject(image, forKey: key)
-                    self.cover = image
-                }
-            }
+            await ThumbnailGenerationQueue.shared.enqueue(pdf, manager: conversionManager)
         }
     }
 }

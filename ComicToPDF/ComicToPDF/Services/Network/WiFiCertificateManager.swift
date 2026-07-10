@@ -18,7 +18,12 @@ struct WiFiCertificateManager {
         var result: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
         guard status == errSecSuccess, let identity = result else { return nil }
-        return (identity as! SecIdentity)
+        // Verify the type using CoreFoundation type IDs before casting.
+        // unsafeBitCast is the idiomatic Security framework pattern here —
+        // SecItemCopyMatching returns CFTypeRef (AnyObject), and the dynamic
+        // `as! SecIdentity` cast can throw at runtime if the type-ID changes.
+        guard CFGetTypeID(identity) == SecIdentityGetTypeID() else { return nil }
+        return unsafeDowncast(identity, to: SecIdentity.self)
     }
 
     // Generates a new P-256 key pair and stores the private key in Keychain.

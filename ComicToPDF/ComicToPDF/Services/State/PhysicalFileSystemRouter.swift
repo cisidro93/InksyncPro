@@ -4,6 +4,17 @@ import SwiftUI
 import PDFKit
 import ZIPFoundation
 import Unrar
+import Vision
+
+private let _globalCoversDirectory: URL = {
+    let fileManager = FileManager.default
+    let appSupportDir = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? fileManager.temporaryDirectory
+    let dir = appSupportDir.appendingPathComponent("Covers", isDirectory: true)
+    if !fileManager.fileExists(atPath: dir.path) {
+        try? fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
+    }
+    return dir
+}()
 
 /// Safely handles all iOS Storage interactions, including disk persistence, thumbnail caching into Application Support, and atomic NSFileCoordinator bindings independent from the Presentation logic.
 @MainActor
@@ -11,18 +22,12 @@ class PhysicalFileSystemRouter {
     static let shared = PhysicalFileSystemRouter()
     private init() {}
     
+    private var backfillTask: Task<Void, Never>?
+    
     // MARK: - Core File IO Storage
-    static func getCoversDirectory() -> URL {
-        let fileManager = FileManager.default
-        guard let appSupportDir = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
-            return fileManager.temporaryDirectory
-        }
-        let coversDir = appSupportDir.appendingPathComponent("Covers", isDirectory: true)
-        
-        if !fileManager.fileExists(atPath: coversDir.path) {
-            try? fileManager.createDirectory(at: coversDir, withIntermediateDirectories: true)
-        }
-        return coversDir
+
+    nonisolated static func getCoversDirectory() -> URL {
+        return _globalCoversDirectory
     }
     
     func getCoverURL(for pdf: ConvertedPDF) -> URL? {
@@ -75,7 +80,7 @@ class PhysicalFileSystemRouter {
                         kCGImageSourceCreateThumbnailFromImageAlways: true,
                         kCGImageSourceShouldCacheImmediately: true,
                         kCGImageSourceCreateThumbnailWithTransform: true,
-                        kCGImageSourceThumbnailMaxPixelSize: 200
+                        kCGImageSourceThumbnailMaxPixelSize: 600   // grid cells never exceed ~200pt (Retina 3x = 600px)
                     ] as CFDictionary
                     
                     if let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, downsampleOpts) {
@@ -93,21 +98,39 @@ class PhysicalFileSystemRouter {
     
     func saveCoverImage(_ data: Data, for pdf: ConvertedPDF, manager: ConversionManager) {
         guard let coverURL = getCoverURL(for: pdf) else { return }
-        try? data.write(to: coverURL)
+        let pdfID = pdf.id
         
-        if let image = UIImage(data: data) {
-            let thumbnail = image.preparingThumbnail(of: CGSize(width: 160, height: 240)) ?? image
-            let key = pdf.id.uuidString as NSString
-            // Pixel byte count approximation — accurate enough for NSCache pressure, zero CPU overhead.
-            let cost = Int(thumbnail.size.width * thumbnail.size.height * thumbnail.scale * thumbnail.scale * 4)
-            manager.thumbnailCache.setObject(thumbnail, forKey: key, cost: cost)
+        // Clear ThumbnailDaemon cache (both memory and disk) so the updated cover is generated
+        Task {
+            await ThumbnailDaemon.shared.clearCache(for: pdfID)
         }
         
-        if let index = manager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
-            manager.convertedPDFs[index].coverImageData = nil
-            // Route through the debounced subject so rapid backfill saves coalesce
-            // into one SwiftUI diff per 150ms window instead of one per cover write.
-            manager.thumbnailReadySubject.send()
+        Task.detached(priority: .background) {
+            try? data.write(to: coverURL)
+            
+            let key = pdfID.uuidString as NSString
+            var thumbnailCost: Int? = nil
+            var finalThumbnail: UIImage? = nil
+            
+            autoreleasepool {
+                if let image = UIImage(data: data) {
+                    let thumbnail = image.preparingThumbnail(of: CGSize(width: 300, height: 450)) ?? image
+                    finalThumbnail = thumbnail
+                    thumbnailCost = Int(thumbnail.size.width * thumbnail.size.height * thumbnail.scale * thumbnail.scale * 4)
+                }
+            }
+            
+            await MainActor.run {
+                if let thumb = finalThumbnail, let cost = thumbnailCost {
+                    manager.thumbnailCache.setObject(thumb, forKey: key, cost: cost)
+                }
+                if let index = manager.convertedPDFs.firstIndex(where: { $0.id == pdfID }) {
+                    manager.convertedPDFs[index].coverImageData = nil
+                    // Route through the debounced subject so rapid backfill saves coalesce
+                    // into one SwiftUI diff per 150ms window instead of one per cover write.
+                    manager.thumbnailReadySubject.send(pdfID)
+                }
+            }
         }
     }
     
@@ -140,12 +163,18 @@ class PhysicalFileSystemRouter {
     
     // MARK: - Heavy Graphics Generation
     func generateCoverThumbnail(for pdf: ConvertedPDF, manager: ConversionManager) async {
-        if let variantID = pdf.metadata.selectedCoverID,
-           let variantURL = pdf.metadata.coverVariants[variantID],
-           FileManager.default.fileExists(atPath: variantURL.path),
-           let data = try? Data(contentsOf: variantURL),
-           let image = UIImage(data: data),
-           let jpegData = image.jpegData(compressionQuality: 0.7) {
+        let variantData: Data? = autoreleasepool {
+            guard let variantID = pdf.metadata.selectedCoverID,
+                  let variantURL = pdf.metadata.coverVariants[variantID],
+                  FileManager.default.fileExists(atPath: variantURL.path) else { return nil }
+            let optData = try? Data(contentsOf: variantURL)
+            if let data = optData, let image = UIImage(data: data) {
+                return image.jpegData(compressionQuality: 0.85)
+            }
+            return nil
+        }
+        
+        if let jpegData = variantData {
             saveCoverImage(jpegData, for: pdf, manager: manager)
             return
         }
@@ -172,8 +201,11 @@ class PhysicalFileSystemRouter {
         // Release scope after background work completes.
         if needsStopAccess { url.stopAccessingSecurityScopedResource() }
         
-        guard let image = image, let jpegData = image.jpegData(compressionQuality: 0.7) else { return }
-        saveCoverImage(jpegData, for: pdf, manager: manager)
+        let jpegData = autoreleasepool {
+            image?.jpegData(compressionQuality: 0.85)
+        }
+        guard let data = jpegData else { return }
+        saveCoverImage(data, for: pdf, manager: manager)
     }
 
     /// Generates and persists a cover thumbnail from an already-downloaded temp file.
@@ -186,8 +218,11 @@ class PhysicalFileSystemRouter {
             PhysicalFileSystemRouter.extractCoverImageStatic(from: localURL)
         }.value
         
-        guard let image, let jpegData = image.jpegData(compressionQuality: 0.7) else { return }
-        saveCoverImage(jpegData, for: pdf, manager: manager)
+        let jpegData = autoreleasepool {
+            image?.jpegData(compressionQuality: 0.85)
+        }
+        guard let data = jpegData else { return }
+        saveCoverImage(data, for: pdf, manager: manager)
         Logger.shared.log("PhysicalFileSystemRouter: Cloud cover generated for '\(pdf.name)'", category: "Cloud", type: .success)
     }
 
@@ -203,7 +238,7 @@ class PhysicalFileSystemRouter {
             let image = await Task.detached(priority: .userInitiated) { () -> UIImage? in
                 UIImage(data: data)
             }.value
-            guard let image, let jpegData = image.jpegData(compressionQuality: 0.7) else { return }
+            guard let image, let jpegData = image.jpegData(compressionQuality: 0.85) else { return }
             saveCoverImage(jpegData, for: pdf, manager: manager)
             Logger.shared.log("PhysicalFileSystemRouter: Cloud cover from byte-range for '\(pdf.name)'", category: "Cloud", type: .success)
         } catch {
@@ -212,16 +247,24 @@ class PhysicalFileSystemRouter {
     }
     
     func backfillMissingThumbnails(manager: ConversionManager) {
+        backfillTask?.cancel()
+        
         let allPDFs = manager.convertedPDFs
-
-        // Pass 1 — warm in-memory NSCache for covers that exist on disk but aren't cached.
-        // This is the "cold-start" fix: covers appear immediately on first library open.
-        Task(priority: .userInitiated) {
+        
+        backfillTask = Task(priority: .userInitiated) {
+            // Hop to Main Actor ONCE to filter pdfs that need warming
+            let pdfsToWarm = await MainActor.run { () -> [ConvertedPDF] in
+                allPDFs.filter { pdf in
+                    let key = pdf.id.uuidString as NSString
+                    return manager.thumbnailCache.object(forKey: key) == nil
+                }
+            }
+            
             var warmedAny = false
-            for pdf in allPDFs {
-                let key = pdf.id.uuidString as NSString
-                guard manager.thumbnailCache.object(forKey: key) == nil,
-                      let coverURL = getCoverURL(for: pdf),
+            for pdf in pdfsToWarm {
+                guard !Task.isCancelled else { return }
+                
+                guard let coverURL = getCoverURL(for: pdf),
                       FileManager.default.fileExists(atPath: coverURL.path) else { continue }
 
                 let image = await Task.detached(priority: .userInitiated) { () -> UIImage? in
@@ -231,7 +274,7 @@ class PhysicalFileSystemRouter {
                         kCGImageSourceCreateThumbnailFromImageAlways: true,
                         kCGImageSourceShouldCacheImmediately: true,
                         kCGImageSourceCreateThumbnailWithTransform: true,
-                        kCGImageSourceThumbnailMaxPixelSize: 200
+                        kCGImageSourceThumbnailMaxPixelSize: 600   // grid cells never exceed ~200pt (Retina 3x = 600px)
                     ] as CFDictionary
                     guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, downsampleOpts) else { return nil }
                     return UIImage(cgImage: cg)
@@ -239,6 +282,7 @@ class PhysicalFileSystemRouter {
 
                 if let image {
                     await MainActor.run {
+                        let key = pdf.id.uuidString as NSString
                         manager.thumbnailCache.setObject(image, forKey: key)
                         warmedAny = true
                     }
@@ -250,27 +294,18 @@ class PhysicalFileSystemRouter {
             }
         }
 
-
         // Pass 2 — generate covers for files that have no on-disk cover yet.
-        // IMPORTANT: Process in batches of 5 with yield between batches to prevent
-        // saturating the NAND / memory bus when importing hundreds of files at once.
-        // Without batching, every generateCoverThumbnail runs concurrently via
-        // Task.detached which causes OOM crashes on large library imports.
+        // ✅ OOM Crash Fix: Hand off all missing covers to the `ThumbnailGenerationQueue`.
+        // This ensures they are processed strictly maxConcurrent = 2 at a time, preventing
+        // overlapping bulk tasks from exhausting device RAM during large imports.
         let pdfsNeedingCovers = allPDFs.filter { pdf in
             guard let coverURL = getCoverURL(for: pdf) else { return true }
             return !FileManager.default.fileExists(atPath: coverURL.path)
         }
         guard !pdfsNeedingCovers.isEmpty else { return }
         Task(priority: .background) {
-            let batchSize = 5
-            for batchStart in stride(from: 0, to: pdfsNeedingCovers.count, by: batchSize) {
-                let batch = pdfsNeedingCovers[batchStart ..< min(batchStart + batchSize, pdfsNeedingCovers.count)]
-                for pdf in batch {
-                    await generateCoverThumbnail(for: pdf, manager: manager)
-                }
-                // Yield after each batch so the system can reclaim memory and
-                // service other lower-priority tasks (UI, scrolling).
-                await Task.yield()
+            for pdf in pdfsNeedingCovers {
+                await ThumbnailGenerationQueue.shared.enqueue(pdf, manager: manager)
             }
         }
 
@@ -288,7 +323,9 @@ class PhysicalFileSystemRouter {
 
     
     func loadThumbnailAsync(for pdf: ConvertedPDF, manager: ConversionManager) async {
-        if manager.thumbnailCache.object(forKey: pdf.id.uuidString as NSString) != nil { return }
+        let key = pdf.id.uuidString as NSString
+        let isCached = await MainActor.run { manager.thumbnailCache.object(forKey: key) != nil }
+        if isCached { return }
         
         var generatedImage: UIImage? = nil
         if let coverURL = self.getCoverURL(for: pdf) {
@@ -298,7 +335,7 @@ class PhysicalFileSystemRouter {
                     kCGImageSourceCreateThumbnailFromImageAlways: true,
                     kCGImageSourceShouldCacheImmediately: true,
                     kCGImageSourceCreateThumbnailWithTransform: true,
-                    kCGImageSourceThumbnailMaxPixelSize: 200
+                    kCGImageSourceThumbnailMaxPixelSize: 720
                 ] as CFDictionary
                 
                 if let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, downsampleOptions) {
@@ -312,13 +349,10 @@ class PhysicalFileSystemRouter {
                 manager.thumbnailCache.setObject(image, forKey: pdf.id.uuidString as NSString)
                 // H2: Fire the debounced subject instead of objectWillChange directly.
                 // Up to 200 concurrent cell loads coalesce into one SwiftUI diff per 150ms window.
-                manager.thumbnailReadySubject.send()
+                manager.thumbnailReadySubject.send(pdf.id)
             }
         } else {
-            await self.generateCoverThumbnail(for: pdf, manager: manager)
-            if manager.thumbnailCache.object(forKey: pdf.id.uuidString as NSString) != nil {
-                await MainActor.run { manager.thumbnailReadySubject.send() }
-            }
+            await ThumbnailGenerationQueue.shared.enqueue(pdf, manager: manager)
         }
     }
     
@@ -339,7 +373,7 @@ class PhysicalFileSystemRouter {
                         kCGImageSourceCreateThumbnailFromImageAlways: true,
                         kCGImageSourceShouldCacheImmediately: true,
                         kCGImageSourceCreateThumbnailWithTransform: true,
-                        kCGImageSourceThumbnailMaxPixelSize: 200
+                        kCGImageSourceThumbnailMaxPixelSize: 720
                     ] as CFDictionary
                     
                     if let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, downsampleOptions) {
@@ -354,35 +388,56 @@ class PhysicalFileSystemRouter {
                 await MainActor.run {
                     manager.thumbnailCache.setObject(image, forKey: keyStr as NSString)
                     // H2: debounced pulse — prevents 200 per-cell full-tree re-renders during scroll
-                    manager.thumbnailReadySubject.send()
+                    manager.thumbnailReadySubject.send(pdf.id)
                 }
             } else {
-                await MainActor.run {
-                    _ = Task {
-                        await self.generateCoverThumbnail(for: pdf, manager: manager)
-                    }
-                }
+                await ThumbnailGenerationQueue.shared.enqueue(pdf, manager: manager)
             }
         }
         return nil
     }
     
     // MARK: - Native Thread-Safe Physical OS Interactions
-    func safelyRenamePhysicalFile(pdf: ConvertedPDF, newName: String, manager: ConversionManager) throws {
+    func safelyRenamePhysicalFile(pdf: ConvertedPDF, newName: String, manager: ConversionManager, saveAfter: Bool = true) async throws {
         guard let idx = manager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) else {
             throw NSError(domain: "Database", code: 404, userInfo: [NSLocalizedDescriptionKey: "File not found within internal database loop."])
         }
         
+        // Close any active handles/locks on this file before attempting rename
+        await ArchiveManager.shared.clearCache()
+        
         let fileManager = FileManager.default
-        let currentURL = pdf.url
+        var currentURL = pdf.url
+        
+        // Acquire security-scoped resource access if linked external file
+        var needsStopAccess = false
+        if case .linked(let bm) = pdf.sourceMode {
+            if let resolved = try? BookmarkResolver.shared.resolve(bm) {
+                needsStopAccess = resolved.startAccessingSecurityScopedResource()
+                currentURL = resolved
+            }
+        }
+        
+        defer {
+            if needsStopAccess {
+                currentURL.stopAccessingSecurityScopedResource()
+            }
+        }
+        
         guard fileManager.fileExists(atPath: currentURL.path) else {
-            throw NSError(domain: "FileSystem", code: 404, userInfo: [NSLocalizedDescriptionKey: "The physical file no longer exists at original path."])
+            throw NSError(domain: "FileSystem", code: 404, userInfo: [NSLocalizedDescriptionKey: "The physical file no longer exists at path: \(currentURL.path)"])
         }
         
         let pathExtension = currentURL.pathExtension
         let cleanName = newName.replacingOccurrences(of: "/", with: "-")
                                .replacingOccurrences(of: "\\", with: "-")
                                .replacingOccurrences(of: ":", with: "-")
+                               .replacingOccurrences(of: "*", with: "")
+                               .replacingOccurrences(of: "?", with: "")
+                               .replacingOccurrences(of: "\"", with: "'")
+                               .replacingOccurrences(of: "<", with: "(")
+                               .replacingOccurrences(of: ">", with: ")")
+                               .replacingOccurrences(of: "|", with: "-")
         
         let targetDirectory = currentURL.deletingLastPathComponent()
         var newURL = targetDirectory.appendingPathComponent("\(cleanName).\(pathExtension)")
@@ -397,44 +452,316 @@ class PhysicalFileSystemRouter {
         do {
             try fileManager.moveItem(at: currentURL, to: newURL)
         } catch {
-            Logger.shared.log("Move Failure: \(error)", category: "FileSystem", type: .error)
+            Logger.shared.log("Move Failure from \(currentURL.path) to \(newURL.path): \(error)", category: "FileSystem", type: .error)
             throw error
         }
         
-        // ✅ PERF: @MainActor class — direct assignment, no dispatch needed
+        // Regenerate bookmark for new URL if it's a linked file
+        if case .linked = pdf.sourceMode {
+            let accessingNew = newURL.startAccessingSecurityScopedResource()
+            do {
+                let newBookmark = try newURL.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
+                manager.convertedPDFs[idx].sourceMode = .linked(bookmarkData: newBookmark)
+            } catch {
+                Logger.shared.log("Failed to create new bookmark after rename: \(error.localizedDescription)", category: "FileSystem", type: .error)
+            }
+            if accessingNew {
+                newURL.stopAccessingSecurityScopedResource()
+            }
+        }
+        
+        // Update database record in-memory
         manager.convertedPDFs[idx].url = newURL
         manager.convertedPDFs[idx].name = newURL.lastPathComponent
+        
+        if saveAfter {
+            manager.saveLibrary()
+        }
+        
+        // Broadcast file rename to active reader sessions
+        NotificationCenter.default.post(
+            name: Notification.Name("InksyncPro.fileDidRename"),
+            object: nil,
+            userInfo: ["pdfID": pdf.id, "newURL": newURL]
+        )
+    }
+
+    func safelyRenameSeries(issues: [ConvertedPDF], newSeriesName: String, manager: ConversionManager) async throws {
+        let cleanSeriesName = newSeriesName.trimmingCharacters(in: .whitespacesAndNewlines)
+                                           .replacingOccurrences(of: "/", with: "-")
+                                           .replacingOccurrences(of: "\\", with: "-")
+                                           .replacingOccurrences(of: ":", with: "-")
+                                           .replacingOccurrences(of: "*", with: "")
+                                           .replacingOccurrences(of: "?", with: "")
+                                           .replacingOccurrences(of: "\"", with: "'")
+                                           .replacingOccurrences(of: "<", with: "(")
+                                           .replacingOccurrences(of: ">", with: ")")
+                                           .replacingOccurrences(of: "|", with: "-")
+        
+        guard !cleanSeriesName.isEmpty else { return }
+
+        // Find database indices of all issues in the target group
+        var dbIndices: [Int] = []
+        for issue in issues {
+            if let idx = manager.convertedPDFs.firstIndex(where: { $0.id == issue.id }) {
+                dbIndices.append(idx)
+            }
+        }
+        
+        guard !dbIndices.isEmpty else { return }
+        
+        let fileManager = FileManager.default
+        let pdfURLs = dbIndices.map { manager.convertedPDFs[$0].url }
+        let parentURLs = pdfURLs.map { $0.deletingLastPathComponent() }
+        let uniqueParents = Set(parentURLs)
+        
+        var folderRenamed = false
+        var oldFolderURL: URL? = nil
+        var newFolderURL: URL? = nil
+        
+        // 1. If all files share a common parent subfolder, attempt directory rename first
+        if uniqueParents.count == 1, let commonParent = uniqueParents.first {
+            let docDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first
+            let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            let inboxDir = appSupport?.appendingPathComponent("InksyncVault/Inbox", isDirectory: true)
+            let tmpDir = URL(fileURLWithPath: NSTemporaryDirectory())
+            
+            let isRoot = commonParent.path == docDir?.path ||
+                         commonParent.path == inboxDir?.path ||
+                         commonParent.path == tmpDir.path ||
+                         commonParent.path == docDir?.deletingLastPathComponent().path
+            
+            if !isRoot {
+                oldFolderURL = commonParent
+                let containerDir = commonParent.deletingLastPathComponent()
+                var targetFolderURL = containerDir.appendingPathComponent(cleanSeriesName, isDirectory: true)
+                
+                // Keep target folder unique
+                var counter = 2
+                while fileManager.fileExists(atPath: targetFolderURL.path) {
+                    targetFolderURL = containerDir.appendingPathComponent("\(cleanSeriesName)_v\(counter)", isDirectory: true)
+                    counter += 1
+                }
+                
+                newFolderURL = targetFolderURL
+                
+                // Clear cached open handles before renaming directory
+                await ArchiveManager.shared.clearCache()
+                await PDFRenderActor.shared.clear()
+                
+                var folderNeedsStopAccess = false
+                let firstPDF = manager.convertedPDFs[dbIndices[0]]
+                
+                // Start access for security scoped parent if linked
+                if case .linked(let bm) = firstPDF.sourceMode {
+                    if let resolvedFile = try? BookmarkResolver.shared.resolve(bm) {
+                        folderNeedsStopAccess = resolvedFile.startAccessingSecurityScopedResource()
+                    }
+                }
+                
+                do {
+                    try fileManager.moveItem(at: commonParent, to: targetFolderURL)
+                    folderRenamed = true
+                    Logger.shared.log("Folder Renamed successfully: \(commonParent.lastPathComponent) -> \(targetFolderURL.lastPathComponent)", category: "FileSystem", type: .success)
+                } catch {
+                    Logger.shared.log("Folder Rename Failed: \(error.localizedDescription). Will fallback to renaming files inside old folder.", category: "FileSystem", type: .warning)
+                }
+                
+                if folderNeedsStopAccess {
+                    if let resolvedFile = try? BookmarkResolver.shared.resolve(firstPDF.driveBookmarkData ?? Data()) {
+                        resolvedFile.stopAccessingSecurityScopedResource()
+                    }
+                }
+            }
+        }
+        
+        // 2. Update URLs of all library items matching the old parent path prefix (cascading rename)
+        if folderRenamed, let oldFolder = oldFolderURL, let newFolder = newFolderURL {
+            for i in 0..<manager.convertedPDFs.count {
+                let pdfURL = manager.convertedPDFs[i].url
+                if pdfURL.path.hasPrefix(oldFolder.path) {
+                    let relativePath = String(pdfURL.path.dropFirst(oldFolder.path.count))
+                    let resolvedNewURL = newFolder.appendingPathComponent(relativePath)
+                    
+                    manager.convertedPDFs[i].url = resolvedNewURL
+                    manager.convertedPDFs[i].metadata.series = cleanSeriesName
+                    
+                    // Re-register bookmark if linked
+                    if case .linked = manager.convertedPDFs[i].sourceMode {
+                        let accessing = resolvedNewURL.startAccessingSecurityScopedResource()
+                        if let newBM = try? resolvedNewURL.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil) {
+                            manager.convertedPDFs[i].sourceMode = .linked(bookmarkData: newBM)
+                        }
+                        if accessing { resolvedNewURL.stopAccessingSecurityScopedResource() }
+                    }
+                }
+            }
+        }
+        
+        // 3. Rename individual files within the parent folder
+        for idx in dbIndices {
+            manager.convertedPDFs[idx].metadata.series = cleanSeriesName
+            let pdf = manager.convertedPDFs[idx]
+            let newFilename = manager.generateRenameFilename(pdf: pdf, newSeriesName: cleanSeriesName)
+            
+            do {
+                try await safelyRenamePhysicalFile(pdf: pdf, newName: newFilename, manager: manager, saveAfter: false)
+            } catch {
+                Logger.shared.log("File rename failed for \(pdf.name): \(error.localizedDescription). Falling back to logical rename.", category: "FileSystem", type: .warning)
+                // Fallback logical rename: update database name & extension only
+                let ext = pdf.url.pathExtension
+                let finalName = newFilename.isEmpty ? pdf.name : "\(newFilename).\(ext)"
+                manager.convertedPDFs[idx].name = finalName
+            }
+        }
+        
         manager.saveLibrary()
     }
     
     // MARK: - Extracted Static Disk Helpers
+    nonisolated static func excludeFromBackup(at url: URL) {
+        var mutableURL = url
+        var resourceValues = URLResourceValues()
+        resourceValues.isExcludedFromBackup = true
+        do {
+            try mutableURL.setResourceValues(resourceValues)
+        } catch {
+            Logger.shared.log("Failed to exclude from backup at \(url.lastPathComponent): \(error.localizedDescription)", category: "FileSystem", type: .error)
+        }
+    }
+    
+    // MARK: - Disclaimer / Warning Image Filter
+    
+    nonisolated static func isDisclaimerFilename(_ path: String) -> Bool {
+        let filename = (path as NSString).lastPathComponent.lowercased()
+        let keywords = [
+            "credit", "disclaimer", "warning", "scanlation", "copyright",
+            "piracy", "pirate", "notice", "please_read", "pleaseread",
+            "read_first", "readfirst", "illegal"
+        ]
+        for keyword in keywords {
+            if filename.contains(keyword) {
+                return true
+            }
+        }
+        return false
+    }
+    
+    nonisolated static func containsDisclaimerText(in image: UIImage) -> Bool {
+        autoreleasepool {
+            guard let cgImage = image.cgImage else { return false }
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = .fast
+            request.usesLanguageCorrection = false
+            
+            let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+            do {
+                try handler.perform([request])
+                guard let observations = request.results else { return false }
+                
+                let keywords = [
+                    "pirat", "illegal", "scanlation", "disclaimer", "not for sale",
+                    "free translation", "support the official", "paid for this", "scammed"
+                ]
+                
+                for observation in observations {
+                    guard let topCandidate = observation.topCandidates(1).first else { continue }
+                    let text = topCandidate.string.lowercased()
+                    for keyword in keywords {
+                        if text.contains(keyword) {
+                            return true
+                        }
+                    }
+                }
+            } catch {
+                Logger.shared.log("[Disclaimer Detector] Vision OCR Error: \(error.localizedDescription)", category: "AI", type: .error)
+            }
+            return false
+        }
+    }
+    
     nonisolated static func extractCoverImageStatic(from url: URL) -> UIImage? {
         let ext = url.pathExtension.lowercased()
         if ext == "pdf" {
-            let accessing = url.startAccessingSecurityScopedResource()
+            let accessing: Bool
+            if url.path.contains("Documents") || url.path.contains("tmp") {
+                accessing = false
+            } else {
+                accessing = url.startAccessingSecurityScopedResource()
+            }
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }
             
-            guard let document = PDFDocument(url: url) else { return nil }
-            
-            // Try up to the first 3 pages to find a portrait cover
-            for i in 0..<min(document.pageCount, 3) {
-                if let page = document.page(at: i) {
-                    let bounds = page.bounds(for: .mediaBox)
-                    // Skip if it's the first page and appears to be a 2-page spread
-                    if i == 0 && bounds.width > bounds.height && document.pageCount > 1 {
-                        continue
+            return autoreleasepool { () -> UIImage? in
+                guard let document = PDFDocument(url: url) else { return nil }
+                
+                let drawPage: (PDFPage) -> UIImage? = { page in
+                    let pageBounds = page.bounds(for: .mediaBox)
+                    guard pageBounds.width > 0 && pageBounds.height > 0 && !pageBounds.width.isNaN && !pageBounds.height.isNaN else { return nil }
+                    let size = CGSize(width: 300, height: 450)
+                    let scale = min(size.width / pageBounds.width, size.height / pageBounds.height)
+                    let scaledSize = CGSize(width: pageBounds.width * scale, height: pageBounds.height * scale)
+                    guard scaledSize.width > 0 && scaledSize.height > 0 && !scaledSize.width.isNaN && !scaledSize.height.isNaN else { return nil }
+                    
+                    let renderer = UIGraphicsImageRenderer(size: scaledSize)
+                    return renderer.image { context in
+                        UIColor.white.setFill()
+                        context.fill(CGRect(origin: .zero, size: scaledSize))
+                        
+                        context.cgContext.translateBy(x: 0, y: scaledSize.height)
+                        context.cgContext.scaleBy(x: scale, y: -scale)
+                        
+                        page.draw(with: .mediaBox, to: context.cgContext)
                     }
-                    return page.thumbnail(of: CGSize(width: 300, height: 450), for: .mediaBox)
                 }
+                
+                // Try up to the first 5 pages to find a portrait cover
+                var firstSpreadImage: UIImage? = nil
+                for i in 0..<min(document.pageCount, 5) {
+                    let pageImage = autoreleasepool { () -> UIImage? in
+                        guard let page = document.page(at: i) else { return nil }
+                        let bounds = page.bounds(for: .mediaBox)
+                        // Skip landscape (two-page spread)
+                        if bounds.width > bounds.height && document.pageCount > 1 {
+                            return drawPage(page)
+                        }
+                        if let portrait = drawPage(page) {
+                            if PhysicalFileSystemRouter.containsDisclaimerText(in: portrait) {
+                                Logger.shared.log("[Disclaimer Detector] Skipping PDF page \(i) due to disclaimer/warning text.", category: "FileSystem", type: .warning)
+                                return nil
+                            }
+                            return portrait
+                        }
+                        return nil
+                    }
+                    
+                    if let img = pageImage {
+                        if let page = document.page(at: i) {
+                            let bounds = page.bounds(for: .mediaBox)
+                            if bounds.width > bounds.height && document.pageCount > 1 {
+                                if firstSpreadImage == nil { firstSpreadImage = img }
+                            } else {
+                                return img
+                            }
+                        }
+                    }
+                }
+                
+                // Fallback to the first spread, or page 0 if nothing else worked
+                if let fallback = firstSpreadImage { return fallback }
+                if let page = document.page(at: 0) {
+                    return drawPage(page)
+                }
+                return nil
             }
-            
-            // Fallback to page 0 if no portrait pages were found
-            guard let page = document.page(at: 0) else { return nil }
-            return page.thumbnail(of: CGSize(width: 300, height: 450), for: .mediaBox)
         }
 
         if ["cbz", "zip", "epub"].contains(ext) {
-            let accessing = url.startAccessingSecurityScopedResource()
+            let accessing: Bool
+            if url.path.contains("Documents") || url.path.contains("tmp") {
+                accessing = false
+            } else {
+                accessing = url.startAccessingSecurityScopedResource()
+            }
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }
             
             guard FileManager.default.fileExists(atPath: url.path) else { return nil }
@@ -472,11 +799,7 @@ class PhysicalFileSystemRouter {
                 // The CBR path already uses prefix(5); we mirror that here. Sorting all
                 // 400 entries of a CBZ just to read the first image was O(N log N) waste.
                 let imageExts: Set<String> = ["jpg", "jpeg", "png", "webp"]
-                var firstSpreadImage: UIImage? = nil
-                var attempts = 0
-
-                // Collect and sort only image entries (central directory read is fast;
-                // we still need sorted order so page 1 is the cover, not a random entry).
+                // Collect and sort ALL image entries first to ensure we get the true first pages
                 var imageEntries: [(String, ZIPFoundation.Entry)] = []
                 for entry in archive {
                     if entry.type == .directory { continue }
@@ -486,31 +809,56 @@ class PhysicalFileSystemRouter {
                           !(entry.path as NSString).lastPathComponent.hasPrefix("._"),
                           !entry.path.hasSuffix(".DS_Store") else { continue }
                     imageEntries.append((entry.path, entry))
-                    // Early collection cap: we only need the first few to find a portrait cover
-                    if imageEntries.count >= 6 { break }
                 }
                 imageEntries.sort { $0.0.localizedStandardCompare($1.0) == .orderedAscending }
 
-                for (_, entry) in imageEntries {
-                    // Safe cancellation check inside a synchronous nonisolated func:
-                    // Task.isCancelled can only be called from async context; using
-                    // withUnsafeCurrentTask avoids a Swift runtime crash.
+                var firstSpreadImage: UIImage? = nil
+                for (path, entry) in imageEntries.prefix(6) {
+                    if PhysicalFileSystemRouter.isDisclaimerFilename(path) {
+                        Logger.shared.log("[Disclaimer Detector] Skipping ZIP entry '\(path)' due to disclaimer filename.", category: "FileSystem", type: .warning)
+                        continue
+                    }
+                    
                     var cancelled = false
                     withUnsafeCurrentTask { cancelled = $0?.isCancelled ?? false }
                     if cancelled { return nil }
-                    var data = Data()
-                    do {
-                        _ = try archive.extract(entry) { data.append($0) }
-                        if let image = UIImage(data: data) {
-                            attempts += 1
-                            if attempts == 1 && image.size.width > image.size.height {
-                                firstSpreadImage = image
-                                continue
+                    
+                    let image = autoreleasepool { () -> UIImage? in
+                        var data = Data()
+                        do {
+                            _ = try archive.extract(entry) { data.append($0) }
+                            
+                            let srcOpts = [kCGImageSourceShouldCache: false] as CFDictionary
+                            guard let source = CGImageSourceCreateWithData(data as CFData, srcOpts) else { return nil }
+                            
+                            let downsampleOpts = [
+                                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                                kCGImageSourceShouldCacheImmediately: true,
+                                kCGImageSourceCreateThumbnailWithTransform: true,
+                                kCGImageSourceThumbnailMaxPixelSize: 600
+                            ] as CFDictionary
+                            
+                            if let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, downsampleOpts) {
+                                let img = UIImage(cgImage: cg)
+                                if PhysicalFileSystemRouter.containsDisclaimerText(in: img) {
+                                    Logger.shared.log("[Disclaimer Detector] Skipping ZIP entry '\(entry.path)' due to disclaimer/warning text content.", category: "FileSystem", type: .warning)
+                                    return nil
+                                }
+                                return img
                             }
-                            return image
+                            return nil
+                        } catch {
+                            Logger.shared.log("Failed to extract \(entry.path): \(error.localizedDescription)", category: "Archive", type: .error)
+                            return nil
                         }
-                    } catch {
-                        Logger.shared.log("Failed to extract \(entry.path): \(error.localizedDescription)", category: "Archive", type: .error)
+                    }
+                    
+                    if let img = image {
+                        if img.size.width > img.size.height {
+                            if firstSpreadImage == nil { firstSpreadImage = img }
+                            continue
+                        }
+                        return img
                     }
                 }
                 
@@ -519,44 +867,77 @@ class PhysicalFileSystemRouter {
                 Logger.shared.log("Failed to extract archive: \(error.localizedDescription)", category: "Archive", type: .error)
             }
         }
-
-        // ── CBR / RAR Archives ─────────────────────────────────────────────────
         if ext == "cbr" || ext == "rar" {
             let accessing = url.startAccessingSecurityScopedResource()
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }
             guard FileManager.default.fileExists(atPath: url.path) else { return nil }
 
-            do {
-                let archive = try Unrar.Archive(fileURL: url)
-                let entries = try archive.entries()
+            return ConcurrencyLocks.unrarLock.withLock {
+                do {
+                    let archive = try Unrar.Archive(fileURL: url)
+                    let entries = try archive.entries()
 
-                let imageExts: Set<String> = ["jpg", "jpeg", "png", "webp"]
-                let sorted = entries
-                    .filter { entry in
-                        guard !entry.directory,
-                              !entry.fileName.contains("__MACOSX"),
-                              !(entry.fileName as NSString).lastPathComponent.hasPrefix("._") && !(entry.fileName as NSString).lastPathComponent.hasSuffix(".DS_Store") else { return false }
-                        return imageExts.contains((entry.fileName as NSString).pathExtension.lowercased())
-                    }
-                    .sorted { $0.fileName.localizedStandardCompare($1.fileName) == .orderedAscending }
+                    let imageExts: Set<String> = ["jpg", "jpeg", "png", "webp"]
+                    let sorted = entries
+                        .filter { entry in
+                            guard !entry.directory,
+                                   !entry.fileName.contains("__MACOSX"),
+                                   !(entry.fileName as NSString).lastPathComponent.hasPrefix("._") && !(entry.fileName as NSString).lastPathComponent.hasSuffix(".DS_Store") else { return false }
+                            return imageExts.contains((entry.fileName as NSString).pathExtension.lowercased())
+                        }
+                        .sorted { $0.fileName.localizedStandardCompare($1.fileName) == .orderedAscending }
 
-                var firstSpread: UIImage? = nil
-                var attempts = 0
-                for entry in sorted.prefix(5) {
-                    let data = try archive.extract(entry)
-                    guard let image = UIImage(data: data) else { continue }
-                    attempts += 1
-                    // Skip landscape (two-page spread) on first attempt — prefer portrait cover
-                    if attempts == 1 && image.size.width > image.size.height && sorted.count > 1 {
-                        firstSpread = image
-                        continue
+                    var firstSpread: UIImage? = nil
+                    for entry in sorted.prefix(6) {
+                        if PhysicalFileSystemRouter.isDisclaimerFilename(entry.fileName) {
+                            Logger.shared.log("[Disclaimer Detector] Skipping CBR entry '\(entry.fileName)' due to disclaimer filename.", category: "FileSystem", type: .warning)
+                            continue
+                        }
+
+                        let image = autoreleasepool { () -> UIImage? in
+                            do {
+                                let data = try archive.extract(entry)
+                                
+                                let srcOpts = [kCGImageSourceShouldCache: false] as CFDictionary
+                                guard let source = CGImageSourceCreateWithData(data as CFData, srcOpts) else { return nil }
+                                
+                                let downsampleOpts = [
+                                    kCGImageSourceCreateThumbnailFromImageAlways: true,
+                                    kCGImageSourceShouldCacheImmediately: true,
+                                    kCGImageSourceCreateThumbnailWithTransform: true,
+                                    kCGImageSourceThumbnailMaxPixelSize: 600
+                                ] as CFDictionary
+                                
+                                if let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, downsampleOpts) {
+                                    let img = UIImage(cgImage: cg)
+                                    if PhysicalFileSystemRouter.containsDisclaimerText(in: img) {
+                                        Logger.shared.log("[Disclaimer Detector] Skipping CBR entry '\(entry.fileName)' due to disclaimer/warning text content.", category: "FileSystem", type: .warning)
+                                        return nil
+                                    }
+                                    return img
+                                }
+                                return nil
+                            } catch {
+                                return nil
+                            }
+                        }
+                        guard let img = image else { continue }
+                        if img.size.width > img.size.height {
+                            if firstSpread == nil { firstSpread = img }
+                            continue
+                        }
+                        return img
                     }
-                    return image
+                    return firstSpread  // fallback if every page is landscape
+                } catch {
+                    Logger.shared.log("PhysicalFileSystemRouter: CBR cover extraction failed for '\(url.lastPathComponent)': \(error.localizedDescription)", category: "Archive", type: .error)
+                    return nil
                 }
-                return firstSpread  // fallback if every page is landscape
-            } catch {
-                Logger.shared.log("PhysicalFileSystemRouter: CBR cover extraction failed for '\(url.lastPathComponent)': \(error.localizedDescription)", category: "Archive", type: .error)
             }
+        }
+
+        if ext == "cbt" || ext == "tar" {
+            return CBTExtractor.extractFirstImage(from: url)
         }
 
         return nil
@@ -575,23 +956,24 @@ class PhysicalFileSystemRouter {
             let accessing = url.startAccessingSecurityScopedResource()
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }
             
-            // ✅ Check file existence before proceeding to prevent errors
-            guard FileManager.default.fileExists(atPath: url.path) else {
-                return 0
-            }
+            guard FileManager.default.fileExists(atPath: url.path) else { return 0 }
             
-            guard let archive = try? Archive(url: url, accessMode: .read, pathEncoding: .utf8) else { return 0 }
-            
-            var count = 0
-            for entry in archive {
-                if entry.type == .directory { continue }
-                let entryExt = (entry.path as NSString).pathExtension.lowercased()
-                if ["jpg", "jpeg", "png", "webp"].contains(entryExt) {
-                    if entry.path.contains("__MACOSX") || entry.path.hasPrefix("._") || entry.path.hasSuffix(".DS_Store") { continue }
-                    count += 1
+            do {
+                let archive = try Archive(url: url, accessMode: .read)
+                var count = 0
+                for entry in archive {
+                    if entry.type == .directory { continue }
+                    let entryExt = (entry.path as NSString).pathExtension.lowercased()
+                    if ["jpg", "jpeg", "png", "webp"].contains(entryExt) {
+                        if entry.path.contains("__MACOSX") || entry.path.hasPrefix("._") || entry.path.hasSuffix(".DS_Store") { continue }
+                        count += 1
+                    }
                 }
+                return count
+            } catch {
+                Logger.shared.log("Failed to count pages in archive: \(error.localizedDescription)", category: "Archive", type: .error)
             }
-            return count
+            return 0
         }
 
         // ── CBR / RAR Archives ─────────────────────────────────────────────────
@@ -600,23 +982,30 @@ class PhysicalFileSystemRouter {
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }
             guard FileManager.default.fileExists(atPath: url.path) else { return 0 }
             let imageExts: Set<String> = ["jpg", "jpeg", "png", "webp"]
-            do {
-                let archive = try Unrar.Archive(fileURL: url)
-                let entries = try archive.entries()
-                return entries.filter { entry in
-                    guard !entry.directory,
-                          !entry.fileName.contains("__MACOSX"),
-                          !(entry.fileName as NSString).lastPathComponent.hasPrefix("._") && !(entry.fileName as NSString).lastPathComponent.hasSuffix(".DS_Store") else { return false }
-                    return imageExts.contains((entry.fileName as NSString).pathExtension.lowercased())
-                }.count
-            } catch {
-                Logger.shared.log("PhysicalFileSystemRouter: CBR page count failed for '\(url.lastPathComponent)': \(error.localizedDescription)", category: "Archive", type: .error)
+            return ConcurrencyLocks.unrarLock.withLock {
+                do {
+                    let archive = try Unrar.Archive(fileURL: url)
+                    let entries = try archive.entries()
+                    return entries.filter { entry in
+                        guard !entry.directory,
+                              !entry.fileName.contains("__MACOSX"),
+                              !(entry.fileName as NSString).lastPathComponent.hasPrefix("._") && !(entry.fileName as NSString).lastPathComponent.hasSuffix(".DS_Store") else { return false }
+                        return imageExts.contains((entry.fileName as NSString).pathExtension.lowercased())
+                    }.count
+                } catch {
+                    Logger.shared.log("PhysicalFileSystemRouter: CBR page count failed for '\(url.lastPathComponent)': \(error.localizedDescription)", category: "Archive", type: .error)
+                    return 0
+                }
             }
+        }
+
+        if ext == "cbt" || ext == "tar" {
+            return CBTExtractor.getPageCount(from: url)
         }
 
         return 0
     }
-
+    
     nonisolated static func extractPageImage(from url: URL, pageIndex: Int) -> UIImage? {
         let ext = url.pathExtension.lowercased()
         if ext == "pdf" {
@@ -626,7 +1015,24 @@ class PhysicalFileSystemRouter {
             guard let document = PDFDocument(url: url) else { return nil }
             guard pageIndex >= 0 && pageIndex < document.pageCount else { return nil }
             guard let page = document.page(at: pageIndex) else { return nil }
-            return page.thumbnail(of: CGSize(width: 400, height: 560), for: .mediaBox)
+            
+            let pageBounds = page.bounds(for: .mediaBox)
+            guard pageBounds.width > 0 && pageBounds.height > 0 && !pageBounds.width.isNaN && !pageBounds.height.isNaN else { return nil }
+            let size = CGSize(width: 400, height: 560)
+            let scale = min(size.width / pageBounds.width, size.height / pageBounds.height)
+            let scaledSize = CGSize(width: pageBounds.width * scale, height: pageBounds.height * scale)
+            guard scaledSize.width > 0 && scaledSize.height > 0 && !scaledSize.width.isNaN && !scaledSize.height.isNaN else { return nil }
+            
+            let renderer = UIGraphicsImageRenderer(size: scaledSize)
+            return renderer.image { context in
+                UIColor.white.setFill()
+                context.fill(CGRect(origin: .zero, size: scaledSize))
+                
+                context.cgContext.translateBy(x: 0, y: scaledSize.height)
+                context.cgContext.scaleBy(x: scale, y: -scale)
+                
+                page.draw(with: .mediaBox, to: context.cgContext)
+            }
         }
 
         if ["cbz", "zip", "epub"].contains(ext) {
@@ -654,11 +1060,26 @@ class PhysicalFileSystemRouter {
                 guard pageIndex >= 0 && pageIndex < sortedEntries.count else { return nil }
                 let targetEntry = sortedEntries[pageIndex]
                 
-                var data = Data()
-                _ = try archive.extract(targetEntry) { chunk in
-                    data.append(chunk)
+                return autoreleasepool {
+                    var data = Data()
+                    do {
+                        _ = try archive.extract(targetEntry) { chunk in
+                            data.append(chunk)
+                        }
+                        // ✅ Memory Optimization: Downsample directly from data without loading full bitmap
+                        let srcOpts = [kCGImageSourceShouldCache: false] as CFDictionary
+                        guard let source = CGImageSourceCreateWithData(data as CFData, srcOpts) else { return nil }
+                        let downsampleOpts = [
+                            kCGImageSourceCreateThumbnailFromImageAlways: true,
+                            kCGImageSourceCreateThumbnailWithTransform: true,
+                            kCGImageSourceThumbnailMaxPixelSize: 600
+                        ] as CFDictionary
+                        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, downsampleOpts) else { return nil }
+                        return UIImage(cgImage: cgImage)
+                    } catch {
+                        return nil
+                    }
                 }
-                return UIImage(data: data)
             } catch {
                 Logger.shared.log("Failed to extract page image at index \(pageIndex) from archive: \(error.localizedDescription)", category: "Archive", type: .error)
             }
@@ -669,33 +1090,97 @@ class PhysicalFileSystemRouter {
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }
             guard FileManager.default.fileExists(atPath: url.path) else { return nil }
 
-            do {
-                let archive = try Unrar.Archive(fileURL: url)
-                let entries = try archive.entries()
+            return ConcurrencyLocks.unrarLock.withLock {
+                do {
+                    let archive = try Unrar.Archive(fileURL: url)
+                    let entries = try archive.entries()
 
-                let imageExts: Set<String> = ["jpg", "jpeg", "png", "webp"]
-                let sorted = entries
-                    .filter { entry in
-                        guard !entry.directory,
-                              !entry.fileName.contains("__MACOSX"),
-                              !(entry.fileName as NSString).lastPathComponent.hasPrefix("._") && !(entry.fileName as NSString).lastPathComponent.hasSuffix(".DS_Store") else { return false }
-                        return imageExts.contains((entry.fileName as NSString).pathExtension.lowercased())
+                    let imageExts: Set<String> = ["jpg", "jpeg", "png", "webp"]
+                    let sorted = entries
+                        .filter { entry in
+                            guard !entry.directory,
+                                   !entry.fileName.contains("__MACOSX"),
+                                   !(entry.fileName as NSString).lastPathComponent.hasPrefix("._") && !(entry.fileName as NSString).lastPathComponent.hasSuffix(".DS_Store") else { return false }
+                            return imageExts.contains((entry.fileName as NSString).pathExtension.lowercased())
+                        }
+                        .sorted { $0.fileName.localizedStandardCompare($1.fileName) == .orderedAscending }
+
+                    guard pageIndex >= 0 && pageIndex < sorted.count else { return nil }
+                    let targetEntry = sorted[pageIndex]
+                    return autoreleasepool {
+                        do {
+                            let data = try archive.extract(targetEntry)
+                            // ✅ Memory Optimization: Downsample directly from data without loading full bitmap
+                            let srcOpts = [kCGImageSourceShouldCache: false] as CFDictionary
+                            guard let source = CGImageSourceCreateWithData(data as CFData, srcOpts) else { return nil }
+                            let downsampleOpts = [
+                                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                                kCGImageSourceCreateThumbnailWithTransform: true,
+                                kCGImageSourceThumbnailMaxPixelSize: 600
+                            ] as CFDictionary
+                            guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, downsampleOpts) else { return nil }
+                            return UIImage(cgImage: cgImage)
+                        } catch {
+                            return nil
+                        }
                     }
-                    .sorted { $0.fileName.localizedStandardCompare($1.fileName) == .orderedAscending }
-
-                guard pageIndex >= 0 && pageIndex < sorted.count else { return nil }
-                let targetEntry = sorted[pageIndex]
-                let data = try archive.extract(targetEntry)
-                return UIImage(data: data)
-            } catch {
-                Logger.shared.log("PhysicalFileSystemRouter: CBR page image extraction failed for index \(pageIndex): \(error.localizedDescription)", category: "Archive", type: .error)
+                } catch {
+                    Logger.shared.log("PhysicalFileSystemRouter: CBR page image extraction failed for index \(pageIndex): \(error.localizedDescription)", category: "Archive", type: .error)
+                    return nil
+                }
             }
         }
-
         return nil
     }
 
     
     // ✅ NEW: Extract Smart Panels from ComicInfo.xml
+}
+
+/// A lightweight queue to strictly limit concurrent thumbnail generation.
+/// This prevents OOM (Out of Memory) crashes when the UI requests 30+ missing covers at once.
+actor ThumbnailGenerationQueue {
+    static let shared = ThumbnailGenerationQueue()
+    
+    // We cannot easily hold `ConversionManager` in an actor array without warnings, 
+    // but since it's an ObservableObject (reference type), it's safe to pass.
+    private var pending: [(ConvertedPDF, ConversionManager)] = []
+    private var inFlight: Set<UUID> = []
+    private var activeCount = 0
+    private let maxConcurrent = 2
+    
+    func enqueue(_ pdf: ConvertedPDF, manager: ConversionManager) {
+        // Prevent duplicate queuing for the same file
+        guard !inFlight.contains(pdf.id) else { return }
+        if pending.contains(where: { $0.0.id == pdf.id }) { return }
+        
+        pending.append((pdf, manager))
+        dequeue()
+    }
+    
+    private func dequeue() {
+        guard activeCount < maxConcurrent, !pending.isEmpty else { return }
+        let (pdf, manager) = pending.removeFirst()
+        
+        activeCount += 1
+        inFlight.insert(pdf.id)
+        
+        Task.detached(priority: .background) {
+            await PhysicalFileSystemRouter.shared.generateCoverThumbnail(for: pdf, manager: manager)
+            await ThumbnailGenerationQueue.shared.taskDidFinish(id: pdf.id)
+        }
+    }
+    
+    func taskDidFinish(id: UUID) {
+        activeCount -= 1
+        inFlight.remove(id)
+        dequeue()
+    }
+    
+    func generateThumbnail(for pdf: ConvertedPDF, in manager: ConversionManager) async -> UIImage? {
+        await PhysicalFileSystemRouter.shared.generateCoverThumbnail(for: pdf, manager: manager)
+        let key = pdf.id.uuidString as NSString
+        return await MainActor.run { manager.thumbnailCache.object(forKey: key) }
+    }
 }
 

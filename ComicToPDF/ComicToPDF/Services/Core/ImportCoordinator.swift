@@ -56,7 +56,8 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
                 UTType(filenameExtension: "epub") ?? .epub,
                 UTType(filenameExtension: "cbz") ?? .zip,
                 UTType(filenameExtension: "cbr") ?? .archive,
-                UTType(filenameExtension: "cb7") ?? .archive
+                UTType(filenameExtension: "cb7") ?? .archive,
+                UTType(filenameExtension: "cbt") ?? .archive
             ].compactMap { $0 }
         }
 
@@ -98,18 +99,32 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
         controller.dismiss(animated: true)
         
         let type = self.currentType
+        let existingPaths = Set(LibraryService.shared.items.map { $0.url.lastPathComponent })
+        let existingQueuePaths = Set(ImportQueueManager.shared.stagedURLs.map { $0.lastPathComponent })
         
-        let stagingTask = Task.detached(priority: .userInitiated) { () -> [URL] in
+        let stagingTask = Task.detached(priority: .userInitiated) { [existingPaths, existingQueuePaths] () -> [URL] in
             if type == .json || type == .smartList {
                 return urls
             }
 
             // --- Parallel Staging: Phase 1 enumerate, Phase 2 concurrent copy ---
             let fm = FileManager.default
-            let allowedExts: Set<String> = ["cbz", "cbr", "cb7", "epub", "zip", "pdf"]
+            let allowedExts: Set<String> = ["pdf", "epub", "cbz", "cbr", "cb7", "cbt", "zip"]
 
             let stagingDir = fm.temporaryDirectory.appendingPathComponent("InksyncStaging_\(UUID().uuidString)")
             try? fm.createDirectory(at: stagingDir, withIntermediateDirectories: true)
+
+            var securedURLs: [URL] = []
+            for url in urls {
+                if url.startAccessingSecurityScopedResource() {
+                    securedURLs.append(url)
+                }
+            }
+            defer {
+                for url in securedURLs {
+                    url.stopAccessingSecurityScopedResource()
+                }
+            }
 
             // ── Phase 1: Collect candidate (source, dest) pairs without copying ──
             // Enumeration is cheap (metadata only); we yield every 25 items to keep
@@ -121,9 +136,6 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
             var jobs: [CopyJob] = []
 
             for url in urls {
-                let secured = url.startAccessingSecurityScopedResource()
-                defer { if secured { url.stopAccessingSecurityScopedResource() } }
-
                 var isDirectory: ObjCBool = false
                 if fm.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue {
                     // Recursively spider — metadata-only, no I/O
@@ -140,6 +152,10 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
                                   rsrc.isDirectory == false else { continue }
                             guard allowedExts.contains(fileURL.pathExtension.lowercased()) else { continue }
 
+                            let fileName = fileURL.lastPathComponent
+                            // Skip duplicates already in main library or staged queue
+                            guard !existingPaths.contains(fileName) && !existingQueuePaths.contains(fileName) else { continue }
+
                             // Preserve native structure for SeriesNameParser Context
                             let originalParent = fileURL.deletingLastPathComponent().lastPathComponent
                             let destFolder = stagingDir.appendingPathComponent(originalParent)
@@ -151,11 +167,14 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
                 } else {
                     // Standard single-file selection
                     if allowedExts.contains(url.pathExtension.lowercased()) {
-                        let originalParent = url.deletingLastPathComponent().lastPathComponent
-                        let destFolder = stagingDir.appendingPathComponent(originalParent)
-                        try? fm.createDirectory(at: destFolder, withIntermediateDirectories: true)
-                        jobs.append(CopyJob(source: url,
-                                            dest: destFolder.appendingPathComponent(url.lastPathComponent)))
+                        let fileName = url.lastPathComponent
+                        if !existingPaths.contains(fileName) && !existingQueuePaths.contains(fileName) {
+                            let originalParent = url.deletingLastPathComponent().lastPathComponent
+                            let destFolder = stagingDir.appendingPathComponent(originalParent)
+                            try? fm.createDirectory(at: destFolder, withIntermediateDirectories: true)
+                            jobs.append(CopyJob(source: url,
+                                                dest: destFolder.appendingPathComponent(url.lastPathComponent)))
+                        }
                     }
                 }
             }
@@ -227,11 +246,22 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
 
     private static func topViewController() -> UIViewController? {
         let scenes = UIApplication.shared.connectedScenes
-        let windowScene = scenes.first(where: { $0.activationState == .foregroundActive }) as? UIWindowScene
-            ?? scenes.first as? UIWindowScene
-        guard let root = windowScene?.windows.first(where: { $0.isKeyWindow })?.rootViewController
-                      ?? windowScene?.windows.first?.rootViewController else { return nil }
-        var top = root
+        var windowScene: UIWindowScene? = nil
+        if let active = scenes.first(where: { $0.activationState == .foregroundActive }) as? UIWindowScene {
+            windowScene = active
+        } else if let first = scenes.first as? UIWindowScene {
+            windowScene = first
+        }
+        guard let windowScene = windowScene else { return nil }
+        
+        var root: UIViewController? = nil
+        if let keyRoot = windowScene.windows.first(where: { $0.isKeyWindow })?.rootViewController {
+            root = keyRoot
+        } else if let firstRoot = windowScene.windows.first?.rootViewController {
+            root = firstRoot
+        }
+        guard var top = root else { return nil }
+        
         while let presented = top.presentedViewController { top = presented }
         return top
     }

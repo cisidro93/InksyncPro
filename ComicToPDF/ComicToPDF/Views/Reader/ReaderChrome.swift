@@ -26,6 +26,10 @@ struct ReaderChrome: View {
     var onSettingsToggle: () -> Void
     var onTOCToggle: (() -> Void)? = nil
     var onAnnotationsToggle: (() -> Void)? = nil
+    var onCharacterMapToggle: (() -> Void)? = nil
+    var onSearchToggle: (() -> Void)? = nil
+    var isDialogueLensEnabled: Bool = false
+    var onDialogueLensToggle: (() -> Void)? = nil
 
     // Scrubber
     @Binding var currentProgress: Double
@@ -36,19 +40,14 @@ struct ReaderChrome: View {
     var timeRemainingText: String? = nil
     var onProgressModeToggle: (() -> Void)? = nil
 
-    // TTS / Narration
-    var hasTTS: Bool = false
-    var isSpeaking: Bool = false
-    var onTTSToggle: (() -> Void)? = nil
-
-    // Narration (AI read-aloud mode)
-    var isNarrating: Bool = false
-    var isNarrationOCRing: Bool = false
-    var onNarrationToggle: (() -> Void)? = nil
+    // Copy Text Action (replaces TTS)
+    var hasCopyAction: Bool = false
+    var onCopyToggle: (() -> Void)? = nil
 
     // PDF tools
     var isPDF: Bool = false
     var isReflowActive: Bool = false
+    var isAutoCropEnabled: Bool = false
     var onCropToggle: (() -> Void)? = nil
     var onReflowToggle: (() -> Void)? = nil
 
@@ -70,6 +69,81 @@ struct ReaderChrome: View {
 
     // Phase 4A: Swipe-down-to-dismiss
     var onSwipeDown: (() -> Void)? = nil
+
+    // Scrubber interaction state
+    @State private var isScrubbing: Bool = false
+
+    init(
+        title: String,
+        pageText: String,
+        isVisible: Binding<Bool>,
+        onBack: @escaping () -> Void,
+        onBookmark: @escaping () -> Void,
+        onBookmarkActive: Bool = false,
+        onSettingsToggle: @escaping () -> Void,
+        onTOCToggle: (() -> Void)? = nil,
+        onAnnotationsToggle: (() -> Void)? = nil,
+        onCharacterMapToggle: (() -> Void)? = nil,
+        onSearchToggle: (() -> Void)? = nil,
+        isDialogueLensEnabled: Bool = false,
+        onDialogueLensToggle: (() -> Void)? = nil,
+        currentProgress: Binding<Double>,
+        totalPages: Int,
+        customScrubber: AnyView? = nil,
+        timeRemainingText: String? = nil,
+        onProgressModeToggle: (() -> Void)? = nil,
+        hasCopyAction: Bool = false,
+        onCopyToggle: (() -> Void)? = nil,
+        isPDF: Bool = false,
+        isReflowActive: Bool = false,
+        isAutoCropEnabled: Bool = false,
+        onCropToggle: (() -> Void)? = nil,
+        onReflowToggle: (() -> Void)? = nil,
+        isEnhanced: Bool = false,
+        onEnhanceToggle: (() -> Void)? = nil,
+        isSettingsActive: Bool = false,
+        currentModeLabel: String? = nil,
+        ambientColor: Color = .clear,
+        isInRoom: Bool = false,
+        roomPeerCount: Int = 0,
+        onRoomToggle: (() -> Void)? = nil,
+        onSwipeDown: (() -> Void)? = nil
+    ) {
+        self.title = title
+        self.pageText = pageText
+        self._isVisible = isVisible
+        self.onBack = onBack
+        self.onBookmark = onBookmark
+        self.onBookmarkActive = onBookmarkActive
+        self.onSettingsToggle = onSettingsToggle
+        self.onTOCToggle = onTOCToggle
+        self.onAnnotationsToggle = onAnnotationsToggle
+        self.onCharacterMapToggle = onCharacterMapToggle
+        self.onSearchToggle = onSearchToggle
+        self.isDialogueLensEnabled = isDialogueLensEnabled
+        self.onDialogueLensToggle = onDialogueLensToggle
+        self._currentProgress = currentProgress
+        self.totalPages = totalPages
+        self.customScrubber = customScrubber
+        self.timeRemainingText = timeRemainingText
+        self.onProgressModeToggle = onProgressModeToggle
+        self.hasCopyAction = hasCopyAction
+        self.onCopyToggle = onCopyToggle
+        self.isPDF = isPDF
+        self.isReflowActive = isReflowActive
+        self.isAutoCropEnabled = isAutoCropEnabled
+        self.onCropToggle = onCropToggle
+        self.onReflowToggle = onReflowToggle
+        self.isEnhanced = isEnhanced
+        self.onEnhanceToggle = onEnhanceToggle
+        self.isSettingsActive = isSettingsActive
+        self.currentModeLabel = currentModeLabel
+        self.ambientColor = ambientColor
+        self.isInRoom = isInRoom
+        self.roomPeerCount = roomPeerCount
+        self.onRoomToggle = onRoomToggle
+        self.onSwipeDown = onSwipeDown
+    }
 
     // MARK: - Body
 
@@ -152,9 +226,28 @@ struct ReaderChrome: View {
                     chromeButton(icon: "text.alignleft", active: isReflowActive, activeColor: .white) {
                         onReflowToggle?()
                     }
-                    chromeButton(icon: "crop", active: false, activeColor: .white) {
-                        onCropToggle?()
-                    }
+                }
+
+                chromeButton(icon: "crop", active: isAutoCropEnabled, activeColor: .white) {
+                    onCropToggle?()
+                }
+
+                if let onDialogueLens = onDialogueLensToggle {
+                    chromeButton(
+                        icon: "sparkle.magnifyingglass",
+                        active: isDialogueLensEnabled,
+                        activeColor: .purple,
+                        action: onDialogueLens
+                    )
+                }
+
+                if let onSearch = onSearchToggle {
+                    chromeButton(
+                        icon: "magnifyingglass",
+                        active: false,
+                        activeColor: .white,
+                        action: onSearch
+                    )
                 }
 
                 chromeButton(
@@ -193,8 +286,44 @@ struct ReaderChrome: View {
                         .foregroundColor(.white.opacity(0.5))
                         .frame(width: 20, alignment: .leading)
 
-                    Slider(value: $currentProgress, in: 0...1)
-                        .tint(Color.white)
+                    Slider(
+                        value: Binding(
+                            get: { currentProgress },
+                            set: { newValue in
+                                if abs(newValue - currentProgress) > (1.0 / Double(max(totalPages, 1))) {
+                                    Haptics.shared.playImpact(style: .light)
+                                }
+                                currentProgress = newValue
+                            }
+                        ),
+                        in: 0...1,
+                        onEditingChanged: { editing in
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                isScrubbing = editing
+                            }
+                        }
+                    )
+                    .tint(Color.white)
+                    .overlay(
+                        GeometryReader { sliderGeo in
+                            if isScrubbing {
+                                let pageNum = max(1, Int(currentProgress * Double(max(totalPages, 1))))
+                                Text("Page \(pageNum)")
+                                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 6)
+                                    .background(Color(white: 0.15).opacity(0.85), in: Capsule())
+                                    .overlay(Capsule().stroke(Color.white.opacity(0.2), lineWidth: 0.5))
+                                    .shadow(color: .black.opacity(0.4), radius: 8, y: 4)
+                                    .position(
+                                        x: 14 + (sliderGeo.size.width - 28) * CGFloat(currentProgress),
+                                        y: -24
+                                    )
+                                    .transition(.scale(scale: 0.8).combined(with: .opacity))
+                            }
+                        }
+                    )
 
                     Text("\(totalPages)")
                         .font(.system(size: 11, weight: .medium))
@@ -206,10 +335,16 @@ struct ReaderChrome: View {
                 .padding(.bottom, 10)
             }
             
-            Text("\(Int(currentProgress * 100))%")
-                .font(.system(size: 10, weight: .bold, design: .rounded))
-                .foregroundColor(.white.opacity(0.4))
-                .padding(.bottom, 8)
+            if !isScrubbing {
+                Text("\(Int(currentProgress * 100))%")
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .foregroundColor(.white.opacity(0.4))
+                    .padding(.bottom, 8)
+            } else {
+                Text(" ") // Keeps layout stable
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .padding(.bottom, 8)
+            }
 
             // ── Thin divider ───────────────────────────────────────────────────
             Rectangle()
@@ -225,43 +360,17 @@ struct ReaderChrome: View {
                         icon: onBookmarkActive ? "bookmark.fill" : "bookmark",
                         tint: onBookmarkActive ? .yellow : .white
                     ) {
-                        HapticEngine.success()
+                        Haptics.shared.playImpact(style: .light)
                         onBookmark()
                     }
 
-                    if hasTTS {
+                    if hasCopyAction {
                         barButton(
-                            icon: isSpeaking ? "waveform" : "headphones",
-                            tint: isSpeaking ? .orange : .white
+                            icon: "doc.on.doc",
+                            tint: .white
                         ) {
-                            onTTSToggle?()
-                        }
-                    }
-
-                    if onNarrationToggle != nil {
-                        Button {
-                            onNarrationToggle?()
-                            HapticEngine.light()
-                        } label: {
-                            ZStack {
-                                if isNarrationOCRing {
-                                    ProgressView()
-                                        .progressViewStyle(CircularProgressViewStyle(tint: .orange))
-                                        .scaleEffect(0.7)
-                                        .frame(width: 44, height: 44)
-                                } else if isNarrating {
-                                    NarrationWaveformView(isActive: true, barColor: .orange)
-                                        .frame(width: 44, height: 44)
-                                } else {
-                                    Image(systemName: "waveform.and.mic")
-                                        .font(.system(size: 17, weight: .medium))
-                                        .foregroundColor(.white.opacity(0.85))
-                                        .frame(width: 44, height: 44)
-                                }
-                            }
-                            .background(isNarrating ? Color.orange.opacity(0.18) : Color.clear)
-                            .clipShape(Circle())
-                            .contentShape(Rectangle())
+                            Haptics.shared.playImpact(style: .light)
+                            onCopyToggle?()
                         }
                     }
                 }
@@ -270,8 +379,8 @@ struct ReaderChrome: View {
 
                 // Page counter / Time Left — centred and prominent
                 Button {
+                    Haptics.shared.playImpact(style: .light)
                     onProgressModeToggle?()
-                    HapticEngine.light()
                 } label: {
                     VStack(spacing: 2) {
                         Text(pageText)
@@ -294,10 +403,22 @@ struct ReaderChrome: View {
                 // Right cluster
                 HStack(spacing: 4) {
                     if let onTOC = onTOCToggle {
-                        barButton(icon: "list.bullet", tint: .white, action: onTOC)
+                        barButton(icon: "list.bullet", tint: .white) {
+                            Haptics.shared.playImpact(style: .light)
+                            onTOC()
+                        }
                     }
                     if let onAnnotations = onAnnotationsToggle {
-                        barButton(icon: "pencil.and.outline", tint: .white, action: onAnnotations)
+                        barButton(icon: "pencil.and.outline", tint: .white) {
+                            Haptics.shared.playImpact(style: .light)
+                            onAnnotations()
+                        }
+                    }
+                    if let onCharacterMap = onCharacterMapToggle {
+                        barButton(icon: "square.stack.3d.up.badge.a", tint: .white) {
+                            Haptics.shared.playImpact(style: .light)
+                            onCharacterMap()
+                        }
                     }
                 }
             }
@@ -355,7 +476,10 @@ struct ReaderChrome: View {
         badgeText: String? = nil,
         action: @escaping () -> Void
     ) -> some View {
-        Button(action: action) {
+        Button {
+            Haptics.shared.playImpact(style: .light)
+            action()
+        } label: {
             VStack(spacing: 1) {
                 Image(systemName: icon)
                     .font(.system(size: 15, weight: .medium))

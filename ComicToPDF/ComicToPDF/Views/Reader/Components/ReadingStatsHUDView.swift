@@ -223,6 +223,7 @@ private struct MetricBox: View {
     }
 }
 
-fileprivate extension Color {
-    static let emerald = Color(red: 0.1, green: 0.7, blue: 0.3)
+extension Color {
+    fileprivate static let emerald = Color(red: 0.1, green: 0.7, blue: 0.3)
 }
+

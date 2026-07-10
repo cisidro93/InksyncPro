@@ -1,6 +1,7 @@
 import SwiftUI
 import WebKit
 import ZIPFoundation
+import SwiftData
 
 // MARK: - EBookReaderView
 struct EBookReaderView: View {
@@ -12,6 +13,7 @@ struct EBookReaderView: View {
     var allBooks: [ConvertedPDF] = []
     
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
     @EnvironmentObject var conversionManager: ConversionManager
     @ObservedObject private var prefs = EBookPreferences.shared
     @Environment(\.colorScheme) var colorScheme
@@ -51,6 +53,23 @@ struct EBookReaderView: View {
     /// Direction of last chapter navigation — used to drive the push transition.
     @State private var isGoingForward: Bool = true
     
+    @State private var activeHighlightToEdit: SDAnnotation? = nil
+    @State private var annotationForFullEdit: SDAnnotation? = nil
+    @State private var lastBrightnessDragValue: CGFloat = 0
+    // Gap A: Annotations panel
+    @State private var showAnnotations = false
+    // Gap B: In-reader search
+    @State private var showSearch = false
+    /// Pending search match text — injected via window.find() after chapter navigation.
+    @State private var pendingSearchMatch: String? = nil
+    /// Gap B: Weak reference to the live WKWebView — used to call evaluateJavaScript for window.find().
+    @State private var webViewReference: WKWebView? = nil
+    /// FIX 4: Within-chapter position as a fractional scroll offset (0.0–1.0).
+    /// Saved on every page turn and restored on chapter load, so position
+    /// survives font-size changes and app restarts unlike a column-integer.
+    @State private var chapterScrollFraction: Double = 0.0
+    // Key for persisting the scroll fraction alongside the chapter index
+    private var fractionKey: String { "ebook_fraction_\(fileURL.lastPathComponent.hashValue)" }
 
     private var totalChapters: Int { metadata?.spineItems.count ?? 1 }
     private var progressFraction: Double {
@@ -84,44 +103,94 @@ struct EBookReaderView: View {
                     } else if let err = errorMessage {
                         readerErrorView(err)
                     } else if let meta = metadata, !meta.spineItems.isEmpty {
-                        EBookWebReader(
-                            spineItem:   meta.spineItems[currentIndex],
-                            unzipDir:    unzipDir,
-                            prefs:       prefs,
-                            colorScheme: colorScheme,
-                            currentPage: $chapterPage,
-                            initialPage: chapterPage,
-                            totalPages:  $chapterTotalPages,
-                            onNext:      nextChapter,
-                            onPrev:      prevChapter,
-                            onCenterTap: { withAnimation(.easeInOut(duration: 0.2)) { showHUD.toggle() } },
-                            onHighlightCreated: { selectedText in
-                                let highlight = Annotation(
-                                    pdfID: pdf?.id ?? UUID(),
-                                    pageIndex: currentIndex,
-                                    chapterTitle: meta.spineItems[currentIndex].label,
-                                    kind: .highlight,
-                                    createdAt: Date(),
-                                    modifiedAt: Date(),
-                                    colorHex: "#ffd700",
-                                    selectedText: selectedText
-                                )
-                                AnnotationStore.shared.add(highlight)
-                                StudyNotesStore.shared.appendHighlight(selectedText, chapter: meta.spineItems[currentIndex].label)
-                            },
-                            pdfID: pdf?.id
-                        )
-                        // Directional page-turn: slide left for forward, right for back.
-                        // Using .id(currentIndex) forces SwiftUI to create a new view identity
-                        // on every chapter change, guaranteeing the transition fires.
-                        .id(currentIndex)
-                        .transition(
-                            .asymmetric(
-                                insertion: .push(from: isGoingForward ? .trailing : .leading),
-                                removal:   .push(from: isGoingForward ? .leading  : .trailing)
+                        ZStack {
+                            EBookWebReader(
+                                spineItem:   meta.spineItems[currentIndex],
+                                unzipDir:    unzipDir,
+                                prefs:       prefs,
+                                colorScheme: colorScheme,
+                                currentPage: $chapterPage,
+                                initialPage: chapterPage,
+                                totalPages:  $chapterTotalPages,
+                                onNext:      nextChapter,
+                                onPrev:      prevChapter,
+                                onCenterTap: { withAnimation(.easeInOut(duration: 0.2)) { showHUD.toggle() } },
+                                // FIX 1+2: Persist highlight to AnnotationStore + SwiftData.
+                                // Open the colour-picker popover immediately so the user can
+                                // change the colour — the selected hex is reflected in the DOM
+                                // via the onColorSelected callback in HighlightQuickPopoverView.
+                                onHighlightCreated: { selectedText in
+                                    guard let p = pdf else { return }
+                                    let spineLabel = metadata?.spineItems[safe: currentIndex]?.label ?? "Chapter \(currentIndex + 1)"
+                                    let highlight = Annotation(
+                                        pdfID: p.id,
+                                        pageIndex: currentIndex,
+                                        chapterTitle: spineLabel,
+                                        kind: .highlight,
+                                        createdAt: Date(),
+                                        modifiedAt: Date(),
+                                        colorHex: "#ffd700",
+                                        selectedText: selectedText
+                                    )
+                                    AnnotationStore.shared.add(highlight)
+                                    let sdAnnotation = SDAnnotation(from: highlight)
+                                    modelContext.insert(sdAnnotation)
+                                    try? modelContext.save()
+                                    // Pop the colour picker popover immediately
+                                    activeHighlightToEdit = sdAnnotation
+                                },
+                                pdfID: pdf?.id,
+                                // FIX 4: Pass the saved fractional position so the chapter
+                                // is restored to the exact scroll position, not the chapter start.
+                                initialScrollFraction: UserDefaults.standard.double(forKey: "ebook_fraction_\(fileURL.lastPathComponent.hashValue)"),
+                                onScrollFractionChanged: { fraction in
+                                    chapterScrollFraction = fraction
+                                    saveProgress()
+                                },
+                                // Gap B: Expose the live WKWebView so window.find() can be injected
+                                webViewRef: $webViewReference
                             )
-                        )
-                        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: currentIndex)
+                            // Directional page-turn: slide left for forward, right for back.
+                            // Using .id(currentIndex) forces SwiftUI to create a new view identity
+                            // on every chapter change, guaranteeing the transition fires.
+                            .id(currentIndex)
+                            .transition(
+                                .asymmetric(
+                                    insertion: .push(from: isGoingForward ? .trailing : .leading),
+                                    removal:   .push(from: isGoingForward ? .leading  : .trailing)
+                                )
+                            )
+                            .animation(.spring(response: 0.35, dampingFraction: 0.85), value: currentIndex)
+                            
+                            // Edge Brightness Gesture Zones
+                            HStack {
+                                Color.clear
+                                    .contentShape(Rectangle())
+                                    .frame(width: 30)
+                                    .gesture(
+                                        DragGesture()
+                                            .onChanged { value in
+                                                let delta = value.translation.height - lastBrightnessDragValue
+                                                lastBrightnessDragValue = value.translation.height
+                                                UIScreen.main.brightness -= delta * 0.005
+                                            }
+                                            .onEnded { _ in lastBrightnessDragValue = 0 }
+                                    )
+                                Spacer()
+                                Color.clear
+                                    .contentShape(Rectangle())
+                                    .frame(width: 30)
+                                    .gesture(
+                                        DragGesture()
+                                            .onChanged { value in
+                                                let delta = value.translation.height - lastBrightnessDragValue
+                                                lastBrightnessDragValue = value.translation.height
+                                                UIScreen.main.brightness -= delta * 0.005
+                                            }
+                                            .onEnded { _ in lastBrightnessDragValue = 0 }
+                                    )
+                            }
+                        }
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -156,11 +225,125 @@ struct EBookReaderView: View {
         .sheet(isPresented: $showShareSheet) {
             ShareSheet(activityItems: [fileURL])
         }
+
         .task { await loadBook() }
         .onDisappear { cleanup(); saveProgress() }
+        // FIX 4: Save scroll fraction whenever the chapter page changes
+        .onChange(of: chapterPage) { _, _ in saveProgress() }
+        // Also save position when the app goes to the background
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in
+            saveProgress()
+        }
         .overlay { if prefs.showReadingRuler { ReadingRulerOverlay() } }
         .onChange(of: sleepTimer.didFire) { _, fired in
             if fired { if let onExit = onExit { onExit() } else { dismiss() } }
+        }
+        // FIX 1+2: Colour picker popover for EPUB highlights
+        .popover(item: $activeHighlightToEdit) { annotation in
+            HighlightQuickPopoverView(
+                annotation: annotation,
+                onDelete: {
+                    // Remove from AnnotationStore (in-memory + SwiftData via its own context)
+                    let pid = annotation.pdfID
+                    AnnotationStore.shared.delete(id: annotation.id, pdfID: pid)
+                    // Also remove from the SwiftUI modelContext (UI layer)
+                    modelContext.delete(annotation)
+                    try? modelContext.save()
+                    activeHighlightToEdit = nil
+                },
+                onEditNote: {
+                    annotationForFullEdit = annotation
+                    activeHighlightToEdit = nil
+                },
+                onColorSelected: { colorHex in
+                    // Update colour in AnnotationStore (in-memory + SwiftData)
+                    let pid = annotation.pdfID
+                    let matching = AnnotationStore.shared.annotations(for: pid)
+                        .first(where: { $0.id == annotation.id })
+                    if var updated = matching {
+                        updated.colorHex = colorHex
+                        AnnotationStore.shared.update(updated)
+                    }
+                    // Also update the SDAnnotation in the SwiftUI model layer
+                    annotation.colorHex = colorHex
+                    try? modelContext.save()
+                }
+            )
+            .presentationCompactAdaptation(.popover)
+        }
+        .sheet(item: $annotationForFullEdit) { annotation in
+            AnnotationEditSheet(annotation: annotation)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
+        // Gap A: Annotations / highlights panel — same StudyNotebookView used by BookReaderEngine
+        .sheet(isPresented: $showAnnotations) {
+            StudyNotebookView(
+                bookID: pdf?.id.uuidString ?? "",
+                bookTitle: title,
+                fileURL: pdf?.url
+            )
+        }
+        // Gap B: Full-text EPUB search sheet
+        .sheet(isPresented: $showSearch) {
+            if let meta = metadata {
+                EPUBSearchView(
+                    spineItems: meta.spineItems,
+                    unzipDir: unzipDir,
+                    onNavigate: { chapterIdx, matchText in
+                        if chapterIdx == currentIndex {
+                            // Same chapter: inject window.find() immediately
+                            if let wv = webViewReference {
+                                let safe = matchText
+                                    .replacingOccurrences(of: "\\", with: "\\\\")
+                                    .replacingOccurrences(of: "'", with: "\\'")
+                                let js = """
+                                (function() {
+                                    window.getSelection()?.removeAllRanges();
+                                    var found = window.find('\(safe)', false, false, true, false, false, false);
+                                    if (!found) { window.find('\(safe)', false, false, false, false, false, false); }
+                                })();
+                                """
+                                wv.evaluateJavaScript(js)
+                            }
+                        } else {
+                            // 1. Navigate to the right chapter
+                            isGoingForward = chapterIdx >= currentIndex
+                            currentIndex = chapterIdx
+                            chapterPage = 0
+                            saveProgress()
+                            // 2. After navigation, inject window.find() to scroll to + highlight match
+                            // The pending match is picked up in .onChange(of: currentIndex)
+                            pendingSearchMatch = matchText
+                        }
+                    }
+                )
+            }
+        }
+        // Gap B: After chapter navigation, inject window.find() into the live WebView
+        .onChange(of: currentIndex) { _, _ in
+            guard let match = pendingSearchMatch, !match.isEmpty else { return }
+            // Small delay to allow the chapter to finish loading before find()
+            Task {
+                try? await Task.sleep(nanoseconds: 600_000_000) // 0.6s
+                await MainActor.run {
+                    if let wv = webViewReference {
+                        let safe = match
+                            .replacingOccurrences(of: "\\", with: "\\\\")
+                            .replacingOccurrences(of: "'", with: "\\'")
+                        // window.find: scroll to first match and select it
+                        let js = """
+                        (function() {
+                            window.getSelection()?.removeAllRanges();
+                            var found = window.find('\(safe)', false, false, true, false, false, false);
+                            if (!found) { window.find('\(safe)', false, false, false, false, false, false); }
+                        })();
+                        """
+                        wv.evaluateJavaScript(js)
+                    }
+                    pendingSearchMatch = nil
+                }
+            }
         }
     }
     
@@ -197,6 +380,15 @@ struct EBookReaderView: View {
                 }
             }
 
+            // Bookmark
+            Button { toggleBookmark() } label: {
+                Image(systemName: isBookmarked ? "bookmark.fill" : "bookmark")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(isBookmarked ? Color.orange : .white)
+                    .frame(width: 34, height: 34)
+                    .background(.ultraThinMaterial, in: Circle())
+            }
+
             // Orientation lock
             Button { orientationLock.toggleLock(current: deviceOrientation) } label: {
                 Image(systemName: orientationLock.isLocked ? "lock.rotation" : "lock.rotation.open")
@@ -217,8 +409,16 @@ struct EBookReaderView: View {
                         Label("Table of Contents", systemImage: "list.bullet.rectangle")
                     }
                     .disabled(metadata?.spineItems.isEmpty ?? true)
+                    // Gap B: In-reader full-text search
+                    Button { showSearch = true } label: {
+                        Label("Search in Book", systemImage: "magnifyingglass")
+                    }
                 }
                 Section("Tools") {
+                    // Gap A: Annotations + highlights panel
+                    Button { showAnnotations = true } label: {
+                        Label("Highlights & Notes", systemImage: "highlighter")
+                    }
                     Button { showShareSheet = true } label: {
                         Label("Share Book", systemImage: "square.and.arrow.up")
                     }
@@ -360,7 +560,7 @@ struct EBookReaderView: View {
                                         )
                                     Spacer()
                                     if idx == currentIndex {
-                                        Image(systemName: "speaker.wave.2.fill")
+                                        Image(systemName: "book.fill")
                                             .font(.system(size: 10))
                                             .foregroundStyle(Color(hex: "#7B5EA7").opacity(0.7))
                                     }
@@ -582,6 +782,22 @@ struct EBookReaderView: View {
         private func saveProgress() {
         UserDefaults.standard.set(currentIndex, forKey: progressKey)
         UserDefaults.standard.set(chapterPage, forKey: pageKey)
+        // FIX 4: Also persist the fractional scroll offset for within-chapter precision
+        UserDefaults.standard.set(chapterScrollFraction, forKey: fractionKey)
+        // Update ReaderProgressTracker with within-chapter offset too
+        if let p = pdf ?? conversionManager.convertedPDFs.first(where: { $0.url.lastPathComponent == fileURL.lastPathComponent }) {
+            let fraction = totalChapters > 1 ? Double(currentIndex) / Double(totalChapters - 1) : 0
+            var progress = ReaderProgressTracker.shared.progress(for: p.id) ?? ReadingProgress(
+                pdfID: p.id, lastOpenedAt: Date(), currentPageIndex: currentIndex,
+                totalPagesRead: 1, completionFraction: fraction, readingSessionDates: []
+            )
+            progress.lastOpenedAt = Date()
+            progress.currentPageIndex = currentIndex
+            progress.currentChapterIndex = currentIndex
+            progress.currentChapterOffset = chapterScrollFraction
+            progress.completionFraction = fraction
+            ReaderProgressTracker.shared.update(progress)
+        }
     }
     
     private func cleanup() {
@@ -609,6 +825,36 @@ struct EBookReaderView: View {
             progress.readingSessionDates.append(Date())
         }
         ReaderProgressTracker.shared.update(progress)
+    }
+
+    // MARK: - Bookmarks
+    private var isBookmarked: Bool {
+        guard let p = pdf ?? conversionManager.convertedPDFs.first(where: { $0.url.lastPathComponent == fileURL.lastPathComponent }) else { return false }
+        return p.metadata.bookmarkedPages.contains(currentIndex)
+    }
+
+    private func toggleBookmark() {
+        guard let p = pdf ?? conversionManager.convertedPDFs.first(where: { $0.url.lastPathComponent == fileURL.lastPathComponent }),
+              let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == p.id }) else {
+            Logger.shared.log("toggleBookmark: could not find pdf in conversionManager", category: "EBookReaderView", type: .warning)
+            return
+        }
+        
+        var updated = conversionManager.convertedPDFs[idx]
+        if isBookmarked {
+            updated.metadata.bookmarkedPages.removeAll(where: { $0 == currentIndex })
+            Logger.shared.log("Bookmark removed: chapter \(currentIndex + 1) of '\(p.name)'", category: "EBookReaderView", type: .info)
+        } else {
+            updated.metadata.bookmarkedPages.append(currentIndex)
+            Logger.shared.log("Bookmark added: chapter \(currentIndex + 1) of '\(p.name)'", category: "EBookReaderView", type: .success)
+        }
+        
+        conversionManager.convertedPDFs[idx] = updated
+        conversionManager.saveLibrary()
+        
+        // Haptic feedback
+        let generator = UIImpactFeedbackGenerator(style: .light)
+        generator.impactOccurred()
     }
 }
 
@@ -642,6 +888,13 @@ struct EBookWebReader: UIViewRepresentable {
     var onHighlightCreated: ((String) -> Void)? = nil
     /// The PDF/book identity — used to restore previously saved highlights on chapter load.
     var pdfID: UUID? = nil
+    /// FIX 4: Scroll fraction to restore within the chapter (0.0–1.0).
+    /// Set from UserDefaults on open; updated via JS bridge on every page turn.
+    var initialScrollFraction: Double = 0.0
+    /// Called back from JS with the current scroll fraction whenever it changes.
+    var onScrollFractionChanged: ((Double) -> Void)? = nil
+    /// Gap B: Binding to share the web view reference for programmatic scripting (e.g. search).
+    @Binding var webViewRef: WKWebView?
 
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
@@ -651,6 +904,9 @@ struct EBookWebReader: UIViewRepresentable {
         config.userContentController.add(proxy, name: "metrics")
         // `highlight` handler: receives selected text when user taps Highlight
         config.userContentController.add(proxy, name: "highlight")
+        // FIX 4: `scrollFraction` handler: receives the fractional scroll offset (0–1)
+        // on every page navigation so we can save and restore within-chapter position.
+        config.userContentController.add(proxy, name: "scrollFraction")
 
         let wv = HighlightableWebView(frame: .zero, configuration: config)
         wv.isOpaque = false
@@ -661,6 +917,15 @@ struct EBookWebReader: UIViewRepresentable {
         wv.onHighlightRequested = {
             wv.evaluateJavaScript("window.applyInksyncHighlight('#ffd700');")
         }
+
+        let pinch = UIPinchGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handlePinch(_:)))
+        pinch.delegate = context.coordinator
+        wv.addGestureRecognizer(pinch)
+
+        DispatchQueue.main.async {
+            self.webViewRef = wv
+        }
+
         return wv
     }
 
@@ -673,6 +938,7 @@ struct EBookWebReader: UIViewRepresentable {
         uiView.configuration.userContentController.removeScriptMessageHandler(forName: "nav")
         uiView.configuration.userContentController.removeScriptMessageHandler(forName: "metrics")
         uiView.configuration.userContentController.removeScriptMessageHandler(forName: "highlight")
+        uiView.configuration.userContentController.removeScriptMessageHandler(forName: "scrollFraction")
         uiView.navigationDelegate = nil
     }
     
@@ -687,115 +953,261 @@ struct EBookWebReader: UIViewRepresentable {
         }
         guard FileManager.default.fileExists(atPath: contentURL.path) else { return }
 
-        let currentStateHash = "\(prefs.themeRaw)_\(prefs.customThemeBg)_\(prefs.customThemeText)_\(prefs.fontSize)_\(prefs.fontFamily)_\(prefs.lineHeight)_\(prefs.letterSpacing)_\(prefs.wordSpacing)_\(prefs.hyphenation)_\(prefs.textMargin)_\(prefs.paragraphSpacing)_\(prefs.paragraphIndent)_\(prefs.paginationMode)_\(prefs.textAlign)"
-        if context.coordinator.lastLoadedHref == spineItem.href &&
-           context.coordinator.lastTheme == currentStateHash { return }
+        let currentStateHash = "\(prefs.themeRaw)_\(prefs.customThemeBg)_\(prefs.customThemeText)_\(prefs.fontSize)_\(prefs.fontFamily)_\(prefs.lineHeight)_\(prefs.letterSpacing)_\(prefs.wordSpacing)_\(prefs.hyphenation)_\(prefs.textMargin)_\(prefs.paragraphSpacing)_\(prefs.paragraphIndent)_\(prefs.paginationMode)_\(prefs.textAlign)_\(prefs.autoScroll)_\(prefs.autoScrollSpeed)_\(prefs.tapZoneStyleRaw)_\(wv.bounds.width)_\(wv.bounds.height)"
+        
+        let contentChanged = context.coordinator.lastLoadedHref != spineItem.href
+        let themeChanged = context.coordinator.lastTheme != currentStateHash
+
+        guard contentChanged || themeChanged else { return }
         context.coordinator.lastLoadedHref = spineItem.href
         context.coordinator.lastTheme = currentStateHash
 
-        // Capture value-type snapshots so the detached task never touches ObservableObject
-        let capturedURL  = contentURL
-        let capturedDir  = dir
-        let capturedPage = initialPage
+        if contentChanged {
+            // Capture value-type snapshots so the detached task never touches ObservableObject
+            let capturedURL  = contentURL
+            let capturedDir  = dir
+            let capturedPage = initialPage
 
-        // CSS is pure string computation — compute on main before the task
-        let cssToInject  = buildReaderCSS(prefs: prefs, colorScheme: colorScheme, initialPage: capturedPage)
+            // CSS is pure string computation — compute on main before the task
+            let cssToInject  = buildReaderCSS(prefs: prefs, colorScheme: colorScheme, initialPage: capturedPage, size: wv.bounds.size)
 
-        // Cancel any in-flight load from a previous chapter swipe
-        context.coordinator.loadTask?.cancel()
-        context.coordinator.loadTask = Task {
-            guard !Task.isCancelled else { return }
+            // Cancel any in-flight load from a previous chapter swipe
+            context.coordinator.loadTask?.cancel()
+            context.coordinator.loadTask = Task {
+                guard !Task.isCancelled else { return }
 
-            // Heavy I/O + string ops on a background thread
-            let styledHTML: String? = await Task.detached(priority: .userInitiated) {
-                var rawHTML: String?
-                var enc: String.Encoding = .utf8
-                if let html = try? String(contentsOf: capturedURL, usedEncoding: &enc) {
-                    rawHTML = html
-                } else if let data = try? Data(contentsOf: capturedURL) {
-                    rawHTML = String(data: data, encoding: .isoLatin1)
-                           ?? String(data: data, encoding: .ascii)
+                // Heavy I/O + string ops on a background thread
+                let styledHTML: String? = await Task.detached(priority: .userInitiated) {
+                    var rawHTML: String?
+                    var enc: String.Encoding = .utf8
+                    let optString = try? String(contentsOf: capturedURL, usedEncoding: &enc)
+                    if let html = optString {
+                        rawHTML = html
+                    } else {
+                        let optData = try? Data(contentsOf: capturedURL)
+                        if let data = optData {
+                            rawHTML = String(data: data, encoding: .isoLatin1)
+                                   ?? String(data: data, encoding: .ascii)
+                        }
+                    }
+                    guard var html = rawHTML else { return nil }
+
+                    // Strip legacy charset tags
+                    let pattern = "<meta[^>]*charset[^>]*>"
+                    let optRegex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive)
+                    if let regex = optRegex {
+                        html = regex.stringByReplacingMatches(
+                            in: html, range: NSRange(html.startIndex..., in: html), withTemplate: ""
+                        )
+                    }
+
+                    // Inject pre-computed CSS
+                    if let range = html.range(of: "</head>", options: .caseInsensitive) {
+                        return html.replacingCharacters(in: range, with: cssToInject + "</head>")
+                    }
+                    return cssToInject + html
+                }.value
+
+                guard !Task.isCancelled, let html = styledHTML else { return }
+
+                // Back on main: write injected file + load
+                await MainActor.run {
+                    let hrefHash = abs(capturedURL.lastPathComponent.hashValue)
+                    let injectedURL = capturedURL.deletingLastPathComponent()
+                        .appendingPathComponent("__inksync_\(hrefHash).injected.html")
+                    try? html.write(to: injectedURL, atomically: true, encoding: .utf8)
+                    wv.loadFileURL(injectedURL, allowingReadAccessTo: capturedDir)
                 }
-                guard var html = rawHTML else { return nil }
-
-                // Strip legacy charset tags
-                let pattern = "<meta[^>]*charset[^>]*>"
-                if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) {
-                    html = regex.stringByReplacingMatches(
-                        in: html, range: NSRange(html.startIndex..., in: html), withTemplate: ""
-                    )
-                }
-
-                // Inject pre-computed CSS
-                if let range = html.range(of: "</head>", options: .caseInsensitive) {
-                    return html.replacingCharacters(in: range, with: cssToInject + "</head>")
-                }
-                return cssToInject + html
-            }.value
-
-            guard !Task.isCancelled, let html = styledHTML else { return }
-
-            // Back on main: write injected file + load
-            await MainActor.run {
-                // Use a per-spine-item path keyed by the href hash so concurrent
-                // chapter swipes never overwrite each other's injected file.
-                // Previously both tasks wrote to the same "chapter.injected.html",
-                // causing the WKWebView to load corrupted / wrong-chapter HTML.
-                let hrefHash = abs(capturedURL.lastPathComponent.hashValue)
-                let injectedURL = capturedURL.deletingLastPathComponent()
-                    .appendingPathComponent("__inksync_\(hrefHash).injected.html")
-                try? html.write(to: injectedURL, atomically: true, encoding: .utf8)
-                wv.loadFileURL(injectedURL, allowingReadAccessTo: capturedDir)
             }
+        } else {
+            // Preferences/Theme changed inside the same chapter — update stylesheet directly in DOM without reloading!
+            injectLiveCSS(into: wv)
+        }
+
+        // Dynamically update tap zone boundaries in the WebView DOM
+        let leftEdge = prefs.tapZoneStyle.zones.leftEdge
+        let rightEdge = prefs.tapZoneStyle.zones.rightEdge
+        wv.evaluateJavaScript("window.__inksync_left_edge = \(leftEdge); window.__inksync_right_edge = \(rightEdge);", completionHandler: nil)
+
+        // Apply auto-scroll logic
+        if prefs.autoScroll && prefs.paginationMode == EBookPaginationMode.continuous.rawValue {
+            let speed = prefs.autoScrollSpeed * 1.5
+            wv.evaluateJavaScript("window.startInksyncAutoScroll(\(speed));", completionHandler: nil)
+        } else {
+            wv.evaluateJavaScript("window.stopInksyncAutoScroll();", completionHandler: nil)
         }
     }
 
     /// Builds the full CSS + JS block as a pure string on the main actor.
     /// No disk I/O — safe to call synchronously before spawning a background task.
-    private func buildReaderCSS(prefs: EBookPreferences, colorScheme: ColorScheme, initialPage: Int) -> String {
+    private func buildReaderCSS(prefs: EBookPreferences, colorScheme: ColorScheme, initialPage: Int, size: CGSize) -> String {
         let isPaged = prefs.paginationMode == EBookPaginationMode.paged.rawValue
 
-        // Extract all preference values into local constants so they can be used
-        // inside the multi-line string literal with normal \(...) interpolation.
-        // The previous code used \\(...) which writes literal \(xxx) into the HTML
-        // instead of the actual value — this caused font/size/spacing to have no effect.
-        let bgColor       = prefs.activeTheme.cssBackground
-        let textColor     = prefs.activeTheme.cssText
-        let linkColor     = prefs.activeTheme.cssLink
-        let fontFamily    = prefs.fontFamily
-        let fontSize      = Int(prefs.fontSize)
-        let lineHeight    = String(format: "%.2f", prefs.lineHeight)
+        let bgColor      = prefs.activeTheme.cssBackground
+        let textColor    = prefs.activeTheme.cssText
+        let linkColor    = prefs.activeTheme.cssLink
+        let fontFamily   = prefs.fontFamily
+        let fontSize     = Int(prefs.fontSize)
+        let lineHeight   = String(format: "%.2f", prefs.lineHeight)
         let letterSpacing = String(format: "%.4fem", prefs.letterSpacing)
         let wordSpacing   = String(format: "%.4fem", prefs.wordSpacing)
-        let hyphenCSS     = prefs.hyphenation ? "auto" : "manual"
         let textAlign     = prefs.textAlign
         let margin        = prefs.textMargin
         let paraSpace     = prefs.paragraphSpacing
         let paraIndent    = prefs.paragraphIndent
+        let hyphenCSS     = prefs.hyphenation ? "auto" : "manual"
 
         let overflowCSS = isPaged
             ? "overflow: hidden !important;"
             : "overflow-x: hidden !important; overflow-y: auto !important;"
         let widthCSS = isPaged ? "" : "width: 100vw !important; overflow-x: hidden !important;"
         
-        let deviceIsPad = UIDevice.current.userInterfaceIdiom == .pad
-        let defaultColumns = deviceIsPad ? 2 : 1
+        let isLandscape = size.width > size.height
+        let defaultColumns = isLandscape ? 2 : 1
         let cols = prefs.columnCount == 0 ? defaultColumns : prefs.columnCount
+        
+        let gap = Int(margin * 2)
         
         let pagedCSS = isPaged ? """
             column-count: \(cols) !important;
-            column-gap: \(margin * 2)px !important;
+            column-width: auto !important;
+            column-gap: \(gap)px !important;
             column-fill: auto !important;
+            column-rule: 1px solid rgba(128, 128, 128, 0.15) !important;
         """ : ""
+
+        let paddingLeft = margin
+        let paddingRight = margin
 
         return """
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
         <style id="__inksync_reader__">
+        @font-face {
+            font-family: 'Literata';
+            src: local('Literata-Regular');
+            font-weight: normal;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Literata';
+            src: local('Literata-Bold');
+            font-weight: bold;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Literata';
+            src: local('Literata-Italic');
+            font-weight: normal;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'Literata';
+            src: local('Literata-BoldItalic');
+            font-weight: bold;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'Atkinson Hyperlegible';
+            src: local('AtkinsonHyperlegible-Regular');
+            font-weight: normal;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Atkinson Hyperlegible';
+            src: local('AtkinsonHyperlegible-Bold');
+            font-weight: bold;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Atkinson Hyperlegible';
+            src: local('AtkinsonHyperlegible-Italic');
+            font-weight: normal;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'Atkinson Hyperlegible';
+            src: local('AtkinsonHyperlegible-BoldItalic');
+            font-weight: bold;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'OpenDyslexic';
+            src: local('OpenDyslexic-Regular');
+            font-weight: normal;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'OpenDyslexic';
+            src: local('OpenDyslexic-Bold');
+            font-weight: bold;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'OpenDyslexic';
+            src: local('OpenDyslexic-Italic');
+            font-weight: normal;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'OpenDyslexic';
+            src: local('OpenDyslexic-BoldItalic');
+            font-weight: bold;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'Merriweather';
+            src: local('Merriweather-Regular');
+            font-weight: normal;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Merriweather';
+            src: local('Merriweather-Bold');
+            font-weight: bold;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Merriweather';
+            src: local('Merriweather-Italic');
+            font-weight: normal;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'Merriweather';
+            src: local('Merriweather-BoldItalic');
+            font-weight: bold;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'Source Serif 4';
+            src: local('SourceSerif4-Regular');
+            font-weight: normal;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Source Serif 4';
+            src: local('SourceSerif4-Regular');
+            font-weight: bold;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Source Serif 4';
+            src: local('SourceSerif4-Italic');
+            font-weight: normal;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'Source Serif 4';
+            src: local('SourceSerif4-Italic');
+            font-weight: bold;
+            font-style: italic;
+        }
         *, *::before, *::after { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
         html {
             margin: 0 !important; padding: 0 !important;
             height: 100vh !important; width: 100vw !important;
+            column-width: auto !important;
             \(overflowCSS)
             background-color: \(bgColor) !important;
         }
@@ -811,8 +1223,8 @@ struct EBookWebReader: UIViewRepresentable {
             \(widthCSS)
             padding-top: 60px !important;
             padding-bottom: 60px !important;
-            padding-left: \(margin)px !important;
-            padding-right: \(margin)px !important;
+            padding-left: \(paddingLeft)px !important;
+            padding-right: \(paddingRight)px !important;
             box-sizing: border-box !important;
             word-wrap: break-word;
             -webkit-text-size-adjust: none;
@@ -821,8 +1233,13 @@ struct EBookWebReader: UIViewRepresentable {
             -webkit-hyphens: \(hyphenCSS) !important;
             hyphens: \(hyphenCSS) !important;
         }
+        div, section, article {
+            column-count: auto !important;
+            column-width: auto !important;
+        }
         p { margin-bottom: \(paraSpace)em !important; text-indent: \(paraIndent)em !important; }
         p, div, span, li, td, th, h1, h2, h3, h4, h5, h6 { color: \(textColor) !important; line-height: \(lineHeight); }
+        img, svg, .page, .chunk-container { display: block !important; margin-left: auto !important; margin-right: auto !important; }
         img { max-width: 100%; height: auto; border-radius: 4px; object-fit: contain; max-height: calc(100vh - 120px); }
         a { color: \(linkColor) !important; }
         blockquote { border-left: 3px solid \(linkColor); margin-left: 0; padding-left: 16px; opacity: 0.85; }
@@ -838,30 +1255,41 @@ struct EBookWebReader: UIViewRepresentable {
 
         var _currentPage = \(initialPage);
         var _totalPages = 1;
+        var _firstRun = true;
 
         function updateMetrics() {
             _totalPages = Math.max(1, Math.ceil(document.documentElement.scrollWidth / window.innerWidth));
+            if (_firstRun) {
+                _firstRun = false;
+                if (_currentPage === 99999) {
+                    _currentPage = _totalPages - 1;
+                }
+                goToPage(_currentPage, false);
+            }
             window.webkit.messageHandlers.metrics.postMessage({ current: _currentPage, total: _totalPages });
         }
 
-        function goToPage(page) {
+        function goToPage(page, smooth) {
             _currentPage = Math.max(0, Math.min(page, _totalPages - 1));
-            window.scrollTo({ left: _currentPage * window.innerWidth, behavior: 'instant' });
-            updateMetrics();
+            var behavior = smooth ? 'smooth' : 'instant';
+            window.scrollTo({ left: _currentPage * window.innerWidth, behavior: behavior });
+            if (!_firstRun) {
+                window.webkit.messageHandlers.metrics.postMessage({ current: _currentPage, total: _totalPages });
+            }
         }
 
         window.onload = function() { setTimeout(updateMetrics, 100); };
-        window.addEventListener('resize', function() { updateMetrics(); goToPage(_currentPage); });
+        window.addEventListener('resize', function() { updateMetrics(); goToPage(_currentPage, false); });
 
         var _sx = 0;
         document.addEventListener('touchstart', function(e) { _sx = e.changedTouches[0].clientX; }, {passive:true});
         document.addEventListener('touchend', function(e) {
             var dx = e.changedTouches[0].clientX - _sx;
             if (dx < -40) {
-                if (_currentPage < _totalPages - 1) goToPage(_currentPage + 1);
+                if (_currentPage < _totalPages - 1) goToPage(_currentPage + 1, false);
                 else window.webkit.messageHandlers.nav.postMessage('next');
             } else if (dx > 40) {
-                if (_currentPage > 0) goToPage(_currentPage - 1);
+                if (_currentPage > 0) goToPage(_currentPage - 1, false);
                 else window.webkit.messageHandlers.nav.postMessage('prev');
             }
         }, {passive:true});
@@ -869,11 +1297,13 @@ struct EBookWebReader: UIViewRepresentable {
         document.addEventListener('click', function(e) {
             if (e.target.tagName.toLowerCase() === 'a') return;
             var x = e.clientX; var w = window.innerWidth;
-            if (x < w * 0.35) {
-                if (_currentPage > 0) goToPage(_currentPage - 1);
+            var leftEdge = window.__inksync_left_edge || 0.30;
+            var rightEdge = window.__inksync_right_edge || 0.70;
+            if (x < w * leftEdge) {
+                if (_currentPage > 0) goToPage(_currentPage - 1, true);
                 else window.webkit.messageHandlers.nav.postMessage('prev');
-            } else if (x > w * 0.65) {
-                if (_currentPage < _totalPages - 1) goToPage(_currentPage + 1);
+            } else if (x > w * rightEdge) {
+                if (_currentPage < _totalPages - 1) goToPage(_currentPage + 1, true);
                 else window.webkit.messageHandlers.nav.postMessage('next');
             } else {
                 window.webkit.messageHandlers.nav.postMessage('center');
@@ -882,11 +1312,11 @@ struct EBookWebReader: UIViewRepresentable {
 
         document.addEventListener('keydown', function(e) {
             if (e.key === 'ArrowRight' || e.key === 'Space') {
-                if (_currentPage < _totalPages - 1) goToPage(_currentPage + 1);
+                if (_currentPage < _totalPages - 1) goToPage(_currentPage + 1, true);
                 else window.webkit.messageHandlers.nav.postMessage('next');
                 e.preventDefault();
             } else if (e.key === 'ArrowLeft') {
-                if (_currentPage > 0) goToPage(_currentPage - 1);
+                if (_currentPage > 0) goToPage(_currentPage - 1, true);
                 else window.webkit.messageHandlers.nav.postMessage('prev');
                 e.preventDefault();
             }
@@ -946,6 +1376,58 @@ struct EBookWebReader: UIViewRepresentable {
                 }
             }
         };
+        window.updateInksyncHighlightColor = function(textToFind, colorHex) {
+            var marks = document.querySelectorAll('mark.inksync-highlight');
+            for (var i = 0; i < marks.length; i++) {
+                if (marks[i].textContent.trim() === textToFind.trim()) {
+                    marks[i].style.backgroundColor = colorHex;
+                    break;
+                }
+            }
+        };
+
+        window.removeInksyncHighlight = function(textToFind) {
+            var marks = document.querySelectorAll('mark.inksync-highlight');
+            for (var i = 0; i < marks.length; i++) {
+                if (marks[i].textContent.trim() === textToFind.trim()) {
+                    var parent = marks[i].parentNode;
+                    while (marks[i].firstChild) {
+                        parent.insertBefore(marks[i].firstChild, marks[i]);
+                    }
+                    parent.removeChild(marks[i]);
+                    parent.normalize();
+                    break;
+                }
+            }
+        };
+
+        // ── Auto Scroll ──────────────────────────────────────────────────
+        var scrollActive = false;
+        var scrollSpeed = 1.0;
+        var lastTime = 0;
+
+        window.startInksyncAutoScroll = function(speed) {
+            scrollSpeed = speed;
+            if (scrollActive) return;
+            scrollActive = true;
+            lastTime = performance.now();
+            
+            function scrollStep(timestamp) {
+                if (!scrollActive) return;
+                var delta = timestamp - lastTime;
+                lastTime = timestamp;
+                
+                // Normalize scroll delta to ~16.7ms base speed step
+                var step = (scrollSpeed * (delta / 16.67));
+                window.scrollBy(0, step);
+                
+                requestAnimationFrame(scrollStep);
+            }
+            requestAnimationFrame(scrollStep);
+        };
+        window.stopInksyncAutoScroll = function() {
+            scrollActive = false;
+        };
 
         // Make text selectable (required in paged/column mode)
         document.addEventListener('DOMContentLoaded', function() {
@@ -956,17 +1438,207 @@ struct EBookWebReader: UIViewRepresentable {
         """
     }
 
+    /// Injects a live CSS update into the existing WebView DOM — no reload required.
+    private func injectLiveCSS(into webView: WKWebView) {
+        let isPaged = prefs.paginationMode == EBookPaginationMode.paged.rawValue
+        
+        let bg            = prefs.activeTheme.cssBackground
+        let fg            = prefs.activeTheme.cssText
+        let link          = prefs.activeTheme.cssLink
+        let ff            = prefs.fontFamily
+        let fs            = Int(prefs.fontSize)
+        let lh            = String(format: "%.2f", prefs.lineHeight)
+        let ls            = String(format: "%.4fem", prefs.letterSpacing)
+        let ws            = String(format: "%.4fem", prefs.wordSpacing)
+        let hyph          = prefs.hyphenation ? "auto" : "manual"
+        let align         = prefs.textAlign
+        let margin        = prefs.textMargin
+        
+        let size = webView.bounds.size
+        let isLandscape = size.width > size.height
+        let defaultColumns = isLandscape ? 2 : 1
+        let cols = prefs.columnCount == 0 ? defaultColumns : prefs.columnCount
+        
+        let gap = Int(margin * 2)
+        
+        let pagedCSS = isPaged ? """
+            column-count: \(cols) !important;
+            column-width: auto !important;
+            column-gap: \(gap)px !important;
+            column-fill: auto !important;
+            column-rule: 1px solid rgba(128, 128, 128, 0.15) !important;
+        """ : ""
+
+        let paddingLeft = margin
+        let paddingRight = margin
+
+        let css = """
+        @font-face {
+            font-family: 'Literata';
+            src: local('Literata-Regular');
+            font-weight: normal;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Literata';
+            src: local('Literata-Bold');
+            font-weight: bold;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Literata';
+            src: local('Literata-Italic');
+            font-weight: normal;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'Literata';
+            src: local('Literata-BoldItalic');
+            font-weight: bold;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'Atkinson Hyperlegible';
+            src: local('AtkinsonHyperlegible-Regular');
+            font-weight: normal;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Atkinson Hyperlegible';
+            src: local('AtkinsonHyperlegible-Bold');
+            font-weight: bold;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Atkinson Hyperlegible';
+            src: local('AtkinsonHyperlegible-Italic');
+            font-weight: normal;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'Atkinson Hyperlegible';
+            src: local('AtkinsonHyperlegible-BoldItalic');
+            font-weight: bold;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'OpenDyslexic';
+            src: local('OpenDyslexic-Regular');
+            font-weight: normal;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'OpenDyslexic';
+            src: local('OpenDyslexic-Bold');
+            font-weight: bold;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'OpenDyslexic';
+            src: local('OpenDyslexic-Italic');
+            font-weight: normal;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'OpenDyslexic';
+            src: local('OpenDyslexic-BoldItalic');
+            font-weight: bold;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'Merriweather';
+            src: local('Merriweather-Regular');
+            font-weight: normal;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Merriweather';
+            src: local('Merriweather-Bold');
+            font-weight: bold;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Merriweather';
+            src: local('Merriweather-Italic');
+            font-weight: normal;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'Merriweather';
+            src: local('Merriweather-BoldItalic');
+            font-weight: bold;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'Source Serif 4';
+            src: local('SourceSerif4-Regular');
+            font-weight: normal;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Source Serif 4';
+            src: local('SourceSerif4-Regular');
+            font-weight: bold;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Source Serif 4';
+            src: local('SourceSerif4-Italic');
+            font-weight: normal;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'Source Serif 4';
+            src: local('SourceSerif4-Italic');
+            font-weight: bold;
+            font-style: italic;
+        }
+        body {
+            font-family: \(ff) !important;
+            font-size: \(fs)px !important;
+            line-height: \(lh) !important;
+            background-color: \(bg) !important;
+            color: \(fg) !important;
+            letter-spacing: \(ls) !important;
+            word-spacing: \(ws) !important;
+            text-align: \(align) !important;
+            -webkit-hyphens: \(hyph) !important;
+            hyphens: \(hyph) !important;
+            \(pagedCSS)
+            padding-left: \(paddingLeft)px !important;
+            padding-right: \(paddingRight)px !important;
+        }
+        div, section, article {
+            column-count: auto !important;
+            column-width: auto !important;
+        }
+        body, p, div, span, li, td, th, h1, h2, h3, h4, h5, h6 { color: \(fg) !important; }
+        a { color: \(link) !important; }
+        html { background-color: \(bg) !important; column-width: auto !important; }
+        """
+
+        let js = """
+        (function() {
+            var el = document.getElementById('__inksync_live__');
+            if (!el) { el = document.createElement('style'); el.id = '__inksync_live__'; document.head.appendChild(el); }
+            el.textContent = \("`\(css.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "`", with: "\\`"))`");
+        })();
+        """
+        webView.evaluateJavaScript(js)
+    }
+
     
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
     @MainActor
-    final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
+    final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate, UIGestureRecognizerDelegate {
         var parent: EBookWebReader
         var lastLoadedHref: String = ""
         var lastTheme: String = ""
         var lastFontSize: Double = 0
         /// Cancellable reference — cancelled on every new chapter load to prevent stale renders
         var loadTask: Task<Void, Never>?
+        var initialPinchFontSize: Double = 16.0
 
         init(_ parent: EBookWebReader) { self.parent = parent }
 
@@ -980,6 +1652,9 @@ struct EBookWebReader: UIViewRepresentable {
                 self.parent.totalPages = body["total"] ?? 1
             } else if message.name == "highlight", let text = message.body as? String, !text.isEmpty {
                 self.parent.onHighlightCreated?(text)
+            } else if message.name == "scrollFraction", let fraction = message.body as? Double {
+                // FIX 4: Report the within-chapter scroll fraction back to Swift for persistence.
+                self.parent.onScrollFractionChanged?(fraction)
             }
         }
         
@@ -1007,7 +1682,7 @@ struct EBookWebReader: UIViewRepresentable {
             }
         }
 
-        /// Restore saved highlights after every chapter load.
+        /// Restore saved highlights and scroll position after every chapter load.
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             guard let pdfID = parent.pdfID else { return }
             let chapter = parent.spineItem.href
@@ -1023,6 +1698,46 @@ struct EBookWebReader: UIViewRepresentable {
                 let js = "window.restoreInksyncHighlight(`\(safeText)`, '\(color)');"
                 webView.evaluateJavaScript(js)
             }
+
+            // FIX 4: Restore the within-chapter fractional scroll position.
+            // We use a 150ms delay to allow the layout engine to complete column
+            // calculation before we scroll; without this, scrollWidth is still 0.
+            let fraction = parent.initialScrollFraction
+            if fraction > 0.01 {
+                let restoreJS = """
+                setTimeout(function() {
+                    var sv = document.scrollingElement || document.documentElement;
+                    var isHoriz = document.body.style.columnCount || window.getComputedStyle(document.body).columnCount !== 'auto';
+                    if (isHoriz) {
+                        window.scrollTo({ left: sv.scrollWidth * \(fraction), behavior: 'instant' });
+                    } else {
+                        window.scrollTo({ top: sv.scrollHeight * \(fraction), behavior: 'instant' });
+                    }
+                    // Report the fraction back to initialise the Swift state correctly
+                    window.webkit.messageHandlers.scrollFraction.postMessage(\(fraction));
+                }, 150);
+                """
+                webView.evaluateJavaScript(restoreJS)
+            }
+        }
+
+        @objc func handlePinch(_ gesture: UIPinchGestureRecognizer) {
+            if gesture.state == .began {
+                initialPinchFontSize = parent.prefs.fontSize
+            } else if gesture.state == .changed {
+                let newSize = initialPinchFontSize * Double(gesture.scale)
+                parent.prefs.fontSize = max(12.0, min(48.0, newSize))
+            }
+        }
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+            return true
+        }
+
+        /// Recover from Jetsam Out-Of-Memory (OOM) WebKit process crashes.
+        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            Logger.shared.log("WebKit process terminated (OOM Jetsam crash). Reloading EPUB chapter.", category: "EBookWebReader", type: .error)
+            webView.reload()
         }
     }
 } // end EBookWebReader

@@ -1,13 +1,16 @@
 import SwiftUI
 import SwiftData
 
+@MainActor
 struct SettingsView: View {
     @EnvironmentObject var conversionManager: ConversionManager
     @EnvironmentObject var settingsManager: AppSettingsManager
-    // Core Navigation & Overarching Variables
-    @AppStorage("useSidebar") private var useSidebar = true
+
     @AppStorage("fastBundleOmnibus") private var fastBundleOmnibus = false
     @AppStorage("appUIMode") private var appUIMode: AppUIMode = .pro
+    @AppStorage("essentialReaderMode") private var essentialReaderMode = false
+    @AppStorage("isHapticsEnabled") private var isHapticsEnabled = true
+    @AppStorage("backTapEnabled") private var backTapEnabled = false
 
     // Kindle Email Storage
     @AppStorage("kindleEmail") private var kindleEmail: String = ""
@@ -15,25 +18,36 @@ struct SettingsView: View {
     // Background Auto-Sync
     @AppStorage("enableBackgroundSync") private var enableBackgroundSync = false
 
-    // Gamification Settings
-    @AppStorage("enableSerendipity") private var enableSerendipity = true
-    @AppStorage("dailyPageGoal") private var dailyPageGoal = 5
-    @AppStorage("streakTheme") private var streakTheme: StreakTheme = .classic
+
 
     // Library Typography Themes
-    @AppStorage("mangaBadgeColorHex") private var mangaBadgeColorHex = "#2dd4a0"
+    @AppStorage("mangaBadgeColorHex") private var mangaBadgeColorHex = "#ff5a36"
     @AppStorage("comicBadgeColorHex") private var comicBadgeColorHex = "#3d6fff"
+    @AppStorage("booksBadgeColorHex") private var booksBadgeColorHex = "#14b8a6"
+    @AppStorage("convertedBadgeColorHex") private var convertedBadgeColorHex = "#f5a623"
 
     // Adaptive Learning Engine
     @ObservedObject private var aiManager = AdaptiveLearningManager.shared
 
-    @State private var showingAddDevice = false
-    @State private var showingDeleteAlert = false
+    @State private var showingSystemLogs = false
     
     // Preset & AI Export State
     @State private var showingPresetAlert = false
     @State private var customPresetName = "Custom Base"
+    @State private var showingDeleteAllAlert = false
     @Environment(\.dismiss) var dismiss
+
+    enum FocusableField: Hashable {
+        case kindleEmail
+        case comicVineAPIKey
+        case aniListAPIToken
+        case aniListClientID
+        case mangaUpdatesUsername
+        case mangaUpdatesPassword
+        case aliasImportedTitle
+        case aliasLibraryTitle
+    }
+    @FocusState private var focusedField: FocusableField?
 
     @State private var showingAIExport = false
     @State private var aiExportDocument: JSONFileDocument?
@@ -41,22 +55,34 @@ struct SettingsView: View {
     @State private var aiFeedbackTitle = ""
     @State private var aiFeedbackMessage = ""
     
-    // Danger Zone state
-    @State private var showingZettelkastenPurgeConfirm = false
+
 
     // ComicVine API key verification state
     @State private var isVerifying = false
     @State private var verificationStatus: KeyStatus = .none
     
-    enum KeyStatus {
+    // AniList API key verification state
+    @State private var isVerifyingAniList = false
+    @State private var aniListVerificationStatus: KeyStatus = .none
+    @State private var aniListClientID = ""
+    
+    // MangaUpdates verification state
+    @State private var isVerifyingMangaUpdates = false
+    @State private var mangaUpdatesVerificationStatus: KeyStatus = .none
+    
+    // Smart List Alias properties
+    @State private var aliasImportedTitle = ""
+    @State private var aliasLibraryTitle = ""
+    
+    enum KeyStatus: Equatable {
         case none, verifying, success, invalid, localizedError(String)
         
         var title: String {
             switch self {
-            case .none: return "Verify Key"
+            case .none: return "Verify"
             case .verifying: return "Verifying..."
-            case .success: return "Key Validated"
-            case .invalid: return "Invalid Key"
+            case .success: return "Validated"
+            case .invalid: return "Invalid"
             case .localizedError(let msg): return msg
             }
         }
@@ -94,6 +120,39 @@ struct SettingsView: View {
         }
     }
     
+    func verifyAniListToken() {
+        let token = settingsManager.conversionSettings.aniListAPIToken
+        guard !token.isEmpty else { return }
+        
+        isVerifyingAniList = true
+        aniListVerificationStatus = .verifying
+        
+        Task {
+            let isValid = await AniListService.shared.validateToken(token)
+            await MainActor.run {
+                isVerifyingAniList = false
+                aniListVerificationStatus = isValid ? .success : .invalid
+            }
+        }
+    }
+    
+    func verifyMangaUpdatesCredentials() {
+        let user = settingsManager.conversionSettings.mangaUpdatesUsername
+        let pass = settingsManager.conversionSettings.mangaUpdatesPassword
+        guard !user.isEmpty && !pass.isEmpty else { return }
+        
+        isVerifyingMangaUpdates = true
+        mangaUpdatesVerificationStatus = .verifying
+        
+        Task {
+            let isValid = await MangaUpdatesService.shared.validateCredentials(username: user, password: pass)
+            await MainActor.run {
+                isVerifyingMangaUpdates = false
+                mangaUpdatesVerificationStatus = isValid ? .success : .invalid
+            }
+        }
+    }
+    
     // Helper to generate App-Store quality iOS Settings icons
     private func settingsIcon(_ systemName: String, color: Color) -> some View {
         Image(systemName: systemName)
@@ -107,6 +166,7 @@ struct SettingsView: View {
     var body: some View {
         Form {
             generalUISection
+            readerPerformanceSection
             sendToKindleSection
             exportDefaultsSection
             omnibusSection
@@ -114,21 +174,28 @@ struct SettingsView: View {
             
             imageFiltersSection
             aiSection
-            gamificationSection
             integrationsSection
             systemSection
             legalSection
-            dangerZoneSection
         }
+        .formStyle(.grouped)
         .scrollContentBackground(.hidden)
-        .background(Color.clear)
+        .background(Color.inkBackground.ignoresSafeArea())
         .listRowBackground(Color.inkSurface.opacity(0.4))
         .navigationTitle("Preferences")
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button(action: { dismiss() }) { Text("Done").bold() }
+        .background(
+            Group {
+                Button("") {
+                    dismiss()
+                }
+                .keyboardShortcut("w", modifiers: .command)
+                Button("") {
+                    dismiss()
+                }
+                .keyboardShortcut(.cancelAction)
             }
-        }
+            .opacity(0)
+        )
         .onChange(of: settingsManager.conversionSettings) {
             settingsManager.save()
         }
@@ -140,6 +207,14 @@ struct SettingsView: View {
                 settingsManager.savePreset(newPreset)
             }
         } message: { Text("Enter a name for your custom export configuration.") }
+        .alert("Delete All Data & Reset?", isPresented: $showingDeleteAllAlert) {
+            Button("Cancel", role: .cancel) { }
+            Button("Delete Everything", role: .destructive) {
+                performFullAppReset()
+            }
+        } message: {
+            Text("This will permanently delete all local library files, databases, reading progress, covers, annotations, and settings. The app will close to complete the reset. Please reopen it manually.")
+        }
         .alert(aiFeedbackTitle, isPresented: $showingAIFeedbackAlert) {
             Button("OK", role: .cancel) { }
         } message: { Text(aiFeedbackMessage) }
@@ -158,25 +233,6 @@ struct SettingsView: View {
                     showingAIFeedbackAlert = true
                 }
             }
-        }
-        .confirmationDialog(
-            "Purge Zettelkasten Database?",
-            isPresented: $showingZettelkastenPurgeConfirm,
-            titleVisibility: .visible
-        ) {
-            Button("Purge Everything", role: .destructive) {
-                let context = InksyncProApp.sharedModelContainer.mainContext
-                let descriptor = FetchDescriptor<SDAnnotation>()
-                if let annotations = try? context.fetch(descriptor) {
-                    for ann in annotations {
-                        context.delete(ann)
-                    }
-                    try? context.save()
-                }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This will permanently delete all highlights, notes, and Readwise imports. This action cannot be undone.")
         }
     }
     
@@ -215,11 +271,9 @@ struct SettingsView: View {
                 settingsIcon("book.fill", color: .purple)
                 Toggle("Default Manga Mode (RTL)", isOn: $settingsManager.conversionSettings.mangaMode)
             }
+
             
-            HStack {
-                settingsIcon("sidebar.left", color: .indigo)
-                Toggle("Use Sidebar Navigation (iPad)", isOn: $useSidebar)
-            }
+
 
             VStack(alignment: .leading) {
                 Toggle("Async Background Conversions", isOn: $settingsManager.conversionSettings.enableBackgroundQueue)
@@ -233,7 +287,7 @@ struct SettingsView: View {
                 settingsIcon("paintpalette.fill", color: .pink)
                 ColorPicker("Manga Badge Background", selection: Binding(
                     get: { Color(hex: mangaBadgeColorHex) },
-                    set: { mangaBadgeColorHex = $0.toHex() ?? "#2dd4a0" }
+                    set: { mangaBadgeColorHex = $0.toHex() ?? "#ff5a36" }
                 ))
             }
             
@@ -242,6 +296,22 @@ struct SettingsView: View {
                 ColorPicker("Comic Badge Background", selection: Binding(
                     get: { Color(hex: comicBadgeColorHex) },
                     set: { comicBadgeColorHex = $0.toHex() ?? "#3d6fff" }
+                ))
+            }
+
+            HStack {
+                settingsIcon("paintpalette.fill", color: .pink)
+                ColorPicker("Books Badge Background", selection: Binding(
+                    get: { Color(hex: booksBadgeColorHex) },
+                    set: { booksBadgeColorHex = $0.toHex() ?? "#14b8a6" }
+                ))
+            }
+
+            HStack {
+                settingsIcon("paintpalette.fill", color: .pink)
+                ColorPicker("Converted Badge Background", selection: Binding(
+                    get: { Color(hex: convertedBadgeColorHex) },
+                    set: { convertedBadgeColorHex = $0.toHex() ?? "#f5a623" }
                 ))
             }
             
@@ -265,6 +335,30 @@ struct SettingsView: View {
     }
 
     @ViewBuilder
+    private var readerPerformanceSection: some View {
+        Section(header: Text("Reader Performance & Immersion")) {
+            HStack {
+                settingsIcon("bolt.speedometer", color: .orange)
+                Toggle("Essential Speed Mode", isOn: $essentialReaderMode)
+            }
+            if !essentialReaderMode {
+                HStack {
+                    settingsIcon("waveform.path.ecg", color: .orange)
+                    Toggle("Haptic Feedback", isOn: $isHapticsEnabled)
+                }
+            }
+            HStack {
+                settingsIcon("hand.tap.fill", color: .orange)
+                Toggle("Back Tap Navigation", isOn: $backTapEnabled)
+            }
+            HStack {
+                settingsIcon("applepencil.and.scribble", color: .orange)
+                Toggle("Apple Pencil Drawing Only", isOn: $settingsManager.conversionSettings.pencilOnlyDrawing)
+            }
+        }
+    }
+
+    @ViewBuilder
     private var sendToKindleSection: some View {
         Section(header: Text("Send to Kindle")) {
             HStack {
@@ -273,6 +367,10 @@ struct SettingsView: View {
                     .keyboardType(.emailAddress)
                     .autocapitalization(.none)
                     .disableAutocorrection(true)
+                    .focused($focusedField, equals: .kindleEmail)
+                    .onSubmit {
+                        focusedField = nil
+                    }
             }
         }
     }
@@ -305,7 +403,7 @@ struct SettingsView: View {
                 HStack {
                     settingsIcon("rectangle.grid.1x2.fill", color: .indigo)
                     Picker("EPUB Conversion Mode", selection: $settingsManager.conversionSettings.outputPipeline) {
-                        ForEach(OutputPipeline.allCases) { pipeline in Text(pipeline.rawValue).tag(pipeline) }
+                        ForEach(OutputPipeline.allCases) { pipeline in Text(pipeline.displayName).tag(pipeline) }
                     }
                     .pickerStyle(.menu)
                 }
@@ -340,6 +438,14 @@ struct SettingsView: View {
                         }
                     }
                     .pickerStyle(.menu)
+                }
+                HStack {
+                    settingsIcon("character.book.closed.fill", color: .purple)
+                    Toggle("Embed Character Glossary", isOn: $settingsManager.conversionSettings.embedCharacterGlossary)
+                }
+                HStack {
+                    settingsIcon("book.double.fill", color: .purple)
+                    Toggle("Link Cover Page as Spread", isOn: $settingsManager.conversionSettings.linkCoverAsSpread)
                 }
             }
             
@@ -603,30 +709,337 @@ struct SettingsView: View {
     }
     
     @ViewBuilder
-    private var integrationsSection: some View {
-        Section {
+    private var comicVineSettings: some View {
+        // ComicVine
+        VStack(alignment: .leading, spacing: 6) {
             HStack {
                 settingsIcon("server.rack", color: .indigo)
-                SecureField("ComicVine API Key", text: $settingsManager.conversionSettings.comicVineAPIKey)
+                SecureField("ComicVine API Key (Optional)", text: $settingsManager.conversionSettings.comicVineAPIKey)
                     .textContentType(.password)
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
-            }
-            
-            if !settingsManager.conversionSettings.comicVineAPIKey.isEmpty {
-                Button(action: verifyAPIKey) {
-                    HStack {
-                        Text(verificationStatus.title)
-                        Spacer()
-                        if isVerifying { ProgressView() } 
-                        else if let icon = verificationStatus.icon { Image(systemName: icon).foregroundColor(verificationStatus.color) }
+                    .focused($focusedField, equals: .comicVineAPIKey)
+                    .onSubmit {
+                        verifyAPIKey()
                     }
-                }
-                .disabled(isVerifying)
             }
-            
-            Link("Get Free API Key", destination: URL(string: "https://comicvine.gamespot.com/api/")!)
-                .font(.caption).foregroundColor(.blue)
+            Text("To comply with ComicVine's commercial guidelines, please enter your free personal API key for metadata lookups.")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+        }
+        
+        if !settingsManager.conversionSettings.comicVineAPIKey.isEmpty {
+            Button(action: verifyAPIKey) {
+                HStack {
+                    Text(verificationStatus == KeyStatus.none ? "Verify ComicVine Key" : "ComicVine: \(verificationStatus.title)")
+                    Spacer()
+                    if isVerifying { ProgressView() } 
+                    else if let icon = verificationStatus.icon { Image(systemName: icon).foregroundColor(verificationStatus.color) }
+                }
+            }
+            .disabled(isVerifying)
+        }
+        
+        DisclosureGroup {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("How to get your free key:")
+                    .font(.caption).bold()
+                    .foregroundColor(.primary)
+                    .padding(.top, 4)
+                Text("1. Sign up for a free account at comicvine.gamespot.com")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                Text("2. Visit comicvine.gamespot.com/api/ to request an API Key")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                Text("3. Copy the 40-character key and paste it in the field above")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                Link("Open ComicVine API Page ↗", destination: URL(string: "https://comicvine.gamespot.com/api/") ?? URL(fileURLWithPath: "/"))
+                    .font(.caption2)
+                    .foregroundColor(.blue)
+                    .padding(.top, 2)
+            }
+            .padding(.bottom, 4)
+        } label: {
+            Label("ComicVine API Key Instructions", systemImage: "info.circle")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private var aniListSettings: some View {
+        // AniList
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                settingsIcon("square.stack.3d.up.fill", color: .blue)
+                SecureField("AniList Personal Token (Optional)", text: $settingsManager.conversionSettings.aniListAPIToken)
+                    .textContentType(.password)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                    .focused($focusedField, equals: .aniListAPIToken)
+                    .onSubmit {
+                        focusedField = .aniListClientID
+                    }
+            }
+            Text("Enter a personal developer token to authenticate requests and increase rate limits on AniList.")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+        }
+        
+        if !settingsManager.conversionSettings.aniListAPIToken.isEmpty {
+            Button(action: verifyAniListToken) {
+                HStack {
+                    Text(aniListVerificationStatus == KeyStatus.none ? "Verify AniList Token" : "AniList: \(aniListVerificationStatus.title)")
+                    Spacer()
+                    if isVerifyingAniList { ProgressView() } 
+                    else if let icon = aniListVerificationStatus.icon { Image(systemName: icon).foregroundColor(aniListVerificationStatus.color) }
+                }
+            }
+            .disabled(isVerifyingAniList)
+        }
+        
+        DisclosureGroup {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("How to get your personal token:")
+                    .font(.caption).bold()
+                    .foregroundColor(.primary)
+                    .padding(.top, 4)
+                
+                Text("1. Log in to anilist.co and navigate to Settings → Developer.")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("2. Click 'Create New Client' and set the Homepage/Website URL to https://inksync.app and Redirect URL to:")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    
+                    HStack {
+                        Text("https://anilist.co/api/v2/oauth/pin")
+                            .font(.caption2)
+                            .foregroundColor(.cyan)
+                            .monospaced()
+                        Spacer()
+                        Button(action: {
+                            UIPasteboard.general.string = "https://anilist.co/api/v2/oauth/pin"
+                        }) {
+                            Label("Copy", systemImage: "doc.on.doc")
+                                .font(.caption2)
+                                .foregroundColor(.blue)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(6)
+                    .background(Color.black.opacity(0.2))
+                    .cornerRadius(6)
+                }
+                
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("3. Paste your Client ID below to generate the authorization link:")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    
+                    TextField("Enter Client ID here", text: $aniListClientID)
+                        .textFieldStyle(.roundedBorder)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                        .padding(.vertical, 2)
+                        .focused($focusedField, equals: .aniListClientID)
+                        .onSubmit {
+                            focusedField = nil
+                        }
+                    
+                    Button(action: {
+                        let clientID = aniListClientID.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if let url = URL(string: "https://anilist.co/api/v2/oauth/authorize?client_id=\(clientID)&response_type=token") {
+                            UIApplication.shared.open(url)
+                        }
+                    }) {
+                        Text("Generate & Open Auth Link")
+                            .font(.caption)
+                            .bold()
+                            .foregroundColor(.white)
+                            .padding(.vertical, 8)
+                            .padding(.horizontal, 16)
+                            .background(aniListClientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Color.gray : Color.blue)
+                            .cornerRadius(8)
+                    }
+                    .disabled(aniListClientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .buttonStyle(.plain)
+                }
+                
+                Text("4. Authorize and copy the long token displayed in your browser (NOT the Client Secret), and paste it in the Token field above.")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                
+                Link("Open AniList Developer Page ↗", destination: URL(string: "https://anilist.co/settings/developer") ?? URL(fileURLWithPath: "/"))
+                    .font(.caption2)
+                    .foregroundColor(.blue)
+            }
+            .padding(.bottom, 4)
+        } label: {
+            Label("AniList Token Instructions", systemImage: "info.circle")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+    }
+
+    
+    @ViewBuilder
+    private var customAliasesSettings: some View {
+        DisclosureGroup {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Map alternate titles to match imported smart lists against your library titles (e.g. English vs Romanized/Japanese titles).")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                
+                let aliases = settingsManager.conversionSettings.customAliases
+                if !aliases.isEmpty {
+                    ForEach(Array(aliases.keys).sorted(), id: \.self) { importedName in
+                        if let libraryName = aliases[importedName] {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("If list contains: \"\(importedName)\"")
+                                        .font(.caption2).foregroundColor(.secondary)
+                                    Text("Match against library: \"\(libraryName)\"")
+                                        .font(.caption)
+                                }
+                                Spacer()
+                                Button(action: {
+                                    settingsManager.conversionSettings.customAliases.removeValue(forKey: importedName)
+                                    settingsManager.save()
+                                }) {
+                                    Image(systemName: "trash")
+                                        .foregroundColor(.red)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            .padding(.vertical, 4)
+                            Divider()
+                        }
+                    }
+                } else {
+                    Text("No custom aliases defined yet.")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                        .italic()
+                }
+                
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Add Title Alias Mapping:")
+                        .font(.caption).bold()
+                        .padding(.top, 4)
+                    
+                    TextField("Imported List Title (e.g., Witch Hat Atelier)", text: $aliasImportedTitle)
+                        .textFieldStyle(.roundedBorder)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                        .focused($focusedField, equals: .aliasImportedTitle)
+                        .onSubmit {
+                            focusedField = .aliasLibraryTitle
+                        }
+                    
+                    TextField("Library Folder/Series Title (e.g., Tongari Boushi no Atelier)", text: $aliasLibraryTitle)
+                        .textFieldStyle(.roundedBorder)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                        .focused($focusedField, equals: .aliasLibraryTitle)
+                        .onSubmit {
+                            let imported = aliasImportedTitle.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                            let library = aliasLibraryTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+                            if !imported.isEmpty && !library.isEmpty {
+                                settingsManager.conversionSettings.customAliases[imported] = library
+                                settingsManager.save()
+                                aliasImportedTitle = ""
+                                aliasLibraryTitle = ""
+                                focusedField = .aliasImportedTitle
+                            } else {
+                                focusedField = nil
+                            }
+                        }
+                    
+                    Button(action: {
+                        let imported = aliasImportedTitle.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                        let library = aliasLibraryTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !imported.isEmpty && !library.isEmpty {
+                            settingsManager.conversionSettings.customAliases[imported] = library
+                            settingsManager.save()
+                            aliasImportedTitle = ""
+                            aliasLibraryTitle = ""
+                        }
+                    }) {
+                        Text("Add Alias Mapping")
+                            .font(.caption)
+                            .bold()
+                            .foregroundColor(.white)
+                            .padding(.vertical, 6)
+                            .padding(.horizontal, 16)
+                            .background((aliasImportedTitle.isEmpty || aliasLibraryTitle.isEmpty) ? Color.gray : Color.blue)
+                            .cornerRadius(6)
+                    }
+                    .disabled(aliasImportedTitle.isEmpty || aliasLibraryTitle.isEmpty)
+                    .buttonStyle(.plain)
+                }
+                .padding(.top, 6)
+            }
+            .padding(.bottom, 4)
+        } label: {
+            Label("Smart List Title Aliases", systemImage: "arrow.2.squarepath")
+                .font(.subheadline)
+        }
+    }
+
+    @ViewBuilder
+    private var mangaUpdatesSettings: some View {
+        // MangaUpdates
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                settingsIcon("books.vertical.fill", color: .purple)
+                VStack(alignment: .leading, spacing: 4) {
+                    TextField("MangaUpdates Username (Optional)", text: $settingsManager.conversionSettings.mangaUpdatesUsername)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                        .focused($focusedField, equals: .mangaUpdatesUsername)
+                        .onSubmit {
+                            focusedField = .mangaUpdatesPassword
+                        }
+                    SecureField("MangaUpdates Password (Optional)", text: $settingsManager.conversionSettings.mangaUpdatesPassword)
+                        .textContentType(.password)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                        .focused($focusedField, equals: .mangaUpdatesPassword)
+                        .onSubmit {
+                            verifyMangaUpdatesCredentials()
+                        }
+                }
+            }
+            Text("Log in to MangaUpdates to search and fetch series details using your personal account profile.")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+        }
+        
+        if !settingsManager.conversionSettings.mangaUpdatesUsername.isEmpty && !settingsManager.conversionSettings.mangaUpdatesPassword.isEmpty {
+            Button(action: verifyMangaUpdatesCredentials) {
+                HStack {
+                    Text(mangaUpdatesVerificationStatus == KeyStatus.none ? "Verify MangaUpdates Login" : "MangaUpdates: \(mangaUpdatesVerificationStatus.title)")
+                    Spacer()
+                    if isVerifyingMangaUpdates { ProgressView() } 
+                    else if let icon = mangaUpdatesVerificationStatus.icon { Image(systemName: icon).foregroundColor(mangaUpdatesVerificationStatus.color) }
+                }
+            }
+            .disabled(isVerifyingMangaUpdates)
+        }
+    }
+
+    @ViewBuilder
+    private var integrationsSection: some View {
+        Section {
+            comicVineSettings
+            aniListSettings
+            mangaUpdatesSettings
+            customAliasesSettings
 
             NavigationLink(destination: CloudConnectionSettingsView()) {
                 HStack {
@@ -641,9 +1054,6 @@ struct SettingsView: View {
                     // Live connection badges
                     HStack(spacing: 4) {
                         if DropboxProvider.shared.isConnected {
-                            Image(systemName: "checkmark.circle.fill").foregroundColor(.green).font(.caption)
-                        }
-                        if GoogleDriveProvider.shared.isConnected {
                             Image(systemName: "checkmark.circle.fill").foregroundColor(.green).font(.caption)
                         }
                     }
@@ -691,6 +1101,13 @@ struct SettingsView: View {
                 }
             }
             
+            NavigationLink(destination: DiagnosticsView()) {
+                HStack {
+                    settingsIcon("memorychip.fill", color: .red)
+                    Text("Telemetry & Diagnostics")
+                }
+            }
+            
             NavigationLink(destination: LogsView()) {
                 HStack {
                     settingsIcon("terminal.fill", color: .gray)
@@ -732,49 +1149,22 @@ struct SettingsView: View {
                     Text("Help & Documentation")
                 }
             }
+            
+            Button(role: .destructive, action: {
+                showingDeleteAllAlert = true
+            }) {
+                HStack {
+                    settingsIcon("trash.fill", color: .red)
+                    Text("Delete All Data & Reset")
+                        .foregroundColor(.red)
+                }
+            }
         } header: { Text("System") }
     }
-    
-    @ViewBuilder
-    private var gamificationSection: some View {
-        Section {
-            HStack {
-                settingsIcon("sparkles", color: .purple)
-                Toggle("Daily Serendipity Engine", isOn: $enableSerendipity)
-            }
-            Text("Surfaces 5 random highlights from your Zettelkasten on the Library Dashboard to help you connect old ideas.")
-                .font(.caption2)
-                .foregroundColor(.secondary)
-            
-            HStack {
-                settingsIcon("target", color: .red)
-                Picker("Daily Reading Goal (Pages/Chapters)", selection: $dailyPageGoal) {
-                    ForEach(1...20, id: \.self) { goal in
-                        Text("\(goal)").tag(goal)
-                    }
-                }
-                .pickerStyle(.menu)
-            }
-            Text("Hitting this goal banks a 'Streak Charge'. Miss a day, and we'll consume a charge instead of breaking your streak!")
-                .font(.caption2)
-                .foregroundColor(.secondary)
-            
-            HStack {
-                settingsIcon(streakTheme.icon, color: streakTheme.color)
-                Picker("Streak Charge Icon Theme", selection: $streakTheme) {
-                    ForEach(StreakTheme.allCases) { theme in
-                        Text(theme.rawValue).tag(theme)
-                    }
-                }
-                .pickerStyle(.menu)
-            }
-        } header: { Text("Gamification & Learning") }
-    }
-    
     @ViewBuilder
     private var legalSection: some View {
         Section {
-            Link(destination: URL(string: "https://inksyncpro.app/privacy.html")!) {
+            Link(destination: URL(string: "https://inksyncpro.app/privacy.html") ?? URL(fileURLWithPath: "/")) {
                 HStack {
                     settingsIcon("hand.raised.fill", color: .blue)
                     Text("Privacy Policy")
@@ -783,25 +1173,6 @@ struct SettingsView: View {
         } header: { Text("Legal") }
     }
     
-    @ViewBuilder
-    private var dangerZoneSection: some View {
-        Section {
-            Button(action: {
-                showingZettelkastenPurgeConfirm = true
-            }) {
-                HStack {
-                    settingsIcon("flame.fill", color: .red)
-                    Text("Purge Zettelkasten Database")
-                        .foregroundColor(.red)
-                        .fontWeight(.semibold)
-                }
-            }
-        } header: {
-            Text("Danger Zone")
-                .foregroundColor(.red)
-        }
-    }
-
     private func importAIProfile(_ url: URL) {
         let accessing = url.startAccessingSecurityScopedResource()
         Task.detached(priority: .userInitiated) {
@@ -838,6 +1209,54 @@ struct SettingsView: View {
                 }
             }
         }
+    }
+    
+    private func performFullAppReset() {
+        let fm = FileManager.default
+        
+        // 1. Clear Documents directory
+        if let docDir = fm.urls(for: .documentDirectory, in: .userDomainMask).first {
+            if let items = try? fm.contentsOfDirectory(at: docDir, includingPropertiesForKeys: nil) {
+                for item in items {
+                    try? fm.removeItem(at: item)
+                }
+            }
+        }
+        
+        // 2. Clear Application Support directory
+        if let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+            if let items = try? fm.contentsOfDirectory(at: appSupport, includingPropertiesForKeys: nil) {
+                for item in items {
+                    try? fm.removeItem(at: item)
+                }
+            }
+        }
+        
+        // 3. Clear Caches directory
+        if let cacheDir = fm.urls(for: .cachesDirectory, in: .userDomainMask).first {
+            if let items = try? fm.contentsOfDirectory(at: cacheDir, includingPropertiesForKeys: nil) {
+                for item in items {
+                    try? fm.removeItem(at: item)
+                }
+            }
+        }
+        
+        // 4. Clear Temporary directory
+        let tempDir = fm.temporaryDirectory
+        if let items = try? fm.contentsOfDirectory(at: tempDir, includingPropertiesForKeys: nil) {
+            for item in items {
+                try? fm.removeItem(at: item)
+            }
+        }
+        
+        // 5. Reset UserDefaults
+        if let bundleID = Bundle.main.bundleIdentifier {
+            UserDefaults.standard.removePersistentDomain(forName: bundleID)
+            UserDefaults.standard.synchronize()
+        }
+        
+        // 6. Hard exit to complete reset
+        exit(0)
     }
 }
 

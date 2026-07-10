@@ -7,6 +7,7 @@ enum LibrarySheetDestination: Identifiable {
     case cloudBrowser          // NEW: premium direct-API cloud browser
     case cloudSync(ConvertedPDF)
     case export(ConvertedPDF)
+    case importQueue
     case directShare(ConvertedPDF)
     case details(ConvertedPDF)
     case searchMetadata(ConvertedPDF)
@@ -17,7 +18,11 @@ enum LibrarySheetDestination: Identifiable {
     case seriesAssignment(ConvertedPDF?, isBatch: Bool, selection: [ConvertedPDF])
     case stats
     case convert(ConvertedPDF)
-    case inbox
+    case ledger
+    case metadataInbox
+    case metadataSpreadsheet([ConvertedPDF])
+    case virtualOmnibusEditor(VirtualOmnibus?, initialFileIDs: [UUID] = [], suggestedName: String = "", parentSeriesID: String? = nil)
+    case controlCenter
     
     var id: String {
         switch self {
@@ -27,6 +32,7 @@ enum LibrarySheetDestination: Identifiable {
         case .cloudBrowser: return "cloudBrowser"
         case .cloudSync(let p): return "cloudSync_\(p.id)"
         case .export(let p): return "export_\(p.id)"
+        case .importQueue: return "importQueue"
         case .directShare(let p): return "directShare_\(p.id)"
         case .details(let p): return "details_\(p.id)"
         case .searchMetadata(let p): return "searchMeta_\(p.id)"
@@ -37,7 +43,11 @@ enum LibrarySheetDestination: Identifiable {
         case .seriesAssignment(let p, let batch, _): return "series_\(p?.id.uuidString ?? "batch_\(batch)")"
         case .stats: return "stats"
         case .convert(let p): return "convert_\(p.id)"
-        case .inbox: return "inbox"
+        case .ledger: return "ledger"
+        case .metadataInbox: return "metadataInbox"
+        case .metadataSpreadsheet: return "metadataSpreadsheet"
+        case .virtualOmnibusEditor(let o, let ids, let name, let parentId): return "virtualOmnibusEditor_\(o?.id.uuidString ?? "new")_\(ids.count)_\(name)_\(parentId ?? "none")"
+        case .controlCenter: return "controlCenter"
         }
     }
 }

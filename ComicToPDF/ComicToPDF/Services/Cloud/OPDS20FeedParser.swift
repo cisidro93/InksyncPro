@@ -27,7 +27,8 @@ final class OPDS20FeedParser {
     ///   - baseURL: The URL the data was fetched from, used to resolve relative hrefs.
     /// - Returns: An `OPDSFeed` in the same shape as the Atom XML parser, or nil on parse failure.
     func parse(data: Data, baseURL: URL) -> OPDSFeed? {
-        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+        let jsonRaw = try? JSONSerialization.jsonObject(with: data)
+        guard let json = jsonRaw as? [String: Any] else {
             return nil
         }
 

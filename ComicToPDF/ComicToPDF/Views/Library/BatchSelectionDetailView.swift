@@ -87,7 +87,7 @@ struct BatchSelectionDetailView: View {
                 Button {
                     onMerge()
                 } label: {
-                    Label("Convert & Merge", systemImage: "doc.on.doc.fill")
+                    Label("Convert & Merge", systemImage: "arrow.triangle.2.circlepath.doc")
                         .font(.headline)
                         .frame(maxWidth: 300)
                         .padding()

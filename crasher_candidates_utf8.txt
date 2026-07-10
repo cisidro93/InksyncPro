@@ -1,0 +1,1204 @@
+﻿File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\ComicToPDFApp.swift (Line: 70)
+Type: if let
+Condition: refreshTask = task as? BGAppRefreshTask 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\ComicToPDFApp.swift (Line: 100)
+Type: if let
+Condition: pdfIDString = userActivity.userInfo?["pdfID"] as? String,
+                       let pdfID = UUID(uuidString: pdfIDString),
+                       let pageIndex = userActivity.userInfo?["pageIndex"] as? Int 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\ComicToPDFApp.swift (Line: 114)
+Type: guard let
+Condition: uniqueID = userActivity.userInfo?[CSSearchableItemActivityIdentifier] as? String 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\ComicToPDFApp.swift (Line: 141)
+Type: if let
+Condition: pdfIDString = userActivity.userInfo?["pdfID"] as? String,
+                       let pdfID = UUID(uuidString: pdfIDString) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\ComicToPDFApp.swift (Line: 152)
+Type: if let
+Condition: annotationIDString = userActivity.userInfo?["annotationID"] as? String,
+                       let annotationID = UUID(uuidString: annotationIDString) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Managers\SandboxCleanupManager.swift (Line: 81)
+Type: guard let
+Condition: contents = try? FileManager.default.contentsOfDirectory(
+            at: tmp,
+            includingPropertiesForKeys: [.fileSizeKey, .creationDateKey],
+            options: .skipsHiddenFiles
+        ) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Managers\SandboxCleanupManager.swift (Line: 111)
+Type: guard let
+Condition: contents = try? FileManager.default.contentsOfDirectory(
+            at: cacheDir,
+            includingPropertiesForKeys: [.fileSizeKey],
+            options: .skipsHiddenFiles
+        ) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Managers\SandboxCleanupManager.swift (Line: 138)
+Type: guard let
+Condition: contents = try? FileManager.default.contentsOfDirectory(
+            at: documentsDir,
+            includingPropertiesForKeys: [.fileSizeKey],
+            options: .skipsHiddenFiles
+        ) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Managers\SandboxCleanupManager.swift (Line: 150)
+Type: guard let
+Condition: data = try? Data(contentsOf: libraryURL),
+                  let pdfs = try? JSONDecoder().decode([ConvertedPDF].self, from: data) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Models\AnnotationStore.swift (Line: 337)
+Type: if let
+Condition: target = try? context.fetch(descriptor).first 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Models\AnnotationStore.swift (Line: 394)
+Type: if let
+Condition: target = try? context.fetch(descriptor).first 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Models\AnnotationStore.swift (Line: 417)
+Type: if let
+Condition: target = try? context.fetch(descriptor).first 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Models\PageModelStore.swift (Line: 27)
+Type: if let
+Condition: data = panelsData, let decoded = try? decoder.decode([NormalizedRect].self, from: data) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Models\PageModelStore.swift (Line: 30)
+Type: if let
+Condition: data = proposedPanelsData, let decoded = try? decoder.decode([NormalizedRect].self, from: data) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Models\PageModelStore.swift (Line: 44)
+Type: if let
+Condition: data = try? encoder.encode(dto.panels) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Models\PageModelStore.swift (Line: 47)
+Type: if let
+Condition: data = try? encoder.encode(dto.proposedPanels) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Models\PageModelStore.swift (Line: 80)
+Type: if let
+Condition: results = try? context.fetch(fetchDescriptor) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Models\PageModelStore.swift (Line: 128)
+Type: if let
+Condition: existing = try? context.fetch(descriptor), let target = existing.first 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Models\ReaderProgressTracker.swift (Line: 237)
+Type: if let
+Condition: uuid = UUID(uuidString: file.deletingPathExtension().lastPathComponent),
+                       let data = try? Data(contentsOf: file),
+                       let progress = try? JSONDecoder().decode(ReadingProgress.self, from: data) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Models\ReaderProgressTracker.swift (Line: 257)
+Type: guard let
+Condition: data = try? JSONEncoder().encode(progress) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Models\ReaderProgressTracker.swift (Line: 267)
+Type: guard let
+Condition: data = iCloudStore.data(forKey: key),
+                  let remote = try? JSONDecoder().decode(ReadingProgress.self, from: data) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Models\State\StudyNotesStore.swift (Line: 23)
+Type: if let
+Condition: data = try? Data(contentsOf: url), let text = String(data: data, encoding: .utf8) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Models\SwiftData\MigrationService.swift (Line: 21)
+Type: guard let
+Condition: data = try? Data(contentsOf: libraryURL),
+              let legacyPDFs = try? JSONDecoder().decode([ConvertedPDF].self, from: data) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Models\SwiftData\MigrationService.swift (Line: 31)
+Type: if let
+Condition: cData = try? Data(contentsOf: collectionsURL),
+           let cols = try? JSONDecoder().decode([PDFCollection].self, from: cData) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Models\SwiftData\MigrationService.swift (Line: 79)
+Type: guard let
+Condition: allDocs = try? context.fetch(fetchDescriptor) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Models\SwiftData\MigrationService.swift (Line: 106)
+Type: if let
+Condition: fetchRes = try? context.fetch(FetchDescriptor(predicate: namePredicate)), let match = fetchRes.first 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Models\SwiftData\MigrationService.swift (Line: 175)
+Type: if let
+Condition: encoded = try? JSONEncoder().encode(pdf.sourceMode), existing.sourceModeData != encoded 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Models\SwiftData\MigrationService.swift (Line: 284)
+Type: if let
+Condition: data = doc.sourceModeData, let mode = try? JSONDecoder().decode(SourceMode.self, from: data), mode.isLinked 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Cloud\CalibreWirelessClient.swift (Line: 151)
+Type: guard let
+Condition: json = jsonRaw as? [String: Any],
+              let opInt = json["op"] as? Int
+        
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Cloud\CalibreWirelessClient.swift (Line: 216)
+Type: if let
+Condition: name = payload["libraryName"] as? String 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Cloud\CalibreWirelessClient.swift (Line: 220)
+Type: if let
+Condition: msg = payload["message"] as? String 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Cloud\CalibreWirelessClient.swift (Line: 275)
+Type: if let
+Condition: lib = payload["libraryName"] as? String 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Cloud\CalibreWirelessClient.swift (Line: 333)
+Type: guard let
+Condition: fileHandle = try? FileHandle(forWritingTo: dest) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Cloud\CalibreWirelessClient.swift (Line: 397)
+Type: if let
+Condition: attrs = fsAttrs,
+           let free = attrs[.systemFreeSize] as? Int64 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Cloud\CalibreWirelessDiscovery.swift (Line: 185)
+Type: guard let
+Condition: listener = try? NWListener(using: params, on: nwPort) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Cloud\OPDS20FeedParser.swift (Line: 31)
+Type: guard let
+Condition: json = jsonRaw as? [String: Any] 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Cloud\OPDS20FeedParser.swift (Line: 49)
+Type: if let
+Condition: meta = json["metadata"] as? [String: Any],
+           let title = meta["title"] as? String 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Cloud\OPDS20FeedParser.swift (Line: 59)
+Type: if let
+Condition: links = json["links"] as? [[String: Any]] 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Cloud\OPDS20FeedParser.swift (Line: 61)
+Type: guard let
+Condition: rel = link["rel"] as? String,
+                      let href = link["href"] as? String,
+                      let url = resolvedURL(href, base: baseURL) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Cloud\OPDS20FeedParser.swift (Line: 75)
+Type: if let
+Condition: navArray = json["navigation"] as? [[String: Any]] 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Cloud\OPDS20FeedParser.swift (Line: 84)
+Type: if let
+Condition: pubs = json["publications"] as? [[String: Any]] 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Cloud\OPDS20FeedParser.swift (Line: 93)
+Type: if let
+Condition: groups = json["groups"] as? [[String: Any]] 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Cloud\OPDS20FeedParser.swift (Line: 95)
+Type: if let
+Condition: navArray = group["navigation"] as? [[String: Any]] 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Cloud\OPDS20FeedParser.swift (Line: 102)
+Type: if let
+Condition: pubs = group["publications"] as? [[String: Any]] 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Cloud\OPDS20FeedParser.swift (Line: 148)
+Type: if let
+Condition: authorArr = meta["author"] as? [[String: Any]] 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Cloud\OPDS20FeedParser.swift (Line: 150)
+Type: if let
+Condition: authorStr = meta["author"] as? String 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Cloud\OPDS20FeedParser.swift (Line: 166)
+Type: guard let
+Condition: href = link["href"] as? String 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Cloud\OPDS20FeedParser.swift (Line: 186)
+Type: if let
+Condition: images = pub["images"] as? [[String: Any]] 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Cloud\OPDS20FeedParser.swift (Line: 188)
+Type: guard let
+Condition: href = img["href"] as? String,
+                      let url = resolvedURL(href, base: base) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Cloud\OPDS20FeedParser.swift (Line: 203)
+Type: if let
+Condition: readingOrder = pub["readingOrder"] as? [[String: Any]] 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Cloud\OPDS20FeedParser.swift (Line: 205)
+Type: guard let
+Condition: href = item["href"] as? String 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Cloud\OPDS20FeedParser.swift (Line: 241)
+Type: guard let
+Condition: href = item["href"] as? String,
+              let title = item["title"] as? String,
+              let url = resolvedURL(href, base: base) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Cloud\OPDSClient.swift (Line: 429)
+Type: guard let
+Condition: http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Cloud\OPDSClient.swift (Line: 466)
+Type: guard let
+Condition: http = response as? HTTPURLResponse 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Cloud\OPDSClient.swift (Line: 472)
+Type: guard let
+Condition: json = jsonObj as? [String: Any],
+              let token = json["token"] as? String
+        
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Cloud\OPDSClient.swift (Line: 505)
+Type: guard let
+Condition: http = response as? HTTPURLResponse, (200...299).contains(http.statusCode)
+        
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Cloud\OPDSClient.swift (Line: 508)
+Type: guard let
+Condition: json = refreshJsonObj as? [String: Any],
+              let newToken = json["token"] as? String
+        
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Cloud\OPDSClient.swift (Line: 513)
+Type: if let
+Condition: newRefresh = json["refreshToken"] as? String 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Cloud\OPDSClient.swift (Line: 540)
+Type: if let
+Condition: http = response as? HTTPURLResponse, http.statusCode == 401,
+           server.serverType == .kavita 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Cloud\OPDSClient.swift (Line: 550)
+Type: guard let
+Condition: http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Cloud\OPDSKeychainStore.swift (Line: 29)
+Type: guard let
+Condition: data = try? JSONEncoder().encode(credential) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Cloud\OPDSProgressSyncService.swift (Line: 103)
+Type: guard let
+Condition: http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Cloud\OPDSProgressSyncService.swift (Line: 119)
+Type: guard let
+Condition: http = response as? HTTPURLResponse, (200...299).contains(http.statusCode)
+        
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Cloud\OPDSProgressSyncService.swift (Line: 122)
+Type: guard let
+Condition: json = kavitaJsonRaw as? [String: Any],
+              let pageNum = json["pageNum"] as? Int
+        
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Cloud\OPDSProgressSyncService.swift (Line: 149)
+Type: guard let
+Condition: http = response as? HTTPURLResponse,
+              http.statusCode == 204 || (200...299).contains(http.statusCode)
+        
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Cloud\OPDSProgressSyncService.swift (Line: 165)
+Type: guard let
+Condition: http = response as? HTTPURLResponse, (200...299).contains(http.statusCode)
+        
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Cloud\OPDSProgressSyncService.swift (Line: 168)
+Type: guard let
+Condition: json = komgaJsonRaw as? [String: Any],
+              let readProgress = json["readProgress"] as? [String: Any],
+              let page = readProgress["page"] as? Int
+        
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Cloud\ReadwiseImportService.swift (Line: 15)
+Type: guard let
+Condition: data = try? Data(contentsOf: url) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Cloud\WebDAVSyncManager.swift (Line: 121)
+Type: if let
+Condition: httpResponse = response as? HTTPURLResponse 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Conversion\ArchiveMutatorService.swift (Line: 129)
+Type: guard let
+Condition: sourceArchive = try? Archive(url: url, accessMode: .read, pathEncoding: .utf8),
+              let destArchive = try? Archive(url: tempArchiveURL, accessMode: .create, pathEncoding: .utf8) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Conversion\ArchiveMutatorService.swift (Line: 208)
+Type: guard let
+Condition: sourceArchive = try? Archive(url: sourceURL, accessMode: .read, pathEncoding: .utf8),
+                  let destArchive = try? Archive(url: tempArchiveURL, accessMode: .create, pathEncoding: .utf8) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Conversion\ArchiveMutatorService.swift (Line: 298)
+Type: guard let
+Condition: archive = try? Archive(url: pdf.url, accessMode: .read, pathEncoding: .utf8) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Conversion\ArchiveMutatorService.swift (Line: 353)
+Type: guard let
+Condition: sourceArchive = try? Archive(url: pdf.url, accessMode: .read, pathEncoding: .utf8),
+                  let destArchive = try? Archive(url: outputURL, accessMode: .create, pathEncoding: .utf8) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Conversion\CBZToEPUBConverter.swift (Line: 109)
+Type: if let
+Condition: source = CGImageSourceCreateWithURL(srcURL as CFURL, nil),
+                   let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Conversion\CBZToEPUBConverter.swift (Line: 279)
+Type: if let
+Condition: pdfs = try? context.fetch(descriptor),
+               let pdf = pdfs.first(where: 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Conversion\CBZToEPUBConverter.swift (Line: 445)
+Type: guard let
+Condition: archive = try? Archive(url: capturedOutputURL, accessMode: .create, pathEncoding: .utf8) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Conversion\CBZToEPUBConverter.swift (Line: 617)
+Type: guard let
+Condition: archive = try? Archive(url: outputURL, accessMode: .create, pathEncoding: .utf8) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Conversion\ConversionJobQueue.swift (Line: 97)
+Type: guard let
+Condition: data = try? Data(contentsOf: queueURL),
+              let loadedJobs = try? JSONDecoder().decode([ConversionJob].self, from: data) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Conversion\ConversionJobQueue.swift (Line: 107)
+Type: if let
+Condition: data = try? JSONEncoder().encode(newJobs) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Conversion\ConversionLedger.swift (Line: 122)
+Type: guard let
+Condition: data = try? Data(contentsOf: persistURL),
+              let loaded = try? JSONDecoder().decode([ConversionJobRecord].self, from: data) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Conversion\ConversionManager+Operations.swift (Line: 33)
+Type: if let
+Condition: resolved = try? BookmarkResolver.shared.resolve(bm) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Conversion\ConversionManager+Operations.swift (Line: 185)
+Type: if let
+Condition: resolved = try? BookmarkResolver.shared.resolve(bm) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Conversion\ConversionManager.swift (Line: 313)
+Type: if let
+Condition: sourcePanels = try? await extractSmartPanels(from: pdf.url) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Conversion\EPUBMerger.swift (Line: 83)
+Type: if let
+Condition: data = try? Data(contentsOf: imgURL) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Conversion\EPUBMerger.swift (Line: 337)
+Type: if let
+Condition: data = try? Data(contentsOf: img) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Conversion\KindleSizeGuard.swift (Line: 21)
+Type: guard let
+Condition: attributes = attrs,
+              let fileSize = attributes[.size] as? Int64 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Conversion\MetadataInjector.swift (Line: 96)
+Type: guard let
+Condition: sourceArchive = try? Archive(url: archiveURL, accessMode: .read, pathEncoding: .utf8) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Conversion\MetadataInjector.swift (Line: 167)
+Type: if let
+Condition: regex = try? NSRegularExpression(pattern: pattern, options: [.dotMatchesLineSeparators]) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Conversion\MetadataInjector.swift (Line: 257)
+Type: guard let
+Condition: newArchive = try? Archive(url: newArchiveURL, accessMode: .create, pathEncoding: .utf8) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Conversion\MetadataInjector.swift (Line: 274)
+Type: if let
+Condition: oldArchive = try? Archive(url: archiveURL, accessMode: .read, pathEncoding: .utf8) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Conversion\MetadataInjector.swift (Line: 383)
+Type: guard let
+Condition: archive = try? Archive(url: url, accessMode: .update, pathEncoding: .utf8) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Conversion\PanelViewEPUBConverter.swift (Line: 237)
+Type: if let
+Condition: pdfs = try? context.fetch(descriptor) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Conversion\PanelViewEPUBConverter.swift (Line: 556)
+Type: guard let
+Condition: content = try? String(contentsOf: fileURL, encoding: .utf8) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Conversion\PanelViewEPUBConverter.swift (Line: 716)
+Type: guard let
+Condition: archive = try? Archive(url: outputURL, accessMode: .create, pathEncoding: .utf8) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Conversion\PanelViewEPUBConverter.swift (Line: 743)
+Type: if let
+Condition: imageFiles = try? fm.contentsOfDirectory(at: imagesDir, includingPropertiesForKeys: nil) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Conversion\PanelViewEPUBConverter.swift (Line: 754)
+Type: if let
+Condition: pageFiles = try? fm.contentsOfDirectory(at: pagesDir, includingPropertiesForKeys: nil) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Conversion\PDFToEPUBConverter.swift (Line: 572)
+Type: guard let
+Condition: archive = try? Archive(url: outputURL, accessMode: .create, pathEncoding: .utf8) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Conversion\SmartPanelService.swift (Line: 23)
+Type: guard let
+Condition: archive = try? Archive(url: url, accessMode: .read, pathEncoding: .utf8) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Conversion\SmartPanelService.swift (Line: 30)
+Type: if let
+Condition: _ = try? archive.extract(opfEntry, consumer: 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Core\BookmarkResolver.swift (Line: 180)
+Type: guard let
+Condition: url = try? resolve(bookmarkData) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Core\BookmarkResolver.swift (Line: 206)
+Type: guard let
+Condition: url = try? resolve(bookmarkData) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Core\CBRExtractor.swift (Line: 34)
+Type: if let
+Condition: http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Core\ComicInfoParser.swift (Line: 29)
+Type: guard let
+Condition: archive = try? Archive(url: archiveURL, accessMode: .read, pathEncoding: .utf8) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Core\ComicInfoWriter.swift (Line: 69)
+Type: guard let
+Condition: archive = try? Archive(url: archiveURL, accessMode: .update, pathEncoding: .utf8) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Core\DriveSaveCoordinator.swift (Line: 84)
+Type: if let
+Condition: first = scenes.first as? UIWindowScene 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Core\EBookParser.swift (Line: 37)
+Type: guard let
+Condition: archive = try? Archive(url: url, accessMode: .read, pathEncoding: .utf8) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Core\EBookParser.swift (Line: 68)
+Type: guard let
+Condition: archive = try? Archive(url: url, accessMode: .read, pathEncoding: .utf8) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Core\EBookParser.swift (Line: 102)
+Type: guard let
+Condition: entry = findEntry(named: "META-INF/container.xml", in: archive),
+              let data = try? readEntry(entry: entry, in: archive) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Core\EBookParser.swift (Line: 166)
+Type: if let
+Condition: entry = findEntry(named: fullTocPath, in: archive),
+               let tocData = try? readEntry(entry: entry, in: archive) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Core\FolderLinkCoordinator.swift (Line: 79)
+Type: if let
+Condition: first = scenes.first as? UIWindowScene 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Core\ImportCoordinator.swift (Line: 148)
+Type: guard let
+Condition: rsrc = try? fileURL.resourceValues(forKeys: Set(keys)),
+                                  rsrc.isDirectory == false 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Core\ImportCoordinator.swift (Line: 242)
+Type: if let
+Condition: first = scenes.first as? UIWindowScene 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Core\InstallGuardService.swift (Line: 79)
+Type: if let
+Condition: items = try? fileManager.contentsOfDirectory(at: docDir, includingPropertiesForKeys: nil) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Core\InstallGuardService.swift (Line: 85)
+Type: if let
+Condition: items = try? fileManager.contentsOfDirectory(at: supportDir, includingPropertiesForKeys: nil) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Core\Logger.swift (Line: 85)
+Type: if let
+Condition: attrs = logAttrs,
+               let size = attrs[.size] as? UInt64, size > 2_000_000 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Core\Logger.swift (Line: 137)
+Type: if let
+Condition: fileHandle = try? FileHandle(forWritingTo: fileURL) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Core\Logger.swift (Line: 259)
+Type: guard let
+Condition: archive = try? Archive(url: url, accessMode: .read, pathEncoding: .utf8) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Core\MetadataHeuristics.swift (Line: 42)
+Type: if let
+Condition: regex = try? NSRegularExpression(pattern: pattern) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Core\MetadataHeuristics.swift (Line: 134)
+Type: guard let
+Condition: httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Core\MetadataMatchService.swift (Line: 81)
+Type: if let
+Condition: embedded = try? await extractComicInfoXML(for: pdf) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Core\MetadataMatchService.swift (Line: 119)
+Type: guard let
+Condition: allPDFs = try? modelContext.fetch(descriptor) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Core\MetadataMatchService.swift (Line: 155)
+Type: guard let
+Condition: allPDFs = try? modelContext.fetch(descriptor) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Core\MetadataMatchService.swift (Line: 253)
+Type: if let
+Condition: regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
+           let match = regex.firstMatch(in: name, options: [], range: NSRange(name.startIndex..., in: name)) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Core\ReviewStreakTracker.swift (Line: 36)
+Type: guard let
+Condition: last = UserDefaults.standard.object(forKey: lastDateKey) as? Date 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Core\ReviewStreakTracker.swift (Line: 69)
+Type: if let
+Condition: lastDate = defaults.object(forKey: lastDateKey) as? Date 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Core\SeriesNameDetector.swift (Line: 97)
+Type: guard let
+Condition: regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]),
+              let match = regex.firstMatch(in: string, range: NSRange(string.startIndex..., in: string)),
+              match.numberOfRanges >= 2 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Core\SharedModels.swift (Line: 720)
+Type: if let
+Condition: pipeline = try? container.decodeIfPresent(OutputPipeline.self, forKey: .outputPipeline) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Core\SharedModels.swift (Line: 733)
+Type: if let
+Condition: legacyKey = try? container.decodeIfPresent(String.self, forKey: .comicVineAPIKey), !legacyKey.isEmpty 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Core\SharedModels.swift (Line: 1079)
+Type: if let
+Condition: encoded = try? JSONEncoder().encode(sourceMode) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Core\SharedModels.swift (Line: 1099)
+Type: if let
+Condition: data = self.sourceModeData, let decoded = try? JSONDecoder().decode(SourceMode.self, from: data) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Core\WorkspaceFocusManager.swift (Line: 71)
+Type: guard let
+Condition: stored = UserDefaults.standard.array(forKey: defaultsKey) as? [String] 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Export\ManuscriptExportService.swift (Line: 174)
+Type: guard let
+Condition: fileData = try? Data(contentsOf: fileURL) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Network\CloudDownloadManager.swift (Line: 278)
+Type: if let
+Condition: httpResponse = response as? HTTPURLResponse 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Network\CloudDownloadManager.swift (Line: 357)
+Type: guard let
+Condition: error = error,
+              let downloadTask = task as? URLSessionDownloadTask 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Network\DropboxProvider.swift (Line: 212)
+Type: if let
+Condition: httpResponse = response as? HTTPURLResponse, httpResponse.statusCode >= 400 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Network\DropboxProvider.swift (Line: 293)
+Type: if let
+Condition: httpResponse = response as? HTTPURLResponse, !(200...299).contains(httpResponse.statusCode) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Network\HTTPRangeZipExtractor.swift (Line: 45)
+Type: guard let
+Condition: httpResponse = response as? HTTPURLResponse,
+              let contentLengthStr = httpResponse.allHeaderFields["Content-Length"] as? String,
+              let contentLength = Int64(contentLengthStr) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Network\HTTPRangeZipExtractor.swift (Line: 167)
+Type: guard let
+Condition: httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 || httpResponse.statusCode == 206 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Network\LocalSendClient.swift (Line: 95)
+Type: guard let
+Condition: httpResponse = response as? HTTPURLResponse 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Network\OPDSDownloadQueue.swift (Line: 101)
+Type: guard let
+Condition: data = UserDefaults.standard.data(forKey: defaultsKey),
+              let records = try? JSONDecoder().decode([OPDSDownloadRecord].self, from: data)
+        
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Network\OPDSDownloadQueue.swift (Line: 133)
+Type: if let
+Condition: data = try? JSONEncoder().encode(queue) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Network\RARHeaderParser.swift (Line: 71)
+Type: guard let
+Condition: http = response as? HTTPURLResponse,
+              http.statusCode == 206 || http.statusCode == 200 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Network\RARHeaderParser.swift (Line: 90)
+Type: guard let
+Condition: http = response as? HTTPURLResponse,
+              http.statusCode == 206 || http.statusCode == 200 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Network\ReadingRoomSession.swift (Line: 256)
+Type: guard let
+Condition: data = try? JSONEncoder().encode(packet) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Network\ReadingRoomSession.swift (Line: 373)
+Type: guard let
+Condition: packet = try? JSONDecoder().decode(ReadingRoomPacket.self, from: data) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Network\StreamBufferCoordinator.swift (Line: 93)
+Type: guard let
+Condition: httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Network\SyncCoordinator.swift (Line: 148)
+Type: guard let
+Condition: httpLoginResp = loginResp as? HTTPURLResponse 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Network\SyncCoordinator.swift (Line: 183)
+Type: guard let
+Condition: httpResponse = response as? HTTPURLResponse 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Network\SyncCoordinator.swift (Line: 238)
+Type: guard let
+Condition: httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Network\ZipCentralDirectory.swift (Line: 97)
+Type: guard let
+Condition: http = sizeResponse as? HTTPURLResponse,
+              http.statusCode == 206 || http.statusCode == 200 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Network\ZipCentralDirectory.swift (Line: 129)
+Type: guard let
+Condition: tailHTTP = tailResponse as? HTTPURLResponse,
+              tailHTTP.statusCode == 206 || tailHTTP.statusCode == 200 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Network\ZipCentralDirectory.swift (Line: 167)
+Type: guard let
+Condition: cdHTTP = cdResponse as? HTTPURLResponse,
+              cdHTTP.statusCode == 206 || cdHTTP.statusCode == 200 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Network\ZipCentralDirectory.swift (Line: 221)
+Type: guard let
+Condition: payloadHTTP = payloadResponse as? HTTPURLResponse,
+              payloadHTTP.statusCode == 206 || payloadHTTP.statusCode == 200 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Networking\ComicVineRateTracker.swift (Line: 21)
+Type: if let
+Condition: windowStart = defaults.object(forKey: keyWindowStart) as? Date 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Networking\ComicVineRateTracker.swift (Line: 46)
+Type: guard let
+Condition: windowStart = defaults.object(forKey: keyWindowStart) as? Date 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Networking\ComicVineService.swift (Line: 52)
+Type: if let
+Condition: httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Networking\ComicVineService.swift (Line: 92)
+Type: if let
+Condition: httpResponse = response as? HTTPURLResponse 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Networking\ComicVineService.swift (Line: 121)
+Type: if let
+Condition: httpResponse = response as? HTTPURLResponse 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Networking\ComicVineService.swift (Line: 142)
+Type: if let
+Condition: httpResponse = response as? HTTPURLResponse 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Networking\ComicVineService.swift (Line: 167)
+Type: if let
+Condition: httpResponse = response as? HTTPURLResponse 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Networking\CoverFetchService.swift (Line: 113)
+Type: if let
+Condition: dict = json as? [String: Any],
+               let results = dict["results"] as? [[String: Any]] 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Networking\CoverFetchService.swift (Line: 116)
+Type: if let
+Condition: artworkUrlRaw = result["artworkUrl100"] as? String 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Networking\CoverFetchService.swift (Line: 136)
+Type: if let
+Condition: dict = json as? [String: Any],
+               let items = dict["items"] as? [[String: Any]] 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Networking\CoverFetchService.swift (Line: 139)
+Type: if let
+Condition: volumeInfo = item["volumeInfo"] as? [String: Any],
+                       let imageLinks = volumeInfo["imageLinks"] as? [String: Any],
+                       var thumbnail = imageLinks["thumbnail"] as? String 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Networking\CoverFetchService.swift (Line: 163)
+Type: if let
+Condition: dict = json as? [String: Any],
+               let docs = dict["docs"] as? [[String: Any]] 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Networking\CoverFetchService.swift (Line: 166)
+Type: if let
+Condition: coverI = doc["cover_i"] as? Int 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Networking\CoverFetchService.swift (Line: 232)
+Type: guard let
+Condition: http = response as? HTTPURLResponse, http.statusCode == 200 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Networking\LocalComicInfoService.swift (Line: 25)
+Type: guard let
+Condition: archive = try? Archive(url: cbzURL, accessMode: .read, pathEncoding: .utf8) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Networking\MangaDexService.swift (Line: 75)
+Type: if let
+Condition: httpResponse = response as? HTTPURLResponse, httpResponse.statusCode != 200 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Networking\MangaDexService.swift (Line: 99)
+Type: if let
+Condition: httpResponse = response as? HTTPURLResponse, httpResponse.statusCode != 200 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\Reader\ReaderUtilities.swift (Line: 38)
+Type: guard let
+Condition: scene = UIApplication.shared.connectedScenes.first as? UIWindowScene 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\State\AppSettingsManager.swift (Line: 117)
+Type: if let
+Condition: data = try? JSONEncoder().encode(config) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\State\ImportOrchestrator.swift (Line: 73)
+Type: guard let
+Condition: resourceValues = try? fileURL.resourceValues(forKeys: Set(keys)),
+                      let isDirectory = resourceValues.isDirectory, !isDirectory 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\State\ImportOrchestrator.swift (Line: 564)
+Type: guard let
+Condition: resourceValues = try? fileURL.resourceValues(forKeys: Set(keys)),
+                              let isDirectory = resourceValues.isDirectory, !isDirectory 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\State\ImportOrchestrator.swift (Line: 711)
+Type: guard let
+Condition: archive = try? Archive(url: url, accessMode: .read, pathEncoding: .utf8) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\State\LibraryDatabaseService.swift (Line: 237)
+Type: guard let
+Condition: data = try? Data(contentsOf: legacyPath) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\State\LibraryDatabaseService.swift (Line: 478)
+Type: guard let
+Condition: id = row["id"] as? String,
+              let path = row["path"] as? String,
+              let filename = row["filename"] as? String,
+              let fileType = row["fileType"] as? String,
+              let addedAt = row["addedAt"] as? Double,
+              let modifiedAt = row["modifiedAt"] as? Double 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\State\LibraryDatabaseService.swift (Line: 519)
+Type: guard let
+Condition: fileID = row["fileID"] as? String 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\State\LibraryDatabaseService.swift (Line: 547)
+Type: guard let
+Condition: id = row["id"] as? String,
+              let fileID = row["fileID"] as? String,
+              let type = row["type"] as? String,
+              let createdAt = row["createdAt"] as? Double 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\State\LibraryDatabaseService.swift (Line: 582)
+Type: guard let
+Condition: id = row["id"] as? String,
+              let title = row["title"] as? String,
+              let createdAt = row["createdAt"] as? Double,
+              let modifiedAt = row["modifiedAt"] as? Double 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\State\LibraryPersistenceManager.swift (Line: 63)
+Type: if let
+Condition: url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent(self.libraryFileName),
+                   FileManager.default.fileExists(atPath: url.path),
+                   let data = try? Data(contentsOf: url),
+                   let index = try? JSONDecoder().decode(LibraryIndex.self, from: data) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\State\LinkedLibraryScanner.swift (Line: 142)
+Type: guard let
+Condition: url = try? URL(
+            resolvingBookmarkData: entry.volumeBookmarkData,
+            options: .withoutUI,
+            relativeTo: nil,
+            bookmarkDataIsStale: &isStale
+        ) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\State\LinkedLibraryScanner.swift (Line: 187)
+Type: if let
+Condition: resolved = try? URL(
+                resolvingBookmarkData: bm,
+                options: .withoutUI,
+                relativeTo: nil,
+                bookmarkDataIsStale: &fileIsStale
+            ) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\State\LinkedLibraryScanner.swift (Line: 275)
+Type: if let
+Condition: rootURL = try? URL(
+                    resolvingBookmarkData: volumeData,
+                    options: .withoutUI,
+                    relativeTo: nil,
+                    bookmarkDataIsStale: &isStale
+                ) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\State\LinkedLibraryScanner.swift (Line: 287)
+Type: if let
+Condition: resolved = try? URL(
+                            resolvingBookmarkData: bm,
+                            options: .withoutUI,
+                            relativeTo: nil,
+                            bookmarkDataIsStale: &fileIsStale
+                        ) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\State\LinkedLibraryScanner.swift (Line: 417)
+Type: guard let
+Condition: bookmark = try? pair.driveURL.bookmarkData(
+                options: [],
+                includingResourceValuesForKeys: nil,
+                relativeTo: nil
+            ) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\State\LinkedLibraryScanner.swift (Line: 497)
+Type: guard let
+Condition: attrs = fileAttrs,
+                  let fileSize = attrs[.size] as? Int64
+            
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\State\LinkedLibraryScanner.swift (Line: 502)
+Type: guard let
+Condition: bookmark = try? fileURL.bookmarkData(
+                options: [],
+                includingResourceValuesForKeys: nil,
+                relativeTo: nil
+            ) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\State\LinkedLibraryScanner.swift (Line: 582)
+Type: guard let
+Condition: staleData = notification.object as? Data,
+              let manager = conversionManager 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\State\LinkedLibraryScanner.swift (Line: 591)
+Type: if let
+Condition: staleURL = try? URL(
+                    resolvingBookmarkData: staleData,
+                    options: .withoutUI,
+                    relativeTo: nil,
+                    bookmarkDataIsStale: &isStale
+                ), let freshBookmark = try? staleURL.bookmarkData(
+                    options: [],
+                    includingResourceValuesForKeys: nil,
+                    relativeTo: nil
+                ) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\State\PhysicalFileSystemRouter.swift (Line: 156)
+Type: if let
+Condition: variantID = pdf.metadata.selectedCoverID,
+               let variantURL = pdf.metadata.coverVariants[variantID],
+               FileManager.default.fileExists(atPath: variantURL.path),
+               let data = try? Data(contentsOf: variantURL),
+               let image = UIImage(data: data) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\State\SmartListImporter.swift (Line: 36)
+Type: guard let
+Condition: xmlString = try? readStringResiliently(from: url) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\State\SmartListImporter.swift (Line: 44)
+Type: guard let
+Condition: text = try? readStringResiliently(from: url) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Services\State\SmartListImporter.swift (Line: 135)
+Type: guard let
+Condition: text = try? readStringResiliently(from: url) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Core\ContentView.swift (Line: 104)
+Type: if let
+Condition: (sdPdfs, sdCols) = try? await MigrationService.shared.fetchSwiftDataLegacyBridge() 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Core\ContentView.swift (Line: 142)
+Type: if let
+Condition: userInfo = notification.userInfo,
+               let message = userInfo["message"] as? String,
+               let category = userInfo["category"] as? String 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Devices\OPDSDivinaReader.swift (Line: 278)
+Type: guard let
+Condition: http = response as? HTTPURLResponse,
+                  (200...299).contains(http.statusCode),
+                  let image = UIImage(data: data)
+            
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Devices\OPDSPSEReader.swift (Line: 276)
+Type: guard let
+Condition: http = response as? HTTPURLResponse, (200...299).contains(http.statusCode),
+                  let image = UIImage(data: data)
+            
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Import\ImportQueueManager.swift (Line: 146)
+Type: guard let
+Condition: data = try? url.bookmarkData(
+                options: .minimalBookmark,
+                includingResourceValuesForKeys: nil,
+                relativeTo: nil
+            ) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Import\ImportQueueManager.swift (Line: 153)
+Type: if let
+Condition: encoded = try? JSONEncoder().encode(entries) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Import\ImportQueueManager.swift (Line: 159)
+Type: guard let
+Condition: data = UserDefaults.standard.data(forKey: "importQueueBookmarks"),
+              let entries = try? JSONDecoder().decode([QueueEntry].self, from: data)
+        
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Import\ImportQueueManager.swift (Line: 166)
+Type: if let
+Condition: url = try? URL(
+                resolvingBookmarkData: entry.bookmarkData,
+                options: .withoutUI,
+                relativeTo: nil,
+                bookmarkDataIsStale: &isStale
+            ), !isStale 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Import\SmartImportSheet.swift (Line: 79)
+Type: if let
+Condition: mem = try? context.fetch(fetch).first 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Library\AdvancedMetadataEditorView.swift (Line: 114)
+Type: if let
+Condition: data = try? await newItem?.loadTransferable(type: Data.self), let uiImage = UIImage(data: data) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Library\BatchMetadataFetchView.swift (Line: 124)
+Type: if let
+Condition: vineError = error as? ComicVineError, case .rateLimited = vineError 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Library\ComicCoverLoader.swift (Line: 48)
+Type: guard let
+Condition: pdfID = note.userInfo?["pdfID"] as? UUID,
+                  pdfID == pdf.id,
+                  let newImage = note.userInfo?["image"] as? UIImage 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Library\LinkedDriveBrowserView.swift (Line: 289)
+Type: if let
+Condition: bm = try? url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Library\LinkedDriveBrowserView.swift (Line: 297)
+Type: guard let
+Condition: bm = try? url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Library\MetadataEditorSheet.swift (Line: 340)
+Type: if let
+Condition: (data, _) = try? await URLSession.shared.data(from: url) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Library\MetadataEditorSheet.swift (Line: 413)
+Type: if let
+Condition: (data, _) = try? await URLSession.shared.data(from: url) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Library\MetadataSearchSheet.swift (Line: 291)
+Type: if let
+Condition: data = try? Data(contentsOf: url) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Library\MetadataSearchSheet.swift (Line: 324)
+Type: if let
+Condition: issueString = MetadataHeuristics.extractIssueNumber(from: relatedPdf.name),
+                   let issue = try? await ComicVineService.shared.getIssue(volumeID: volume.id, issueNumber: issueString, apiKey: apiKey) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Library\MetadataSearchSheet.swift (Line: 368)
+Type: if let
+Condition: regex = try? NSRegularExpression(pattern: pattern),
+           let match = regex.firstMatch(in: name, range: NSRange(name.startIndex..., in: name)) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Library\ModernLibraryView.swift (Line: 135)
+Type: if let
+Condition: newBook = notification.object as? ConvertedPDF 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Library\ModernLibraryView.swift (Line: 144)
+Type: if let
+Condition: userInfo = notification.userInfo,
+           let pdfID = userInfo["pdfID"] as? UUID,
+           let pageIndex = userInfo["pageIndex"] as? Int 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Library\ModernLibraryView.swift (Line: 173)
+Type: if let
+Condition: searchTitle = notification.userInfo?["searchTitle"] as? String 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Library\ModernLibraryView.swift (Line: 184)
+Type: if let
+Condition: fileURL = note.userInfo?["fileURL"] as? URL 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Library\ModernLibraryView.swift (Line: 195)
+Type: guard let
+Condition: group = notification.object as? SeriesGroup 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Library\ModernLibraryView.swift (Line: 639)
+Type: if let
+Condition: urlData = data as? Data, let url = URL(dataRepresentation: urlData, relativeTo: nil) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Library\ModernLibraryView.swift (Line: 641)
+Type: if let
+Condition: url = data as? URL 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Library\SeriesDetailView.swift (Line: 1206)
+Type: if let
+Condition: windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+           let rootVC = windowScene.windows.first?.rootViewController 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Library\SeriesDetailView.swift (Line: 1343)
+Type: if let
+Condition: windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                   let rootVC = windowScene.windows.first?.rootViewController 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Library\Components\AlphabetScrollIndicator.swift (Line: 163)
+Type: if let
+Condition: data = UserDefaults.standard.data(forKey: storageKey),
+           let saved = try? JSONDecoder().decode(Set<String>.self, from: data) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Library\Components\AlphabetScrollIndicator.swift (Line: 183)
+Type: if let
+Condition: data = try? JSONEncoder().encode(disabledPills.map(\.rawValue)) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Library\Components\ContinueReadingShelf.swift (Line: 125)
+Type: if let
+Condition: id = note.userInfo?["id"] as? UUID, id == pdf.id,
+               let image = note.userInfo?["image"] as? UIImage 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Reader\BookReaderEngine.swift (Line: 98)
+Type: guard let
+Condition: archive = try? Archive(url: pdfURL, accessMode: .read, pathEncoding: .utf8) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Reader\BookReaderEngine.swift (Line: 151)
+Type: if let
+Condition: data = try? Data(contentsOf: indexURL),
+           let decoded = try? JSONDecoder().decode([String: Set<Int>].self, from: data) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Reader\BookReaderEngine.swift (Line: 162)
+Type: guard let
+Condition: content = try? String(contentsOf: url) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Reader\BookReaderEngine.swift (Line: 177)
+Type: if let
+Condition: data = try? JSONEncoder().encode(newIndex) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Reader\BookReaderEngine.swift (Line: 198)
+Type: if let
+Condition: html = try? String(contentsOf: url, usedEncoding: &enc) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Reader\BookReaderEngine.swift (Line: 199)
+Type: if let
+Condition: data = try? Data(contentsOf: url) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Reader\BookReaderEngine.swift (Line: 211)
+Type: if let
+Condition: regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Reader\BookReaderEngine.swift (Line: 259)
+Type: guard let
+Condition: content = try? String(contentsOf: files[idx]) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Reader\BookReaderEngine.swift (Line: 839)
+Type: if let
+Condition: text = result as? String, !text.isEmpty 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Reader\ComicReaderEngine.swift (Line: 199)
+Type: guard let
+Condition: archive = try? Archive(url: resolvedURL, accessMode: .read, pathEncoding: .utf8) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Reader\ComicReaderEngine.swift (Line: 377)
+Type: guard let
+Condition: archive = try? Archive(url: url, accessMode: .read, pathEncoding: .utf8) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Reader\DocumentReaderEngine.swift (Line: 335)
+Type: if let
+Condition: view = notification.object as? PDFView,
+               let page = view.currentPage,
+               let document = view.document 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Reader\EBookReaderView.swift (Line: 742)
+Type: if let
+Condition: html = try? String(contentsOf: capturedURL, usedEncoding: &enc) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Reader\EBookReaderView.swift (Line: 744)
+Type: if let
+Condition: data = try? Data(contentsOf: capturedURL) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Reader\EBookReaderView.swift (Line: 752)
+Type: if let
+Condition: regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Reader\LocalFileImage.swift (Line: 54)
+Type: guard let
+Condition: data = try? Data(contentsOf: localURL, options: .mappedIfSafe),
+                  let image = UIImage(data: data) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Reader\PageCanvasOverlay.swift (Line: 37)
+Type: if let
+Condition: existing = try? modelContext.fetch(descriptor).first 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Reader\PageCanvasOverlay.swift (Line: 39)
+Type: if let
+Condition: data = existing.drawingData, let drawing = try? PKDrawing(data: data) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Reader\ReaderView.swift (Line: 261)
+Type: if let
+Condition: idx = note.userInfo?["pageIndex"] as? Int 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Reader\ReaderView.swift (Line: 268)
+Type: if let
+Condition: idx = note.userInfo?["pageIndex"] as? Int, idx < pages.count 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Reader\ReaderView.swift (Line: 271)
+Type: if let
+Condition: data = try? Data(contentsOf: pageURL),
+                           let img  = UIImage(data: data) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Reader\ReaderView.swift (Line: 644)
+Type: guard let
+Condition: data = try? Data(contentsOf: pageURL),
+                      let img = UIImage(data: data) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Reader\ReaderView.swift (Line: 1240)
+Type: if let
+Condition: existing = try? modelContext.fetch(descriptor).first 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Reader\ReaderView.swift (Line: 1271)
+Type: if let
+Condition: active = try? self.modelContext.fetch(refreshDescriptor).first, active.drawingOCRText != ocrText 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Reader\ReaderView.swift (Line: 1432)
+Type: guard let
+Condition: pdfView = gesture.view as? PDFView,
+                  let currentPage = pdfView.currentPage 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Reader\ReaderView.swift (Line: 1474)
+Type: guard let
+Condition: pdfView = notification.object as? PDFView,
+                  let currentPage = pdfView.currentPage,
+                  let document = pdfView.document 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Reader\WebtoonScrollView.swift (Line: 166)
+Type: guard let
+Condition: source = CGImageSourceCreateWithURL(url as CFURL, nil),
+                      let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any],
+                      let width = properties[kCGImagePropertyPixelWidth as String] as? CGFloat,
+                      let height = properties[kCGImagePropertyPixelHeight as String] as? CGFloat,
+                      width > 0 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Reader\WebtoonScrollView.swift (Line: 178)
+Type: guard let
+Condition: data = try? Data(contentsOf: url),
+                      let img  = UIImage(data: data) 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Reader\ZoomableScrollView.swift (Line: 97)
+Type: guard let
+Condition: scrollView = recognizer.view as? UIScrollView 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Reader\Components\ReflowTextView.swift (Line: 115)
+Type: guard let
+Condition: textView = gesture.view as? UITextView 
+----------------------------------------
+File: C:\Users\chris\.gemini\antigravity\scratch\InksyncPro\ComicToPDF\ComicToPDF\Views\Settings\LogsView.swift (Line: 219)
+Type: if let
+Condition: smartURL = logger.generateSmartLog(categories: filterCategories, types: filterTypes),
+                       let targetData = try? Data(contentsOf: smartURL) 
+----------------------------------------

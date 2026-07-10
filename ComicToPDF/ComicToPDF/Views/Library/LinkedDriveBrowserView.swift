@@ -12,6 +12,7 @@ import SwiftUI
 // directly without library registration (ephemeral reader session).
 // ============================================================================
 
+@MainActor
 struct LinkedDriveBrowserView: View {
 
     let driveEntry: AppSettingsManager.LinkedDriveEntry
@@ -213,61 +214,64 @@ struct LinkedDriveBrowserView: View {
     // MARK: - Directory Loading
 
     private func loadDirectory() async {
-        await MainActor.run {
-            isLoading = true
-            errorMessage = nil
-        }
+        isLoading = true
+        errorMessage = nil
 
         do {
             let rootURL = try BookmarkResolver.shared.resolve(driveEntry.volumeBookmarkData)
             let targetURL = directoryURL ?? rootURL
-            let didAccess = targetURL.startAccessingSecurityScopedResource()
-            defer { if didAccess { targetURL.stopAccessingSecurityScopedResource() } }
 
-            guard FileManager.default.fileExists(atPath: targetURL.path) else {
-                await MainActor.run {
-                    errorMessage = "Drive folder not accessible. Please reconnect the drive."
-                    isLoading = false
+            let (discoveredItems, errorMsg) = await Task.detached(priority: .userInitiated) { () -> ([BrowseItem], String?) in
+                let didAccess = targetURL.startAccessingSecurityScopedResource()
+                defer { if didAccess { targetURL.stopAccessingSecurityScopedResource() } }
+
+                guard FileManager.default.fileExists(atPath: targetURL.path) else {
+                    return ([], "Drive folder not accessible. Please reconnect the drive.")
                 }
-                return
-            }
 
-            let supportedExts = Set(["cbz", "cbr", "cb7", "cbt", "epub", "pdf"])
-            let fm = FileManager.default
-            let children = try fm.contentsOfDirectory(
-                at: targetURL,
-                includingPropertiesForKeys: [.isDirectoryKey, .fileSizeKey, .isHiddenKey],
-                options: [.skipsHiddenFiles]
-            )
+                do {
+                    let supportedExts = Set(["pdf", "epub", "cbz", "cbr", "cb7", "cbt", "zip"])
+                    let fm = FileManager.default
+                    let children = try fm.contentsOfDirectory(
+                        at: targetURL,
+                        includingPropertiesForKeys: [.isDirectoryKey, .fileSizeKey, .isHiddenKey],
+                        options: [.skipsHiddenFiles]
+                    )
 
-            var discovered: [BrowseItem] = []
-            for url in children {
-                let res = try? url.resourceValues(forKeys: [.isDirectoryKey, .fileSizeKey])
-                let isDir = res?.isDirectory ?? false
-                let name = url.lastPathComponent
-                if isDir {
-                    discovered.append(BrowseItem(id: url.path, name: name, kind: .folder(url)))
-                } else if supportedExts.contains(url.pathExtension.lowercased()) {
-                    let size = Int64(res?.fileSize ?? 0)
-                    discovered.append(BrowseItem(id: url.path, name: url.deletingPathExtension().lastPathComponent, kind: .file(url), fileSize: size))
+                    var discovered: [BrowseItem] = []
+                    for url in children {
+                        let res = try? url.resourceValues(forKeys: [.isDirectoryKey, .fileSizeKey])
+                        let isDir = res?.isDirectory ?? false
+                        let name = url.lastPathComponent
+                        if isDir {
+                            discovered.append(BrowseItem(id: url.path, name: name, kind: .folder(url)))
+                        } else if supportedExts.contains(url.pathExtension.lowercased()) {
+                            let size = Int64(res?.fileSize ?? 0)
+                            discovered.append(BrowseItem(id: url.path, name: url.deletingPathExtension().lastPathComponent, kind: .file(url), fileSize: size))
+                        }
+                    }
+
+                    discovered.sort {
+                        if $0.isFolder != $1.isFolder { return $0.isFolder }
+                        return $0.name.localizedStandardCompare($1.name) == .orderedAscending
+                    }
+                    
+                    return (discovered, nil)
+                } catch {
+                    return ([], "Could not access drive: \(error.localizedDescription)")
                 }
-            }
+            }.value
 
-            discovered.sort {
-                if $0.isFolder != $1.isFolder { return $0.isFolder }
-                return $0.name.localizedStandardCompare($1.name) == .orderedAscending
+            if let errorMsg = errorMsg {
+                self.errorMessage = errorMsg
+            } else {
+                self.items = discoveredItems
             }
-
-            await MainActor.run {
-                items = discovered
-                isLoading = false
-            }
+            self.isLoading = false
 
         } catch {
-            await MainActor.run {
-                errorMessage = "Could not access drive: \(error.localizedDescription)"
-                isLoading = false
-            }
+            self.errorMessage = "Could not access drive: \(error.localizedDescription)"
+            self.isLoading = false
         }
     }
 
@@ -286,15 +290,27 @@ struct LinkedDriveBrowserView: View {
             contentType: type
         )
         // Encode a per-file bookmark so the reader can acquire security scope
-        if let bm = try? url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil) {
-            tempPDF.sourceMode = .linked(bookmarkData: bm)
+        if let rootURL = try? BookmarkResolver.shared.resolve(driveEntry.volumeBookmarkData) {
+            let accessing = rootURL.startAccessingSecurityScopedResource()
+            defer { if accessing { rootURL.stopAccessingSecurityScopedResource() } }
+            if let bm = try? url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil) {
+                tempPDF.sourceMode = .linked(bookmarkData: bm)
+            }
         }
         selectedPDF = tempPDF
     }
 
     private func addToLibrary(_ item: BrowseItem) {
         guard case .file(let url) = item.kind else { return }
-        guard let bm = try? url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil) else { return }
+        
+        var bookmarkData: Data? = nil
+        if let rootURL = try? BookmarkResolver.shared.resolve(driveEntry.volumeBookmarkData) {
+            let accessing = rootURL.startAccessingSecurityScopedResource()
+            defer { if accessing { rootURL.stopAccessingSecurityScopedResource() } }
+            bookmarkData = try? url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
+        }
+        
+        guard let bm = bookmarkData else { return }
 
         let stem = url.deletingPathExtension().lastPathComponent
         let fileSize = item.fileSize

@@ -107,6 +107,7 @@ enum LibraryPillKey: String, CaseIterable, Identifiable {
     case reviewMissing = "reviewMissing"
     case stats         = "stats"
     case vault         = "vault"
+    case metadataSpreadsheet = "metadataSpreadsheet"
 
     var id: String { rawValue }
 
@@ -123,6 +124,7 @@ enum LibraryPillKey: String, CaseIterable, Identifiable {
         case .reviewMissing: return "Review Missing"
         case .stats:         return "Stats"
         case .vault:         return "Vault"
+        case .metadataSpreadsheet: return "Grid Editor"
         }
     }
 
@@ -134,11 +136,12 @@ enum LibraryPillKey: String, CaseIterable, Identifiable {
         case .smartList:     return "list.star"
         case .aiRename:      return "sparkles.tv"
         case .merge:         return "arrow.triangle.merge"
-        case .convertMerge:  return "doc.on.doc.fill"
+        case .convertMerge:  return "arrow.triangle.2.circlepath.doc"
         case .autoMatch:     return "wand.and.stars.inverse"
         case .reviewMissing: return "exclamationmark.triangle.fill"
         case .stats:         return "flame.fill"
         case .vault:         return "lock.fill"
+        case .metadataSpreadsheet: return "tablecells"
         }
     }
 }
@@ -157,9 +160,11 @@ final class LibraryPillConfig: ObservableObject {
     @Published var disabledPills: Set<LibraryPillKey> = []
 
     init() {
-        if let data = UserDefaults.standard.data(forKey: storageKey),
-           let saved = try? JSONDecoder().decode(Set<String>.self, from: data) {
-            disabledPills = Set(saved.compactMap { LibraryPillKey(rawValue: $0) })
+        if let data = UserDefaults.standard.data(forKey: storageKey) {
+            let optSaved = try? JSONDecoder().decode(Set<String>.self, from: data)
+            if let saved = optSaved {
+                disabledPills = Set(saved.compactMap { LibraryPillKey(rawValue: $0) })
+            }
         }
     }
 

@@ -47,6 +47,8 @@ struct BatchMergeReorderView: View {
                             
                             Toggle("E-Ink High Contrast Filter", isOn: $settingsManager.conversionSettings.optimizeForDevice)
                             
+                            Toggle("Link Cover Page as Spread", isOn: $settingsManager.conversionSettings.linkCoverAsSpread)
+                            
                             Picker("Image Quality", selection: $settingsManager.conversionSettings.compressionQuality) {
                                 ForEach(CompressionPreset.allCases, id: \.self) { preset in
                                     Text(preset.rawValue).tag(preset)
@@ -78,11 +80,7 @@ struct BatchMergeReorderView: View {
                         ScrollView {
                             LazyVGrid(columns: columns, spacing: 20) {
                                 ForEach(selectedFiles) { file in
-                                    GridThumbnail(file: file, conversionManager: conversionManager)
-                                        .onDrag {
-                                            self.draggedItem = file
-                                            return NSItemProvider(object: file.id.uuidString as NSString)
-                                        }
+                                    GridThumbnail(file: file, conversionManager: conversionManager, draggedItem: $draggedItem)
                                         .onDrop(of: [.text], delegate: ReorderDropDelegate(item: file, items: $selectedFiles, draggedItem: $draggedItem))
                                 }
                             }
@@ -153,12 +151,13 @@ struct BatchMergeReorderView: View {
 struct GridThumbnail: View {
     let file: ConvertedPDF
     let conversionManager: ConversionManager
+    @Binding var draggedItem: ConvertedPDF?
     
     @State private var coverImage: UIImage? = nil
     
     var body: some View {
         VStack {
-            ZStack {
+            ZStack(alignment: .topTrailing) {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(Color(uiColor: .systemGroupedBackground))
                     .frame(height: 160)
@@ -178,8 +177,18 @@ struct GridThumbnail: View {
                         .foregroundColor(.gray.opacity(0.5))
                 }
                 
-                // Visual numbered badge if we can access the index 
-                // We'll leave index out for now since drag-and-drop order visually conveys it
+                // Grab Handle Icon for Reordering
+                Image(systemName: "line.3.horizontal")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(.white)
+                    .padding(8)
+                    .background(Color.black.opacity(0.6))
+                    .clipShape(Circle())
+                    .padding(8)
+                    .onDrag {
+                        self.draggedItem = file
+                        return NSItemProvider(object: file.id.uuidString as NSString)
+                    }
             }
             
             Text(file.name)

@@ -1,5 +1,6 @@
 import SwiftUI
 
+@MainActor
 struct LinkedLibrarySettingsView: View {
     @EnvironmentObject var conversionManager: ConversionManager
     @ObservedObject var appSettings = AppSettingsManager.shared
@@ -253,8 +254,8 @@ struct LinkedLibrarySettingsView: View {
         let manager = conversionManager
         LinkedLibraryScanner.shared.conversionManager = manager
 
-        FolderLinkCoordinator.present { urls in
-            guard !urls.isEmpty else {
+        FolderLinkCoordinator.present { results in
+            guard !results.isEmpty else {
                 Task { @MainActor in self.isLinkingDrive = false }
                 return
             }
@@ -266,16 +267,17 @@ struct LinkedLibrarySettingsView: View {
                 var linked = 0
                 var totalFiles = 0
 
-                for url in urls {
+                for result in results {
                     do {
                         let entry = try await scanner.linkDrive(
-                            folderURL: url,
-                            displayName: url.lastPathComponent
+                            folderURL: result.url,
+                            bookmarkData: result.bookmark,
+                            displayName: result.url.lastPathComponent
                         )
                         linked += 1
                         totalFiles += entry.fileCount
                     } catch {
-                        self.errorMessage = "Failed to link \"\(url.lastPathComponent)\": \(error.localizedDescription)"
+                        self.errorMessage = "Failed to link \"\(result.url.lastPathComponent)\": \(error.localizedDescription)"
                     }
                 }
 
@@ -285,7 +287,7 @@ struct LinkedLibrarySettingsView: View {
                     if totalFiles == 0 {
                         self.errorMessage = "Folder\(linked > 1 ? "s" : "") linked but no comic files were found inside. Make sure you selected the folder containing your .cbz / .pdf / .epub files."
                     } else {
-                        let folderLabel = linked == 1 ? "\"\(urls.first!.lastPathComponent)\"" : "\(linked) folders"
+                        let folderLabel = linked == 1 ? "\"\(results.first?.url.lastPathComponent ?? "Folder")\"" : "\(linked) folders"
                         self.successMessage = "Linked \(folderLabel) — \(totalFiles) comic\(totalFiles == 1 ? "" : "s") found."
                         Task {
                             try? await Task.sleep(nanoseconds: 6_000_000_000)
@@ -303,15 +305,15 @@ struct LinkedLibrarySettingsView: View {
         let manager = conversionManager
         LinkedLibraryScanner.shared.conversionManager = manager
 
-        FolderLinkCoordinator.present { urls in
-            guard let url = urls.first else {
+        FolderLinkCoordinator.present { results in
+            guard let result = results.first else {
                 Task { @MainActor in self.isLinkingDrive = false }
                 return
             }
             Task { @MainActor in
                 do {
-                    try await LinkedLibraryScanner.shared.relinkDrive(drive, newFolderURL: url)
-                    self.successMessage = "Re-linked \"\(url.lastPathComponent)\" successfully."
+                    try await LinkedLibraryScanner.shared.relinkDrive(drive, newFolderURL: result.url, newBookmarkData: result.bookmark)
+                    self.successMessage = "Re-linked \"\(result.url.lastPathComponent)\" successfully."
                     Task {
                         try? await Task.sleep(nanoseconds: 5_000_000_000)
                         self.successMessage = nil

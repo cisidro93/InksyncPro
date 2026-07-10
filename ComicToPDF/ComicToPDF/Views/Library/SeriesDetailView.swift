@@ -1,31 +1,48 @@
 import SwiftUI
-
 struct SeriesDetailView: View {
     let series: SeriesGroup
     @EnvironmentObject var conversionManager: ConversionManager
+    @EnvironmentObject var settingsManager: AppSettingsManager
     @Environment(\.dismiss) var dismiss
     @Binding var selectedPDF: ConvertedPDF?
     var useNavigationStack: Bool
+    @Environment(\.horizontalSizeClass) private var hSizeClass
     
+    enum LibraryViewStyle: String {
+        case list = "List"
+        case grid = "Grid"
+    }
+    
+    @AppStorage("libraryViewStyle") private var viewStyle: LibraryViewStyle = .grid
     @AppStorage("libraryTapAction") private var tapAction: LibraryTapAction = .read
     @AppStorage("defaultSeriesSort") private var sortOption: SeriesSortOption = .issueNumber
     @AppStorage("fastBundleOmnibus") private var fastBundleOmnibus = false
     @AppStorage("manualOmnibusBuildsCount") private var manualOmnibusBuildsCount = 0
-    
     @State private var headerCover: UIImage? = nil
-    
-    // Config Sheet & Prompt State
-    @State private var showingOmnibusPrompt: Bool = false
+    @State private var isSummaryExpanded = false
+    @State private var showingOmnibusPrompt = false
     @State private var pendingConfigSelection: Set<UUID>? = nil
     @State private var mergeConfigSuggestedName: String? = nil
     
-    // Batch Selection
+// Batch Selection
     @State private var selection = Set<UUID>()
     @State private var isSelectionMode: Bool = false
     @State private var showingMergeConfig: Bool = false
+    @State private var mergeSessionID = UUID()
+    @State private var metadataSessionID = UUID()
     @State private var showBatchMetadataEditor: Bool = false
     @State private var showingBatchSeriesAssignment: Bool = false
     
+    // Drag-to-select Gestures & Coordinate Tracking
+    @State private var cellFrames: [UUID: CGRect] = [:]
+    @State private var scrollOffset: CGFloat = 0
+    @State private var dragStartIndex: Int? = nil
+    @State private var currentDragIndex: Int? = nil
+    @State private var isDragSelecting: Bool = true
+    @State private var initialSelectionBeforeDrag = Set<UUID>()
+    @State private var lastDragLocation: CGPoint = .zero
+    @State private var autoScrollTask: Task<Void, Never>? = nil
+
     // Context Menu State
     @State private var pdfToRename: ConvertedPDF?
     @State private var renameText = ""
@@ -36,6 +53,10 @@ struct SeriesDetailView: View {
     @State private var pdfToRead: ConvertedPDF? // Added for Reader
     @State private var pdfToDetails: ConvertedPDF? // Details sheet (non-nav-stack path)
     @State private var pdfToDelete: ConvertedPDF? // QoL: Delete confirmation gate
+    
+    // Action Sheet Support
+    @State private var pendingActionPDF: ConvertedPDF? = nil
+    @State private var showingActionSheet: Bool = false
 
     enum SeriesSortOption: String, CaseIterable, Identifiable {
         case manual = "Custom Order"
@@ -52,9 +73,49 @@ struct SeriesDetailView: View {
     @State private var showBookmarksOnly = false // Added for filtering
     @State private var showingRenameSeriesAlert = false
     @State private var pendingRenameSeriesName = ""
+    @AppStorage("hideMergedIssuesInSeries") private var hideMergedIssues = false
+
+    var freshIssues: [ConvertedPDF] {
+        let allPDFs = conversionManager.convertedPDFs
+        let visiblePDFs = settingsManager.isVaultUnlocked ? allPDFs : allPDFs.filter { !$0.isPrivate }
+        
+        if let folderUUID = UUID(uuidString: series.id) {
+            // It's a custom Collection folder
+            let sorted = visiblePDFs.filter { $0.collectionId == folderUUID }
+            if let collection = conversionManager.collections.first(where: { $0.id == folderUUID }),
+               let manualOrder = collection.manualSortOrder, !manualOrder.isEmpty {
+                let orderDict = Dictionary(uniqueKeysWithValues: manualOrder.enumerated().map { ($0.element, $0.offset) })
+                return sorted.sorted { pdf1, pdf2 in
+                    let idx1 = orderDict[pdf1.id] ?? Int.max
+                    let idx2 = orderDict[pdf2.id] ?? Int.max
+                    if idx1 == idx2 {
+                        return pdf1.name.localizedStandardCompare(pdf2.name) == .orderedAscending
+                    }
+                    return idx1 < idx2
+                }
+            }
+            return sorted
+        } else {
+            // It's a publisher series
+            var seriesAliases: [String: String] = [:]
+            for omnibus in conversionManager.virtualOmnibuses {
+                for fileId in omnibus.fileIDs {
+                    if let pdf = allPDFs.first(where: { $0.id == fileId }),
+                       let fileSeries = pdf.metadata.series, !fileSeries.isEmpty {
+                        seriesAliases[fileSeries.lowercased()] = omnibus.name
+                    }
+                }
+            }
+            return visiblePDFs.filter { pdf in
+                let rawSeries = pdf.metadata.series ?? ""
+                let resolvedSeries = seriesAliases[rawSeries.lowercased()] ?? rawSeries
+                return resolvedSeries.localizedCaseInsensitiveCompare(series.title) == .orderedSame
+            }
+        }
+    }
 
     var sortedIssues: [ConvertedPDF] {
-        var sorted = series.issues
+        var sorted = freshIssues
         
         switch sortOption {
         case .manual:
@@ -73,8 +134,7 @@ struct SeriesDetailView: View {
         case .titleDesc:
             sorted.sort { $0.name.localizedStandardCompare($1.name) == .orderedDescending }
         case .dateNewest:
-            sorted.removeAll() // We can't trust original appending sequence chronologically due to bulk processing imports
-            sorted = series.issues.reversed() // Fallback to inverted addition (approximating dateNewest for legacy items)
+            sorted = freshIssues.reversed() // Fallback to inverted addition (approximating dateNewest for legacy items)
         case .dateOldest:
             break // Native loop append order is Date Added
         case .sizeLargest:
@@ -90,25 +150,93 @@ struct SeriesDetailView: View {
     }
     
     @State private var localIssues: [ConvertedPDF] = []
+    @State private var selectedVolumeFilter: String? = nil
+    
+    var visualIssues: [ConvertedPDF] {
+        if showVolumeGrouping && hasVolumeData {
+            return volumeGroups.flatMap { $0.issues }
+        } else {
+            return filteredIssues
+        }
+    }
     
     // Volume Grouping State
     @State private var showVolumeGrouping: Bool = true
     @State private var collapsedVolumes: Set<String> = []
     @State private var showBatchVolumeAssignment = false
+    @State private var showManualVolumeLinker = false
+    @State private var showSeriesDetails = false
     @State private var jumpToVolume: String? = nil
+    @State private var cachedVolumeGroups: [(key: String, issues: [ConvertedPDF])] = []
+    @State private var cachedSeriesWriter: String? = nil
+    @State private var cachedSeriesArtist: String? = nil
+    @State private var cachedSeriesTags: [String] = []
+    @State private var cachedSeriesSummary: String? = nil
     
+    var seriesWriter: String? { cachedSeriesWriter }
+    var seriesArtist: String? { cachedSeriesArtist }
+    var seriesTags: [String] { cachedSeriesTags }
+    var seriesSummary: String? { cachedSeriesSummary }
+
     var isCollection: Bool {
         guard let id = UUID(uuidString: series.id) else { return false }
         return conversionManager.collections.contains(where: { $0.id == id })
     }
     
-    /// Groups issues by their volume metadata for collapsible rendering
+    var availableVolumes: [String] {
+        cachedVolumeGroups.map { $0.key }
+    }
+    
+    private func resolvedVolume(for pdf: ConvertedPDF) -> String? {
+        if let vol = pdf.metadata.volume, !vol.isEmpty {
+            return vol
+        }
+        let parsed = DeterministicFilenameParser.parse(filename: pdf.name)
+        return parsed.volume
+    }
+
+    var filteredIssues: [ConvertedPDF] {
+        let baseIssues: [ConvertedPDF]
+        if hideMergedIssues {
+            let mergedSourceIDs = Set(localIssues.flatMap { $0.metadata.sourceFileIDs ?? [] })
+            baseIssues = localIssues.filter { !mergedSourceIDs.contains($0.id) }
+        } else {
+            baseIssues = localIssues
+        }
+        
+        if let selectedVolume = selectedVolumeFilter {
+            return baseIssues.filter { pdf in
+                let vol = resolvedVolume(for: pdf)
+                if selectedVolume == "Ungrouped" {
+                    return vol == nil || vol!.isEmpty
+                } else {
+                    return vol == selectedVolume
+                }
+            }
+        }
+        return baseIssues
+    }
+    
+    /// Groups issues by their volume metadata for collapsible rendering (read from cached State to prevent thread bottlenecking)
     var volumeGroups: [(key: String, issues: [ConvertedPDF])] {
+        let allGroups = cachedVolumeGroups
+        if let selectedVolume = selectedVolumeFilter {
+            return allGroups.filter { $0.key == selectedVolume }
+        }
+        return allGroups
+    }
+    
+    private func updateVolumeGroups() {
         var groups: [String: [ConvertedPDF]] = [:]
         var ungrouped: [ConvertedPDF] = []
         
+        let mergedSourceIDs = Set(localIssues.flatMap { $0.metadata.sourceFileIDs ?? [] })
+        
         for pdf in localIssues {
-            if let vol = pdf.metadata.volume, !vol.isEmpty {
+            if hideMergedIssues && mergedSourceIDs.contains(pdf.id) {
+                continue
+            }
+            if let vol = resolvedVolume(for: pdf) {
                 groups[vol, default: []].append(pdf)
             } else {
                 ungrouped.append(pdf)
@@ -116,18 +244,107 @@ struct SeriesDetailView: View {
         }
         
         // Sort volume keys numerically
-        var result = groups.map { (key: $0.key, issues: $0.value) }
+        var result = groups.map { (key: String, issues: [ConvertedPDF]) in (key: key, issues: issues) }
             .sorted { (Int($0.key) ?? 0) < (Int($1.key) ?? 0) }
         
         if !ungrouped.isEmpty {
             result.append((key: "Ungrouped", issues: ungrouped))
         }
-        return result
+        self.cachedVolumeGroups = result
+        
+        // Optimize metadata calculation and cache results to prevent main-thread spikes during scrolling
+        let currentIssues = freshIssues
+        self.cachedSeriesWriter = currentIssues.compactMap { $0.metadata.writer }.first { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        self.cachedSeriesArtist = currentIssues.compactMap { $0.metadata.penciller }.first { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        self.cachedSeriesSummary = currentIssues.compactMap { $0.metadata.summary }.first { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        
+        let allTags = currentIssues.flatMap { $0.metadata.tags }.map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        self.cachedSeriesTags = Array(Set(allTags)).sorted()
     }
     
     /// True if any issues have volume metadata worth grouping by
     var hasVolumeData: Bool {
-        localIssues.contains { $0.metadata.volume != nil && !($0.metadata.volume!.isEmpty) }
+        localIssues.contains { resolvedVolume(for: $0) != nil }
+    }
+    
+    var availableSortOptions: [SeriesSortOption] {
+        SeriesSortOption.allCases.filter { $0 != .manual || isCollection }
+    }
+    
+    var seriesVirtualOmnibuses: [VirtualOmnibus] {
+        let allOmnibuses = conversionManager.virtualOmnibuses
+        Logger.shared.log("🔍 [Flight Recorder] 👁️ [Virtual Volume] Evaluating visibility. total omnibuses: \(allOmnibuses.count), series title: '\(series.title)', series ID: '\(series.id)'", category: "Debug")
+        
+        return allOmnibuses.filter { omnibus in
+            // 1. Explicit connection context (parentSeriesID) matches series.id
+            if let parent = omnibus.parentSeriesID {
+                let parentMatch = parent.localizedCaseInsensitiveCompare(series.id) == .orderedSame
+                Logger.shared.log("🔍 [Flight Recorder] 👁️ [Virtual Volume] Checked '\(omnibus.name)' - parentSeriesID: '\(parent)', match = \(parentMatch)", category: "Debug")
+                if parentMatch { return true }
+            }
+            
+            // 2. Match by virtual volume name (case-insensitive, substring/contains allowed)
+            let nameMatch = omnibus.name.localizedCaseInsensitiveCompare(series.title) == .orderedSame ||
+                            omnibus.name.localizedCaseInsensitiveContains(series.title) ||
+                            series.title.localizedCaseInsensitiveContains(omnibus.name)
+            Logger.shared.log("🔍 [Flight Recorder] 👁️ [Virtual Volume] Checked '\(omnibus.name)' - nameMatch = \(nameMatch)", category: "Debug")
+            if nameMatch { return true }
+            
+            // 3. Match if any issue inside the omnibus belongs to this series (case-insensitive)
+            let resolvedFiles = omnibus.fileIDs.compactMap { id in
+                conversionManager.convertedPDFs.first(where: { $0.id == id })
+            }
+            
+            // 4. Match if this is a custom collection (folder) and any file in the omnibus belongs to it
+            if let folderUUID = UUID(uuidString: series.id) {
+                let collectionMatch = resolvedFiles.contains { $0.collectionId == folderUUID }
+                Logger.shared.log("🔍 [Flight Recorder] 👁️ [Virtual Volume] Checked '\(omnibus.name)' - collectionMatch = \(collectionMatch)", category: "Debug")
+                return collectionMatch
+            }
+            
+            let fileMatch = resolvedFiles.contains { pdf in
+                let matches = pdf.metadata.series?.localizedCaseInsensitiveCompare(series.title) == .orderedSame
+                if matches {
+                    Logger.shared.log("🔍 [Flight Recorder] 👁️ [Virtual Volume] Matched pdf '\(pdf.name)' with series '\(pdf.metadata.series ?? "nil")'", category: "Debug")
+                }
+                return matches
+            }
+            Logger.shared.log("🔍 [Flight Recorder] 👁️ [Virtual Volume] Checked '\(omnibus.name)' - fileMatch = \(fileMatch)", category: "Debug")
+            return fileMatch
+        }
+    }
+    
+    @ViewBuilder
+    private var seriesVirtualOmnibusesSection: some View {
+        let list = seriesVirtualOmnibuses
+        if !list.isEmpty {
+            VirtualOmnibusShelf(
+                omnibuses: list,
+                onEdit: { omnibus in
+                    AppRouter.shared.presentSheet(.virtualOmnibusEditor(omnibus, parentSeriesID: series.id))
+                },
+                onRead: { omnibus in
+                    let resolved = omnibus.fileIDs.compactMap { id in
+                        conversionManager.convertedPDFs.first(where: { $0.id == id })
+                    }
+                    let totalPageCount = resolved.reduce(0) { $0 + max($1.pageCount, 1) }
+                    let virtualPDF = ConvertedPDF(
+                        id: omnibus.id,
+                        name: omnibus.name,
+                        url: URL(string: "virtual-omnibus://\(omnibus.id.uuidString)")!,
+                        pageCount: totalPageCount,
+                        fileSize: 0,
+                        metadata: PDFMetadata(title: omnibus.name),
+                        contentType: .comic
+                    )
+                    pdfToRead = virtualPDF
+                }
+            )
+            .environmentObject(conversionManager)
+            .listRowInsets(EdgeInsets())
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
+        }
     }
     
     /// Detected missing issues in the series
@@ -146,7 +363,7 @@ struct SeriesDetailView: View {
         return nil
     }
     
-    /// Calculates reading progress (0.0–1.0) for a set of issues
+    /// Calculates reading progress (0.0â€“1.0) for a set of issues
     private func readingProgress(for issues: [ConvertedPDF]) -> Double {
         let totalPages = issues.reduce(0) { $0 + max($1.pageCount, 1) }
         let readPages = issues.reduce(0) { $0 + ($1.metadata.lastReadPage ?? 0) }
@@ -167,655 +384,732 @@ struct SeriesDetailView: View {
         issues.filter { ($0.metadata.lastReadPage ?? 0) >= $0.pageCount && $0.pageCount > 0 }.count
     }
 
-    private var contentList: some View {
+    private var mainContent: some View {
         ScrollViewReader { scrollProxy in
-        List {
-            Section(header: headerView) {
-                // ── Continue Reading Smart Button ────────────────────────
-                if let nextIssue = nextUnreadIssue {
-                    Button {
-                        pdfToRead = nextIssue
-                    } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: "play.circle.fill")
-                                .font(.system(size: 28))
-                                .foregroundStyle(
-                                    LinearGradient(colors: [Theme.orange, Theme.red],
-                                                   startPoint: .topLeading, endPoint: .bottomTrailing)
-                                )
-                            
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Continue Reading")
-                                    .font(.system(size: 11, weight: .bold))
-                                    .foregroundColor(Theme.textSecondary)
-                                    .tracking(0.8)
-                                
-                                Text(nextIssue.name)
-                                    .font(.system(size: 14, weight: .semibold))
-                                    .foregroundColor(Theme.text)
-                                    .lineLimit(1)
-                                
-                                if let vol = nextIssue.metadata.volume, !vol.isEmpty,
-                                   let issue = nextIssue.metadata.issueNumber {
-                                    Text("Vol. \(vol) • Ch. \(issue) • Page \((nextIssue.metadata.lastReadPage ?? 0) + 1)")
-                                        .font(.system(size: 11, design: .rounded))
-                                        .foregroundColor(Theme.orange)
-                                } else {
-                                    Text("Page \((nextIssue.metadata.lastReadPage ?? 0) + 1) of \(nextIssue.pageCount)")
-                                        .font(.system(size: 11, design: .rounded))
-                                        .foregroundColor(Theme.orange)
-                                }
-                            }
-                            
-                            Spacer()
-                            
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundColor(Theme.textSecondary)
-                        }
-                        .padding(.vertical, 8)
-                        .padding(.horizontal, 12)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .fill(Theme.orange.opacity(0.1))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                        .stroke(Theme.orange.opacity(0.2), lineWidth: 1)
-                                )
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .listRowBackground(Color.clear)
-                    .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 8, trailing: 0))
-                }
-                
-                // ── Missing Issue Banner ──────────────────────────────
-                if !missingIssues.isEmpty {
-                    MissingIssueBanner(gaps: missingIssues)
-                }
-                
-                if showVolumeGrouping && hasVolumeData {
-                    // ── Collapsible Volume Sections ──────────────────────────
-                    ForEach(volumeGroups, id: \.key) { group in
-                        let isCollapsed = collapsedVolumes.contains(group.key)
-                        let progress = readingProgress(for: group.issues)
-                        let completed = completedCount(for: group.issues)
-                        
-                        // Volume Header (tap to collapse/expand)
-                        Button {
-                            withAnimation(.easeInOut(duration: 0.25)) {
-                                if isCollapsed {
-                                    collapsedVolumes.remove(group.key)
-                                } else {
-                                    collapsedVolumes.insert(group.key)
-                                }
-                            }
-                        } label: {
-
-                            VStack(spacing: 6) {
-                                HStack(spacing: 10) {
-                                    Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
-                                        .font(.system(size: 12, weight: .bold))
-                                        .foregroundColor(Theme.orange)
-                                        .frame(width: 16)
-                                    
-                                    Image(systemName: completed == group.issues.count ? "book.closed.fill" : "book.closed")
-                                        .font(.system(size: 14))
-                                        .foregroundColor(completed == group.issues.count ? .green : (group.key == "Ungrouped" ? Theme.textSecondary : Theme.blue))
-                                    
-                                    Text(group.key == "Ungrouped" ? "Ungrouped Issues" : "Volume \(group.key)")
-                                        .font(.system(size: 15, weight: .semibold))
-                                        .foregroundColor(Theme.text)
-                                    
-                                    Spacer()
-                                    
-                                    Text("\(completed)/\(group.issues.count)")
-                                        .font(.system(size: 12, weight: .medium, design: .rounded))
-                                        .foregroundColor(completed == group.issues.count ? .green : Theme.textSecondary)
-                                        .padding(.horizontal, 8)
-                                        .padding(.vertical, 3)
-                                        .background(Theme.text.opacity(0.08))
-                                        .clipShape(Capsule())
-                                }
-                                
-                                // Reading Progress Bar
-                                GeometryReader { geo in
-                                    ZStack(alignment: .leading) {
-                                        RoundedRectangle(cornerRadius: 2)
-                                            .fill(Theme.text.opacity(0.08))
-                                            .frame(height: 3)
-                                        
-                                        RoundedRectangle(cornerRadius: 2)
-                                            .fill(
-                                                progress >= 1.0
-                                                    ? AnyShapeStyle(Color.green)
-                                                    : AnyShapeStyle(LinearGradient(colors: [Theme.orange, Theme.red], startPoint: .leading, endPoint: .trailing))
-                                            )
-                                            .frame(width: geo.size.width * CGFloat(min(progress, 1.0)), height: 3)
-                                    }
-                                }
-                                .frame(height: 3)
-                            }
-                            .padding(.vertical, 6)
-                        }
-                        .buttonStyle(.plain)
-                        .listRowBackground(Theme.surface.opacity(0.5))
-                        .id("vol_\(group.key)")  // anchor for QuickVolumeJump scroll
-                        // Feature 3: Volume Omnibus Quick-Build (long-press)
-                        .contextMenu {
-                            Button {
-                                if fastBundleOmnibus {
-                                    // User opted-in to the background autobuilder
-                                    conversionManager.enqueueOmnibus(
-                                        name: "\(series.title) Vol. \(formattedVolumeKey(group.key))",
-                                        sourceFiles: group.issues
-                                    )
-                                } else {
-                                    // User prefers the manual control sheet
-                                    manualOmnibusBuildsCount += 1
-                                    let selectedIDs = Set(group.issues.map { $0.id })
-                                    
-                                    // Trigger the prompt instead of instantly showing if they hit the 3-build threshold
-                                    if manualOmnibusBuildsCount == 3 {
-                                        pendingConfigSelection = selectedIDs
-                                        mergeConfigSuggestedName = "\(series.title) Vol. \(formattedVolumeKey(group.key))"
-                                        showingOmnibusPrompt = true
-                                    } else {
-                                        selection = selectedIDs
-                                        mergeConfigSuggestedName = "\(series.title) Vol. \(formattedVolumeKey(group.key))"
-                                        showingMergeConfig = true
-                                    }
-                                }
-                            } label: {
-                                Label("Build Kindle Omnibus for Vol. \(formattedVolumeKey(group.key))", systemImage: "books.vertical.fill")
-                            }
-                            
-                            Button {
-                                withAnimation {
-                                    if isCollapsed {
-                                        collapsedVolumes.remove(group.key)
-                                    } else {
-                                        collapsedVolumes.insert(group.key)
-                                    }
-                                }
-                            } label: {
-                                Label(isCollapsed ? "Expand" : "Collapse", systemImage: isCollapsed ? "rectangle.expand.vertical" : "rectangle.compress.vertical")
-                            }
-                        }
-                        
-                        // Volume Contents (shown when expanded)
-                        if !isCollapsed {
-                            ForEach(group.issues) { pdf in
-                                issueRow(pdf)
-                            }
-                        }
-                    }
+            Group {
+                if viewStyle == .grid {
+                    gridView(scrollProxy: scrollProxy)
                 } else {
-                    // ── Flat List (original behavior) ────────────────────────
-                    ForEach(localIssues) { pdf in
-                        issueRow(pdf)
-                    }
-                    .onMove { source, destination in
-                        if isCollection {
-                            localIssues.move(fromOffsets: source, toOffset: destination)
-                            if let colID = UUID(uuidString: series.id) {
-                                conversionManager.updateCollectionOrder(collectionID: colID, newOrderIDs: localIssues.map { $0.id })
-                            }
-                        }
-                    }
+                    listView(scrollProxy: scrollProxy)
                 }
             }
+        }
+        .navigationTitle(series.title)
+        .toolbar {
+            listViewToolbar
         }
         .onAppear {
             localIssues = sortedIssues
+            updateVolumeGroups()
         }
         .onChange(of: sortOption) { localIssues = sortedIssues }
-        .onChange(of: conversionManager.convertedPDFs.count) { localIssues = sortedIssues }
-        .listStyle(InsetGroupedListStyle())
-        .navigationTitle(series.title)
-        // ── Volume Jump: ensure target is expanded then scroll to its anchor ──
-        .onChange(of: jumpToVolume) { _, targetKey in
-            guard let targetKey else { return }
-            // 1. Expand the volume if it was collapsed
-            let _ = withAnimation(.easeInOut(duration: 0.2)) {
-                collapsedVolumes.remove(targetKey)
-            }
-            // 2. Scroll after the expand animation gives the List time to render
-            Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 350_000_000) // 0.35 s \u2014 matches expand animation
-                withAnimation(.easeInOut(duration: 0.4)) {
-                    scrollProxy.scrollTo("vol_\(targetKey)", anchor: .top)
-                }
-                HapticEngine.medium()
-                jumpToVolume = nil  // reset so same volume can be re-selected
+        .onChange(of: conversionManager.convertedPDFs) { localIssues = sortedIssues }
+        .onChange(of: conversionManager.collections) { localIssues = sortedIssues }
+        .onChange(of: settingsManager.isVaultUnlocked) { localIssues = sortedIssues }
+        .onChange(of: localIssues) { updateVolumeGroups() }
+        .onChange(of: selectedVolumeFilter) { _, newValue in
+            if let newValue = newValue {
+                collapsedVolumes.remove(newValue)
             }
         }
-        .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                HStack(spacing: 16) {
-                    if isSelectionMode {
-                        Button(action: {
-                            withAnimation {
-                                if selection.count == localIssues.count {
-                                    selection.removeAll()
-                                } else {
-                                    selection = Set(localIssues.map { $0.id })
-                                }
-                            }
-                        }) {
-                            Text(selection.count == localIssues.count ? "Deselect All" : "Select All")
-                        }
+    }
+    
+    private func listView(scrollProxy: ScrollViewProxy) -> some View {
+        GeometryReader { viewportGeo in
+            List {
+                Section(header: headerView) {
+                    continueReadingSection
+                    missingIssuesSection
+                    
+                    seriesVirtualOmnibusesSection
+                    
+                    if hasVolumeData {
+                        volumeFilterBar
+                            .listRowInsets(EdgeInsets())
+                            .listRowBackground(Color.clear)
                     }
                     
-                    Button(action: {
-                        let generator = UIImpactFeedbackGenerator(style: .medium)
-                        generator.impactOccurred()
-                        withAnimation {
-                            isSelectionMode.toggle()
-                            selection.removeAll()
-                        }
-                    }) {
-                        Text(isSelectionMode ? "Cancel" : "Select")
-                            .bold(isSelectionMode)
-                    }
-                    
-                    if !isSelectionMode {
-                        Button {
-                            pendingRenameSeriesName = series.title
-                            showingRenameSeriesAlert = true
-                        } label: {
-                            Image(systemName: "pencil")
-                                .foregroundColor(.blue)
-                        }
-
-                        Button {
-                            withAnimation { showBookmarksOnly.toggle() }
-                        } label: {
-                            Image(systemName: showBookmarksOnly ? "bookmark.fill" : "bookmark")
-                                .foregroundColor(showBookmarksOnly ? Theme.orange : .blue)
-                        }
-
-                        // Volume Grouping Toggle (only visible when volume data exists)
-                        if hasVolumeData {
-                            Button {
-                                withAnimation { showVolumeGrouping.toggle() }
-                            } label: {
-                                Image(systemName: showVolumeGrouping ? "rectangle.3.group.fill" : "rectangle.3.group")
-                                    .foregroundColor(showVolumeGrouping ? Theme.orange : .blue)
-                            }
-                        }
-
-                        Menu {
-                            Picker("Sort By", selection: $sortOption) {
-                                if isCollection {
-                                    Text(SeriesSortOption.manual.rawValue).tag(SeriesSortOption.manual)
-                                }
-                                ForEach(SeriesSortOption.allCases.filter { $0 != .manual }) { option in
-                                    Text(option.rawValue).tag(option)
-                                }
-                            }
-                            
-                            if showVolumeGrouping && hasVolumeData {
-                                Divider()
-                                
-                                Button {
-                                    withAnimation {
-                                        collapsedVolumes = Set(volumeGroups.map { $0.key })
-                                    }
-                                } label: {
-                                    Label("Collapse All Volumes", systemImage: "rectangle.compress.vertical")
-                                }
-                                
-                                Button {
-                                    withAnimation {
-                                        collapsedVolumes.removeAll()
-                                    }
-                                } label: {
-                                    Label("Expand All Volumes", systemImage: "rectangle.expand.vertical")
-                                }
-                            }
-                            
-                            Divider()
-                            
-                            // Feature 5: Smart List Template Export
-                            Button {
-                                exportSmartListTemplate()
-                            } label: {
-                                Label("Export as Smart List (.csv)", systemImage: "square.and.arrow.up")
-                            }
-                        } label: {
-                            Image(systemName: "arrow.up.arrow.down")
-                        }
-                        
-                        if isCollection {
-                            EditButton()
-                        }
+                    if showVolumeGrouping && hasVolumeData {
+                        volumeGroupingSection
+                    } else {
+                        flatListSection
                     }
                 }
             }
+            .listStyle(InsetGroupedListStyle())
+            .coordinateSpace(name: "SeriesDetailScrollView")
+            .coordinateSpace(name: "SeriesDetailViewport")
+            .gesture(
+                isSelectionMode ?
+                LongPressGesture(minimumDuration: 0.08)
+                    .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .named("SeriesDetailViewport")))
+                    .onChanged { value in
+                        switch value {
+                        case .first:
+                            break
+                        case .second(_, let dragValue):
+                            if let drag = dragValue {
+                                handleDragUpdate(to: drag.location, viewportHeight: viewportGeo.size.height, scrollProxy: scrollProxy)
+                            }
+                        }
+                    }
+                    .onEnded { _ in
+                        handleDragEnded()
+                    }
+                : nil
+            )
+            .onPreferenceChange(ScrollOffsetPreferenceKey.self) { value in
+                self.scrollOffset = value
+            }
+            .onPreferenceChange(CellFramePreferenceKey.self) { value in
+                self.cellFrames = value
+            }
+            // ── Volume Jump: ensure target is expanded then scroll to its anchor ──
+            .onChange(of: jumpToVolume) { _, targetKey in
+                guard let targetKey else { return }
+                // 1. Expand the volume if it was collapsed
+                let _ = withAnimation(.easeInOut(duration: 0.2)) {
+                    collapsedVolumes.remove(targetKey)
+                }
+                // 2. Scroll after the expand animation gives the List time to render
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 350_000_000) // 0.35 s — matches expand animation
+                    withAnimation(.easeInOut(duration: 0.4)) {
+                        scrollProxy.scrollTo("vol_\(targetKey)", anchor: .top)
+                    }
+                    HapticEngine.medium()
+                    jumpToVolume = nil  // reset so same volume can be re-selected
+                }
+            }
         }
-        } // end ScrollViewReader
     }
 
-    var body: some View {
-        contentList
-        .fullScreenCover(item: $pdfToRead) { pdf in
-            UnifiedReaderView(pdf: pdf)
-        }
-        .safeAreaInset(edge: .bottom) {
-            if isSelectionMode {
-                VStack(spacing: 0) {
-                    Divider().background(Color.white.opacity(0.1))
+    @ViewBuilder
+    private var continueReadingSection: some View {
+        if let nextIssue = nextUnreadIssue {
+            Button {
+                pdfToRead = nextIssue
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "play.circle.fill")
+                        .font(.system(size: 28))
+                        .foregroundStyle(
+                            LinearGradient(colors: [Theme.orange, Theme.red],
+                                           startPoint: .topLeading, endPoint: .bottomTrailing)
+                        )
                     
-                    HStack(spacing: 16) {
-                        Button(action: {
-                            let generator = UIImpactFeedbackGenerator(style: .medium)
-                            generator.impactOccurred()
-                            showBatchMetadataEditor = true
-                        }) {
-                            HStack {
-                                Image(systemName: "sparkles")
-                                Text("Intelligent Metadata")
-                            }
-                            .font(.subheadline.bold())
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 12)
-                            .background(alignment: .center) {
-                                if selection.isEmpty {
-                                    Color.gray.opacity(0.3)
-                                } else {
-                                    LinearGradient(colors: [Theme.blue, Theme.blue.opacity(0.8)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                                }
-                            }
-                            .clipShape(Capsule())
-                            .shadow(color: selection.isEmpty ? .clear : Theme.blue.opacity(0.3), radius: 5, y: 3)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Continue Reading")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(Theme.textSecondary)
+                            .tracking(0.8)
+                        
+                        Text(nextIssue.name)
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(Theme.text)
+                            .lineLimit(1)
+                        
+                        if let vol = nextIssue.metadata.volume, !vol.isEmpty,
+                           let issue = nextIssue.metadata.issueNumber {
+                            Text("Vol. \(vol) • Ch. \(issue) • Page \((nextIssue.metadata.lastReadPage ?? 0) + 1)")
+                                .font(.system(size: 11, design: .rounded))
+                                .foregroundColor(Theme.orange)
+                        } else {
+                            Text("Page \((nextIssue.metadata.lastReadPage ?? 0) + 1) of \(nextIssue.pageCount)")
+                                .font(.system(size: 11, design: .rounded))
+                                .foregroundColor(Theme.orange)
                         }
-                        .disabled(selection.isEmpty)
-                        
-                        Spacer()
-                        
-                        VStack(spacing: 2) {
-                            Text("\(selection.count) Selected")
-                                .font(.system(size: 12, weight: .bold))
-                                .foregroundColor(.secondary)
-                            
-                            HStack(spacing: 12) {
-                                Button {
-                                    showBatchVolumeAssignment = true
-                                } label: {
-                                    Text("Assign Volume")
-                                        .font(.system(size: 10, weight: .semibold))
-                                        .foregroundColor(selection.isEmpty ? .gray : Theme.orange)
-                                }
-                                .disabled(selection.isEmpty)
-                                
-                                Button {
-                                    showingBatchSeriesAssignment = true
-                                } label: {
-                                    Text("Move to Series")
-                                        .font(.system(size: 10, weight: .semibold))
-                                        .foregroundColor(selection.isEmpty ? .gray : Theme.orange)
-                                }
-                                .disabled(selection.isEmpty)
-                            }
-                        }
-                        
-                        Spacer()
-                        
-                        Button(action: {
-                            let generator = UIImpactFeedbackGenerator(style: .medium)
-                            generator.impactOccurred()
-                            mergeConfigSuggestedName = "\(series.title) Omnibus"
-                            showingMergeConfig = true
-                        }) {
-                            HStack {
-                                Text("Convert & Merge")
-                                Image(systemName: "doc.on.doc.fill")
-                            }
-                            .font(.subheadline.bold())
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 12)
-                            .background(alignment: .center) {
-                                if selection.count < 2 {
-                                    Color.gray.opacity(0.3)
-                                } else {
-                                    LinearGradient(colors: [Color.purple, Color.purple.opacity(0.8)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                                }
-                            }
-                            .clipShape(Capsule())
-                            .shadow(color: selection.count < 2 ? .clear : Color.purple.opacity(0.3), radius: 5, y: 3)
-                        }
-                        .disabled(selection.count < 2)
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 16)
-                    .background(
-                        Rectangle()
-                            .fill(.ultraThinMaterial)
-                            .ignoresSafeArea(edges: .bottom)
-                            .shadow(color: .black.opacity(0.2), radius: 10, y: -5)
-                    )
+                    
+                    Spacer()
+                    
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(Theme.textSecondary)
                 }
-                .transition(.move(edge: .bottom))
+                .padding(.vertical, 8)
+                .padding(.horizontal, 12)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Theme.orange.opacity(0.1))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .stroke(Theme.orange.opacity(0.2), lineWidth: 1)
+                        )
+                )
+            }
+            .buttonStyle(.plain)
+            .listRowBackground(Color.clear)
+            .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 8, trailing: 0))
+        }
+    }
+
+    @ViewBuilder
+    private var missingIssuesSection: some View {
+        if !missingIssues.isEmpty {
+            MissingIssueBanner(gaps: missingIssues)
+        }
+    }
+
+    @ViewBuilder
+    private var volumeGroupingSection: some View {
+        ForEach(volumeGroups, id: \.key) { group in
+            volumeGroupRow(group)
+        }
+    }
+
+    @ViewBuilder
+    private func volumeGroupRow(_ group: (key: String, issues: [ConvertedPDF])) -> some View {
+        let isCollapsed = collapsedVolumes.contains(group.key)
+        let progress = readingProgress(for: group.issues)
+        let completed = completedCount(for: group.issues)
+        
+        // Volume Header (tap to collapse/expand)
+        Button {
+            withAnimation(.easeInOut(duration: 0.25)) {
+                if isCollapsed {
+                    collapsedVolumes.remove(group.key)
+                } else {
+                    collapsedVolumes.insert(group.key)
+                }
+            }
+        } label: {
+            VStack(spacing: 6) {
+                HStack(spacing: 10) {
+                    Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(Theme.orange)
+                        .frame(width: 16)
+                    
+                    Image(systemName: completed == group.issues.count ? "book.closed.fill" : "book.closed")
+                        .font(.system(size: 14))
+                        .foregroundColor(completed == group.issues.count ? .green : (group.key == "Ungrouped" ? Theme.textSecondary : Theme.blue))
+                    
+                    Text(group.key == "Ungrouped" ? "Ungrouped Issues" : "Volume \(group.key)")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(Theme.text)
+                    
+                    Spacer()
+                    
+                    Text("\(completed)/\(group.issues.count)")
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundColor(completed == group.issues.count ? .green : Theme.textSecondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Theme.text.opacity(0.08))
+                        .clipShape(Capsule())
+                }
+                
+                // Reading Progress Bar
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(Theme.text.opacity(0.08))
+                            .frame(height: 3)
+                        
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(
+                                progress >= 1.0
+                                    ? AnyShapeStyle(Color.green)
+                                    : AnyShapeStyle(LinearGradient(colors: [Theme.orange, Theme.red], startPoint: .leading, endPoint: .trailing))
+                            )
+                            .frame(width: geo.size.width * CGFloat(min(progress, 1.0)), height: 3)
+                    }
+                }
+                .frame(height: 3)
+            }
+            .padding(.vertical, 6)
+        }
+        .buttonStyle(.plain)
+        .listRowBackground(Theme.surface.opacity(0.5))
+        .id("vol_\(group.key)")  // anchor for QuickVolumeJump scroll
+        // Feature 3: Volume Omnibus Quick-Build (long-press)
+        .contextMenu {
+            Button {
+                if fastBundleOmnibus {
+                    // User opted-in to the background autobuilder
+                    conversionManager.enqueueOmnibus(
+                        name: "\(series.title) Vol. \(formattedVolumeKey(group.key))",
+                        sourceFiles: group.issues
+                    )
+                } else {
+                    // User prefers the manual control sheet
+                    manualOmnibusBuildsCount += 1
+                    let selectedIDs = Set(group.issues.map { $0.id })
+                    
+                    // Trigger the prompt instead of instantly showing if they hit the 3-build threshold
+                    if manualOmnibusBuildsCount == 3 {
+                        pendingConfigSelection = selectedIDs
+                        mergeConfigSuggestedName = "\(series.title) Vol. \(formattedVolumeKey(group.key))"
+                        showingOmnibusPrompt = true
+                    } else {
+                        selection = selectedIDs
+                        mergeConfigSuggestedName = "\(series.title) Vol. \(formattedVolumeKey(group.key))"
+                        showingMergeConfig = true
+                    }
+                }
+            } label: {
+                Label("Build Kindle Omnibus for Vol. \(formattedVolumeKey(group.key))", systemImage: "books.vertical.fill")
+            }
+            
+            Button {
+                withAnimation {
+                    if isCollapsed {
+                        collapsedVolumes.remove(group.key)
+                    } else {
+                        collapsedVolumes.insert(group.key)
+                    }
+                }
+            } label: {
+                Label(isCollapsed ? "Expand" : "Collapse", systemImage: isCollapsed ? "rectangle.expand.vertical" : "rectangle.compress.vertical")
             }
         }
-        .sheet(isPresented: $showingMergeConfig) {
-            let filesToMerge = series.issues.filter { selection.contains($0.id) }
-            SeriesMergeConfigurationView(sourceFiles: filesToMerge, suggestedName: mergeConfigSuggestedName)
+        
+        // Volume Contents (shown when expanded)
+        if !isCollapsed {
+            ForEach(group.issues) { pdf in
+                issueRow(pdf, isInVolume: true, volumeKey: group.key)
+            }
         }
-        .sheet(isPresented: $showBatchMetadataEditor) {
-            let selectedFiles = series.issues.filter { selection.contains($0.id) }
-            BatchMetadataEditorView(selectedPDFs: selectedFiles)
+    }
+
+    @ViewBuilder
+    private var volumeFilterBar: some View {
+        if hasVolumeData {
+            let volumes = availableVolumes
+            if !volumes.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        Button {
+                            withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
+                                selectedVolumeFilter = nil
+                            }
+                        } label: {
+                            Text("All Volumes")
+                                .font(.system(size: 13, weight: selectedVolumeFilter == nil ? .semibold : .medium))
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(selectedVolumeFilter == nil ? Theme.orange : Theme.surface.opacity(0.6))
+                                .foregroundColor(selectedVolumeFilter == nil ? .white : Theme.text)
+                                .clipShape(Capsule())
+                                .overlay(
+                                    Capsule()
+                                        .stroke(Color.white.opacity(selectedVolumeFilter == nil ? 0.2 : 0.08), lineWidth: 0.5)
+                                )
+                        }
+                        
+                        ForEach(volumes, id: \.self) { vol in
+                            let isSelected = selectedVolumeFilter == vol
+                            Button {
+                                withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
+                                    selectedVolumeFilter = vol
+                                }
+                            } label: {
+                                Text(vol == "Ungrouped" ? "Ungrouped" : "Vol. \(vol)")
+                                    .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 6)
+                                    .background(isSelected ? Theme.orange : Theme.surface.opacity(0.6))
+                                    .foregroundColor(isSelected ? .white : Theme.text)
+                                    .clipShape(Capsule())
+                                    .overlay(
+                                        Capsule()
+                                            .stroke(Color.white.opacity(isSelected ? 0.2 : 0.08), lineWidth: 0.5)
+                                    )
+                            }
+                        }
+                    }
+                    .padding(.horizontal)
+                    .padding(.vertical, 8)
+                }
+            }
         }
-        .sheet(item: $pdfToExport) { pdf in
-            DualExportView(pdf: pdf)
+    }
+
+    @ViewBuilder
+    private var flatListSection: some View {
+        ForEach(filteredIssues) { pdf in
+            issueRow(pdf)
         }
-        .sheet(item: $pdfToSearchMetadata) { pdf in
-            MetadataSearchSheet(pdf: pdf)
+        .onMove { source, destination in
+            if isCollection {
+                localIssues.move(fromOffsets: source, toOffset: destination)
+                if let colID = UUID(uuidString: series.id) {
+                    conversionManager.updateCollectionOrder(collectionID: colID, newOrderIDs: localIssues.map { $0.id })
+                }
+            }
         }
-        // ✅ Fix: pdfToDetails now correctly presents MediaDetailSheet in all non-nav-stack contexts.
-        .sheet(item: $pdfToDetails) { pdf in
-            MediaDetailSheet(pdf: pdf) { action in
-                switch action {
-                case .read:          pdfToRead = pdf
-                case .export:        pdfToExport = pdf
-                case .fetchMetadata: pdfToSearchMetadata = pdf
-                case .editMetadata:  pdfToSearchMetadata = pdf
-                case .rename:        renameText = pdf.name; pdfToRename = pdf
-                case .delete:        pdfToDelete = pdf
-                case .convert:
-                    let settingsReady = AppSettingsManager.shared.conversionSettings.isConfigured
-                    if case .cloud = pdf.sourceMode {
-                        Task {
-                            await CloudDownloadManager.shared.downloadAndStore(
-                                pdf: pdf,
-                                thenConvert: settingsReady,
-                                manager: conversionManager
+    }
+
+    @ToolbarContentBuilder
+    private var listViewToolbar: some ToolbarContent {
+        ToolbarItem(placement: .navigationBarTrailing) {
+            HStack(spacing: 16) {
+                if isSelectionMode {
+                    Button {
+                        withAnimation {
+                            if selection.count == localIssues.count {
+                                selection.removeAll()
+                            } else {
+                                selection = Set(localIssues.map { $0.id })
+                            }
+                        }
+                    } label: {
+                        Text(selection.count == localIssues.count ? "Deselect All" : "Select All")
+                    }
+                }
+                
+                Button {
+                    let generator = UIImpactFeedbackGenerator(style: .medium)
+                    generator.impactOccurred()
+                    withAnimation {
+                        isSelectionMode.toggle()
+                        selection.removeAll()
+                    }
+                } label: {
+                    Text(isSelectionMode ? "Cancel" : "Select")
+                        .bold(isSelectionMode)
+                }
+                
+                if !isSelectionMode {
+                    Button {
+                        pendingRenameSeriesName = series.title
+                        showingRenameSeriesAlert = true
+                    } label: {
+                        Image(systemName: "pencil")
+                            .foregroundColor(.blue)
+                    }
+
+                    Button {
+                        withAnimation { showBookmarksOnly.toggle() }
+                    } label: {
+                        Image(systemName: showBookmarksOnly ? "bookmark.fill" : "bookmark")
+                            .foregroundColor(showBookmarksOnly ? Theme.orange : .blue)
+                    }
+
+                    // Volume Grouping Toggle (only visible when volume data exists)
+                    if hasVolumeData {
+                        Button {
+                            withAnimation { showVolumeGrouping.toggle() }
+                        } label: {
+                            Image(systemName: showVolumeGrouping ? "rectangle.3.group.fill" : "rectangle.3.group")
+                                .foregroundColor(showVolumeGrouping ? Theme.orange : .blue)
+                        }
+                    }
+                    
+                    if localIssues.contains(where: { !($0.metadata.sourceFileIDs ?? []).isEmpty }) {
+                        Button {
+                            HapticEngine.light()
+                            withAnimation {
+                                hideMergedIssues.toggle()
+                                updateVolumeGroups()
+                            }
+                        } label: {
+                            Image(systemName: hideMergedIssues ? "eye.slash" : "eye")
+                                .foregroundColor(hideMergedIssues ? Theme.orange : .blue)
+                        }
+                    }
+
+                    sortAndFilterMenu
+                    
+                    if isCollection {
+                        EditButton()
+                    }
+                }
+            }
+        }
+    }
+
+    private var sortAndFilterMenu: some View {
+        SwiftUI.Menu {
+            Picker("Sort By", selection: $sortOption) {
+                ForEach(availableSortOptions) { option in
+                    Text(option.rawValue).tag(option)
+                }
+            }
+            
+            if hasVolumeData {
+                Divider()
+                
+                Picker("Filter by Volume", selection: $selectedVolumeFilter) {
+                    Text("All Volumes").tag(nil as String?)
+                    ForEach(availableVolumes, id: \.self) { vol in
+                        Text(vol == "Ungrouped" ? "Ungrouped" : "Volume \(vol)").tag(vol as String?)
+                    }
+                }
+            }
+            
+            if showVolumeGrouping && hasVolumeData {
+                Divider()
+                
+                Button {
+                    withAnimation {
+                        collapsedVolumes = Set(volumeGroups.map { $0.key })
+                    }
+                } label: {
+                    Label("Collapse All Volumes", systemImage: "rectangle.compress.vertical")
+                }
+                
+                Button {
+                    withAnimation {
+                        collapsedVolumes.removeAll()
+                    }
+                } label: {
+                    Label("Expand All Volumes", systemImage: "rectangle.expand.vertical")
+                }
+            }
+            
+            Divider()
+            
+            Button {
+                showManualVolumeLinker = true
+            } label: {
+                Label("Link Volumes Manually", systemImage: "link.circle")
+            }
+            
+            Button {
+                exportSmartListTemplate()
+            } label: {
+                Label("Export as Smart List (.csv)", systemImage: "square.and.arrow.up")
+            }
+        } label: {
+            Image(systemName: "arrow.up.arrow.down")
+        }
+    }
+
+    private func gridView(scrollProxy: ScrollViewProxy) -> some View {
+        GeometryReader { viewportGeo in
+            ScrollView {
+                LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
+                    headerView
+                        .padding(.horizontal)
+                        .padding(.bottom, 16)
+                    
+                    if let nextIssue = nextUnreadIssue {
+                        Button {
+                            pdfToRead = nextIssue
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "play.circle.fill")
+                                    .font(.system(size: 28))
+                                    .foregroundStyle(
+                                        LinearGradient(colors: [Theme.orange, Theme.red],
+                                                       startPoint: .topLeading, endPoint: .bottomTrailing)
+                                    )
+                                
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Continue Reading")
+                                        .font(.system(size: 11, weight: .bold))
+                                        .foregroundColor(Theme.textSecondary)
+                                        .tracking(0.8)
+                                    
+                                    Text(nextIssue.name)
+                                        .font(.system(size: 14, weight: .semibold))
+                                        .foregroundColor(Theme.text)
+                                        .lineLimit(1)
+                                    
+                                    if let vol = nextIssue.metadata.volume, !vol.isEmpty,
+                                       let issue = nextIssue.metadata.issueNumber {
+                                        Text("Vol. \(vol) • Ch. \(issue) • Page \((nextIssue.metadata.lastReadPage ?? 0) + 1)")
+                                            .font(.system(size: 11, design: .rounded))
+                                            .foregroundColor(Theme.orange)
+                                    } else {
+                                        Text("Page \((nextIssue.metadata.lastReadPage ?? 0) + 1) of \(nextIssue.pageCount)")
+                                            .font(.system(size: 11, design: .rounded))
+                                            .foregroundColor(Theme.orange)
+                                    }
+                                }
+                                
+                                Spacer()
+                                
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundColor(Theme.textSecondary)
+                            }
+                            .padding(.vertical, 8)
+                            .padding(.horizontal, 12)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .fill(Theme.orange.opacity(0.1))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                            .stroke(Theme.orange.opacity(0.2), lineWidth: 1)
+                                    )
                             )
                         }
-                    } else {
-                        Task { await conversionManager.convertComic(pdf) }
+                        .buttonStyle(.plain)
+                        .padding(.horizontal)
+                        .padding(.bottom, 16)
                     }
-                case .share, .sync, .sendToKindle:
-                    // For share/kindle we dismiss and fire via UIActivityViewController
-                    let url = pdf.url
-                    Task { @MainActor in
-                        let activityVC = UIActivityViewController(activityItems: [url], applicationActivities: nil)
-                        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                           let rootVC = windowScene.windows.first?.rootViewController {
-                            var topVC = rootVC
-                            while let presented = topVC.presentedViewController { topVC = presented }
-                            if let popover = activityVC.popoverPresentationController {
-                                popover.sourceView = topVC.view
-                                popover.sourceRect = CGRect(x: topVC.view.bounds.midX, y: topVC.view.bounds.midY, width: 0, height: 0)
-                                popover.permittedArrowDirections = []
+                    
+                    if !missingIssues.isEmpty {
+                        MissingIssueBanner(gaps: missingIssues)
+                            .padding(.horizontal)
+                            .padding(.bottom, 16)
+                    }
+                    
+                    seriesVirtualOmnibusesSection
+                        .padding(.bottom, 16)
+                    
+                    volumeFilterBar
+                        .padding(.bottom, 8)
+
+                    let hPad: CGFloat = hSizeClass == .regular ? 24 : 12
+                    let colSpacing: CGFloat = hSizeClass == .regular ? 20 : 10
+                    let colCount = hSizeClass == .regular ? 5 : 3
+                    let columns = Array(repeating: GridItem(.flexible(), spacing: colSpacing), count: colCount)
+
+                    if showVolumeGrouping && hasVolumeData {
+                        ForEach(volumeGroups, id: \.key) { group in
+                            let isCollapsed = collapsedVolumes.contains(group.key)
+                            let progress = readingProgress(for: group.issues)
+                            let completed = completedCount(for: group.issues)
+                            
+                            Section(header: 
+                                volumeHeaderView(group: group, isCollapsed: isCollapsed, progress: progress, completed: completed)
+                                    .background(.ultraThinMaterial)
+                                    .id("vol_\(group.key)")
+                            ) {
+                                if !isCollapsed {
+                                    LazyVGrid(columns: columns, spacing: hSizeClass == .regular ? 28 : 14) {
+                                        ForEach(group.issues) { pdf in
+                                            gridIssueCell(pdf)
+                                        }
+                                    }
+                                    .padding(.horizontal, hPad)
+                                    .padding(.vertical, 16)
+                                }
                             }
-                            topVC.present(activityVC, animated: true)
                         }
+                    } else {
+                        LazyVGrid(columns: columns, spacing: hSizeClass == .regular ? 28 : 14) {
+                            ForEach(filteredIssues) { pdf in
+                                gridIssueCell(pdf)
+                            }
+                        }
+                        .padding(.horizontal, hPad)
+                        .padding(.bottom, 120)
                     }
-                case .favorite:
-                    if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
-                        conversionManager.convertedPDFs[idx].isFavorite.toggle()
-                        conversionManager.saveLibrary()
-                    }
-                case .addToSeries:
-                    assignSeriesText = pdf.metadata.series ?? ""
-                    pdfToAssignSeries = pdf
-                case .covers:
-                    // Cover Studio requires the main library context — navigate there after dismiss
-                    pdfToDetails = nil
-                    // Post notification so ModernLibraryView can open the Cover Studio sheet
-                    NotificationCenter.default.post(name: .init("InksyncPro.openCoverStudio"), object: pdf)
-                case .toggleVault:
-                    if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
-                        conversionManager.convertedPDFs[idx].isPrivate.toggle()
-                        conversionManager.saveLibrary()
-                    }
-                default: break
                 }
+                .coordinateSpace(name: "SeriesDetailScrollView")
+                .gesture(
+                    isSelectionMode ?
+                    LongPressGesture(minimumDuration: 0.08)
+                        .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .named("SeriesDetailViewport")))
+                        .onChanged { value in
+                            switch value {
+                            case .first:
+                                break
+                            case .second(_, let dragValue):
+                                if let drag = dragValue {
+                                    handleDragUpdate(to: drag.location, viewportHeight: viewportGeo.size.height, scrollProxy: scrollProxy)
+                                }
+                            }
+                        }
+                        .onEnded { _ in
+                            handleDragEnded()
+                        }
+                    : nil
+                )
             }
-            .environmentObject(conversionManager)
-        }
-        .sheet(isPresented: $showBatchVolumeAssignment) {
-            BatchVolumeAssignmentSheet(selectedIDs: selection)
-                .environmentObject(conversionManager)
-        }
-        .sheet(isPresented: $showingBatchSeriesAssignment) {
-            CollectionEditorSheet { name, icon, color in
-                let cleanName = name.trimmingCharacters(in: .whitespaces)
-                if !cleanName.isEmpty {
-                    let selectedFiles = series.issues.filter { selection.contains($0.id) }
-                    for pdf in selectedFiles {
-                        conversionManager.assignToSeries(pdf, seriesName: cleanName)
-                    }
-                    conversionManager.createCollection(name: cleanName, icon: icon, color: color)
-                    isSelectionMode = false
-                    selection.removeAll()
-                }
+            .coordinateSpace(name: "SeriesDetailViewport")
+            .onPreferenceChange(ScrollOffsetPreferenceKey.self) { value in
+                self.scrollOffset = value
             }
-            .environmentObject(conversionManager)
-        }
-        .overlay {
-            if showVolumeGrouping && hasVolumeData && volumeGroups.count > 4 {
-                QuickVolumeJumpOverlay(volumeGroups: volumeGroups) { volKey in
-                    jumpToVolume = volKey
-                }
+            .onPreferenceChange(CellFramePreferenceKey.self) { value in
+                self.cellFrames = value
             }
         }
-        .alert("Rename File", isPresented: Binding(
-            get: { pdfToRename != nil },
-            set: { if !$0 { pdfToRename = nil } }
-        )) {
-            TextField("New Name", text: $renameText)
-            Button("Cancel", role: .cancel) { }
-            Button("Rename") {
-                if let pdf = pdfToRename {
-                    conversionManager.renamePDF(pdf, to: renameText)
+    }
+    private func volumeHeaderView(group: (key: String, issues: [ConvertedPDF]), isCollapsed: Bool, progress: Double, completed: Int) -> some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.25)) {
+                if isCollapsed {
+                    collapsedVolumes.remove(group.key)
+                } else {
+                    collapsedVolumes.insert(group.key)
                 }
             }
-        }
-        .alert(isCollection ? "Rename Folder" : "Rename Series", isPresented: $showingRenameSeriesAlert) {
-            TextField(isCollection ? "Folder Name" : "Series Name", text: $pendingRenameSeriesName)
-                .autocorrectionDisabled()
-            Button("Rename") {
-                let newName = pendingRenameSeriesName.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !newName.isEmpty, newName != series.title else { return }
+        } label: {
+            VStack(spacing: 6) {
+                HStack(spacing: 10) {
+                    Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(Theme.orange)
+                        .frame(width: 16)
+                    
+                    Image(systemName: completed == group.issues.count ? "book.closed.fill" : "book.closed")
+                        .font(.system(size: 14))
+                        .foregroundColor(completed == group.issues.count ? .green : (group.key == "Ungrouped" ? Theme.textSecondary : Theme.blue))
+                    
+                    Text(group.key == "Ungrouped" ? "Ungrouped Issues" : "Volume \(group.key)")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(Theme.text)
+                    
+                    Spacer()
+                    
+                    Text("\(completed)/\(group.issues.count)")
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundColor(completed == group.issues.count ? .green : Theme.textSecondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Theme.text.opacity(0.08))
+                        .clipShape(Capsule())
+                }
                 
-                if let collectionUUID = UUID(uuidString: series.id),
-                   let colIdx = conversionManager.collections.firstIndex(where: { $0.id == collectionUUID }) {
-                    conversionManager.collections[colIdx].name = newName
-                }
-                
-                for pdf in series.issues {
-                    if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
-                        conversionManager.convertedPDFs[idx].metadata.series = newName
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(Theme.text.opacity(0.08))
+                            .frame(height: 3)
+                        
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(
+                                progress >= 1.0
+                                    ? AnyShapeStyle(Color.green)
+                                    : AnyShapeStyle(LinearGradient(colors: [Theme.orange, Theme.red], startPoint: .leading, endPoint: .trailing))
+                            )
+                            .frame(width: geo.size.width * CGFloat(min(progress, 1.0)), height: 3)
                     }
                 }
-                conversionManager.saveLibrary()
-                dismiss()
+                .frame(height: 3)
             }
-            Button("Cancel", role: .cancel) { }
-        } message: {
-            Text(isCollection ? "This will rename the folder." : "This will rename all \(series.count) issues in this series.")
+            .padding(.vertical, 12)
+            .padding(.horizontal, 16)
         }
-        .alert("Add to Series", isPresented: Binding(
-            get: { pdfToAssignSeries != nil },
-            set: { if !$0 { pdfToAssignSeries = nil } }
-        )) {
-            TextField("Series Name", text: $assignSeriesText)
-            Button("Cancel", role: .cancel) { pdfToAssignSeries = nil }
-            Button("Assign") {
-                if let pdf = pdfToAssignSeries {
-                    let name = assignSeriesText.trimmingCharacters(in: .whitespaces)
-                    if !name.isEmpty {
-                        conversionManager.assignToSeries(pdf, seriesName: name)
-                    }
-                }
-                pdfToAssignSeries = nil
-            }
-        } message: {
-            Text("Enter the series name to group this file into a collection.")
-        }
-        .alert("Automate Omnibus Builds?", isPresented: $showingOmnibusPrompt) {
-            Button("Enable Fast Bundle") {
-                fastBundleOmnibus = true
-                
-                // Route them directly to background queue
-                if let pending = pendingConfigSelection {
-                    let files = series.issues.filter { pending.contains($0.id) }
-                    conversionManager.enqueueOmnibus(name: "\(series.title) Omnibus", sourceFiles: files)
-                }
-                pendingConfigSelection = nil
-            }
-            Button("Keep Showing Control Sheet") {
-                // If they deny, trigger the sheet
-                if let pending = pendingConfigSelection {
-                    selection = pending
+        .buttonStyle(.plain)
+        .contextMenu {
+            Button {
+                if fastBundleOmnibus {
+                    conversionManager.enqueueOmnibus(
+                        name: "\(series.title) Vol. \(formattedVolumeKey(group.key))",
+                        sourceFiles: group.issues
+                    )
+                } else {
+                    let selectedIDs = Set(group.issues.map { $0.id })
+                    selection = selectedIDs
+                    mergeConfigSuggestedName = "\(series.title) Vol. \(formattedVolumeKey(group.key))"
                     showingMergeConfig = true
                 }
-                pendingConfigSelection = nil
+            } label: {
+                Label("Build Kindle Omnibus for Vol. \(formattedVolumeKey(group.key))", systemImage: "books.vertical.fill")
             }
-        } message: {
-            Text("You've built 3 omnibuses manually. Would you like to enable 'Fast Bundle Mode' to automatically skip the configuration sheet and instantly queue omnibuses in the background using your saved settings?")
-        }
-        // QoL: Delete confirmation with Move to Trash option
-        .alert("Delete File", isPresented: Binding(
-            get: { pdfToDelete != nil },
-            set: { if !$0 { pdfToDelete = nil } }
-        )) {
-            Button("Move to Trash", role: .destructive) {
-                if let pdf = pdfToDelete {
-                    // Move file to system trash instead of permanent delete
-                    if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
-                        let fileURL = pdf.url
-                        conversionManager.convertedPDFs.remove(at: idx)
-                        conversionManager.saveLibrary()
-                        Task.detached(priority: .background) {
-                            try? FileManager.default.trashItem(at: fileURL, resultingItemURL: nil)
-                        }
+            
+            Button {
+                withAnimation {
+                    if isCollapsed {
+                        collapsedVolumes.remove(group.key)
+                    } else {
+                        collapsedVolumes.insert(group.key)
                     }
                 }
-                pdfToDelete = nil
+            } label: {
+                Label(isCollapsed ? "Expand" : "Collapse", systemImage: isCollapsed ? "rectangle.expand.vertical" : "rectangle.compress.vertical")
             }
-            Button("Delete Permanently", role: .destructive) {
-                if let pdf = pdfToDelete {
-                    conversionManager.deletePDF(pdf)
-                }
-                pdfToDelete = nil
-            }
-            Button("Cancel", role: .cancel) { pdfToDelete = nil }
-        } message: {
-            Text("\"\(pdfToDelete?.name ?? "this file")\" will be removed. Move to Trash allows recovery via the Files app.")
         }
-        .task(id: series.id) { await loadHeaderCover() }
     }
-    
-    // MARK: - Issue Row (Shared by flat + volume grouped views)
-    
     @ViewBuilder
-    private func issueRow(_ pdf: ConvertedPDF) -> some View {
+    private func gridIssueCell(_ pdf: ConvertedPDF) -> some View {
         if isSelectionMode {
             Button {
                 if selection.contains(pdf.id) {
@@ -824,45 +1118,382 @@ struct SeriesDetailView: View {
                     selection.insert(pdf.id)
                 }
             } label: {
-                HStack {
-                    LibraryPDFRowWithCover(pdf: pdf, isSelected: false)
-                    Spacer()
-                    Image(systemName: selection.contains(pdf.id) ? "checkmark.circle.fill" : "circle")
-                        .foregroundColor(selection.contains(pdf.id) ? .blue : .gray)
-                        .font(.title2)
-                }
+                ModernGridFileCell(pdf: pdf, isSelected: selection.contains(pdf.id), isBatch: true)
             }
             .buttonStyle(PlainButtonStyle())
-            .listRowBackground(selection.contains(pdf.id) ? Color.blue.opacity(0.1) : Theme.bg)
-            
+            .background(
+                GeometryReader { geo in
+                    Color.clear
+                        .preference(
+                            key: CellFramePreferenceKey.self,
+                            value: [pdf.id: geo.frame(in: .named("SeriesDetailScrollView"))]
+                        )
+                }
+            )
         } else {
             Button {
                 if tapAction == .read {
                     pdfToRead = pdf
-                } else { // tapAction == .convert
-                    if case .cloud = pdf.sourceMode {
-                        Task {
-                            await CloudDownloadManager.shared.downloadAndStore(
-                                pdf: pdf,
-                                thenConvert: false,
-                                manager: conversionManager
-                            )
-                            await MainActor.run {
-                                if let updated = conversionManager.convertedPDFs.first(where: { $0.id == pdf.id }) {
-                                    DispatchQueue.main.async {
-                                        AppRouter.shared.presentSheet(.convert(updated))
+                } else {
+                    pendingActionPDF = pdf
+                    showingActionSheet = true
+                }
+            } label: {
+                ModernGridFileCell(pdf: pdf, isSelected: selectedPDF?.id == pdf.id, isBatch: false)
+            }
+            .buttonStyle(PlainButtonStyle())
+            .contextMenu { contextMenuContent(pdf) }
+        }
+    }
+    var body: some View {
+        let view = mainContent
+            .fullScreenCover(item: $pdfToRead) { pdf in
+                UnifiedReaderView(pdf: pdf)
+            }
+            .safeAreaInset(edge: .bottom) {
+                bottomActionBar
+            }
+            .overlay {
+                quickVolumeJumpOverlay
+            }
+            .onChange(of: showingMergeConfig) { _, newValue in
+                if newValue {
+                    mergeSessionID = UUID()
+                }
+            }
+            .onChange(of: showBatchMetadataEditor) { _, newValue in
+                if newValue {
+                    metadataSessionID = UUID()
+                }
+            }
+            .onChange(of: isSelectionMode) { _, newValue in
+                AppRouter.shared.isSeriesSelectionMode = newValue
+            }
+            .onChange(of: selection) { _, newValue in
+                AppRouter.shared.seriesSelectionCount = newValue.count
+            }
+            .onDisappear {
+                AppRouter.shared.isSeriesSelectionMode = false
+                AppRouter.shared.seriesSelectionCount = 0
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InkTabBar_CancelAction"))) { _ in
+                isSelectionMode = false
+                selection.removeAll()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InkTabBar_MetadataAction"))) { _ in
+                showBatchMetadataEditor = true
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InkTabBar_AssignVolumeAction"))) { _ in
+                showBatchVolumeAssignment = true
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InkTabBar_MoveToSeriesAction"))) { _ in
+                showingBatchSeriesAssignment = true
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InkTabBar_CreateVirtualVolumeAction"))) { _ in
+                let items = freshIssues.filter { selection.contains($0.id) }
+                let sortedItems = items.sorted {
+                    let n1 = Double($0.metadata.issueNumber ?? "")
+                    let n2 = Double($1.metadata.issueNumber ?? "")
+                    if let v1 = n1, let v2 = n2 { return v1 < v2 }
+                    if n1 != nil && n2 == nil { return true }
+                    if n1 == nil && n2 != nil { return false }
+                    return $0.name.localizedStandardCompare($1.name) == .orderedAscending
+                }
+                let sortedIDs = sortedItems.map { $0.id }
+                
+                let suggestedName: String
+                if let firstSeries = sortedItems.first(where: { $0.metadata.series?.isEmpty == false })?.metadata.series {
+                    if let sharedVolume = sortedItems.first(where: { $0.metadata.volume?.isEmpty == false })?.metadata.volume {
+                        suggestedName = "\(firstSeries) Vol. \(sharedVolume)"
+                    } else {
+                        suggestedName = "\(firstSeries) Virtual Volume"
+                    }
+                } else {
+                    suggestedName = "New Virtual Volume"
+                }
+                
+                AppRouter.shared.presentSheet(.virtualOmnibusEditor(nil, initialFileIDs: sortedIDs, suggestedName: suggestedName, parentSeriesID: series.id))
+                isSelectionMode = false
+                selection.removeAll()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InkTabBar_MergeAction"))) { _ in
+                mergeConfigSuggestedName = "\(series.title) Omnibus"
+                showingMergeConfig = true
+            }
+        
+        let viewWithSheets = applySheets(view)
+        let viewWithAlerts = applyAlerts(viewWithSheets)
+        
+        return viewWithAlerts
+            .task(id: series.id) { await loadHeaderCover() }
+    }
+
+    @ViewBuilder
+    private var bottomActionBar: some View {
+        EmptyView()
+    }
+
+    @ViewBuilder
+    private var quickVolumeJumpOverlay: some View {
+        if showVolumeGrouping && hasVolumeData && volumeGroups.count > 4 {
+            QuickVolumeJumpOverlay(volumeGroups: volumeGroups) { volKey in
+                jumpToVolume = volKey
+            }
+        }
+    }
+
+    private func applySheets<Content: View>(_ content: Content) -> some View {
+        content
+            .sheet(isPresented: $showingMergeConfig) {
+                LazyView {
+                    SeriesMergeConfigurationView(seriesFiles: freshIssues, initialSelection: selection, suggestedName: mergeConfigSuggestedName)
+                        .id(mergeSessionID)
+                        .environmentObject(conversionManager)
+                        .environmentObject(settingsManager)
+                }
+            }
+            .sheet(isPresented: $showBatchMetadataEditor) {
+                LazyView {
+                    BatchMetadataEditorView(selectedPDFs: freshIssues.filter { selection.contains($0.id) })
+                        .id(metadataSessionID)
+                }
+            }
+            .sheet(item: $pdfToExport) { pdf in
+                DualExportView(pdf: pdf)
+            }
+            .sheet(item: $pdfToSearchMetadata) { pdf in
+                MetadataSearchSheet(pdf: pdf)
+            }
+            .sheet(item: $pdfToDetails) { pdf in
+                MediaDetailSheet(pdf: pdf) { action in
+                    handleMediaDetailAction(action, for: pdf)
+                }
+                .environmentObject(conversionManager)
+            }
+            .sheet(isPresented: $showBatchVolumeAssignment) {
+                BatchVolumeAssignmentSheet(selectedIDs: selection)
+                    .environmentObject(conversionManager)
+            }
+            .sheet(isPresented: $showManualVolumeLinker) {
+                ManualVolumeLinkerView(seriesID: series.id, seriesTitle: series.title)
+                    .environmentObject(conversionManager)
+            }
+            .sheet(isPresented: $showingBatchSeriesAssignment) {
+                CollectionEditorSheet { name, icon, color in
+                    let cleanName = name.trimmingCharacters(in: .whitespaces)
+                    if !cleanName.isEmpty {
+                        let selectedFiles = freshIssues.filter { selection.contains($0.id) }
+                        for pdf in selectedFiles {
+                            conversionManager.assignToSeries(pdf, seriesName: cleanName)
+                        }
+                        conversionManager.createCollection(name: cleanName, icon: icon, color: color)
+                        isSelectionMode = false
+                        selection.removeAll()
+                    }
+                }
+                .environmentObject(conversionManager)
+            }
+    }
+
+    private func applyAlerts<Content: View>(_ content: Content) -> some View {
+        content
+            .alert("Rename File", isPresented: Binding(
+                get: { pdfToRename != nil },
+                set: { if !$0 { pdfToRename = nil } }
+            )) {
+                TextField("New Name", text: $renameText)
+                Button("Cancel", role: .cancel) { }
+                Button("Rename") {
+                    if let pdf = pdfToRename {
+                        conversionManager.renamePDF(pdf, to: renameText)
+                    }
+                }
+            }
+            .alert(isCollection ? "Rename Folder" : "Rename Series", isPresented: $showingRenameSeriesAlert) {
+                TextField(isCollection ? "Folder Name" : "Series Name", text: $pendingRenameSeriesName)
+                    .autocorrectionDisabled()
+                Button("Rename") {
+                    let newName = pendingRenameSeriesName.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !newName.isEmpty, newName != series.title else { return }
+                    
+                    if let collectionUUID = UUID(uuidString: series.id),
+                       let colIdx = conversionManager.collections.firstIndex(where: { $0.id == collectionUUID }) {
+                        conversionManager.collections[colIdx].name = newName
+                    }
+                    
+                    Task {
+                        await conversionManager.safelyRenameSeries(issues: freshIssues, newSeriesName: newName)
+                        dismiss()
+                    }
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text(isCollection ? "This will rename the folder." : "This will rename all \(series.count) issues in this series.")
+            }
+            .alert("Add to Series", isPresented: Binding(
+                get: { pdfToAssignSeries != nil },
+                set: { if !$0 { pdfToAssignSeries = nil } }
+            )) {
+                TextField("Series Name", text: $assignSeriesText)
+                Button("Cancel", role: .cancel) { pdfToAssignSeries = nil }
+                Button("Assign") {
+                    if let pdf = pdfToAssignSeries {
+                        let name = assignSeriesText.trimmingCharacters(in: .whitespaces)
+                        if !name.isEmpty {
+                            conversionManager.assignToSeries(pdf, seriesName: name)
+                        }
+                    }
+                    pdfToAssignSeries = nil
+                }
+            } message: {
+                Text("Enter the series name to group this file into a collection.")
+            }
+            .alert("Automate Omnibus Builds?", isPresented: $showingOmnibusPrompt) {
+                Button("Enable Fast Bundle") {
+                    fastBundleOmnibus = true
+                    if let pending = pendingConfigSelection {
+                        let files = freshIssues.filter { pending.contains($0.id) }
+                        conversionManager.enqueueOmnibus(name: "\(series.title) Omnibus", sourceFiles: files)
+                    }
+                    pendingConfigSelection = nil
+                }
+                Button("Keep Showing Control Sheet") {
+                    if let pending = pendingConfigSelection {
+                        selection = pending
+                        showingMergeConfig = true
+                    }
+                    pendingConfigSelection = nil
+                }
+            } message: {
+                Text("You've built 3 omnibuses manually. Would you like to enable 'Fast Bundle Mode' to automatically skip the configuration sheet and instantly queue omnibuses in the background using your saved settings?")
+            }
+            .alert("Delete File", isPresented: Binding(
+                get: { pdfToDelete != nil },
+                set: { if !$0 { pdfToDelete = nil } }
+            )) {
+                Button("Move to Trash", role: .destructive) {
+                    if let pdf = pdfToDelete {
+                        if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                            let fileURL = pdf.url
+                            conversionManager.convertedPDFs.remove(at: idx)
+                            conversionManager.saveLibrary()
+                            Task.detached(priority: .background) {
+                                try? FileManager.default.trashItem(at: fileURL, resultingItemURL: nil)
+                            }
+                        }
+                    }
+                    pdfToDelete = nil
+                }
+                Button("Delete Permanently", role: .destructive) {
+                    if let pdf = pdfToDelete {
+                        conversionManager.deletePDF(pdf)
+                    }
+                    pdfToDelete = nil
+                }
+                Button("Cancel", role: .cancel) { pdfToDelete = nil }
+            } message: {
+                Text("\"\(pdfToDelete?.name ?? "this file")\" will be removed. Move to Trash allows recovery via the Files app.")
+            }
+    }
+    
+    // MARK: - Issue Row (Shared by flat + volume grouped views)
+    
+    @ViewBuilder
+    private func issueRow(_ pdf: ConvertedPDF, isInVolume: Bool = false, volumeKey: String = "") -> some View {
+        if isSelectionMode {
+            HStack(spacing: 0) {
+                if isInVolume && volumeKey != "Ungrouped" {
+                    RoundedRectangle(cornerRadius: 1.5)
+                        .fill(Theme.orange.opacity(0.8))
+                        .frame(width: 3)
+                        .padding(.vertical, 8)
+                        .padding(.trailing, 12)
+                }
+                
+                Button {
+                    if selection.contains(pdf.id) {
+                        selection.remove(pdf.id)
+                    } else {
+                        selection.insert(pdf.id)
+                    }
+                } label: {
+                    HStack {
+                        LibraryPDFRowWithCover(pdf: pdf, isSelected: false)
+                        
+                        if conversionManager.convertedPDFs.contains(where: { $0.metadata.sourceFileIDs?.contains(pdf.id) == true }) {
+                            Image(systemName: "link")
+                                .font(.footnote)
+                                .foregroundColor(Theme.orange)
+                                .padding(.trailing, 8)
+                        }
+                        
+                        Spacer()
+                        Image(systemName: selection.contains(pdf.id) ? "checkmark.circle.fill" : "circle")
+                            .foregroundColor(selection.contains(pdf.id) ? .blue : .gray)
+                            .font(.title2)
+                    }
+                }
+                .buttonStyle(PlainButtonStyle())
+            }
+            .padding(.leading, isInVolume && volumeKey != "Ungrouped" ? 14 : 0)
+            .listRowBackground(selection.contains(pdf.id) ? Color.blue.opacity(0.1) : Theme.bg)
+            .background(
+                GeometryReader { geo in
+                    Color.clear
+                        .preference(
+                            key: CellFramePreferenceKey.self,
+                            value: [pdf.id: geo.frame(in: .named("SeriesDetailScrollView"))]
+                        )
+                }
+            )
+        } else {
+            HStack(spacing: 0) {
+                if isInVolume && volumeKey != "Ungrouped" {
+                    RoundedRectangle(cornerRadius: 1.5)
+                        .fill(Theme.orange.opacity(0.8))
+                        .frame(width: 3)
+                        .padding(.vertical, 8)
+                        .padding(.trailing, 12)
+                }
+                
+                Button {
+                    if tapAction == .read {
+                        pdfToRead = pdf
+                    } else { // tapAction == .convert
+                        if case .cloud = pdf.sourceMode {
+                            Task {
+                                await CloudDownloadManager.shared.downloadAndStore(
+                                    pdf: pdf,
+                                    thenConvert: false,
+                                    manager: conversionManager
+                                )
+                                await MainActor.run {
+                                    if let updated = conversionManager.convertedPDFs.first(where: { $0.id == pdf.id }) {
+                                        DispatchQueue.main.async {
+                                            AppRouter.shared.presentSheet(.convert(updated))
+                                        }
                                     }
                                 }
                             }
+                        } else {
+                            AppRouter.shared.presentSheet(.convert(pdf))
                         }
-                    } else {
-                        AppRouter.shared.presentSheet(.convert(pdf))
+                    }
+                } label: {
+                    HStack {
+                        LibraryPDFRowWithCover(pdf: pdf, isSelected: selectedPDF?.id == pdf.id)
+                        
+                        if conversionManager.convertedPDFs.contains(where: { $0.metadata.sourceFileIDs?.contains(pdf.id) == true }) {
+                            Image(systemName: "link")
+                                .font(.footnote)
+                                .foregroundColor(Theme.orange)
+                                .padding(.trailing, 8)
+                        }
                     }
                 }
-            } label: {
-                LibraryPDFRowWithCover(pdf: pdf, isSelected: selectedPDF?.id == pdf.id)
+                .buttonStyle(CellButtonStyle())
             }
-            .buttonStyle(CellButtonStyle())
+            .padding(.leading, isInVolume && volumeKey != "Ungrouped" ? 14 : 0)
             .listRowBackground(selectedPDF?.id == pdf.id ? Theme.surfaceElevated : Theme.bg)
             .swipeActions(edge: .leading) { swipeActionsLeading(pdf) }
             .swipeActions(edge: .trailing) { swipeActionsTrailing(pdf) }
@@ -871,7 +1502,7 @@ struct SeriesDetailView: View {
     }
 
     var headerView: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 16) {
             HStack(alignment: .top, spacing: 16) {
                 if let img = headerCover {
                     Image(uiImage: img)
@@ -883,7 +1514,6 @@ struct SeriesDetailView: View {
                             RoundedRectangle(cornerRadius: 12, style: .continuous)
                                 .stroke(Color.white.opacity(0.10), lineWidth: 0.5)
                         )
-                        // Dual shadow: crisp near + ambient book-pile depth
                         .shadow(color: .black.opacity(0.40), radius: 6, x: 0, y: 4)
                         .shadow(color: .black.opacity(0.20), radius: 22, x: 0, y: 14)
                 } else {
@@ -900,15 +1530,17 @@ struct SeriesDetailView: View {
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text(series.title)
-                        .font(.system(size: 20, weight: .bold))
+                        .font(.system(size: 22, weight: .bold))
                         .foregroundStyle(Theme.text)
+                        .lineLimit(3)
 
                     HStack(spacing: 6) {
-                        Text("\(series.count) ISSUES")
+                        Text("\(freshIssues.count) ISSUES")
                             .font(.system(size: 10, weight: .bold, design: .monospaced))
                             .foregroundStyle(Theme.textSecondary)
                             .tracking(0.8)
-                        if let publisher = series.issues.first?.metadata.publisher {
+                        
+                        if let publisher = freshIssues.first?.metadata.publisher {
                             Text(publisher)
                                 .font(.system(size: 10, weight: .semibold))
                                 .foregroundStyle(Color.inkBlue)
@@ -919,7 +1551,7 @@ struct SeriesDetailView: View {
                         }
                     }
 
-                    // Series-wide reading progress
+                    // Series-wide reading progress status
                     let seriesProgress = readingProgress(for: localIssues)
                     let seriesCompleted = completedCount(for: localIssues)
 
@@ -960,9 +1592,83 @@ struct SeriesDetailView: View {
                         .padding(.top, 2)
                     }
                 }
-                .padding(.leading)
+                .padding(.leading, 4)
                 Spacer()
             }
+            
+            // Action Bar
+            HStack(spacing: 12) {
+                // Continue Reading / Play Button
+                Button {
+                    if let next = nextUnreadIssue {
+                        pdfToRead = next
+                    } else if let first = localIssues.first {
+                        pdfToRead = first
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "play.fill")
+                        Text(nextUnreadIssue != nil ? "CONTINUE" : "READ AGAIN")
+                            .fontWeight(.bold)
+                    }
+                    .font(.system(size: 12))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .background(
+                        LinearGradient(colors: [Theme.orange, Theme.red], startPoint: .topLeading, endPoint: .bottomTrailing)
+                    )
+                    .cornerRadius(10)
+                    .shadow(color: Theme.orange.opacity(0.3), radius: 5, y: 2)
+                }
+                
+                // Build Kindle Omnibus / Merge
+                Button {
+                    let generator = UIImpactFeedbackGenerator(style: .medium)
+                    generator.impactOccurred()
+                    if !isSelectionMode || selection.isEmpty {
+                        selection = Set(freshIssues.map { $0.id })
+                    }
+                    mergeConfigSuggestedName = "\(series.title) Omnibus"
+                    showingMergeConfig = true
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.triangle.2.circlepath.doc")
+                        Text("BUILD OMNIBUS")
+                            .fontWeight(.semibold)
+                    }
+                    .font(.system(size: 11))
+                    .foregroundColor(Theme.text)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .background(Color.white.opacity(0.08))
+                    .cornerRadius(10)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                    )
+                }
+                
+                // Fetch Meta
+                Button {
+                    if let first = freshIssues.first {
+                        pdfToSearchMetadata = first
+                    }
+                } label: {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 12))
+                        .foregroundColor(Theme.text)
+                        .padding(.vertical, 10)
+                        .padding(.horizontal, 14)
+                        .background(Color.white.opacity(0.08))
+                        .cornerRadius(10)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10)
+                                .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                        )
+                }
+            }
+            .padding(.top, 4)
             
             // Series-wide progress bar
             let progress = readingProgress(for: localIssues)
@@ -982,29 +1688,44 @@ struct SeriesDetailView: View {
                 }
             }
             .frame(height: 4)
+            
+            seriesDetailsCard
         }
         .padding(.vertical)
+        .background(
+            GeometryReader { geo in
+                Color.clear
+                    .preference(
+                        key: ScrollOffsetPreferenceKey.self,
+                        value: geo.frame(in: .named("SeriesDetailViewport")).minY
+                    )
+            }
+        )
     }
     
     // MARK: - Feature 5: Smart List Template Export
     
+    private func escapeCSVField(_ field: String) -> String {
+        var clean = field
+        if clean.contains(",") || clean.contains("\"") || clean.contains("\n") {
+            clean = clean.replacingOccurrences(of: "\"", with: "\"\"")
+            return "\"\(clean)\""
+        }
+        return clean
+    }
+    
     private func exportSmartListTemplate() {
         var csv = "volume,start_chapter,end_chapter,series\n"
         
-        if hasVolumeData {
-            for group in volumeGroups {
-                guard group.key != "Ungrouped" else { continue }
-                let issueNumbers = group.issues.compactMap { $0.metadata.issueNumber }.compactMap { Int($0) }.sorted()
-                if let first = issueNumbers.first, let last = issueNumbers.last {
-                    csv += "\(group.key),\(first),\(last),\(series.title)\n"
-                }
-            }
-        } else {
-            for pdf in localIssues {
-                let issue = pdf.metadata.issueNumber ?? ""
-                let vol = pdf.metadata.volume ?? ""
-                csv += "\(vol),\(issue),\(issue),\(series.title)\n"
-            }
+        for pdf in localIssues {
+            let issue = pdf.metadata.issueNumber ?? ""
+            let vol = pdf.metadata.volume ?? ""
+            
+            let escapedVol = escapeCSVField(vol)
+            let escapedIssue = escapeCSVField(issue)
+            let escapedSeries = escapeCSVField(series.title)
+            
+            csv += "\(escapedVol),\(escapedIssue),\(escapedIssue),\(escapedSeries)\n"
         }
         
         let filename = "\(series.title.replacingOccurrences(of: " ", with: "_"))_SmartList.csv"
@@ -1058,15 +1779,190 @@ struct SeriesDetailView: View {
     }
     
     @ViewBuilder
-    private func contextMenuContent(_ pdf: ConvertedPDF) -> some View {
+    private func primaryContextMenuItems(_ pdf: ConvertedPDF) -> some View {
         Button {
             pdfToRead = pdf
         } label: { Label("Read / Preview", systemImage: "book.pages") }
-
-        // Cloud files: smart Download vs Download & Convert
+        
         if case .cloud = pdf.sourceMode {
-            let settingsReady = AppSettingsManager.shared.conversionSettings.isConfigured
+            // Cloud files download via Cloud & Sync
+        } else {
             Button {
+                AppRouter.shared.presentSheet(.convert(pdf))
+            } label: { Label("Convert File", systemImage: "arrow.triangle.2.circlepath") }
+        }
+        
+        let isPinned = WorkspaceFocusManager.shared.isPinned(pdf)
+        Button {
+            if isPinned {
+                WorkspaceFocusManager.shared.unpin(pdf)
+            } else {
+                WorkspaceFocusManager.shared.pin(pdf)
+            }
+        } label: {
+            Label(
+                isPinned ? "Remove from Work Area" : "Send to Work Area",
+                systemImage: isPinned ? "pin.slash" : "pin"
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func organizeSubmenu(_ pdf: ConvertedPDF) -> some View {
+        SwiftUI.Menu {
+            Button {
+                renameText = pdf.name
+                pdfToRename = pdf
+            } label: { Label("Rename", systemImage: "pencil") }
+            
+            Button {
+                assignSeriesText = pdf.metadata.series ?? ""
+                pdfToAssignSeries = pdf
+            } label: { Label("Add to Series...", systemImage: "books.vertical") }
+            
+            if (pdf.metadata.series?.isEmpty == false) || pdf.collectionId != nil {
+                Button {
+                    conversionManager.setExplicitSeriesCover(for: pdf)
+                } label: { Label("Set as Series Cover", systemImage: "photo.on.rectangle") }
+            }
+        } label: {
+            Label("Organize", systemImage: "folder.badge.gearshape")
+        }
+    }
+
+    @ViewBuilder
+    private func cloudSubmenu(_ pdf: ConvertedPDF) -> some View {
+        SwiftUI.Menu {
+            if case .cloud = pdf.sourceMode {
+                let settingsReady = AppSettingsManager.shared.conversionSettings.isConfigured
+                Button {
+                    Task {
+                        await CloudDownloadManager.shared.downloadAndStore(
+                            pdf: pdf,
+                            thenConvert: settingsReady,
+                            manager: conversionManager
+                        )
+                    }
+                } label: {
+                    Label(
+                        settingsReady ? "Download & Convert" : "Download",
+                        systemImage: settingsReady ? "arrow.down.circle.fill" : "arrow.down.circle"
+                    )
+                }
+            }
+        } label: {
+            Label("Cloud & Sync", systemImage: "icloud")
+        }
+    }
+
+    @ViewBuilder
+    private func exportSubmenu(_ pdf: ConvertedPDF) -> some View {
+        SwiftUI.Menu {
+            Button {
+                pdfToExport = pdf
+            } label: { Label("Export Options", systemImage: "square.and.arrow.up") }
+        } label: {
+            Label("Export", systemImage: "square.and.arrow.up")
+        }
+    }
+
+    @ViewBuilder
+    private func toolsSubmenu(_ pdf: ConvertedPDF) -> some View {
+        SwiftUI.Menu {
+            Button {
+                pdfToSearchMetadata = pdf
+            } label: { Label("Fetch Metadata", systemImage: "magnifyingglass") }
+            
+            Button {
+                Task { await conversionManager.embedPanels(for: pdf) }
+            } label: { Label("Embed Panels", systemImage: "flame") }
+        } label: {
+            Label("Metadata & Tools", systemImage: "slider.horizontal.3")
+        }
+    }
+
+    @ViewBuilder
+    private func statusSubmenu(_ pdf: ConvertedPDF) -> some View {
+        SwiftUI.Menu {
+            Button {
+                ReaderProgressTracker.shared.markComplete(pdfID: pdf.id)
+                if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                    conversionManager.convertedPDFs[idx].metadata.lastReadPage = pdf.pageCount
+                    conversionManager.saveProgressOnly()
+                }
+            } label: { Label("Mark as Read", systemImage: "checkmark.circle") }
+            
+            Button {
+                var progress = ReaderProgressTracker.shared.progress(for: pdf.id) ?? ReadingProgress(pdfID: pdf.id, lastOpenedAt: Date(), currentPageIndex: 0, totalPagesRead: 0, completionFraction: 0.0, readingSessionDates: [])
+                progress.currentPageIndex = 0
+                progress.completionFraction = 0.0
+                ReaderProgressTracker.shared.update(progress)
+                
+                if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                    conversionManager.convertedPDFs[idx].metadata.lastReadPage = 0
+                    conversionManager.saveProgressOnly()
+                }
+            } label: { Label("Mark as Unread", systemImage: "circle") }
+            
+            Button {
+                withAnimation {
+                    if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                        conversionManager.convertedPDFs[idx].isPrivate.toggle()
+                        conversionManager.saveLibrary()
+                    }
+                }
+            } label: { Label(pdf.isPrivate ? "Remove from Vault" : "Move to Vault", systemImage: pdf.isPrivate ? "lock.open" : "lock.fill") }
+        } label: {
+            Label("Status & Vault", systemImage: "checkmark.shield")
+        }
+    }
+
+    @ViewBuilder
+    private func contextMenuContent(_ pdf: ConvertedPDF) -> some View {
+        primaryContextMenuItems(pdf)
+        
+        Divider()
+        
+        organizeSubmenu(pdf)
+        cloudSubmenu(pdf)
+        exportSubmenu(pdf)
+        toolsSubmenu(pdf)
+        
+        Divider()
+        
+        statusSubmenu(pdf)
+        
+        if let sourceIDs = pdf.metadata.sourceFileIDs, !sourceIDs.isEmpty {
+            Button {
+                HapticEngine.medium()
+                withAnimation {
+                    if let index = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                        var updated = conversionManager.convertedPDFs[index]
+                        updated.metadata.sourceFileIDs = nil
+                        conversionManager.convertedPDFs[index] = updated
+                        conversionManager.saveLibrary()
+                        updateVolumeGroups()
+                    }
+                }
+            } label: {
+                Label("Unlink Merged Issues", systemImage: "link.badge.plus")
+            }
+        }
+        
+        Button(role: .destructive) { pdfToDelete = pdf } label: { Label("Delete", systemImage: "trash") }
+    }
+
+    private func handleMediaDetailAction(_ action: LibraryRowAction, for pdf: ConvertedPDF) {
+        switch action {
+        case .read:          pdfToRead = pdf
+        case .export:        pdfToExport = pdf
+        case .fetchMetadata: pdfToSearchMetadata = pdf
+        case .editMetadata:  pdfToSearchMetadata = pdf
+        case .rename:        renameText = pdf.name; pdfToRename = pdf
+        case .delete:        pdfToDelete = pdf
+        case .convert:
+            let settingsReady = AppSettingsManager.shared.conversionSettings.isConfigured
+            if case .cloud = pdf.sourceMode {
                 Task {
                     await CloudDownloadManager.shared.downloadAndStore(
                         pdf: pdf,
@@ -1074,64 +1970,297 @@ struct SeriesDetailView: View {
                         manager: conversionManager
                     )
                 }
-            } label: {
-                Label(
-                    settingsReady ? "Download & Convert" : "Download",
-                    systemImage: settingsReady ? "arrow.down.circle.fill" : "arrow.down.circle"
-                )
+            } else {
+                Task { await conversionManager.convertComic(pdf) }
             }
-            Divider()
-        }
-        
-        Button {
-            pdfToExport = pdf
-        } label: { Label("Export Options", systemImage: "square.and.arrow.up") }
-        
-        Button {
-            renameText = pdf.name
-            pdfToRename = pdf
-        } label: { Label("Rename", systemImage: "pencil") }
-        
-        Button {
-            assignSeriesText = pdf.metadata.series ?? ""
-            pdfToAssignSeries = pdf
-        } label: { Label("Add to Series...", systemImage: "books.vertical") }
-        
-        if (pdf.metadata.series != nil && !pdf.metadata.series!.isEmpty) || pdf.collectionId != nil {
-            Button {
-                conversionManager.setExplicitSeriesCover(for: pdf)
-            } label: { Label("Set as Series Cover", systemImage: "photo.on.rectangle") }
-        }
-        
-        Button {
-            Task { await conversionManager.embedPanels(for: pdf) }
-        } label: { Label("Embed Panels", systemImage: "flame") }
-        
-        Button(role: .destructive) { pdfToDelete = pdf } label: { Label("Delete", systemImage: "trash") }
-        
-        Divider()
-        
-        Button {
-            withAnimation {
-                if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
-                    conversionManager.convertedPDFs[idx].isPrivate.toggle()
-                    conversionManager.saveLibrary()
+        case .share, .sync, .sendToKindle:
+            // For share/kindle we dismiss and fire via UIActivityViewController
+            let url = pdf.url
+            Task { @MainActor in
+                let activityVC = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+                if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                   let rootVC = windowScene.windows.first?.rootViewController {
+                    var topVC = rootVC
+                    while let presented = topVC.presentedViewController { topVC = presented }
+                    if let popover = activityVC.popoverPresentationController {
+                        popover.sourceView = topVC.view
+                        popover.sourceRect = CGRect(x: topVC.view.bounds.midX, y: topVC.view.bounds.midY, width: 0, height: 0)
+                        popover.permittedArrowDirections = []
+                    }
+                    topVC.present(activityVC, animated: true)
                 }
             }
-        } label: { Label(pdf.isPrivate ? "Remove from Vault" : "Move to Vault", systemImage: pdf.isPrivate ? "lock.open" : "lock.fill") }
-        Button {
-            pdfToSearchMetadata = pdf
-        } label: { Label("Fetch Metadata", systemImage: "magnifyingglass") }
+        case .favorite:
+            if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                conversionManager.convertedPDFs[idx].isFavorite.toggle()
+                conversionManager.saveLibrary()
+            }
+        case .addToSeries:
+            assignSeriesText = pdf.metadata.series ?? ""
+            pdfToAssignSeries = pdf
+        case .covers:
+            // Cover Studio requires the main library context â€” navigate there after dismiss
+            pdfToDetails = nil
+            // Post notification so ModernLibraryView can open the Cover Studio sheet
+            NotificationCenter.default.post(name: .init("InksyncPro.openCoverStudio"), object: pdf)
+        case .toggleVault:
+            if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                conversionManager.convertedPDFs[idx].isPrivate.toggle()
+                conversionManager.saveLibrary()
+            }
+        default: break
+        }
     }
 
     private func loadHeaderCover() async {
-        guard let url = series.coverURL else { return }
-        let img = await Task.detached(priority: .userInitiated) {
-            guard let data = try? Data(contentsOf: url) else { return UIImage?.none }
-            return UIImage(data: data)?.preparingThumbnail(of: CGSize(width: 160, height: 240))
-        }.value
-        await MainActor.run { headerCover = img }
+        guard let coverIssueID = series.coverIssueID,
+              let issue = freshIssues.first(where: { $0.id == coverIssueID }) else { return }
+        
+        let key = issue.id.uuidString as NSString
+        if let cached = await MainActor.run(body: { conversionManager.thumbnailCache.object(forKey: key) }) {
+            await MainActor.run { headerCover = cached }
+            return
+        }
+        
+        await ThumbnailGenerationQueue.shared.enqueue(issue, manager: conversionManager)
+        
+        if let cached = await MainActor.run(body: { conversionManager.thumbnailCache.object(forKey: key) }) {
+            await MainActor.run { headerCover = cached }
+        }
+    }
+    
+    // MARK: - Pan-To-Select Drag Gesture Handlers
+    
+    private func findPDFUnderTouch(at location: CGPoint) -> ConvertedPDF? {
+        let currentIssues = visualIssues
+        for pdf in currentIssues {
+            if let frame = cellFrames[pdf.id], frame.contains(location) {
+                return pdf
+            }
+        }
+        return nil
+    }
+    
+    private func handleDragUpdate(to location: CGPoint, viewportHeight: CGFloat, scrollProxy: ScrollViewProxy) {
+        lastDragLocation = location
+        
+        // Convert touch from viewport coordinates to content coordinates
+        let contentLocation = CGPoint(x: location.x, y: location.y - scrollOffset)
+        
+        if let pdf = findPDFUnderTouch(at: contentLocation) {
+            let currentIssues = visualIssues
+            if let index = currentIssues.firstIndex(where: { $0.id == pdf.id }) {
+                if dragStartIndex == nil {
+                    dragStartIndex = index
+                    isDragSelecting = !selection.contains(pdf.id)
+                    initialSelectionBeforeDrag = selection
+                }
+                currentDragIndex = index
+                updateSelectionForCurrentRange()
+            }
+        }
+        
+        let touchViewportY = location.y
+        
+        if touchViewportY < 60 || touchViewportY > viewportHeight - 60 {
+            if autoScrollTask == nil {
+                autoScrollTask = Task {
+                    while !Task.isCancelled {
+                        try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
+                        if Task.isCancelled { break }
+                        await MainActor.run {
+                            performAutoScroll(viewportHeight: viewportHeight, scrollProxy: scrollProxy)
+                        }
+                    }
+                }
+            }
+        } else {
+            autoScrollTask?.cancel()
+            autoScrollTask = nil
+        }
+    }
+    
+    private func updateSelectionForCurrentRange() {
+        guard let startIndex = dragStartIndex, let currentIndex = currentDragIndex else { return }
+        let range = min(startIndex, currentIndex)...max(startIndex, currentIndex)
+        let currentIssues = visualIssues
+        
+        var newSelection = initialSelectionBeforeDrag
+        for i in 0..<currentIssues.count {
+            let pdf = currentIssues[i]
+            if range.contains(i) {
+                if isDragSelecting {
+                    newSelection.insert(pdf.id)
+                } else {
+                    newSelection.remove(pdf.id)
+                }
+            }
+        }
+        selection = newSelection
+    }
+    
+    private func performAutoScroll(viewportHeight: CGFloat, scrollProxy: ScrollViewProxy) {
+        guard let currentIndex = currentDragIndex else { return }
+        let touchViewportY = lastDragLocation.y
+        let currentIssues = visualIssues
+        
+        if touchViewportY < 60 {
+            let targetIndex = max(0, currentIndex - 1)
+            if targetIndex != currentIndex {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    scrollProxy.scrollTo(currentIssues[targetIndex].id, anchor: .top)
+                }
+                currentDragIndex = targetIndex
+                updateSelectionForCurrentRange()
+            }
+        } else if touchViewportY > viewportHeight - 60 {
+            let targetIndex = min(currentIssues.count - 1, currentIndex + 1)
+            if targetIndex != currentIndex {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    scrollProxy.scrollTo(currentIssues[targetIndex].id, anchor: .bottom)
+                }
+                currentDragIndex = targetIndex
+                updateSelectionForCurrentRange()
+            }
+        }
+    }
+    
+    private func handleDragEnded() {
+        autoScrollTask?.cancel()
+        autoScrollTask = nil
+        dragStartIndex = nil
+        currentDragIndex = nil
+        initialSelectionBeforeDrag.removeAll()
+    }
+    
+    private var seriesDetailsCard: some View {
+        Group {
+            let writer = seriesWriter
+            let artist = seriesArtist
+            let summary = seriesSummary
+            let tags = seriesTags
+            let seriesProgress = readingProgress(for: localIssues)
+            let seriesCompleted = completedCount(for: localIssues)
+            
+            VStack(alignment: .leading, spacing: 14) {
+                // Metadata details
+                HStack(alignment: .top, spacing: 20) {
+                    if writer != nil || artist != nil {
+                        VStack(alignment: .leading, spacing: 8) {
+                            if let writer = writer {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "pencil.and.outline")
+                                        .font(.system(size: 11))
+                                        .foregroundColor(Theme.orange)
+                                    Text("Writer:")
+                                        .font(.system(size: 11, weight: .bold))
+                                        .foregroundColor(Theme.textSecondary)
+                                    Text(writer)
+                                        .font(.system(size: 12))
+                                        .foregroundColor(Theme.text)
+                                        .lineLimit(1)
+                                }
+                            }
+                            if let artist = artist {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "paintbrush.pointed")
+                                        .font(.system(size: 11))
+                                        .foregroundColor(Theme.orange)
+                                    Text("Artist:")
+                                        .font(.system(size: 11, weight: .bold))
+                                        .foregroundColor(Theme.textSecondary)
+                                    Text(artist)
+                                        .font(.system(size: 12))
+                                        .foregroundColor(Theme.text)
+                                        .lineLimit(1)
+                                }
+                            }
+                        }
+                    }
+                    
+                    Spacer()
+                    
+                    // Quick Stats
+                    VStack(alignment: .trailing, spacing: 4) {
+                        Text("\(Int(seriesProgress * 100))% COMPLETE")
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .foregroundColor(Theme.orange)
+                        Text("\(seriesCompleted) of \(localIssues.count) Completed")
+                            .font(.system(size: 11, design: .rounded))
+                            .foregroundColor(Theme.textSecondary)
+                    }
+                }
+                
+                // Tags
+                if !tags.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            ForEach(tags, id: \.self) { tag in
+                                Text(tag.uppercased())
+                                    .font(.system(size: 8, weight: .bold, design: .monospaced))
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(Color.inkBlue.opacity(0.12))
+                                    .foregroundColor(Color.inkBlue)
+                                    .clipShape(Capsule())
+                            }
+                        }
+                    }
+                }
+                
+                // Synopsis / Description
+                if let summary = summary {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(summary)
+                            .font(.system(size: 12))
+                            .foregroundColor(Theme.textSecondary)
+                            .lineLimit(isSummaryExpanded ? nil : 3)
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                        
+                        Button {
+                            withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
+                                isSummaryExpanded.toggle()
+                            }
+                        } label: {
+                            Text(isSummaryExpanded ? "Read Less" : "Read More")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundColor(Theme.orange)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.top, 4)
+                }
+            }
+            .padding(14)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Theme.surface.opacity(0.25))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                    )
+            )
+            .shadow(color: Color.black.opacity(0.1), radius: 10, y: 5)
+            .padding(.top, 4)
+
+        }
     }
 }
 
+// MARK: - Preference Keys for Coordinate Space Tracking
 
+struct CellFramePreferenceKey: PreferenceKey {
+    typealias Value = [UUID: CGRect]
+    static var defaultValue: [UUID: CGRect] { [:] }
+    static func reduce(value: inout [UUID: CGRect], nextValue: () -> [UUID: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { $1 })
+    }
+}
+
+struct ScrollOffsetPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat { 0 }
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}

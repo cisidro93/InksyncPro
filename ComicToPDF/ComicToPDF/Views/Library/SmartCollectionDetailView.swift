@@ -13,6 +13,7 @@ import SwiftUI
 @MainActor struct SmartCollectionDetailView: View {
     let rule: SmartCollectionRule
     @EnvironmentObject var conversionManager: ConversionManager
+    @EnvironmentObject var settingsManager: AppSettingsManager
     @Environment(\.dismiss) var dismiss
     @Environment(\.horizontalSizeClass) private var hSizeClass
 
@@ -32,26 +33,28 @@ import SwiftUI
     // MARK: - Filter + Group
 
     private func recomputeFilter() {
+        let isVaultUnlocked = settingsManager.isVaultUnlocked
         let allPDFs = conversionManager.convertedPDFs
         let rule = self.rule
 
         Task.detached(priority: .userInitiated) {
             let cap = 200
+            let filteredPDFs = isVaultUnlocked ? allPDFs : allPDFs.filter { !$0.isPrivate }
             var results: [ConvertedPDF]
             var truncated = false
 
             let progressSnapshot: [UUID: ReadingProgress] = await MainActor.run {
-                Dictionary(uniqueKeysWithValues: allPDFs.compactMap { pdf in
+                Dictionary(uniqueKeysWithValues: filteredPDFs.compactMap { pdf in
                     ReaderProgressTracker.shared.progress(for: pdf.id).map { (pdf.id, $0) }
                 })
             }
 
             switch rule {
             case .recentlyAdded:
-                results = Array(allPDFs.sorted { $0.lastModified > $1.lastModified }.prefix(50))
+                results = Array(filteredPDFs.sorted { $0.lastModified > $1.lastModified }.prefix(50))
 
             case .readingNow:
-                results = allPDFs.filter {
+                results = filteredPDFs.filter {
                     let f = progressSnapshot[$0.id]?.completionFraction ?? 0
                     return f > 0 && f < 1
                 }.sorted {
@@ -60,24 +63,24 @@ import SwiftUI
                 }
 
             case .allUnread:
-                results = allPDFs.filter { (progressSnapshot[$0.id]?.completionFraction ?? 0) == 0 }
+                results = filteredPDFs.filter { (progressSnapshot[$0.id]?.completionFraction ?? 0) == 0 }
                     .sorted { $0.lastModified > $1.lastModified }
                 if results.count > cap { results = Array(results.prefix(cap)); truncated = true }
 
             case .completed:
-                results = allPDFs.filter { (progressSnapshot[$0.id]?.completionFraction ?? 0) >= 1 }
+                results = filteredPDFs.filter { (progressSnapshot[$0.id]?.completionFraction ?? 0) >= 1 }
                     .sorted {
                         (progressSnapshot[$0.id]?.lastOpenedAt ?? .distantPast) >
                         (progressSnapshot[$1.id]?.lastOpenedAt ?? .distantPast)
                     }
 
             case .onDrive:
-                results = allPDFs.filter { if case .linked = $0.sourceMode { return true }; return false }
+                results = filteredPDFs.filter { if case .linked = $0.sourceMode { return true }; return false }
                     .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
                 if results.count > cap { results = Array(results.prefix(cap)); truncated = true }
 
             case .cloudLibrary:
-                results = allPDFs.filter { if case .cloud = $0.sourceMode { return true }; return false }
+                results = filteredPDFs.filter { if case .cloud = $0.sourceMode { return true }; return false }
                     .sorted { $0.lastModified > $1.lastModified }
                 if results.count > cap { results = Array(results.prefix(cap)); truncated = true }
             }
@@ -106,8 +109,8 @@ import SwiftUI
                 if groups[key] == nil {
                     groups[key] = SeriesGroup(id: seriesName, title: seriesName, coverIssueID: pdf.id, count: 0, issues: [])
                 }
-                groups[key]!.issues.append(pdf)
-                groups[key]!.count += 1
+                groups[key]?.issues.append(pdf)
+                groups[key]?.count += 1
             } else {
                 let key = "single_\(pdf.id)"
                 if order[key] == nil { order[key] = i }
@@ -117,13 +120,13 @@ import SwiftUI
 
         // Sort issues inside each series numerically
         for key in groups.keys {
-            groups[key]!.issues.sort {
+            groups[key]?.issues.sort {
                 let a = Double($0.metadata.issueNumber ?? "") ?? Double.infinity
                 let b = Double($1.metadata.issueNumber ?? "") ?? Double.infinity
                 if a != b { return a < b }
                 return $0.name.localizedStandardCompare($1.name) == .orderedAscending
             }
-            if let first = groups[key]!.issues.first { groups[key]!.coverIssueID = first.id }
+            if let first = groups[key]?.issues.first { groups[key]?.coverIssueID = first.id }
         }
 
         var items: [(Int, LibraryListItem)] = []
@@ -131,6 +134,13 @@ import SwiftUI
         for pdf in singles { items.append((order["single_\(pdf.id)"] ?? 0, .single(pdf))) }
         items.sort { $0.0 < $1.0 }
         return items.map { $0.1 }
+    }
+
+    // MARK: - Helpers
+    private func getCoverImage(for group: SeriesGroup) -> UIImage? {
+        guard let coverID = group.coverIssueID,
+              let cover = group.issues.first(where: { $0.id == coverID }) else { return nil }
+        return conversionManager.getThumbnail(for: cover)
     }
 
     // MARK: - Body
@@ -161,6 +171,7 @@ import SwiftUI
         }
         .task { recomputeFilter() }
         .onChange(of: conversionManager.convertedPDFs.count) { recomputeFilter() }
+        .onChange(of: settingsManager.isVaultUnlocked) { recomputeFilter() }
         .onReceive(tracker.objectWillChange) { recomputeFilter() }
     }
 
@@ -328,8 +339,10 @@ import SwiftUI
         ZStack(alignment: .topTrailing) {
             // Tap → navigate to series detail
             NavigationLink(destination:
-                SeriesDetailView(series: group, selectedPDF: .constant(nil), useNavigationStack: false)
-                    .environmentObject(conversionManager)
+                LazyView {
+                    SeriesDetailView(series: group, selectedPDF: .constant(nil), useNavigationStack: false)
+                        .environmentObject(conversionManager)
+                }
             ) {
                 ModernGridSeriesCell(group: group, isSelected: false, isBatch: false)
             }
@@ -382,8 +395,30 @@ import SwiftUI
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(pdf.name).font(.subheadline).foregroundStyle(Theme.text).lineLimit(2)
-                if let series = pdf.metadata.series {
-                    Text(series).font(.caption2).foregroundStyle(.secondary)
+                if let series = pdf.metadata.series, !series.isEmpty {
+                    HStack(spacing: 6) {
+                        Text(series).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                        
+                        if let vol = pdf.metadata.volume, !vol.trimmingCharacters(in: .whitespaces).isEmpty {
+                            Text("Vol. \(vol)")
+                                .font(.system(size: 8, weight: .bold))
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 1)
+                                .background(Color.purple.opacity(0.12))
+                                .foregroundColor(.purple)
+                                .cornerRadius(3)
+                        }
+                        
+                        if let issue = pdf.metadata.issueNumber, !issue.trimmingCharacters(in: .whitespaces).isEmpty {
+                            Text("#\(issue)")
+                                .font(.system(size: 8, weight: .bold))
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 1)
+                                .background(Color.blue.opacity(0.12))
+                                .foregroundColor(.blue)
+                                .cornerRadius(3)
+                        }
+                    }
                 }
                 if isCloud {
                     if let p = progress {
@@ -428,16 +463,16 @@ import SwiftUI
         let isDownloadingThis = downloadingSeriesID == group.id
 
         NavigationLink(destination:
-            SeriesDetailView(series: group, selectedPDF: .constant(nil), useNavigationStack: false)
-                .environmentObject(conversionManager)
+            LazyView {
+                SeriesDetailView(series: group, selectedPDF: .constant(nil), useNavigationStack: false)
+                    .environmentObject(conversionManager)
+            }
         ) {
             HStack(spacing: 12) {
                 // Cover stack
                 ZStack {
                     RoundedRectangle(cornerRadius: 6).fill(Theme.surface).frame(width: 40, height: 56)
-                    if let coverID = group.coverIssueID,
-                       let cover = group.issues.first(where: { $0.id == coverID }),
-                       let img = conversionManager.getThumbnail(for: cover) {
+                    if let img = getCoverImage(for: group) {
                         Image(uiImage: img).resizable().scaledToFill()
                             .frame(width: 40, height: 56).clipShape(RoundedRectangle(cornerRadius: 6))
                     } else {
@@ -502,6 +537,10 @@ import SwiftUI
             Divider()
             Button { downloadFile(pdf, thenConvert: false) } label: { Label("Download", systemImage: "arrow.down.circle") }
             Button { downloadFile(pdf, thenConvert: true) } label: { Label("Download & Convert", systemImage: "arrow.down.circle.fill") }
+        } else {
+            Button {
+                AppRouter.shared.presentSheet(.convert(pdf))
+            } label: { Label("Convert File", systemImage: "arrow.triangle.2.circlepath") }
         }
     }
 

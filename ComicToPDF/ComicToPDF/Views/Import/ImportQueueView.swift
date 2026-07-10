@@ -78,11 +78,12 @@ struct ImportQueueView: View {
             }
             // Series name conflict sheet
             .sheet(isPresented: $showSeriesConflict) {
+                let safeManager = conversionManager
                 SeriesConflictView(
                     conflictingGroups: pendingConflictGroups,
                     onAddToExisting: { group in
                         Task {
-                            await conversionManager.importFilesAsSeries(
+                            await safeManager.importFilesAsSeries(
                                 urls: group.urls,
                                 seriesName: group.seriesName,
                                 addToExisting: true
@@ -91,7 +92,7 @@ struct ImportQueueView: View {
                     },
                     onCreateNew: { group in
                         Task {
-                            await conversionManager.importFilesAsSeries(
+                            await safeManager.importFilesAsSeries(
                                 urls: group.urls,
                                 seriesName: "\(group.seriesName) (New)",
                                 addToExisting: false
@@ -108,8 +109,12 @@ struct ImportQueueView: View {
                 }
             }
             .onChange(of: showSeriesConflict) { _, newValue in
-                if newValue == false && queue.stagedURLs.isEmpty {
+                if newValue == false {
                     dismiss()
+                    Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 350_000_000)
+                        queue.clear()
+                    }
                 }
             }
         }
@@ -236,7 +241,6 @@ struct ImportQueueView: View {
 
     private func importAll() {
         let urls = queue.stagedURLs
-        queue.clear()
         
         // Group into series using SeriesNameParser
         let groups = SeriesNameParser.groupIntoSeries(urls)
@@ -246,6 +250,9 @@ struct ImportQueueView: View {
         let conflicting = groups.filter { group in
             existingSeriesNames.contains(group.seriesName.lowercased())
         }
+        
+        // Safely capture the EnvironmentObject reference BEFORE dismissal
+        let safeManager = conversionManager
 
         if !conflicting.isEmpty {
             pendingConflictGroups = conflicting
@@ -255,15 +262,20 @@ struct ImportQueueView: View {
             let conflictNames = Set(conflicting.map { $0.seriesName })
             let nonConflicting = groups.filter { !conflictNames.contains($0.seriesName) }
             if !nonConflicting.isEmpty {
-                Task { await runImport(groups: nonConflicting) }
+                Task { await runImport(groups: nonConflicting, manager: safeManager) }
             }
         } else {
             dismiss()
-            Task { await runImport(groups: groups) }
+            // Wait for dismissal animation before clearing state and starting heavy work
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 350_000_000)
+                queue.clear()
+                await runImport(groups: groups, manager: safeManager)
+            }
         }
     }
 
-    private func runImport(groups: [(seriesName: String, urls: [URL])]) async {
+    private func runImport(groups: [(seriesName: String, urls: [URL])], manager: ConversionManager) async {
         var allURLs: [URL] = []
         var combinedOverrides: [URL: PDFMetadata] = [:]
         
@@ -276,12 +288,12 @@ struct ImportQueueView: View {
             }
         }
         
-        await conversionManager.importFilesAsSeries(urls: allURLs, overrides: combinedOverrides)
+        await manager.importFilesAsSeries(urls: allURLs, overrides: combinedOverrides)
     }
 
     private func iconFor(_ url: URL) -> String {
         switch url.pathExtension.lowercased() {
-        case "cbz", "cbr", "cb7", "cbt": return "doc.zipper"
+        case "cbz", "cbr", "cb7", "cbt", "zip": return "doc.zipper"
         case "epub": return "book"
         case "pdf": return "doc.richtext"
         default: return "doc"

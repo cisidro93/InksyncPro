@@ -29,7 +29,12 @@ actor ImportOrchestrator {
     
     func importFolderStructure(from folderURL: URL, manager: ConversionManager) async {
         await MainActor.run { manager.isConverting = true; manager.processingStatus = "Preparing Folder Sync..." }
-        defer { Task { await MainActor.run { manager.isConverting = false; manager.processingStatus = "" } } }
+        defer {
+            Task {
+                await SandboxCleanupManager.shared.autoCleanupIfStorageLow()
+                await MainActor.run { manager.isConverting = false; manager.processingStatus = "" }
+            }
+        }
         
         let existingPaths = await MainActor.run { Set(manager.convertedPDFs.map { $0.url.lastPathComponent }) }
 
@@ -51,7 +56,7 @@ actor ImportOrchestrator {
             }
             
             let fileManager = FileManager.default
-            let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+            let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
             var newlyImported: [ConvertedPDF] = []
             
             await MainActor.run { manager.processingStatus = "Scanning \(folderURL.lastPathComponent)..." }
@@ -74,7 +79,7 @@ actor ImportOrchestrator {
                       let isDirectory = resourceValues.isDirectory, !isDirectory else { continue }
                 
                 let ext = fileURL.pathExtension.lowercased()
-                guard ["cbz", "zip", "epub"].contains(ext) else { continue }
+                guard ["pdf", "epub", "cbz", "cbr", "cb7", "cbt", "zip"].contains(ext) else { continue }
                 
                 let fileName = fileURL.lastPathComponent
                 let destURL = documentsDir.appendingPathComponent(fileName)
@@ -84,30 +89,48 @@ actor ImportOrchestrator {
                 
                 do {
                     await MainActor.run { manager.processingStatus = "Importing \(fileName)..." }
-                    if fileManager.fileExists(atPath: destURL.path) { try fileManager.removeItem(at: destURL) }
-                    try fileManager.copyItem(at: fileURL, to: destURL)
+                    try autoreleasepool {
+                        if fileManager.fileExists(atPath: destURL.path) { try fileManager.removeItem(at: destURL) }
+                        try fileManager.copyItem(at: fileURL, to: destURL)
+                        PhysicalFileSystemRouter.excludeFromBackup(at: destURL)
+                    }
                     
                     // FIX: read size from enumerator's pre-fetched resourceValues — saves one attributesOfItem syscall per file
                     let size = resourceValues.fileSize.map(Int64.init) ?? 0
                     
-                    let seriesName = fileURL.deletingLastPathComponent().lastPathComponent
-                    var smartDisplayName = fileName
-                    var smartMetadata = PDFMetadata(title: fileName)
+                    let parsedTokens = DeterministicFilenameParser.parse(filename: fileName)
+                    let seriesName = parsedTokens.seriesName.isEmpty ? fileURL.deletingLastPathComponent().lastPathComponent : parsedTokens.seriesName
+                    var smartDisplayName = parsedTokens.title ?? fileName
+                    var smartMetadata = PDFMetadata(title: smartDisplayName)
                     smartMetadata.series = seriesName
+                    smartMetadata.volume = parsedTokens.volume
+                    smartMetadata.issueNumber = parsedTokens.issueNumber
                     
-                    let cType = MetadataHeuristics.detectAsymmetricContentType(url: destURL)
+                    let cType = MetadataHeuristics.detectAsymmetricContentType(url: fileURL)
                     
                     // FIX: Single ZIP open — previously called fetchNonDestructiveMetadata AND
                     // ComicInfoParser.parse separately, each re-opening the archive.
                     let isArchive = ["cbz", "zip"].contains(ext)
-                    let xmlData = isArchive ? (try? LocalComicInfoService.shared.fetchNonDestructiveMetadata(from: destURL)) : nil
-                    let parsedInfo = isArchive ? ComicInfoParser.parse(from: destURL) : nil
+                    
+                    var xmlData: (displayName: String, parsedSeries: String?, parsedNumber: String?, parsedVolume: String?, parsedTitle: String?)?
+                    var parsedInfo: ComicInfoParser.ComicInfo?
+                    let pdfID = UUID()
+                    
+                    autoreleasepool {
+                        xmlData = isArchive ? (try? LocalComicInfoService.shared.fetchNonDestructiveMetadata(from: destURL)) : nil
+                        parsedInfo = isArchive ? ComicInfoParser.parse(from: destURL) : nil
+                        // Cover extraction intentionally deferred: extracting covers inline for
+                        // every file in a large batch causes unbounded memory growth (OOM crash).
+                        // backfillMissingThumbnails() handles cover generation post-import with
+                        // a rate-limited batch of 5 + Task.yield() to prevent bus saturation.
+                    }
 
                     if let xmlData = xmlData {
                         smartDisplayName = xmlData.displayName
                         smartMetadata.title = xmlData.parsedTitle ?? smartDisplayName
                         smartMetadata.series = xmlData.parsedSeries ?? seriesName
-                        smartMetadata.issueNumber = xmlData.parsedNumber
+                        smartMetadata.issueNumber = xmlData.parsedNumber ?? parsedTokens.issueNumber
+                        smartMetadata.volume = xmlData.parsedVolume ?? parsedTokens.volume
                         smartMetadata.tags.append("Auto XML Scrape")
                     }
 
@@ -116,7 +139,12 @@ actor ImportOrchestrator {
                         if xmlData == nil {
                             smartMetadata.title = parsedInfo.title ?? smartDisplayName
                             smartMetadata.series = parsedInfo.series ?? seriesName
-                            smartMetadata.issueNumber = parsedInfo.number
+                            smartMetadata.issueNumber = parsedInfo.number ?? parsedTokens.issueNumber
+                            if let vol = parsedInfo.volume {
+                                smartMetadata.volume = String(vol)
+                            } else {
+                                smartMetadata.volume = parsedTokens.volume
+                            }
                             smartMetadata.writer = parsedInfo.writer
                             smartMetadata.publisher = parsedInfo.publisher
                             smartMetadata.summary = parsedInfo.summary
@@ -135,12 +163,13 @@ actor ImportOrchestrator {
                     }
 
                     var pdf = ConvertedPDF(
+                        id: pdfID,
                         name: smartDisplayName,
                         url: destURL,
                         pageCount: 0,
                         fileSize: size,
                         metadata: smartMetadata,
-                        contentType: cType
+                        contentType: (smartMetadata.isManga ?? false) ? .manga : cType
                     )
                     if pdf.contentType == .hybrid || pdf.contentType == .book {
                         pdf.documentSubtype = await self.detectDocumentSubtype(url: destURL, fileSize: size)
@@ -160,12 +189,19 @@ actor ImportOrchestrator {
                 manager.convertedPDFs.append(pdf)
             }
             manager.saveLibrary()
+            manager.backfillMissingThumbnails()
         }
+        await LibraryService.shared.runSmartGrouping()
     }
     
-    func importFilesAsSeries(urls: [URL], manager: ConversionManager, overrides: [URL: PDFMetadata] = [:]) async {
+    func importFilesAsSeries(urls: [URL], manager: ConversionManager, overrides: [URL: PDFMetadata] = [:]) async -> [ConvertedPDF] {
         await MainActor.run { manager.isConverting = true; manager.processingStatus = "Preparing Import..." }
-        defer { Task { await MainActor.run { manager.isConverting = false; manager.processingStatus = "" } } }
+        defer {
+            Task {
+                await SandboxCleanupManager.shared.autoCleanupIfStorageLow()
+                await MainActor.run { manager.isConverting = false; manager.processingStatus = "" }
+            }
+        }
         
         // ── Smart Duplicate Fingerprinting ──────────────────────────────────────────
         // Build TWO lookup sets from the live library (both sourced from the model, not disk):
@@ -184,7 +220,7 @@ actor ImportOrchestrator {
         
         let importedPDFs: [ConvertedPDF] = await Task.detached(priority: .userInitiated) { () -> [ConvertedPDF] in
             let fileManager = FileManager.default
-            let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+            let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
             var newPDFs: [ConvertedPDF] = []
             var unstoredPDFs: [ConvertedPDF] = []
 
@@ -215,7 +251,8 @@ actor ImportOrchestrator {
                 let overrideMeta = overrides[url]
 
                 // ── Duplicate Detection ────────────────────────────────────────────────
-                let incomingSize = (try? fileManager.attributesOfItem(atPath: url.path)[.size] as? Int64) ?? 0
+                let attrs = try? fileManager.attributesOfItem(atPath: url.path)
+                let incomingSize: Int64 = (attrs?[.size] as? Int64) ?? 0
                 let compositeKey = "\(fileName)||\(incomingSize)"
 
                 // 1. Exact match: same filename AND same byte-count in library → true duplicate, skip
@@ -240,21 +277,28 @@ actor ImportOrchestrator {
                 }
 
                 do {
-                    if fileManager.fileExists(atPath: destURL.path) { try fileManager.removeItem(at: destURL) }
-
-                    // Aggressive APFS Inode Optimization (Move instead of Copy for Staged Items)
-                    if url.path.contains("InksyncStaging_") {
-                        try fileManager.moveItem(at: url, to: destURL)
-                    } else {
-                        try fileManager.copyItem(at: url, to: destURL)
+                    try autoreleasepool {
+                        let useMove = url.path.contains("InksyncStaging_")
+                        try AtomicFileCoordinator.importFile(from: url, to: destURL, useMoveIfStaged: useMove)
+                        PhysicalFileSystemRouter.excludeFromBackup(at: destURL)
                     }
+                    
                     // Re-use incomingSize if known, otherwise fallback to destURL attribute
-                    let size = incomingSize > 0 ? incomingSize : ((try? fileManager.attributesOfItem(atPath: destURL.path)[.size] as? Int64) ?? 0)
+                    let size: Int64
+                    if incomingSize > 0 {
+                        size = incomingSize
+                    } else {
+                        let destAttrs = try? fileManager.attributesOfItem(atPath: destURL.path)
+                        size = (destAttrs?[.size] as? Int64) ?? 0
+                    }
 
-                    let cType = MetadataHeuristics.detectAsymmetricContentType(url: destURL)
+                    let cType = MetadataHeuristics.detectAsymmetricContentType(url: url)
 
-                    var smartDisplayName = fileName
-                    var smartMetadata = PDFMetadata(title: fileName)
+                    let parsedTokens = DeterministicFilenameParser.parse(filename: fileName)
+                    var smartDisplayName = parsedTokens.title ?? fileName
+                    var smartMetadata = PDFMetadata(title: smartDisplayName)
+                    smartMetadata.volume = parsedTokens.volume
+                    smartMetadata.issueNumber = parsedTokens.issueNumber
 
                     // Always calculate the Safe Parent Folder fallback
                     let parentName = url.deletingLastPathComponent().lastPathComponent
@@ -264,6 +308,9 @@ actor ImportOrchestrator {
                     if !invalidParents.contains(where: { parentName.lowercased().hasPrefix($0) }) && parentName.count > 2 && UUID(uuidString: parentName) == nil {
                         validParentFolder = parentName
                     }
+                    
+                    let fallbackSeries = parsedTokens.seriesName.isEmpty ? (validParentFolder ?? "Unknown") : parsedTokens.seriesName
+                    smartMetadata.series = fallbackSeries
 
                     // ── Single ZIP pass: merge ComicInfo fetch + full parse ─────────────
                     // Previously two separate ZIP opens (fetchNonDestructiveMetadata + ComicInfoParser.parse)
@@ -271,14 +318,25 @@ actor ImportOrchestrator {
                     let ext = destURL.pathExtension.lowercased()
                     let isArchive = ["cbz", "zip"].contains(ext)
                     
-                    let xmlData  = isArchive ? (try? LocalComicInfoService.shared.fetchNonDestructiveMetadata(from: destURL)) : nil
-                    let parsedInfo = isArchive ? ComicInfoParser.parse(from: destURL) : nil
+                    var xmlData: (displayName: String, parsedSeries: String?, parsedNumber: String?, parsedVolume: String?, parsedTitle: String?)?
+                    var parsedInfo: ComicInfoParser.ComicInfo?
+                    let pdfID = UUID()
+                    
+                    autoreleasepool {
+                        xmlData = isArchive ? (try? LocalComicInfoService.shared.fetchNonDestructiveMetadata(from: destURL)) : nil
+                        parsedInfo = isArchive ? ComicInfoParser.parse(from: destURL) : nil
+                        // Cover extraction intentionally deferred: extracting covers inline for
+                        // every file in a large batch causes unbounded memory growth (OOM crash).
+                        // backfillMissingThumbnails() handles cover generation post-import with
+                        // a rate-limited batch of 5 + Task.yield() to prevent bus saturation.
+                    }
 
                     if let xmlData = xmlData {
                         smartDisplayName = xmlData.displayName
                         smartMetadata.title = xmlData.parsedTitle ?? overrideMeta?.title ?? smartDisplayName
-                        smartMetadata.series = xmlData.parsedSeries ?? overrideMeta?.series ?? validParentFolder
-                        smartMetadata.issueNumber = xmlData.parsedNumber
+                        smartMetadata.series = xmlData.parsedSeries ?? overrideMeta?.series ?? fallbackSeries
+                        smartMetadata.issueNumber = xmlData.parsedNumber ?? overrideMeta?.issueNumber ?? parsedTokens.issueNumber
+                        smartMetadata.volume = xmlData.parsedVolume ?? overrideMeta?.volume ?? parsedTokens.volume
                         smartMetadata.tags.append("Auto XML Scrape")
                         if smartMetadata.issueNumber == nil, let overMeta = overrideMeta {
                             smartMetadata.issueNumber = overMeta.issueNumber
@@ -286,8 +344,19 @@ actor ImportOrchestrator {
                     } else if let meta = overrideMeta {
                         smartDisplayName = meta.title
                         smartMetadata = meta
+                        if smartMetadata.series == nil || smartMetadata.series?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == true {
+                            smartMetadata.series = fallbackSeries
+                        }
                     } else {
-                        smartMetadata.series = validParentFolder
+                        smartMetadata.series = fallbackSeries
+                    }
+                    
+                    // Fallback to smart filename extraction if series is still missing/empty
+                    if smartMetadata.series == nil || smartMetadata.series?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == true {
+                        let parsedSeries = SeriesNameParser.cleanFolderName(MetadataHeuristics.cleanFilename(fileName))
+                        if !parsedSeries.isEmpty {
+                            smartMetadata.series = parsedSeries
+                        }
                     }
 
                     // Apply manga flag and any fields not covered by the XML display layer
@@ -298,6 +367,14 @@ actor ImportOrchestrator {
                             smartMetadata.writer    = parsedInfo.writer
                             smartMetadata.publisher = parsedInfo.publisher
                             smartMetadata.summary   = parsedInfo.summary
+                            if let vol = parsedInfo.volume {
+                                smartMetadata.volume = String(vol)
+                            } else if smartMetadata.volume == nil {
+                                smartMetadata.volume = parsedTokens.volume
+                            }
+                            if smartMetadata.issueNumber == nil {
+                                smartMetadata.issueNumber = parsedInfo.number ?? parsedTokens.issueNumber
+                            }
                             if let year = parsedInfo.year {
                                 var comps = DateComponents()
                                 comps.year = year; comps.month = 1; comps.day = 1
@@ -310,12 +387,13 @@ actor ImportOrchestrator {
                     }
 
                     var pdf = ConvertedPDF(
+                        id: pdfID,
                         name: smartDisplayName,
                         url: destURL,
                         pageCount: 0,
                         fileSize: size,
                         metadata: smartMetadata,
-                        contentType: cType
+                        contentType: (smartMetadata.isManga ?? false) ? .manga : cType
                     )
                     if pdf.contentType == .hybrid || pdf.contentType == .book {
                         pdf.documentSubtype = await self.detectDocumentSubtype(url: destURL, fileSize: size)
@@ -372,74 +450,91 @@ actor ImportOrchestrator {
         }.value
         
         await MainActor.run { ImportMonitorManager.shared.completeImport() }
-        guard !importedPDFs.isEmpty else { return }
-
-        // Fast-path SwiftData insert for ONLY the new records.
-        // This bypasses the expensive full-library reconciliation that syncToSwiftData does.
-        // The regular saveLibrary debounce will run syncToSwiftData later for full consistency.
-        await MigrationService.shared.batchInsertToSwiftData(newPDFs: importedPDFs)
-
-        // ✅ Import History: log each successfully imported file
-        for pdf in importedPDFs {
-            let size = pdf.fileSize > 0 ? ByteCountFormatter.string(fromByteCount: pdf.fileSize, countStyle: .file) : "unknown size"
-            Logger.shared.log("✓ Imported: \(pdf.name) (\(size))", category: "Import", type: .success)
-        }
-        Logger.shared.log("✅ Import batch complete: \(importedPDFs.count) file(s) added to library.", category: "Import", type: .success)
+        guard !importedPDFs.isEmpty else { return [] }
         
         var clusters: [String: [ConvertedPDF]] = [:]
         
         for pdf in importedPDFs {
-            let seriesName = (pdf.metadata.series?.isEmpty == false) ? pdf.metadata.series! : "Ungrouped"
+            let rawSeries = pdf.metadata.series ?? ""
+            let cleanedSeries = SeriesNameParser.cleanFolderName(rawSeries).trimmingCharacters(in: .whitespacesAndNewlines)
+            let seriesName = cleanedSeries.isEmpty ? "Ungrouped" : cleanedSeries
             clusters[seriesName, default: []].append(pdf)
         }
         
         let finalClusters = clusters
-        await MainActor.run {
-            // Optimize O(N^2) removeAll by building a Set of incoming names
-            var unclusteredPDFs: [ConvertedPDF] = []
+        let finalImportedPDFs = await MainActor.run {
+            var allImported: [ConvertedPDF] = []
             
-            for (series, clusterPDFs) in finalClusters {
-                if clusterPDFs.count > 1 && series != "Ungrouped" {
-                    Task { await self.finalizeSeriesImport(pdfs: clusterPDFs, seriesName: series, manager: manager) }
-                } else {
-                    unclusteredPDFs.append(contentsOf: clusterPDFs)
+            for (series, var clusterPDFs) in finalClusters {
+                guard series != "Ungrouped" && !series.isEmpty else {
+                    allImported.append(contentsOf: clusterPDFs)
+                    continue
                 }
+                
+                // Case-insensitive, whitespace-trimmed lookup in manager.collections
+                let existingCol = manager.collections.first(where: {
+                    $0.name.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) == series.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+                })
+                
+                // Group if:
+                // 1. A collection with this name already exists.
+                // 2. OR, there are at least 2 matching items.
+                if existingCol != nil || clusterPDFs.count > 1 {
+                    let targetCollection: PDFCollection
+                    if let existing = existingCol {
+                        targetCollection = existing
+                    } else {
+                        let newCol = PDFCollection(id: UUID(), name: series, icon: "books.vertical", color: "orange", creationDate: Date())
+                        manager.collections.append(newCol)
+                        targetCollection = newCol
+                    }
+                    
+                    for i in 0..<clusterPDFs.count {
+                        clusterPDFs[i].collectionId = targetCollection.id
+                        clusterPDFs[i].metadata.series = targetCollection.name
+                    }
+                }
+                allImported.append(contentsOf: clusterPDFs)
             }
             
-            if !unclusteredPDFs.isEmpty {
-                let incomingNames = Set(unclusteredPDFs.map { $0.url.lastPathComponent })
+            if !allImported.isEmpty {
+                let incomingNames = Set(allImported.map { $0.url.lastPathComponent })
                 manager.convertedPDFs.removeAll(where: { incomingNames.contains($0.url.lastPathComponent) })
-                manager.convertedPDFs.append(contentsOf: unclusteredPDFs)
+                manager.convertedPDFs.append(contentsOf: allImported)
             }
             
             manager.saveLibrary()
-        } // End MainActor.run
-
-        // ✅ PERF: Thumbnail generation — detached to prevent locking the UI banner at 100%
-        Task.detached(priority: .background) {
-            await withTaskGroup(of: Void.self) { group in
-                var inFlight = 0
-                for pdf in importedPDFs {
-                    if inFlight >= 4 {
-                        await group.next()
-                        inFlight -= 1
-                    }
-                    group.addTask { await manager.generateCoverThumbnail(for: pdf) }
-                    inFlight += 1
-                }
-            }
+            manager.backfillMissingThumbnails()
+            return allImported
         }
+        
+        // Run unified smart grouping in the background (persists and groups files)
+        await LibraryService.shared.runSmartGrouping()
+
+        // ✅ Import History: log each successfully imported file
+        for pdf in finalImportedPDFs {
+            let size = pdf.fileSize > 0 ? ByteCountFormatter.string(fromByteCount: pdf.fileSize, countStyle: .file) : "unknown size"
+            Logger.shared.log("✓ Imported: \(pdf.name) (\(size))", category: "Import", type: .success)
+        }
+        Logger.shared.log("✅ Import batch complete: \(finalImportedPDFs.count) file(s) added to library.", category: "Import", type: .success)
+        
+        return finalImportedPDFs
     }
     
     func finalizeSeriesImport(pdfs: [ConvertedPDF], seriesName: String, manager: ConversionManager) async {
         await MainActor.run {
             let targetCollection: PDFCollection
-            if let existing = manager.collections.first(where: { $0.name == seriesName }), !seriesName.isEmpty {
-                targetCollection = existing
-            } else if !seriesName.isEmpty {
-                let newCol = PDFCollection(id: UUID(), name: seriesName, icon: "books.vertical", color: "orange", creationDate: Date())
-                manager.collections.append(newCol)
-                targetCollection = newCol
+            let cleanedSeries = SeriesNameParser.cleanFolderName(seriesName).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !cleanedSeries.isEmpty {
+                if let existing = manager.collections.first(where: {
+                    $0.name.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) == cleanedSeries.lowercased()
+                }) {
+                    targetCollection = existing
+                } else {
+                    let newCol = PDFCollection(id: UUID(), name: cleanedSeries, icon: "books.vertical", color: "orange", creationDate: Date())
+                    manager.collections.append(newCol)
+                    targetCollection = newCol
+                }
             } else {
                 for pdf in pdfs {
                     manager.convertedPDFs.removeAll(where: { $0.url.lastPathComponent == pdf.url.lastPathComponent })
@@ -451,7 +546,7 @@ actor ImportOrchestrator {
 
             for var pdf in pdfs {
                 pdf.collectionId = targetCollection.id
-                pdf.metadata.series = seriesName
+                pdf.metadata.series = targetCollection.name
                 manager.convertedPDFs.removeAll(where: { $0.url.lastPathComponent == pdf.url.lastPathComponent })
                 manager.convertedPDFs.append(pdf)
                 // ✅ PERF: saveLibrary() removed from inside loop.
@@ -459,37 +554,27 @@ actor ImportOrchestrator {
             }
             manager.saveLibrary() // single debounced write for the entire series
         }
-
-        // ✅ PERF: Thumbnail generation — detached to prevent UI blocking
-        Task.detached(priority: .background) {
-            await withTaskGroup(of: Void.self) { group in
-                var inFlight = 0
-                for pdf in pdfs {
-                    if inFlight >= 4 {
-                        await group.next()
-                        inFlight -= 1
-                    }
-                    group.addTask { await manager.generateCoverThumbnail(for: pdf) }
-                    inFlight += 1
-                }
-            }
-        }
     }
     
     nonisolated func assignToSeries(_ pdf: ConvertedPDF, seriesName: String, manager: ConversionManager) {
         Task { @MainActor in
             let targetCollection: PDFCollection
-            if let existing = manager.collections.first(where: { $0.name == seriesName }) {
+            let cleanedSeries = SeriesNameParser.cleanFolderName(seriesName).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !cleanedSeries.isEmpty else { return }
+            
+            if let existing = manager.collections.first(where: {
+                $0.name.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) == cleanedSeries.lowercased()
+            }) {
                 targetCollection = existing
             } else {
-                let newCol = PDFCollection(id: UUID(), name: seriesName, icon: "books.vertical", color: "orange", creationDate: Date())
+                let newCol = PDFCollection(id: UUID(), name: cleanedSeries, icon: "books.vertical", color: "orange", creationDate: Date())
                 manager.collections.append(newCol)
                 targetCollection = newCol
             }
             
             if let index = manager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
                 manager.convertedPDFs[index].collectionId = targetCollection.id
-                manager.convertedPDFs[index].metadata.series = seriesName
+                manager.convertedPDFs[index].metadata.series = targetCollection.name
             }
             manager.saveLibrary()
         }
@@ -500,13 +585,18 @@ actor ImportOrchestrator {
         guard !localFolders.isEmpty else { return }
         
         await MainActor.run { manager.isConverting = true; manager.processingStatus = "Background Folder Sync..." }
-        defer { Task { await MainActor.run { manager.isConverting = false; manager.processingStatus = "" } } }
+        defer {
+            Task {
+                await SandboxCleanupManager.shared.autoCleanupIfStorageLow()
+                await MainActor.run { manager.isConverting = false; manager.processingStatus = "" }
+            }
+        }
         
         let existingPaths = await MainActor.run { Set(manager.convertedPDFs.map { $0.url.lastPathComponent }) }
         
         let newPDFs: [ConvertedPDF] = await Task.detached(priority: .userInitiated) { () -> [ConvertedPDF] in
             let fileManager = FileManager.default
-            let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+            let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
             var newlyImported: [ConvertedPDF] = []
             var staleBookmarkIndices: [Int] = []
             
@@ -546,7 +636,7 @@ actor ImportOrchestrator {
                               let isDirectory = resourceValues.isDirectory, !isDirectory else { continue }
                         
                         let ext = fileURL.pathExtension.lowercased()
-                        guard ["cbz", "zip", "epub"].contains(ext) else { continue }
+                        guard ["pdf", "epub", "cbz", "cbr", "cb7", "cbt", "zip"].contains(ext) else { continue }
                         
                         let fileName = fileURL.lastPathComponent
                         let destURL = documentsDir.appendingPathComponent(fileName)
@@ -555,8 +645,11 @@ actor ImportOrchestrator {
                     if existingPaths.contains(fileName) || syncedFileNames.contains(fileName) { continue }
                         do {
                             await MainActor.run { manager.processingStatus = "Syncing \(fileName)..." }
-                            if fileManager.fileExists(atPath: destURL.path) { try fileManager.removeItem(at: destURL) }
-                            try fileManager.copyItem(at: fileURL, to: destURL)
+                            try autoreleasepool {
+                                if fileManager.fileExists(atPath: destURL.path) { try fileManager.removeItem(at: destURL) }
+                                try fileManager.copyItem(at: fileURL, to: destURL)
+                                PhysicalFileSystemRouter.excludeFromBackup(at: destURL)
+                            }
 
                             // FIX: read size from enumerator resource values — saves one attributesOfItem syscall per file
                             let size = resourceValues.fileSize.map(Int64.init) ?? 0
@@ -605,15 +698,22 @@ actor ImportOrchestrator {
                                 }
                             }
                             
-                            let cType = MetadataHeuristics.detectAsymmetricContentType(url: destURL)
+                            let cType = MetadataHeuristics.detectAsymmetricContentType(url: fileURL)
                             
+                            let pdfID = UUID()
+                            // Cover extraction intentionally deferred: extracting covers inline for
+                            // every file in a large batch causes unbounded memory growth (OOM crash).
+                            // backfillMissingThumbnails() handles cover generation post-import with
+                            // a rate-limited batch of 5 + Task.yield() to prevent bus saturation.
+
                             var pdf = ConvertedPDF(
+                                id: pdfID,
                                 name: smartDisplayName,
                                 url: destURL,
                                 pageCount: 0,
                                 fileSize: size,
                                 metadata: metadata,
-                                contentType: cType
+                                contentType: (metadata.isManga ?? false) ? .manga : cType
                             )
                             if pdf.contentType == .hybrid || pdf.contentType == .book {
                                 pdf.documentSubtype = await self.detectDocumentSubtype(url: destURL, fileSize: size)
@@ -649,34 +749,29 @@ actor ImportOrchestrator {
         await MainActor.run {
             for var newPdf in newPDFs {
                 if let seriesName = newPdf.metadata.series, !seriesName.isEmpty {
-                    if let existingCol = manager.collections.first(where: { $0.name == seriesName }) {
-                        newPdf.collectionId = existingCol.id
-                    } else {
-                        let newCol = PDFCollection(id: UUID(), name: seriesName, icon: "folder", color: "blue", creationDate: Date())
-                        manager.collections.append(newCol)
-                        newPdf.collectionId = newCol.id
+                    let cleanedSeries = SeriesNameParser.cleanFolderName(seriesName).trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !cleanedSeries.isEmpty {
+                        let targetCol: PDFCollection
+                        if let existingCol = manager.collections.first(where: {
+                            $0.name.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) == cleanedSeries.lowercased()
+                        }) {
+                            targetCol = existingCol
+                        } else {
+                            let newCol = PDFCollection(id: UUID(), name: cleanedSeries, icon: "folder", color: "blue", creationDate: Date())
+                            manager.collections.append(newCol)
+                            targetCol = newCol
+                        }
+                        newPdf.collectionId = targetCol.id
+                        newPdf.metadata.series = targetCol.name
                     }
                 }
                 manager.convertedPDFs.removeAll(where: { $0.url.lastPathComponent == newPdf.url.lastPathComponent })
                 manager.convertedPDFs.append(newPdf)
             }
             manager.saveLibrary()
+            manager.backfillMissingThumbnails()
         }
-        // FIX: was one unstructured Task per file — floods thread pool with 1400 simultaneous zip opens.
-        // Now uses the same 4-slot TaskGroup pattern as importFilesAsSeries.
-        Task.detached(priority: .background) {
-            await withTaskGroup(of: Void.self) { group in
-                var inFlight = 0
-                for pdf in newPDFs {
-                    if inFlight >= 4 {
-                        await group.next()
-                        inFlight -= 1
-                    }
-                    group.addTask { await manager.generateCoverThumbnail(for: pdf) }
-                    inFlight += 1
-                }
-            }
-        }
+        await LibraryService.shared.runSmartGrouping()
     }
     
     nonisolated func detectContentType(from url: URL, mangaMode: Bool) -> ContentType {
@@ -722,6 +817,9 @@ actor ImportOrchestrator {
     func importPDF(url: URL, manager: ConversionManager) async {
         let fileName = url.deletingPathExtension().lastPathComponent
         await MainActor.run { manager.processingStatus = "Importing \(fileName)..." }
+        
+        let accessing = url.startAccessingSecurityScopedResource()
+        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
         
         do {
             let tempPDFURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".pdf")
@@ -787,13 +885,14 @@ actor ImportOrchestrator {
                     }
                     
                     let cbzName = fileName + ".cbz"
-                    let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+                    let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
                     let cbzURL = docDir.appendingPathComponent(cbzName)
                     
                     if FileManager.default.fileExists(atPath: cbzURL.path) {
                         try FileManager.default.removeItem(at: cbzURL)
                     }
                     try await ZipUtilities.zipDirectory(tempDir, to: cbzURL)
+                    PhysicalFileSystemRouter.excludeFromBackup(at: cbzURL)
                     
                     return (pageCount, firstPageData)
                 }
@@ -802,7 +901,7 @@ actor ImportOrchestrator {
             let mangaMode = await AppSettingsManager.shared.conversionSettings.mangaMode
             let contentType = detectContentType(from: url, mangaMode: mangaMode)
             
-            let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+            let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
             let cbzName = fileName + ".cbz"
             let cbzURL = docDir.appendingPathComponent(cbzName)
             let attributes = try FileManager.default.attributesOfItem(atPath: cbzURL.path)
@@ -825,6 +924,7 @@ actor ImportOrchestrator {
             await MainActor.run {
                 manager.convertedPDFs.append(finalPDF)
                 manager.saveLibrary()
+                manager.backfillMissingThumbnails()
                 manager.processingStatus = ""
             }
             

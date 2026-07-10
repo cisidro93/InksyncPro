@@ -147,7 +147,8 @@ actor CalibreWirelessClient {
 
         // Read JSON payload
         let jsonData = try await receive(exactly: length)
-        guard let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+        let jsonRaw = try? JSONSerialization.jsonObject(with: jsonData)
+        guard let json = jsonRaw as? [String: Any],
               let opInt = json["op"] as? Int
         else { throw CalibreError.badPacket }
 
@@ -392,7 +393,8 @@ actor CalibreWirelessClient {
     // MARK: - Utilities
 
     private func availableBytes() -> Int64 {
-        if let attrs = try? FileManager.default.attributesOfFileSystem(forPath: NSHomeDirectory()),
+        let fsAttrs = try? FileManager.default.attributesOfFileSystem(forPath: NSHomeDirectory())
+        if let attrs = fsAttrs,
            let free = attrs[.systemFreeSize] as? Int64 {
             return free
         }

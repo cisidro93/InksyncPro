@@ -103,7 +103,8 @@ class PlannerPDFGenerator {
         }
         
         // 4. Inject Hyperlink Annotations dynamically based on UUIDs
-        if !pendingLinks.isEmpty, let pdfDocument = PDFDocument(url: outputURL) {
+        if !pendingLinks.isEmpty {
+            guard let pdfDocument = PDFDocument(url: outputURL) else { return }
             for link in pendingLinks {
                 guard let physicalTargetIndex = pageUUIDToIndexMap[link.targetUUID],
                       let sourcePage = pdfDocument.page(at: link.pageIndex),

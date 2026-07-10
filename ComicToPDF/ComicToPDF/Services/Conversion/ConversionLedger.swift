@@ -2,17 +2,19 @@ import Foundation
 import Combine
 
 // Actor-isolated conversion ledger.
-// All public methods are actor-isolated — no DispatchQueue usage.
+// Refactored to a @MainActor class conforming to ObservableObject for easy SwiftUI bindings.
+// All public methods run on the Main Actor, making them thread-safe and UI-observable.
 // Persistence: atomic JSON write via tmp-rename pattern.
 
-actor ConversionLedger {
+@MainActor
+class ConversionLedger: ObservableObject {
     static let shared = ConversionLedger()
 
-    private var jobs: [UUID: ConversionJobRecord] = [:]
+    @Published var jobs: [UUID: ConversionJobRecord] = [:]
     private let persistURL: URL
-    nonisolated let batchCompletionSubject = SendableSubject<UUID>()
+    let batchCompletionSubject = SendableSubject<UUID>()
 
-    nonisolated var batchCompletionPublisher: AnyPublisher<UUID, Never> {
+    var batchCompletionPublisher: AnyPublisher<UUID, Never> {
         batchCompletionSubject.subject.eraseToAnyPublisher()
     }
 
@@ -20,6 +22,7 @@ actor ConversionLedger {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         persistURL = appSupport.appendingPathComponent("InkSyncPro/conversion_ledger.json")
         try? FileManager.default.createDirectory(at: persistURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        restore()
     }
 
     // MARK: - Public API
@@ -68,7 +71,7 @@ actor ConversionLedger {
         persist()
     }
 
-    func retryFailed() {
+    func retryFailed(manager: ConversionManager) {
         for key in jobs.keys {
             guard var rec = jobs[key], rec.status == .failed || rec.status == .abandoned else { continue }
             rec.status = .queued
@@ -79,10 +82,35 @@ actor ConversionLedger {
             jobs[key] = rec
         }
         persist()
+        
+        Task {
+            await ConversionOrchestrator.shared.processLedgerQueue(manager: manager)
+        }
+    }
+
+    func retryJob(_ id: UUID, manager: ConversionManager) {
+        guard var rec = jobs[id] else { return }
+        rec.status = .queued
+        rec.attemptCount = 0
+        rec.failureReason = nil
+        rec.nextRetryAt = nil
+        rec.completedAt = nil
+        jobs[id] = rec
+        persist()
+        
+        Task {
+            await ConversionOrchestrator.shared.processLedgerQueue(manager: manager)
+        }
     }
 
     func clearCompleted() {
         jobs = jobs.filter { $0.value.status != .succeeded && $0.value.status != .abandoned }
+        persist()
+    }
+
+    func removeJob(_ id: UUID) {
+        Logger.shared.log("ConversionLedger: removing job for id=\(id)", category: "Converter", type: .info)
+        jobs.removeValue(forKey: id)
         persist()
     }
 
@@ -99,6 +127,14 @@ actor ConversionLedger {
             try? FileManager.default.removeItem(at: tempDir)
             Logger.shared.log("ConversionLedger: Cleaned up temp dir for job \(jobID)", category: "Converter")
         }
+    }
+
+    var hasActiveJobs: Bool {
+        jobs.values.contains { $0.status == .queued || $0.status == .running || $0.status == .retrying }
+    }
+    
+    var activeJobsCount: Int {
+        jobs.values.filter { $0.status == .queued || $0.status == .running || $0.status == .retrying }.count
     }
 
     // MARK: - Persistence (atomic)

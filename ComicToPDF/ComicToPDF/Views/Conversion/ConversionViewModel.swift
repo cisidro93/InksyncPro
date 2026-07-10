@@ -21,10 +21,18 @@ class ConversionViewModel: ObservableObject {
         }
     }
 
-    func pipelineSubtitle(for pipeline: OutputPipeline) -> String {
+    func pipelineSubtitle(for pipeline: OutputPipeline, format: OutputFormat = .epub) -> String {
         switch pipeline {
         case .standard:
-            return "EPUB · No panel zoom · Cloud-safe (OneDrive, Google Drive, Send-to-Kindle)"
+            if format == .epub {
+                return "EPUB · No panel zoom · Cloud-safe (OneDrive, Google Drive, Send-to-Kindle)"
+            } else if format == .pdf {
+                return "PDF · High fidelity · Standard page layout"
+            } else if format == .cbz {
+                return "CBZ · High-fidelity archive · Standard page layout"
+            } else {
+                return "Standard page layout and format-native structure"
+            }
         case .proPanel:
             return "EPUB · Full Amazon Panel View Support · Universal Compatibility"
         }

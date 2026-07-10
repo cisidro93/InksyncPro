@@ -29,15 +29,40 @@ struct PDFGenerator: Sendable {
         
         let sourceImages = mangaMode ? images.reversed() : images
         
+        // Determine the standard page size by finding the most common image size
+        let fallbackTargetSize = settings.targetDeviceProfile.resolution ?? CGSize(width: 1200, height: 1800)
+        var standardSize = fallbackTargetSize
+        var sizeCounts: [String: Int] = [:]
+        
+        for imgURL in sourceImages.prefix(15) {
+            autoreleasepool {
+                if let img = UIImage(contentsOfFile: imgURL.path) {
+                    let w = round(img.size.width)
+                    let h = round(img.size.height)
+                    let key = "\(w),\(h)"
+                    sizeCounts[key, default: 0] += 1
+                }
+            }
+        }
+        
+        if let mostCommonKey = sizeCounts.max(by: { $0.value < $1.value })?.key {
+            let comps = mostCommonKey.components(separatedBy: ",")
+            if comps.count == 2, let w = Double(comps[0]), let h = Double(comps[1]) {
+                standardSize = CGSize(width: w, height: h)
+            }
+        } else if let firstURL = sourceImages.first, let firstImg = UIImage(contentsOfFile: firstURL.path) {
+            standardSize = firstImg.size
+        }
+        
         // Format is initialized, but bounds will be set per-page dynamically
         let format = UIGraphicsPDFRendererFormat()
         let renderer = UIGraphicsPDFRenderer(bounds: .zero, format: format)
         
         var hasValidChapters = false
-        var fallbackTargetSize = settings.targetDeviceProfile.resolution ?? CGSize(width: 1200, height: 1800)
         var tocLinks: [(rect: CGRect, targetPage: Int)] = []
         
         try renderer.writePDF(to: outputURL) { context in
+            var globalPageIndex = 0
             for (index, imageURL) in sourceImages.enumerated() {
                 autoreleasepool {
                     let image: UIImage?
@@ -52,59 +77,94 @@ struct PDFGenerator: Sendable {
                         return
                     }
                     
-                    // Apply E-Ink Filtering and Scaling
-                    let targetProfile = settings.targetDeviceProfile
-                    let applyEInkFilter = settings.imageEnhancement.grayscale
-                    let cropMargins = settings.trimMargins
-                    let reduceMoire = settings.imageEnhancement.reduceMoire
-                    let dither = settings.imageEnhancement.ditheringEnabled
+                    // A. Check for Webtoon Slicing or Spread Slicing
+                    var imagesToProcess: [UIImage] = []
+                    var isSliced = false
                     
-                    let optimizedImage = EInkOptimizer.shared.processImage(
-                        safeImage,
-                        for: targetProfile,
-                        applyGrayscale: applyEInkFilter,
-                        cropMargins: cropMargins,
-                        reduceMoire: reduceMoire,
-                        dither: dither,
-                        marginOffset: settings.bindingMarginOffset,
-                        marginSide: settings.bindingMarginSide,
-                        isOddPage: index % 2 == 0
-                    )
+                    let width = safeImage.size.width
+                    let height = safeImage.size.height
                     
-                    let targetSize = targetProfile.resolution ?? optimizedImage.size
-                    fallbackTargetSize = targetSize
-                    let pageRect = CGRect(origin: .zero, size: targetSize)
+                    if settings.splitWebtoon && height > width * 1.5 {
+                        let slices = ImageProcessor.sliceWebtoon(image: safeImage, targetAspectRatio: 1.33)
+                        if slices.count > 1 {
+                            imagesToProcess = slices
+                            isSliced = true
+                        }
+                    } else if settings.splitSpreads && width > height * 1.1 {
+                        let slices = ImageProcessor.sliceSpread(image: safeImage, isManga: settings.mangaMode)
+                        if slices.count > 1 {
+                            imagesToProcess = slices
+                            isSliced = true
+                        }
+                    }
                     
-                    context.beginPage(withBounds: pageRect, pageInfo: [:])
+                    if !isSliced {
+                        imagesToProcess = [safeImage]
+                    }
                     
-                    // Add Internal Anchor for Hyperlinking
-                    let displayPageNum = index + 1
-                    context.setURL(URL(string: "page://\(displayPageNum)")!, for: pageRect)
-                    
-                    // Aspect Fit Calculation
-                    let imgSize = optimizedImage.size
-                    let hRatio = targetSize.width / imgSize.width
-                    let vRatio = targetSize.height / imgSize.height
-                    let scale = min(hRatio, vRatio)
-                    
-                    let drawnSize = CGSize(width: imgSize.width * scale, height: imgSize.height * scale)
-                    let origin = CGPoint(
-                        x: (targetSize.width - drawnSize.width) / 2.0,
-                        y: (targetSize.height - drawnSize.height) / 2.0
-                    )
-                    
-                    // Draw white background
-                    UIColor.white.setFill()
-                    context.fill(pageRect)
-                    
-                    // ✅ Fix (KCC Optimization): 
-                    // UIGraphicsPDFRenderer defaults to JPEG wrappers for UIImages which bloats 
-                    // B&W manga from 200MB to 800MB+. We forcefully coerce the image to PNG Data first.
-                    if let pngData = optimizedImage.pngData(), let pngImage = UIImage(data: pngData) {
-                        pngImage.draw(in: CGRect(origin: origin, size: drawnSize))
-                    } else {
-                        // Fallback
-                        optimizedImage.draw(in: CGRect(origin: origin, size: drawnSize))
+                    for slice in imagesToProcess {
+                        // Apply E-Ink Filtering and Scaling
+                        let optimizedImage = EInkOptimizer.shared.processImage(
+                            slice,
+                            settings: settings,
+                            isOddPage: globalPageIndex % 2 == 0
+                        )
+                        
+                        let imgSize = optimizedImage.size
+                        let isLandscape = imgSize.width > imgSize.height
+                        let standardIsLandscape = standardSize.width > standardSize.height
+                        
+                        let targetSize: CGSize
+                        if isLandscape && !standardIsLandscape {
+                            // Double page spread: scale width proportional to height
+                            let scaleHeight = standardSize.height
+                            let scaleWidth = scaleHeight * (imgSize.width / imgSize.height)
+                            targetSize = CGSize(width: scaleWidth, height: scaleHeight)
+                        } else if !isLandscape && standardIsLandscape {
+                            // Standard is landscape, but page is portrait: scale height proportional to width
+                            let scaleWidth = standardSize.width
+                            let scaleHeight = scaleWidth * (imgSize.height / imgSize.width)
+                            targetSize = CGSize(width: scaleWidth, height: scaleHeight)
+                        } else {
+                            targetSize = standardSize
+                        }
+                        
+                        let pageRect = CGRect(origin: .zero, size: targetSize)
+                        
+                        context.beginPage(withBounds: pageRect, pageInfo: [:])
+                        
+                        // Add Internal Anchor for Hyperlinking
+                        let displayPageNum = globalPageIndex + 1
+                        if let url = URL(string: "page://\(displayPageNum)") {
+                            context.setURL(url, for: pageRect)
+                        }
+                        
+                        // Aspect Fit Calculation
+                        let hRatio = targetSize.width / imgSize.width
+                        let vRatio = targetSize.height / imgSize.height
+                        let scale = min(hRatio, vRatio)
+                        
+                        let drawnSize = CGSize(width: imgSize.width * scale, height: imgSize.height * scale)
+                        let origin = CGPoint(
+                            x: (targetSize.width - drawnSize.width) / 2.0,
+                            y: (targetSize.height - drawnSize.height) / 2.0
+                        )
+                        
+                        // Draw white background
+                        UIColor.white.setFill()
+                        context.fill(pageRect)
+                        
+                        // ✅ Fix (KCC Optimization): 
+                        // UIGraphicsPDFRenderer defaults to JPEG wrappers for UIImages which bloats 
+                        // B&W manga from 200MB to 800MB+. We forcefully coerce the image to PNG Data first.
+                        if let pngData = optimizedImage.pngData(), let pngImage = UIImage(data: pngData) {
+                            pngImage.draw(in: CGRect(origin: origin, size: drawnSize))
+                        } else {
+                            // Fallback
+                            optimizedImage.draw(in: CGRect(origin: origin, size: drawnSize))
+                        }
+                        
+                        globalPageIndex += 1
                     }
                     
                     // Progress
@@ -181,54 +241,55 @@ struct PDFGenerator: Sendable {
         if hasValidChapters, let chapterList = chapters {
             if !isSafeSize {
                 Logger.shared.log("⚠️ Skipping PDF ToC Injection: File exceeds safe memory bounds (\(rawFileSize / 1024 / 1024)MB).", category: "PDF", type: .warning)
-            } else if let pdfDocument = PDFDocument(url: outputURL) {
-            let outlineRoot = PDFOutline()
-            for chapter in chapterList {
-                let actualIndex = mangaMode ? (images.count - 1 - chapter.pageIndex) : chapter.pageIndex
-                let safeIndex = max(0, min(actualIndex, pdfDocument.pageCount - 1))
-                
-                if let destinationPage = pdfDocument.page(at: safeIndex) {
-                    let outlineItem = PDFOutline()
-                    outlineItem.label = chapter.title
-                    outlineItem.destination = PDFDestination(page: destinationPage, at: CGPoint(x: 0, y: destinationPage.bounds(for: .mediaBox).height))
-                    outlineRoot.insertChild(outlineItem, at: outlineRoot.numberOfChildren)
-                }
-            }
-            
-            // Add Physical ToC to Outline
-            if let tocPage = pdfDocument.page(at: pdfDocument.pageCount - 1) {
-                let tocOutline = PDFOutline()
-                tocOutline.label = "Table of Contents"
-                tocOutline.destination = PDFDestination(page: tocPage, at: CGPoint(x: 0, y: tocPage.bounds(for: .mediaBox).height))
-                outlineRoot.insertChild(tocOutline, at: outlineRoot.numberOfChildren)
-                
-                // 🔗 Inject Tap Link Annotations into the ToC Page
-                for link in tocLinks {
-                    // PDF coordinates are flipped (Origin at bottom-left)
-                    let pdfY = tocPage.bounds(for: .mediaBox).height - link.rect.maxY
-                    let annotationRect = CGRect(x: link.rect.minX, y: pdfY, width: link.rect.width, height: link.rect.height)
+            } else {
+                guard let pdfDocument = PDFDocument(url: outputURL) else { return }
+                let outlineRoot = PDFOutline()
+                for chapter in chapterList {
+                    let actualIndex = mangaMode ? (images.count - 1 - chapter.pageIndex) : chapter.pageIndex
+                    let safeIndex = max(0, min(actualIndex, pdfDocument.pageCount - 1))
                     
-                    // Create an invisible hyperlink annotation
-                    let linkAnnotation = PDFAnnotation(bounds: annotationRect, forType: .link, withProperties: nil)
-                    
-                    // Point annotation to target page
-                    if let targetPDFPage = pdfDocument.page(at: link.targetPage - 1) {
-                        let destination = PDFDestination(page: targetPDFPage, at: CGPoint(x: 0, y: targetPDFPage.bounds(for: .mediaBox).height))
-                        linkAnnotation.action = PDFActionGoTo(destination: destination)
-                        tocPage.addAnnotation(linkAnnotation)
+                    if let destinationPage = pdfDocument.page(at: safeIndex) {
+                        let outlineItem = PDFOutline()
+                        outlineItem.label = chapter.title
+                        outlineItem.destination = PDFDestination(page: destinationPage, at: CGPoint(x: 0, y: destinationPage.bounds(for: .mediaBox).height))
+                        outlineRoot.insertChild(outlineItem, at: outlineRoot.numberOfChildren)
                     }
                 }
-            }
-            
-            pdfDocument.outlineRoot = outlineRoot
-            let tempURL = outputURL.deletingPathExtension().appendingPathExtension("tmp.pdf")
-            if pdfDocument.write(to: tempURL) {
-                try? FileManager.default.removeItem(at: outputURL)
-                try? FileManager.default.moveItem(at: tempURL, to: outputURL)
-            } else {
-                Logger.shared.log("Failed to write PDF with outlines, file size might be 0 bytes.", category: "PDF", type: .error)
-            }
-        }   
+                
+                // Add Physical ToC to Outline
+                if let tocPage = pdfDocument.page(at: pdfDocument.pageCount - 1) {
+                    let tocOutline = PDFOutline()
+                    tocOutline.label = "Table of Contents"
+                    tocOutline.destination = PDFDestination(page: tocPage, at: CGPoint(x: 0, y: tocPage.bounds(for: .mediaBox).height))
+                    outlineRoot.insertChild(tocOutline, at: outlineRoot.numberOfChildren)
+                    
+                    // 🔗 Inject Tap Link Annotations into the ToC Page
+                    for link in tocLinks {
+                        // PDF coordinates are flipped (Origin at bottom-left)
+                        let pdfY = tocPage.bounds(for: .mediaBox).height - link.rect.maxY
+                        let annotationRect = CGRect(x: link.rect.minX, y: pdfY, width: link.rect.width, height: link.rect.height)
+                        
+                        // Create an invisible hyperlink annotation
+                        let linkAnnotation = PDFAnnotation(bounds: annotationRect, forType: .link, withProperties: nil)
+                        
+                        // Point annotation to target page
+                        if let targetPDFPage = pdfDocument.page(at: link.targetPage - 1) {
+                            let destination = PDFDestination(page: targetPDFPage, at: CGPoint(x: 0, y: targetPDFPage.bounds(for: .mediaBox).height))
+                            linkAnnotation.action = PDFActionGoTo(destination: destination)
+                            tocPage.addAnnotation(linkAnnotation)
+                        }
+                    }
+                }
+                
+                pdfDocument.outlineRoot = outlineRoot
+                let tempURL = outputURL.deletingPathExtension().appendingPathExtension("tmp.pdf")
+                if pdfDocument.write(to: tempURL) {
+                    try? FileManager.default.removeItem(at: outputURL)
+                    try? FileManager.default.moveItem(at: tempURL, to: outputURL)
+                } else {
+                    Logger.shared.log("Failed to write PDF with outlines, file size might be 0 bytes.", category: "PDF", type: .error)
+                }
+            }   
         } // Close outer `if hasValidChapters`
         
         Logger.shared.log("Generated Optimized PDF at \(outputURL.path)", category: "PDF", type: .success)

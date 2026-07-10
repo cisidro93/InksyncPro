@@ -193,6 +193,14 @@ struct PanelExtractor {
         let width = CGFloat(cgImage.width)
         let height = CGFloat(cgImage.height)
         
+        guard !normalizedRect.minX.isNaN && !normalizedRect.minX.isInfinite &&
+              !normalizedRect.minY.isNaN && !normalizedRect.minY.isInfinite &&
+              !normalizedRect.width.isNaN && !normalizedRect.width.isInfinite &&
+              !normalizedRect.height.isNaN && !normalizedRect.height.isInfinite &&
+              normalizedRect.width > 0 && normalizedRect.height > 0 else {
+            return nil
+        }
+        
         let cropRect = CGRect(
             x: normalizedRect.minX * width,
             y: (1.0 - normalizedRect.maxY) * height,

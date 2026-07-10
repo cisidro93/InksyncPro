@@ -31,7 +31,6 @@ struct RegisteredDevice: Codable, Identifiable, Equatable {
     enum TransferMethod: String, Codable, CaseIterable {
         case airDrop = "AirDrop"
         case webDAV = "WebDAV"
-        case kfxHandoff = "Kindle via Mac/PC"
         case sendToKindle = "Send to Kindle"
         case saveToFiles = "Save to Files"
     }

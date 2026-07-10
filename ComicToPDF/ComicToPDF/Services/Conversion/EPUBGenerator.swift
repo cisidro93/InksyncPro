@@ -143,7 +143,7 @@ class EPUBGenerator {
         
         // Streaming Process
         for (index, url) in imageURLs.enumerated() {
-            try? autoreleasepool {
+            try autoreleasepool {
                 let pageNumber = index + 1
                 let imageName = "image\(pageNumber).jpg"
                 let imageDestURL = oebpsDir.appendingPathComponent("images/\(imageName)")
@@ -153,16 +153,17 @@ class EPUBGenerator {
             // But we typically enforce constraints.
             // Let's load and processed like normal to ensure consistency
             
-            var imgWidth = 1000
-            var imgHeight = 1500
+            guard let image = UIImage(contentsOfFile: url.path) else {
+                throw NSError(domain: "ImageProcessor", code: 404, userInfo: [
+                    NSLocalizedDescriptionKey: "Invalid or corrupted image file '\(url.lastPathComponent)'. Please verify your source file."
+                ])
+            }
             
-            if let image = UIImage(contentsOfFile: url.path) {
-                let processed = resizeImageIfNeeded(image)
-                imgWidth = Int(processed.size.width)
-                imgHeight = Int(processed.size.height)
-                if let data = processed.jpegData(compressionQuality: compressionQuality) {
-                     try data.write(to: imageDestURL)
-                }
+            let processed = resizeImageIfNeeded(image)
+            let imgWidth = Int(processed.size.width)
+            let imgHeight = Int(processed.size.height)
+            if let data = processed.jpegData(compressionQuality: compressionQuality) {
+                 try data.write(to: imageDestURL)
             }
             
             accumulatedImageManifestItems += "        <item id=\"image\(pageNumber)\" href=\"images/\(imageName)\" media-type=\"image/jpeg\"/>\n"
@@ -231,7 +232,8 @@ class EPUBGenerator {
     
     private func generateContentOPF() throws {
         let titleBlock = metadata.title.isEmpty ? "Comic Book" : metadata.title
-        let hardenedMetadata = OPFGenerator.generateHardenedMetadata(title: titleBlock)
+        let isManga = settings.readingDirection == .rtl
+        let hardenedMetadata = OPFGenerator.generateHardenedMetadata(title: titleBlock, isManga: isManga)
         
         let contentOPF = """
         <?xml version="1.0" encoding="UTF-8"?>
@@ -256,9 +258,9 @@ class EPUBGenerator {
         // 🚨 CRITICAL 5.19.3 FIX: Explicit global CSS to negate AWS padding overrides
         let cssContent = """
         @page { margin: 0; padding: 0; }
-        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #000000; overflow: hidden; }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #000000; }
         div { margin: 0; padding: 0; position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
-        img { margin: 0; padding: 0; position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; }
+        img { margin: 0; padding: 0; position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
         svg { margin: 0; padding: 0; display: block; width: 100%; height: 100%; }
         """
         try cssContent.write(to: tempDirectory.appendingPathComponent("OEBPS/style.css"), atomically: true, encoding: .utf8)
@@ -332,7 +334,9 @@ class EPUBGenerator {
         
         // 2. Add remaining files (META-INF, OEBPS)
         let resourceKeys: [URLResourceKey] = [.isDirectoryKey, .fileSizeKey]
-        let enumerator = FileManager.default.enumerator(at: tempDirectory, includingPropertiesForKeys: resourceKeys)!
+        guard let enumerator = FileManager.default.enumerator(at: tempDirectory, includingPropertiesForKeys: resourceKeys) else {
+            throw NSError(domain: "EPUBGenerator", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to enumerate files"])
+        }
         
         for case let fileURL as URL in enumerator {
             let resourceValues = try fileURL.resourceValues(forKeys: Set(resourceKeys))
@@ -420,10 +424,11 @@ class EPUBGenerator {
         let finalCanvas = canvasSize ?? size
         
         // Check for sanity
-        if finalCanvas.width > 5000 || finalCanvas.height > 5000 { return image }
+        if finalCanvas.width <= 0 || finalCanvas.height <= 0 || finalCanvas.width.isNaN || finalCanvas.height.isNaN || finalCanvas.width > 5000 || finalCanvas.height > 5000 { return image }
         
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1.0
+        format.preferredRange = .standard // Forces standard sRGB color space
         format.opaque = true // No alpha channel = smaller file
         
         let renderer = UIGraphicsImageRenderer(size: finalCanvas, format: format)

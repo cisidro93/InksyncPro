@@ -20,6 +20,8 @@
     <string>1</string>
     <key>LSRequiresIPhoneOS</key>
     <true/>
+    <key>CADisableMinimumFrameDurationOnPhone</key>
+    <true/>
     <key>UIApplicationSceneManifest</key>
     <dict>
         <key>UIApplicationSupportsMultipleScenes</key>
@@ -66,9 +68,7 @@
     <key>NSBonjourServices</key>
     <array>
         <string>_inksync._tcp</string>
-        <string>_inksync._tcp.</string>
         <string>_http._tcp</string>
-        <string>_http._tcp.</string>
     </array>
     
     <!-- FILE SHARING & DOCS -->
@@ -78,7 +78,7 @@
     <true/>
 
     
-    <!-- DOCUMENT TYPES (CBZ) -->
+    <!-- DOCUMENT TYPES (CBZ & CBR) -->
     <key>CFBundleDocumentTypes</key>
     <array>
         <dict>
@@ -88,7 +88,10 @@
             <string>Owner</string>
             <key>LSItemContentTypes</key>
             <array>
+                <string>com.macrabbit.comicbookzip</string>
+                <string>com.macrabbit.comicbookrar</string>
                 <string>com.antigravity.cbz</string>
+                <string>com.antigravity.cbr</string>
                 <string>com.adobe.pdf</string>
                 <string>org.idpf.epub-container</string>
                 <string>org.7-zip.7-zip-archive</string>
@@ -126,6 +129,26 @@
                 </array>
             </dict>
         </dict>
+        <dict>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.data</string>
+                <string>public.archive</string>
+            </array>
+            <key>UTTypeDescription</key>
+            <string>Comic Book Archive (Rar)</string>
+            <key>UTTypeIconFiles</key>
+            <array/>
+            <key>UTTypeIdentifier</key>
+            <string>com.antigravity.cbr</string>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array>
+                    <string>cbr</string>
+                </array>
+            </dict>
+        </dict>
         <!-- Library drag-and-drop payload: internal type used for series grouping gestures -->
         <dict>
             <key>UTTypeConformsTo</key>
@@ -143,8 +166,54 @@
         </dict>
     </array>
 
+    <key>UTImportedTypeDeclarations</key>
+    <array>
+        <dict>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.data</string>
+                <string>public.archive</string>
+            </array>
+            <key>UTTypeDescription</key>
+            <string>Comic Book Archive Zip</string>
+            <key>UTTypeIconFiles</key>
+            <array/>
+            <key>UTTypeIdentifier</key>
+            <string>com.macrabbit.comicbookzip</string>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array>
+                    <string>cbz</string>
+                    <string>CBZ</string>
+                </array>
+            </dict>
+        </dict>
+        <dict>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.data</string>
+                <string>public.archive</string>
+            </array>
+            <key>UTTypeDescription</key>
+            <string>Comic Book Archive Rar</string>
+            <key>UTTypeIconFiles</key>
+            <array/>
+            <key>UTTypeIdentifier</key>
+            <string>com.macrabbit.comicbookrar</string>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array>
+                    <string>cbr</string>
+                    <string>CBR</string>
+                </array>
+            </dict>
+        </dict>
+    </array>
+
     <!-- OAUTH CALLBACK URL SCHEMES -->
-    <!-- Registers inksyncpro:// so iOS routes Dropbox & Google OAuth callbacks back into this app -->
+    <!-- Registers inksyncpro:// so iOS routes Dropbox OAuth callbacks back into this app -->
     <key>CFBundleURLTypes</key>
     <array>
         <dict>
@@ -156,5 +225,10 @@
             </array>
         </dict>
     </array>
+    
+    <!-- EXPORT COMPLIANCE -->
+    <!-- Prevents automated App Store Connect warning since we only use standard HTTPS/system encryption -->
+    <key>ITSAppUsesNonExemptEncryption</key>
+    <false/>
 </dict>
 </plist>

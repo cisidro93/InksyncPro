@@ -10,7 +10,6 @@ struct ReaderSettingsSheet: View {
     @Binding var isVerticalScroll: Bool
 
     // Layout
-    @Binding var isDoublePageMode: Bool
     @Binding var autoLandscapeDualPage: Bool
 
     // Image Enhancement
@@ -19,13 +18,16 @@ struct ReaderSettingsSheet: View {
     @Binding var isAutoCropEnabled: Bool
 
     // Color Filter
-    @Binding var colorFilter: ReaderColorFilter
+    @Binding var colorFilter: ReadingFilter
 
     // Ambient
     @ObservedObject var ambientBrightness: AmbientBrightnessManager
+    @Binding var brightnessLevel: CGFloat
+    @Binding var warmthLevel: Double
 
     // Webtoon
     @Binding var isWebtoonAutoScrolling: Bool
+    @Binding var webtoonScrollSpeed: Double
 
     // Callbacks
     var onJumpToPage: () -> Void
@@ -37,16 +39,18 @@ struct ReaderSettingsSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 VStack(spacing: 24) {
                     readingModeSection
                     layoutSection
                     pageTurnSection
+                    tapZoneSection
                     imageEnhancementSection
                     colorFilterSection
                     ambientSection
                     if isVerticalScroll { webtoonSection }
+                    performanceSection
                     toolsSection
                 }
                 .padding(.horizontal, 20)
@@ -85,23 +89,48 @@ struct ReaderSettingsSheet: View {
     // MARK: - Layout
     private var layoutSection: some View {
         SettingsSection(title: "Layout", icon: "rectangle.split.2x1") {
-            SettingsToggleRow(
-                label: "Dual Page (Manual)",
-                icon: "rectangle.split.2x1.fill",
-                isOn: $isDoublePageMode
-            )
+            // Smart orientation-aware dual-page mode.
+            // When ON (default): landscape → dual page, portrait → single page automatically.
+            // When OFF: always single page regardless of orientation.
+            HStack(spacing: 12) {
+                Image(systemName: autoLandscapeDualPage ? "rectangle.split.2x1.fill" : "rectangle")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(autoLandscapeDualPage ? Color.orange : Color.inkTextSecondary)
+                    .frame(width: 28)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Smart Dual-Page")
+                        .font(.system(size: 15))
+                        .foregroundStyle(Color.inkTextPrimary)
+                    Text("Landscape → dual  ·  Portrait → single")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.inkTextSecondary)
+                }
+                Spacer()
+                Toggle("", isOn: $autoLandscapeDualPage)
+                    .labelsHidden()
+                    .tint(Color.orange)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
             Divider().padding(.leading, 44)
             SettingsToggleRow(
-                label: "Auto Dual Page in Landscape",
-                icon: "iphone.landscape",
-                isOn: $autoLandscapeDualPage
+                label: "Zoom Lock (Preserve Zoom)",
+                icon: "lock.magnifyingglass",
+                isOn: $isZoomLockEnabled
             )
         }
     }
 
+
     // MARK: - Page Turn Style
     @AppStorage("pageTurnStyle") private var pageTurnStyleRaw = PageTurnStyle.slide.rawValue
+    @AppStorage("essentialReaderMode") private var essentialReaderMode = false
+    @AppStorage("isHapticsEnabled") private var isHapticsEnabled = true
+    @AppStorage("backTapEnabled") private var backTapEnabled = false
     private var currentTurnStyle: PageTurnStyle { PageTurnStyle(rawValue: pageTurnStyleRaw) ?? .slide }
+
+    @AppStorage("isZoomLockEnabled") private var isZoomLockEnabled = false
+    @AppStorage("tapZoneStyle") private var tapZoneStyleRaw = TapZoneStyle.classic.rawValue
 
     private var pageTurnSection: some View {
         SettingsSection(title: "Page Turn Style", icon: "hand.draw") {
@@ -116,6 +145,22 @@ struct ReaderSettingsSheet: View {
         }
     }
 
+    private var tapZoneStyle: TapZoneStyle { TapZoneStyle(rawValue: tapZoneStyleRaw) ?? .classic }
+
+    private var tapZoneSection: some View {
+        SettingsSection(title: "Tap Zone Style", icon: "hand.tap") {
+            HStack(spacing: 8) {
+                ForEach(TapZoneStyle.allCases, id: \.self) { style in
+                    TapZoneStyleCard(style: style, isSelected: tapZoneStyle == style) {
+                        UserDefaults.standard.set(style.rawValue, forKey: "tapZoneStyle")
+                    }
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+        }
+    }
+
     // MARK: - Image Enhancement
     private var imageEnhancementSection: some View {
         SettingsSection(title: "Image Enhancement", icon: "wand.and.stars") {
@@ -125,13 +170,13 @@ struct ReaderSettingsSheet: View {
                 isOn: $isAutoCropEnabled
             )
             Divider().padding(.leading, 44)
-            SettingsToggleRow(
-                label: "Auto Contrast",
+            SettingsSliderRow(
+                label: "Auto Contrast Level",
                 icon: "circle.lefthalf.filled",
-                isOn: Binding(
-                    get: { autoContrastLevel > 1.0 },
-                    set: { val in autoContrastLevel = val ? 1.5 : 1.0 }
-                )
+                value: $autoContrastLevel,
+                range: 1.0...2.0,
+                step: 0.05,
+                displayFormat: { String(format: "%.2f×", $0) }
             )
             Divider().padding(.leading, 44)
             SettingsToggleRow(
@@ -146,7 +191,7 @@ struct ReaderSettingsSheet: View {
     private var colorFilterSection: some View {
         SettingsSection(title: "Color Filter", icon: "paintpalette") {
             HStack(spacing: 10) {
-                ForEach(ReaderColorFilter.allCases, id: \.self) { filter in
+                ForEach(ReadingFilter.allCases, id: \.self) { filter in
                     ColorFilterCard(filter: filter, isSelected: colorFilter == filter) {
                         withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
                             colorFilter = filter
@@ -171,6 +216,27 @@ struct ReaderSettingsSheet: View {
                         ambientBrightness.evaluate()
                     }
                 )
+            )
+            Divider().padding(.leading, 44)
+            SettingsSliderRow(
+                label: "Screen Brightness",
+                icon: "sun.max.fill",
+                value: Binding<Double>(
+                    get: { Double(brightnessLevel) },
+                    set: { brightnessLevel = CGFloat($0) }
+                ),
+                range: 0.0...1.0,
+                step: 0.05,
+                displayFormat: { String(format: "%.0f%%", $0 * 100) }
+            )
+            Divider().padding(.leading, 44)
+            SettingsSliderRow(
+                label: "Night Warmth",
+                icon: "flame.fill",
+                value: $warmthLevel,
+                range: 0.0...0.4,
+                step: 0.02,
+                displayFormat: { String(format: "%.0f%%", ($0 / 0.4) * 100) }
             )
             if ambientBrightness.autoNightMode {
                 Divider().padding(.leading, 44)
@@ -197,6 +263,42 @@ struct ReaderSettingsSheet: View {
                 label: "Auto-Scroll",
                 icon: "play.circle.fill",
                 isOn: $isWebtoonAutoScrolling
+            )
+            if isWebtoonAutoScrolling {
+                Divider().padding(.leading, 44)
+                SettingsSliderRow(
+                    label: "Scroll Speed",
+                    icon: "speedometer",
+                    value: $webtoonScrollSpeed,
+                    range: 10.0...150.0,
+                    step: 5.0,
+                    displayFormat: { String(format: "%.0f px/s", $0) }
+                )
+            }
+        }
+    }
+
+    // MARK: - Performance & Immersion
+    private var performanceSection: some View {
+        SettingsSection(title: "Performance & Immersion", icon: "bolt.fill") {
+            SettingsToggleRow(
+                label: "Essential Speed Mode",
+                icon: "bolt.speedometer",
+                isOn: $essentialReaderMode
+            )
+            if !essentialReaderMode {
+                Divider().padding(.leading, 44)
+                SettingsToggleRow(
+                    label: "Haptic Feedback",
+                    icon: "waveform.path.ecg",
+                    isOn: $isHapticsEnabled
+                )
+            }
+            Divider().padding(.leading, 44)
+            SettingsToggleRow(
+                label: "Back Tap Navigation",
+                icon: "hand.tap.fill",
+                isOn: $backTapEnabled
             )
         }
     }
@@ -339,7 +441,7 @@ private struct PageTurnStyleCard: View {
 }
 
 private struct ColorFilterCard: View {
-    let filter: ReaderColorFilter
+    let filter: ReadingFilter
     let isSelected: Bool
     let action: () -> Void
 
@@ -347,8 +449,8 @@ private struct ColorFilterCard: View {
         switch filter {
         case .none:      return Color.white.opacity(0.12)
         case .sepia:     return Color(red: 0.44, green: 0.26, blue: 0.08).opacity(0.3)
-        case .grayscale: return Color.gray.opacity(0.3)
-        case .warm:      return Color(red: 1.0, green: 0.75, blue: 0.4).opacity(0.35)
+        case .midnight:  return Color(red: 0.35, green: 0.25, blue: 0.6).opacity(0.35)
+        case .amber:     return Color(red: 1.0, green: 0.75, blue: 0.4).opacity(0.35)
         }
     }
 
@@ -378,3 +480,73 @@ private struct ColorFilterCard: View {
         .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isSelected)
     }
 }
+
+private struct SettingsSliderRow: View {
+    let label: String
+    let icon: String
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    let step: Double
+    let displayFormat: (Double) -> String
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(Color.inkTextSecondary)
+                .frame(width: 28)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text(label)
+                        .font(.system(size: 15))
+                        .foregroundStyle(Color.inkTextPrimary)
+                    Spacer()
+                    Text(displayFormat(value))
+                        .font(.system(size: 13, weight: .semibold, design: .rounded).monospacedDigit())
+                        .foregroundStyle(Color.orange)
+                }
+                Slider(value: $value, in: range, step: step)
+                    .tint(Color.orange)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+    }
+}
+
+private struct TapZoneStyleCard: View {
+    let style: TapZoneStyle
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 8) {
+                Image(systemName: style.icon)
+                    .font(.system(size: 20, weight: .medium))
+                    .foregroundStyle(isSelected ? Color.orange : Color.inkTextSecondary)
+                Text(style.label)
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(isSelected ? Color.orange : Color.inkTextSecondary)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 70)
+            .padding(.vertical, 8)
+            .padding(.horizontal, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(isSelected ? Color.orange.opacity(0.12) : Color.inkSurfaceRaised)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(isSelected ? Color.orange.opacity(0.5) : Color.clear, lineWidth: 1.5)
+            )
+        }
+        .buttonStyle(.plain)
+        .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isSelected)
+    }
+}
+

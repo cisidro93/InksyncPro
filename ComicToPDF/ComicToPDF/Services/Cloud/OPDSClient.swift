@@ -468,7 +468,8 @@ private extension String {
         if http.statusCode == 401 { throw OPDSError.connectionFailed("Invalid email or password.") }
         guard (200...299).contains(http.statusCode) else { throw OPDSError.httpError(http.statusCode) }
 
-        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+        let jsonObj = try? JSONSerialization.jsonObject(with: data)
+        guard let json = jsonObj as? [String: Any],
               let token = json["token"] as? String
         else { throw OPDSError.parseFailure }
 
@@ -501,8 +502,10 @@ private extension String {
         request.httpBody = try JSONSerialization.data(withJSONObject: ["token": refresh])
 
         let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode)
+        else { throw OPDSError.connectionFailed("Token refresh failed — please re-authenticate.") }
+        let refreshJsonObj = try? JSONSerialization.jsonObject(with: data)
+        guard let json = refreshJsonObj as? [String: Any],
               let newToken = json["token"] as? String
         else { throw OPDSError.connectionFailed("Token refresh failed — please re-authenticate.") }
 

@@ -1,168 +1,427 @@
 import SwiftUI
+import UIKit
 
 // ============================================================
-// MARK: - Book Page Turn Transition (Magazine-spread feel)
+// MARK: - Native Page Curl Transition (UIPageViewController)
 // ============================================================
-/// A custom page-flip transition that mirrors how a physical book opens.
-/// - Right side of screen taps → page turns forward (curl from right)
-/// - Left side of screen taps → page turns back (curl from left)
-struct BookFlipGesture: View {
+struct PageCurlReader: UIViewControllerRepresentable {
     @Binding var currentIndex: Int
-    let content: (Int) -> AnyView
+    let totalPages: Int
+    let cache: ComicImageCache
+    let isTwoUp: Bool
     let isMangaRTL: Bool
+    let activeFilterPreset: ReadingFilterPreset
     var onChromeTap: () -> Void
+    var onFlipPastEnd: (() -> Void)?
 
-    var canFlipForward: () -> Bool
-    var canFlipBack: () -> Bool
-    var onFlipForward: () -> Void
-    var onFlipBack: () -> Void
+    func computeSpreads() -> [[Int]] {
+        var allSpreads: [[Int]] = []
+        let landscapeArray = cache.isLandscapeArray
 
-    @State private var dragOffset: CGFloat = 0
-    /// Guards the full flip sequence — prevents double-advance from rapid taps.
-    @State private var isAnimating = false
-    /// Stored so new flips can cancel the previous in-flight animation Task.
-    @State private var flipTask: Task<Void, Never>? = nil
-
-    var body: some View {
-        GeometryReader { geo in
-            ZStack {
-                // ── Background: previous spread (renders beneath the curl) ──
-                content(max(0, currentIndex - 1))
-                    .frame(width: geo.size.width, height: geo.size.height)
-                    .zIndex(0)
-
-                // ── The page curling away ──
-                let normalizedDrag = geo.size.width > 0 ? dragOffset / geo.size.width : 0
-                let rotation = Double(normalizedDrag) * -70.0
-
-                content(currentIndex)
-                    .frame(width: geo.size.width, height: geo.size.height)
-                    .rotation3DEffect(
-                        .degrees(isAnimating ? 0 : rotation),
-                        axis: (x: 0, y: 1, z: 0),
-                        anchor: dragOffset > 0 ? .leading : .trailing,
-                        perspective: 0.35
-                    )
-                    .offset(x: dragOffset * 0.06)
-                    // Shadow darkens the leading/trailing edge during curl
-                    .overlay(
-                        LinearGradient(
-                            colors: [
-                                Color.black.opacity(
-                                    max(0, min(0.5, abs(normalizedDrag) * 0.9))
-                                ),
-                                Color.clear
-                            ],
-                            startPoint: dragOffset < 0 ? .trailing : .leading,
-                            endPoint:   dragOffset < 0 ? .leading  : .trailing
-                        )
-                        .allowsHitTesting(false)
-                    )
-                    .zIndex(1)
+        guard landscapeArray.count == totalPages else {
+            if totalPages > 1 {
+                allSpreads.append([0])
+                var i = 1
+                while i < totalPages {
+                    if i + 1 < totalPages {
+                        allSpreads.append([i, i + 1])
+                        i += 2
+                    } else {
+                        allSpreads.append([i])
+                        i += 1
+                    }
+                }
+            } else {
+                allSpreads.append([0])
             }
-            .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 12)
-                    .onChanged { val in
-                        if !isAnimating { dragOffset = val.translation.width }
-                    }
-                    .onEnded { val in
-                        let threshold = geo.size.width * 0.22
-                        let swipeRight = val.translation.width >  threshold
-                        let swipeLeft  = val.translation.width < -threshold
+            return allSpreads
+        }
 
-                        let goNext = isMangaRTL ? swipeRight : swipeLeft
-                        let goPrev = isMangaRTL ? swipeLeft  : swipeRight
-
-                        if goNext && canFlipForward() {
-                            flipForward(width: geo.size.width)
-                        } else if goPrev && canFlipBack() {
-                            flipBack(width: geo.size.width)
-                        } else {
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                dragOffset = 0
-                            }
-                        }
+        allSpreads.append([0])
+        var i = 1
+        while i < totalPages {
+            let isL = landscapeArray[i]
+            if isL {
+                allSpreads.append([i])
+                i += 1
+            } else {
+                if i + 1 < totalPages {
+                    let nextIsL = landscapeArray[i + 1]
+                    if nextIsL {
+                        allSpreads.append([i])
+                        i += 1
+                    } else {
+                        allSpreads.append([i, i + 1])
+                        i += 2
                     }
-            )
-            .onTapGesture { location in
-                guard !isAnimating else { return }
-                let third = geo.size.width / 3
-                if location.x < third {
-                    if isMangaRTL { flipForward(width: geo.size.width) }
-                    else          { flipBack(width: geo.size.width) }
-                } else if location.x > geo.size.width - third {
-                    if isMangaRTL { flipBack(width: geo.size.width) }
-                    else          { flipForward(width: geo.size.width) }
                 } else {
-                    onChromeTap()
+                    allSpreads.append([i])
+                    i += 1
                 }
             }
         }
-        .onDisappear {
-            // Cancel any in-flight animation when the view is torn down
-            // (e.g. orientation changes switching between pageTwoUp and pageHorizontal).
-            flipTask?.cancel()
-            flipTask = nil
-            isAnimating = false
-        }
+        return allSpreads
     }
 
-    // MARK: - Flip Forward
-    private func flipForward(width: CGFloat) {
-        guard !isAnimating, canFlipForward() else { return }
-        isAnimating = true
-        HapticEngine.light()
-        // Cancel any lingering previous task before starting fresh
-        flipTask?.cancel()
-
-        // Phase 1 — peel the page offscreen
-        let exitOffset: CGFloat = isMangaRTL ? width * 0.6 : -width * 0.6
-        withAnimation(.interactiveSpring(response: 0.28, dampingFraction: 0.78)) {
-            dragOffset = exitOffset
-        }
-
-        flipTask = Task { @MainActor in
-            // Phase 2 — swap content while curl is offscreen
-            try? await Task.sleep(nanoseconds: 160_000_000)
-            guard !Task.isCancelled else { isAnimating = false; return }
-            onFlipForward()
-
-            // Phase 3 — bounce snap back to reveal new page
-            dragOffset = isMangaRTL ? -28 : 28
-            withAnimation(.spring(response: 0.22, dampingFraction: 0.88)) { dragOffset = 0 }
-
-            // Phase 4 — unlock gate after settle
-            try? await Task.sleep(nanoseconds: 300_000_000)
-            guard !Task.isCancelled else { return }
-            isAnimating = false
-        }
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
     }
 
-    // MARK: - Flip Back
-    private func flipBack(width: CGFloat) {
-        guard !isAnimating, canFlipBack() else { return }
-        isAnimating = true
-        HapticEngine.light()
-        flipTask?.cancel()
+    func makeUIViewController(context: Context) -> UIPageViewController {
+        let pageViewController = UIPageViewController(
+            transitionStyle: .pageCurl,
+            navigationOrientation: .horizontal,
+            options: nil
+        )
+        pageViewController.dataSource = context.coordinator
+        pageViewController.delegate = context.coordinator
 
-        let exitOffset: CGFloat = isMangaRTL ? -width * 0.6 : width * 0.6
-        withAnimation(.interactiveSpring(response: 0.28, dampingFraction: 0.78)) {
-            dragOffset = exitOffset
+        for gesture in pageViewController.gestureRecognizers {
+            if gesture is UITapGestureRecognizer {
+                gesture.isEnabled = false
+            }
         }
 
-        flipTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 160_000_000)
-            guard !Task.isCancelled else { isAnimating = false; return }
-            onFlipBack()
+        let view = pageViewController.view!
+        
+        let doubleTap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleDoubleTap(_:)))
+        doubleTap.numberOfTapsRequired = 2
+        doubleTap.cancelsTouchesInView = false
+        view.addGestureRecognizer(doubleTap)
 
-            dragOffset = isMangaRTL ? 28 : -28
-            withAnimation(.spring(response: 0.22, dampingFraction: 0.88)) { dragOffset = 0 }
+        let singleTap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleSingleTap(_:)))
+        singleTap.numberOfTapsRequired = 1
+        singleTap.require(toFail: doubleTap)
+        view.addGestureRecognizer(singleTap)
 
-            try? await Task.sleep(nanoseconds: 300_000_000)
-            guard !Task.isCancelled else { return }
-            isAnimating = false
+        context.coordinator.pageViewController = pageViewController
+        return pageViewController
+    }
+
+    func updateUIViewController(_ uiViewController: UIPageViewController, context: Context) {
+        context.coordinator.parent = self
+        
+        let targetIndex = currentIndex
+        let targetControllerIndex: Int
+        
+        if isTwoUp {
+            let spreads = computeSpreads()
+            targetControllerIndex = spreads.firstIndex(where: { $0.contains(targetIndex) }) ?? 0
+        } else {
+            targetControllerIndex = targetIndex
         }
+        
+        if let currentVC = uiViewController.viewControllers?.first as? PageContentViewController {
+            let spreadsChanged: Bool
+            if isTwoUp {
+                let currentSpreads = currentVC.spreads
+                let newSpreads = computeSpreads()
+                spreadsChanged = currentSpreads != newSpreads
+            } else {
+                spreadsChanged = false
+            }
+            
+            if currentVC.index != targetControllerIndex || currentVC.isTwoUp != isTwoUp || currentVC.activeFilterPreset != activeFilterPreset || spreadsChanged {
+                let vc = context.coordinator.makeViewController(for: targetControllerIndex)
+                let direction: UIPageViewController.NavigationDirection = targetControllerIndex >= currentVC.index ? .forward : .reverse
+                uiViewController.setViewControllers([vc], direction: direction, animated: false, completion: nil)
+            }
+        } else {
+            let vc = context.coordinator.makeViewController(for: targetControllerIndex)
+            uiViewController.setViewControllers([vc], direction: .forward, animated: false, completion: nil)
+        }
+    }
+}
+
+extension PageCurlReader {
+    @MainActor
+    class Coordinator: NSObject, UIPageViewControllerDataSource, UIPageViewControllerDelegate {
+        var parent: PageCurlReader
+        weak var pageViewController: UIPageViewController?
+        
+        init(_ parent: PageCurlReader) {
+            self.parent = parent
+            super.init()
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(handleZoomStateChanged(_:)),
+                name: .readerZoomStateChanged,
+                object: nil
+            )
+        }
+        
+        deinit {
+            NotificationCenter.default.removeObserver(self)
+        }
+        
+        func makeViewController(for index: Int) -> PageContentViewController {
+            PageContentViewController(
+                index: index,
+                parent: self.parent
+            )
+        }
+        
+        // MARK: - UIPageViewControllerDataSource
+        
+        func pageViewController(
+            _ pageViewController: UIPageViewController,
+            viewControllerBefore viewController: UIViewController
+        ) -> UIViewController? {
+            guard let contentVC = viewController as? PageContentViewController else { return nil }
+            let currentIndex = contentVC.index
+            let targetIndex: Int
+            
+            if parent.isMangaRTL {
+                targetIndex = currentIndex + 1
+            } else {
+                targetIndex = currentIndex - 1
+            }
+            
+            let maxCount = parent.isTwoUp ? parent.computeSpreads().count : parent.totalPages
+            guard targetIndex >= 0 && targetIndex < maxCount else { return nil }
+            return makeViewController(for: targetIndex)
+        }
+        
+        func pageViewController(
+            _ pageViewController: UIPageViewController,
+            viewControllerAfter viewController: UIViewController
+        ) -> UIViewController? {
+            guard let contentVC = viewController as? PageContentViewController else { return nil }
+            let currentIndex = contentVC.index
+            let targetIndex: Int
+            
+            if parent.isMangaRTL {
+                targetIndex = currentIndex - 1
+            } else {
+                targetIndex = currentIndex + 1
+            }
+            
+            let maxCount = parent.isTwoUp ? parent.computeSpreads().count : parent.totalPages
+            guard targetIndex >= 0 && targetIndex < maxCount else { return nil }
+            return makeViewController(for: targetIndex)
+        }
+        
+        // MARK: - UIPageViewControllerDelegate
+        
+        func pageViewController(
+            _ pageViewController: UIPageViewController,
+            didFinishAnimating finished: Bool,
+            previousViewControllers: [UIViewController],
+            transitionCompleted completed: Bool
+        ) {
+            guard completed,
+                  let currentVC = pageViewController.viewControllers?.first as? PageContentViewController else {
+                return
+            }
+            
+            let newControllerIndex = currentVC.index
+            
+            if self.parent.isTwoUp {
+                let spreads = self.parent.computeSpreads()
+                if newControllerIndex < spreads.count {
+                    let newPageIndex = spreads[newControllerIndex].first ?? 0
+                    if self.parent.currentIndex != newPageIndex {
+                        self.parent.currentIndex = newPageIndex
+                    }
+                }
+            } else {
+                if self.parent.currentIndex != newControllerIndex {
+                    self.parent.currentIndex = newControllerIndex
+                }
+            }
+        }
+        
+        // MARK: - Gesture Handlers
+        
+        @objc func handleDoubleTap(_ gesture: UITapGestureRecognizer) {
+            // Cooperative gesture helper
+        }
+        
+        @objc func handleSingleTap(_ gesture: UITapGestureRecognizer) {
+            guard let view = gesture.view, let pvc = pageViewController else { return }
+            let location = gesture.location(in: view)
+            let width = view.bounds.width
+            
+            let hSizeClass = view.traitCollection.horizontalSizeClass
+            let zoneW = hSizeClass == .regular ? width * 0.15 : width / 3.0
+            
+            if location.x < zoneW {
+                if parent.isMangaRTL {
+                    turnForward(pvc)
+                } else {
+                    turnBackward(pvc)
+                }
+            } else if location.x > width - zoneW {
+                if parent.isMangaRTL {
+                    turnBackward(pvc)
+                } else {
+                    turnForward(pvc)
+                }
+            } else {
+                parent.onChromeTap()
+            }
+        }
+        
+        private func turnForward(_ pvc: UIPageViewController) {
+            let maxCount = parent.isTwoUp ? parent.computeSpreads().count : parent.totalPages
+            let currentControllerIndex: Int
+            if parent.isTwoUp {
+                let spreads = parent.computeSpreads()
+                currentControllerIndex = spreads.firstIndex(where: { $0.contains(parent.currentIndex) }) ?? 0
+            } else {
+                currentControllerIndex = parent.currentIndex
+            }
+            
+            let targetIndex = currentControllerIndex + 1
+            if targetIndex < maxCount {
+                let vc = makeViewController(for: targetIndex)
+                HapticEngine.light()
+                let direction: UIPageViewController.NavigationDirection = parent.isMangaRTL ? .reverse : .forward
+                pvc.setViewControllers([vc], direction: direction, animated: true) { [weak self] completed in
+                    if completed {
+                        DispatchQueue.main.async {
+                            self?.updateParentIndex(to: targetIndex)
+                        }
+                    }
+                }
+            } else {
+                parent.onFlipPastEnd?()
+            }
+        }
+        
+        private func turnBackward(_ pvc: UIPageViewController) {
+            let currentControllerIndex: Int
+            if parent.isTwoUp {
+                let spreads = parent.computeSpreads()
+                currentControllerIndex = spreads.firstIndex(where: { $0.contains(parent.currentIndex) }) ?? 0
+            } else {
+                currentControllerIndex = parent.currentIndex
+            }
+            
+            let targetIndex = currentControllerIndex - 1
+            if targetIndex >= 0 {
+                let vc = makeViewController(for: targetIndex)
+                HapticEngine.light()
+                let direction: UIPageViewController.NavigationDirection = parent.isMangaRTL ? .forward : .reverse
+                pvc.setViewControllers([vc], direction: direction, animated: true) { [weak self] completed in
+                    if completed {
+                        DispatchQueue.main.async {
+                            self?.updateParentIndex(to: targetIndex)
+                        }
+                    }
+                }
+            }
+        }
+        
+        private func updateParentIndex(to controllerIndex: Int) {
+            if parent.isTwoUp {
+                let spreads = parent.computeSpreads()
+                if controllerIndex < spreads.count {
+                    let newPageIndex = spreads[controllerIndex].first ?? 0
+                    parent.currentIndex = newPageIndex
+                }
+            } else {
+                parent.currentIndex = controllerIndex
+            }
+        }
+        
+        @objc func handleZoomStateChanged(_ notification: Notification) {
+            guard let isZoomed = notification.userInfo?["isZoomed"] as? Bool else { return }
+            guard let pvc = self.pageViewController else { return }
+            for gesture in pvc.gestureRecognizers {
+                if gesture is UIPanGestureRecognizer {
+                    gesture.isEnabled = !isZoomed
+                }
+            }
+        }
+    }
+}
+
+@MainActor
+class PageContentViewController: UIViewController {
+    let index: Int
+    let isTwoUp: Bool
+    let activeFilterPreset: ReadingFilterPreset
+    let content: AnyView
+    let spreads: [[Int]]
+    
+    init(index: Int, parent: PageCurlReader) {
+        self.index = index
+        self.isTwoUp = parent.isTwoUp
+        self.activeFilterPreset = parent.activeFilterPreset
+        
+        let spreads = parent.computeSpreads()
+        self.spreads = spreads
+        
+        if parent.isTwoUp {
+            let pages = index < spreads.count ? spreads[index] : [0]
+            
+            let spreadView = GeometryReader { geo in
+                if pages.count == 1 {
+                    TwoUpPageCell(index: pages[0], cache: parent.cache, activeFilterPreset: parent.activeFilterPreset, alignment: .center)
+                        .frame(width: geo.size.width, height: geo.size.height)
+                } else if parent.isMangaRTL {
+                    HStack(spacing: 0) {
+                        if pages.count == 2 {
+                            TwoUpPageCell(index: pages[1], cache: parent.cache, activeFilterPreset: parent.activeFilterPreset, alignment: .trailing)
+                                .frame(width: geo.size.width / 2, height: geo.size.height)
+                        } else {
+                            Color.black
+                                .frame(width: geo.size.width / 2, height: geo.size.height)
+                        }
+                        TwoUpPageCell(index: pages[0], cache: parent.cache, activeFilterPreset: parent.activeFilterPreset, alignment: .leading)
+                            .frame(width: geo.size.width / 2, height: geo.size.height)
+                    }
+                } else {
+                    HStack(spacing: 0) {
+                        TwoUpPageCell(index: pages[0], cache: parent.cache, activeFilterPreset: parent.activeFilterPreset, alignment: .trailing)
+                            .frame(width: geo.size.width / 2, height: geo.size.height)
+                        if pages.count == 2 {
+                            TwoUpPageCell(index: pages[1], cache: parent.cache, activeFilterPreset: parent.activeFilterPreset, alignment: .leading)
+                                .frame(width: geo.size.width / 2, height: geo.size.height)
+                        } else {
+                            Color.black
+                                .frame(width: geo.size.width / 2, height: geo.size.height)
+                        }
+                    }
+                }
+            }
+            .id("spread_\(pages.first ?? 0)")
+            .background(Color.black)
+            .ignoresSafeArea()
+            
+            self.content = AnyView(spreadView)
+        } else {
+            let singleView = ComicPageView(index: index, cache: parent.cache)
+                .applyFilterPreset(parent.activeFilterPreset)
+                .background(Color.black)
+                .ignoresSafeArea()
+            self.content = AnyView(singleView)
+        }
+        
+        super.init(nibName: nil, bundle: nil)
+    }
+    
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+    
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .black
+        
+        let hostingController = UIHostingController(rootView: content)
+        hostingController.view.backgroundColor = .black
+        addChild(hostingController)
+        view.addSubview(hostingController.view)
+        hostingController.view.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            hostingController.view.topAnchor.constraint(equalTo: view.topAnchor),
+            hostingController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            hostingController.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            hostingController.view.trailingAnchor.constraint(equalTo: view.trailingAnchor)
+        ])
+        hostingController.didMove(toParent: self)
     }
 }
 
@@ -175,7 +434,9 @@ struct BookPager: View {
     let cache: ComicImageCache
     let readingMode: ComicReadingMode
     let activeFilterPreset: ReadingFilterPreset
+    let isMangaRTL: Bool
     var onChromeTap: () -> Void
+    var onFlipPastEnd: (() -> Void)? = nil
 
     var body: some View {
         switch readingMode {
@@ -188,35 +449,37 @@ struct BookPager: View {
         }
     }
 
-    // ── 3D Curl (default, original behaviour) ─────────────────────────
+    // ── 3D Curl (UIPageViewController) ─────────────────────────
     private var curlPager: some View {
-        BookFlipGesture(
+        PageCurlReader(
             currentIndex: $currentIndex,
-            content: { idx in
-                AnyView(
-                    ComicPageView(
-                        image: cache.getImage(at: idx),
-                        forceRedrawTick: cache.cacheUpdatedTick
-                    )
-                    .applyFilterPreset(activeFilterPreset)
-                )
-            },
+            totalPages: totalPages,
+            cache: cache,
+            isTwoUp: false,
             isMangaRTL: readingMode == .mangaRTL,
+            activeFilterPreset: activeFilterPreset,
             onChromeTap: onChromeTap,
-            canFlipForward: { currentIndex < totalPages - 1 },
-            canFlipBack:    { currentIndex > 0 },
-            onFlipForward:  { currentIndex += 1 },
-            onFlipBack:     { currentIndex -= 1 }
+            onFlipPastEnd: onFlipPastEnd
         )
     }
 
     // ── Flat Slide (TabView / PageTabViewStyle) ────────────────────────
     private var slidePager: some View {
-        TabView(selection: $currentIndex) {
+        let selectionBinding = Binding<Int>(
+            get: {
+                isMangaRTL ? (totalPages - 1 - currentIndex) : currentIndex
+            },
+            set: { newValue in
+                currentIndex = isMangaRTL ? (totalPages - 1 - newValue) : newValue
+            }
+        )
+
+        return TabView(selection: selectionBinding) {
             ForEach(0..<totalPages, id: \.self) { idx in
+                let pageIndex = isMangaRTL ? (totalPages - 1 - idx) : idx
                 ComicPageView(
-                    image: cache.getImage(at: idx),
-                    forceRedrawTick: cache.cacheUpdatedTick
+                    index: pageIndex,
+                    cache: cache
                 )
                 .applyFilterPreset(activeFilterPreset)
                 .tag(idx)
@@ -232,11 +495,11 @@ struct BookPager: View {
     private var fadePager: some View {
         ZStack {
             ComicPageView(
-                image: cache.getImage(at: currentIndex),
-                forceRedrawTick: cache.cacheUpdatedTick
+                index: currentIndex,
+                cache: cache
             )
             .applyFilterPreset(activeFilterPreset)
-            .id(currentIndex) // forces view replacement on change → triggers transition
+            .id(currentIndex)
             .transition(.opacity)
             .animation(.easeInOut(duration: 0.28), value: currentIndex)
         }
@@ -245,10 +508,30 @@ struct BookPager: View {
         .gesture(
             DragGesture(minimumDistance: 30)
                 .onEnded { val in
-                    if val.translation.width < -30, currentIndex < totalPages - 1 {
-                        withAnimation(.easeInOut(duration: 0.28)) { currentIndex += 1 }
-                    } else if val.translation.width > 30, currentIndex > 0 {
-                        withAnimation(.easeInOut(duration: 0.28)) { currentIndex -= 1 }
+                    if val.translation.width < -30 {
+                        if isMangaRTL {
+                            if currentIndex > 0 {
+                                withAnimation(.easeInOut(duration: 0.28)) { currentIndex -= 1 }
+                            }
+                        } else {
+                            if currentIndex < totalPages - 1 {
+                                withAnimation(.easeInOut(duration: 0.28)) { currentIndex += 1 }
+                            } else {
+                                onFlipPastEnd?()
+                            }
+                        }
+                    } else if val.translation.width > 30 {
+                        if isMangaRTL {
+                            if currentIndex < totalPages - 1 {
+                                withAnimation(.easeInOut(duration: 0.28)) { currentIndex += 1 }
+                            } else {
+                                onFlipPastEnd?()
+                            }
+                        } else {
+                            if currentIndex > 0 {
+                                withAnimation(.easeInOut(duration: 0.28)) { currentIndex -= 1 }
+                            }
+                        }
                     }
                 }
         )
@@ -258,108 +541,45 @@ struct BookPager: View {
 // ============================================================
 // MARK: - Two-Up Spread Pager
 // ============================================================
-/// Shows two portrait pages side-by-side that flip as a complete spread.
-/// Manga mode (isMangaRTL) renders right page first for authentic RTL layout.
-///   spreadIdx 0  →  pages 0 + 1
-///   spreadIdx 1  →  pages 2 + 3  …
 struct TwoUpBookPager: View {
     @Binding var currentIndex: Int
     let cache: ComicImageCache
     let activeFilterPreset: ReadingFilterPreset
     let isMangaRTL: Bool
     var onChromeTap: () -> Void
-
-    @State private var spreadIdx: Int = 0
-
-    private var totalSpreads: Int {
-        max(1, Int(ceil(Double(cache.pageCount) / 2.0)))
-    }
-
-    private func leftPage(for sIdx: Int) -> Int { sIdx * 2 }
-
-    private func isLandscapePage(_ absIdx: Int) -> Bool {
-        guard let img = cache.getImage(at: absIdx) else { return false }
-        return (img.size.width / max(1, img.size.height)) > 1.15
-    }
+    var onFlipPastEnd: (() -> Void)? = nil
 
     var body: some View {
-        BookFlipGesture(
-            currentIndex: $spreadIdx,
-            content: { sIdx in
-                AnyView(spreadView(leftPage: leftPage(for: sIdx)))
-            },
+        PageCurlReader(
+            currentIndex: $currentIndex,
+            totalPages: cache.pageCount,
+            cache: cache,
+            isTwoUp: true,
             isMangaRTL: isMangaRTL,
+            activeFilterPreset: activeFilterPreset,
             onChromeTap: onChromeTap,
-            canFlipForward: { spreadIdx < totalSpreads - 1 },
-            canFlipBack:    { spreadIdx > 0 },
-            onFlipForward:  { spreadIdx += 1 },
-            onFlipBack:     { spreadIdx -= 1 }
+            onFlipPastEnd: onFlipPastEnd
         )
-        .onAppear { spreadIdx = currentIndex / 2 }
-        .onChange(of: spreadIdx) { _, newVal in
-            let page = leftPage(for: newVal)
-            if currentIndex != page { currentIndex = page }
-        }
-        .onChange(of: currentIndex) { _, newVal in
-            let target = newVal / 2
-            if spreadIdx != target { spreadIdx = target }
-        }
     }
+}
 
-    @ViewBuilder
-    private func spreadView(leftPage leftIdx: Int) -> some View {
-        GeometryReader { geo in
-            if isLandscapePage(leftIdx) {
-                // Native landscape — fills the full frame solo
-                pageSlot(leftIdx)
-                    .frame(width: geo.size.width, height: geo.size.height)
-            } else if isMangaRTL {
-                // Manga RTL: higher page number (right panel) on left of screen
-                HStack(spacing: 0) {
-                    if leftIdx + 1 < cache.pageCount {
-                        pageSlot(leftIdx + 1)
-                            .frame(width: geo.size.width / 2, height: geo.size.height)
-                    } else {
-                        Color.black
-                            .frame(width: geo.size.width / 2, height: geo.size.height)
-                    }
-                    pageSlot(leftIdx)
-                        .frame(width: geo.size.width / 2, height: geo.size.height)
-                }
-            } else {
-                // Standard LTR two-page spread
-                HStack(spacing: 0) {
-                    pageSlot(leftIdx)
-                        .frame(width: geo.size.width / 2, height: geo.size.height)
-                    if leftIdx + 1 < cache.pageCount {
-                        pageSlot(leftIdx + 1)
-                            .frame(width: geo.size.width / 2, height: geo.size.height)
-                    } else {
-                        Color.black
-                            .frame(width: geo.size.width / 2, height: geo.size.height)
-                    }
-                }
-            }
-        }
-        .id("spread_\(leftIdx)")
-        // Observe cache ticks WITHOUT rebuilding the full spread view:
-        // opacity stays 1 always; this merely gives SwiftUI a value to watch
-        // so that individual pageSlot views redraw in place.
-        .animation(.easeIn(duration: 0.18), value: cache.cacheUpdatedTick)
-    }
-
-    @ViewBuilder
-    private func pageSlot(_ index: Int) -> some View {
-        // Use ZStack + opacity transition so the loaded image fades in over
-        // the black placeholder — eliminates the hard white/black flash.
+struct TwoUpPageCell: View {
+    let index: Int
+    let cache: ComicImageCache
+    let activeFilterPreset: ReadingFilterPreset
+    var alignment: Alignment = .center
+    
+    @State private var image: UIImage? = nil
+    
+    var body: some View {
         ZStack {
             Color.black
-            if let img = cache.getImage(at: index) {
-                Image(uiImage: img)
+            if let image = image {
+                Image(uiImage: image)
                     .resizable()
                     .applyFilterPreset(activeFilterPreset)
                     .aspectRatio(contentMode: .fit)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
                     .transition(.opacity)
             } else {
                 ProgressView()
@@ -367,9 +587,17 @@ struct TwoUpBookPager: View {
                     .transition(.opacity)
             }
         }
-        // cacheUpdatedTick is @Published on MainActor — safe to use as animation
-        // trigger. Avoids calling cache.getImage() during SwiftUI's diffing phase
-        // which can race with background prefetch mutations on NSCache.
-        .animation(.easeIn(duration: 0.18), value: cache.cacheUpdatedTick)
+        .id(index)
+        .onAppear {
+            image = cache.getImage(at: index)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .comicImageCacheImageLoaded)) { notification in
+            guard let userInfo = notification.userInfo,
+                  let loadedIndex = userInfo["index"] as? Int,
+                  loadedIndex == index else { return }
+            withAnimation(.easeIn(duration: 0.18)) {
+                image = cache.getImage(at: index)
+            }
+        }
     }
 }

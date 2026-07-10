@@ -90,7 +90,6 @@ struct AdvancedMetadataEditorView: View {
                     coreMetadataSection
                     organizationSection
                     tagsSection
-                    contentEditorHook
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 24)
@@ -196,36 +195,6 @@ struct AdvancedMetadataEditorView: View {
                 .background(Color.inkSurface)
                 .cornerRadius(10)
                 .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.primary.opacity(0.08), lineWidth: 1))
-        }
-    }
-    
-    @ViewBuilder
-    private var contentEditorHook: some View {
-        if pdf.url.pathExtension.lowercased() == "pdf" || pdf.contentType == .book {
-            CustomGlassCard(title: "Advanced Editing", icon: "scissors") {
-                NavigationLink(destination: getEditorView(for: pdf)) {
-                    HStack {
-                        Image(systemName: "slider.horizontal.3")
-                        Text("Edit Content (Modify Source Data)")
-                        Spacer()
-                        Image(systemName: "chevron.right").font(.caption)
-                    }
-                    .font(.headline)
-                    .foregroundColor(.white)
-                    .padding()
-                    .background(Theme.blue.opacity(0.8))
-                    .cornerRadius(10)
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func getEditorView(for pdf: ConvertedPDF) -> some View {
-        if pdf.contentType == .book {
-            EPUBContentEditorView(pdf: pdf, manager: conversionManager)
-        } else {
-            PDFContentEditorView(pdf: pdf, manager: conversionManager)
         }
     }
     

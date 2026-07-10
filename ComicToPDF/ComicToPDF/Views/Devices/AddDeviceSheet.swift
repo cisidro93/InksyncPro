@@ -11,6 +11,13 @@ struct AddDeviceSheet: View {
     @State private var kindleEmail: String = ""
 
     var isValid: Bool { !name.isEmpty }
+    
+    var availableMethods: [RegisteredDevice.TransferMethod] {
+        RegisteredDevice.TransferMethod.allCases.filter { m in
+            if !deviceType.isKindle && m == .sendToKindle { return false }
+            return true
+        }
+    }
 
     var body: some View {
         NavigationStack {
@@ -105,12 +112,6 @@ struct AddDeviceSheet: View {
                                 .foregroundColor(.inkTextSecondary)
                                 .tracking(1.2)
                             
-                            // Filter valid methods based on device type
-                            let availableMethods = RegisteredDevice.TransferMethod.allCases.filter { m in
-                                if !deviceType.isKindle && m == .sendToKindle { return false }
-                                return true
-                            }
-                            
                             VStack(spacing: 8) {
                                 ForEach(availableMethods, id: \.self) { method in
                                     let isSelected = transferMethod == method
@@ -173,35 +174,6 @@ struct AddDeviceSheet: View {
                         }
 
                         // ── Desktop Setup Help Card ─────────────────────────
-                        if transferMethod == .kfxHandoff {
-                            VStack(alignment: .leading, spacing: 8) {
-                                HStack(spacing: 8) {
-                                    Image(systemName: "desktopcomputer")
-                                        .foregroundColor(Color.inkAmber)
-                                        .font(.system(size: 18))
-                                    Text("Desktop Setup Required")
-                                        .font(.system(size: 15, weight: .bold))
-                                        .foregroundColor(.inkTextPrimary)
-                                }
-                                
-                                Text("KFX layout conversion requires a desktop assistant to render advanced Kindle typography.")
-                                    .font(.system(size: 13))
-                                    .foregroundColor(.inkTextSecondary)
-                                    .lineSpacing(3)
-                                
-                                Text("Prerequisites: Kindle Previewer 3, Calibre, and the KFX Output plugin installed on your PC or Mac.")
-                                    .font(.system(size: 12, weight: .medium))
-                                    .foregroundColor(.inkTextTertiary)
-                                    .lineSpacing(2)
-                            }
-                            .padding()
-                            .background(Color.inkAmber.opacity(0.08))
-                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                    .stroke(Color.inkAmber.opacity(0.2), lineWidth: 1)
-                            )
-                        }
                     }
                     .padding(24)
                 }

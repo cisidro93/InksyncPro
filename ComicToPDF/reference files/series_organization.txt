@@ -1,0 +1,106 @@
+Series,Issue,Volume,Label,Optional
+Invincible,1-47,Compendium 1,Collection,false
+Invincible,48-96,Compendium 2,Collection,false
+Dark Web: X-Men,1-3,Vol 1,Main,false
+Dragon Ball,1-7,Vol 1,Collection,false
+Ducktales,1-6,Vol 1,Collection,false
+Ducktales 2024,1-8,Vol 1,Collection,false
+TMNT: The Last Ronin,1-5,Vol 1,Collection,false
+Battle Nexus,1-3,Vol 1,Collection,false
+Something is Killing the Children,1-15,Vol 1,Collection,false
+Mary Jane and Black Cat,1-5,Vol 1,Collection,false
+Dark Web,1-5,Vol 1,Collection,false
+Black Science,1-6,Vol 1,Collection,false
+Batman Beyond Neogothic,1-6,Vol 1,Collection,false
+My Little Pony: Friends Forever,1-6,Vol 1,Collection,false
+Go! Go! Loser Ranger!,1-6,Vol 1,Collection,false
+Feral,1-5,Vol 1,Collection,false
+Vinland Saga,1-8,Vol 1,Collection,false
+100M.,1-5,Vol 1,Collection,false
+Jujutsu Kaisen,1-8,Vol 1,Collection,false
+The Amazing Spider-Man,1-5,Vol 1,Collection,false
+My Little Pony: Equestria Girls Holiday Special,1,Special,Special,true
+Rook: Exodus,1-5,Vol 1,Collection,false
+Carthago,1-5,Omnibus 1,Collection,false
+Tokyo Ghost,1-5,Vol 1,Collection,false
+Kimi no Na wa.,1-3,Vol 1,Collection,false
+TMNT: Battle Nexus,1-3,Vol 1,Collection,false
+Witch Hat Atelier,1-5,Vol 1,Collection,false
+Hamlet,1-6,Vol 1,Collection,false
+Blue Lock,1-8,Vol 1,Collection,false
+Kaiju No. 8,1-8,Vol 1,Collection,false
+InuYasha,1-10,Vol 1,Collection,false
+Giant-Size Wolverine,1,Vol 1,Main,false
+One Piece,1-10,Vol 1,Collection,false
+Initial D,1-10,Vol 01,Collection,false
+Initial D,11-20,Vol 02,Collection,false
+Initial D,21-30,Vol 03,Collection,false
+Initial D,31-40,Vol 04,Collection,false
+Initial D,41-50,Vol 05,Collection,false
+Initial D,51-60,Vol 06,Collection,false
+Initial D,61-70,Vol 07,Collection,false
+Initial D,71-80,Vol 08,Collection,false
+Initial D,81-90,Vol 09,Collection,false
+Initial D,91-100,Vol 10,Collection,false
+Initial D,101-110,Vol 11,Collection,false
+Initial D,111-120,Vol 12,Collection,false
+Initial D,121-130,Vol 13,Collection,false
+Initial D,131-140,Vol 14,Collection,false
+Initial D,141-150,Vol 15,Collection,false
+Initial D,151-160,Vol 16,Collection,false
+Initial D,161-170,Vol 17,Collection,false
+Initial D,171-180,Vol 18,Collection,false
+Initial D,181-190,Vol 19,Collection,false
+Initial D,191-200,Vol 20,Collection,false
+Initial D,201-210,Vol 21,Collection,false
+Initial D,211-220,Vol 22,Collection,false
+Initial D,221-230,Vol 23,Collection,false
+Initial D,231-240,Vol 24,Collection,false
+Initial D,241-250,Vol 25,Collection,false
+Initial D,251-260,Vol 26,Collection,false
+Initial D,261-270,Vol 27,Collection,false
+Initial D,271-280,Vol 28,Collection,false
+Initial D,281-290,Vol 29,Collection,false
+Initial D,291-300,Vol 30,Collection,false
+Initial D,301-310,Vol 31,Collection,false
+Initial D,311-320,Vol 32,Collection,false
+Initial D,321-330,Vol 33,Collection,false
+Initial D,331-340,Vol 34,Collection,false
+Initial D,341-350,Vol 35,Collection,false
+Initial D,351-360,Vol 36,Collection,false
+Initial D,361-370,Vol 37,Collection,false
+Initial D,371-380,Vol 38,Collection,false
+Initial D,381-390,Vol 39,Collection,false
+Initial D,391-400,Vol 40,Collection,false
+Initial D,401-410,Vol 41,Collection,false
+Initial D,411-420,Vol 42,Collection,false
+Initial D,421-430,Vol 43,Collection,false
+Initial D,431-440,Vol 44,Collection,false
+Initial D,441-450,Vol 45,Collection,false
+Initial D,451-460,Vol 46,Collection,false
+Initial D,461-470,Vol 47,Collection,false
+Initial D,471-480,Vol 48,Collection,false
+Initial D,481-490,Vol 49,Collection,false
+Initial D,491-500,Vol 50,Collection,false
+Initial D,501-510,Vol 51,Collection,false
+Initial D,511-520,Vol 52,Collection,false
+Initial D,521-530,Vol 53,Collection,false
+Initial D,531-540,Vol 54,Collection,false
+Initial D,541-550,Vol 55,Collection,false
+Initial D,551-560,Vol 56,Collection,false
+Initial D,561-570,Vol 57,Collection,false
+Initial D,571-580,Vol 58,Collection,false
+Initial D,581-590,Vol 59,Collection,false
+Initial D,591-600,Vol 60,Collection,false
+Initial D,601-610,Vol 61,Collection,false
+Initial D,611-620,Vol 62,Collection,false
+Initial D,621-630,Vol 63,Collection,false
+Initial D,631-640,Vol 64,Collection,false
+Initial D,641-650,Vol 65,Collection,false
+Initial D,651-660,Vol 66,Collection,false
+Initial D,661-670,Vol 67,Collection,false
+Initial D,671-680,Vol 68,Collection,false
+Initial D,681-690,Vol 69,Collection,false
+Initial D,691-700,Vol 70,Collection,false
+Initial D,701-710,Vol 71,Collection,false
+Initial D,711-719,Vol 72,Collection,false

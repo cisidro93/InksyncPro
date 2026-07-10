@@ -29,10 +29,7 @@ struct ActiveReaderDashboardView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 32) {
-                // ── GAMIFICATION DASHBOARD ───────────────────
-                GamificationDashboardView()
-                    .padding(.top, 20)
-                
+
                 if let hero = activeHero {
                     // ── HERO SECTION ─────────────────────────
                     VStack(alignment: .leading, spacing: 16) {

@@ -8,19 +8,31 @@ struct MetadataHeuristics {
     ///
     /// - Parameter name: The original file name (e.g., "Batman_(2023)_#12.cbz")
     /// - Returns: A cleaned query string (e.g., "Batman")
+    /// Cleans the raw filename to yield a searchable Series/Volume name.
+    ///
+    /// - Parameter name: The original file name (e.g., "Batman_(2023)_#12.cbz")
+    /// - Returns: A cleaned query string (e.g., "Batman")
     static func cleanFilename(_ name: String) -> String {
-        var clean = URL(fileURLWithPath: name).deletingPathExtension().lastPathComponent
+        let detected = SeriesNameDetector.detect(from: name)
+        var clean = detected.seriesName
         
-        // Remove underscores and replacing them with spaces
-        clean = clean.replacingOccurrences(of: "_", with: " ")
-        
-        // Remove parenthesis content roughly (e.g. publication years "(2023)")
-        if let range = clean.range(of: "\\(.*?\\)", options: .regularExpression) {
+        // Remove parenthesis content roughly (like year, if we want a clean series search)
+        while let range = clean.range(of: "\\(.*?\\)", options: .regularExpression) {
              clean.removeSubrange(range)
         }
         
-        // Return stripped query
-        return clean.trimmingCharacters(in: .whitespaces)
+        // Remove curly brace content roughly
+        while let range = clean.range(of: "\\{.*?\\}", options: .regularExpression) {
+             clean.removeSubrange(range)
+        }
+        
+        clean = clean.trimmingCharacters(in: .whitespacesAndNewlines)
+        while clean.hasSuffix("-") || clean.hasSuffix(":") || clean.hasSuffix(";") || clean.hasSuffix(",") {
+            clean.removeLast()
+            clean = clean.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        
+        return clean
     }
     
     /// Attempts to extract an issue number from the raw filename using regex.
@@ -28,28 +40,26 @@ struct MetadataHeuristics {
     /// - Parameter name: The original file name (e.g., "Batman_#12.cbz")
     /// - Returns: The extracted issue number as a String, if found.
     static func extractIssueNumber(from name: String) -> String? {
-        // Look for #123 or 123 at the end of parts
-        let pattern = "#?(\\d+)"
-        if let regex = try? NSRegularExpression(pattern: pattern),
-           let match = regex.firstMatch(in: name, range: NSRange(name.startIndex..., in: name)) {
-            if let range = Range(match.range(at: 1), in: name) {
-                return String(name[range])
-            }
-        }
-        return nil
+        let detected = SeriesNameDetector.detect(from: name)
+        return detected.issueNumberString
     }
     
-    /// Intelligently routes manga vs western comics based on heuristic file names
+    /// Intelligently routes manga vs western comics based on heuristic file names and path structures
     static func detectAsymmetricContentType(url: URL) -> ContentType {
         let ext = url.pathExtension.lowercased()
         if ext == "pdf" || ext == "epub" { return .book }
         
-        // Scanlation signatures
+        let pathLower = url.path.lowercased()
         let nameLower = url.lastPathComponent.lowercased()
         let parentLower = url.deletingLastPathComponent().lastPathComponent.lowercased()
-        let mangaKeywords = ["[raw]", "[ch.", "ch.", "manhwa", "manhua", "manga", "scanlation", "oneshot", "doujin"]
         
-        if mangaKeywords.contains(where: { nameLower.contains($0) || parentLower.contains($0) }) {
+        // Scanlation/Manga signatures
+        let mangaKeywords = ["[raw]", "[ch.", "ch.", "manhwa", "manhua", "manga", "scanlation", "oneshot", "doujin", "tankobon", "volume", "chapter", "shonen", "shoujo", "seinen", "josei"]
+        
+        if mangaKeywords.contains(where: { nameLower.contains($0) || parentLower.contains($0) }) ||
+           pathLower.contains("/manga/") ||
+           pathLower.contains("/manga") ||
+           url.pathComponents.map({ $0.lowercased() }).contains("manga") {
             return .manga
         }
         

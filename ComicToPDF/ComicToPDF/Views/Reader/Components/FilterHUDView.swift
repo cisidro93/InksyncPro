@@ -6,6 +6,9 @@ enum ReadingFilterPreset: String, CaseIterable, Codable {
     case eink = "E-Ink Clarity"
     case vibrant = "Vibrant Webtoon"
     case dark = "Manga Dark Mode"
+    case amber = "Amber Mode"
+    case sepia = "Sepia Theme"
+    case custom = "Custom Adjust"
     
     var icon: String {
         switch self {
@@ -14,6 +17,9 @@ enum ReadingFilterPreset: String, CaseIterable, Codable {
         case .eink: return "newspaper.fill"
         case .vibrant: return "paintpalette.fill"
         case .dark: return "moon.stars.fill"
+        case .amber: return "sun.max.fill"
+        case .sepia: return "eye.fill"
+        case .custom: return "slider.horizontal.3"
         }
     }
 }
@@ -21,6 +27,10 @@ enum ReadingFilterPreset: String, CaseIterable, Codable {
 struct FilterHUDView: View {
     @Binding var activePreset: ReadingFilterPreset
     var onDismiss: () -> Void
+    
+    @AppStorage("customContrast") private var customContrast: Double = 1.0
+    @AppStorage("customBrightness") private var customBrightness: Double = 0.0
+    @AppStorage("customSaturation") private var customSaturation: Double = 1.0
     
     var body: some View {
         VStack(spacing: 16) {
@@ -55,6 +65,19 @@ struct FilterHUDView: View {
                 .padding(.horizontal)
                 .padding(.bottom, 20)
             }
+            
+            if activePreset == .custom {
+                VStack(spacing: 12) {
+                    Divider()
+                        .background(Color.white.opacity(0.15))
+                    
+                    sliderRow(title: "Contrast", value: $customContrast, range: 0.5...2.0, format: "%.1fx", icon: "circle.lefthalf.filled")
+                    sliderRow(title: "Brightness", value: $customBrightness, range: -0.4...0.4, format: "%+.2f", icon: "sun.max.fill")
+                    sliderRow(title: "Saturation", value: $customSaturation, range: 0.0...2.0, format: "%.1fx", icon: "drop.fill")
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 20)
+            }
         }
         .background(
             RoundedRectangle(cornerRadius: 24)
@@ -67,6 +90,25 @@ struct FilterHUDView: View {
                 .stroke(Color.white.opacity(0.15), lineWidth: 0.5)
         )
         .padding()
+    }
+    
+    @ViewBuilder
+    private func sliderRow(title: String, value: Binding<Double>, range: ClosedRange<Double>, format: String, icon: String) -> some View {
+        VStack(spacing: 4) {
+            HStack {
+                Label(title, systemImage: icon)
+                    .font(.footnote)
+                    .foregroundColor(.white.opacity(0.8))
+                Spacer()
+                Text(String(format: format, value.wrappedValue))
+                    .font(.caption)
+                    .foregroundColor(.white.opacity(0.6))
+                    .monospacedDigit()
+            }
+            
+            Slider(value: value, in: range)
+                .tint(.blue)
+        }
     }
 }
 

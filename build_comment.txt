@@ -1,0 +1,172 @@
+﻿### Build Failure Diagnostics
+
+#### Compilation Errors:
+```
+1785-SwiftCompile normal arm64 /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Views/Conversion/PrecisionCanvasView.swift (in target 'InksyncPro' from project 'InksyncPro')
+1786-    cd /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF
+1787-    
+1788:/Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Views/Conversion/PrecisionCanvasView.swift:68:25: error: cannot find 'PencilKitDrawView' in scope
+1789-                        PencilKitDrawView(canvas: $canvasView)
+1790-                        ^~~~~~~~~~~~~~~~~
+1791:/Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Views/Conversion/PrecisionCanvasView.swift:229:13: error: cannot find 'GuidedViewPreview' in scope
+1792-            GuidedViewPreview(pdf: pdf, startingPageIndex: pageIndex)
+1793-            ^~~~~~~~~~~~~~~~~
+1794:/Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Views/Conversion/PrecisionCanvasView.swift:38:25: error: the compiler is unable to type-check this expression in reasonable time; try breaking up the expression into distinct sub-expressions
+1795-    var body: some View {
+1796-                        ^
+1797-
+```
+
+#### Trailing Log Output:
+```
+SwiftCompile normal arm64 /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Services/Core/SeriesModels.swift (in target 'InksyncPro' from project 'InksyncPro')
+    cd /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF
+    
+
+SwiftCompile normal arm64 /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Services/Core/SeriesNameDetector.swift (in target 'InksyncPro' from project 'InksyncPro')
+    cd /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF
+    
+
+SwiftCompile normal arm64 /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Utilities/SeriesNameParser.swift (in target 'InksyncPro' from project 'InksyncPro')
+    cd /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF
+    
+
+SwiftCompile normal arm64 /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Views/Library/SeriesPickerSheet.swift (in target 'InksyncPro' from project 'InksyncPro')
+    cd /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF
+    
+
+SwiftCompile normal arm64 /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Views/Library/SeriesViewModel.swift (in target 'InksyncPro' from project 'InksyncPro')
+    cd /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF
+    
+
+SwiftCompile normal arm64 /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Views/Settings/SettingsComponents.swift (in target 'InksyncPro' from project 'InksyncPro')
+    cd /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF
+    
+
+SwiftCompile normal arm64 /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Views/Settings/SettingsView.swift (in target 'InksyncPro' from project 'InksyncPro')
+    cd /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF
+    
+
+SwiftCompile normal arm64 /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Services/Core/SharedModels.swift (in target 'InksyncPro' from project 'InksyncPro')
+    cd /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF
+    
+
+SwiftDriverJobDiscovery normal arm64 Compiling ConversionViewModel.swift, ConvertView.swift, CoreComponents.swift, CoverFetchService.swift, CoverGenerator.swift, CoverVisionAnalyzer.swift, DebugUtils.swift, DeepScanPanelProvider.swift, DesignConstants.swift, DesignSystem.swift, DeviceDetailView.swift, DeviceIdentity.swift, DevicePreviewEngine.swift, DeviceRegistry.swift, DevicesView.swift, DiagnosticsView.swift, DocumentReaderEngine.swift, DriveMonitor.swift, DriveSaveCoordinator.swift, DropboxProvider.swift, DualExportView.swift, EBookParser.swift, EBookPreferences.swift, EBookReaderView.swift, EBookSettingsPanel.swift (in target 'InksyncPro' from project 'InksyncPro')
+
+SwiftCompile normal arm64 Compiling\ ActiveReaderDashboardView.swift,\ ActivityTrackerView.swift,\ AdaptiveLearningManager.swift,\ AddDeviceSheet.swift,\ AddOPDSServerSheet.swift,\ AdvancedMetadataEditorView.swift,\ AdvancedWorkspaceView.swift,\ AlphabetScrollIndicator.swift,\ AmbientBrightnessManager.swift,\ AnnotationEditSheet.swift,\ AnnotationStore.swift,\ AppRouter.swift,\ AppSettingsManager.swift,\ ArchiveMutatorService.swift,\ BackgroundMetadataEngine.swift,\ BackupRestoreView.swift,\ BatchLocalRenamerView.swift,\ BatchMergeReorderView.swift,\ BatchMetadataEditorView.swift,\ BatchMetadataFetchView.swift,\ BatchSelectionDetailView.swift,\ BookPageTurnEngine.swift,\ BookReaderEngine.swift,\ BookmarkResolver.swift,\ CBRExtractor.swift /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Views/Reader/ActiveReaderDashboardView.swift /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Views/Library/ActivityTrackerView.swift /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Services/Core/AdaptiveLearningManager.swift /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Views/Devices/AddDeviceSheet.swift /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Views/Devices/AddOPDSServerSheet.swift /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Views/Library/AdvancedMetadataEditorView.swift /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Views/Library/AdvancedWorkspaceView.swift /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Views/Library/Components/AlphabetScrollIndicator.swift /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Services/Reader/AmbientBrightnessManager.swift /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Views/Reader/AnnotationEditSheet.swift /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Models/AnnotationStore.swift /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Services/Core/AppRouter.swift /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Services/State/AppSettingsManager.swift /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Services/Conversion/ArchiveMutatorService.swift /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Services/State/BackgroundMetadataEngine.swift /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Views/Settings/BackupRestoreView.swift /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Views/Library/BatchLocalRenamerView.swift /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Views/Library/BatchMergeReorderView.swift /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Views/Library/BatchMetadataEditorView.swift /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Views/Library/BatchMetadataFetchView.swift /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Views/Library/BatchSelectionDetailView.swift /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Views/Reader/BookPageTurnEngine.swift /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Views/Reader/BookReaderEngine.swift /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Services/Core/BookmarkResolver.swift /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Services/Core/CBRExtractor.swift (in target 'InksyncPro' from project 'InksyncPro')
+
+SwiftCompile normal arm64 /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Views/Reader/ActiveReaderDashboardView.swift (in target 'InksyncPro' from project 'InksyncPro')
+    cd /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF
+    
+
+SwiftCompile normal arm64 /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Views/Library/ActivityTrackerView.swift (in target 'InksyncPro' from project 'InksyncPro')
+    cd /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF
+    
+
+SwiftCompile normal arm64 /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Services/Core/AdaptiveLearningManager.swift (in target 'InksyncPro' from project 'InksyncPro')
+    cd /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF
+    
+
+SwiftCompile normal arm64 /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Views/Devices/AddDeviceSheet.swift (in target 'InksyncPro' from project 'InksyncPro')
+    cd /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF
+    
+
+SwiftCompile normal arm64 /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Views/Devices/AddOPDSServerSheet.swift (in target 'InksyncPro' from project 'InksyncPro')
+    cd /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF
+    
+
+SwiftCompile normal arm64 /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Views/Library/AdvancedMetadataEditorView.swift (in target 'InksyncPro' from project 'InksyncPro')
+    cd /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF
+    
+
+SwiftCompile normal arm64 /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Views/Library/AdvancedWorkspaceView.swift (in target 'InksyncPro' from project 'InksyncPro')
+    cd /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF
+    
+
+SwiftCompile normal arm64 /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Views/Library/Components/AlphabetScrollIndicator.swift (in target 'InksyncPro' from project 'InksyncPro')
+    cd /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF
+    
+
+SwiftCompile normal arm64 /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Services/Reader/AmbientBrightnessManager.swift (in target 'InksyncPro' from project 'InksyncPro')
+    cd /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF
+    
+
+SwiftCompile normal arm64 /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Views/Reader/AnnotationEditSheet.swift (in target 'InksyncPro' from project 'InksyncPro')
+    cd /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF
+    
+
+SwiftCompile normal arm64 /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Models/AnnotationStore.swift (in target 'InksyncPro' from project 'InksyncPro')
+    cd /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF
+    
+
+SwiftCompile normal arm64 /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Services/Core/AppRouter.swift (in target 'InksyncPro' from project 'InksyncPro')
+    cd /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF
+    
+
+SwiftCompile normal arm64 /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Services/State/AppSettingsManager.swift (in target 'InksyncPro' from project 'InksyncPro')
+    cd /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF
+    
+
+SwiftCompile normal arm64 /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Services/Conversion/ArchiveMutatorService.swift (in target 'InksyncPro' from project 'InksyncPro')
+    cd /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF
+    
+
+SwiftCompile normal arm64 /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Services/State/BackgroundMetadataEngine.swift (in target 'InksyncPro' from project 'InksyncPro')
+    cd /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF
+    
+
+SwiftCompile normal arm64 /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Views/Settings/BackupRestoreView.swift (in target 'InksyncPro' from project 'InksyncPro')
+    cd /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF
+    
+
+SwiftCompile normal arm64 /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Views/Library/BatchLocalRenamerView.swift (in target 'InksyncPro' from project 'InksyncPro')
+    cd /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF
+    
+
+SwiftCompile normal arm64 /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Views/Library/BatchMergeReorderView.swift (in target 'InksyncPro' from project 'InksyncPro')
+    cd /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF
+    
+
+SwiftCompile normal arm64 /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Views/Library/BatchMetadataEditorView.swift (in target 'InksyncPro' from project 'InksyncPro')
+    cd /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF
+    
+
+SwiftCompile normal arm64 /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Views/Library/BatchMetadataFetchView.swift (in target 'InksyncPro' from project 'InksyncPro')
+    cd /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF
+    
+
+SwiftCompile normal arm64 /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Views/Library/BatchSelectionDetailView.swift (in target 'InksyncPro' from project 'InksyncPro')
+    cd /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF
+    
+
+SwiftCompile normal arm64 /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Views/Reader/BookPageTurnEngine.swift (in target 'InksyncPro' from project 'InksyncPro')
+    cd /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF
+    
+
+SwiftCompile normal arm64 /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Views/Reader/BookReaderEngine.swift (in target 'InksyncPro' from project 'InksyncPro')
+    cd /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF
+    
+
+SwiftCompile normal arm64 /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Services/Core/BookmarkResolver.swift (in target 'InksyncPro' from project 'InksyncPro')
+    cd /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF
+    
+
+SwiftCompile normal arm64 /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Services/Core/CBRExtractor.swift (in target 'InksyncPro' from project 'InksyncPro')
+    cd /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF
+    
+
+SwiftDriverJobDiscovery normal arm64 Compiling EInkOptimizer.swift, EPUBDiagnostics.swift, EPUBGenerator.swift, EPUBImporter.swift, EPUBManifestBuilder.swift, EPUBMerger.swift, EPUBStripFixer.swift, EPUBtoPDFConverter.swift, EditorSessionManager.swift, EventResolutionSheet.swift, ExportOrchestrator.swift, ExportProfilesView.swift, ExternalStorageManager.swift, FaceIDOverlay.swift, FileMergeView.swift, FilterHUDView.swift, FolderLinkCoordinator.swift, GoConvertView.swift, HTTPRangeZipExtractor.swift, HandwritingOCRManager.swift, HapticEngine.swift, HapticManager.swift, Haptics.swift, HelpCenterView.swift, ImageProcessor.swift (in target 'InksyncPro' from project 'InksyncPro')
+
+note: Disabling previews because SWIFT_VERSION is set and SWIFT_OPTIMIZATION_LEVEL=-Owholemodule, expected -Onone (in target 'ZIPFoundation' from project 'ZIPFoundation')
+note: Disabling previews because SWIFT_VERSION is set and SWIFT_OPTIMIZATION_LEVEL=-Owholemodule, expected -Onone (in target 'Unrar' from project 'Unrar')
+note: Disabling previews because SWIFT_VERSION is set and SWIFT_OPTIMIZATION_LEVEL=-O, expected -Onone (in target 'InksyncPro' from project 'InksyncPro')
+note: Disabling previews because SWIFT_VERSION is set and SWIFT_OPTIMIZATION_LEVEL=-Owholemodule, expected -Onone (in target 'Cunrar' from project 'Unrar')
+** BUILD FAILED **
+
+
+The following build commands failed:
+	SwiftCompile normal arm64 /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Views/Conversion/PrecisionCanvasView.swift (in target 'InksyncPro' from project 'InksyncPro')
+	SwiftCompile normal arm64 Compiling\ PanelViewEPUBConverter.swift,\ PeerManager.swift,\ PhysicalFileSystemRouter.swift,\ PipelineSelector.swift,\ PlannerEditorView.swift,\ PlannerModels.swift,\ PlannerPDFGenerator.swift,\ PrecisionCanvasView.swift,\ ProcessInfo+Performance.swift,\ ProgressOverlay.swift,\ RARHeaderParser.swift,\ ReadNowTabView.swift,\ ReaderChrome.swift,\ ReaderExtras.swift,\ ReaderImageFilterEngine.swift,\ ReaderProgressTracker.swift,\ ReaderSearchView.swift,\ ReaderSettingsHUD.swift,\ ReaderSettingsSheet.swift,\ ReaderUtilities.swift,\ ReaderView.swift,\ ReadingModeQuickPicker.swift,\ ReadingRoomOverlay.swift,\ ReadingRoomSession.swift /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Services/Conversion/PanelViewEPUBConverter.swift /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Services/Network/PeerManager.swift /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Services/State/PhysicalFileSystemRouter.swift /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Views/Shared/PipelineSelector.swift /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Views/Conversion/PlannerEditorView.swift /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Services/Conversion/PlannerModels.swift /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Services/Conversion/PlannerPDFGenerator.swift /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Views/Conversion/PrecisionCanvasView.swift /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Extensions/ProcessInfo+Performance.swift /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Views/Core/ProgressOverlay.swift /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Services/Network/RARHeaderParser.swift /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Views/Library/ReadNowTabView.swift /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Views/Reader/ReaderChrome.swift /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Services/Reader/ReaderExtras.swift /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Views/Reader/ReaderImageFilterEngine.swift /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Models/ReaderProgressTracker.swift /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Views/Reader/ReaderSearchView.swift /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Views/Reader/Components/ReaderSettingsHUD.swift /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Views/Reader/ReaderSettingsSheet.swift /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Services/Reader/ReaderUtilities.swift /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Views/Reader/ReaderView.swift /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Views/Reader/Components/ReadingModeQuickPicker.swift /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Views/Reader/ReadingRoomOverlay.swift /Users/runner/work/InksyncPro/InksyncPro/ComicToPDF/ComicToPDF/Services/Network/ReadingRoomSession.swift (in target 'InksyncPro' from project 'InksyncPro')
+	Building project InksyncPro with scheme InksyncPro and configuration Release
+(3 failures)
+```

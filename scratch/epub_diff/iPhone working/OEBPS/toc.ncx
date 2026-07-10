@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
+    <head><meta name="dtb:uid" content="urn:uuid:94952C7B-FEF9-4456-AC89-97845F98BAEB"/></head>
+    <docTitle><text>InuYasha</text></docTitle>
+    <navMap>
+        <navPoint id="navPoint-1" playOrder="1">
+            <navLabel><text>Start</text></navLabel>
+            <content src="text/cover.xhtml"/>
+        </navPoint>
+    </navMap>
+</ncx>

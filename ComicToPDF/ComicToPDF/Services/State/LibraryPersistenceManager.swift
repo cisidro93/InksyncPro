@@ -30,20 +30,20 @@ class LibraryPersistenceManager {
 
         Task.detached(priority: .background) {
             // PERF D-M2: Only sync SwiftData when the library structure changed.
-            // Page-turn progress writes (the majority of debounce fires) skip this
-            // expensive N-row migration entirely.
             if isStructural {
-                await MigrationService.shared.syncToSwiftData(pdfs: syncPDFs, collections: syncCols)
+                try? await LibraryRepository.shared.sync(pdfs: syncPDFs, collections: syncCols)
+                await LibraryDatabaseService.shared.save(syncPDFs)
             }
-            await LibraryDatabaseService.shared.save(syncPDFs)
         }
     }
 
-    /// SQLite-only save for progress updates. Never calls syncToSwiftData.
+    /// Progress updates write back to SwiftData context.
     @MainActor
     func saveProgressOnly(manager: ConversionManager) {
         let syncPDFs = manager.convertedPDFs
+        let syncCols = manager.collections
         Task.detached(priority: .background) {
+            try? await LibraryRepository.shared.sync(pdfs: syncPDFs, collections: syncCols)
             await LibraryDatabaseService.shared.save(syncPDFs)
         }
     }
@@ -52,18 +52,17 @@ class LibraryPersistenceManager {
     func load(manager: ConversionManager) {
         Task {
             do {
-                let (sdPdfs, sdCols) = try await MigrationService.shared.fetchSwiftDataLegacyBridge()
-                
-                let legacyPDFs = sdPdfs.map { $0.toDTO() }
-                let legacyCols = sdCols.map { $0.toDTO() }
+                let (legacyPDFs, legacyCols) = try await LibraryRepository.shared.loadLibrary()
                 
                 manager.convertedPDFs = legacyPDFs
                 manager.collections = legacyCols
                 
-                if let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent(self.libraryFileName),
-                   FileManager.default.fileExists(atPath: url.path),
-                   let data = try? Data(contentsOf: url),
-                   let index = try? JSONDecoder().decode(LibraryIndex.self, from: data) {
+                let dirURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+                if let url = dirURL?.appendingPathComponent(self.libraryFileName),
+                   FileManager.default.fileExists(atPath: url.path) {
+                    let optData = try? Data(contentsOf: url)
+                    if let data = optData,
+                       let index = try? JSONDecoder().decode(LibraryIndex.self, from: data) {
                     
                     if let legacyPanels = index.panelOverrides, !legacyPanels.isEmpty {
                         for (pdfID, pages) in legacyPanels {
@@ -93,6 +92,7 @@ class LibraryPersistenceManager {
                     DeviceRegistry.shared.primaryDeviceID = index.primaryDeviceID
                     
                     try? FileManager.default.removeItem(at: url)
+                    }
                 }
             } catch {
                 Logger.shared.log("Critical Boot Error: Bridge Load Failed. \(error.localizedDescription)", category: "Library", type: .error)

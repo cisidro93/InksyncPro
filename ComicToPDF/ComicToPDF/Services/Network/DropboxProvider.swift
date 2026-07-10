@@ -73,6 +73,7 @@ class DropboxProvider: NSObject, CloudStorageProvider, ObservableObject {
     /// if we don't retain the anchor it gets deallocated immediately → error 2.
     private var _oauthAnchor: OAuthWindowAnchor?
     private var _oauthSession: ASWebAuthenticationSession?
+    private var activeRefreshTask: Task<Void, Error>?
 
     private override init() {
         super.init()
@@ -87,7 +88,7 @@ class DropboxProvider: NSObject, CloudStorageProvider, ObservableObject {
         let challenge = codeChallenge(for: verifier)
 
         // 2. Build auth URL
-        var comps = URLComponents(string: "https://www.dropbox.com/oauth2/authorize")!
+        guard var comps = URLComponents(string: "https://www.dropbox.com/oauth2/authorize") else { throw URLError(.badURL) }
         comps.queryItems = [
             URLQueryItem(name: "client_id",             value: clientID),
             URLQueryItem(name: "redirect_uri",          value: redirectURI),
@@ -124,16 +125,24 @@ class DropboxProvider: NSObject, CloudStorageProvider, ObservableObject {
                     }
                 }
                 // Grab the key window safely, falling back to the first available window
-                let activeScene = UIApplication.shared.connectedScenes
-                    .compactMap({ $0 as? UIWindowScene })
-                    .first(where: { $0.activationState == .foregroundActive })
-                    
-                let keyWindow = activeScene?.windows.first(where: { $0.isKeyWindow })
-                    ?? activeScene?.windows.first
-                    ?? UIApplication.shared.connectedScenes
-                        .compactMap({ $0 as? UIWindowScene })
-                        .flatMap({ $0.windows })
-                        .first
+                var activeScene: UIWindowScene? = nil
+                let windowScenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+                if let fg = windowScenes.first(where: { $0.activationState == .foregroundActive }) {
+                    activeScene = fg
+                }
+                
+                var keyWindow: UIWindow? = nil
+                if let active = activeScene {
+                    if let key = active.windows.first(where: { $0.isKeyWindow }) {
+                        keyWindow = key
+                    } else if let first = active.windows.first {
+                        keyWindow = first
+                    }
+                }
+                
+                if keyWindow == nil {
+                    keyWindow = windowScenes.flatMap { $0.windows }.first
+                }
                 guard let window = keyWindow else {
                     continuation.resume(throwing: NSError(
                         domain: "Dropbox", code: 2,
@@ -160,7 +169,8 @@ class DropboxProvider: NSObject, CloudStorageProvider, ObservableObject {
     }
 
     private func exchangeCode(_ code: String, verifier: String) async throws {
-        var request = URLRequest(url: URL(string: "https://api.dropboxapi.com/oauth2/token")!)
+        guard let url = URL(string: "https://api.dropboxapi.com/oauth2/token") else { throw URLError(.badURL) }
+        var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
 
@@ -186,31 +196,45 @@ class DropboxProvider: NSObject, CloudStorageProvider, ObservableObject {
 
     private func refreshAccessTokenIfNeeded() async throws {
         guard let expiry = tokenExpiry, expiry < Date().addingTimeInterval(60) else { return }
-        guard let rToken = refreshToken else {
-            self.isConnected = false
-            throw NSError(domain: "Dropbox", code: 401, userInfo: [NSLocalizedDescriptionKey: "No refresh token — please reconnect"])
+        
+        // If a refresh is already in progress, await its completion
+        if let activeTask = activeRefreshTask {
+            _ = try await activeTask.value
+            return
         }
 
-        var request = URLRequest(url: URL(string: "https://api.dropboxapi.com/oauth2/token")!)
-        request.httpMethod = "POST"
-        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        let task = Task {
+            guard let rToken = refreshToken else {
+                self.isConnected = false
+                throw NSError(domain: "Dropbox", code: 401, userInfo: [NSLocalizedDescriptionKey: "No refresh token — please reconnect"])
+            }
 
-        let params = ["grant_type": "refresh_token", "refresh_token": rToken, "client_id": clientID]
-        request.httpBody = params.map { "\($0.key)=\($0.value)" }.joined(separator: "&").data(using: .utf8)
+            guard let url = URL(string: "https://api.dropboxapi.com/oauth2/token") else { throw URLError(.badURL) }
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
 
-        let (data, response) = try await URLSession.shared.data(for: request)
-        if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode >= 400 {
-            self.isConnected = false
-            self.accessToken = nil
-            self.refreshToken = nil
-            throw NSError(domain: "Dropbox", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Refresh token rejected by Dropbox. Please reconnect."])
+            let params = ["grant_type": "refresh_token", "refresh_token": rToken, "client_id": clientID]
+            request.httpBody = params.map { "\($0.key)=\($0.value)" }.joined(separator: "&").data(using: .utf8)
+
+            let (data, response) = try await URLSession.shared.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode >= 400 {
+                self.isConnected = false
+                self.accessToken = nil
+                self.refreshToken = nil
+                throw NSError(domain: "Dropbox", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Refresh token rejected by Dropbox. Please reconnect."])
+            }
+            let tokenResponse = try JSONDecoder().decode(DropboxTokenResponse.self, from: data)
+            accessToken = tokenResponse.access_token
+            if let expiresIn = tokenResponse.expires_in {
+                tokenExpiry = Date().addingTimeInterval(TimeInterval(expiresIn))
+            }
+            self.isConnected = true
         }
-        let tokenResponse = try JSONDecoder().decode(DropboxTokenResponse.self, from: data)
-        accessToken = tokenResponse.access_token
-        if let expiresIn = tokenResponse.expires_in {
-            tokenExpiry = Date().addingTimeInterval(TimeInterval(expiresIn))
-        }
-        self.isConnected = true
+
+        activeRefreshTask = task
+        defer { activeRefreshTask = nil }
+        try await task.value
     }
 
     // MARK: - Sign Out
@@ -239,7 +263,8 @@ class DropboxProvider: NSObject, CloudStorageProvider, ObservableObject {
         try await refreshAccessTokenIfNeeded()
         guard let token = accessToken else { throw NSError(domain: "Dropbox", code: 401, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"]) }
 
-        var request = URLRequest(url: URL(string: "https://api.dropboxapi.com/2/files/list_folder")!)
+        guard let url = URL(string: "https://api.dropboxapi.com/2/files/list_folder") else { throw URLError(.badURL) }
+        var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -268,7 +293,8 @@ class DropboxProvider: NSObject, CloudStorageProvider, ObservableObject {
         try await refreshAccessTokenIfNeeded()
         guard let token = accessToken else { throw NSError(domain: "Dropbox", code: 401, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"]) }
 
-        var request = URLRequest(url: URL(string: "https://api.dropboxapi.com/2/files/get_temporary_link")!)
+        guard let url = URL(string: "https://api.dropboxapi.com/2/files/get_temporary_link") else { throw URLError(.badURL) }
+        var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -280,7 +306,8 @@ class DropboxProvider: NSObject, CloudStorageProvider, ObservableObject {
         // A deleted or moved file returns a 409 with a JSON error_summary, not a TemporaryLinkResponse.
         if let httpResponse = response as? HTTPURLResponse, !(200...299).contains(httpResponse.statusCode) {
             // Attempt to surface Dropbox's own error_summary if present
-            let summary = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])
+            let dropboxJsonRaw = try? JSONSerialization.jsonObject(with: data)
+            let summary = (dropboxJsonRaw as? [String: Any])
                 .flatMap { $0["error_summary"] as? String } ?? "HTTP \(httpResponse.statusCode)"
             throw NSError(
                 domain: "Dropbox",
@@ -314,7 +341,8 @@ class DropboxProvider: NSObject, CloudStorageProvider, ObservableObject {
         var hasMore = true
 
         // First page
-        var request = URLRequest(url: URL(string: "https://api.dropboxapi.com/2/files/list_folder")!)
+        guard let url = URL(string: "https://api.dropboxapi.com/2/files/list_folder") else { throw URLError(.badURL) }
+        var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -349,7 +377,8 @@ class DropboxProvider: NSObject, CloudStorageProvider, ObservableObject {
 
         // Continue with cursor pagination
         while hasMore, let currentCursor = cursor {
-            var contRequest = URLRequest(url: URL(string: "https://api.dropboxapi.com/2/files/list_folder/continue")!)
+            guard let url = URL(string: "https://api.dropboxapi.com/2/files/list_folder/continue") else { throw URLError(.badURL) }
+            var contRequest = URLRequest(url: url)
             contRequest.httpMethod = "POST"
             contRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
             contRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")

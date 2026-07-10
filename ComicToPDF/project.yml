@@ -66,10 +66,37 @@ targets:
         CFBundleVersion: "2"
         CFBundleShortVersionString: "1.0.1"
         UILaunchStoryboardName: LaunchScreen
-        UIRequiresFullScreen: true
+        UIRequiresFullScreen: false
         UIFileSharingEnabled: true
         LSSupportsOpeningDocumentsInPlace: true
-        UIBackgroundModes: [audio]
+        UIBackgroundModes: [audio, fetch]
+        BGTaskSchedulerPermittedIdentifiers:
+          - "com.antigravity.InksyncPro.autosync"
+        ITSAppUsesNonExemptEncryption: false
+        CADisableMinimumFrameDurationOnPhone: true
+        NSLocalNetworkUsageDescription: "InksyncPro requires local network access to securely transfer comic files over your Wi-Fi and to discover Calibre libraries on your network."
+        NSBonjourServices:
+          - "_calibrewireless._tcp"
+          - "_inksync._tcp"
+        UIAppFonts:
+          - AtkinsonHyperlegible-Regular.ttf
+          - AtkinsonHyperlegible-Bold.ttf
+          - AtkinsonHyperlegible-Italic.ttf
+          - AtkinsonHyperlegible-BoldItalic.ttf
+          - Literata-Regular.ttf
+          - Literata-Bold.ttf
+          - Literata-Italic.ttf
+          - Literata-BoldItalic.ttf
+          - OpenDyslexic-Regular.otf
+          - OpenDyslexic-Bold.otf
+          - OpenDyslexic-Italic.otf
+          - OpenDyslexic-BoldItalic.otf
+          - SourceSerif4-Regular.ttf
+          - SourceSerif4-Italic.ttf
+          - Merriweather-Regular.ttf
+          - Merriweather-Bold.ttf
+          - Merriweather-Italic.ttf
+          - Merriweather-BoldItalic.ttf
         UTImportedTypeDeclarations:
           - UTTypeIdentifier: public.comma-separated-values-text
             UTTypeDescription: CSV File

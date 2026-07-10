@@ -73,7 +73,7 @@ actor BookmarkResolver {
     }
 
     /// Resolve a linked ConvertedPDF's URL, or return its url directly if local.
-    func resolveIfLinked(_ pdf: borrowing ConvertedPDF) throws -> URL {
+    nonisolated func resolveIfLinked(_ pdf: borrowing ConvertedPDF) throws -> URL {
         if case .linked(let bm) = pdf.sourceMode {
             return try resolve(bm)
         }
@@ -98,34 +98,54 @@ actor BookmarkResolver {
             if accessing { resolvedURL.stopAccessingSecurityScopedResource() }
         }
 
-        var coordinationError: NSError?
-        var coordinatedURL: URL = resolvedURL
+        return try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let holder = CoordinatedResultHolder<T>()
+                var coordinationError: NSError?
+                var didExecute = false
 
-        let coordinator = NSFileCoordinator()
-        coordinator.coordinate(readingItemAt: resolvedURL, options: [], error: &coordinationError) { safeURL in
-            coordinatedURL = safeURL
-        }
-        if let coordError = coordinationError {
-            throw BookmarkError.coordinationFailed(underlying: coordError)
-        }
+                let coordinator = NSFileCoordinator()
+                coordinator.coordinate(readingItemAt: resolvedURL, options: [], error: &coordinationError) { safeURL in
+                    didExecute = true
+                    let semaphore = DispatchSemaphore(value: 0)
+                    let operationTask = Task {
+                        return try await operation(safeURL)
+                    }
+                    
+                    let watchdog = Task {
+                        try? await Task.sleep(for: timeout)
+                        operationTask.cancel()
+                    }
+                    
+                    Task {
+                        do {
+                            holder.result = try await operationTask.value
+                        } catch {
+                            holder.error = error
+                        }
+                        watchdog.cancel()
+                        semaphore.signal()
+                    }
+                    
+                    let timeoutSeconds = Double(timeout.components.seconds) + Double(timeout.components.attoseconds) / 1e18
+                    _ = semaphore.wait(timeout: .now() + timeoutSeconds)
+                    
+                    if let opError = holder.error {
+                        continuation.resume(throwing: opError)
+                    } else if let finalResult = holder.result {
+                        continuation.resume(returning: finalResult)
+                    } else {
+                        Logger.shared.log("BookmarkResolver.withAccess: operation TIMED OUT after \(timeout)", category: "BookmarkResolver", type: .error)
+                        continuation.resume(throwing: BookmarkError.timedOut)
+                    }
+                }
 
-        let operationTask = Task { try await operation(coordinatedURL) }
-        let watchdog = Task {
-            try await Task.sleep(for: timeout)
-            operationTask.cancel()
-        }
-
-        do {
-            let result = try await operationTask.value
-            watchdog.cancel()
-            return result
-        } catch is CancellationError {
-            watchdog.cancel()
-            Logger.shared.log("BookmarkResolver.withAccess: operation TIMED OUT after \(timeout)", category: "BookmarkResolver", type: .error)
-            throw BookmarkError.timedOut
-        } catch {
-            watchdog.cancel()
-            throw error
+                if let coordError = coordinationError {
+                    continuation.resume(throwing: BookmarkError.coordinationFailed(underlying: coordError))
+                } else if !didExecute {
+                    continuation.resume(throwing: BookmarkError.coordinationFailed(underlying: NSError(domain: "BookmarkResolver", code: -1, userInfo: [NSLocalizedDescriptionKey: "NSFileCoordinator failed to execute block silently."])))
+                }
+            }
         }
     }
 
@@ -141,34 +161,54 @@ actor BookmarkResolver {
             if accessing { resolvedURL.stopAccessingSecurityScopedResource() }
         }
 
-        var coordinationError: NSError?
-        var coordinatedURL: URL = resolvedURL
+        return try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let holder = CoordinatedResultHolder<T>()
+                var coordinationError: NSError?
+                var didExecute = false
 
-        let coordinator = NSFileCoordinator()
-        coordinator.coordinate(writingItemAt: resolvedURL, options: .forReplacing, error: &coordinationError) { safeURL in
-            coordinatedURL = safeURL
-        }
-        if let coordError = coordinationError {
-            throw BookmarkError.coordinationFailed(underlying: coordError)
-        }
+                let coordinator = NSFileCoordinator()
+                coordinator.coordinate(writingItemAt: resolvedURL, options: .forReplacing, error: &coordinationError) { safeURL in
+                    didExecute = true
+                    let semaphore = DispatchSemaphore(value: 0)
+                    let operationTask = Task {
+                        return try await operation(safeURL)
+                    }
+                    
+                    let watchdog = Task {
+                        try? await Task.sleep(for: timeout)
+                        operationTask.cancel()
+                    }
+                    
+                    Task {
+                        do {
+                            holder.result = try await operationTask.value
+                        } catch {
+                            holder.error = error
+                        }
+                        watchdog.cancel()
+                        semaphore.signal()
+                    }
+                    
+                    let timeoutSeconds = Double(timeout.components.seconds) + Double(timeout.components.attoseconds) / 1e18
+                    _ = semaphore.wait(timeout: .now() + timeoutSeconds)
+                    
+                    if let opError = holder.error {
+                        continuation.resume(throwing: opError)
+                    } else if let finalResult = holder.result {
+                        continuation.resume(returning: finalResult)
+                    } else {
+                        Logger.shared.log("BookmarkResolver.withWriteAccess: write operation TIMED OUT after \(timeout)", category: "BookmarkResolver", type: .error)
+                        continuation.resume(throwing: BookmarkError.timedOut)
+                    }
+                }
 
-        let operationTask = Task { try await operation(coordinatedURL) }
-        let watchdog = Task {
-            try await Task.sleep(for: timeout)
-            operationTask.cancel()
-        }
-
-        do {
-            let result = try await operationTask.value
-            watchdog.cancel()
-            return result
-        } catch is CancellationError {
-            watchdog.cancel()
-            Logger.shared.log("BookmarkResolver.withWriteAccess: write operation TIMED OUT after \(timeout)", category: "BookmarkResolver", type: .error)
-            throw BookmarkError.timedOut
-        } catch {
-            watchdog.cancel()
-            throw error
+                if let coordError = coordinationError {
+                    continuation.resume(throwing: BookmarkError.coordinationFailed(underlying: coordError))
+                } else if !didExecute {
+                    continuation.resume(throwing: BookmarkError.coordinationFailed(underlying: NSError(domain: "BookmarkResolver", code: -1, userInfo: [NSLocalizedDescriptionKey: "NSFileCoordinator failed to execute block silently."])))
+                }
+            }
         }
     }
 
@@ -215,6 +255,11 @@ actor BookmarkResolver {
         }
         return writable
     }
+}
+
+private final class CoordinatedResultHolder<T>: @unchecked Sendable {
+    var result: T?
+    var error: Error?
 }
 
 // MARK: - Notification Names

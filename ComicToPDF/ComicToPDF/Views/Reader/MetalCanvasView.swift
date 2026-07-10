@@ -2,26 +2,49 @@ import SwiftUI
 import MetalKit
 import CoreImage
 
+/// A thread-safe global cache for Metal and CoreImage context resources to prevent expensive recompilations
+private final class MetalCanvasCache: @unchecked Sendable {
+    static let shared = MetalCanvasCache()
+    
+    let device: MTLDevice?
+    let commandQueue: MTLCommandQueue?
+    let ciContext: CIContext?
+    
+    private init() {
+        if let device = MTLCreateSystemDefaultDevice() {
+            self.device = device
+            self.commandQueue = device.makeCommandQueue()
+            
+            let options: [CIContextOption: Any] = [
+                .workingColorSpace: CGColorSpaceCreateDeviceRGB(),
+                .useSoftwareRenderer: false
+            ]
+            self.ciContext = CIContext(mtlDevice: device, options: options)
+        } else {
+            self.device = nil
+            self.commandQueue = nil
+            self.ciContext = nil
+            print("CRITICAL ENGINE ERROR: Metal is not supported on this device.")
+        }
+    }
+}
+
 /// A SwiftUI wrapper for an MTKView heavily optimized for Comic Page Rendering
 struct MetalCanvasView: UIViewRepresentable {
     var image: CGImage?
     var lockedRect: NormalizedRect
     var isPPLEnabled: Bool
+    var alignment: HorizontalAlignment = .center
     
     func makeUIView(context: Context) -> MTKView {
         let mtkView = MTKView()
         
-        // ✅ Direct Hardware Pipeline Initialization
-        if let device = MTLCreateSystemDefaultDevice() {
+        // ✅ Direct Hardware Pipeline Initialization via Global Cache
+        let cache = MetalCanvasCache.shared
+        if let device = cache.device {
             mtkView.device = device
-            context.coordinator.commandQueue = device.makeCommandQueue()
-            
-            // We specify a working color space to handle DCI-P3 comic colors gracefully
-            let options: [CIContextOption: Any] = [
-                .workingColorSpace: CGColorSpaceCreateDeviceRGB(),
-                .useSoftwareRenderer: false
-            ]
-            context.coordinator.ciContext = CIContext(mtlDevice: device, options: options)
+            context.coordinator.commandQueue = cache.commandQueue
+            context.coordinator.ciContext = cache.ciContext
         } else {
             print("CRITICAL ENGINE ERROR: Metal is not supported on this device.")
         }
@@ -40,6 +63,7 @@ struct MetalCanvasView: UIViewRepresentable {
         context.coordinator.image = image
         context.coordinator.lockedRect = lockedRect
         context.coordinator.isPPLEnabled = isPPLEnabled
+        context.coordinator.alignment = alignment
         
         // Push the frame through the pipe
         uiView.setNeedsDisplay()
@@ -57,6 +81,7 @@ struct MetalCanvasView: UIViewRepresentable {
         var image: CGImage?
         var lockedRect: NormalizedRect = .full
         var isPPLEnabled: Bool = false
+        var alignment: HorizontalAlignment = .center
         
         // Double buffering offscreen textures & state cache
         private var frontTexture: MTLTexture?
@@ -64,6 +89,7 @@ struct MetalCanvasView: UIViewRepresentable {
         private var lastRenderedImage: CGImage?
         private var lastRenderedLockedRect: NormalizedRect?
         private var lastRenderedPPLEnabled: Bool?
+        private var lastRenderedAlignment: HorizontalAlignment?
         private var lastRenderedSize: CGSize = .zero
         
         init(_ parent: MetalCanvasView) {
@@ -111,7 +137,7 @@ struct MetalCanvasView: UIViewRepresentable {
                 return
             }
             
-            let contentChanged = cgImage !== lastRenderedImage || lockedRect != lastRenderedLockedRect || isPPLEnabled != lastRenderedPPLEnabled
+            let contentChanged = cgImage !== lastRenderedImage || lockedRect != lastRenderedLockedRect || isPPLEnabled != lastRenderedPPLEnabled || alignment != lastRenderedAlignment
             
             if contentChanged || frontTexture == nil {
                 // Render the new frame to the backTexture offscreen using Core Image
@@ -135,21 +161,24 @@ struct MetalCanvasView: UIViewRepresentable {
                 }
                 
                 // Phase 1: Smart Upscaling & Auto Contrast Layer
-                let contrastLevel = UserDefaults.standard.double(forKey: "comic_autoContrastLevel")
-                if contrastLevel > 1.0 {
-                    if let filter = CIFilter(name: "CIColorControls") {
-                        filter.setValue(ciImage, forKey: kCIInputImageKey)
-                        filter.setValue(contrastLevel, forKey: kCIInputContrastKey)
-                        if let output = filter.outputImage { ciImage = output }
+                let isEssential = UserDefaults.standard.bool(forKey: "essentialReaderMode")
+                if !isEssential {
+                    let contrastLevel = UserDefaults.standard.double(forKey: "comic_autoContrastLevel")
+                    if contrastLevel > 1.0 {
+                        if let filter = CIFilter(name: "CIColorControls") {
+                            filter.setValue(ciImage, forKey: kCIInputImageKey)
+                            filter.setValue(contrastLevel, forKey: kCIInputContrastKey)
+                            if let output = filter.outputImage { ciImage = output }
+                        }
                     }
-                }
-                
-                let useSharpening = UserDefaults.standard.bool(forKey: "comic_smartSharpen")
-                if useSharpening {
-                    if let filter = CIFilter(name: "CISharpenLuminance") {
-                        filter.setValue(ciImage, forKey: kCIInputImageKey)
-                        filter.setValue(0.7, forKey: kCIInputSharpnessKey)
-                        if let output = filter.outputImage { ciImage = output }
+                    
+                    let useSharpening = UserDefaults.standard.bool(forKey: "comic_smartSharpen")
+                    if useSharpening {
+                        if let filter = CIFilter(name: "CISharpenLuminance") {
+                            filter.setValue(ciImage, forKey: kCIInputImageKey)
+                            filter.setValue(0.7, forKey: kCIInputSharpnessKey)
+                            if let output = filter.outputImage { ciImage = output }
+                        }
                     }
                 }
 
@@ -162,7 +191,17 @@ struct MetalCanvasView: UIViewRepresentable {
                 let scale = min(scaleX, scaleY)
 
                 let scaledImage = ciImage.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
-                let xOffset = (drawableSize.width - scaledImage.extent.width) / 2.0
+                
+                let xOffset: CGFloat
+                switch alignment {
+                case .leading:
+                    xOffset = 0
+                case .trailing:
+                    xOffset = drawableSize.width - scaledImage.extent.width
+                default:
+                    xOffset = (drawableSize.width - scaledImage.extent.width) / 2.0
+                }
+                
                 let yOffset = (drawableSize.height - scaledImage.extent.height) / 2.0
                 let centeredImage = scaledImage.transformed(by: CGAffineTransform(translationX: xOffset, y: yOffset))
 
@@ -200,16 +239,24 @@ struct MetalCanvasView: UIViewRepresentable {
                 lastRenderedImage = cgImage
                 lastRenderedLockedRect = lockedRect
                 lastRenderedPPLEnabled = isPPLEnabled
+                lastRenderedAlignment = alignment
             }
             
             // Blit frontTexture to MTKView drawable texture
             if let sourceTexture = frontTexture {
                 if let blitEncoder = commandBuffer.makeBlitCommandEncoder() {
+                    let copyWidth = min(sourceTexture.width, drawable.texture.width)
+                    let copyHeight = min(sourceTexture.height, drawable.texture.height)
+                    guard copyWidth > 0, copyHeight > 0 else {
+                        blitEncoder.endEncoding()
+                        return
+                    }
+                    
                     blitEncoder.copy(from: sourceTexture,
                                      sourceSlice: 0,
                                      sourceLevel: 0,
                                      sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
-                                     sourceSize: MTLSize(width: sourceTexture.width, height: sourceTexture.height, depth: 1),
+                                     sourceSize: MTLSize(width: copyWidth, height: copyHeight, depth: 1),
                                      to: drawable.texture,
                                      destinationSlice: 0,
                                      destinationLevel: 0,

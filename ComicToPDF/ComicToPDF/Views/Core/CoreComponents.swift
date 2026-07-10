@@ -300,21 +300,14 @@ struct BlurView: UIViewRepresentable {
 
 // MARK: - Splash Screen
 struct SplashScreenView: View {
-    // Track if user has completed onboarding (default: false = not seen yet)
-    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @State private var isActive = false
     @State private var logoScale: CGFloat = 0.8
     @State private var logoOpacity: Double = 0
-    @State private var showOnboarding = false
     @EnvironmentObject var conversionManager: ConversionManager
     
     var body: some View {
         Group {
-            if showOnboarding {
-                // First Launch: Show Onboarding
-                OnboardingView()
-                    .environmentObject(conversionManager)
-            } else if isActive {
+            if isActive {
                 // Main App
                 ContentView()
             } else {
@@ -350,25 +343,10 @@ struct SplashScreenView: View {
                     
                     Task { @MainActor in
                         try? await Task.sleep(for: .seconds(1.5))
-                        if !hasCompletedOnboarding {
-                            withAnimation(.easeInOut(duration: 0.3)) {
-                                showOnboarding = true
-                            }
-                        } else {
-                            withAnimation(.easeInOut(duration: 0.3)) {
-                                isActive = true
-                            }
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            isActive = true
                         }
                     }
-                }
-            }
-        }
-        .onChange(of: hasCompletedOnboarding) { _, completed in
-            // When onboarding is completed, go straight to main app
-            if completed {
-                withAnimation(.easeInOut(duration: 0.3)) {
-                    showOnboarding = false
-                    isActive = true
                 }
             }
         }

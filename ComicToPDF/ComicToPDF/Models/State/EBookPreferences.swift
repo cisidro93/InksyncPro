@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 // MARK: - Core Preference Data Engine
 @MainActor
@@ -6,7 +7,23 @@ class EBookPreferences: ObservableObject {
     static let shared = EBookPreferences()
 
     // MARK: - Theme
-    @AppStorage("ebook_theme") var themeRaw: String = EBookTheme.paper.rawValue
+    var themeRaw: String {
+        get {
+            if let saved = UserDefaults.standard.string(forKey: "ebook_theme") {
+                return saved
+            }
+            // Dynamic default: Match system appearance if user hasn't customized it yet
+            if UITraitCollection.current.userInterfaceStyle == .dark {
+                return EBookTheme.night.rawValue
+            } else {
+                return EBookTheme.paper.rawValue
+            }
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: "ebook_theme")
+            objectWillChange.send()
+        }
+    }
 
     // Per-book theme memory: [bookID: themeRaw]
     @AppStorage("ebook_bookThemes") private var bookThemesData: Data = Data()
@@ -52,6 +69,23 @@ class EBookPreferences: ObservableObject {
 
     // Progress display mode (cycles on tap)
     @AppStorage("ebook_progressMode")   var progressMode: Int = 0  // 0=page, 1=chapter, 2=timeLeft
+
+    // MARK: - Customizable Tap Zones Layout
+    @AppStorage("ebook_tapZoneStyle") var tapZoneStyleRaw: String = TapZoneStyle.classic.rawValue
+    var tapZoneStyle: TapZoneStyle {
+        get { TapZoneStyle(rawValue: tapZoneStyleRaw) ?? .classic }
+        set { 
+            tapZoneStyleRaw = newValue.rawValue
+            objectWillChange.send()
+        }
+    }
+
+    // MARK: - Reading Color Filters (Midnight, Amber, Sepia)
+    @AppStorage("ebook_readingFilter") var readingFilterRaw: String = ReadingFilter.none.rawValue
+    var readingFilter: ReadingFilter {
+        get { ReadingFilter(rawValue: readingFilterRaw) ?? .none }
+        set { readingFilterRaw = newValue.rawValue }
+    }
 
     // MARK: - Image Filters (legacy, kept for compatibility)
     @AppStorage("ebook_isSmartCropEnabled") var isSmartCropEnabled: Bool = false
@@ -138,6 +172,7 @@ enum EBookTheme: String, CaseIterable, Identifiable {
     case sepia     = "Sepia"
     case slate     = "Slate"
     case night     = "Night"
+    case oled      = "OLED"
     case custom    = "Custom"
 
     nonisolated var id: String { rawValue }
@@ -151,6 +186,7 @@ enum EBookTheme: String, CaseIterable, Identifiable {
         case .sepia:     return Color(hex: "#F8F0E3")
         case .slate:     return Color(hex: "#1A2332")
         case .night:     return Color(hex: "#0D0D0D")
+        case .oled:      return Color(hex: "#000000")
         case .custom:    return Color(hex: EBookPreferences.shared.customThemeBg)
         }
     }
@@ -162,6 +198,7 @@ enum EBookTheme: String, CaseIterable, Identifiable {
         case .sepia:     return Color(hex: "#5C4033")
         case .slate:     return Color(hex: "#E8ECF0")
         case .night:     return Color(hex: "#CCCCCC")
+        case .oled:      return Color(hex: "#CBD5E1")
         case .custom:    return Color(hex: EBookPreferences.shared.customThemeText)
         }
     }
@@ -173,13 +210,14 @@ enum EBookTheme: String, CaseIterable, Identifiable {
         case .sepia:     return Color(hex: "#A0522D")
         case .slate:     return Color(hex: "#6EA4D0")
         case .night:     return Color(hex: "#FF7B2C")
+        case .oled:      return Color(hex: "#A855F7")
         case .custom:    return Color(hex: "#7B5EA7")
         }
     }
 
     var isDark: Bool {
         switch self {
-        case .slate, .night: return true
+        case .slate, .night, .oled: return true
         default: return false
         }
     }
@@ -193,6 +231,7 @@ enum EBookTheme: String, CaseIterable, Identifiable {
         case .sepia:     return "#F8F0E3"
         case .slate:     return "#1A2332"
         case .night:     return "#0D0D0D"
+        case .oled:      return "#000000"
         case .custom:    return EBookPreferences.shared.customThemeBg
         }
     }
@@ -205,6 +244,7 @@ enum EBookTheme: String, CaseIterable, Identifiable {
         case .sepia:     return "#5C4033"
         case .slate:     return "#E8ECF0"
         case .night:     return "#CCCCCC"
+        case .oled:      return "#CBD5E1"
         case .custom:    return EBookPreferences.shared.customThemeText
         }
     }
@@ -217,6 +257,7 @@ enum EBookTheme: String, CaseIterable, Identifiable {
         case .sepia:     return "#A0522D"
         case .slate:     return "#6EA4D0"
         case .night:     return "#FF7B2C"
+        case .oled:      return "#A855F7"
         case .custom:    return "#7B5EA7"
         }
     }

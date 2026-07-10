@@ -79,7 +79,18 @@ class Logger: ObservableObject, @unchecked Sendable {
         let fileURL = self.logFileURL
         queue.async { [weak self] in
             guard let self = self else { return }
-            let logs = (try? String(contentsOf: fileURL, encoding: .utf8)) ?? ""
+            var logs = ""
+            // Prevent Jetsam memory crashes by capping file load
+            let logAttrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path)
+            if let attrs = logAttrs,
+               let size = attrs[.size] as? UInt64, size > 2_000_000 {
+                try? FileManager.default.removeItem(at: fileURL)
+                logs = "[SYSTEM] Log file exceeded 2MB and was truncated to preserve memory.\n"
+                try? logs.write(to: fileURL, atomically: true, encoding: .utf8)
+            } else {
+                logs = (try? String(contentsOf: fileURL, encoding: .utf8)) ?? ""
+            }
+            
             let parsed = self.parseLogFile(content: logs)
             DispatchQueue.main.async {
                 self.parsedLogs = parsed
@@ -88,8 +99,21 @@ class Logger: ObservableObject, @unchecked Sendable {
     }
     
     nonisolated var logFileURL: URL {
-        let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-        return docDir.appendingPathComponent(logFileName)
+        let oldDocDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+        let oldURL = oldDocDir?.appendingPathComponent(logFileName)
+        
+        let cacheDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
+        let newURL = cacheDir.appendingPathComponent(logFileName)
+        
+        // Migrate old log file if it exists in documents directory
+        if let oldURL = oldURL, FileManager.default.fileExists(atPath: oldURL.path) {
+            if !FileManager.default.fileExists(atPath: newURL.path) {
+                try? FileManager.default.moveItem(at: oldURL, to: newURL)
+            } else {
+                try? FileManager.default.removeItem(at: oldURL)
+            }
+        }
+        return newURL
     }
     
     nonisolated func log(_ message: String, category: String = "INFO", type: LogType = .info) {
@@ -233,7 +257,7 @@ class Logger: ObservableObject, @unchecked Sendable {
     private func parseLogFile(content: String) -> [LogEntry] {
         var entries: [LogEntry] = []
         let lines = content.components(separatedBy: .newlines)
-        for line in lines.reversed() { // Newest first
+        for line in lines.reversed().prefix(500) { // Newest first, capped to 500 to prevent unbounded memory growth
             if let entry = LogEntry.from(line: line) {
                 entries.append(entry)
             }

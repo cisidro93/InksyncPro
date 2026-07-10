@@ -17,8 +17,13 @@ class CoverGenerator {
         
         // Define canvas scale based on the original image dimensions
         let size = originalImage.size
+        guard size.width > 0 && size.height > 0 && !size.width.isNaN && !size.height.isNaN else {
+            Logger.shared.log("Invalid Cover Image size: \(size). Returning original data.", category: "CoverGen", type: .warning)
+            return originalData
+        }
         let format = UIGraphicsImageRendererFormat()
         format.scale = originalImage.scale
+        format.preferredRange = .standard // Forces sRGB instead of device-dependent P3 to avoid Kindle E999
         
         let renderer = UIGraphicsImageRenderer(size: size, format: format)
         

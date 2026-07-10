@@ -17,31 +17,32 @@ struct PPLReaderView: View {
     @Binding var currentPageIndex: Int
     var pdfID: UUID?
     var isMangaMode: Bool
-    var isDoublePageOverride: Bool = false
     var isDrawingMode: Bool = false // ✅ Added for GoodNotes Parity
     var startWithGuidedReading: Bool = false
     var onCenterTap: () -> Void
 
     @ObservedObject private var bufferManager = PageBufferManager.shared
+    @EnvironmentObject var settingsManager: AppSettingsManager
 
     // ── Zoom / pan state ──────────────────────────────────────────────────────
     @State private var scale: CGFloat = 1.0
     @State private var lastScale: CGFloat = 1.0
     @State private var offset: CGSize = .zero
     @State private var dragOffset: CGSize = .zero
-    @State private var momentumTask: Task<Void, Never>?
+    @State private var momentumAnimator = MomentumAnimator()
 
     // ── Live swipe peel state ─────────────────────────────────────────────────
     @State private var swipeDragX: CGFloat = 0
     @State private var isCommittingSwipe = false
 
     // ── Settings ──────────────────────────────────────────────────────────────
-    @AppStorage("isDoublePageMode")       private var isDoublePageStored  = false
+    @AppStorage("autoLandscapeDualPage")  private var autoLandscapeDualPage = true
     @AppStorage("autoSplitPortraitSpreads") private var autoSplitPortraitSpreads = true
     @AppStorage("tapZoneStyle")           private var tapZoneStyleRaw     = TapZoneStyle.classic.rawValue
     @AppStorage("pageTurnStyle")          private var pageTurnStyleRaw    = PageTurnStyle.slide.rawValue
     @AppStorage("showSpreadSeam")         private var showSpreadSeam      = true
     @AppStorage("isAutoCropEnabled")      private var isAutoCropEnabled   = false
+    @AppStorage("isZoomLockEnabled")      private var isZoomLockEnabled   = false
 
     private var tapZoneStyle:  TapZoneStyle  { TapZoneStyle(rawValue: tapZoneStyleRaw)   ?? .classic }
     private var pageTurnStyle: PageTurnStyle { PageTurnStyle(rawValue: pageTurnStyleRaw) ?? .slide   }
@@ -55,49 +56,93 @@ struct PPLReaderView: View {
     @State private var guidedPanels: [NormalizedRect] = []
     @State private var hasInitializedGuidedReading = false
 
-    private var effectiveDoublePage: Bool { isDoublePageOverride || isDoublePageStored }
+    // effectiveDoublePage: orientation-intelligence implementation.
+    // Single source of truth is autoLandscapeDualPage — the reader automatically
+    // uses dual-page in landscape and single-page in portrait.
+    // isDoublePageStored (the old manual toggle) is intentionally excluded:
+    // it caused a double-trigger race condition and also broke the intelligent
+    // orientation-based behavior the user expects.
+    private var effectiveDoublePage: Bool { autoLandscapeDualPage }
+
 
     // MARK: - Body
 
     var body: some View {
         GeometryReader { geo in
             let isLandscape  = geo.size.width > geo.size.height
-            let showingDual  = effectiveDoublePage && isLandscape
+            let targetDual   = effectiveDoublePage && isLandscape
+            let currentDual  = bufferManager.currentSpread != nil
 
             ZStack {
                 Color.black.ignoresSafeArea()
 
-                if bufferManager.isLoading && bufferManager.currentImage == nil {
+                // Show loading indicator whenever there's no image to display.
+                // CRITICAL: checking isLoading alone is NOT enough — setupDirectArchive
+                // clears currentImage synchronously before the async ZIP scan sets isLoading.
+                // During dual→single mode switches this gap causes singlePageView to render
+                // with currentImage=nil → MetalCanvasView GPU texture crash.
+                // Guard on currentImage == nil directly so the loading indicator covers
+                // the full async gap regardless of isLoading state.
+                if bufferManager.currentImage == nil {
                     loadingIndicator
                 } else {
-                    pageContent(geo: geo, showingDual: showingDual)
+                    pageContent(geo: geo, currentDual: currentDual)
                         .contextMenu { contextMenuItems() }
                 }
             }
-            .onAppear       { setupBuffer(geo: geo, dual: showingDual) }
-            .onChange(of: currentPageIndex) { _, newIndex in advanceBuffer(to: newIndex, geo: geo, dual: showingDual) }
-            .onChange(of: geo.size)         { _, size   in resetOnResize(to: size, dual: effectiveDoublePage && size.width > size.height) }
-            .onChange(of: isDoublePageStored) { _, _ in setupBuffer(geo: geo, dual: effectiveDoublePage && geo.size.width > geo.size.height) }
-            .onChange(of: isAutoCropEnabled) { _, _ in setupBuffer(geo: geo, dual: showingDual) }
+            .onAppear       { setupBuffer(geo: geo, dual: targetDual) }
+            .onChange(of: currentPageIndex) { _, newIndex in
+                if !isZoomLockEnabled {
+                    withAnimation(.easeOut(duration: 0.15)) {
+                        scale = 1.0
+                        lastScale = 1.0
+                        offset = .zero
+                        dragOffset = .zero
+                    }
+                    bufferManager.isPPLEnabled = false
+                    bufferManager.updateViewport(rect: .full)
+                } else if scale > 1.0 {
+                    updatePPL(in: geo.size)
+                }
+                advanceBuffer(to: newIndex, geo: geo, dual: targetDual)
+            }
+            // onChange(of: geo.size) fires many times during the rotation animation with
+            // intermediate sizes. We debounce by ignoring any size where either dimension
+            // is zero, and we only commit a full buffer reset once the final stable size
+            // has settled (detected by the guard in resetOnResize).
+            .onChange(of: geo.size)         { _, size   in
+                // Ignore intermediate near-zero sizes emitted during rotation animation
+                guard size.width > 0, size.height > 0 else { return }
+                resetOnResize(to: size, dual: effectiveDoublePage && size.width > size.height)
+            }
+            // When the user toggles "Auto Dual Page in Landscape" in settings,
+            // reload the buffer immediately with the correct mode.
+            .onChange(of: autoLandscapeDualPage) { _, _ in
+                setupBuffer(geo: geo, dual: effectiveDoublePage && geo.size.width > geo.size.height)
+            }
+            .onChange(of: isAutoCropEnabled) { _, _ in setupBuffer(geo: geo, dual: targetDual) }
+            .onDisappear {
+                momentumAnimator.stop()
+            }
         }
     }
 
     // MARK: - Page Content with Live Peel
 
     @ViewBuilder
-    private func pageContent(geo: GeometryProxy, showingDual: Bool) -> some View {
+    private func pageContent(geo: GeometryProxy, currentDual: Bool) -> some View {
         let w = geo.size.width
 
         ZStack(alignment: .center) {
             // ── Back layer: adjacent spread peeking ──────────────────────────
             if pageTurnStyle != .instant {
                 if swipeDragX > 8 {
-                    adjacentSpread(isNext: false, showingDual: showingDual, geo: geo)
+                    adjacentSpread(isNext: false, currentDual: currentDual, geo: geo)
                         .offset(x: swipeDragX - w)
                         .allowsHitTesting(false)
                 }
                 if swipeDragX < -8 {
-                    adjacentSpread(isNext: true, showingDual: showingDual, geo: geo)
+                    adjacentSpread(isNext: true, currentDual: currentDual, geo: geo)
                         .offset(x: swipeDragX + w)
                         .allowsHitTesting(false)
                 }
@@ -105,7 +150,7 @@ struct PPLReaderView: View {
 
             // ── Front layer: current spread, sliding with finger ──────────────
             ZStack {
-                currentContent(geo: geo, showingDual: showingDual)
+                currentContent(geo: geo, currentDual: currentDual)
                 
                 // ✅ Phase 4: In-Line Handwriting
                 PageCanvasOverlay(pdfID: pdfID, pageIndex: currentPageIndex, isMarkupEnabled: isDrawingMode)
@@ -122,9 +167,9 @@ struct PPLReaderView: View {
             .offset(x: offset.width + dragOffset.width,
                     y: offset.height + dragOffset.height)
         }
-        // If drawing mode is on, we let PKCanvasView handle gestures and disable reader zoom/pan
-        .gesture(isDrawingMode ? nil : zoomGesture(geo: geo))
-        .simultaneousGesture(isDrawingMode ? nil : swipeAndPanGesture(geo: geo))
+        // If drawing mode is on, we let PKCanvasView handle gestures and disable reader zoom/pan (unless Pencil-Only is active)
+        .gesture((isDrawingMode && !settingsManager.conversionSettings.pencilOnlyDrawing) ? nil : zoomGesture(geo: geo))
+        .simultaneousGesture((isDrawingMode && !settingsManager.conversionSettings.pencilOnlyDrawing) ? nil : swipeAndPanGesture(geo: geo))
         .onTapGesture(count: 2) { loc in handleDoubleTap(at: loc, geo: geo) }
         .onTapGesture              { loc in handleSingleTap(at: loc, geo: geo) }
         .overlay(alignment: .bottom) {
@@ -156,8 +201,8 @@ struct PPLReaderView: View {
     // MARK: - Current Content
 
     @ViewBuilder
-    private func currentContent(geo: GeometryProxy, showingDual: Bool) -> some View {
-        if showingDual {
+    private func currentContent(geo: GeometryProxy, currentDual: Bool) -> some View {
+        if currentDual {
             dualSpreadView(geo: geo, spread: bufferManager.currentSpread)
         } else {
             singlePageView(geo: geo)
@@ -179,10 +224,12 @@ struct PPLReaderView: View {
             MetalCanvasView(image: leftImg ?? rightImg,
                             lockedRect: bufferManager.lockedRect,
                             isPPLEnabled: bufferManager.isPPLEnabled)
+                .id("dual-solo-\(spread?.leadIndex ?? 0)")
         } else {
             HStack(spacing: 0) {
                 if let left = leftImg {
-                    MetalCanvasView(image: left, lockedRect: .full, isPPLEnabled: false)
+                    MetalCanvasView(image: left, lockedRect: .full, isPPLEnabled: false, alignment: isMangaMode ? .leading : .trailing)
+                        .id("dual-left-\(spread?.leadIndex ?? 0)")
                 } else {
                     Color.black
                 }
@@ -195,7 +242,8 @@ struct PPLReaderView: View {
                 }
 
                 if let right = rightImg {
-                    MetalCanvasView(image: right, lockedRect: .full, isPPLEnabled: false)
+                    MetalCanvasView(image: right, lockedRect: .full, isPPLEnabled: false, alignment: isMangaMode ? .trailing : .leading)
+                        .id("dual-right-\(spread?.leadIndex ?? 0)")
                 } else {
                     Color.black
                 }
@@ -219,23 +267,26 @@ struct PPLReaderView: View {
                 ? (splitHalf == 0 ? rightHalf : leftHalf)
                 : (splitHalf == 0 ? leftHalf  : rightHalf)
             MetalCanvasView(image: img, lockedRect: rect, isPPLEnabled: true)
+                .id("single-split-\(currentPageIndex)")
         } else {
             MetalCanvasView(image: bufferManager.currentImage,
                             lockedRect: bufferManager.lockedRect,
                             isPPLEnabled: bufferManager.isPPLEnabled)
+                .id("single-full-\(currentPageIndex)")
         }
     }
 
     // MARK: - Adjacent Spread (peel preview layer)
 
     @ViewBuilder
-    private func adjacentSpread(isNext: Bool, showingDual: Bool, geo: GeometryProxy) -> some View {
-        if showingDual {
+    private func adjacentSpread(isNext: Bool, currentDual: Bool, geo: GeometryProxy) -> some View {
+        if currentDual {
             let spread = isNext ? bufferManager.nextSpread : bufferManager.prevSpread
             dualSpreadView(geo: geo, spread: spread)
         } else {
             let img = isNext ? bufferManager.nextImage : bufferManager.prevImage
             MetalCanvasView(image: img, lockedRect: .full, isPPLEnabled: false)
+                .id("adj-\(isNext ? 1 : 0)-\(currentPageIndex)")
         }
     }
 
@@ -261,20 +312,53 @@ struct PPLReaderView: View {
         MagnificationGesture()
             .onChanged { val in
                 let targetScale = lastScale * val
-                scale = min(max(targetScale, 1.0), 5.0)
+                if targetScale < 1.0 {
+                    scale = 1.0 - (1.0 - targetScale) * 0.5
+                } else if targetScale > 5.0 {
+                    scale = 5.0 + (targetScale - 5.0) * 0.3
+                } else {
+                    scale = targetScale
+                }
             }
             .onEnded { _ in
-                lastScale = scale
-                updatePPL(in: geo.size)
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
+                    if scale < 1.0 {
+                        scale = 1.0
+                        offset = .zero
+                        Haptics.shared.playImpact(style: .light)
+                    } else if scale > 5.0 {
+                        scale = 5.0
+                        Haptics.shared.playImpact(style: .light)
+                    }
+                    lastScale = scale
+                    updatePPL(in: geo.size)
+                }
             }
     }
 
     private func swipeAndPanGesture(geo: GeometryProxy) -> some Gesture {
         DragGesture(minimumDistance: 8)
             .onChanged { val in
-                momentumTask?.cancel()
+                guard !isCommittingSwipe else { return }
+                momentumAnimator.stop()
                 if scale > 1.0 {
-                    dragOffset = val.translation
+                    // Rubber-band resistance at pan boundaries
+                    let maxOffsetX = geo.size.width * (scale - 1) / 2
+                    let maxOffsetY = geo.size.height * (scale - 1) / 2
+                    
+                    var dx = val.translation.width
+                    var dy = val.translation.height
+                    
+                    let intendedX = offset.width + dx
+                    let intendedY = offset.height + dy
+                    
+                    if intendedX > maxOffsetX { dx = maxOffsetX - offset.width + (intendedX - maxOffsetX) * 0.3 }
+                    else if intendedX < -maxOffsetX { dx = -maxOffsetX - offset.width + (intendedX + maxOffsetX) * 0.3 }
+                    
+                    if intendedY > maxOffsetY { dy = maxOffsetY - offset.height + (intendedY - maxOffsetY) * 0.3 }
+                    else if intendedY < -maxOffsetY { dy = -maxOffsetY - offset.height + (intendedY + maxOffsetY) * 0.3 }
+                    
+                    dragOffset = CGSize(width: dx, height: dy)
                 } else {
                     let dx = val.translation.width
                     let dy = val.translation.height
@@ -287,6 +371,7 @@ struct PPLReaderView: View {
                 }
             }
             .onEnded { val in
+                guard !isCommittingSwipe else { return }
                 if scale > 1.0 {
                     commitPan(val: val, geo: geo)
                 } else {
@@ -323,7 +408,7 @@ struct PPLReaderView: View {
             }
             Task { @MainActor in
                 try? await Task.sleep(nanoseconds: pageTurnStyle == .flip3D ? 200_000_000 : 160_000_000)
-                nextPage(geo: geo.size, showingDual: showingDual)
+                nextPage(geo: geo.size, targetDual: showingDual)
                 swipeDragX = pageTurnStyle == .flip3D ? 0 : w * 0.15
                 withAnimation(.spring(response: 0.22, dampingFraction: 0.9)) { swipeDragX = 0 }
                 isCommittingSwipe = false
@@ -335,7 +420,7 @@ struct PPLReaderView: View {
             }
             Task { @MainActor in
                 try? await Task.sleep(nanoseconds: 160_000_000)
-                prevPage(geo: geo.size, showingDual: showingDual)
+                prevPage(geo: geo.size, targetDual: showingDual)
                 swipeDragX = -w * 0.15
                 withAnimation(.spring(response: 0.22, dampingFraction: 0.9)) { swipeDragX = 0 }
                 isCommittingSwipe = false
@@ -355,25 +440,25 @@ struct PPLReaderView: View {
     // MARK: - Pan Commit + Momentum
 
     private func commitPan(val: DragGesture.Value, geo: GeometryProxy) {
-        offset.width  += val.translation.width
-        offset.height += val.translation.height
+        offset.width  += dragOffset.width
+        offset.height += dragOffset.height
         dragOffset = .zero
-        updatePPL(in: geo.size)
+        
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
+            updatePPL(in: geo.size)
+        }
 
         let vel = val.velocity
         guard abs(vel.width) > 30 || abs(vel.height) > 30 else { return }
 
-        momentumTask = Task { @MainActor in
-            var vx = vel.width  * 0.012
-            var vy = vel.height * 0.012
-            repeat {
-                try? await Task.sleep(nanoseconds: 16_000_000) // ~60 fps
-                guard !Task.isCancelled else { return }
-                vx *= 0.90; vy *= 0.90
-                offset.width  = max(-geo.size.width  * (scale - 1), min(geo.size.width  * (scale - 1), offset.width  + vx))
-                offset.height = max(-geo.size.height * (scale - 1), min(geo.size.height * (scale - 1), offset.height + vy))
-                updatePPL(in: geo.size)
-            } while abs(vx) > 0.5 || abs(vy) > 0.5
+        momentumAnimator.start(
+            velocity: vel,
+            currentOffset: offset,
+            scale: scale,
+            geoSize: geo.size
+        ) { newOffset in
+            offset = newOffset
+            updatePPL(in: geo.size)
         }
     }
 
@@ -388,6 +473,7 @@ struct PPLReaderView: View {
     // MARK: - Tap Handling
 
     private func handleDoubleTap(at location: CGPoint, geo: GeometryProxy) {
+        guard !isCommittingSwipe else { return }
         if scale > 1.0 {
             withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                 scale = 1.0
@@ -419,25 +505,27 @@ struct PPLReaderView: View {
     }
 
     private func handleSingleTap(at location: CGPoint, geo: GeometryProxy) {
-        guard scale <= 1.0 || isGuidedReadingActive else { return }
+        guard !isCommittingSwipe else { return }
+        guard scale <= 1.0 || isZoomLockEnabled || isGuidedReadingActive else { return }
         let w = geo.size.width
         let isLandscape = geo.size.width > geo.size.height
-        let showingDual = effectiveDoublePage && isLandscape
+        let targetDual = effectiveDoublePage && isLandscape
         let zones = tapZoneStyle.zones
+        let touchX = location.x
 
         if isGuidedReadingActive {
-            if location.x < w * zones.leftEdge {
+            if touchX < w * zones.leftEdge {
                 if isMangaMode { nextGuidedPanel(geo: geo.size) } else { prevGuidedPanel(geo: geo.size) }
-            } else if location.x > w * zones.rightEdge {
+            } else if touchX > w * zones.rightEdge {
                 if isMangaMode { prevGuidedPanel(geo: geo.size) } else { nextGuidedPanel(geo: geo.size) }
             } else {
                 onCenterTap()
             }
         } else {
-            if location.x < w * zones.leftEdge {
-                if isMangaMode { nextPage(geo: geo.size, showingDual: showingDual) } else { prevPage(geo: geo.size, showingDual: showingDual) }
-            } else if location.x > w * zones.rightEdge {
-                if isMangaMode { prevPage(geo: geo.size, showingDual: showingDual) } else { nextPage(geo: geo.size, showingDual: showingDual) }
+            if touchX < w * zones.leftEdge {
+                if isMangaMode { nextPage(geo: geo.size, targetDual: targetDual) } else { prevPage(geo: geo.size, targetDual: targetDual) }
+            } else if touchX > w * zones.rightEdge {
+                if isMangaMode { prevPage(geo: geo.size, targetDual: targetDual) } else { nextPage(geo: geo.size, targetDual: targetDual) }
             } else {
                 onCenterTap()
             }
@@ -468,83 +556,96 @@ struct PPLReaderView: View {
 
     // MARK: - Navigation
 
-    private func nextPage(geo: CGSize, showingDual: Bool) {
+    private func nextPage(geo: CGSize, targetDual: Bool) {
         let isSpread     = bufferManager.currentImage.map { isWideSpread($0) } ?? false
-        let nextIsSpread = bufferManager.nextImage.map   { isWideSpread($0) } ?? false
         let isPortrait   = geo.height > geo.width
 
         if isPortrait && isSpread && autoSplitPortraitSpreads {
             if splitHalf == 0 { splitHalf = 1; return } else { splitHalf = 0 }
         }
 
-        // Always base hop arithmetic on the canonical lead in dual-page mode so we never sit on a
-        // right-slot index and stall for a tap. This gives the natural
-        // "every tap = one spread forward" feel the user expects.
-        // In single-page mode, just use the current page index.
-        let lead = showingDual
-            ? PageBufferManager.canonicalLeadIndex(for: currentPageIndex, isMangaMode: isMangaMode)
-            : currentPageIndex
-        let isCover = showingDual && lead == 0
+        if targetDual && !bufferManager.activeSpreads.isEmpty {
+            let nextIndex = bufferManager.currentSpreadIndex + 1
+            if nextIndex < bufferManager.activeSpreads.count {
+                Haptics.shared.playImpact(style: .light)
+                currentPageIndex = bufferManager.activeSpreads[nextIndex].leadIndex
+            } else {
+                Haptics.shared.playImpact(style: .rigid)
+                NotificationCenter.default.post(name: NSNotification.Name("Reader_EndOfBookReached"), object: nil)
+            }
+            return
+        }
 
-        // In dual-page mode hop by 2 (one full spread) unless the current or next
-        // page is a wide physical spread — those always occupy a solo slot.
-        let hop: Int = (showingDual && !isSpread && !nextIsSpread && !isCover) ? 2 : 1
-        let next = lead + hop
-
+        let next = currentPageIndex + 1
         if next < pages.count {
             Haptics.shared.playImpact(style: .light)
             currentPageIndex = next
-        } else if lead < pages.count - 1 {
-            Haptics.shared.playImpact(style: .light)
-            currentPageIndex = pages.count - 1
         } else {
             Haptics.shared.playImpact(style: .rigid)
             NotificationCenter.default.post(name: NSNotification.Name("Reader_EndOfBookReached"), object: nil)
         }
     }
 
-    private func prevPage(geo: CGSize, showingDual: Bool) {
+    private func prevPage(geo: CGSize, targetDual: Bool) {
         let isSpread     = bufferManager.currentImage.map { isWideSpread($0) } ?? false
-        let prevIsSpread = bufferManager.prevImage.map    { isWideSpread($0) } ?? false
         let isPortrait   = geo.height > geo.width
 
         if isPortrait && isSpread && autoSplitPortraitSpreads {
             if splitHalf == 1 { splitHalf = 0; return } else { splitHalf = 1 }
         }
 
-        // Always base hop arithmetic on the canonical lead in dual-page mode — same reasoning as nextPage.
-        let lead = showingDual
-            ? PageBufferManager.canonicalLeadIndex(for: currentPageIndex, isMangaMode: isMangaMode)
-            : currentPageIndex
-        let isCover = showingDual && lead == 0
-        guard lead > 0 else {
-            Haptics.shared.playImpact(style: .rigid)
+        if targetDual && !bufferManager.activeSpreads.isEmpty {
+            let prevIndex = bufferManager.currentSpreadIndex - 1
+            if prevIndex >= 0 {
+                Haptics.shared.playImpact(style: .light)
+                currentPageIndex = bufferManager.activeSpreads[prevIndex].leadIndex
+            } else {
+                Haptics.shared.playImpact(style: .rigid)
+            }
             return
         }
 
-        // In dual-page mode hop back by 2 (one full spread), respecting wide pages.
-        let hop: Int = (showingDual && !isSpread && !prevIsSpread && !isCover) ? 2 : 1
-        Haptics.shared.playImpact(style: .light)
-        currentPageIndex = max(0, lead - hop)
+        let prev = currentPageIndex - 1
+        if prev >= 0 {
+            Haptics.shared.playImpact(style: .light)
+            currentPageIndex = prev
+        } else {
+            Haptics.shared.playImpact(style: .rigid)
+        }
     }
 
     // MARK: - Buffer Setup
 
     private func setupBuffer(geo: GeometryProxy, dual: Bool) {
+        let isLandscape = geo.size.width > geo.size.height
+        let targetDual = dual && isLandscape
+
         if let firstPage = pages.first,
            let archiveURL = PageBufferManager.findArchiveURL(in: firstPage) {
-            bufferManager.setupDirectArchive(url: archiveURL)
+            // setupDirectArchive is async — it fires the initial render() itself
+            // after pageURLs is populated. Do NOT call render() here separately;
+            // doing so would race with the empty pageURLs and produce a nil
+            // currentImage crash in MetalCanvasView (single-page mode only).
+            bufferManager.setupDirectArchive(
+                url: archiveURL,
+                initialPageIndex: currentPageIndex,
+                bounds: geo.size,
+                dual: targetDual,
+                isMangaMode: isMangaMode
+            )
         } else {
-            bufferManager.setup(pages: pages)
+            bufferManager.setup(pages: pages, isMangaMode: isMangaMode)
+            if targetDual {
+                if let targetIdx = bufferManager.activeSpreads.firstIndex(where: { $0.leadIndex == currentPageIndex }) {
+                    bufferManager.renderDual(spreadIndex: targetIdx, bounds: geo.size)
+                } else {
+                    bufferManager.renderDual(spreadIndex: 0, bounds: geo.size)
+                }
+            } else {
+                bufferManager.render(pageIndex: currentPageIndex, bounds: geo.size)
+            }
         }
-        
-        if dual {
-            let lead = PageBufferManager.canonicalLeadIndex(for: currentPageIndex, isMangaMode: isMangaMode)
-            bufferManager.renderDual(leadIndex: lead, pages: pages, isMangaMode: isMangaMode, bounds: geo.size)
-        } else {
-            bufferManager.render(pageIndex: currentPageIndex, bounds: geo.size)
-        }
-        
+
         if startWithGuidedReading && !hasInitializedGuidedReading {
             hasInitializedGuidedReading = true
             refreshGuidedPanels()
@@ -560,9 +661,9 @@ struct PPLReaderView: View {
     }
 
     private func advanceBuffer(to index: Int, geo: GeometryProxy, dual: Bool) {
-        if dual {
-            let lead = PageBufferManager.canonicalLeadIndex(for: index, isMangaMode: isMangaMode)
-            bufferManager.renderDual(leadIndex: lead, pages: pages, isMangaMode: isMangaMode, bounds: geo.size)
+        if dual && !bufferManager.activeSpreads.isEmpty {
+            let targetIdx = bufferManager.activeSpreads.firstIndex(where: { $0.leadIndex == index }) ?? bufferManager.currentSpreadIndex
+            bufferManager.renderDual(spreadIndex: targetIdx, bounds: geo.size)
         } else {
             bufferManager.render(pageIndex: index, bounds: geo.size)
         }
@@ -572,8 +673,7 @@ struct PPLReaderView: View {
         guard size.width > 0, size.height > 0 else { return }
         // Cancel any in-flight momentum or swipe-commit task so stale geometry
         // can't mutate state after the screen has already rotated.
-        momentumTask?.cancel()
-        momentumTask = nil
+        momentumAnimator.stop()
         isCommittingSwipe = false
         withAnimation(.easeOut(duration: 0.15)) {
             scale = 1.0
@@ -584,9 +684,22 @@ struct PPLReaderView: View {
         }
         bufferManager.isPPLEnabled = false
         bufferManager.updateViewport(rect: .full)
-        if dual {
-            let lead = PageBufferManager.canonicalLeadIndex(for: currentPageIndex, isMangaMode: isMangaMode)
-            bufferManager.renderDual(leadIndex: lead, pages: pages, isMangaMode: isMangaMode, bounds: size)
+
+        // ✅ Rotation crash fix: eagerly clear ALL spread and image states BEFORE issuing the
+        // new render. This guarantees bufferManager.currentImage is nil, forcing the
+        // loadingIndicator to show. If we don't clear currentImage when switching from dual
+        // to single, MetalCanvasView stays mounted during the MTKView's drawableSize transition,
+        // which causes a Metal pipeline crash on device rotation.
+        bufferManager.currentImage = nil
+        bufferManager.currentSpread = nil
+        bufferManager.nextImage = nil
+        bufferManager.nextSpread = nil
+        bufferManager.prevImage = nil
+        bufferManager.prevSpread = nil
+
+        if dual && !bufferManager.activeSpreads.isEmpty {
+            let targetIdx = bufferManager.activeSpreads.firstIndex(where: { $0.leadIndex == currentPageIndex }) ?? bufferManager.currentSpreadIndex
+            bufferManager.renderDual(spreadIndex: targetIdx, bounds: size)
         } else {
             bufferManager.render(pageIndex: currentPageIndex, bounds: size)
         }
@@ -601,13 +714,15 @@ struct PPLReaderView: View {
             withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { offset = .zero }
             return
         }
-        bufferManager.isPPLEnabled = true
-        let visW = size.width  / scale
-        let visH = size.height / scale
-        let x = ((size.width  - visW) / 2) - (offset.width  / scale)
-        let y = ((size.height - visH) / 2) - (offset.height / scale)
-        bufferManager.updateViewport(rect: CoordinateConverter.normalize(
-            rect: CGRect(x: x, y: y, width: visW, height: visH), in: size))
+        // Manual pinch/tap zoom uses native SwiftUI scaleEffect to avoid double-dipping with Metal's PPL crop.
+        // This ensures tap-to-zoom is professionally clean and works flawlessly on dual-page spreads.
+        bufferManager.isPPLEnabled = false
+        
+        // Clamp the pan offset so the image doesn't fly off screen
+        let maxOffsetX = size.width * (scale - 1) / 2
+        let maxOffsetY = size.height * (scale - 1) / 2
+        offset.width = max(-maxOffsetX, min(maxOffsetX, offset.width))
+        offset.height = max(-maxOffsetY, min(maxOffsetY, offset.height))
     }
 
     // MARK: - Spread Detection
@@ -633,7 +748,7 @@ struct PPLReaderView: View {
             withAnimation(.easeInOut(duration: 0.25)) { bufferManager.lockedRect = guidedPanels[guidedPanelIndex] }
         } else {
             let isLandscape = geo.width > geo.height
-            nextPage(geo: geo, showingDual: effectiveDoublePage && isLandscape)
+            nextPage(geo: geo, targetDual: effectiveDoublePage && isLandscape)
             if isGuidedReadingActive {
                 refreshGuidedPanels(); guidedPanelIndex = 0
                 if guidedPanels.isEmpty { isGuidedReadingActive = false; updatePPL(in: geo) }
@@ -648,15 +763,87 @@ struct PPLReaderView: View {
             withAnimation(.easeInOut(duration: 0.25)) { bufferManager.lockedRect = guidedPanels[guidedPanelIndex] }
         } else {
             let isLandscape = geo.width > geo.height
-            prevPage(geo: geo, showingDual: effectiveDoublePage && isLandscape)
+            prevPage(geo: geo, targetDual: effectiveDoublePage && isLandscape)
             if isGuidedReadingActive {
                 refreshGuidedPanels()
                 if guidedPanels.isEmpty { isGuidedReadingActive = false; updatePPL(in: geo) }
                 else {
-                    guidedPanelIndex = guidedPanels.count - 1
-                    withAnimation(.easeInOut(duration: 0.25)) { bufferManager.lockedRect = guidedPanels[guidedPanelIndex] }
+                    let lastIdx = guidedPanels.count - 1
+                    guidedPanelIndex = lastIdx
+                    withAnimation(.easeInOut(duration: 0.25)) { bufferManager.lockedRect = guidedPanels[lastIdx] }
                 }
             }
+        }
+    }
+}
+
+// ── Momentum DisplayLink Proxy ────────────────────────────────────────────────
+@MainActor
+private class MomentumDisplayLinkProxy: NSObject {
+    private weak var target: MomentumAnimator?
+    
+    init(target: MomentumAnimator) {
+        self.target = target
+        super.init()
+    }
+    
+    @objc func tick(_ dl: CADisplayLink) {
+        target?.tick(dl)
+    }
+}
+
+// ── Momentum Animator Class ──────────────────────────────────────────────────
+@MainActor
+class MomentumAnimator: NSObject {
+    private var displayLink: CADisplayLink?
+    private var vx: CGFloat = 0
+    private var vy: CGFloat = 0
+    private var scale: CGFloat = 1.0
+    private var geoSize: CGSize = .zero
+    
+    var offsetWidth: CGFloat = 0
+    var offsetHeight: CGFloat = 0
+    
+    var onTick: ((CGSize) -> Void)?
+    
+    func start(velocity: CGSize, currentOffset: CGSize, scale: CGFloat, geoSize: CGSize, onTick: @escaping (CGSize) -> Void) {
+        stop()
+        
+        self.vx = velocity.width * 0.012
+        self.vy = velocity.height * 0.012
+        self.offsetWidth = currentOffset.width
+        self.offsetHeight = currentOffset.height
+        self.scale = scale
+        self.geoSize = geoSize
+        self.onTick = onTick
+        
+        let proxy = MomentumDisplayLinkProxy(target: self)
+        let dl = CADisplayLink(target: proxy, selector: #selector(MomentumDisplayLinkProxy.tick(_:)))
+        if #available(iOS 15.0, *) {
+            dl.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
+        }
+        dl.add(to: .main, forMode: .common)
+        self.displayLink = dl
+    }
+    
+    func stop() {
+        displayLink?.invalidate()
+        displayLink = nil
+    }
+    
+    fileprivate func tick(_ dl: CADisplayLink) {
+        let dt = CGFloat(dl.duration)
+        let decay = pow(0.90, dt / (1.0 / 60.0))
+        vx *= decay
+        vy *= decay
+        
+        offsetWidth  = max(-geoSize.width  * (scale - 1), min(geoSize.width  * (scale - 1), offsetWidth  + vx))
+        offsetHeight = max(-geoSize.height * (scale - 1), min(geoSize.height * (scale - 1), offsetHeight + vy))
+        
+        onTick?(CGSize(width: offsetWidth, height: offsetHeight))
+        
+        if abs(vx) <= 0.5 && abs(vy) <= 0.5 {
+            stop()
         }
     }
 }

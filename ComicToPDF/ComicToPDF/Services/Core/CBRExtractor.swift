@@ -50,6 +50,10 @@ struct CBRExtractor {
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 let fm = FileManager.default
+                let stem = sourceURL.deletingPathExtension().lastPathComponent
+                let uniqueID = UUID().uuidString.prefix(8)
+                let tempDir = fm.temporaryDirectory
+                    .appendingPathComponent("cbr_\(stem)_\(uniqueID)")
                 do {
                     // Security-scoped access (only applies to local sandbox-scoped URLs)
                     let secured = localSourceURL.startAccessingSecurityScopedResource()
@@ -60,38 +64,42 @@ struct CBRExtractor {
                     }
 
                     // Create extraction destination
-                    let stem = sourceURL.deletingPathExtension().lastPathComponent
-                    let uniqueID = UUID().uuidString.prefix(8)
-                    let tempDir = fm.temporaryDirectory
-                        .appendingPathComponent("cbr_\(stem)_\(uniqueID)")
                     try fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
 
-                    // Open archive — Unrar.Archive disambiguates from ZIPFoundation.Archive
-                    let archive = try Unrar.Archive(fileURL: localSourceURL)
+                    let imageURLs = try ConcurrencyLocks.unrarLock.withLock {
+                        // Open archive — Unrar.Archive disambiguates from ZIPFoundation.Archive
+                        let archive = try Unrar.Archive(fileURL: localSourceURL)
 
-                    // List all entries
-                    let entries = try archive.entries()
-                    var imageURLs: [URL] = []
+                        // List all entries
+                        let entries = try archive.entries()
+                        var urls: [URL] = []
+                        var fileIndex = 0
 
-                    for entry in entries {
-                        let flatName = (entry.fileName as NSString).lastPathComponent
+                        for entry in entries {
+                            let flatName = (entry.fileName as NSString).lastPathComponent
 
-                        // Skip directories and macOS metadata artefacts
-                        guard !entry.directory,
-                              !entry.fileName.contains("__MACOSX"),
-                              !flatName.hasPrefix("._"),
-                              flatName != ".DS_Store" else { continue }
+                            // Skip directories and macOS metadata artefacts
+                            guard !entry.directory,
+                                  !entry.fileName.contains("__MACOSX"),
+                                  !flatName.hasPrefix("._"),
+                                  flatName != ".DS_Store" else { continue }
 
-                        let ext = (flatName as NSString).pathExtension.lowercased()
-                        guard imageExtensions.contains(ext) else { continue }
+                            let ext = (flatName as NSString).pathExtension.lowercased()
+                            guard imageExtensions.contains(ext) else { continue }
 
-                        // Flatten the path — all images land directly in tempDir
-                        let destURL = tempDir.appendingPathComponent(flatName)
+                            // Flatten the path — all images land directly in tempDir with sequential indexing
+                            let paddedName = String(format: "%04d_%@", fileIndex, flatName)
+                            let destURL = tempDir.appendingPathComponent(paddedName)
 
-                        // Extract entry to Data then persist atomically
-                        let data = try archive.extract(entry)
-                        try data.write(to: destURL, options: .atomic)
-                        imageURLs.append(destURL)
+                            try autoreleasepool {
+                                // Extract entry to Data then persist atomically
+                                let data = try archive.extract(entry)
+                                try data.write(to: destURL, options: .atomic)
+                                urls.append(destURL)
+                                fileIndex += 1
+                            }
+                        }
+                        return urls
                     }
 
                     guard !imageURLs.isEmpty else {
@@ -114,6 +122,7 @@ struct CBRExtractor {
                         "CBRExtractor failed: \(error.localizedDescription)",
                         category: "System", type: .error
                     )
+                    try? fm.removeItem(at: tempDir)
                     continuation.resume(throwing: error)
                 }
             }

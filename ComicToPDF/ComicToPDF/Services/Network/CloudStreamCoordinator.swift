@@ -58,13 +58,12 @@ final class CloudStreamCoordinator: ObservableObject {
 
         // ── Step 1: Resolve authenticated download URL ───────────────────────────
         let downloadURL: URL
-        var authHeader: String? = nil
+        // authHeader is set per-provider below and never mutated after assignment,
+        // so `let` is correct. Using `var` triggers a Swift immutability warning.
+        let authHeader: String? = nil
 
         if provider == "Dropbox" {
             downloadURL = try await DropboxProvider.shared.getDownloadURL(fileID: archiveRemoteID(pdf))
-        } else if provider == "Google Drive" || provider == "GoogleDrive" {
-            downloadURL = try await GoogleDriveProvider.shared.getDownloadURL(fileID: archiveRemoteID(pdf))
-            authHeader  = try await GoogleDriveProvider.shared.currentAuthHeader()
         } else {
             throw CloudCoordinatorError.unknownProvider(provider)
         }
@@ -123,7 +122,8 @@ final class CloudStreamCoordinator: ObservableObject {
         // ── A: Download to temp ───────────────────────────────────────────────────
         await MainActor.run { self.phase = .downloading(0.0) }
         let localCBR = try await CloudDownloadManager.shared.streamCloudFile(pdf: pdf)
-        let cbrFileSize = (try? FileManager.default.attributesOfItem(atPath: localCBR.path)[.size] as? Int64) ?? 0
+        let cbrAttrs = try? FileManager.default.attributesOfItem(atPath: localCBR.path)
+        let cbrFileSize: Int64 = (cbrAttrs?[.size] as? Int64) ?? 0
 
         // Guard: bail immediately on an empty file — avoids Unrar Error 2 on 0-byte bodies
         guard cbrFileSize > 0 else {

@@ -1,5 +1,7 @@
 import SwiftUI
 import ZIPFoundation
+import Foundation
+import SwiftData
 
 // ============================================================
 // SCOPE BOUNDARY — ISOLATED MODULE
@@ -94,32 +96,44 @@ class PanelViewEPUBConverter {
         panels: [Int: [PanelExtractor.Panel]],
         sourceIsMangaPDF: Bool = false,
         coverOverrideData: Data? = nil,
+        customOutputName: String? = nil,
         progress: @escaping (Double) -> Void
     ) async throws -> [URL] {
         Logger.shared.log("PanelViewEPUBConverter: Starting. Pages with panels: \(panels.count)", category: "PVConverter")
 
         let fileManager = FileManager.default
-        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
 
         // ── Strip all extensions from filename ────────────────────────────────
-        var baseFilename = sourceURL.lastPathComponent
-        while baseFilename.contains(".") {
-            let s = (baseFilename as NSString).deletingPathExtension
-            if s == baseFilename { break }
-            baseFilename = s
+        var baseFilename: String
+        if let customName = customOutputName, !customName.isEmpty {
+            var derived = customName
+            while derived.contains(".") {
+                let s = (derived as NSString).deletingPathExtension
+                if s == derived { break }
+                derived = s
+            }
+            baseFilename = derived
+        } else {
+            var derived = sourceURL.lastPathComponent
+            while derived.contains(".") {
+                let s = (derived as NSString).deletingPathExtension
+                if s == derived { break }
+                derived = s
+            }
+            baseFilename = derived
         }
 
         // ── Step 0: Extract archive ───────────────────────────────────────────
         progress(0.05)
+        // ZipUtilities.extractComic requires the caller to hold the security scope.
+        let didAccess = sourceURL.startAccessingSecurityScopedResource()
         let extraction = try await ZipUtilities.extractComic(from: sourceURL)
+        if didAccess { sourceURL.stopAccessingSecurityScopedResource() }
         let tempDir    = extraction.workingDir
         defer { try? fileManager.removeItem(at: tempDir) }
 
-        var imageURLs = extraction.imageURLs
-        
-        if sourceIsMangaPDF {
-            imageURLs.reverse()
-        }
+        let imageURLs = extraction.imageURLs
         
         guard !imageURLs.isEmpty else { throw PanelViewError.noImages }
 
@@ -161,16 +175,22 @@ class PanelViewEPUBConverter {
             let bookUUID = "urn:uuid:\(UUID().uuidString)"
 
             // ── Cover thumbnail (Fix 2: dedicated cover.jpg for Kindle library) ──
-            // Kindle's library indexer looks for a standalone cover-image manifest
-            // item. It cannot reliably pull the thumbnail from the first spine page.
-            let coverSrcURL = batch.first?.url ?? imageURLs[0]
-            let coverJpegData: Data
-            if let override = coverOverrideData {
-                coverJpegData = override
-            } else {
-                coverJpegData = processImage(srcURL: coverSrcURL, settings: settings, isOddPage: true)
+            let hasBadgedCover = batches.count > 1
+            if hasBadgedCover {
+                let coverSrcURL = batch.first?.url ?? imageURLs[0]
+                let coverJpegData: Data
+                if let override = coverOverrideData {
+                    coverJpegData = override
+                } else {
+                    coverJpegData = processImage(srcURL: coverSrcURL, settings: settings, isOddPage: true)
+                }
+                let badgedCoverData = CoverGenerator.generateCover(from: coverJpegData, partNumber: batchIdx + 1, totalParts: batches.count)
+                try? badgedCoverData.write(to: imagesDir.appendingPathComponent("cover.jpg"))
+                
+                // Write cover.xhtml to prevent Kindle's double-cover auto-injection
+                let coverXHTML = EPUBManifestBuilder.buildCoverXHTML(coverFilename: "cover.jpg", isManga: isManga)
+                try? coverXHTML.write(to: pagesDir.appendingPathComponent("cover.xhtml"), atomically: true, encoding: .utf8)
             }
-            try? coverJpegData.write(to: imagesDir.appendingPathComponent("cover.jpg"))
 
             // Step 2 prep: build page catalog
             var pageCatalog: [PageEntry] = []
@@ -190,7 +210,16 @@ class PanelViewEPUBConverter {
                     } else {
                          imgData = processImage(srcURL: item.url, settings: settings, isOddPage: globalIdx % 2 == 0)
                     }
-                    try? imgData.write(to: imagesDir.appendingPathComponent(imageName))
+                    
+                    if globalIdx > 0 || !hasBadgedCover {
+                        try? imgData.write(to: imagesDir.appendingPathComponent(imageName))
+                    }
+                    
+                    // If this is the cover page of a multi-part book,
+                    // we skip generating its XHTML page and spine/pageCatalog entry.
+                    if hasBadgedCover && globalIdx == 0 {
+                        return
+                    }
                     
                     // Resolve actual pixel dimensions per page (may differ from page 1)
                     let pageSz = UIImage(data: imgData)?.size ?? pageSize
@@ -222,21 +251,53 @@ class PanelViewEPUBConverter {
                 }
             }
 
+            // Step 3.5: Build Glossary Page if enabled
+            if settings.embedCharacterGlossary {
+                let metadataInfo = await MainActor.run { () -> (seriesID: String?, seriesName: String?, issueNum: Int?) in
+                    let context = InksyncProApp.sharedModelContainer.mainContext
+                    let urlStr = sourceURL.absoluteString
+                    let nameStr = sourceURL.lastPathComponent
+                    let descriptor = FetchDescriptor<SDConvertedPDF>()
+                    if let pdfs = try? context.fetch(descriptor) {
+                        if let pdf = pdfs.first(where: { $0.url.absoluteString == urlStr || $0.name == nameStr }) {
+                            let seriesID = pdf.metadata.universalSeriesID
+                            let seriesName = pdf.metadata.series
+                            let issueNum = Int(pdf.metadata.issueNumber ?? "")
+                            return (seriesID, seriesName, issueNum)
+                        }
+                    }
+                    return (nil, nil, nil)
+                }
+                
+                let glossaryHTML = await MainActor.run {
+                    CharacterGlossaryBuilder.shared.buildGlossaryHTML(
+                        seriesIDString: metadataInfo.seriesID,
+                        seriesName: metadataInfo.seriesName ?? baseFilename,
+                        issueNumber: metadataInfo.issueNum
+                    )
+                }
+                
+                if let html = glossaryHTML {
+                    try? html.write(to: pagesDir.appendingPathComponent("glossary.xhtml"), atomically: true, encoding: .utf8)
+                }
+            }
+
             // Step 4: Validation
             try validate(pagesDir: pagesDir, pageCatalog: pageCatalog)
 
             // Write ancillary files
             try buildCSS().write(to: cssDir.appendingPathComponent("comic.css"), atomically: true, encoding: .utf8)
             try buildContainerXML().write(to: metaDir.appendingPathComponent("container.xml"), atomically: true, encoding: .utf8)
-            try buildNavXHTML(title: batchName, firstPage: pageCatalog.first?.xhtmlName ?? "page001.xhtml")
+            let firstPage = hasBadgedCover ? "pages/cover.xhtml" : "pages/\(pageCatalog.first?.xhtmlName ?? "page001.xhtml")"
+            try buildNavXHTML(title: batchName, firstPage: firstPage, isManga: isManga)
                 .write(to: oebpsDir.appendingPathComponent("nav.xhtml"), atomically: true, encoding: .utf8)
-            try buildTocNCX(title: batchName, uuid: bookUUID, firstPage: pageCatalog.first?.xhtmlName ?? "page001.xhtml")
+            try buildTocNCX(title: batchName, uuid: bookUUID, firstPage: firstPage)
                 .write(to: oebpsDir.appendingPathComponent("toc.ncx"), atomically: true, encoding: .utf8)
 
             // Blank page (Manga odd-page handling)
             let needsBlank = isManga && (pageCatalog.count % 2 != 0)
             if needsBlank {
-                let blankXHTML = buildBlankXHTML(pageWidth: pageW, pageHeight: pageH)
+                let blankXHTML = buildBlankXHTML(pageWidth: pageW, pageHeight: pageH, isManga: isManga)
                 try blankXHTML.write(to: pagesDir.appendingPathComponent("blank.xhtml"), atomically: true, encoding: .utf8)
             }
 
@@ -249,7 +310,9 @@ class PanelViewEPUBConverter {
                 isManga: isManga,
                 pageCatalog: pageCatalog,
                 needsBlank: needsBlank,
-                comicInfo: comicInfo
+                comicInfo: comicInfo,
+                settings: settings,
+                hasBadgedCover: hasBadgedCover
             )
             try opf.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8)
 
@@ -264,6 +327,7 @@ class PanelViewEPUBConverter {
                 try fileManager.removeItem(at: outputURL)
             }
             try assembleEPUB(buildDir: buildDir, outputURL: outputURL, oebpsDir: oebpsDir, metaDir: metaDir, mimetypePath: mimetypePath)
+            PhysicalFileSystemRouter.excludeFromBackup(at: outputURL)
 
             outputURLs.append(outputURL)
             Logger.shared.log("PanelViewEPUBConverter: Produced \(outputName)", category: "PVConverter")
@@ -284,36 +348,46 @@ class PanelViewEPUBConverter {
         isManga: Bool,
         pageCatalog: [PageEntry],
         needsBlank: Bool,
-        comicInfo: ComicInfoParser.ComicInfo?
+        comicInfo: ComicInfoParser.ComicInfo?,
+        settings: ConversionSettings,
+        hasBadgedCover: Bool
     ) -> String {
-        // let orientation  = "auto"
-        // let orientationLock = "none"
-        // let writingMode  = isManga ? "horizontal-rl" : "horizontal-lr"
-        // let spreadMode   = "landscape"
         let author       = comicInfo?.writer ?? "Unknown"
         let pubDate      = ISO8601DateFormatter().string(from: Date()).prefix(10)
 
         // Manifest items
-        // Fix 2: dedicated cover-image item so Kindle's thumbnail indexer resolves
-        // the cover without loading the full EPUB (cover.jpg written in convert()).
         var manifestItems: [String] = [
-            #"<item id="cover-image" href="images/cover.jpg" media-type="image/jpeg" properties="cover-image"/>"#,
             #"<item id="nav"  href="nav.xhtml"  media-type="application/xhtml+xml" properties="nav"/>"#,
             #"<item id="ncx"  href="toc.ncx"    media-type="application/x-dtbncx+xml"/>"#,
             #"<item id="css"  href="css/comic.css" media-type="text/css"/>"#
         ]
+        if hasBadgedCover {
+            manifestItems.append(#"<item id="cover-image" href="images/cover.jpg" media-type="image/jpeg" properties="cover-image"/>"#)
+            manifestItems.append(#"<item id="cover-page" href="pages/cover.xhtml" media-type="application/xhtml+xml"/>"#)
+        }
+        
         for entry in pageCatalog {
-            // properties="cover-image" intentionally absent here — only the
-            // dedicated cover-image item above should carry that property.
-            manifestItems.append(#"<item id="img-\#(entry.paddedNum)" href="images/\#(entry.imageName)" media-type="image/jpeg"/>"#)
+            let isCover = !hasBadgedCover && entry.globalIndex == 0
+            let imgProps = isCover ? #" properties="cover-image""# : ""
+            manifestItems.append(#"<item id="img-\#(entry.paddedNum)" href="images/\#(entry.imageName)" media-type="image/jpeg"\#(imgProps)/>"#)
             manifestItems.append(#"<item id="page\#(entry.paddedNum)" href="pages/\#(entry.xhtmlName)" media-type="application/xhtml+xml"/>"#)
         }
         if needsBlank {
             manifestItems.append(#"<item id="page-blank" href="pages/blank.xhtml" media-type="application/xhtml+xml"/>"#)
         }
+        if settings.embedCharacterGlossary {
+            manifestItems.append(#"<item id="character-glossary" href="pages/glossary.xhtml" media-type="application/xhtml+xml"/>"#)
+        }
 
-        // Step 2: Spine with synthetic spreads
-        let spineItems = buildSpineItems(pageCatalog: pageCatalog, isManga: isManga, needsBlank: needsBlank)
+        let coverMetaID = hasBadgedCover ? "cover-image" : "img-001"
+        let spineItems = buildSpineItems(
+            pageCatalog: pageCatalog,
+            isManga: isManga,
+            needsBlank: needsBlank,
+            embedCharacterGlossary: settings.embedCharacterGlossary,
+            hasBadgedCover: hasBadgedCover,
+            linkCoverAsSpread: settings.linkCoverAsSpread
+        )
 
         return """
         <?xml version="1.0" encoding="UTF-8"?>
@@ -327,13 +401,11 @@ class PanelViewEPUBConverter {
             <dc:title>\(title.xmlEscaped())</dc:title>
             <dc:creator>\(author.xmlEscaped())</dc:creator>
             <dc:identifier id="BookID">\(uuid)</dc:identifier>
-            <dc:language>\(isManga ? "ja" : "en")</dc:language>
+             <dc:language>en</dc:language>
             <dc:date>\(pubDate)</dc:date>
             <meta property="dcterms:modified">\(ISO8601DateFormatter().string(from: Date()))</meta>
             
-            <!-- Fix 2: id must exactly match the manifest item that carries
-                 properties="cover-image" — which is now the dedicated cover-image item. -->
-            <meta name="cover" content="cover-image"/>
+            <meta name="cover" content="\(coverMetaID)"/>
             <meta name="comic-panel-view" content="guided"/>
 
             <!-- Fixed Layout Metadata -->
@@ -341,9 +413,15 @@ class PanelViewEPUBConverter {
             <meta name="original-resolution" content="\(pageWidth)x\(pageHeight)"/>
             <meta name="orientation-lock" content="none"/>
             <meta name="book-type" content="comic"/>
+            <meta name="cdetype" content="pdoc"/>
+            <meta name="RegionMagnification" content="true"/>
+            <meta name="region-all-mag-adp" content="1"/>
+            <meta name="zero-gutter" content="true"/>
+            <meta name="zero-margin" content="true"/>
+            <meta name="ke-border-color" content="#000000"/>
+            <meta name="ke-border-width" content="0"/>
             <!-- Suppresses "Learning reading speed" on Kindle — signals image-based content to firmware -->
             <meta name="amzn:kindle:book-type" content="image-based"/>
-            <meta name="RegionMagnification" content="true"/>
             <meta name="primary-writing-mode" content="\(isManga ? "horizontal-rl" : "horizontal-lr")"/>
             <meta property="rendition:layout">pre-paginated</meta>
             <meta property="rendition:orientation">auto</meta>
@@ -376,33 +454,48 @@ class PanelViewEPUBConverter {
     /// Western Logic: 1->left, 2->right, 3->left, 4->right
     /// Manga Logic: 1->facing-right, 2->facing-left (First pair)
     ///              3->page-spread-right, 4->page-spread-left (Subsequent pairs)
-    private func buildSpineItems(pageCatalog: [PageEntry], isManga: Bool, needsBlank: Bool) -> [String] {
+    private func buildSpineItems(pageCatalog: [PageEntry], isManga: Bool, needsBlank: Bool, embedCharacterGlossary: Bool, hasBadgedCover: Bool, linkCoverAsSpread: Bool) -> [String] {
         var items: [String] = []
 
-        if isManga {
-            for (idx, entry) in pageCatalog.enumerated() {
-                let idref = "page\(entry.paddedNum)"
-                let isFirstPair = (idx < 2)
-                let isEvenSlot  = (idx % 2 == 0) // RTL Manga: Cover (0) is Left
+        if hasBadgedCover {
+            let coverSpreadTag: String
+            if linkCoverAsSpread {
+                coverSpreadTag = isManga ? #" properties="page-spread-right""# : #" properties="page-spread-left""#
+            } else {
+                coverSpreadTag = ""
+            }
+            items.append(#"<itemref idref="cover-page"\#(coverSpreadTag)/>"#)
+        }
 
-                if isFirstPair {
-                    let prop = isEvenSlot ? "facing-page-left" : "facing-page-right"
-                    items.append(#"<itemref idref="\#(idref)" properties="\#(prop)"/>"#)
+        var globalPageCounter = hasBadgedCover ? 2 : 1
+
+        for entry in pageCatalog {
+            let idref = "page\(entry.paddedNum)"
+            let spreadTag: String
+            if linkCoverAsSpread {
+                if isManga {
+                    spreadTag = (globalPageCounter % 2 == 1) ? #" properties="page-spread-right""# : #" properties="page-spread-left""#
                 } else {
-                    let prop = isEvenSlot ? "page-spread-left" : "page-spread-right"
-                    items.append(#"<itemref idref="\#(idref)" properties="\#(prop)"/>"#)
+                    spreadTag = (globalPageCounter % 2 == 1) ? #" properties="page-spread-left""# : #" properties="page-spread-right""#
+                }
+            } else {
+                if globalPageCounter == 1 {
+                    spreadTag = "" // Cover stands alone centered
+                } else if isManga {
+                    spreadTag = (globalPageCounter % 2 == 1) ? #" properties="page-spread-left""# : #" properties="page-spread-right""#
+                } else {
+                    spreadTag = (globalPageCounter % 2 == 1) ? #" properties="page-spread-right""# : #" properties="page-spread-left""#
                 }
             }
-            if needsBlank {
-                items.append(#"<itemref idref="page-blank" properties="layout-blank"/>"#)
-            }
-        } else {
-            // Western LTR: Cover (0) is Right
-            for (idx, entry) in pageCatalog.enumerated() {
-                let idref = "page\(entry.paddedNum)"
-                let prop = (idx % 2 == 0) ? "page-spread-right" : "page-spread-left"
-                items.append(#"<itemref idref="\#(idref)" properties="\#(prop)"/>"#)
-            }
+            items.append(#"<itemref idref="\#(idref)"\#(spreadTag)/>"#)
+            globalPageCounter += 1
+        }
+
+        if needsBlank {
+            items.append(#"<itemref idref="page-blank" properties="layout-blank"/>"#)
+        }
+        if embedCharacterGlossary {
+            items.append(#"<itemref idref="character-glossary"/>"#)
         }
         return items
     }
@@ -455,7 +548,7 @@ class PanelViewEPUBConverter {
             let bgY = Int(pxRect.minY - magRect.minY)
 
             // JSON attribute — no nested quotes, no % characters
-            let jsonAttr = #"{"targetId":"\#(magID)","ordinal":\#(ordinal)}"#
+            let jsonAttr = #"{"targetId":"\#(magID)","sourceId":"\#(srcID)","ordinal":\#(ordinal)}"#
 
             // Tap target (VALIDATION RULE: <a> is inside tap-target-container div, NOT inside another <a>)
             tapTargets += """
@@ -478,15 +571,16 @@ class PanelViewEPUBConverter {
         // Pages with no panels: Kindle performs 2×2 Virtual Panel automatically.
         let panelSection = panels.isEmpty ? "    <!-- No panels: Kindle will apply 2×2 Virtual Panel fallback -->\n" : (tapTargets + "\n" + magnifyBlocks)
 
+        let lang = "en"
         return """
         <?xml version="1.0" encoding="UTF-8"?>
         <!DOCTYPE html>
         <!-- Fix 1: xmlns:epub required for EPUB 3 XHTML Content Documents compliance.
-             Without it the KFX ingestor flags a structural mismatch (E013). -->
-        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+             Without it the Kindle ingestor flags a structural mismatch (E013). -->
+        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="\(lang)" xml:lang="\(lang)">
           <head>
             <title>Page \(pageNum)</title>
-            <meta name="viewport" content="width=\(W), height=\(H), initial-scale=1.0"/>
+            <meta name="viewport" content="width=\(W), height=\(H)"/>
             <link rel="stylesheet" type="text/css" href="../css/comic.css"/>
           </head>
           <body>
@@ -583,9 +677,9 @@ class PanelViewEPUBConverter {
         /* PanelView EPUB Stylesheet — fixed-layout Kindle comic */
         @page { margin: 0; padding: 0; }
         * { margin: 0; padding: 0; border: 0; }
-        html, body { width: 100vw; height: 100vh; overflow: hidden; background-color: #000000; margin: 0; padding: 0; }
-        .page { position: absolute; width: 100vw; height: 100vh; margin: 0; padding: 0; text-align: center; }
-        .page-image { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; object-fit: contain; }
+        html, body { width: 100%; height: 100%; background-color: #000000; margin: 0; padding: 0; }
+        .page { position: absolute; width: 100%; height: 100%; margin: 0; padding: 0; text-align: center; }
+        .page-image { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
 
         /* Tap target container: invisible overlay, absolute pixel positioned */
         .tap-target-container { position: absolute; }
@@ -609,11 +703,13 @@ class PanelViewEPUBConverter {
     """
     }
 
-    private func buildNavXHTML(title: String, firstPage: String) -> String {
-        """
+    private func buildNavXHTML(title: String, firstPage: String, isManga: Bool) -> String {
+        // lang is intentionally fixed to "en" regardless of manga mode.
+        let lang = "en"
+        return """
         <?xml version="1.0" encoding="UTF-8"?>
         <!DOCTYPE html>
-        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="en">
+        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="\(lang)" xml:lang="\(lang)">
           <head><meta charset="UTF-8"/><title>\(title.xmlEscaped())</title></head>
           <body>
             <nav epub:type="toc" id="toc">
@@ -649,16 +745,21 @@ class PanelViewEPUBConverter {
     """
     }
 
-    private func buildBlankXHTML(pageWidth: CGFloat, pageHeight: CGFloat) -> String {
-        """
+    private func buildBlankXHTML(pageWidth: CGFloat, pageHeight: CGFloat, isManga: Bool) -> String {
+        // lang is intentionally fixed to "en" regardless of manga mode.
+        let lang = "en"
+        return """
         <?xml version="1.0" encoding="UTF-8"?>
         <!DOCTYPE html>
-        <html xmlns="http://www.w3.org/1999/xhtml">
+        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="\(lang)" xml:lang="\(lang)">
           <head>
             <title>Blank</title>
-            <meta name="viewport" content="width=\(Int(pageWidth)), height=\(Int(pageHeight)), initial-scale=1.0"/>
+            <meta name="viewport" content="width=\(Int(pageWidth)), height=\(Int(pageHeight))"/>
+            <link rel="stylesheet" type="text/css" href="../css/comic.css"/>
           </head>
-          <body style="background-color:#000000;"></body>
+          <body style="background-color:#000000;">
+            <div class="page"></div>
+          </body>
         </html>
     """
     }
@@ -696,9 +797,7 @@ class PanelViewEPUBConverter {
         if let imageFiles = try? fm.contentsOfDirectory(at: imagesDir, includingPropertiesForKeys: nil) {
             for imgURL in imageFiles.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
                 // 🚨 COMPETITOR FIX: Never apply .deflate to pre-compressed entropy vectors (JPEG). Saves 40s CPU drain.
-                let ext = imgURL.pathExtension.lowercased()
-                let compression: CompressionMethod = ["jpg", "jpeg", "png", "webp", "heic"].contains(ext) ? .none : .deflate
-                try archive.addEntry(with: "OEBPS/images/\(imgURL.lastPathComponent)", fileURL: imgURL, compressionMethod: compression)
+                try archive.addEntry(with: "OEBPS/images/\(imgURL.lastPathComponent)", fileURL: imgURL, compressionMethod: .deflate)
             }
         }
 
@@ -751,51 +850,17 @@ class PanelViewEPUBConverter {
         let needsOptimization = settings.optimizeForDevice || settings.trimMargins || needsEnhancement
 
         if needsOptimization, let rawImage = UIImage(contentsOfFile: srcURL.path) {
-            var workingImage = rawImage
-            if settings.optimizeForDevice {
-                // ── Landscape half-slot pre-fit (Kindle Scribe only) ──────────────
-                // For large-screen Scribes the EPUB uses rendition:spread=landscape,
-                // meaning each page occupies exactly half the screen width.
-                // Pre-scaling to the half-slot dimensions eliminates the ~73 px
-                // letterbox that would otherwise appear at the top and bottom of
-                // each page because portrait comic pages are wider than the slot.
-                // Only applies to portrait source images; landscape source images
-                // (spreads) are left at full resolution.
-                let halfSlot = settings.targetDeviceProfile.landscapeHalfSlotResolution
-                let isPortraitSource = rawImage.size.height >= rawImage.size.width
-                let effectiveProfile = settings.targetDeviceProfile
-
-                if let slot = halfSlot, isPortraitSource {
-                    // Use a synthetic profile resolution that matches the exact half-slot.
-                    // EInkOptimizer.processImage already aspect-fits, so this is safe.
-                    workingImage = EInkOptimizer.shared.processImage(
-                        rawImage,
-                        for: effectiveProfile,                 // carries grayscale, moire, binding settings
-                        applyGrayscale: settings.imageEnhancement.grayscale,
-                        cropMargins: settings.trimMargins,
-                        reduceMoire: settings.imageEnhancement.reduceMoire,
-                        dither: settings.imageEnhancement.ditheringEnabled,
-                        marginOffset: settings.bindingMarginOffset,
-                        marginSide: settings.bindingMarginSide,
-                        isOddPage: isOddPage,
-                        customTargetSize: slot
-                    )
-                } else {
-                    workingImage = EInkOptimizer.shared.processImage(
-                        workingImage,
-                        for: settings.targetDeviceProfile,
-                        applyGrayscale: settings.imageEnhancement.grayscale,
-                        cropMargins: settings.trimMargins,
-                        reduceMoire: settings.imageEnhancement.reduceMoire,
-                        dither: settings.imageEnhancement.ditheringEnabled,
-                        marginOffset: settings.bindingMarginOffset,
-                        marginSide: settings.bindingMarginSide,
-                        isOddPage: isOddPage
-                    )
-                }
-            }
-            // Traditional Filters
-            workingImage = ImageProcessor.process(image: workingImage, settings: settings) ?? workingImage
+            let halfSlot = settings.optimizeForDevice ? settings.targetDeviceProfile.landscapeHalfSlotResolution : nil
+            let isPortraitSource = rawImage.size.height >= rawImage.size.width
+            let customSize = (halfSlot != nil && isPortraitSource) ? halfSlot : nil
+            
+            let workingImage = EInkOptimizer.shared.processImage(
+                rawImage,
+                settings: settings,
+                isOddPage: isOddPage,
+                customTargetSize: customSize
+            )
+            
             let quality = settings.compressionQuality.value
             return workingImage.jpegData(compressionQuality: quality) ?? (try? Data(contentsOf: srcURL)) ?? Data()
         }
@@ -817,6 +882,12 @@ class PanelViewEPUBConverter {
 
     private func resolvePageSize(from url: URL) async -> CGSize {
         return await Task.detached(priority: .userInitiated) {
+            if let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] {
+                let w = properties[kCGImagePropertyPixelWidth] as? CGFloat ?? 1080
+                let h = properties[kCGImagePropertyPixelHeight] as? CGFloat ?? 1620
+                return CGSize(width: w, height: h)
+            }
             if let img = UIImage(contentsOfFile: url.path) { return img.size }
             return CGSize(width: 1080, height: 1620)
         }.value

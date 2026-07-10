@@ -5,51 +5,61 @@ import Foundation
 public struct EPUBManifestBuilder {
 
     public static let containerXML = """
-    <?xml version="1.0" encoding="UTF-8"?>
-    <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
-        <rootfiles>
-            <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
-        </rootfiles>
-    </container>
+    <?xml version="1.0"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>
     """
 
     public static let cssContent = """
     @page { margin: 0; padding: 0; }
-    body { margin: 0; padding: 0; background-color: #000000; }
-    .content-container { display: flex; justify-content: center; align-items: center; width: 100vw; height: 100vh; margin: 0; padding: 0; }
-    .page { position: absolute; width: 100%; height: 100%; margin: 0; padding: 0; }
-    img.comic-page { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
-    a.app-amzn-magnify { display: block; position: absolute; z-index: 10; text-decoration: none; background: transparent; }
-    .panel-source { position: absolute; width: 100%; height: 100%; background: transparent; }
-    .panel-target { position: absolute; z-index: 5; pointer-events: none; background: transparent; }
+    html, body { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #000000; }
+    .chunk-container { width: 100%; height: 100%; margin: 0; padding: 0; }
+    .page { width: 100%; height: 100%; margin: 0; padding: 0; }
+    .page-image { display: block; width: 100%; height: 100%; }
     """
 
-    public static func buildCoverXHTML(coverFilename: String) -> String {
+    public static func buildCoverXHTML(coverFilename: String, isManga: Bool = false) -> String {
+        // lang is intentionally fixed to "en" regardless of manga mode.
+        // Amazon's cloud converter routes lang="ja" through a CJK layout pipeline
+        // that fails with E999 on fixed-layout EPUBs (regressed in commit e953c38b).
+        // Reading direction is controlled by page-progression-direction on the spine,
+        // not by xml:lang. Commit 031174fd resolved E999 by fixing lang to "en".
         return """
         <?xml version="1.0" encoding="UTF-8"?>
-        <html xmlns="http://www.w3.org/1999/xhtml">
-        <head><title>Cover</title><style type="text/css">
-        body { margin: 0; padding: 0; text-align: center; background-color: #000; }
-        img { max-width: 100%; max-height: 100%; height: auto; }
-        </style></head>
-        <body><img src="../images/\(coverFilename)" alt="Cover"/></body>
+        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="en" xml:lang="en">
+        <head>
+            <meta name="viewport" content="width=1980, height=2640"/>
+            <title>Cover</title>
+            <style type="text/css">
+            html, body { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #000000; }
+            img { display: block; width: 100%; height: 100%; }
+            </style>
+        </head>
+        <body epub:type="cover"><img src="../images/\(coverFilename)" alt="Cover"/></body>
         </html>
         """
     }
 
-    public static let navContent = """
-    <?xml version="1.0" encoding="UTF-8"?>
-    <!DOCTYPE html>
-    <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="en" xml:lang="en">
-    <head><title>Navigation</title><meta charset="utf-8" /></head>
-    <body>
-        <nav epub:type="toc" id="toc"><h1>Table of Contents</h1><ol><li><a href="text/page_0001.xhtml">Start Reading</a></li></ol></nav>
-        <nav epub:type="landmarks"><h1>Landmarks</h1><ol><li><a epub:type="cover" href="text/page_0001.xhtml">Cover</a></li><li><a epub:type="bodymatter" href="text/page_0001.xhtml">Start</a></li></ol></nav>
-    </body>
-    </html>
-    """
+    /// Generates a nav.xhtml pointing to the correct first content page.
+    /// - Parameter firstPageHref: The href of the first spine item, e.g. "text/page_0001.xhtml"
+    ///   or "text/cover.xhtml" when a badged cover is prepended.
+    public static func buildNavContent(firstPageHref: String = "text/page_0001.xhtml", isManga: Bool = false) -> String {
+        // lang fixed to "en" — see buildCoverXHTML comment. isManga param kept for
+        // call-site compatibility but does not affect the output language tag.
+        return """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="en" xml:lang="en">
+        <head><title>Navigation</title><meta charset="utf-8" /></head>
+        <body>
+            <nav epub:type="toc" id="toc"><h1>Table of Contents</h1><ol><li><a href="\(firstPageHref)">Start Reading</a></li></ol></nav>
+            <nav epub:type="landmarks"><h1>Landmarks</h1><ol><li><a epub:type="cover" href="\(firstPageHref)">Cover</a></li><li><a epub:type="bodymatter" href="\(firstPageHref)">Start</a></li></ol></nav>
+        </body>
+        </html>
+        """
+    }
 
-    public static func buildNCXContent(bookUUID: String, baseFilename: String) -> String {
+    @available(*, deprecated, renamed: "buildNavContent(firstPageHref:)")
+    public static let navContent = buildNavContent()
+
+    public static func buildNCXContent(bookUUID: String, baseFilename: String, firstPageHref: String = "text/page_0001.xhtml") -> String {
         return """
         <?xml version="1.0" encoding="UTF-8"?>
         <ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
@@ -58,7 +68,7 @@ public struct EPUBManifestBuilder {
             <navMap>
                 <navPoint id="navPoint-1" playOrder="1">
                     <navLabel><text>Start</text></navLabel>
-                    <content src="text/page_0001.xhtml"/>
+                    <content src="\(firstPageHref)"/>
                 </navPoint>
             </navMap>
         </ncx>
@@ -68,29 +78,44 @@ public struct EPUBManifestBuilder {
     public static func buildOPFContent(
         bookUUID: String,
         baseFilename: String,
-        batchIndex: Int,
-        hasCoverData: Bool,
+        coverMetaID: String,
         manifestItems: [String],
         spineItems: [String],
-        isManga: Bool
+        isManga: Bool,
+        firstPageHref: String = "text/page_0001.xhtml"
     ) -> String {
         let modified = ISO8601DateFormatter().string(from: Date())
-        let coverMeta = (batchIndex > 0 && hasCoverData) ? "cover_reused_img" : "img_1"
         let direction = isManga ? "rtl" : "ltr"
-        
+        // Kindle Scribe Colorsoft native B&W resolution: 1980x2640 (300ppi, portrait).
+        // The original-resolution meta is required by Amazon's KF8 fixed-layout spec so
+        // Kindle can pre-scale images to native pixels rather than stretching from an
+        // unknown source size. Without it renders are blurry on high-DPI screens.
+        let originalResolution = "1980x2640"
+        // dc:language is fixed to "en" — see buildCoverXHTML comment. The reading
+        // direction (RTL for manga) is set on the spine's page-progression-direction.
         return """
         <?xml version="1.0" encoding="UTF-8"?>
         <package xmlns="http://www.idpf.org/2007/opf" xmlns:epub="http://www.idpf.org/2007/ops" unique-identifier="BookID" version="3.0" prefix="rendition: http://www.idpf.org/vocab/rendition/# dcterms: http://purl.org/dc/terms/">
             <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
                 <dc:identifier id="BookID">urn:uuid:\(bookUUID)</dc:identifier>
                 <dc:title>\(baseFilename.xmlEscaped())</dc:title>
+                <dc:creator>Inksync Pro</dc:creator>
+                <dc:description>Omnibus edition generated by Inksync.</dc:description>
                 <dc:language>en</dc:language>
                 <meta property="dcterms:modified">\(modified)</meta>
                 <meta property="rendition:layout">pre-paginated</meta>
                 <meta property="rendition:orientation">auto</meta>
                 <meta property="rendition:spread">auto</meta>
                 <meta name="fixed-layout" content="true"/>
-                <meta name="cover" content="\(coverMeta)"/>
+                <meta name="original-resolution" content="\(originalResolution)"/>
+                <meta name="cover" content="\(coverMetaID)"/>
+                <meta name="cdetype" content="pdoc"/>
+                <meta name="amzn:kindle:book-type" content="image-based"/>
+                <meta name="zero-gutter" content="true"/>
+                <meta name="zero-margin" content="true"/>
+                <meta name="ke-border-color" content="#000000"/>
+                <meta name="ke-border-width" content="0"/>
+                <meta name="primary-writing-mode" content="\(isManga ? "horizontal-rl" : "horizontal-lr")"/>
             </metadata>
             <manifest>
                 \(manifestItems.joined(separator: "\n        "))
@@ -99,42 +124,55 @@ public struct EPUBManifestBuilder {
                 \(spineItems.joined(separator: "\n        "))
             </spine>
             <guide>
-                <reference type="cover" title="Cover" href="text/page_0001.xhtml"/>
-                <reference type="text" title="Text" href="text/page_0001.xhtml"/>
+                <reference type="cover" title="Cover" href="\(firstPageHref)"/>
+                <reference type="text" title="Text" href="\(firstPageHref)"/>
             </guide>
         </package>
         """
     }
 
-    public static func buildChunkXHTML(chunkIndex: Int, images: [String], title: String) -> String {
+    public static func buildChunkXHTML(chunkIndex: Int, images: [String], title: String, bookUUID: String? = nil, pageIndex: Int? = nil, isManga: Bool = false) -> String {
         let imageElements = images.enumerated().map { _, imageName in
             """
-                <div class="page">
-                    <img src="../images/\(imageName)" class="page-image" alt="Page Image"/>
-                </div>
+                    <div class="page">
+                        <img src="../images/\(imageName)" class="page-image" alt=""/>
+                    </div>
             """
         }.joined(separator: "\n")
-        
+
+        // NOTE: The tracking pixel (http://LOCAL_IP:8080/page_sync?...) has been removed.
+        // Amazon's Send to Kindle scanner rejects EPUBs containing embedded remote HTTP
+        // requests, producing error E999. Reading-position sync is handled entirely
+        // in-app via the PPLReaderView page-turn callback chain.
+
+        // CSS rules use only the Kindle-approved fixed-layout subset:
+        // • NO position:fixed (rejected by Kindle fixed-layout as incompatible element → E013)
+        // • NO overflow:hidden on body (not in Kindle CSS subset)
+        // • NO @media amzn-kf8 (proprietary at-rules rejected by Send
+        //   to Kindle cloud converter's XML validator → E013)
+        // • NO @page { size: } (CSS Paged Media L3, rejected by Amazon's cloud validator)
+        // • NO object-fit/object-position (not in Kindle CSS subset → E013)
+        // Page sizing is controlled entirely by the viewport meta + rendition:layout OPF meta.
+        // lang is intentionally fixed to "en" regardless of manga mode — see buildCoverXHTML comment.
         return """
         <?xml version="1.0" encoding="UTF-8"?>
-        <!DOCTYPE html>
-        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="en" xml:lang="en">
         <head>
             <meta charset="UTF-8"/>
-            <meta name="viewport" content="width=100vw, height=100vh"/>
+            <meta name="viewport" content="width=1980, height=2640"/>
             <title>\(title)</title>
-            <style>
+            <link rel="stylesheet" type="text/css" href="../css/comic.css"/>
+            <style type="text/css">
                 @page { margin: 0; padding: 0; }
-                @media amzn-kf8 { body { margin: 0 !important; padding: 0 !important; } }
-                html, body { margin: 0; padding: 0; background-color: #000000; overflow: hidden; height: 100vh; width: 100vw; }
-                .chunk-container { display: flex; justify-content: center; align-items: center; width: 100vw; height: 100vh; margin: 0; padding: 0; }
-                .page { display: flex; justify-content: center; align-items: center; width: 100vw; height: 100vh; margin: 0; padding: 0; }
-                .page-image { max-width: 100vw; max-height: 100vh; height: 100%; width: 100%; object-fit: contain; object-position: center; }
+                html, body { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #000000; }
+                .chunk-container { width: 100%; height: 100%; margin: 0; padding: 0; }
+                .page { width: 100%; height: 100%; margin: 0; padding: 0; }
+                .page-image { display: block; width: 100%; height: 100%; }
             </style>
         </head>
         <body>
             <div class="chunk-container">
-            \(imageElements)
+        \(imageElements)
             </div>
         </body>
         </html>

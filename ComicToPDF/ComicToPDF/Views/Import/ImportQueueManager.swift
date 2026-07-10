@@ -46,59 +46,52 @@ class ImportQueueManager: ObservableObject {
     /// Stages new files after dedup check. Returns what was skipped.
     /// Dedup order: (1) intra-batch dedup, (2) filename fast check,
     /// (3) chapter-key fast check, (4) SHA-256 hash check vs library.
-    func stageWithDuplicateCheck(_ incomingURLs: [URL]) -> StageResult {
-        // 1. Intra-batch dedup — remove duplicates within the incoming array itself
-        var seenPaths = Set<String>()
-        let dedupedIncoming = incomingURLs.filter { seenPaths.insert($0.path).inserted }
-
-        // @MainActor guarantees safe direct read — no .sync needed
-        let currentQueueSnapshot = stagedURLs
+    func stageWithDuplicateCheck(_ incomingURLs: [URL]) async -> StageResult {
+        let currentSnapshot = stagedURLs
+        let libraryFilenames = Set(LibraryService.shared.items.map { $0.url.lastPathComponent })
 
         // 2. Fast pre-filters (no file I/O)
-        let existingFilenames = Set(currentQueueSnapshot.map { $0.lastPathComponent })
-        let existingChapterKeys: Set<String> = Set(currentQueueSnapshot.compactMap { url -> String? in
+        let existingFilenames = Set(currentSnapshot.map { $0.lastPathComponent })
+        let existingChapterKeys: Set<String> = Set(currentSnapshot.compactMap { url -> String? in
             let series = url.deletingLastPathComponent().lastPathComponent
             guard let ch = SeriesNameParser.chapterKey(from: url.lastPathComponent) else { return nil }
             return "\(series):\(ch)"
         })
 
-        // 3. Hash-based library dedup is handled downstream in ImportOrchestrator.
-        //    The queue manager focuses on fast intra-queue dedup only.
-        //    Full SHA-256 dedup against the library happens at import time.
+        // Move the heavy loop off the main thread
+        let result = await Task.detached(priority: .userInitiated) { [libraryFilenames] () -> (toStage: [URL], dupes: [URL]) in
+            var seenPaths = Set<String>()
+            let dedupedIncoming = incomingURLs.filter { seenPaths.insert($0.path).inserted }
 
-        var toStage: [URL] = []
-        var dupes: [URL] = []
-        let total = dedupedIncoming.count
+            var toStage: [URL] = []
+            var dupes: [URL] = []
 
-        for (index, url) in dedupedIncoming.enumerated() {
-            // Safe direct mutation — we are @MainActor
-            stagingProgress = (current: index + 1, total: total)
+            for url in dedupedIncoming {
+                let filename = url.lastPathComponent
+                let seriesFolder = url.deletingLastPathComponent().lastPathComponent
 
-            let filename = url.lastPathComponent
-            let seriesFolder = url.deletingLastPathComponent().lastPathComponent
+                if existingFilenames.contains(filename) || libraryFilenames.contains(filename) {
+                    dupes.append(url); continue
+                }
 
-            // Fast filename check
-            if existingFilenames.contains(filename) {
-                dupes.append(url); continue
+                if let ch = SeriesNameParser.chapterKey(from: filename),
+                   existingChapterKeys.contains("\(seriesFolder):\(ch)") {
+                    dupes.append(url); continue
+                }
+
+                toStage.append(url)
             }
+            return (toStage, dupes)
+        }.value
 
-            // Fast chapter-key check
-            if let ch = SeriesNameParser.chapterKey(from: filename),
-               existingChapterKeys.contains("\(seriesFolder):\(ch)") {
-                dupes.append(url); continue
-            }
-
-            toStage.append(url)
-        }
-
-        stagedURLs.append(contentsOf: toStage)
+        stagedURLs.append(contentsOf: result.toStage)
         stagingProgress = nil
-        schedulePersist()   // debounced — won't write on every file during batch imports
+        schedulePersist()
 
         return StageResult(
-            staged: toStage.count,
-            skippedDuplicates: dupes.count,
-            duplicateURLs: dupes
+            staged: result.toStage.count,
+            skippedDuplicates: result.dupes.count,
+            duplicateURLs: result.dupes
         )
     }
 
@@ -151,36 +144,46 @@ class ImportQueueManager: ObservableObject {
         let entries: [QueueEntry] = stagedURLs.compactMap { url in
             let accessing = url.startAccessingSecurityScopedResource()
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-            guard let data = try? url.bookmarkData(
+            let optData = try? url.bookmarkData(
                 options: .minimalBookmark,
                 includingResourceValuesForKeys: nil,
                 relativeTo: nil
-            ) else { return nil }
+            )
+            guard let data = optData else { return nil }
             return QueueEntry(bookmarkData: data, originalPath: url.path)
         }
-        if let encoded = try? JSONEncoder().encode(entries) {
+        let optEncoded = try? JSONEncoder().encode(entries)
+        if let encoded = optEncoded {
             UserDefaults.standard.set(encoded, forKey: "importQueueBookmarks")
         }
     }
 
     private func loadPersistedQueue() {
-        guard let data = UserDefaults.standard.data(forKey: "importQueueBookmarks"),
-              let entries = try? JSONDecoder().decode([QueueEntry].self, from: data)
-        else { return }
+        guard let data = UserDefaults.standard.data(forKey: "importQueueBookmarks") else { return }
+        let optEntries = try? JSONDecoder().decode([QueueEntry].self, from: data)
+        guard let entries = optEntries else { return }
 
-        var resolved: [URL] = []
-        for entry in entries {
-            var isStale = false
-            if let url = try? URL(
-                resolvingBookmarkData: entry.bookmarkData,
-                options: .withoutUI,
-                relativeTo: nil,
-                bookmarkDataIsStale: &isStale
-            ), !isStale {
-                resolved.append(url)
+        Task {
+            let resolved = await Task.detached(priority: .userInitiated) { () -> [URL] in
+                var urls: [URL] = []
+                for entry in entries {
+                    var isStale = false
+                    let optURL = try? URL(
+                        resolvingBookmarkData: entry.bookmarkData,
+                        options: .withoutUI,
+                        relativeTo: nil,
+                        bookmarkDataIsStale: &isStale
+                    )
+                    if let url = optURL, !isStale {
+                        urls.append(url)
+                    }
+                }
+                return urls
+            }.value
+            
+            await MainActor.run {
+                self.stagedURLs = resolved
             }
-            // Stale bookmarks are silently pruned — file may have moved or been deleted
         }
-        stagedURLs = resolved
     }
 }

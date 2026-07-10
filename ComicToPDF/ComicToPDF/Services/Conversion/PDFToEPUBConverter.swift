@@ -191,7 +191,7 @@ final class PDFToEPUBConverter: Sendable {
                 let height = Int(scaledSize.height)
                 let bitsPerComponent = 8
                 let bytesPerRow = 0 // Auto
-                let colorSpace = CGColorSpaceCreateDeviceRGB()
+                let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
                 let bitmapInfo = CGImageAlphaInfo.noneSkipLast.rawValue // Opaque RGB
                 
                 guard let context = CGContext(data: nil,
@@ -220,13 +220,14 @@ final class PDFToEPUBConverter: Sendable {
                      throw ConversionError.pageRenderFailed(pageIndex + 1)
                 }
                 
-                var cgImageToSave = rawCGImage
+                let cgImageToSave = rawCGImage
                 
-                if let settings = options.settings, let processed = ImageProcessor.process(image: UIImage(cgImage: rawCGImage), settings: settings), let processedCG = processed.cgImage {
-                    cgImageToSave = processedCG
+                var finalCGImage = cgImageToSave
+                if let settings = options.settings, let processed = ImageProcessor.process(image: UIImage(cgImage: cgImageToSave), settings: settings), let processedCG = processed.cgImage {
+                    finalCGImage = processedCG
                 }
                 
-                let finalImage = UIImage(cgImage: cgImageToSave)
+                let finalImage = UIImage(cgImage: finalCGImage)
                 let quality = options.settings?.compressionQuality.value ?? 0.8
                 let finalData = finalImage.jpegData(compressionQuality: quality) ?? Data()
                 
@@ -306,25 +307,8 @@ final class PDFToEPUBConverter: Sendable {
                 let badgedCoverData = CoverGenerator.generateCover(from: coverData, partNumber: batchIndex + 1, totalParts: batchDirectories.count)
                 let coverFilename = "badged_cover.jpg"
                 try? badgedCoverData.write(to: imagesDir.appendingPathComponent(coverFilename))
-                coverManifestItem = "<item id=\"cover-image\" href=\"images/\(coverFilename)\" media-type=\"image/jpeg\"/>\n<item id=\"cover-page\" href=\"cover.xhtml\" media-type=\"application/xhtml+xml\"/>\n"
-                coverSpineItem = "<itemref idref=\"cover-page\"/>\n"
-                // Write cover.xhtml
-                let coverXHTML = """
-                <?xml version="1.0" encoding="UTF-8"?>
-                <!DOCTYPE html>
-                <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
-                <head>
-                    <title>Cover</title>
-                    <meta name="viewport" content="width=1000, height=1500"/>
-                </head>
-                <body style="margin: 0; padding: 0; background-color: #000000; overflow: hidden;">
-                    <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden;">
-                        <img style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain;" src="images/\(coverFilename)" alt="Cover"/>
-                    </div>
-                </body>
-                </html>
-                """
-                try? coverXHTML.write(to: oebpsDir.appendingPathComponent("cover.xhtml"), atomically: true, encoding: String.Encoding.utf8)
+                coverManifestItem = "<item id=\"cover-image\" href=\"images/\(coverFilename)\" media-type=\"image/jpeg\" properties=\"cover-image\"/>\n"
+                coverSpineItem = ""
             }
         
         progressHandler?(ConversionProgress(
@@ -336,9 +320,13 @@ final class PDFToEPUBConverter: Sendable {
         let pageLimit = 1 // ✅ REQUIRED: 1 image per file for Fixed-Layout EPUBs
         var xhtmlFiles: [String] = []
         
+        // Skip the first page of the book (original cover) to prevent duplicate cover pages on Kindle
+        let skipFirst = (batchIndex == 0)
+        let filteredImageFiles = skipFirst ? Array(imageFiles.dropFirst()) : imageFiles
+        
         // Group images into chunks to prevent single massive HTML files while still allowing dynamic spreads
-        let chunks = stride(from: 0, to: imageFiles.count, by: pageLimit).map {
-            Array(imageFiles[$0..<min($0 + pageLimit, imageFiles.count)])
+        let chunks = stride(from: 0, to: filteredImageFiles.count, by: pageLimit).map {
+            Array(filteredImageFiles[$0..<min($0 + pageLimit, filteredImageFiles.count)])
         }
         
         for (chunkIndex, chunkImages) in chunks.enumerated() {
@@ -348,7 +336,8 @@ final class PDFToEPUBConverter: Sendable {
                 chunkIndex: chunkIndex + 1,
                 images: chunkImages,
                 title: title,
-                startIndex: (chunkIndex * pageLimit) + 1
+                startIndex: (chunkIndex * pageLimit) + (skipFirst ? 2 : 1),
+                isManga: options.mangaMode
             )
             try chunkXHTML.write(to: oebpsDir.appendingPathComponent(chunkFileName), atomically: true, encoding: String.Encoding.utf8)
             xhtmlFiles.append(chunkFileName)
@@ -377,15 +366,15 @@ final class PDFToEPUBConverter: Sendable {
         try ncxContent.write(to: oebpsDir.appendingPathComponent("toc.ncx"), atomically: true, encoding: String.Encoding.utf8)
         
         // Generate nav.xhtml (EPUB3)
-        let navXHTML = generateNavXHTML(title: title, xhtmlFiles: xhtmlFiles)
+        let navXHTML = generateNavXHTML(title: title, xhtmlFiles: xhtmlFiles, isManga: options.mangaMode)
         try navXHTML.write(to: oebpsDir.appendingPathComponent("nav.xhtml"), atomically: true, encoding: String.Encoding.utf8)
         
         // 🚨 CRITICAL FIX: Generate global style.css overriding Amazon's @page Region padding
         let cssContent = """
         @page { margin: 0; padding: 0; }
-        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #000000; overflow: hidden; }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #000000; }
         div { margin: 0; padding: 0; position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
-        img { margin: 0; padding: 0; position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; }
+        img { margin: 0; padding: 0; position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
         """
         try cssContent.write(to: oebpsDir.appendingPathComponent("style.css"), atomically: true, encoding: String.Encoding.utf8)
         
@@ -444,6 +433,7 @@ final class PDFToEPUBConverter: Sendable {
                 <meta name="original-resolution" content="1000x1500"/>
                 <meta name="orientation-lock" content="none"/>
                 <meta name="book-type" content="comic"/>
+                <meta name="cdetype" content="pdoc"/>
                 <!-- Suppresses "Learning reading speed" — signals image-based content to Kindle firmware -->
                 <meta name="amzn:kindle:book-type" content="image-based"/>
                 <meta name="zero-gutter" content="true"/>
@@ -451,6 +441,7 @@ final class PDFToEPUBConverter: Sendable {
                 <meta name="ke-border-color" content="#000000"/>
                 <meta name="ke-border-width" content="0"/>
                 <meta name="cover" content="\(coverMetaID)"/>
+                <meta name="primary-writing-mode" content="\(mangaMode ? "horizontal-rl" : "horizontal-lr")"/>
                 
                 <meta property="rendition:layout">pre-paginated</meta>
                 <meta property="rendition:spread">auto</meta>
@@ -494,7 +485,7 @@ final class PDFToEPUBConverter: Sendable {
         """
     }
     
-    private func generateNavXHTML(title: String, xhtmlFiles: [String]) -> String {
+    private func generateNavXHTML(title: String, xhtmlFiles: [String], isManga: Bool) -> String {
         // For a single content.xhtml, we'll just have one nav item
         let navItems = xhtmlFiles.enumerated().map { index, xhtmlFile in
             "<li><a href=\"\(xhtmlFile)\">Start</a></li>"
@@ -502,10 +493,12 @@ final class PDFToEPUBConverter: Sendable {
         
         let firstFile = xhtmlFiles.first ?? "chunk_0001.xhtml"
         
+        // lang is intentionally fixed to "en" regardless of manga mode.
+        let lang = "en"
         return """
         <?xml version="1.0" encoding="UTF-8"?>
         <!DOCTYPE html>
-        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="en">
+        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="\(lang)" xml:lang="\(lang)">
         <head>
             <meta charset="utf-8" />
             <title>\(escapeXML(title))</title>
@@ -530,17 +523,19 @@ final class PDFToEPUBConverter: Sendable {
         """
     }
     
-    private func generateChunkXHTML(chunkIndex: Int, images: [String], title: String, startIndex: Int) -> String {
+    private func generateChunkXHTML(chunkIndex: Int, images: [String], title: String, startIndex: Int, isManga: Bool) -> String {
         let imageElements = images.enumerated().map { i, imageName in
             """
-            <img style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain;" src="images/\(imageName)" alt="Page \(startIndex + i)"/>
+            <img style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;" src="images/\(imageName)" alt="Page \(startIndex + i)"/>
             """
         }.joined(separator: "\n")
         
+        // lang is intentionally fixed to "en" regardless of manga mode.
+        let lang = "en"
         return """
         <?xml version="1.0" encoding="UTF-8"?>
         <!DOCTYPE html>
-        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="\(lang)" xml:lang="\(lang)">
         <head>
             <title>\(escapeXML(title))</title>
             <meta name="viewport" content="width=1000, height=1500"/>
@@ -574,12 +569,17 @@ final class PDFToEPUBConverter: Sendable {
         
         // 2. Add remaining files
         let resourceKeys: [URLResourceKey] = [.isDirectoryKey, .fileSizeKey]
-        let enumerator = FileManager.default.enumerator(at: tempDir, includingPropertiesForKeys: resourceKeys)!
+        guard let enumerator = FileManager.default.enumerator(at: tempDir, includingPropertiesForKeys: resourceKeys) else {
+            throw ConversionError.fileWriteFailed
+        }
         
         for case let fileURL as URL in enumerator {
             let resourceValues = try fileURL.resourceValues(forKeys: Set(resourceKeys))
             let isDirectory = resourceValues.isDirectory ?? false
-            let path = fileURL.path.replacingOccurrences(of: tempDir.path + "/", with: "")
+            let normalizedFile = fileURL.path.replacingOccurrences(of: "\\", with: "/")
+            let normalizedBase = tempDir.path.replacingOccurrences(of: "\\", with: "/")
+            let prefix = normalizedBase.hasSuffix("/") ? normalizedBase : normalizedBase + "/"
+            let path = normalizedFile.replacingOccurrences(of: prefix, with: "")
             
             if path == "mimetype" || path.isEmpty { continue }
             

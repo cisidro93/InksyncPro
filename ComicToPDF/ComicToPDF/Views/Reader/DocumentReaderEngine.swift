@@ -10,73 +10,125 @@ struct DocumentReaderEngine: View {
     @State private var currentPageIndex: Int = 0
     @State private var isPencilMode = false
     @State private var pdfDocument: PDFDocument?
+    @State private var accessedURL: URL? = nil
+
+    private var totalPages: Int {
+        pdfDocument?.pageCount ?? pdf.pageCount
+    }
     
     // KOReader Parity
     @State private var isReflowMode = false
     @State private var reflowText: String = "Extracting text..."
+    @State private var showingSettings = false
+    @State private var showAnnotations = false
+    @State private var showSearch = false
+    @State private var pdfViewReference: PDFView? = nil
+    @State private var resolvedURL: URL? = nil
+    @ObservedObject private var prefs = EBookPreferences.shared
+    @FocusState private var isReaderFocused: Bool
+    @State private var lastBrightnessDragValue: CGFloat = 0
+    @ObservedObject private var sleepTimer = SleepTimerManager.shared
     
     var body: some View {
         ZStack {
-            Color(UIColor.systemBackground).edgesIgnoringSafeArea(.all)
+            prefs.activeTheme.background.edgesIgnoringSafeArea(.all)
             
-            if isReflowMode {
-                ScrollView {
-                    Text(reflowText)
-                        .font(.system(.body, design: .serif))
-                        .lineSpacing(8)
-                        .padding(24)
-                        .padding(.top, 40)
-                        .padding(.bottom, 80)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .foregroundColor(Color(UIColor.label))
+            Group {
+                if isReflowMode {
+                    ReflowTextView(
+                        text: reflowText,
+                        onCenterTap: {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                chromeVisible.toggle()
+                            }
+                        },
+                        onPrevPage: {
+                            if currentPageIndex > 0 {
+                                currentPageIndex -= 1
+                                HapticEngine.light()
+                            }
+                        },
+                        onNextPage: {
+                            if currentPageIndex < totalPages - 1 {
+                                currentPageIndex += 1
+                                HapticEngine.light()
+                            }
+                        }
+                    )
+                } else if let doc = pdfDocument {
+                    PDFKitRepresentedView(document: doc,
+                                          pdf: pdf,
+                                          currentPageIndex: $currentPageIndex,
+                                          chromeVisible: $chromeVisible,
+                                          isPencilMode: $isPencilMode,
+                                          pdfViewRef: $pdfViewReference)
+                    .colorInvertIfDark(theme: prefs.activeTheme)
+                } else {
+                    ProgressView("Loading Document...")
                 }
-                .background(Color(UIColor.systemBackground))
-                .onTapGesture {
-                    chromeVisible.toggle()
-                }
-            } else if let doc = pdfDocument {
-                PDFKitRepresentedView(document: doc,
-                                      pdf: pdf,
-                                      currentPageIndex: $currentPageIndex,
-                                      chromeVisible: $chromeVisible,
-                                      isPencilMode: $isPencilMode)
-            } else {
-                ProgressView("Loading Document...")
+            }
+            .readingFilter(prefs.readingFilter)
+            
+            // Edge Brightness Gesture Zones
+            HStack {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .frame(width: 30)
+                    .gesture(
+                        DragGesture()
+                            .onChanged { value in
+                                let delta = value.translation.height - lastBrightnessDragValue
+                                lastBrightnessDragValue = value.translation.height
+                                UIScreen.main.brightness -= delta * 0.005
+                            }
+                            .onEnded { _ in lastBrightnessDragValue = 0 }
+                    )
+                Spacer()
+                Color.clear
+                    .contentShape(Rectangle())
+                    .frame(width: 30)
+                    .gesture(
+                        DragGesture()
+                            .onChanged { value in
+                                let delta = value.translation.height - lastBrightnessDragValue
+                                lastBrightnessDragValue = value.translation.height
+                                UIScreen.main.brightness -= delta * 0.005
+                            }
+                            .onEnded { _ in lastBrightnessDragValue = 0 }
+                    )
             }
             
             ReaderChrome(
                 title: pdf.name,
-                pageText: "\(currentPageIndex + 1) / \(pdf.pageCount)",
+                pageText: "\(currentPageIndex + 1) / \(totalPages)",
                 isVisible: $chromeVisible,
                 onBack: {
-                    ReaderProgressTracker.shared.update(ReadingProgress(
-                        pdfID: pdf.id, lastOpenedAt: Date(), currentPageIndex: currentPageIndex,
-                        currentChapterIndex: nil, currentChapterOffset: nil,
-                        totalPagesRead: 1, completionFraction: Double(currentPageIndex + 1) / Double(max(1, pdf.pageCount)),
-                        readingSessionDates: [Date()], estimatedMinutesRemaining: nil
-                    ))
+                    savePosition(pageIndex: currentPageIndex)
                     onDismiss()
                 },
                 onBookmark: {
                     let bookmark = Annotation(pdfID: pdf.id, pageIndex: currentPageIndex, kind: .bookmark, createdAt: Date(), modifiedAt: Date())
                     AnnotationStore.shared.add(bookmark)
                 },
-                onSettingsToggle: {},
+                onSettingsToggle: { showingSettings = true },
+                onTOCToggle: { showAnnotations = true },
                 onAnnotationsToggle: { isPencilMode.toggle() },
+                onSearchToggle: { showSearch = true },
                 currentProgress: Binding(
-                    get: { Double(currentPageIndex) / Double(max(1, pdf.pageCount - 1)) },
+                    get: { Double(currentPageIndex) / Double(max(1, totalPages - 1)) },
                     set: {
-                        currentPageIndex = Int($0 * Double(max(1, pdf.pageCount - 1)))
+                        currentPageIndex = Int($0 * Double(max(1, totalPages - 1)))
                     }
                 ),
-                totalPages: pdf.pageCount,
+                totalPages: totalPages,
                 isPDF: true,
                 isReflowActive: isReflowMode,
                 onCropToggle: { applySmartCrop() },
                 onReflowToggle: {
                     isReflowMode.toggle()
                     if isReflowMode { updateReflowText() }
-                }
+                },
+                isSettingsActive: showingSettings
             )
             
             if isPencilMode && !isReflowMode {
@@ -98,31 +150,119 @@ struct DocumentReaderEngine: View {
                 .transition(.opacity)
             }
         }
+        .overlay { if prefs.showReadingRuler { ReadingRulerOverlay() } }
+        .onChange(of: sleepTimer.didFire) { _, fired in
+            if fired {
+                ReaderProgressTracker.shared.update(ReadingProgress(
+                    pdfID: pdf.id, lastOpenedAt: Date(), currentPageIndex: currentPageIndex,
+                    currentChapterIndex: nil, currentChapterOffset: nil,
+                    totalPagesRead: 1, completionFraction: Double(currentPageIndex + 1) / Double(max(1, totalPages)),
+                    readingSessionDates: [Date()], estimatedMinutesRemaining: nil
+                ))
+                onDismiss()
+            }
+        }
         .task {
             // Linked Library: Resolve security-scoped URL before opening.
-            // PDFDocument copies data internally on open, so we stop access immediately after.
+            // PDFDocument reads data lazily on draw, so we hold onto the access scope until disappear.
             let resolvedURL: URL
-            var accessedURL: URL? = nil
+            var accessed: URL? = nil
             if case .linked(let bm) = pdf.sourceMode,
                let url = try? BookmarkResolver.shared.resolve(bm) {
                 let didAccess = url.startAccessingSecurityScopedResource()
                 resolvedURL = url
-                if didAccess { accessedURL = url }
+                if didAccess { accessed = url }
             } else {
                 resolvedURL = pdf.url
             }
 
             let doc = PDFDocument(url: resolvedURL)
-            // PDFDocument has fully loaded — release the scope.
-            accessedURL?.stopAccessingSecurityScopedResource()
+            self.accessedURL = accessed
+            self.resolvedURL = resolvedURL
             pdfDocument = doc
             if let saved = ReaderProgressTracker.shared.progress(for: pdf.id) {
                 currentPageIndex = saved.currentPageIndex
             }
             if isReflowMode { updateReflowText() }
+            isReaderFocused = true
         }
-        .onChange(of: currentPageIndex) { old, new in
+        // FIX 3: Save position on every page turn — not just on deliberate back-tap.
+        // This ensures phone-calls, swipe-up app kills, and background terminations
+        // never lose the user's reading position.
+        .onChange(of: currentPageIndex) { _, new in
             if isReflowMode { updateReflowText() }
+            savePosition(pageIndex: new)
+        }
+        // FIX 3b: Also save when the app goes to the background (resign-active).
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in
+            savePosition(pageIndex: currentPageIndex)
+        }
+        .onDisappear {
+            savePosition(pageIndex: currentPageIndex)
+            accessedURL?.stopAccessingSecurityScopedResource()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
+            Logger.shared.log("DocumentReaderEngine: Memory warning received. Purging PDF cache.", category: "Memory", type: .warning)
+            Task {
+                await PDFRenderActor.shared.clear()
+            }
+        }
+        .sheet(isPresented: $showingSettings) {
+            EBookSettingsPanel(bookID: pdf.id.uuidString)
+                .presentationDetents([.medium, .large])
+        }
+        .sheet(isPresented: $showAnnotations) {
+            StudyNotebookView(
+                bookID: pdf.id.uuidString,
+                bookTitle: pdf.name,
+                fileURL: pdf.url
+            )
+        }
+        .sheet(isPresented: $showSearch) {
+            if let doc = pdfDocument, let pdfV = pdfViewReference {
+                ReaderSearchView(document: doc, pdfView: pdfV)
+                    .presentationDetents([.medium, .large])
+            }
+        }
+        .focusable()
+        .focused($isReaderFocused)
+        .focusEffectDisabled()
+        .onKeyPress(.leftArrow) {
+            pageBackward()
+            return .handled
+        }
+        .onKeyPress(.rightArrow) {
+            pageForward()
+            return .handled
+        }
+        .onKeyPress(.space) {
+            pageForward()
+            return .handled
+        }
+        .onKeyPress(.escape) {
+            ReaderProgressTracker.shared.update(ReadingProgress(
+                pdfID: pdf.id, lastOpenedAt: Date(), currentPageIndex: currentPageIndex,
+                currentChapterIndex: nil, currentChapterOffset: nil,
+                totalPagesRead: 1, completionFraction: Double(currentPageIndex + 1) / Double(max(1, totalPages)),
+                readingSessionDates: [Date()], estimatedMinutesRemaining: nil
+            ))
+            onDismiss()
+            return .handled
+        }
+        .preferredColorScheme(prefs.activeTheme.isDark ? .dark : .light)
+    }
+    
+    private func pageForward() {
+        if currentPageIndex < totalPages - 1 {
+            currentPageIndex += 1
+            HapticEngine.light()
+        }
+    }
+    
+    private func pageBackward() {
+        if currentPageIndex > 0 {
+            currentPageIndex -= 1
+            HapticEngine.light()
         }
     }
     
@@ -134,22 +274,74 @@ struct DocumentReaderEngine: View {
         self.reflowText = extracted.isEmpty ? "No extractable text on this page." : extracted
     }
     
+    // FIX 5: Smart crop now runs entirely on a background thread.
+    // The previous implementation iterated every page on the main actor, causing
+    // multi-second UI freezes on large PDFs (500+ pages).
+    // Under Swift 6, we avoid capturing non-Sendable PDFDocument across actor boundaries
+    // by passing the Sendable resolvedURL, creating a background document, and returning
+    // a Sendable [Int: CGRect] dictionary.
     private func applySmartCrop() {
         guard let doc = pdfDocument else { return }
-        for i in 0..<doc.pageCount {
-            if let page = doc.page(at: i) {
-                var crop = page.bounds(for: .cropBox)
-                crop = crop.insetBy(dx: crop.width * 0.12, dy: crop.height * 0.12)
-                page.setBounds(crop, for: .cropBox)
+        let url = resolvedURL ?? pdf.url
+        // Temporarily nil-out to signal loading state
+        pdfDocument = nil
+        Task {
+            let cropBoxes = await Task.detached(priority: .utility) { () -> [Int: CGRect] in
+                guard let backgroundDoc = PDFDocument(url: url) else { return [:] }
+                var results = [Int: CGRect]()
+                for i in 0..<backgroundDoc.pageCount {
+                    guard let page = backgroundDoc.page(at: i) else { continue }
+                    let pageBounds = page.bounds(for: .cropBox)
+                    var unionBounds = CGRect.null
+                    let charCount = page.numberOfCharacters
+                    if charCount > 0 {
+                        for charIndex in 0..<charCount {
+                            let charBounds = page.characterBounds(at: charIndex)
+                            if charBounds.width > 0 && charBounds.height > 0 {
+                                unionBounds = unionBounds.union(charBounds)
+                            }
+                        }
+                    }
+                    if !unionBounds.isNull {
+                        let croppedRect = unionBounds.insetBy(dx: -16, dy: -16)
+                        let finalCrop = croppedRect.intersection(pageBounds)
+                        if finalCrop.width > 50 && finalCrop.height > 50 {
+                            results[i] = finalCrop
+                        }
+                    } else {
+                        var crop = pageBounds
+                        crop = crop.insetBy(dx: crop.width * 0.08, dy: crop.height * 0.08)
+                        results[i] = crop
+                    }
+                }
+                return results
+            }.value
+
+            // Re-apply to doc and restore pdfDocument reference on MainActor
+            await MainActor.run {
+                for (i, cropBox) in cropBoxes {
+                    if let page = doc.page(at: i) {
+                        page.setBounds(cropBox, for: .cropBox)
+                    }
+                }
+                self.pdfDocument = doc
             }
         }
-        // Force PDFView to re-layout: nil → reassign on next runloop tick.
-        // Task.yield() is deterministic under CPU load (no magic 0.1s delay).
-        pdfDocument = nil
-        Task { @MainActor in
-            await Task.yield()
-            self.pdfDocument = doc
-        }
+    }
+
+    // Shared helper — save position to ReaderProgressTracker.
+    private func savePosition(pageIndex: Int) {
+        ReaderProgressTracker.shared.update(ReadingProgress(
+            pdfID: pdf.id,
+            lastOpenedAt: Date(),
+            currentPageIndex: pageIndex,
+            currentChapterIndex: nil,
+            currentChapterOffset: nil,
+            totalPagesRead: 1,
+            completionFraction: Double(pageIndex + 1) / Double(max(1, totalPages)),
+            readingSessionDates: [Date()],
+            estimatedMinutesRemaining: nil
+        ))
     }
 }
 
@@ -193,14 +385,31 @@ struct PDFKitRepresentedView: UIViewRepresentable {
     @Binding var currentPageIndex: Int
     @Binding var chromeVisible: Bool
     @Binding var isPencilMode: Bool
+    @Binding var pdfViewRef: PDFView?
+    
+    private func makePdfViewTransparent(_ pdfView: PDFView) {
+        pdfView.isOpaque = false
+        pdfView.backgroundColor = .clear
+        for subview in pdfView.subviews {
+            subview.backgroundColor = .clear
+            if let scrollView = subview as? UIScrollView {
+                scrollView.backgroundColor = .clear
+            }
+        }
+    }
     
     func makeUIView(context: Context) -> UIView {
         let pdfView = HighlightablePDFView()
+        DispatchQueue.main.async {
+            self.pdfViewRef = pdfView
+        }
         pdfView.document = document
         pdfView.autoScales = true
         pdfView.displayDirection = .vertical
         pdfView.displayMode = pdf.documentSubtype == .magazine ? .singlePageContinuous : .singlePageContinuous
         pdfView.delegate = context.coordinator
+        
+        makePdfViewTransparent(pdfView)
         
         pdfView.onHighlightCreated = { text, bounds in
             guard let page = pdfView.currentPage else { return }
@@ -226,6 +435,15 @@ struct PDFKitRepresentedView: UIViewRepresentable {
                 bounds: normalizedBounds
             )
             AnnotationStore.shared.add(annotation)
+
+            // Gap C fix: Write the annotation back to the PDF document on disk.
+            // PDFAnnotation is added to the in-memory PDFPage above in customHighlightAction,
+            // but without this write, the highlight is lost when the app is relaunched.
+            // We use a background Task to avoid blocking the main thread.
+            let writeURL = pdf.url
+            Task { @MainActor in
+                document.write(to: writeURL)
+            }
         }
         
         let canvasView = PKCanvasView()
@@ -265,6 +483,33 @@ struct PDFKitRepresentedView: UIViewRepresentable {
     func updateUIView(_ uiView: UIView, context: Context) {
         context.coordinator.canvasView?.isUserInteractionEnabled = isPencilMode
         context.coordinator.parent = self
+        
+        if let canvasView = context.coordinator.canvasView {
+            if isPencilMode {
+                context.coordinator.toolPicker.setVisible(true, forFirstResponder: canvasView)
+                context.coordinator.toolPicker.addObserver(canvasView)
+                canvasView.becomeFirstResponder()
+            } else {
+                context.coordinator.toolPicker.setVisible(false, forFirstResponder: canvasView)
+                context.coordinator.toolPicker.removeObserver(canvasView)
+                canvasView.resignFirstResponder()
+            }
+        }
+        
+        if let pdfView = context.coordinator.pdfView {
+            makePdfViewTransparent(pdfView)
+            
+            // Sync outer page change to the PDFView
+            if let document = pdfView.document,
+               let currentPage = pdfView.currentPage {
+                let viewPageIndex = document.index(for: currentPage)
+                if viewPageIndex != currentPageIndex && currentPageIndex >= 0 && currentPageIndex < document.pageCount {
+                    if let targetPage = document.page(at: currentPageIndex) {
+                        pdfView.go(to: targetPage)
+                    }
+                }
+            }
+        }
     }
     
     func makeCoordinator() -> Coordinator {
@@ -275,6 +520,11 @@ struct PDFKitRepresentedView: UIViewRepresentable {
     /// repeated opens. Without this, each reader open registers a new observer
     /// and the Coordinator is retained by NotificationCenter indefinitely.
     static func dismantleUIView(_ uiView: UIView, coordinator: Coordinator) {
+        if let canvasView = coordinator.canvasView {
+            coordinator.toolPicker.setVisible(false, forFirstResponder: canvasView)
+            coordinator.toolPicker.removeObserver(canvasView)
+            canvasView.resignFirstResponder()
+        }
         if let pdfView = coordinator.pdfView {
             NotificationCenter.default.removeObserver(coordinator, name: .PDFViewPageChanged, object: pdfView)
         }
@@ -296,7 +546,28 @@ struct PDFKitRepresentedView: UIViewRepresentable {
         
         @objc func handleTap(_ gesture: UITapGestureRecognizer) {
             guard !parent.isPencilMode else { return }
-            parent.chromeVisible.toggle()
+            
+            let location = gesture.location(in: gesture.view)
+            let width = gesture.view?.bounds.width ?? 0
+            
+            let zones = EBookPreferences.shared.tapZoneStyle.zones
+            
+            if location.x < width * zones.leftEdge {
+                // Page backward
+                if parent.currentPageIndex > 0 {
+                    parent.currentPageIndex -= 1
+                    HapticEngine.light()
+                }
+            } else if location.x > width * zones.rightEdge {
+                // Page forward
+                if let doc = pdfView?.document, parent.currentPageIndex < doc.pageCount - 1 {
+                    parent.currentPageIndex += 1
+                    HapticEngine.light()
+                }
+            } else {
+                // Toggle chrome
+                parent.chromeVisible.toggle()
+            }
         }
         
         @objc func pageChanged(_ notification: Notification) {

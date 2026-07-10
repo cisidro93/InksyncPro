@@ -96,54 +96,69 @@ struct ConvertView: View {
                             .labelsHidden()
                             .tint(.inkBlue)
                     }
+                    if settingsManager.conversionSettings.optimizeForDevice {
+                        Divider().overlay(Color.inkBorderSubtle)
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Embed Character Glossary")
+                                    .font(.system(size: 14, weight: .medium))
+                                    .foregroundColor(.inkTextPrimary)
+                                Text("Appends character dossiers & relationships to the EPUB")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.inkTextSecondary)
+                            }
+                            Spacer()
+                            Toggle("", isOn: $settingsManager.conversionSettings.embedCharacterGlossary)
+                                .labelsHidden()
+                                .tint(.inkBlue)
+                        }
+                    }
                 }
 
-                // MARK: Export Pipeline (EPUB only)
-                if settingsManager.conversionSettings.outputFormat == .epub {
-                    InkCard(header: "EPUB Export Mode") {
-                        VStack(spacing: 10) {
-                            ForEach(OutputPipeline.allCases) { pipeline in
-                                let isDisabled = viewModel.pipelineIsDisabled(pipeline, for: pdf, format: settingsManager.conversionSettings.outputFormat)
-                                Button(action: {
-                                    if !isDisabled {
-                                        viewModel.selectedPipeline = pipeline
-                                        viewModel.applyPipeline(pipeline, to: &settingsManager.conversionSettings)
-                                    }
-                                }) {
-                                    PipelineCardView(
-                                        pipeline: pipeline,
-                                        isDisabled: isDisabled,
-                                        isSelected: viewModel.selectedPipeline == pipeline,
-                                        viewModel: viewModel,
-                                        currentFormat: settingsManager.conversionSettings.outputFormat
-                                    )
+                // MARK: Export Pipeline
+                InkCard(header: "Conversion Mode") {
+                    VStack(spacing: 10) {
+                        ForEach(OutputPipeline.allCases) { pipeline in
+                            let isDisabled = viewModel.pipelineIsDisabled(pipeline, for: pdf, format: settingsManager.conversionSettings.outputFormat)
+                            Button(action: {
+                                if !isDisabled {
+                                    viewModel.selectedPipeline = pipeline
+                                    viewModel.applyPipeline(pipeline, to: &settingsManager.conversionSettings)
+                                }
+                            }) {
+                                PipelineCardView(
+                                    pipeline: pipeline,
+                                    isDisabled: isDisabled,
+                                    isSelected: viewModel.selectedPipeline == pipeline,
+                                    viewModel: viewModel,
+                                    currentFormat: settingsManager.conversionSettings.outputFormat
+                                )
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                            .disabled(conversionManager.isConverting || isDisabled)
+                            .opacity(isDisabled || conversionManager.isConverting ? 0.55 : 1.0)
+                        }
+
+                        if viewModel.selectedPipeline == .proPanel {
+                            VStack(spacing: 8) {
+                                Button(action: { viewModel.showingPreview = true }) {
+                                    Label("Preview Panel Detection (Page 4)", systemImage: "eye")
+                                        .font(.system(size: 14))
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 10)
+                                        .background(Color.inkSurfaceRaised)
+                                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                                        .foregroundColor(.inkTextPrimary)
                                 }
                                 .buttonStyle(PlainButtonStyle())
-                                .disabled(conversionManager.isConverting || isDisabled)
-                                .opacity(isDisabled || conversionManager.isConverting ? 0.55 : 1.0)
-                            }
-
-                            if viewModel.selectedPipeline == .proPanel {
-                                VStack(spacing: 8) {
-                                    Button(action: { viewModel.showingPreview = true }) {
-                                        Label("Preview Panel Detection (Page 4)", systemImage: "eye")
-                                            .font(.system(size: 14))
-                                            .frame(maxWidth: .infinity)
-                                            .padding(.vertical, 10)
-                                            .background(Color.inkSurfaceRaised)
-                                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                                            .foregroundColor(.inkTextPrimary)
-                                    }
-                                    .buttonStyle(PlainButtonStyle())
-                                    Button(action: { viewModel.showingCalibreGuide = true }) {
-                                        Label("How to Sideload to Kindle", systemImage: "questionmark.circle")
-                                            .font(.caption)
-                                            .foregroundColor(.inkBlue)
-                                    }
-                                    .buttonStyle(PlainButtonStyle())
+                                Button(action: { viewModel.showingCalibreGuide = true }) {
+                                    Label("How to Sideload to Kindle", systemImage: "questionmark.circle")
+                                        .font(.caption)
+                                        .foregroundColor(.inkBlue)
                                 }
-                                .padding(.top, 4)
+                                .buttonStyle(PlainButtonStyle())
                             }
+                            .padding(.top, 4)
                         }
                     }
                 }
@@ -161,6 +176,22 @@ struct ConvertView: View {
                         }
                         Spacer()
                         Toggle("", isOn: $viewModel.isMangaMode)
+                            .labelsHidden()
+                            .tint(.inkBlue)
+                            .disabled(conversionManager.isConverting)
+                    }
+                    Divider().overlay(Color.inkBorderSubtle)
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Link Cover Page as Spread")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundColor(.inkTextPrimary)
+                            Text("Pairs Cover Page with Page 2 as a spread")
+                                .font(.system(size: 12))
+                                .foregroundColor(.inkTextSecondary)
+                        }
+                        Spacer()
+                        Toggle("", isOn: $settingsManager.conversionSettings.linkCoverAsSpread)
                             .labelsHidden()
                             .tint(.inkBlue)
                             .disabled(conversionManager.isConverting)
@@ -324,7 +355,7 @@ struct PipelineCardView: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
-                    Text(pipeline.rawValue).font(.headline).foregroundColor(textColor)
+                    Text(pipeline.displayName).font(.headline).foregroundColor(textColor)
                     if pipeline == .proPanel {
                         if isDisabled {
                             if currentFormat != .epub {
@@ -337,7 +368,7 @@ struct PipelineCardView: View {
                         }
                     }
                 }
-                Text(viewModel.pipelineSubtitle(for: pipeline)).font(.caption).foregroundColor(subtextColor)
+                Text(viewModel.pipelineSubtitle(for: pipeline, format: currentFormat)).font(.caption).foregroundColor(subtextColor)
             }
             Spacer()
             if isSelected {
@@ -378,18 +409,18 @@ struct CalibreGuideView: View {
                 VStack(alignment: .leading, spacing: 20) {
 
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Sideloading Panel View to Kindle")
+                        Text("Sideloading to Kindle & E-Readers")
                             .font(.title2.bold())
-                        Text("Due to recent Kindle firmware updates (5.19.2+), standard USB transfers no longer process advanced EPUB features directly on the device. Follow these steps to ensure Panel View works flawlessly.")
+                        Text("Follow these steps to transfer your converted books to your Kindle or other e-readers using Calibre.")
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                     }
                     .padding(.bottom, 10)
 
-                    guideStep(number: 1, title: "Install Calibre & KFX Plugin", description: "Download the free library manager 'Calibre' on your computer. Inside Calibre, go to Preferences → Plugins → Get new plugins, and install the 'KFX Output' plugin.", icon: "gearshape.2.fill")
+                    guideStep(number: 1, title: "Install Calibre", description: "Download the free library manager 'Calibre' on your computer.", icon: "gearshape.2.fill")
                     guideStep(number: 2, title: "Export to Computer", description: "Use the 'Export' button in Inksync Pro to save your translated EPUB to iCloud Drive, or Share it directly to your Mac.", icon: "macbook.and.iphone")
-                    guideStep(number: 3, title: "Convert to KFX", description: "Drag the EPUB into Calibre. Select the book, click 'Convert books', and set the top-right Output Format to 'KFX'. Click OK.", icon: "arrow.triangle.2.circlepath")
-                    guideStep(number: 4, title: "Send via USB", description: "Connect your Kindle via USB. In Calibre, click 'Send to device'. The KFX file will carry all Panel View metadata and render natively on your Kindle.", icon: "cable.connector")
+                    guideStep(number: 3, title: "Add to Calibre", description: "Drag the EPUB file into your Calibre library interface.", icon: "arrow.triangle.2.circlepath")
+                    guideStep(number: 4, title: "Send via USB", description: "Connect your Kindle or e-reader via USB. In Calibre, click 'Send to device' to copy it directly to your device.", icon: "cable.connector")
 
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {

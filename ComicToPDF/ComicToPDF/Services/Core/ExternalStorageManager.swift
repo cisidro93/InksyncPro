@@ -132,7 +132,7 @@ class ExternalStorageManager: NSObject {
         }
         
         // Copy to app's documents directory
-        let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
         let destinationURL = documentsURL.appendingPathComponent(externalURL.lastPathComponent)
         
         // Remove existing file if present

@@ -10,7 +10,7 @@ struct ModernFileRow: View {
     @State private var localCover: UIImage? = nil
     
     // ✅ PHASE 7: Dynamic User Aesthetic Colors
-    @AppStorage("mangaBadgeColorHex") private var mangaBadgeColorHex = "#2dd4a0"
+    @AppStorage("mangaBadgeColorHex") private var mangaBadgeColorHex = "#ff5a36"
     @AppStorage("comicBadgeColorHex") private var comicBadgeColorHex = "#3d6fff"
     
     var body: some View {
@@ -64,10 +64,32 @@ struct ModernFileRow: View {
                 
                 // ✅ Show Fetched Metadata Context
                 if let series = pdf.metadata.series, !series.isEmpty {
-                    Text("\(series) \(pdf.metadata.issueNumber.map { "#\($0)" } ?? "")")
-                        .font(.system(size: 12))
-                        .foregroundColor(Theme.textSecondary)
-                        .lineLimit(1)
+                    HStack(spacing: 6) {
+                        Text(series)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(Theme.textSecondary)
+                            .lineLimit(1)
+                        
+                        if let vol = pdf.metadata.volume, !vol.trimmingCharacters(in: .whitespaces).isEmpty {
+                            Text("Vol. \(vol)")
+                                .font(.system(size: 9, weight: .bold))
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 1)
+                                .background(Color.purple.opacity(0.12))
+                                .foregroundColor(.purple)
+                                .cornerRadius(3)
+                        }
+                        
+                        if let issue = pdf.metadata.issueNumber, !issue.trimmingCharacters(in: .whitespaces).isEmpty {
+                            Text("#\(issue)")
+                                .font(.system(size: 9, weight: .bold))
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 1)
+                                .background(Color.blue.opacity(0.12))
+                                .foregroundColor(.blue)
+                                .cornerRadius(3)
+                        }
+                    }
                 }
                 
                 HStack(spacing: 6) {
@@ -170,6 +192,14 @@ struct ModernFileRow: View {
                 self.localCover = loaded
             }
         }
+        .onReceive(conversionManager.thumbnailReadySubject.receive(on: RunLoop.main)) { updatedID in
+            if updatedID == pdf.id {
+                let key = pdf.id.uuidString as NSString
+                if let cached = conversionManager.thumbnailCache.object(forKey: key) {
+                    self.localCover = cached
+                }
+            }
+        }
     }
 }
 
@@ -183,7 +213,7 @@ struct ModernSeriesRow: View {
     @State private var localCover: UIImage? = nil
     
     // ✅ PHASE 7: Dynamic User Aesthetic Colors
-    @AppStorage("mangaBadgeColorHex") private var mangaBadgeColorHex = "#2dd4a0"
+    @AppStorage("mangaBadgeColorHex") private var mangaBadgeColorHex = "#ff5a36"
     @AppStorage("comicBadgeColorHex") private var comicBadgeColorHex = "#3d6fff"
     
     var body: some View {
@@ -233,10 +263,21 @@ struct ModernSeriesRow: View {
             .shadow(color: Color(.sRGBLinear, white: 0, opacity: 0.25), radius: 4, y: 2)
             
             VStack(alignment: .leading, spacing: 4) {
-                Text(group.title)
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(Theme.text)
-                    .lineLimit(1)
+                HStack(spacing: 8) {
+                    Text(group.title)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(Theme.text)
+                        .lineLimit(1)
+                    
+                    if group.count > 0 {
+                        let readCount = group.issues.filter {
+                            (ReaderProgressTracker.shared.progress(for: $0.id)?.completionFraction ?? 0.0) >= 0.95
+                        }.count
+                        
+                        SeriesProgressRing(readCount: readCount, totalCount: group.count)
+                            .frame(width: 16, height: 16)
+                    }
+                }
                 
                 HStack(spacing: 6) {
                     HStack(spacing: 3) {
@@ -251,7 +292,7 @@ struct ModernSeriesRow: View {
                     .foregroundColor(Theme.blue)
                     .cornerRadius(4)
                     
-                    if let first = group.issues.first(where: { $0.contentType == .comic }) {
+                    if let first = firstComicIssue {
                         let isManga = first.metadata.isManga ?? false
                         Text(isManga ? "MANGA" : "COMIC")
                             .font(.system(size: 10, weight: .bold))
@@ -288,7 +329,7 @@ struct ModernSeriesRow: View {
         .contentShape(Rectangle())
         .hoverEffect(.lift)
         // ✅ PERF: Async thumbnail load — reads back from NSCache after write
-        .task(id: group.id) {
+        .task(id: group.coverIssueID) {
             if let issueID = group.coverIssueID,
                let pdf = conversionManager.convertedPDFs.first(where: { $0.id == issueID }) {
                 let key = issueID.uuidString as NSString
@@ -301,5 +342,17 @@ struct ModernSeriesRow: View {
                 }
             }
         }
+        .onReceive(conversionManager.thumbnailReadySubject.receive(on: RunLoop.main)) { updatedID in
+            if let coverID = group.coverIssueID, updatedID == coverID {
+                let key = coverID.uuidString as NSString
+                if let cached = conversionManager.thumbnailCache.object(forKey: key) {
+                    self.localCover = cached
+                }
+            }
+        }
+    }
+
+    private var firstComicIssue: ConvertedPDF? {
+        return group.issues.first(where: { $0.contentType == .comic })
     }
 }

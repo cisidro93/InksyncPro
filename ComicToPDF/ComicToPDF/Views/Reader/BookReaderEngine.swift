@@ -2,41 +2,13 @@ import SwiftUI
 import WebKit
 import PDFKit
 import ZIPFoundation
-import AVFoundation
 import CoreTransferable
+import UIKit
+import SwiftData
 
 
 @MainActor
-class TTSManager: NSObject, ObservableObject, AVSpeechSynthesizerDelegate {
-    static let shared = TTSManager()
-    let synthesizer = AVSpeechSynthesizer()
-    @Published var isSpeaking = false
-    
-    override init() {
-        super.init()
-        synthesizer.delegate = self
-    }
-    
-    func speak(text: String) {
-        if synthesizer.isSpeaking { stop() }
-        let utterance = AVSpeechUtterance(string: text)
-        utterance.rate = 0.5
-        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
-        try? AVAudioSession.sharedInstance().setActive(true)
-        synthesizer.speak(utterance)
-        isSpeaking = true
-    }
-    
-    func stop() {
-        synthesizer.stopSpeaking(at: .immediate)
-        isSpeaking = false
-        try? AVAudioSession.sharedInstance().setActive(false)
-    }
-    
-    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
-        Task { @MainActor in self.isSpeaking = false }
-    }
-}
+
 
 struct SearchResult: Identifiable {
     let id = UUID()
@@ -51,7 +23,6 @@ class BookReaderViewModel: NSObject, ObservableObject, WKNavigationDelegate {
     @Published var currentChapterHTML: String = ""
     @Published var chapterHtmlFiles: [URL] = []
     @Published var currentChapterIndex = 0
-    @Published var isPlayingTTS = false
     @Published var metadata: EBookMetadata?
     @Published var tocItems: [EBookMetadata.SpineItem] = []
     
@@ -61,22 +32,30 @@ class BookReaderViewModel: NSObject, ObservableObject, WKNavigationDelegate {
     
     let pdf: ConvertedPDF
     private let fileManager = FileManager.default
-    private lazy var tempDir: URL = { fileManager.temporaryDirectory.appendingPathComponent(pdf.id.uuidString) }()
-    
-    // TTS
-    private let speechSynthesizer = AVSpeechSynthesizer()
+    nonisolated let tempDirURL: URL
     
     init(pdf: ConvertedPDF) {
         self.pdf = pdf
+        self.tempDirURL = FileManager.default.temporaryDirectory.appendingPathComponent(pdf.id.uuidString)
         super.init()
         unpackEPUB()
+    }
+    
+    deinit {
+        let path = tempDirURL.path
+        Task.detached(priority: .background) {
+            let fm = FileManager.default
+            if fm.fileExists(atPath: path) {
+                try? fm.removeItem(atPath: path)
+            }
+        }
     }
     
     private func unpackEPUB() {
         Task.detached(priority: .userInitiated) { [weak self] in
             guard let self else { return }
             let fm = FileManager.default
-            let tempDir = await self.tempDir
+            let tempDir = self.tempDirURL
             let sourcePDF = self.pdf
 
             // Linked Library: resolve security-scoped URL for linked files.
@@ -147,7 +126,7 @@ class BookReaderViewModel: NSObject, ObservableObject, WKNavigationDelegate {
     }
     
     private func buildOrLoadSearchIndex() {
-        let indexURL = tempDir.appendingPathComponent("search_index.json")
+        let indexURL = tempDirURL.appendingPathComponent("search_index.json")
         if let data = try? Data(contentsOf: indexURL),
            let decoded = try? JSONDecoder().decode([String: Set<Int>].self, from: data) {
             self.searchIndex = decoded
@@ -203,7 +182,7 @@ class BookReaderViewModel: NSObject, ObservableObject, WKNavigationDelegate {
             }.value
 
             guard var html = rawHTML else {
-                await MainActor.run { self.isLoading = false }
+                self.isLoading = false
                 return
             }
             // Normalise charset declaration so WKWebView always uses UTF-8
@@ -211,11 +190,9 @@ class BookReaderViewModel: NSObject, ObservableObject, WKNavigationDelegate {
             if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) {
                 html = regex.stringByReplacingMatches(in: html, options: [], range: NSRange(html.startIndex..., in: html), withTemplate: "<meta charset=\\\"utf-8\\\">")
             }
-            // Return to main actor to update @Published properties
-            await MainActor.run {
-                self.currentChapterHTML = html
-                self.isLoading = false
-            }
+            // Update @Published properties directly on MainActor
+            self.currentChapterHTML = html
+            self.isLoading = false
         }
     }
     
@@ -290,25 +267,6 @@ class BookReaderViewModel: NSObject, ObservableObject, WKNavigationDelegate {
             self.isSearching = false
         }
     }
-    
-    // MARK: TTS
-    
-    func toggleTTS(text: String) {
-        if isPlayingTTS {
-            speechSynthesizer.pauseSpeaking(at: .immediate)
-            isPlayingTTS = false
-        } else {
-            if speechSynthesizer.isPaused {
-                speechSynthesizer.continueSpeaking()
-            } else {
-                let utterance = AVSpeechUtterance(string: text)
-                utterance.rate = AVSpeechUtteranceDefaultSpeechRate
-                utterance.voice = AVSpeechSynthesisVoice(language: "en-US")
-                speechSynthesizer.speak(utterance)
-            }
-            isPlayingTTS = true
-        }
-    }
 }
 
 // Custom WebView subclass to add "Highlight" to the native iOS text selection menu
@@ -349,21 +307,27 @@ struct EPUBWebView: UIViewRepresentable {
     @Binding var htmlContent: String
     @Binding var baseUrl: URL
     @ObservedObject var prefs: EBookPreferences
+    @Binding var scrollToLastPageOnLoad: Bool
     var onHighlightCreated: ((String, String) -> Void)?
     var onPageLoaded: ((WKWebView) -> Void)?
     /// Fired when user taps the center third of the page (toggles chrome)
     var onCenterTap: (() -> Void)? = nil
+    /// Fired when user taps the left third of the page (turns page back)
+    var onLeftTap: (() -> Void)? = nil
+    /// Fired when user taps the right third of the page (turns page forward)
+    var onRightTap: (() -> Void)? = nil
     /// Fired when a forward swipe reaches the end of the last column
     var onNextChapter: (() -> Void)? = nil
     /// Fired when a backward swipe is at the first column
     var onPrevChapter: (() -> Void)? = nil
 
-    class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
+    class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate, UIGestureRecognizerDelegate {
         var parent: EPUBWebView
         /// Stable hash of the combined (content + prefs) state — prevents update loops.
         var lastContentHash: Int = 0
         /// Hash of the raw HTML only — used to distinguish content changes from prefs-only changes.
         var lastContentOnlyHash: Int = 0
+        var initialPinchFontSize: Double = 16.0
 
         init(_ parent: EPUBWebView) { self.parent = parent }
 
@@ -375,6 +339,8 @@ struct EPUBWebView: UIViewRepresentable {
             } else if message.name == "nav", let body = message.body as? String {
                 switch body {
                 case "center": parent.onCenterTap?()
+                case "left":   parent.onLeftTap?()
+                case "right":  parent.onRightTap?()
                 case "next":   parent.onNextChapter?()
                 case "prev":   parent.onPrevChapter?()
                 default: break
@@ -382,8 +348,69 @@ struct EPUBWebView: UIViewRepresentable {
             }
         }
 
+        // Intercept navigation for Footnotes, External links, and Chapters
+        func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) {
+            if navigationAction.navigationType == .linkActivated {
+                if let url = navigationAction.request.url {
+                    if url.scheme == "http" || url.scheme == "https" {
+                        UIApplication.shared.open(url)
+                    } else if let fragment = url.fragment {
+                        // Internal anchor (e.g., footnote)
+                        let js = """
+                        var el = document.getElementById('\(fragment)') || document.getElementsByName('\(fragment)')[0];
+                        if (el) {
+                            var targetOffset = el.getBoundingClientRect().left + window.pageXOffset;
+                            var pageIndex = Math.floor(targetOffset / window.innerWidth);
+                            window.scrollTo({ left: pageIndex * window.innerWidth, behavior: 'smooth' });
+                        }
+                        """
+                        webView.evaluateJavaScript(js, completionHandler: nil)
+                    }
+                }
+                decisionHandler(.cancel)
+            } else {
+                decisionHandler(.allow)
+            }
+        }
+
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             parent.onPageLoaded?(webView)
+            
+            if parent.scrollToLastPageOnLoad {
+                parent.scrollToLastPageOnLoad = false
+                let js = """
+                setTimeout(function() {
+                    var sv = document.scrollingElement || document.documentElement;
+                    if (document.body.style.columnCount) {
+                        var maxScroll = sv.scrollWidth - window.innerWidth;
+                        window.scrollTo({ left: maxScroll, behavior: 'instant' });
+                    } else {
+                        var maxScroll = sv.scrollHeight - window.innerHeight;
+                        window.scrollTo({ top: maxScroll, behavior: 'instant' });
+                    }
+                }, 100);
+                """
+                webView.evaluateJavaScript(js, completionHandler: nil)
+            }
+        }
+
+        @objc func handlePinch(_ gesture: UIPinchGestureRecognizer) {
+            if gesture.state == .began {
+                initialPinchFontSize = parent.prefs.fontSize
+            } else if gesture.state == .changed {
+                let newSize = initialPinchFontSize * Double(gesture.scale)
+                parent.prefs.fontSize = max(12.0, min(48.0, newSize))
+            }
+        }
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+            return true
+        }
+
+        /// Recover from Jetsam Out-Of-Memory (OOM) WebKit process crashes.
+        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            Logger.shared.log("WebKit process terminated (OOM Jetsam crash). Reloading EPUB chapter.", category: "EPUBWebView", type: .error)
+            webView.reload()
         }
     }
 
@@ -400,7 +427,7 @@ struct EPUBWebView: UIViewRepresentable {
         // Use WeakProxy — WKUserContentController strongly retains handlers by default.
         let proxy = WeakScriptMessageProxy(context.coordinator)
         config.userContentController.add(proxy, name: "highlightHandler")
-        // `nav` bridge: center tap (toggle chrome), next/prev chapter boundary swipes
+        // `nav` bridge: center/left/right tap, next/prev chapter boundary swipes
         config.userContentController.add(proxy, name: "nav")
 
         // CSS + JS Injection (runs once after each page load, not on every SwiftUI update)
@@ -408,64 +435,9 @@ struct EPUBWebView: UIViewRepresentable {
             source: """
             var meta = document.createElement('meta');
             meta.name = 'viewport';
-            meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
+            meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover';
             var head = document.getElementsByTagName('head')[0];
             head.appendChild(meta);
-
-            var style = document.createElement('style');
-            style.innerHTML = `
-                html {
-                    overflow-y: \(prefs.paginationMode == EBookPaginationMode.continuous.rawValue ? "scroll" : "hidden") !important;
-                    height: 100vh !important;
-                }
-                body {
-                    font-family: '\(prefs.fontFamily)' !important;
-                    font-size: \(prefs.fontSize)px !important;
-                    line-height: \(prefs.lineHeight) !important;
-                    background-color: \(prefs.activeTheme.cssBackground) !important;
-                    color: \(prefs.activeTheme.cssText) !important;
-                    letter-spacing: \(String(format: "%.4f", prefs.letterSpacing))em !important;
-                    word-spacing: \(String(format: "%.4f", prefs.wordSpacing))em !important;
-                    -webkit-user-select: text !important;
-                    user-select: text !important;
-
-                    /* Layout */
-                    height: \(prefs.paginationMode == EBookPaginationMode.continuous.rawValue ? "auto" : "calc(100vh - 100px)") !important;
-                    padding-top: 40px !important;
-                    padding-bottom: 60px !important;
-                    padding-left: 0 !important;
-                    padding-right: 0 !important;
-                    margin: 0 !important;
-
-                    \(prefs.paginationMode == EBookPaginationMode.continuous.rawValue ? "" : (prefs.columnCount == 2 ? "column-width: calc(50vw - 30px) !important; column-gap: 60px !important;" : (prefs.columnCount == 1 ? "column-width: 100vw !important; column-gap: 0 !important;" : "column-width: 100vw !important; column-gap: 0 !important;")))
-
-                    /* Typography enhancements */
-                    text-align: \(prefs.textAlign) !important;
-                    -webkit-hyphens: \(prefs.hyphenation ? "auto" : "manual") !important;
-                    hyphens: \(prefs.hyphenation ? "auto" : "manual") !important;
-                }
-                @media (prefers-color-scheme: dark) {
-                    body {
-                        background-color: \(prefs.activeTheme.cssBackground(colorScheme: .dark)) !important;
-                        color: \(prefs.activeTheme.cssText(colorScheme: .dark)) !important;
-                    }
-                }
-                \(prefs.paginationMode == EBookPaginationMode.continuous.rawValue || prefs.columnCount != 0 ? "" : """
-                @media (min-width: 768px) and (orientation: landscape) {
-                    body {
-                        column-width: calc(50vw - 30px) !important;
-                        column-gap: 60px !important;
-                    }
-                }
-                """)
-                .content-container {
-                    padding-left: \(prefs.textMargin)px !important;
-                    padding-right: \(prefs.textMargin)px !important;
-                }
-                img { max-width: 100% !important; max-height: 100% !important; border-radius: 4px; object-fit: contain; }
-                .inksync-highlight { background-color: #ffd700; color: inherit; border-radius: 2px; mix-blend-mode: multiply; -webkit-mix-blend-mode: multiply; padding: 0 1px; }
-            `;
-            head.appendChild(style);
 
             // Wrap body content in a container for margins while keeping columns full-width
             if (!document.getElementById('inksync-container')) {
@@ -480,8 +452,6 @@ struct EPUBWebView: UIViewRepresentable {
 
             // Highlight Engine JS
             // Uses DOM Range + <mark> element wrapping.
-            // document.execCommand('hiliteColor') is deprecated and produces no
-            // visual output in WKWebView on iOS 16+, so we use Range.surroundContents().
             window.applyInksyncHighlight = function(colorHex) {
                 var sel = window.getSelection();
                 if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
@@ -511,8 +481,6 @@ struct EPUBWebView: UIViewRepresentable {
             };
 
             // Restore a previously saved highlight on chapter reload.
-            // Uses TreeWalker to locate the text node — window.find() is unreliable
-            // in column/paged mode and execCommand('hiliteColor') is dead in iOS 16+.
             window.restoreInksyncHighlight = function(textToFind, colorHex) {
                 if (!textToFind) return;
                 var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
@@ -536,9 +504,60 @@ struct EPUBWebView: UIViewRepresentable {
                 }
             };
 
+            window.updateInksyncHighlightColor = function(textToFind, colorHex) {
+                var marks = document.querySelectorAll('mark.inksync-highlight');
+                for (var i = 0; i < marks.length; i++) {
+                    if (marks[i].textContent.trim() === textToFind.trim()) {
+                        marks[i].style.backgroundColor = colorHex;
+                        break;
+                    }
+                }
+            };
+
+            window.removeInksyncHighlight = function(textToFind) {
+                var marks = document.querySelectorAll('mark.inksync-highlight');
+                for (var i = 0; i < marks.length; i++) {
+                    if (marks[i].textContent.trim() === textToFind.trim()) {
+                        var parent = marks[i].parentNode;
+                        while (marks[i].firstChild) {
+                            parent.insertBefore(marks[i].firstChild, marks[i]);
+                        }
+                        parent.removeChild(marks[i]);
+                        parent.normalize();
+                        break;
+                    }
+                }
+            };
+
+            // ── Auto Scroll ──────────────────────────────────────────────────
+            var scrollActive = false;
+            var scrollSpeed = 1.0;
+            var lastTime = 0;
+
+            window.startInksyncAutoScroll = function(speed) {
+                scrollSpeed = speed;
+                if (scrollActive) return;
+                scrollActive = true;
+                lastTime = performance.now();
+                
+                function scrollStep(timestamp) {
+                    if (!scrollActive) return;
+                    var delta = timestamp - lastTime;
+                    lastTime = timestamp;
+                    
+                    // Normalize scroll delta to ~16.7ms base speed step
+                    var step = (scrollSpeed * (delta / 16.67));
+                    window.scrollBy(0, step);
+                    
+                    requestAnimationFrame(scrollStep);
+                }
+                requestAnimationFrame(scrollStep);
+            };
+            window.stopInksyncAutoScroll = function() {
+                scrollActive = false;
+            };
+
             // ── Navigation (swipe + tap) bridge ──────────────────────────────
-            // WKWebView absorbs all SwiftUI gesture recognizers, so we must
-            // post navigation messages from JS to toggle chrome and turn chapters.
             var _sx = 0, _sy = 0;
             document.addEventListener('touchstart', function(e) {
                 _sx = e.changedTouches[0].clientX;
@@ -548,21 +567,24 @@ struct EPUBWebView: UIViewRepresentable {
                 var dx = e.changedTouches[0].clientX - _sx;
                 var dy = e.changedTouches[0].clientY - _sy;
                 if (Math.abs(dx) < 8 && Math.abs(dy) < 8) {
-                    // Tap: determine zone
                     var x = e.changedTouches[0].clientX;
                     var w = window.innerWidth;
-                    if (x > w * 0.35 && x < w * 0.65) {
+                    var leftEdge = window.__inksync_left_edge || 0.30;
+                    var rightEdge = window.__inksync_right_edge || 0.70;
+                    if (x < w * leftEdge) {
+                        window.webkit.messageHandlers.nav.postMessage('left');
+                    } else if (x > w * rightEdge) {
+                        window.webkit.messageHandlers.nav.postMessage('right');
+                    } else {
                         window.webkit.messageHandlers.nav.postMessage('center');
                     }
                 } else if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) {
                     // Horizontal swipe
                     if (dx < 0) {
-                        // Forward swipe: check right scroll boundary
                         var sv = document.scrollingElement || document.documentElement;
                         var atEnd = (sv.scrollLeft + window.innerWidth) >= sv.scrollWidth - 4;
                         if (atEnd) window.webkit.messageHandlers.nav.postMessage('next');
                     } else {
-                        // Backward swipe: check left scroll boundary
                         var sv2 = document.scrollingElement || document.documentElement;
                         if (sv2.scrollLeft <= 4) window.webkit.messageHandlers.nav.postMessage('prev');
                     }
@@ -577,8 +599,8 @@ struct EPUBWebView: UIViewRepresentable {
         let webView = HighlightableWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
         webView.isOpaque = false
-        webView.backgroundColor = UIColor(prefs.activeTheme.background)
-        webView.scrollView.backgroundColor = webView.backgroundColor
+        webView.backgroundColor = .clear
+        webView.scrollView.backgroundColor = .clear
         webView.scrollView.isPagingEnabled = prefs.paginationMode == EBookPaginationMode.paged.rawValue
         webView.scrollView.showsHorizontalScrollIndicator = false
         webView.scrollView.showsVerticalScrollIndicator = prefs.paginationMode == EBookPaginationMode.continuous.rawValue
@@ -589,6 +611,10 @@ struct EPUBWebView: UIViewRepresentable {
         webView.onHighlightRequested = {
             webView.evaluateJavaScript("window.applyInksyncHighlight('#ffd700');")
         }
+
+        let pinch = UIPinchGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handlePinch(_:)))
+        pinch.delegate = context.coordinator
+        webView.addGestureRecognizer(pinch)
 
         return webView
     }
@@ -602,9 +628,14 @@ struct EPUBWebView: UIViewRepresentable {
 
     func updateUIView(_ webView: WKWebView, context: Context) {
         let contentHash = htmlContent.hashValue
-        let prefsState = "\(prefs.themeRaw)_\(prefs.fontSize)_\(prefs.fontFamily)_\(prefs.lineHeight)_\(prefs.letterSpacing)_\(prefs.wordSpacing)_\(prefs.textAlign)_\(prefs.paginationMode)_\(prefs.columnCount)_\(prefs.textMargin)_\(prefs.hyphenation)"
+        let prefsState = "\(prefs.themeRaw)_\(prefs.fontSize)_\(prefs.fontFamily)_\(prefs.lineHeight)_\(prefs.letterSpacing)_\(prefs.wordSpacing)_\(prefs.textAlign)_\(prefs.paginationMode)_\(prefs.columnCount)_\(prefs.textMargin)_\(prefs.hyphenation)_\(prefs.autoScroll)_\(prefs.autoScrollSpeed)_\(prefs.tapZoneStyleRaw)_\(webView.bounds.width)_\(webView.bounds.height)"
         let newHash = contentHash ^ prefsState.hashValue
         
+        // Dynamically update tap zone boundaries in the WebView DOM
+        let leftEdge = prefs.tapZoneStyle.zones.leftEdge
+        let rightEdge = prefs.tapZoneStyle.zones.rightEdge
+        webView.evaluateJavaScript("window.__inksync_left_edge = \(leftEdge); window.__inksync_right_edge = \(rightEdge);", completionHandler: nil)
+
         guard context.coordinator.lastContentHash != newHash else { return }
         
         // True when the chapter HTML itself changed (not just prefs)
@@ -613,62 +644,422 @@ struct EPUBWebView: UIViewRepresentable {
         context.coordinator.lastContentOnlyHash = contentHash
 
         if contentChanged {
-            // Chapter changed — full reload so WKUserScript reruns with latest values.
-            webView.loadHTMLString(htmlContent, baseURL: baseUrl)
+            // Swift-side HTML preprocessing: pre-inject CSS into head directly
+            var html = htmlContent
+            let css = buildReaderCSS(prefs: prefs, size: webView.bounds.size)
+            if let range = html.range(of: "</head>", options: .caseInsensitive) {
+                html = html.replacingCharacters(in: range, with: css + "</head>")
+            } else {
+                html = css + html
+            }
+            webView.loadHTMLString(html, baseURL: baseUrl)
         } else {
             // Prefs-only change — inject updated CSS directly into the live DOM.
-            // This avoids losing scroll position and is instant.
             injectLiveCSS(into: webView)
         }
 
         // Always sync native appearance
-        webView.backgroundColor = UIColor(prefs.activeTheme.background)
-        webView.scrollView.backgroundColor = webView.backgroundColor
+        webView.backgroundColor = .clear
+        webView.scrollView.backgroundColor = .clear
         webView.scrollView.isPagingEnabled = prefs.paginationMode == EBookPaginationMode.paged.rawValue
         webView.scrollView.showsVerticalScrollIndicator = prefs.paginationMode == EBookPaginationMode.continuous.rawValue
         webView.scrollView.alwaysBounceVertical = prefs.paginationMode == EBookPaginationMode.continuous.rawValue
+
+        // Apply auto-scroll logic
+        if prefs.autoScroll && prefs.paginationMode == EBookPaginationMode.continuous.rawValue {
+            let speed = prefs.autoScrollSpeed * 1.5
+            webView.evaluateJavaScript("window.startInksyncAutoScroll(\(speed));", completionHandler: nil)
+        } else {
+            webView.evaluateJavaScript("window.stopInksyncAutoScroll();", completionHandler: nil)
+        }
+    }
+
+    /// Builds the full CSS + JS block as a pure string.
+    private func buildReaderCSS(prefs: EBookPreferences, size: CGSize) -> String {
+        let isPaged = prefs.paginationMode == EBookPaginationMode.paged.rawValue
+
+        let bgColor       = prefs.activeTheme.cssBackground
+        let textColor     = prefs.activeTheme.cssText
+        let linkColor     = prefs.activeTheme.cssLink
+        let fontFamily    = prefs.fontFamily
+        let fontSize      = Int(prefs.fontSize)
+        let lineHeight    = String(format: "%.2f", prefs.lineHeight)
+        let letterSpacing = String(format: "%.4fem", prefs.letterSpacing)
+        let wordSpacing   = String(format: "%.4fem", prefs.wordSpacing)
+        let hyphenCSS     = prefs.hyphenation ? "auto" : "manual"
+        let textAlign     = prefs.textAlign
+        let margin        = prefs.textMargin
+        let paraSpace     = prefs.paragraphSpacing
+        let paraIndent    = prefs.paragraphIndent
+
+        let overflowCSS = isPaged
+            ? "overflow: hidden !important;"
+            : "overflow-x: hidden !important; overflow-y: auto !important;"
+        let widthCSS = isPaged ? "" : "width: 100vw !important; overflow-x: hidden !important;"
+        
+        let isLandscape = size.width > size.height
+        let defaultColumns = isLandscape ? 2 : 1
+        let cols = prefs.columnCount == 0 ? defaultColumns : prefs.columnCount
+        
+        let gap = Int(margin * 2)
+        
+        let pagedCSS = isPaged ? """
+            column-count: \(cols) !important;
+            column-width: auto !important;
+            column-gap: \(gap)px !important;
+            column-fill: auto !important;
+            column-rule: 1px solid rgba(128, 128, 128, 0.15) !important;
+        """ : ""
+
+        let paddingLeft = margin
+        let paddingRight = margin
+
+        return """
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+        <style id="__inksync_live__">
+        @font-face {
+            font-family: 'Literata';
+            src: local('Literata-Regular');
+            font-weight: normal;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Literata';
+            src: local('Literata-Bold');
+            font-weight: bold;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Literata';
+            src: local('Literata-Italic');
+            font-weight: normal;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'Literata';
+            src: local('Literata-BoldItalic');
+            font-weight: bold;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'Atkinson Hyperlegible';
+            src: local('AtkinsonHyperlegible-Regular');
+            font-weight: normal;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Atkinson Hyperlegible';
+            src: local('AtkinsonHyperlegible-Bold');
+            font-weight: bold;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Atkinson Hyperlegible';
+            src: local('AtkinsonHyperlegible-Italic');
+            font-weight: normal;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'Atkinson Hyperlegible';
+            src: local('AtkinsonHyperlegible-BoldItalic');
+            font-weight: bold;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'OpenDyslexic';
+            src: local('OpenDyslexic-Regular');
+            font-weight: normal;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'OpenDyslexic';
+            src: local('OpenDyslexic-Bold');
+            font-weight: bold;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'OpenDyslexic';
+            src: local('OpenDyslexic-Italic');
+            font-weight: normal;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'OpenDyslexic';
+            src: local('OpenDyslexic-BoldItalic');
+            font-weight: bold;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'Merriweather';
+            src: local('Merriweather-Regular');
+            font-weight: normal;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Merriweather';
+            src: local('Merriweather-Bold');
+            font-weight: bold;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Merriweather';
+            src: local('Merriweather-Italic');
+            font-weight: normal;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'Merriweather';
+            src: local('Merriweather-BoldItalic');
+            font-weight: bold;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'Source Serif 4';
+            src: local('SourceSerif4-Regular');
+            font-weight: normal;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Source Serif 4';
+            src: local('SourceSerif4-Regular');
+            font-weight: bold;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Source Serif 4';
+            src: local('SourceSerif4-Italic');
+            font-weight: normal;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'Source Serif 4';
+            src: local('SourceSerif4-Italic');
+            font-weight: bold;
+            font-style: italic;
+        }
+        *, *::before, *::after { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        html {
+            margin: 0 !important; padding: 0 !important;
+            height: 100vh !important; width: 100vw !important;
+            column-width: auto !important;
+            \(overflowCSS)
+            background-color: \(bgColor) !important;
+        }
+        body {
+            color: \(textColor) !important;
+            font-family: \(fontFamily);
+            font-size: \(fontSize)px;
+            line-height: \(lineHeight);
+            text-align: \(textAlign) !important;
+            \(pagedCSS)
+            margin: 0 !important;
+            height: 100vh !important;
+            \(widthCSS)
+            padding-top: 60px !important;
+            padding-bottom: 60px !important;
+            padding-left: \(paddingLeft)px !important;
+            padding-right: \(paddingRight)px !important;
+            box-sizing: border-box !important;
+            word-wrap: break-word;
+            -webkit-text-size-adjust: none;
+            letter-spacing: \(letterSpacing) !important;
+            word-spacing: \(wordSpacing) !important;
+            -webkit-hyphens: \(hyphenCSS) !important;
+            hyphens: \(hyphenCSS) !important;
+        }
+        div, section, article {
+            column-count: auto !important;
+            column-width: auto !important;
+        }
+        p { margin-bottom: \(paraSpace)em !important; text-indent: \(paraIndent)em !important; }
+        p, div, span, li, td, th, h1, h2, h3, h4, h5, h6 { color: \(textColor) !important; line-height: \(lineHeight); }
+        img, svg, .page, .chunk-container { display: block !important; margin-left: auto !important; margin-right: auto !important; }
+        img { max-width: 100%; height: auto; border-radius: 4px; object-fit: contain; max-height: calc(100vh - 120px); }
+        a { color: \(linkColor) !important; }
+        blockquote { border-left: 3px solid \(linkColor); margin-left: 0; padding-left: 16px; opacity: 0.85; }
+        mark.inksync-highlight { background-color: #ffd700; color: inherit; border-radius: 2px; mix-blend-mode: multiply; -webkit-mix-blend-mode: multiply; padding: 0 1px; }
+        </style>
+        """
     }
 
     /// Injects a live CSS update into the existing WebView DOM — no reload required.
-    /// Creates or replaces the `__inksync_live__` style tag.
     private func injectLiveCSS(into webView: WKWebView) {
-        let bg    = prefs.activeTheme.cssBackground
-        let fg    = prefs.activeTheme.cssText
-        let link  = prefs.activeTheme.cssLink
-        let ff    = prefs.fontFamily
-        let fs    = Int(prefs.fontSize)
-        let lh    = String(format: "%.2f", prefs.lineHeight)
-        let ls    = String(format: "%.4f", prefs.letterSpacing)
-        let ws    = String(format: "%.4f", prefs.wordSpacing)
-        let hyph  = prefs.hyphenation ? "auto" : "manual"
-        let align = prefs.textAlign
-        let marg  = prefs.textMargin
         let isPaged = prefs.paginationMode == EBookPaginationMode.paged.rawValue
-        let colW: String
-        switch prefs.columnCount {
-        case 2:  colW = "column-width: calc(50vw - 30px) !important; column-gap: 60px !important;"
-        case 1:  colW = "column-width: 100vw !important; column-gap: 0 !important;"
-        default: colW = isPaged ? "column-width: 100vw !important; column-gap: 0 !important;" : ""
-        }
+        
+        let bg            = prefs.activeTheme.cssBackground
+        let fg            = prefs.activeTheme.cssText
+        let link          = prefs.activeTheme.cssLink
+        let ff            = prefs.fontFamily
+        let fs            = Int(prefs.fontSize)
+        let lh            = String(format: "%.2f", prefs.lineHeight)
+        let ls            = String(format: "%.4fem", prefs.letterSpacing)
+        let ws            = String(format: "%.4fem", prefs.wordSpacing)
+        let hyph          = prefs.hyphenation ? "auto" : "manual"
+        let align         = prefs.textAlign
+        let margin        = prefs.textMargin
+        
+        let size = webView.bounds.size
+        let isLandscape = size.width > size.height
+        let defaultColumns = isLandscape ? 2 : 1
+        let cols = prefs.columnCount == 0 ? defaultColumns : prefs.columnCount
+        
+        let gap = Int(margin * 2)
+        
+        let pagedCSS = isPaged ? """
+            column-count: \(cols) !important;
+            column-width: auto !important;
+            column-gap: \(gap)px !important;
+            column-fill: auto !important;
+            column-rule: 1px solid rgba(128, 128, 128, 0.15) !important;
+        """ : ""
+
+        let paddingLeft = margin
+        let paddingRight = margin
 
         let css = """
+        @font-face {
+            font-family: 'Literata';
+            src: local('Literata-Regular');
+            font-weight: normal;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Literata';
+            src: local('Literata-Bold');
+            font-weight: bold;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Literata';
+            src: local('Literata-Italic');
+            font-weight: normal;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'Literata';
+            src: local('Literata-BoldItalic');
+            font-weight: bold;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'Atkinson Hyperlegible';
+            src: local('AtkinsonHyperlegible-Regular');
+            font-weight: normal;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Atkinson Hyperlegible';
+            src: local('AtkinsonHyperlegible-Bold');
+            font-weight: bold;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Atkinson Hyperlegible';
+            src: local('AtkinsonHyperlegible-Italic');
+            font-weight: normal;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'Atkinson Hyperlegible';
+            src: local('AtkinsonHyperlegible-BoldItalic');
+            font-weight: bold;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'OpenDyslexic';
+            src: local('OpenDyslexic-Regular');
+            font-weight: normal;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'OpenDyslexic';
+            src: local('OpenDyslexic-Bold');
+            font-weight: bold;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'OpenDyslexic';
+            src: local('OpenDyslexic-Italic');
+            font-weight: normal;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'OpenDyslexic';
+            src: local('OpenDyslexic-BoldItalic');
+            font-weight: bold;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'Merriweather';
+            src: local('Merriweather-Regular');
+            font-weight: normal;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Merriweather';
+            src: local('Merriweather-Bold');
+            font-weight: bold;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Merriweather';
+            src: local('Merriweather-Italic');
+            font-weight: normal;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'Merriweather';
+            src: local('Merriweather-BoldItalic');
+            font-weight: bold;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'Source Serif 4';
+            src: local('SourceSerif4-Regular');
+            font-weight: normal;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Source Serif 4';
+            src: local('SourceSerif4-Regular');
+            font-weight: bold;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Source Serif 4';
+            src: local('SourceSerif4-Italic');
+            font-weight: normal;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'Source Serif 4';
+            src: local('SourceSerif4-Italic');
+            font-weight: bold;
+            font-style: italic;
+        }
         body {
-            font-family: '\(ff)' !important;
+            font-family: \(ff) !important;
             font-size: \(fs)px !important;
             line-height: \(lh) !important;
             background-color: \(bg) !important;
             color: \(fg) !important;
-            letter-spacing: \(ls)em !important;
-            word-spacing: \(ws)em !important;
+            letter-spacing: \(ls) !important;
+            word-spacing: \(ws) !important;
             text-align: \(align) !important;
             -webkit-hyphens: \(hyph) !important;
             hyphens: \(hyph) !important;
-            \(colW)
+            \(pagedCSS)
+            padding-left: \(paddingLeft)px !important;
+            padding-right: \(paddingRight)px !important;
         }
-        body, p, div, span, li { color: \(fg) !important; }
+        div, section, article {
+            column-count: auto !important;
+            column-width: auto !important;
+        }
+        body, p, div, span, li, td, th, h1, h2, h3, h4, h5, h6 { color: \(fg) !important; }
         a { color: \(link) !important; }
-        html { background-color: \(bg) !important; }
-        .content-container { padding-left: \(marg)px !important; padding-right: \(marg)px !important; }
+        html { background-color: \(bg) !important; column-width: auto !important; }
         """
 
         let js = """
@@ -688,11 +1079,9 @@ struct EPUBWebView: UIViewRepresentable {
 struct BookReaderEngine: View {
     let pdf: ConvertedPDF
     var onDismiss: () -> Void
-    /// All books in the library — used to find the next volume in a series.
     var allBooks: [ConvertedPDF] = []
     
     @StateObject private var vm: BookReaderViewModel
-    @ObservedObject private var tts = TTSManager.shared
     @State private var webViewReference: WKWebView?
     @State private var chromeVisible = false
     @State private var showAnnotations = false
@@ -700,8 +1089,18 @@ struct BookReaderEngine: View {
     @State private var showTOC = false
     @State private var activeHighlightToEdit: SDAnnotation? = nil
     @ObservedObject private var prefs = EBookPreferences.shared
+    @ObservedObject private var sleepTimer = SleepTimerManager.shared
+    @State private var scrollToLastPageOnLoad = false
+    @State private var annotationForFullEdit: SDAnnotation? = nil
+    
+    @Environment(\.modelContext) private var modelContext
     @State private var extractedTextParams: String = "Chapter reading is not extracted to string yet."
     @State private var lastBrightnessDragValue: CGFloat = 0
+    
+    // Custom Toast messages
+    @State private var showToast = false
+    @State private var toastMessage = ""
+    @FocusState private var isReaderFocused: Bool
     
     init(pdf: ConvertedPDF, onDismiss: @escaping () -> Void, allBooks: [ConvertedPDF] = []) {
         self.pdf = pdf
@@ -720,7 +1119,7 @@ struct BookReaderEngine: View {
             } else {
                 if !vm.chapterHtmlFiles.isEmpty {
                     let currentChapterURL = vm.chapterHtmlFiles[vm.currentChapterIndex]
-                    EPUBWebView(htmlContent: $vm.currentChapterHTML, baseUrl: .constant(currentChapterURL), prefs: EBookPreferences.shared, onHighlightCreated: { selectedText, _ in
+                    EPUBWebView(htmlContent: $vm.currentChapterHTML, baseUrl: .constant(currentChapterURL), prefs: EBookPreferences.shared, scrollToLastPageOnLoad: $scrollToLastPageOnLoad, onHighlightCreated: { selectedText, _ in
 
                         let highlight = Annotation(
                             pdfID: pdf.id,
@@ -737,6 +1136,8 @@ struct BookReaderEngine: View {
 
                         // Zettelkasten Integration: Instantly pop up editor for new highlight
                         let sdAnnotation = SDAnnotation(from: highlight)
+                        modelContext.insert(sdAnnotation)
+                        try? modelContext.save()
                         self.activeHighlightToEdit = sdAnnotation
 
                     }, onPageLoaded: { webView in
@@ -747,12 +1148,14 @@ struct BookReaderEngine: View {
                                 let safeText = text.replacingOccurrences(of: "`", with: "\\`")
                                                    .replacingOccurrences(of: "\"", with: "\\\"")
                                                    .replacingOccurrences(of: "\n", with: " ")
-                                let js = "window.restoreInksyncHighlight(`\(safeText)`, '\(color)');"
+                                                   let js = "window.restoreInksyncHighlight(`\(safeText)`, '\(color)');"
                                 webView.evaluateJavaScript(js)
                             }
                         }
                     },
                     onCenterTap: { chromeVisible.toggle() },
+                    onLeftTap: { pageBackward() },
+                    onRightTap: { pageForward() },
                     onNextChapter: {
                         let lastIdx = vm.chapterHtmlFiles.count - 1
                         if vm.currentChapterIndex >= lastIdx {
@@ -763,6 +1166,7 @@ struct BookReaderEngine: View {
                         }
                     },
                     onPrevChapter: {
+                        scrollToLastPageOnLoad = true
                         vm.loadChapter(index: max(0, vm.currentChapterIndex - 1))
                     })
                     .edgesIgnoringSafeArea(.horizontal)
@@ -823,20 +1227,31 @@ struct BookReaderEngine: View {
                     }
                 ),
                 totalPages: vm.chapterHtmlFiles.count,
-                hasTTS: true,
-                isSpeaking: tts.isSpeaking,
-                onTTSToggle: {
-                    if tts.isSpeaking {
-                        tts.stop()
-                    } else {
-                        webViewReference?.evaluateJavaScript("document.body.innerText") { result, _ in
-                            if let text = result as? String, !text.isEmpty {
-                                tts.speak(text: text)
-                            }
+                hasCopyAction: true,
+                onCopyToggle: {
+                    webViewReference?.evaluateJavaScript("document.body.innerText") { result, _ in
+                        if let text = result as? String, !text.isEmpty {
+                            UIPasteboard.general.string = text
+                            showToastMessage("Chapter copied to clipboard")
+                            Haptics.shared.playImpact(style: .light)
                         }
                     }
                 }
             )
+            
+            if showToast {
+                Text(toastMessage)
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 10)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 0.5))
+                    .shadow(color: .black.opacity(0.2), radius: 12, y: 4)
+                    .padding(.bottom, 110)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .zIndex(100)
+            }
         }
         .onAppear {
             if let saved = ReaderProgressTracker.shared.progress(for: pdf.id), let ch = saved.currentChapterIndex {
@@ -845,9 +1260,9 @@ struct BookReaderEngine: View {
             // Apply per-book theme + typography profiles
             prefs.applyBookTheme(bookID: pdf.id.uuidString)
             prefs.applyBookTypography(bookID: pdf.id.uuidString)
+            isReaderFocused = true
         }
         .onDisappear {
-            tts.stop()
             ReaderProgressTracker.shared.update(ReadingProgress(
                 pdfID: pdf.id, lastOpenedAt: Date(), currentPageIndex: vm.currentChapterIndex,
                 currentChapterIndex: vm.currentChapterIndex, currentChapterOffset: 0.0,
@@ -855,10 +1270,39 @@ struct BookReaderEngine: View {
                 readingSessionDates: [Date()], estimatedMinutesRemaining: nil
             ))
         }
-        .sheet(isPresented: $showAnnotations) {
-            AnnotationListView(pdfID: pdf.id, documentTitle: pdf.name)
+        .overlay { if prefs.showReadingRuler { ReadingRulerOverlay() } }
+        .onChange(of: sleepTimer.didFire) { _, fired in
+            if fired { onDismiss() }
         }
-        .sheet(item: $activeHighlightToEdit) { annotation in
+        .sheet(isPresented: $showAnnotations) {
+            StudyNotebookView(bookID: pdf.id.uuidString, bookTitle: pdf.name, fileURL: pdf.url)
+        }
+        .popover(item: $activeHighlightToEdit) { annotation in
+            HighlightQuickPopoverView(
+                annotation: annotation,
+                onDelete: {
+                    if let webView = webViewReference, let text = annotation.selectedText {
+                        let safeText = text.replacingOccurrences(of: "`", with: "\\`").replacingOccurrences(of: "\"", with: "\\\"").replacingOccurrences(of: "\n", with: " ")
+                        webView.evaluateJavaScript("window.removeInksyncHighlight(`\(safeText)`);")
+                    }
+                    modelContext.delete(annotation)
+                    try? modelContext.save()
+                    activeHighlightToEdit = nil
+                },
+                onEditNote: {
+                    annotationForFullEdit = annotation
+                    activeHighlightToEdit = nil
+                },
+                onColorSelected: { colorHex in
+                    if let webView = webViewReference, let text = annotation.selectedText {
+                        let safeText = text.replacingOccurrences(of: "`", with: "\\`").replacingOccurrences(of: "\"", with: "\\\"").replacingOccurrences(of: "\n", with: " ")
+                        webView.evaluateJavaScript("window.updateInksyncHighlightColor(`\(safeText)`, '\(colorHex)');")
+                    }
+                }
+            )
+            .presentationCompactAdaptation(.popover)
+        }
+        .sheet(item: $annotationForFullEdit) { annotation in
             AnnotationEditSheet(annotation: annotation)
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
@@ -873,8 +1317,115 @@ struct BookReaderEngine: View {
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
-        .onChange(of: vm.currentChapterIndex) { _, _ in
-            GamificationManager.shared.logPageRead()
+        .focusable()
+        .focused($isReaderFocused)
+        .focusEffectDisabled()
+        .onKeyPress(.leftArrow) {
+            pageBackward()
+            return .handled
+        }
+        .onKeyPress(.rightArrow) {
+            pageForward()
+            return .handled
+        }
+        .onKeyPress(.space) {
+            pageForward()
+            return .handled
+        }
+        .onKeyPress(.escape) {
+            onDismiss()
+            return .handled
+        }
+        .preferredColorScheme(prefs.activeTheme.isDark ? .dark : .light)
+    }
+
+    private func showToastMessage(_ message: String) {
+        toastMessage = message
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+            showToast = true
+        }
+        Task {
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            withAnimation(.easeOut(duration: 0.3)) {
+                if toastMessage == message {
+                    showToast = false
+                }
+            }
+        }
+    }
+
+
+    // MARK: - Navigation helpers
+
+    private func pageForward() {
+        guard let webView = webViewReference else { return }
+        let scroll = webView.scrollView
+        let isPaged = prefs.paginationMode == EBookPaginationMode.paged.rawValue
+        
+        if isPaged {
+            let width = webView.bounds.width
+            let currentOffset = scroll.contentOffset.x
+            let targetOffset = currentOffset + width
+            let maxOffset = scroll.contentSize.width - width
+            
+            if targetOffset >= scroll.contentSize.width - 4 {
+                let lastIdx = vm.chapterHtmlFiles.count - 1
+                if vm.currentChapterIndex >= lastIdx {
+                    attemptBookSeriesContinuation()
+                } else {
+                    vm.loadChapter(index: min(lastIdx, vm.currentChapterIndex + 1))
+                }
+            } else {
+                scroll.setContentOffset(CGPoint(x: min(targetOffset, maxOffset), y: 0), animated: true)
+            }
+        } else {
+            let height = webView.bounds.height
+            let currentOffset = scroll.contentOffset.y
+            let targetOffset = currentOffset + height * 0.9
+            let maxOffset = scroll.contentSize.height - height
+            
+            if targetOffset >= scroll.contentSize.height - 4 {
+                let lastIdx = vm.chapterHtmlFiles.count - 1
+                if vm.currentChapterIndex >= lastIdx {
+                    attemptBookSeriesContinuation()
+                } else {
+                    vm.loadChapter(index: min(lastIdx, vm.currentChapterIndex + 1))
+                }
+            } else {
+                scroll.setContentOffset(CGPoint(x: 0, y: min(targetOffset, maxOffset)), animated: true)
+            }
+        }
+    }
+
+    private func pageBackward() {
+        guard let webView = webViewReference else { return }
+        let scroll = webView.scrollView
+        let isPaged = prefs.paginationMode == EBookPaginationMode.paged.rawValue
+        
+        if isPaged {
+            let width = webView.bounds.width
+            let currentOffset = scroll.contentOffset.x
+            let targetOffset = currentOffset - width
+            
+            if targetOffset <= 4 {
+                if vm.currentChapterIndex > 0 {
+                    vm.loadChapter(index: vm.currentChapterIndex - 1)
+                }
+            } else {
+                scroll.setContentOffset(CGPoint(x: max(0, targetOffset), y: 0), animated: true)
+            }
+        } else {
+            let height = webView.bounds.height
+            let currentOffset = scroll.contentOffset.y
+            let targetOffset = currentOffset - height * 0.9
+            
+            if targetOffset <= 4 {
+                if vm.currentChapterIndex > 0 {
+                    vm.loadChapter(index: vm.currentChapterIndex - 1)
+                }
+            } else {
+                scroll.setContentOffset(CGPoint(x: 0, y: max(0, targetOffset)), animated: true)
+            }
         }
     }
 
@@ -1126,7 +1677,7 @@ struct AnnotationListView: View {
                             
                             if let note = annotation.noteText, !note.isEmpty {
                                 HStack(alignment: .top) {
-                                    Image(systemName: "pencil.line")
+                                    Image(systemName: "note.text")
                                         .foregroundColor(.orange)
                                     Text(note)
                                         .font(.subheadline)
@@ -1154,6 +1705,67 @@ struct AnnotationListView: View {
                 }
             }
         }
+    }
+}
+
+struct HighlightQuickPopoverView: View {
+    @Bindable var annotation: SDAnnotation
+    var onDelete: () -> Void
+    var onEditNote: () -> Void
+    var onColorSelected: (String) -> Void
+    
+    let colors = [
+        ("#FFD60A", Color.yellow),
+        ("#30D158", Color.green),
+        ("#FF375F", Color.pink),
+        ("#0A84FF", Color.blue),
+        ("#BF5AF2", Color.purple)
+    ]
+    
+    var body: some View {
+        VStack(spacing: 12) {
+            // Colors row
+            HStack(spacing: 14) {
+                ForEach(colors, id: \.0) { item in
+                    Circle()
+                        .fill(item.1)
+                        .frame(width: 28, height: 28)
+                        .overlay(
+                            Circle()
+                                .stroke(Color.primary.opacity(0.3), lineWidth: annotation.colorHex == item.0 ? 3 : 0)
+                        )
+                        .onTapGesture {
+                            annotation.colorHex = item.0
+                            annotation.modifiedAt = Date()
+                            try? annotation.modelContext?.save()
+                            onColorSelected(item.0)
+                        }
+                }
+            }
+            .padding(.top, 4)
+            
+            Divider()
+            
+            // Actions row
+            HStack(spacing: 20) {
+                Button(action: onEditNote) {
+                    Label("Add Note", systemImage: "square.and.pencil")
+                        .font(.subheadline)
+                        .foregroundColor(.primary)
+                }
+                
+                Spacer()
+                
+                Button(action: onDelete) {
+                    Label("Delete", systemImage: "trash")
+                        .font(.subheadline)
+                        .foregroundColor(.red)
+                }
+            }
+            .padding(.horizontal, 4)
+        }
+        .padding(12)
+        .frame(width: 260, height: 110)
     }
 }
 

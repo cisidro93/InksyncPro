@@ -10,15 +10,32 @@ actor LibraryScanner {
 
     func scanLibrary(addedByMode: AppUIMode? = nil, manager: ConversionManager) async {
         let fileManager = FileManager.default
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
         let inboxDir  = appSupport.appendingPathComponent("InksyncVault/Inbox", isDirectory: true)
-        let docDir    = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let docDir    = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
+
+        func relativePath(for url: URL) -> String {
+            let path = url.path
+            if let range = path.range(of: "/Documents/") {
+                return "Documents/" + String(path[range.upperBound...])
+            }
+            if let range = path.range(of: "/InksyncVault/Inbox/") {
+                return "Inbox/" + String(path[range.upperBound...])
+            }
+            return url.lastPathComponent
+        }
 
         var newPDFs: [ConvertedPDF] = []
         let keys: [URLResourceKey] = [.nameKey, .isDirectoryKey, .fileSizeKey]
 
         let currentPaths = await MainActor.run {
-            manager.convertedPDFs.map { $0.url.lastPathComponent }
+            manager.convertedPDFs.map { pdf -> String in
+                if pdf.isLinked {
+                    return pdf.url.path
+                } else {
+                    return relativePath(for: pdf.url)
+                }
+            }
         }
         let pathSet = Set(currentPaths)
 
@@ -47,32 +64,78 @@ actor LibraryScanner {
                 if fileURL.path.contains("Recovered_Vault") || fileURL.path.contains("LibraryVault") { continue }
 
                 let ext = fileURL.pathExtension.lowercased()
-                guard ["pdf", "cbz", "zip", "epub", "cbr", "cbt"].contains(ext) else { continue }
+                guard ["pdf", "epub", "cbz", "cbr", "cb7", "cbt", "zip"].contains(ext) else { continue }
 
                 let filename = fileURL.lastPathComponent
-                guard !pathSet.contains(filename) else { continue }
+                let relPath = relativePath(for: fileURL)
+                guard !pathSet.contains(relPath) else { continue }
 
                 let fileSize = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
 
-                // Infer content type from extension:
-                // • EPUB → always a book (e-reader format)
-                // • PDF  → book by default (most PDFs are documents/books, not comics)
-                // • CBZ/CBR/CBT/ZIP → comic (these are the canonical comic archive formats)
-                let inferredContentType: ContentType
-                switch ext {
-                case "epub", "pdf":
-                    inferredContentType = .book
-                case "cbz", "cbr", "cbt", "zip":
-                    inferredContentType = .comic
-                default:
-                    inferredContentType = .comic
+                let inferredContentType = MetadataHeuristics.detectAsymmetricContentType(url: fileURL)
+
+                let parentName = fileURL.deletingLastPathComponent().lastPathComponent
+                let invalidParents = ["documents", "inbox", "tmp", "caches", "file provider storage", "downloads", "inksyncstaging_", "folder_spider_", "folderspider_"]
+                var seriesName: String? = nil
+                if !invalidParents.contains(where: { parentName.lowercased().hasPrefix($0) }) && parentName.count > 2 && UUID(uuidString: parentName) == nil {
+                    seriesName = parentName
+                }
+
+                let parsedTokens = DeterministicFilenameParser.parse(filename: filename)
+                let fallbackSeries = parsedTokens.seriesName.isEmpty ? (seriesName ?? "Unknown") : parsedTokens.seriesName
+                var metadata = PDFMetadata(title: parsedTokens.title ?? filename)
+                metadata.series = fallbackSeries
+                metadata.volume = parsedTokens.volume
+                metadata.issueNumber = parsedTokens.issueNumber
+                
+                // Fallback to smart filename extraction if series is still missing/empty
+                if metadata.series == nil || metadata.series?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == true {
+                    let parsedSeries = SeriesNameParser.cleanFolderName(MetadataHeuristics.cleanFilename(filename))
+                    if !parsedSeries.isEmpty {
+                        metadata.series = parsedSeries
+                    }
+                }
+
+                var finalContentType = inferredContentType
+                let isArchive = ["cbz", "zip"].contains(ext)
+                if isArchive {
+                    if let parsedInfo = ComicInfoParser.parse(from: fileURL) {
+                        metadata.isManga = parsedInfo.manga
+                        if parsedInfo.manga {
+                            finalContentType = .manga
+                        }
+                        if let parsedSeries = parsedInfo.series, !parsedSeries.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            metadata.series = parsedSeries
+                        }
+                        if let parsedTitle = parsedInfo.title, !parsedTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            metadata.title = parsedTitle
+                        }
+                        if let parsedNum = parsedInfo.number {
+                            metadata.issueNumber = parsedNum
+                        }
+                        if let parsedVolume = parsedInfo.volume {
+                            metadata.volume = String(parsedVolume)
+                        }
+                        if let writer = parsedInfo.writer {
+                            metadata.writer = writer
+                        }
+                        if let publisher = parsedInfo.publisher {
+                            metadata.publisher = publisher
+                        }
+                        if let summary = parsedInfo.summary {
+                            metadata.summary = summary
+                        }
+                        for tag in parsedInfo.tags {
+                            if !metadata.tags.contains(tag) { metadata.tags.append(tag) }
+                        }
+                    }
                 }
 
                 var newPDF = ConvertedPDF(
                     name: filename, url: fileURL,
                     pageCount: 0, fileSize: fileSize,
-                    metadata: PDFMetadata(title: filename),
-                    contentType: inferredContentType
+                    metadata: metadata,
+                    contentType: finalContentType
                 )
                 newPDF.addedByMode = addedByMode ?? .pro
                 newPDFs.append(newPDF)
@@ -86,6 +149,7 @@ actor LibraryScanner {
                 Logger.shared.log("Library Scanned: Found \(finalNewPDFs.count) new files (mode: \(addedByMode?.rawValue ?? "Pro"))", category: "Library")
                 manager.saveLibrary()
             }
+            await LibraryService.shared.runSmartGrouping()
         }
 
         // ── Cover + page-count backfill ──────────────────────────────────────
@@ -100,40 +164,43 @@ actor LibraryScanner {
         }
 
         if !pdfsToProcess.isEmpty {
+            // Materialise the work list as a plain value-type array before crossing into
+            // Task.detached isolation. The original code captured a mutable iterator and an
+            // Int counter by reference across actor boundaries — a data race in strict concurrency.
+            let workItems: [(id: UUID, url: URL)] = pdfsToProcess.map { ($0.id, $0.url) }
+            let perfClass = ProcessInfo.processInfo.performanceClass
+            let maxConcurrency = perfClass == .low ? 2 : 4
+
             Task.detached(priority: .background) {
                 await withTaskGroup(of: (UUID, Int)?.self) { group in
-                    var inFlight = 0
-                    var pending = pdfsToProcess.makeIterator()
-
-                    func enqueue() {
-                        guard let pdf = pending.next() else { return }
-                        group.addTask {
-                            // H3: Call extractCoverImageStatic directly — it is `nonisolated static`
-                            // and runs freely on the background thread pool. This eliminates the
-                            // background→main→background double actor-hop that generateCoverThumbnail
-                            // caused (it bounces to @MainActor then re-dispatches to Task.detached).
-                            let image = PhysicalFileSystemRouter.extractCoverImageStatic(from: pdf.url)
-                            if let image, let jpegData = image.jpegData(compressionQuality: 0.7) {
-                                // Single MainActor round-trip: write cover + warm NSCache
-                                await MainActor.run {
-                                    PhysicalFileSystemRouter.shared.saveCoverImage(jpegData, for: pdf, manager: manager)
-                                }
-                            }
-                            let count = PhysicalFileSystemRouter.getPageCountStatic(from: pdf.url)
-                            return count > 0 ? (pdf.id, count) : nil
-                        }
-                        inFlight += 1
-                    }
-
-                    // Dynamically set concurrency based on device capability
-                    let perfClass = ProcessInfo.processInfo.performanceClass
-                    let maxConcurrency = perfClass == .low ? 2 : 4
+                    var nextIndex = 0
 
                     // Seed initial slots
-                    for _ in 0..<min(maxConcurrency, pdfsToProcess.count) { enqueue() }
+                    func enqueueNext() {
+                        guard nextIndex < workItems.count else { return }
+                        let item = workItems[nextIndex]
+                        nextIndex += 1
+                        group.addTask {
+                            let image = PhysicalFileSystemRouter.extractCoverImageStatic(from: item.url)
+                            if let image, let jpegData = image.jpegData(compressionQuality: 0.7) {
+                                let capturedID = item.id
+                                await MainActor.run {
+                                    // Look up the full ConvertedPDF on MainActor — saveCoverImage
+                                    // requires the ConvertedPDF object, not just a UUID.
+                                    if let pdf = manager.convertedPDFs.first(where: { $0.id == capturedID }) {
+                                        PhysicalFileSystemRouter.shared.saveCoverImage(
+                                            jpegData, for: pdf, manager: manager)
+                                    }
+                                }
+                            }
+                            let count = PhysicalFileSystemRouter.getPageCountStatic(from: item.url)
+                            return count > 0 ? (item.id, count) : nil
+                        }
+                    }
+
+                    for _ in 0..<min(maxConcurrency, workItems.count) { enqueueNext() }
 
                     for await result in group {
-                        inFlight -= 1
                         if let (id, count) = result {
                             await MainActor.run {
                                 if let idx = manager.convertedPDFs.firstIndex(where: { $0.id == id }) {
@@ -141,11 +208,9 @@ actor LibraryScanner {
                                 }
                             }
                         }
-                        // Refill the slot immediately
-                        enqueue()
+                        enqueueNext()
                     }
                 }
-                // Single save after all backfill work is done
                 await MainActor.run { manager.saveLibrary() }
             }
         }
@@ -153,80 +218,91 @@ actor LibraryScanner {
         // ── Deduplication & ghost-file pruning ───────────────────────────────
         let allPDFs = await MainActor.run { manager.convertedPDFs }
         
-        var uniquePDFs: [ConvertedPDF] = []
-        var seenNames = Set<String>()
+        var seenPaths = Set<String>()
         var missingIDs = Set<UUID>()
-        
-        var didRepairURLs = false
+        var repairedURLs: [UUID: URL] = [:]
 
         // PERF D-M1: yield every 50 files so iCloud-backed fileExists calls
         // (which can block waiting for ubiquity metadata) don't stall the actor
         // thread and delay the first library render.
         var pruneYieldCount = 0
-        for var pdf in allPDFs {
+        for pdf in allPDFs {
             pruneYieldCount += 1
             if pruneYieldCount % 50 == 0 { await Task.yield() }
 
-            if seenNames.contains(pdf.url.lastPathComponent) {
+            if pdf.isLinked {
+                if seenPaths.contains(pdf.url.path) {
+                    missingIDs.insert(pdf.id)
+                    continue
+                }
+                seenPaths.insert(pdf.url.path)
+                continue
+            }
+
+            var resolvedURL = pdf.url
+            var didRepair = false
+
+            if !fileManager.fileExists(atPath: pdf.url.path) {
+                // Sandbox-Shift Repair Logic
+                let oldPath = pdf.url.path
+                if let docRange = oldPath.range(of: "/Documents/") {
+                    let relPath = String(oldPath[docRange.upperBound...])
+                    let checkURL = docDir.appendingPathComponent(relPath)
+                    if fileManager.fileExists(atPath: checkURL.path) {
+                        resolvedURL = checkURL
+                        didRepair = true
+                    }
+                }
+                if !didRepair, let inboxRange = oldPath.range(of: "/InksyncVault/Inbox/") {
+                    let relPath = String(oldPath[inboxRange.upperBound...])
+                    let checkURL = inboxDir.appendingPathComponent(relPath)
+                    if fileManager.fileExists(atPath: checkURL.path) {
+                        resolvedURL = checkURL
+                        didRepair = true
+                    }
+                }
+                // Fallback: Check root of Documents and Inbox
+                if !didRepair {
+                    let rootDoc = docDir.appendingPathComponent(pdf.url.lastPathComponent)
+                    let rootInbox = inboxDir.appendingPathComponent(pdf.url.lastPathComponent)
+                    if fileManager.fileExists(atPath: rootDoc.path) {
+                        resolvedURL = rootDoc
+                        didRepair = true
+                    } else if fileManager.fileExists(atPath: rootInbox.path) {
+                        resolvedURL = rootInbox
+                        didRepair = true
+                    }
+                }
+            }
+
+            if didRepair {
+                repairedURLs[pdf.id] = resolvedURL
+            }
+
+            if seenPaths.contains(resolvedURL.path) {
                 missingIDs.insert(pdf.id)
                 continue
             }
-            seenNames.insert(pdf.url.lastPathComponent)
 
-            if pdf.isLinked {
-                uniquePDFs.append(pdf)
-                continue
-            }
-
-            if fileManager.fileExists(atPath: pdf.url.path) {
-                uniquePDFs.append(pdf)
-                continue
-            }
-
-            // Sandbox-Shift Repair Logic
-            var repairedURL: URL? = nil
-            let oldPath = pdf.url.path
-
-            if let docRange = oldPath.range(of: "/Documents/") {
-                let relPath = String(oldPath[docRange.upperBound...])
-                let checkURL = docDir.appendingPathComponent(relPath)
-                if fileManager.fileExists(atPath: checkURL.path) {
-                    repairedURL = checkURL
-                }
-            }
-            if repairedURL == nil, let inboxRange = oldPath.range(of: "/InksyncVault/Inbox/") {
-                let relPath = String(oldPath[inboxRange.upperBound...])
-                let checkURL = inboxDir.appendingPathComponent(relPath)
-                if fileManager.fileExists(atPath: checkURL.path) {
-                    repairedURL = checkURL
-                }
-            }
-
-            // Fallback: Check root of Documents and Inbox
-            if repairedURL == nil {
-                let rootDoc = docDir.appendingPathComponent(pdf.url.lastPathComponent)
-                let rootInbox = inboxDir.appendingPathComponent(pdf.url.lastPathComponent)
-                if fileManager.fileExists(atPath: rootDoc.path) {
-                    repairedURL = rootDoc
-                } else if fileManager.fileExists(atPath: rootInbox.path) {
-                    repairedURL = rootInbox
-                }
-            }
-
-            if let newURL = repairedURL {
-                pdf.url = newURL
-                didRepairURLs = true
-                uniquePDFs.append(pdf)
+            if fileManager.fileExists(atPath: resolvedURL.path) {
+                seenPaths.insert(resolvedURL.path)
             } else {
                 missingIDs.insert(pdf.id)
             }
         }
 
-        let requiresPrune = !missingIDs.isEmpty || didRepairURLs
+        let requiresPrune = !missingIDs.isEmpty || !repairedURLs.isEmpty
         if requiresPrune {
             await MainActor.run {
-                manager.convertedPDFs = uniquePDFs
-                Logger.shared.log("Library Pruned: Repaired sandbox-shifted URLs and removed \(missingIDs.count) missing files", category: "Library")
+                if !missingIDs.isEmpty {
+                    manager.convertedPDFs.removeAll { missingIDs.contains($0.id) }
+                }
+                for (id, url) in repairedURLs {
+                    if let idx = manager.convertedPDFs.firstIndex(where: { $0.id == id }) {
+                        manager.convertedPDFs[idx].url = url
+                    }
+                }
+                Logger.shared.log("Library Pruned: Repaired \(repairedURLs.count) sandbox-shifted URLs and removed \(missingIDs.count) missing files", category: "Library")
                 manager.saveLibrary()
             }
         }

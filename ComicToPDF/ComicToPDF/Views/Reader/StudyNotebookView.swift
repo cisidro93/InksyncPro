@@ -34,6 +34,9 @@ struct StudyNotebookView: View {
     // Pro Search & Filter State
     @State private var highlightSearchQuery = ""
     @State private var highlightSortNewest = true
+    @State private var selectedTagFilter: String? = nil
+    @State private var activeHighlightToEdit: SDAnnotation? = nil
+    @State private var showWritingAssistant = false
     
     // ✅ Speech-to-Text Subsystem
     @StateObject private var speechManager = SpeechRecognitionManager.shared
@@ -53,7 +56,7 @@ struct StudyNotebookView: View {
             VStack(spacing: 0) {
                 // MARK: Glassmorphic Header
                 HStack(spacing: 12) {
-                    Image(systemName: "character.book.closed.fill")
+                    Image(systemName: "notebook.toptab.fill")
                         .foregroundStyle(LinearGradient(colors: [Theme.blue, Color.purple], startPoint: .topLeading, endPoint: .bottomTrailing))
                         .font(.system(size: 18, weight: .bold))
                     
@@ -115,10 +118,23 @@ struct StudyNotebookView: View {
                             .clipShape(Circle())
                     }
                     
+                    // Spelling & Grammar Assistant
+                    Button {
+                        showWritingAssistant = true
+                    } label: {
+                        Image(systemName: "checkmark.bubble.fill")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(.blue)
+                            .padding(8)
+                            .background(Color.blue.opacity(0.1))
+                            .clipShape(Circle())
+                    }
+                    
                     // Export Suite Menu
                     Menu {
                         Button { exportNotes(as: .markdown) } label: { Label("Export Markdown (.md)", systemImage: "arrow.down.doc") }
                         Button { exportNotes(as: .plainText) } label: { Label("Export Plain Text (.txt)", systemImage: "doc.text") }
+                        Button { exportZettelkastenZip() } label: { Label("Export Zettelkasten Zip (Obsidian)", systemImage: "archivebox") }
                         Button { shareNotes() } label: { Label("Share Note...", systemImage: "square.and.arrow.up") }
                     } label: {
                         Image(systemName: "square.and.arrow.up")
@@ -232,6 +248,21 @@ struct StudyNotebookView: View {
                 pagePreviewModalOverlay
             }
         }
+        .sheet(item: $activeHighlightToEdit) { annotation in
+            AnnotationEditSheet(annotation: annotation)
+                .presentationDetents([.height(180), .medium])
+                .presentationDragIndicator(.visible)
+        }
+        .onChange(of: activeHighlightToEdit) { _, newVal in
+            if newVal == nil {
+                refreshHighlights()
+            }
+        }
+        .sheet(isPresented: $showWritingAssistant) {
+            WritingAssistantSheet(text: $localNotes)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
         .onAppear {
             Logger.shared.log("StudyNotebook appeared for book: '\(bookTitle)'", category: "Notebook", type: .info)
             initializeSDAnnotation()
@@ -322,8 +353,6 @@ struct StudyNotebookView: View {
                 text: nil,
                 note: "",
                 isReadwiseImport: false,
-                // Store the real book title so the Zettelkasten Hub can group
-                // this note under the correct book name instead of a raw UUID.
                 readwiseBookTitle: bookTitle.isEmpty ? nil : bookTitle,
                 readwiseAuthor: nil,
                 createdAt: Date()
@@ -353,6 +382,17 @@ struct StudyNotebookView: View {
             Logger.shared.log("StudyNotebookView: could not resolve SDConvertedPDF for UUID \(targetPDFID)", category: "Notebook", type: .warning)
         }
     }
+
+    private func refreshHighlights() {
+        var targetPDFID = UUID()
+        if let actualUUID = UUID(uuidString: bookID) {
+            targetPDFID = actualUUID
+        }
+        let hDescriptor = FetchDescriptor<SDAnnotation>(predicate: #Predicate { $0.kindRaw == "highlight" && $0.pdfID == targetPDFID })
+        if let h = try? modelContext.fetch(hDescriptor) {
+            self.bookHighlights = h.sorted { $0.createdAt > $1.createdAt }
+        }
+    }
     
     private func debounceSave() {
         saveTask?.cancel()
@@ -367,14 +407,8 @@ struct StudyNotebookView: View {
                     self.activeNoteAnnotation?.noteText = note
                     self.activeNoteAnnotation?.drawingData = drawingData
                     self.activeNoteAnnotation?.modifiedAt = Date()
-                    do {
-                        try self.modelContext.save()
-                        Logger.shared.log("Debounce save succeeded for '\(self.bookTitle)'", category: "Notebook", type: .success)
-                        if let annotation = self.activeNoteAnnotation {
-                            SpotlightIndexer.shared.indexAnnotation(annotation)
-                        }
-                    } catch {
-                        Logger.shared.log("Debounce save FAILED for '\(self.bookTitle)': \(error.localizedDescription)", category: "Notebook", type: .error)
+                    if let annotation = self.activeNoteAnnotation {
+                        SpotlightIndexer.shared.indexAnnotation(annotation)
                     }
                 }
                 
@@ -385,7 +419,6 @@ struct StudyNotebookView: View {
                                 if let active = self.activeNoteAnnotation, active.drawingOCRText != ocrText {
                                     active.drawingOCRText = ocrText
                                     active.modifiedAt = Date()
-                                    try? self.modelContext.save()
                                     Logger.shared.log("Handwriting OCR updated for '\(self.bookTitle)': \(ocrText.prefix(40))...", category: "OCR", type: .success)
                                     SpotlightIndexer.shared.indexAnnotation(active)
                                 }
@@ -397,8 +430,16 @@ struct StudyNotebookView: View {
         }
     }
 
+    private var allTagsInHighlights: [String] {
+        let all = bookHighlights.flatMap { $0.tags ?? [] }
+        return Array(Set(all)).sorted()
+    }
+
     private var filteredHighlights: [SDAnnotation] {
         var h = bookHighlights
+        if let filter = selectedTagFilter {
+            h = h.filter { $0.tags?.contains(filter) ?? false }
+        }
         if !highlightSearchQuery.isEmpty {
             h = h.filter { $0.selectedText?.localizedCaseInsensitiveContains(highlightSearchQuery) ?? false }
         }
@@ -409,17 +450,29 @@ struct StudyNotebookView: View {
         }
     }
 
-    private func insertHighlightIntoNote(_ highlight: SDAnnotation) {
-        guard let text = highlight.selectedText else {
-            Logger.shared.log("insertHighlightIntoNote: skipped — highlight has no selectedText (id: \(highlight.id))", category: "Notebook", type: .warning)
-            return
+    private func formatHighlightForInsertion(_ highlight: SDAnnotation) -> String {
+        guard let text = highlight.selectedText else { return "" }
+        let pageLink = "[Page \(highlight.pageIndex + 1)](inksync://reader/jump?page=\(highlight.pageIndex))"
+        var md = "\n\n> \(text) (\(pageLink))"
+        if let note = highlight.noteText, !note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            md += "\n> *Thoughts:* \(note)"
         }
-        let quote = "\n\n> \(text) [[Page \(highlight.pageIndex + 1)]]\n\n"
+        if let tags = highlight.tags, !tags.isEmpty {
+            let tagStrs = tags.map { "#\($0)" }.joined(separator: " ")
+            md += "\n> \(tagStrs)"
+        }
+        md += "\n\n"
+        return md
+    }
+
+    private func insertHighlightIntoNote(_ highlight: SDAnnotation) {
+        let citation = formatHighlightForInsertion(highlight)
+        guard !citation.isEmpty else { return }
         withAnimation {
-            localNotes += quote
+            localNotes += citation
             debounceSave()
         }
-        Logger.shared.log("Inserted highlight citation [[Page \(highlight.pageIndex + 1)]] into note for '\(bookTitle)'", category: "Notebook", type: .info)
+        Logger.shared.log("Inserted formatted highlight citation into note for '\(bookTitle)'", category: "Notebook", type: .info)
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
     }
 
@@ -473,10 +526,8 @@ struct StudyNotebookView: View {
             self.showPreviewModal = true
         }
         
-        // Triggers haptic feedback
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         
-        // Extract page image in background
         if let bookURL = fileURL ?? resolvedPDF?.url {
             Task {
                 let img = await Task.detached(priority: .userInitiated) { () -> UIImage? in
@@ -500,7 +551,6 @@ struct StudyNotebookView: View {
     @ViewBuilder
     private var pagePreviewModalOverlay: some View {
         ZStack {
-            // Semi-transparent dimming backdrop to focus on the preview, tapping it dismisses the modal
             Color.black.opacity(0.45)
                 .ignoresSafeArea()
                 .onTapGesture {
@@ -511,9 +561,7 @@ struct StudyNotebookView: View {
                     }
                 }
             
-            // Glassmorphic Modal Card
             VStack(spacing: 0) {
-                // Header
                 HStack {
                     if let pageIndex = previewPageIndex {
                         Text("Page \(pageIndex + 1)")
@@ -547,7 +595,6 @@ struct StudyNotebookView: View {
                 
                 Divider()
                 
-                // Page content container
                 ZStack {
                     if isExtractingPreviewImage {
                         VStack(spacing: 12) {
@@ -583,22 +630,18 @@ struct StudyNotebookView: View {
                 
                 Divider()
                 
-                // Footer
                 if let pageIndex = previewPageIndex {
                     Button {
-                        // Dismiss modal
                         withAnimation(.easeOut(duration: 0.2)) {
                             showPreviewModal = false
                             previewPageIndex = nil
                             previewImage = nil
                         }
-                        // Jump to page in Reader
                         NotificationCenter.default.post(
                             name: NSNotification.Name("Reader_JumpToPage"),
                             object: nil,
                             userInfo: ["pageIndex": pageIndex]
                         )
-                        // Play haptic jump response
                         UINotificationFeedbackGenerator().notificationOccurred(.success)
                     } label: {
                         Text("Jump to Page \(pageIndex + 1)")
@@ -682,12 +725,44 @@ struct StudyNotebookView: View {
             let activityVC = UIActivityViewController(activityItems: [fileURL], applicationActivities: nil)
             if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
                let rootVC = windowScene.windows.first?.rootViewController {
+                if let popover = activityVC.popoverPresentationController {
+                    popover.sourceView = rootVC.view
+                    popover.sourceRect = CGRect(x: rootVC.view.bounds.midX, y: rootVC.view.bounds.midY, width: 0, height: 0)
+                    popover.permittedArrowDirections = []
+                }
                 rootVC.present(activityVC, animated: true)
-            } else {
-                Logger.shared.log("exportNotes: could not find root view controller to present share sheet", category: "Notebook", type: .warning)
             }
         } catch {
             Logger.shared.log("exportNotes(\(formatLabel)) FAILED for '\(bookTitle)': \(error.localizedDescription)", category: "Notebook", type: .error)
+        }
+    }
+
+    private func exportZettelkastenZip() {
+        Task {
+            do {
+                let allPDFs = try? modelContext.fetch(FetchDescriptor<SDConvertedPDF>())
+                let allAnns = try? modelContext.fetch(FetchDescriptor<SDAnnotation>())
+                
+                let pdfDTOs = (allPDFs ?? []).map { $0.toDTO() }
+                let annDTOs = (allAnns ?? []).map { $0.toDTO() }
+                
+                let zipURL = try await ZettelkastenExporter.shared.exportToMarkdownZip(annotations: annDTOs, pdfs: pdfDTOs)
+                
+                await MainActor.run {
+                    let activityVC = UIActivityViewController(activityItems: [zipURL], applicationActivities: nil)
+                    if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                       let rootVC = windowScene.windows.first?.rootViewController {
+                        if let popover = activityVC.popoverPresentationController {
+                            popover.sourceView = rootVC.view
+                            popover.sourceRect = CGRect(x: rootVC.view.bounds.midX, y: rootVC.view.bounds.midY, width: 0, height: 0)
+                            popover.permittedArrowDirections = []
+                        }
+                        rootVC.present(activityVC, animated: true)
+                    }
+                }
+            } catch {
+                Logger.shared.log("Zettelkasten zip export FAILED: \(error.localizedDescription)", category: "Notebook", type: .error)
+            }
         }
     }
     
@@ -696,10 +771,13 @@ struct StudyNotebookView: View {
         let activityVC = UIActivityViewController(activityItems: [localNotes], applicationActivities: nil)
         if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
            let rootVC = windowScene.windows.first?.rootViewController {
+            if let popover = activityVC.popoverPresentationController {
+                popover.sourceView = rootVC.view
+                popover.sourceRect = CGRect(x: rootVC.view.bounds.midX, y: rootVC.view.bounds.midY, width: 0, height: 0)
+                popover.permittedArrowDirections = []
+            }
             rootVC.present(activityVC, animated: true)
             Logger.shared.log("Share sheet presented for '\(bookTitle)'", category: "Notebook", type: .success)
-        } else {
-            Logger.shared.log("shareNotes: could not find root view controller to present share sheet", category: "Notebook", type: .warning)
         }
     }
 
@@ -737,6 +815,47 @@ struct StudyNotebookView: View {
                     .padding(6)
                     .background(Color.primary.opacity(0.06))
                     .cornerRadius(6)
+                    
+                    // Tag filters scroll list
+                    let tagsList = allTagsInHighlights
+                    if !tagsList.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 6) {
+                                Button {
+                                    withAnimation { selectedTagFilter = nil }
+                                } label: {
+                                    Text("All")
+                                        .font(.system(size: 10, weight: selectedTagFilter == nil ? .bold : .regular))
+                                        .foregroundColor(selectedTagFilter == nil ? .white : .primary)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .background(selectedTagFilter == nil ? Theme.blue : Color.primary.opacity(0.06), in: Capsule())
+                                }
+                                .buttonStyle(.plain)
+                                
+                                ForEach(tagsList, id: \.self) { tag in
+                                    Button {
+                                        withAnimation {
+                                            if selectedTagFilter == tag {
+                                                selectedTagFilter = nil
+                                            } else {
+                                                selectedTagFilter = tag
+                                            }
+                                        }
+                                    } label: {
+                                        Text("#\(tag)")
+                                            .font(.system(size: 10, weight: selectedTagFilter == tag ? .bold : .regular))
+                                            .foregroundColor(selectedTagFilter == tag ? .white : Theme.blue)
+                                            .padding(.horizontal, 8)
+                                            .padding(.vertical, 4)
+                                            .background(selectedTagFilter == tag ? Theme.blue : Theme.blue.opacity(0.1), in: Capsule())
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                            .padding(.vertical, 2)
+                        }
+                    }
                     
                     HStack {
                         Button {
@@ -779,6 +898,20 @@ struct StudyNotebookView: View {
                                         .foregroundColor(Theme.text)
                                         .lineSpacing(4)
                                     
+                                    if let tags = highlight.tags, !tags.isEmpty {
+                                        HStack(spacing: 4) {
+                                            ForEach(tags, id: \.self) { tag in
+                                                Text("#\(tag)")
+                                                    .font(.system(size: 9, weight: .bold))
+                                                    .foregroundColor(Theme.blue)
+                                                    .padding(.horizontal, 6)
+                                                    .padding(.vertical, 2)
+                                                    .background(Theme.blue.opacity(0.1), in: Capsule())
+                                            }
+                                        }
+                                        .padding(.vertical, 2)
+                                    }
+                                    
                                     HStack {
                                         Button {
                                             insertHighlightIntoNote(highlight)
@@ -791,6 +924,19 @@ struct StudyNotebookView: View {
                                             .foregroundColor(Theme.blue)
                                         }
                                         .buttonStyle(.borderless)
+                                        
+                                        Button {
+                                            activeHighlightToEdit = highlight
+                                        } label: {
+                                            HStack(spacing: 3) {
+                                                Image(systemName: "square.and.pencil")
+                                                Text("Edit")
+                                            }
+                                            .font(.system(size: 11, weight: .bold))
+                                            .foregroundColor(.secondary)
+                                        }
+                                        .buttonStyle(.borderless)
+                                        .padding(.leading, 8)
                                         
                                         Spacer()
                                         Text("p. \(highlight.pageIndex + 1)")
@@ -806,7 +952,8 @@ struct StudyNotebookView: View {
                                 )
                                 .cornerRadius(8)
                                 .onDrag {
-                                    NSItemProvider(object: (highlight.selectedText ?? "") as NSString)
+                                    let formattedText = formatHighlightForInsertion(highlight)
+                                    return NSItemProvider(object: formattedText as NSString)
                                 }
                             }
                         }
@@ -823,7 +970,6 @@ struct StudyNotebookView: View {
     }
 }
 
-// MARK: - Phase 2: Modern Markdown Engine WYSIWYG
 // MARK: - Phase 2: Modern Markdown Engine WYSIWYG
 struct MarkdownTextEditor: UIViewRepresentable {
     @Binding var text: String
@@ -848,10 +994,8 @@ struct MarkdownTextEditor: UIViewRepresentable {
         textView.addGestureRecognizer(tapGesture)
 
         // MARK: Formatting Shortcut Bar — Phase 4E-2 expanded (Bear/Notability pattern)
-        // Replaces the plain "Done" toolbar with a 10-button formatting bar.
         let bar = UIInputView(frame: CGRect(x: 0, y: 0, width: UIScreen.main.bounds.width, height: 48),
                               inputViewStyle: .keyboard)
-        // Glassmorphic blur background
         let blurEffect = UIBlurEffect(style: .systemChromeMaterial)
         let blurView  = UIVisualEffectView(effect: blurEffect)
         blurView.frame = bar.bounds
@@ -859,17 +1003,13 @@ struct MarkdownTextEditor: UIViewRepresentable {
         bar.addSubview(blurView)
 
         let items: [(title: String, insert: String, after: String?)] = [
-            // Text formatting
             ("B",       "**",     "**"),
             ("I",       "_",      "_"),
-            // Structural
             ("H1",      "# ",     nil),
             ("H2",      "## ",    nil),
-            // Rich elements — Phase 4E-2 additions
-            ("≡ List",  "- ",     nil),    // bullet list item
-            ("`Code`",  "`",      "`"),     // inline code
-            ("—— Rule", "---\n",  nil),    // horizontal rule
-            // Zettelkasten linking
+            ("≡ List",  "- ",     nil),
+            ("`Code`",  "`",      "`"),
+            ("—— Rule", "---\n",  nil),
             ("[[",      "[[",     "]]"),
             ("#",       "#",      nil),
             ("> Quote", "> ",     nil),
@@ -891,7 +1031,6 @@ struct MarkdownTextEditor: UIViewRepresentable {
             stack.addArrangedSubview(btn)
         }
 
-        // Add Microphone button (tag 999) to formatting bar
         let micBtn = UIButton(type: .system)
         micBtn.tag = 999
         let isRecording = SpeechRecognitionManager.shared.isRecording
@@ -906,7 +1045,6 @@ struct MarkdownTextEditor: UIViewRepresentable {
         micBtn.widthAnchor.constraint(equalToConstant: 36).isActive = true
         micBtn.heightAnchor.constraint(equalToConstant: 32).isActive = true
 
-        // Spacer + Done button on trailing
         let spacer = UIView()
         spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
         stack.addArrangedSubview(spacer)
@@ -917,7 +1055,6 @@ struct MarkdownTextEditor: UIViewRepresentable {
         doneBtn.addTarget(context.coordinator, action: #selector(Coordinator.doneButtonTapped), for: .touchUpInside)
         stack.addArrangedSubview(doneBtn)
 
-        // Phase 4E-2: wrap in UIScrollView so all 10 buttons fit on any screen width
         let scrollView = UIScrollView()
         scrollView.showsHorizontalScrollIndicator = false
         scrollView.alwaysBounceHorizontal = true
@@ -952,7 +1089,6 @@ struct MarkdownTextEditor: UIViewRepresentable {
             uiView.resignFirstResponder()
         }
         
-        // Sync custom mic button tag 999
         if let bar = uiView.inputAccessoryView {
             if let micBtn = bar.viewWithTag(999) as? UIButton {
                 let isRecording = SpeechRecognitionManager.shared.isRecording
@@ -1023,7 +1159,6 @@ struct MarkdownTextEditor: UIViewRepresentable {
             let selectedRange = tv.selectedRange
             let originalText = tv.text ?? ""
             
-            // Insert space if needed
             let insertionText: String
             if selectedRange.location > 0 {
                 let prevIndex = originalText.index(originalText.startIndex, offsetBy: selectedRange.location - 1)
@@ -1038,11 +1173,8 @@ struct MarkdownTextEditor: UIViewRepresentable {
             }
             
             tv.insertText(insertionText)
-            
-            // Trigger SwiftUI update
             parent.text = tv.text
             
-            // Re-apply highlights
             let newSelectedRange = tv.selectedRange
             tv.attributedText = MarkdownHighlighter.highlight(tv.text)
             tv.selectedRange = newSelectedRange
@@ -1050,8 +1182,6 @@ struct MarkdownTextEditor: UIViewRepresentable {
         
         func textViewDidChange(_ textView: UITextView) {
             parent.text = textView.text
-            
-            // Re-apply highlights on the fly for pure WYSIWYG
             let selectedRange = textView.selectedRange
             textView.attributedText = MarkdownHighlighter.highlight(textView.text)
             textView.selectedRange = selectedRange
@@ -1070,8 +1200,6 @@ struct MarkdownTextEditor: UIViewRepresentable {
             UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         }
 
-        // MARK: - UIGestureRecognizerDelegate
-        
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
             guard let textView = textView else { return false }
             let point = touch.location(in: textView)
@@ -1278,7 +1406,6 @@ private final class FormatButton: UIButton {
         }
         tv.replace(selectedRange, withText: replacement)
 
-        // Move cursor inside wrapping syntax when selection was empty
         if selectedText.isEmpty, let after = insertAfter {
             let offset = insertBefore.count
             if let startPos = tv.position(from: selectedRange.start, offset: offset) {
@@ -1290,8 +1417,8 @@ private final class FormatButton: UIButton {
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
     }
 }
-// MARK: - Paper Styles
 
+// MARK: - Paper Styles
 enum PaperStyle: String, CaseIterable, Identifiable {
     case plain = "Plain"
     case ruled = "Ruled"

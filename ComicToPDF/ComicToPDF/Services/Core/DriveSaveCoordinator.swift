@@ -31,7 +31,7 @@ final class DriveSaveCoordinator: NSObject, UIDocumentPickerDelegate {
         picker.delegate = coordinator
         picker.allowsMultipleSelection = true
         picker.shouldShowFileExtensions = true
-        picker.modalPresentationStyle = .fullScreen
+        picker.modalPresentationStyle = .pageSheet
 
         Logger.shared.log("DriveSaveCoordinator: presenting save destination picker", category: "DriveSave", type: .info)
         rootVC.present(picker, animated: true)
@@ -49,18 +49,13 @@ final class DriveSaveCoordinator: NSObject, UIDocumentPickerDelegate {
         }
 
         Logger.shared.log("DriveSaveCoordinator: user selected save destination: \(selectedURL.lastPathComponent)", category: "DriveSave", type: .success)
-        let accessing = selectedURL.startAccessingSecurityScopedResource()
 
         controller.dismiss(animated: true)
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let self else {
-                if accessing { selectedURL.stopAccessingSecurityScopedResource() }
-                return
-            }
+            guard let self else { return }
             DispatchQueue.main.async {
                 self.finish(with: selectedURL)
-                if accessing { selectedURL.stopAccessingSecurityScopedResource() }
             }
         }
     }
@@ -78,11 +73,22 @@ final class DriveSaveCoordinator: NSObject, UIDocumentPickerDelegate {
 
     private static func topViewController() -> UIViewController? {
         let scenes = UIApplication.shared.connectedScenes
-        let windowScene = scenes.first(where: { $0.activationState == .foregroundActive }) as? UIWindowScene
-            ?? scenes.first as? UIWindowScene
-        guard let root = windowScene?.windows.first(where: { $0.isKeyWindow })?.rootViewController
-                      ?? windowScene?.windows.first?.rootViewController else { return nil }
-        var top = root
+        var windowScene: UIWindowScene? = nil
+        if let active = scenes.first(where: { $0.activationState == .foregroundActive }) as? UIWindowScene {
+            windowScene = active
+        } else if let first = scenes.first as? UIWindowScene {
+            windowScene = first
+        }
+        guard let windowScene = windowScene else { return nil }
+        
+        var root: UIViewController? = nil
+        if let keyRoot = windowScene.windows.first(where: { $0.isKeyWindow })?.rootViewController {
+            root = keyRoot
+        } else if let firstRoot = windowScene.windows.first?.rootViewController {
+            root = firstRoot
+        }
+        guard var top = root else { return nil }
+        
         while let presented = top.presentedViewController { top = presented }
         return top
     }

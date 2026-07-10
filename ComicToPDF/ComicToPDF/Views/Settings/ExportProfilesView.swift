@@ -6,6 +6,7 @@ struct ExportProfilesView: View {
     @State private var showingAddPreset = false
     @State private var newPresetName = ""
     @State private var newPresetSettings = ConversionSettings()
+    @FocusState private var isNameFocused: Bool
 
     var body: some View {
         List {
@@ -66,6 +67,10 @@ struct ExportProfilesView: View {
                 Form {
                     Section(header: Text("Profile Info")) {
                         TextField("Name (e.g., Manga Oasis, Webtoon PDF)", text: $newPresetName)
+                            .focused($isNameFocused)
+                            .onSubmit {
+                                savePreset()
+                            }
                     }
                     
                     Section(header: Text("Core Settings")) {
@@ -81,7 +86,7 @@ struct ExportProfilesView: View {
                     if newPresetSettings.outputFormat == .epub {
                         Section(header: Text("EPUB Advanced")) {
                             Picker("Conversion Pipeline", selection: $newPresetSettings.outputPipeline) {
-                                ForEach(OutputPipeline.allCases) { pipeline in Text(pipeline.rawValue).tag(pipeline) }
+                                  ForEach(OutputPipeline.allCases) { pipeline in Text(pipeline.displayName).tag(pipeline) }
                             }
                         }
                     }
@@ -97,11 +102,7 @@ struct ExportProfilesView: View {
                     }
                     ToolbarItem(placement: .navigationBarTrailing) {
                         Button("Save") {
-                            let finalName = newPresetName.trimmingCharacters(in: .whitespaces).isEmpty ? "Custom Profile" : newPresetName
-                            let preset = ConversionPreset(name: finalName, settings: newPresetSettings)
-                            settingsManager.conversionPresets.append(preset)
-                            conversionManager.saveLibrary()
-                            showingAddPreset = false
+                            savePreset()
                         }
                         .fontWeight(.bold)
                     }
@@ -109,5 +110,13 @@ struct ExportProfilesView: View {
             }
             .presentationDetents([.medium, .large])
         }
+    }
+    
+    private func savePreset() {
+        let finalName = newPresetName.trimmingCharacters(in: .whitespaces).isEmpty ? "Custom Profile" : newPresetName
+        let preset = ConversionPreset(name: finalName, settings: newPresetSettings)
+        settingsManager.conversionPresets.append(preset)
+        conversionManager.saveLibrary()
+        showingAddPreset = false
     }
 }

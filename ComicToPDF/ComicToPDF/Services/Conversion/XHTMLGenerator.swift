@@ -23,17 +23,16 @@ class XHTMLGenerator {
                 html, body {
                     margin: 0;
                     padding: 0;
-                    width: 100vw;
-                    height: 100vh;
+                    width: 100%;
+                    height: 100%;
                     background-color: black;
-                    overflow: hidden;
                 }
                 svg {
                     display: block;
                     margin: 0;
                     padding: 0;
-                    width: 100vw;
-                    height: 100vh;
+                    width: 100%;
+                    height: 100%;
                 }
             </style>
         </head>
@@ -42,7 +41,7 @@ class XHTMLGenerator {
         let body = """
         <body>
             <svg version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" 
-                 width="100vw" height="100vh" viewBox="0 0 \(width) \(height)" preserveAspectRatio="xMidYMid meet">
+                 width="100%" height="100%" viewBox="0 0 \(width) \(height)" preserveAspectRatio="xMidYMid meet">
                 <image width="\(width)" height="\(height)" xlink:href="../images/\(imageName)"/>
             </svg>
         </body>

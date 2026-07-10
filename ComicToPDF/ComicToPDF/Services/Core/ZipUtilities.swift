@@ -6,6 +6,13 @@ import Unrar
 
 struct ZipUtilities {
     
+    /// Extract all image files from a comic archive (CBZ/ZIP/PDF/CBR/CBT).
+    ///
+    /// **Security scope contract**: The CALLER is responsible for calling
+    /// `startAccessingSecurityScopedResource()` on `sourceURL` before invoking
+    /// this function, and `stopAccessingSecurityScopedResource()` after it returns.
+    /// This function does NOT open the scope itself to prevent double-open ref-count
+    /// bugs when callers already hold the scope.
     static func extractComic(from sourceURL: URL) async throws -> (workingDir: URL, imageURLs: [URL]) {
         let ext = sourceURL.pathExtension.lowercased()
 
@@ -22,17 +29,14 @@ struct ZipUtilities {
         return try await withCheckedThrowingContinuation { continuation in
             // Use a raw background queue to guarantee isolation from the UI
             DispatchQueue.global(qos: .userInitiated).async {
+                let fileManager = FileManager.default
+                let filename = sourceURL.deletingPathExtension().lastPathComponent
+                let uniqueID = UUID().uuidString.prefix(8)
+                let tempDir = fileManager.temporaryDirectory.appendingPathComponent("extract_\(filename)_\(uniqueID)")
                 do {
-                    let fileManager = FileManager.default
-                    
-                    // 1. Security & Setup
-                    let secure = sourceURL.startAccessingSecurityScopedResource()
-                    defer { if secure { sourceURL.stopAccessingSecurityScopedResource() } }
-                    
-                    let filename = sourceURL.deletingPathExtension().lastPathComponent
-                    let uniqueID = UUID().uuidString.prefix(8)
-                    let tempDir = fileManager.temporaryDirectory.appendingPathComponent("extract_\(filename)_\(uniqueID)")
-                    
+                    // Security scope is managed by the CALLER — do not open it here.
+                    // See doc comment on extractComic for the ownership contract.
+
                     // 2. Create Target Directory
                     try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
                     
@@ -41,34 +45,38 @@ struct ZipUtilities {
                     // 3. Extraction Strategy
                     if ext == "pdf" {
                         // --- PDF PATH ---
-                        if let document = PDFDocument(url: sourceURL) {
-                            let pageCount = document.pageCount
-                            for i in 0..<pageCount {
-                                try autoreleasepool {
-                                    if let page = document.page(at: i) {
-                                        // Render full page
-                                        let pageRect = page.bounds(for: .mediaBox)
-                                        let renderer = UIGraphicsImageRenderer(size: pageRect.size)
-                                        let image = renderer.image { ctx in
+                        guard let document = PDFDocument(url: sourceURL) else {
+                            throw NSError(domain: "ZipError", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to load PDF document"])
+                        }
+                        let pageCount = document.pageCount
+                        for i in 0..<pageCount {
+                            try autoreleasepool {
+                                if let page = document.page(at: i) {
+                                    // Render full page
+                                    var pageRect = page.bounds(for: .mediaBox)
+                                    if pageRect.width <= 0 || pageRect.height <= 0 || pageRect.width.isNaN || pageRect.height.isNaN {
+                                        pageRect = CGRect(x: 0, y: 0, width: 612, height: 792)
+                                    }
+                                    let format = UIGraphicsImageRendererFormat()
+                                    format.scale = 1.0
+                                    format.preferredRange = .standard // Forces standard sRGB color space
+                                    let renderer = UIGraphicsImageRenderer(size: pageRect.size, format: format)
+                                    let image = renderer.image { ctx in
                                         UIColor.white.set()
                                         ctx.fill(pageRect)
                                         ctx.cgContext.translateBy(x: 0.0, y: pageRect.size.height)
                                         ctx.cgContext.scaleBy(x: 1.0, y: -1.0)
                                         page.draw(with: .mediaBox, to: ctx.cgContext)
                                     }
-                                    
-                                    // Save
                                     let pageName = String(format: "%04d.jpg", i)
                                     let fileURL = tempDir.appendingPathComponent(pageName)
-                                        if let data = image.jpegData(compressionQuality: 0.9) {
-                                            try data.write(to: fileURL)
-                                            extractedFiles.append(fileURL)
-                                        }
+                                    if let data = image.jpegData(compressionQuality: 0.9) {
+                                        try data.write(to: fileURL)
+                                        extractedFiles.append(fileURL)
                                     }
                                 }
                             }
                         }
-
                     } else {
                         // --- ZIP / CBZ PATH ---
                         //
@@ -90,13 +98,10 @@ struct ZipUtilities {
                         //             O(all images) — eliminates the iOS memory pressure crash.
 
                         // ── Phase 1: Enumerate qualifying entry paths (no I/O, metadata only) ──
-                        let enumerationArchive: ZIPFoundation.Archive
-                        do {
-                            enumerationArchive = try ZIPFoundation.Archive(url: sourceURL, accessMode: .read)
-                        } catch {
+                        guard let enumerationArchive = ZIPFoundation.Archive(url: sourceURL, accessMode: .read) else {
                             throw NSError(domain: "ZipError", code: 1,
                                           userInfo: [NSLocalizedDescriptionKey:
-                                            "Could not open CBZ archive '\(sourceURL.lastPathComponent)': \(error.localizedDescription)"])
+                                            "Could not open CBZ archive '\(sourceURL.lastPathComponent)'"])
                         }
 
                         let imageExtensions: Set<String> = ["jpg", "jpeg", "png", "webp", "gif", "heic"]
@@ -137,7 +142,7 @@ struct ZipUtilities {
                                 defer { workerGroup.leave() }
 
                                 // Each worker opens its own Archive — independent file handle & position.
-                                guard let workerArchive = try? ZIPFoundation.Archive(
+                                guard let workerArchive = ZIPFoundation.Archive(
                                     url: sourceURL, accessMode: .read
                                 ) else {
                                     Logger.shared.log(
@@ -192,6 +197,7 @@ struct ZipUtilities {
                     
                 } catch {
                     Logger.shared.log("Crash/Error in ZipUtilities: \(error.localizedDescription)", category: "System", type: .error)
+                    try? fileManager.removeItem(at: tempDir)
                     continuation.resume(throwing: error)
                 }
             }
@@ -205,7 +211,9 @@ struct ZipUtilities {
                     let secure = sourceURL.startAccessingSecurityScopedResource()
                     defer { if secure { sourceURL.stopAccessingSecurityScopedResource() } }
                     
-                    let archive = try Archive(url: sourceURL, accessMode: .read)
+                    guard let archive = Archive(url: sourceURL, accessMode: .read) else {
+                        throw NSError(domain: "ZipError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to read archive"])
+                    }
                     let entries = archive.filter { entry in
                         let name = entry.path
                         let ext = URL(fileURLWithPath: name).pathExtension.lowercased()
@@ -243,7 +251,9 @@ struct ZipUtilities {
                     }
                     
                     // Creates a new archive at destinationURL
-                    let archive = try Archive(url: destinationURL, accessMode: .create)
+                    guard let archive = Archive(url: destinationURL, accessMode: .create) else {
+                        throw NSError(domain: "ZipError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to create archive"])
+                    }
                     
                     // Get all files in source directory
                     let fileURLs = try fileManager.contentsOfDirectory(at: sourceURL, includingPropertiesForKeys: nil)

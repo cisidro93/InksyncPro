@@ -14,55 +14,67 @@ struct EPUBMerger: Sendable {
         // 1. Structure
         let epubDir = tempDir.appendingPathComponent("EPUB_Merge")
         let oebpsDir = epubDir.appendingPathComponent("OEBPS")
+        let textDir = oebpsDir.appendingPathComponent("text")
         let imagesDir = oebpsDir.appendingPathComponent("images")
         let cssDir = oebpsDir.appendingPathComponent("css")
         
         try fileManager.createDirectory(at: imagesDir, withIntermediateDirectories: true)
+        try fileManager.createDirectory(at: textDir, withIntermediateDirectories: true)
         try fileManager.createDirectory(at: cssDir, withIntermediateDirectories: true)
         
         // 2. CSS
-        let cssContent = """
-        @page { margin: 0; padding: 0; }
-        body { margin: 0; padding: 0; width: 100vw; height: 100vh; background-color: #000000; }
-        div.svg-wrapper { width: 100%; height: 100%; margin: 0; padding: 0; text-align: center; }
-        img { height: 100%; width: auto; max-width: 100%; object-fit: contain; }
-        """
-        try cssContent.write(to: cssDir.appendingPathComponent("style.css"), atomically: true, encoding: .utf8)
+        try EPUBManifestBuilder.cssContent.write(to: cssDir.appendingPathComponent("comic.css"), atomically: true, encoding: .utf8)
+        
+        // 1.5 Load active cover data
+        var activeCoverData = overrideCoverData
+        if activeCoverData == nil, let firstURL = sourceURLs.first {
+            let tempExtract = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try? fileManager.createDirectory(at: tempExtract, withIntermediateDirectories: true)
+            defer { try? fileManager.removeItem(at: tempExtract) }
+            
+            try? fileManager.unzipItem(at: firstURL, to: tempExtract)
+            if let images = try? findImages(in: tempExtract), let firstImg = images.first {
+                activeCoverData = try? Data(contentsOf: firstImg)
+            }
+        }
+        
+        // Ensure cover is in sRGB if it's Display P3
+        if let coverData = activeCoverData {
+            activeCoverData = ImageProcessor.convertToSRGB(data: coverData)
+        }
         
         var manifestItems: [String] = []
         var spineItems: [String] = []
-        manifestItems.append("<item id=\"css\" href=\"css/style.css\" media-type=\"text/css\"/>")
+        manifestItems.append("<item id=\"css\" href=\"css/comic.css\" media-type=\"text/css\"/>")
+        manifestItems.append("<item id=\"ncx\" href=\"toc.ncx\" media-type=\"application/x-dtbncx+xml\"/>")
+        manifestItems.append("<item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/>")
         
-        var globalPageIndex = 0
+        var globalPageIndex = 1
+        var globalPageCounter = (activeCoverData != nil) ? 2 : 1
         
         // 2.5 Inject Override Cover if Present
-        if let coverData = overrideCoverData {
-            let coverName = "page_00000_cover.jpg"
-            let destURL = imagesDir.appendingPathComponent(coverName)
+        if let coverData = activeCoverData {
+            let coverFilename = "cover.jpg"
+            let destURL = imagesDir.appendingPathComponent(coverFilename)
             try? coverData.write(to: destURL)
             
-            let htmlName = "page_00000_cover.xhtml"
-            let htmlContent = """
-            <?xml version="1.0" encoding="UTF-8"?>
-            <!DOCTYPE html>
-            <html xmlns="http://www.w3.org/1999/xhtml">
-            <head>
-                <title>Cover</title>
-                <meta name="viewport" content="width=1000, height=1500, initial-scale=1.0"/>
-                <link rel="stylesheet" type="text/css" href="css/style.css"/>
-            </head>
-            <body>
-                <div class="svg-wrapper"><img src="images/\(coverName)" alt="Cover"/></div>
-            </body>
-            </html>
-            """
-            try? htmlContent.write(to: oebpsDir.appendingPathComponent(htmlName), atomically: true, encoding: .utf8)
-            
-            manifestItems.append("<item id=\"cover_page\" href=\"\(htmlName)\" media-type=\"application/xhtml+xml\"/>")
-            manifestItems.append("<item id=\"cover_img\" href=\"images/\(coverName)\" media-type=\"image/jpeg\" properties=\"cover-image\"/>")
-            spineItems.append("<itemref idref=\"cover_page\" linear=\"yes\"/>")
-            
-            globalPageIndex += 1
+            // The cover image must carry properties="cover-image" so that the OPF
+            // <meta name="cover" content="cover_img"/> is consistent. Kindle's
+            // ingestor checks that the item referenced by <meta name="cover"> has this
+            // property and fails with E999 if it does not. The duplicate is still
+            // suppressed because cover.xhtml (first spine item) wraps the image —
+            // auto-injection only fires when a cover-image item has NO spine XHTML wrapper.
+            manifestItems.append("<item id=\"cover_img\" href=\"images/\(coverFilename)\" media-type=\"image/jpeg\" properties=\"cover-image\"/>")
+            let coverXHTML = EPUBManifestBuilder.buildCoverXHTML(coverFilename: coverFilename, isManga: settings.mangaMode)
+            try coverXHTML.write(to: textDir.appendingPathComponent("cover.xhtml"), atomically: true, encoding: .utf8)
+            manifestItems.append("<item id=\"cover_page\" href=\"text/cover.xhtml\" media-type=\"application/xhtml+xml\"/>")
+            let coverSpreadTag: String
+            if settings.linkCoverAsSpread {
+                coverSpreadTag = settings.mangaMode ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
+            } else {
+                coverSpreadTag = ""
+            }
+            spineItems.append("<itemref idref=\"cover_page\"\(coverSpreadTag)/>")
         }
         
         // 3. Process Each EPUB
@@ -71,97 +83,98 @@ struct EPUBMerger: Sendable {
             try fileManager.createDirectory(at: unzipDir, withIntermediateDirectories: true)
             try fileManager.unzipItem(at: url, to: unzipDir)
             
-            // Extract Images (Assuming standard OEBPS/images structure or recursive search)
+            // Extract Images
             let foundImages = try findImages(in: unzipDir)
             
-            for imgURL in foundImages {
-                autoreleasepool {
-                    let newName = "page_\(String(format: "%05d", globalPageIndex)).jpg"
+            for (imgIndex, imgURL) in foundImages.enumerated() {
+                // Skip the first page of the first EPUB if we are using it as the cover
+                if index == 0 && imgIndex == 0 && activeCoverData != nil {
+                    continue
+                }
+                
+                try autoreleasepool {
+                    let trueExt = (imgURL.pathExtension.lowercased() == "png") ? "png" : "jpg"
+                    let safeExt = (trueExt == "jpg") ? "jpeg" : trueExt
+                    let newName = String(format: "image_%05d.%@", globalPageIndex, trueExt)
                     let destURL = imagesDir.appendingPathComponent(newName)
                     
-                    // Copy/Re-compress
-                    if let data = try? Data(contentsOf: imgURL) {
-                        try? data.write(to: destURL)
-                    }
+                    // Copy and convert WebP to JPEG if needed
+                    try copyAndPrepareImage(from: imgURL, to: destURL, settings: settings)
                     
                     // Manifest & HTML
-                    let htmlName = "page_\(String(format: "%05d", globalPageIndex)).xhtml"
-                    let htmlContent = """
-                    <?xml version="1.0" encoding="UTF-8"?>
-                    <!DOCTYPE html>
-                    <html xmlns="http://www.w3.org/1999/xhtml">
-                    <head>
-                        <title>Page \(globalPageIndex)</title>
-                        <meta name="viewport" content="width=1000, height=1500, initial-scale=1.0"/>
-                        <link rel="stylesheet" type="text/css" href="css/style.css"/>
-                    </head>
-                    <body>
-                        <div class="svg-wrapper"><img src="images/\(newName)" alt=""/></div>
-                    </body>
-                    </html>
-                    """
+                    let htmlName = String(format: "page_%05d.xhtml", globalPageIndex)
+                    let htmlContent = EPUBManifestBuilder.buildChunkXHTML(
+                        chunkIndex: globalPageIndex,
+                        images: [newName],
+                        title: "Page \(globalPageIndex)"
+                    )
+                    try? htmlContent.write(to: textDir.appendingPathComponent(htmlName), atomically: true, encoding: .utf8)
                     
-                    try? htmlContent.write(to: oebpsDir.appendingPathComponent(htmlName), atomically: true, encoding: .utf8)
+                    let isFirstPageCover = (globalPageIndex == 1 && activeCoverData == nil)
+                    // The cover image (img_1) must carry properties="cover-image" so that the
+                    // OPF <meta name="cover" content="img_1"/> is consistent — Kindle's ingestor
+                    // checks that the item referenced by <meta name="cover"> has this property and
+                    // fails with E999 if it does not. The duplicate-cover problem is suppressed by
+                    // page_1.xhtml being the FIRST spine item wrapping img_1.
+                    let coverImageProp = isFirstPageCover ? " properties=\"cover-image\"" : ""
+                    manifestItems.append("<item id=\"page_\(globalPageIndex)\" href=\"text/\(htmlName)\" media-type=\"application/xhtml+xml\"/>")
+                    manifestItems.append("<item id=\"img_\(globalPageIndex)\" href=\"images/\(newName)\" media-type=\"image/\(safeExt)\"\(coverImageProp)/>")
                     
-                    manifestItems.append("<item id=\"page_\(globalPageIndex)\" href=\"\(htmlName)\" media-type=\"application/xhtml+xml\"/>")
-                    manifestItems.append("<item id=\"img_\(globalPageIndex)\" href=\"images/\(newName)\" media-type=\"image/jpeg\"/>")
-                    spineItems.append("<itemref idref=\"page_\(globalPageIndex)\" linear=\"yes\"/>")
+                    // Apply Dynamic Landscape Spreads Tagging (RTL vs LTR)
+                    let spreadTag: String
+                    if settings.linkCoverAsSpread {
+                        if settings.mangaMode {
+                            spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
+                        } else {
+                            spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-left\"" : " properties=\"page-spread-right\""
+                        }
+                    } else {
+                        if globalPageCounter == 1 {
+                            spreadTag = "" // Cover stands alone centered
+                        } else if settings.mangaMode {
+                            spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-left\"" : " properties=\"page-spread-right\""
+                        } else {
+                            spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
+                        }
+                    }
+                    spineItems.append("<itemref idref=\"page_\(globalPageIndex)\"\(spreadTag)/>")
                     
                     globalPageIndex += 1
+                    globalPageCounter += 1
                 }
             }
         }
         
-        spineItems.append("<itemref idref=\"nav\" linear=\"no\"/>")
+        let firstPageHref = (activeCoverData != nil) ? "text/cover.xhtml" : "text/page_00001.xhtml"
         
         // 4. Metadata (OPF)
         let opfTitle = sourceMetadata?.series ?? sourceMetadata?.title ?? "Merged Comic Collection"
-        let rawCreator = sourceMetadata?.writer ?? sourceMetadata?.publisher ?? ""
-        let opfCreator = rawCreator.isEmpty ? "Inksync Pro" : rawCreator
-        let opfDesc = sourceMetadata?.summary ?? "Omnibus edition generated by Inksync."
-        let progression = settings.mangaMode ? "page-progression-direction=\"rtl\"" : ""
-        let dateIso = Date().ISO8601Format()
+        let bookUUID = UUID().uuidString
+        let coverMeta = (activeCoverData != nil) ? "cover_img" : "img_1"
         
-        let opfContent = """
-        <?xml version="1.0" encoding="UTF-8"?>
-        <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookID" version="3.0">
-            <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
-                <dc:title>\(opfTitle.replacingOccurrences(of: "&", with: "&amp;"))</dc:title>
-                <dc:creator>\(opfCreator.replacingOccurrences(of: "&", with: "&amp;"))</dc:creator>
-                <dc:description>\(opfDesc.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;").replacingOccurrences(of: ">", with: "&gt;"))</dc:description>
-                <dc:language>en</dc:language>
-                <meta property="dcterms:modified">\(dateIso)</meta>
-            </metadata>
-            <manifest>
-                \(manifestItems.joined(separator: "\n"))
-                <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
-            </manifest>
-            <spine \(progression)>
-                \(spineItems.joined(separator: "\n"))
-            </spine>
-        </package>
-        """
-        try opfContent.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: String.Encoding.utf8)
+        let opfContent = EPUBManifestBuilder.buildOPFContent(
+            bookUUID: bookUUID,
+            baseFilename: opfTitle,
+            coverMetaID: coverMeta,
+            manifestItems: manifestItems,
+            spineItems: spineItems,
+            isManga: settings.mangaMode,
+            firstPageHref: firstPageHref
+        )
+        try opfContent.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8)
         
         // 5. Nav
-        let navContent = """
-        <?xml version="1.0" encoding="UTF-8"?>
-        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
-        <head><title>Navigation</title></head>
-        <body><nav epub:type="toc" id="toc"><ol><li><a href="page_00000.xhtml">Start</a></li></ol></nav></body>
-        </html>
-        """
-        try navContent.write(to: oebpsDir.appendingPathComponent("nav.xhtml"), atomically: true, encoding: String.Encoding.utf8)
+        let navContent = EPUBManifestBuilder.buildNavContent(firstPageHref: firstPageHref, isManga: settings.mangaMode)
+        try navContent.write(to: oebpsDir.appendingPathComponent("nav.xhtml"), atomically: true, encoding: .utf8)
+        
+        // 5.5 NCX
+        let ncxContent = EPUBManifestBuilder.buildNCXContent(bookUUID: bookUUID, baseFilename: opfTitle, firstPageHref: firstPageHref)
+        try ncxContent.write(to: oebpsDir.appendingPathComponent("toc.ncx"), atomically: true, encoding: .utf8)
         
         // 6. Zip
         let metaInfDir = epubDir.appendingPathComponent("META-INF")
         try fileManager.createDirectory(at: metaInfDir, withIntermediateDirectories: true)
-        try """
-        <?xml version="1.0"?>
-        <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
-            <rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles>
-        </container>
-        """.write(to: metaInfDir.appendingPathComponent("container.xml"), atomically: true, encoding: String.Encoding.utf8)
+        try EPUBManifestBuilder.containerXML.write(to: metaInfDir.appendingPathComponent("container.xml"), atomically: true, encoding: .utf8)
         
         if fileManager.fileExists(atPath: outputURL.path) {
             try fileManager.removeItem(at: outputURL)
@@ -174,22 +187,25 @@ struct EPUBMerger: Sendable {
         try "application/epub+zip".write(to: mimetypePath, atomically: true, encoding: .ascii)
         try archive.addEntry(with: "mimetype", fileURL: mimetypePath, compressionMethod: .none)
         
-        // 8. Recursive Payload Addition
+        // Inject container.xml second, matching CBZToEPUBConverter
+        let containerPath = epubDir.appendingPathComponent("META-INF/container.xml")
+        try archive.addEntry(with: "META-INF/container.xml", fileURL: containerPath, compressionMethod: .none)
+        
+        // 8. Recursive Payload Addition of OEBPS folder contents
         let keys: [URLResourceKey] = [.nameKey, .isDirectoryKey]
-        if let enumerator = fileManager.enumerator(at: epubDir, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) {
+        if let enumerator = fileManager.enumerator(at: oebpsDir, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) {
             while let fileURL = enumerator.nextObject() as? URL {
-                autoreleasepool {
-                    if fileURL.lastPathComponent == "mimetype" { return }
-                    
+                try autoreleasepool {
                     var isDirectory: ObjCBool = false
                     fileManager.fileExists(atPath: fileURL.path, isDirectory: &isDirectory)
                     if isDirectory.boolValue { return }
                     
-                    let relativePath = fileURL.path.replacingOccurrences(of: epubDir.path + "/", with: "")
-                    let ext = fileURL.pathExtension.lowercased()
-                    let compression: CompressionMethod = ["jpg", "jpeg", "png", "webp"].contains(ext) ? .none : .deflate
+                    let normalizedFile = fileURL.path.replacingOccurrences(of: "\\", with: "/")
+                    let normalizedBase = epubDir.path.replacingOccurrences(of: "\\", with: "/")
+                    let prefix = normalizedBase.hasSuffix("/") ? normalizedBase : normalizedBase + "/"
+                    let relativePath = normalizedFile.replacingOccurrences(of: prefix, with: "")
                     
-                    try? archive.addEntry(with: relativePath, fileURL: fileURL, compressionMethod: compression)
+                    try archive.addEntry(with: relativePath, fileURL: fileURL, compressionMethod: .deflate)
                 }
             }
         }
@@ -203,45 +219,60 @@ struct EPUBMerger: Sendable {
         let thresholdBytes: Int = settings.omnibusSplitThresholdMB == 99999 ? .max : settings.omnibusSplitThresholdMB * 1024 * 1024
         var currentBundleBytes = 0
         
+        // 1.5 Load active cover data
+        var activeCoverData = overrideCoverData
+        if activeCoverData == nil, let firstURL = sourceURLs.first {
+            let tempExtract = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try? fileManager.createDirectory(at: tempExtract, withIntermediateDirectories: true)
+            defer { try? fileManager.removeItem(at: tempExtract) }
+            
+            try? fileManager.unzipItem(at: firstURL, to: tempExtract)
+            if let images = try? findImages(in: tempExtract), let firstImg = images.first {
+                activeCoverData = try? Data(contentsOf: firstImg)
+            }
+        }
+        
+        // Ensure cover is in sRGB if it's Display P3
+        if let coverData = activeCoverData {
+            activeCoverData = ImageProcessor.convertToSRGB(data: coverData)
+        }
+        
         // Setup initial Working Dir
         var currentEpubDir = try initializeBlankEPUBDir(volumeOffset: currentVolumeIndex)
-        var globalPageIndex = 0
-        var manifestItems: [String] = ["<item id=\"css\" href=\"css/style.css\" media-type=\"text/css\"/>"]
+        var globalPageIndex = 1
+        var globalPageCounter = (activeCoverData != nil) ? 2 : 1
+        var manifestItems: [String] = []
+        manifestItems.append("<item id=\"css\" href=\"css/comic.css\" media-type=\"text/css\"/>")
+        manifestItems.append("<item id=\"ncx\" href=\"toc.ncx\" media-type=\"application/x-dtbncx+xml\"/>")
+        manifestItems.append("<item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/>")
         var spineItems: [String] = []
         
         // Base closure to "Seal" a volume
         let sealCurrentEPUB = { (dirURL: URL, volIdx: Int, mItems: [String], sItems: [String]) throws -> URL in
             let oebps = dirURL.appendingPathComponent("OEBPS")
             
-            let progression = settings.mangaMode ? "page-progression-direction=\"rtl\"" : ""
-            let dateIso = Date().ISO8601Format()
-            let opf = """
-            <?xml version="1.0" encoding="UTF-8"?>
-            <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookID" version="3.0">
-                <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
-                    <dc:title>\(baseOutputName) (Vol \(volIdx))</dc:title>
-                    <dc:language>en</dc:language>
-                    <meta property="dcterms:modified">\(dateIso)</meta>
-                </metadata>
-                <manifest>
-                    \(mItems.joined(separator: "\n"))
-                    <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
-                </manifest>
-                <spine \(progression)>
-                    \(sItems.joined(separator: "\n"))
-                </spine>
-            </package>
-            """
+
+            let bookUUID = UUID().uuidString
+            let coverMeta = (activeCoverData != nil) ? "cover_img" : "img_1"
+            let firstPageHref = (activeCoverData != nil) ? "text/cover.xhtml" : "text/page_00001.xhtml"
+            let opfTitle = "\(baseOutputName) (Vol \(volIdx))"
+            
+            let opf = EPUBManifestBuilder.buildOPFContent(
+                bookUUID: bookUUID,
+                baseFilename: opfTitle,
+                coverMetaID: coverMeta,
+                manifestItems: mItems,
+                spineItems: sItems,
+                isManga: settings.mangaMode,
+                firstPageHref: firstPageHref
+            )
             try opf.write(to: oebps.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8)
             
-            let navContent = """
-            <?xml version="1.0" encoding="UTF-8"?>
-            <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
-            <head><title>Navigation</title></head>
-            <body><nav epub:type="toc" id="toc"><ol><li><a href="page_00000_cover.xhtml">Start</a></li></ol></nav></body>
-            </html>
-            """
+            let navContent = EPUBManifestBuilder.buildNavContent(firstPageHref: firstPageHref, isManga: settings.mangaMode)
             try navContent.write(to: oebps.appendingPathComponent("nav.xhtml"), atomically: true, encoding: .utf8)
+            
+            let ncxContent = EPUBManifestBuilder.buildNCXContent(bookUUID: bookUUID, baseFilename: opfTitle, firstPageHref: firstPageHref)
+            try ncxContent.write(to: oebps.appendingPathComponent("toc.ncx"), atomically: true, encoding: .utf8)
             
             let vTitle = "\(baseOutputName) - Part \(volIdx).epub"
             let finalURL = targetDir.appendingPathComponent(vTitle)
@@ -253,19 +284,23 @@ struct EPUBMerger: Sendable {
             try "application/epub+zip".write(to: mimetypePath, atomically: true, encoding: .ascii)
             try archive.addEntry(with: "mimetype", fileURL: mimetypePath, compressionMethod: .none)
             
+            let containerPath = dirURL.appendingPathComponent("META-INF/container.xml")
+            try archive.addEntry(with: "META-INF/container.xml", fileURL: containerPath, compressionMethod: .none)
+            
+            let oebpsDir = dirURL.appendingPathComponent("OEBPS")
             let keys: [URLResourceKey] = [.nameKey, .isDirectoryKey]
-            if let enumerator = fileManager.enumerator(at: dirURL, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) {
+            if let enumerator = fileManager.enumerator(at: oebpsDir, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) {
                 while let fileURL = enumerator.nextObject() as? URL {
-                    autoreleasepool {
-                        if fileURL.lastPathComponent == "mimetype" { return }
+                    try autoreleasepool {
                         var isDirectory: ObjCBool = false
                         fileManager.fileExists(atPath: fileURL.path, isDirectory: &isDirectory)
                         if isDirectory.boolValue { return }
                         
-                        let relativePath = fileURL.path.replacingOccurrences(of: dirURL.path + "/", with: "")
-                        let ext = fileURL.pathExtension.lowercased()
-                        let compression: CompressionMethod = ["jpg", "jpeg", "png", "webp"].contains(ext) ? .none : .deflate
-                        try? archive.addEntry(with: relativePath, fileURL: fileURL, compressionMethod: compression)
+                        let normalizedFile = fileURL.path.replacingOccurrences(of: "\\", with: "/")
+                        let normalizedBase = dirURL.path.replacingOccurrences(of: "\\", with: "/")
+                        let prefix = normalizedBase.hasSuffix("/") ? normalizedBase : normalizedBase + "/"
+                        let relativePath = normalizedFile.replacingOccurrences(of: prefix, with: "")
+                        try archive.addEntry(with: relativePath, fileURL: fileURL, compressionMethod: .deflate)
                     }
                 }
             }
@@ -274,25 +309,28 @@ struct EPUBMerger: Sendable {
         }
         
         let injectCover = { (targetImagesDir: URL, targetOESPSDir: URL, partNumber: Int, destManifest: inout [String], destSpine: inout [String]) throws -> Int in
-            if let baseCover = overrideCoverData {
+            if let baseCover = activeCoverData {
                 let badgedData = self.createBadgedCover(from: baseCover, partNumber: partNumber, placement: settings.omnibusBadgePlacement) ?? baseCover
                 
-                let coverName = "page_00000_cover.jpg"
-                try badgedData.write(to: targetImagesDir.appendingPathComponent(coverName))
-                let htmlName = "page_00000_cover.xhtml"
-                let content = """
-                    <?xml version="1.0" encoding="UTF-8"?>
-                    <!DOCTYPE html>
-                    <html xmlns="http://www.w3.org/1999/xhtml">
-                    <head><title>Cover</title><meta name="viewport" content="width=1000, height=1500, initial-scale=1.0"/><link rel="stylesheet" type="text/css" href="css/style.css"/></head>
-                    <body><div class="svg-wrapper"><img src="images/\(coverName)" alt="Cover"/></div></body>
-                    </html>
-                """
-                try content.write(to: targetOESPSDir.appendingPathComponent(htmlName), atomically: true, encoding: .utf8)
-                destManifest.append("<item id=\"cover_page\" href=\"\(htmlName)\" media-type=\"application/xhtml+xml\"/>")
-                destManifest.append("<item id=\"cover_img\" href=\"images/\(coverName)\" media-type=\"image/jpeg\" properties=\"cover-image\"/>")
-                destSpine.append("<itemref idref=\"cover_page\" linear=\"yes\"/>")
-                return 1
+                let coverFilename = "cover.jpg"
+                try badgedData.write(to: targetImagesDir.appendingPathComponent(coverFilename))
+                
+                destManifest.append("<item id=\"cover_img\" href=\"images/\(coverFilename)\" media-type=\"image/jpeg\" properties=\"cover-image\"/>")
+                // Write cover.xhtml so the cover-image manifest item is referenced from the spine.
+                // Kindle Cloud auto-injects a duplicate cover page for any cover-image item that
+                // is NOT in the spine — this cover.xhtml prevents that auto-injection.
+                let coverXHTML = EPUBManifestBuilder.buildCoverXHTML(coverFilename: coverFilename, isManga: settings.mangaMode)
+                let textDir = targetOESPSDir.appendingPathComponent("text")
+                try coverXHTML.write(to: textDir.appendingPathComponent("cover.xhtml"), atomically: true, encoding: .utf8)
+                destManifest.append("<item id=\"cover_page\" href=\"text/cover.xhtml\" media-type=\"application/xhtml+xml\"/>")
+                let coverSpreadTag: String
+                if settings.linkCoverAsSpread {
+                    coverSpreadTag = settings.mangaMode ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
+                } else {
+                    coverSpreadTag = ""
+                }
+                destSpine.append("<itemref idref=\"cover_page\"\(coverSpreadTag)/>")
+                return 0 // cover.xhtml is the first spine entry; regular pages follow at globalPageIndex 1+
             }
             return 0
         }
@@ -307,7 +345,11 @@ struct EPUBMerger: Sendable {
             try fileManager.unzipItem(at: sourceBox, to: scratchDir)
             
             let images = try findImages(in: scratchDir)
-            let issueMB = images.compactMap { try? fileManager.attributesOfItem(atPath: $0.path)[.size] as? Int }.reduce(0, +)
+            let issueMB: Int = images.reduce(0) { sum, imgURL in
+                let imgAttrs = try? fileManager.attributesOfItem(atPath: imgURL.path)
+                let bytes: Int = (imgAttrs?[.size] as? Int) ?? 0
+                return sum + bytes
+            }
             
             if currentBundleBytes + issueMB > thresholdBytes && currentBundleBytes > 0 {
                 let builtEPUBURL = try sealCurrentEPUB(currentEpubDir, currentVolumeIndex, manifestItems, spineItems)
@@ -315,9 +357,13 @@ struct EPUBMerger: Sendable {
                 
                 currentVolumeIndex += 1
                 currentBundleBytes = 0
-                globalPageIndex = 0
+                globalPageIndex = 1
+                globalPageCounter = (activeCoverData != nil) ? 2 : 1
                 currentEpubDir = try initializeBlankEPUBDir(volumeOffset: currentVolumeIndex)
-                manifestItems = ["<item id=\"css\" href=\"css/style.css\" media-type=\"text/css\"/>"]
+                manifestItems = []
+                manifestItems.append("<item id=\"css\" href=\"css/comic.css\" media-type=\"text/css\"/>")
+                manifestItems.append("<item id=\"ncx\" href=\"toc.ncx\" media-type=\"application/x-dtbncx+xml\"/>")
+                manifestItems.append("<item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/>")
                 spineItems = []
                 
                 globalPageIndex += try injectCover(currentEpubDir.appendingPathComponent("OEBPS/images"), currentEpubDir.appendingPathComponent("OEBPS"), currentVolumeIndex, &manifestItems, &spineItems)
@@ -325,28 +371,60 @@ struct EPUBMerger: Sendable {
             
             let activeOEBPS = currentEpubDir.appendingPathComponent("OEBPS")
             let activeImages = activeOEBPS.appendingPathComponent("images")
+            let activeText = activeOEBPS.appendingPathComponent("text")
             
-            for img in images {
-                autoreleasepool {
-                    let newName = "page_\(String(format: "%05d", globalPageIndex)).jpg"
-                    let destURL = activeImages.appendingPathComponent(newName)
-                    if let data = try? Data(contentsOf: img) { try? data.write(to: destURL) }
-                    let htmlName = "page_\(String(format: "%05d", globalPageIndex)).xhtml"
-                    let content = """
-                        <?xml version="1.0" encoding="UTF-8"?>
-                        <!DOCTYPE html>
-                        <html xmlns="http://www.w3.org/1999/xhtml">
-                        <head><title>Page</title><meta name="viewport" content="width=1000, height=1500, initial-scale=1.0"/><link rel="stylesheet" type="text/css" href="css/style.css"/></head>
-                        <body><div class="svg-wrapper"><img src="images/\(newName)" alt="Page"/></div></body>
-                        </html>
-                    """
-                    try? content.write(to: activeOEBPS.appendingPathComponent(htmlName), atomically: true, encoding: .utf8)
+            for (imgIdx, img) in images.enumerated() {
+                try autoreleasepool {
+                    // Skip the first image of the first EPUB if cover override is active (Part 1 cover page)
+                    if idx == 0 && imgIdx == 0 && activeCoverData != nil {
+                        return
+                    }
                     
-                    manifestItems.append("<item id=\"page_\(globalPageIndex)\" href=\"\(htmlName)\" media-type=\"application/xhtml+xml\"/>")
-                    manifestItems.append("<item id=\"img_\(globalPageIndex)\" href=\"images/\(newName)\" media-type=\"image/jpeg\"/>")
-                    spineItems.append("<itemref idref=\"page_\(globalPageIndex)\" linear=\"yes\"/>")
+                    let trueExt = (img.pathExtension.lowercased() == "png") ? "png" : "jpg"
+                    let safeExt = (trueExt == "jpg") ? "jpeg" : trueExt
+                    let newName = String(format: "image_%05d.%@", globalPageIndex, trueExt)
+                    let destURL = activeImages.appendingPathComponent(newName)
+                    try copyAndPrepareImage(from: img, to: destURL, settings: settings)
+                    
+                    let htmlName = String(format: "page_%05d.xhtml", globalPageIndex)
+                    let htmlContent = EPUBManifestBuilder.buildChunkXHTML(
+                        chunkIndex: globalPageIndex,
+                        images: [newName],
+                        title: "Page \(globalPageIndex)"
+                    )
+                    try? htmlContent.write(to: activeText.appendingPathComponent(htmlName), atomically: true, encoding: .utf8)
+                    
+                    let isFirstPageCover = (globalPageIndex == 1 && activeCoverData == nil)
+                    // The cover image (img_1) must carry properties="cover-image" so that the
+                    // OPF <meta name="cover" content="img_1"/> is consistent — Kindle's ingestor
+                    // checks that the item referenced by <meta name="cover"> has this property and
+                    // fails with E999 if it does not. The duplicate-cover problem is suppressed by
+                    // page_1.xhtml being the FIRST spine item wrapping img_1.
+                    let coverImageProp = isFirstPageCover ? " properties=\"cover-image\"" : ""
+                    manifestItems.append("<item id=\"page_\(globalPageIndex)\" href=\"text/\(htmlName)\" media-type=\"application/xhtml+xml\"/>")
+                    manifestItems.append("<item id=\"img_\(globalPageIndex)\" href=\"images/\(newName)\" media-type=\"image/\(safeExt)\"\(coverImageProp)/>")
+                    
+                    // Apply Dynamic Landscape Spreads Tagging (RTL vs LTR)
+                    let spreadTag: String
+                    if settings.linkCoverAsSpread {
+                        if settings.mangaMode {
+                            spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
+                        } else {
+                            spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-left\"" : " properties=\"page-spread-right\""
+                        }
+                    } else {
+                        if globalPageCounter == 1 {
+                            spreadTag = "" // Cover stands alone centered
+                        } else if settings.mangaMode {
+                            spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-left\"" : " properties=\"page-spread-right\""
+                        } else {
+                            spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
+                        }
+                    }
+                    spineItems.append("<itemref idref=\"page_\(globalPageIndex)\"\(spreadTag)/>")
                     
                     globalPageIndex += 1
+                    globalPageCounter += 1
                 }
             }
             
@@ -370,73 +448,111 @@ struct EPUBMerger: Sendable {
         let newDir = fileManager.temporaryDirectory.appendingPathComponent("Omnibus_V\(volumeOffset)_\(UUID().uuidString)")
         let oebpsDir = newDir.appendingPathComponent("OEBPS")
         try fileManager.createDirectory(at: oebpsDir.appendingPathComponent("images"), withIntermediateDirectories: true)
+        try fileManager.createDirectory(at: oebpsDir.appendingPathComponent("text"), withIntermediateDirectories: true)
         try fileManager.createDirectory(at: oebpsDir.appendingPathComponent("css"), withIntermediateDirectories: true)
-        let cssContent = """
-        @page { margin: 0; padding: 0; }
-        body { margin: 0; padding: 0; width: 100vw; height: 100vh; background-color: #000000; }
-        div.svg-wrapper { width: 100%; height: 100%; margin: 0; padding: 0; text-align: center; }
-        img { height: 100%; width: auto; max-width: 100%; object-fit: contain; }
-        """
-        try cssContent.write(to: oebpsDir.appendingPathComponent("css/style.css"), atomically: true, encoding: .utf8)
+        let cssContent = EPUBManifestBuilder.cssContent
+        try cssContent.write(to: oebpsDir.appendingPathComponent("css/comic.css"), atomically: true, encoding: .utf8)
         try fileManager.createDirectory(at: newDir.appendingPathComponent("META-INF"), withIntermediateDirectories: true)
-        try "<?xml version=\"1.0\"?><container version=\"1.0\" xmlns=\"urn:oasis:names:tc:opendocument:xmlns:container\"><rootfiles><rootfile full-path=\"OEBPS/content.opf\" media-type=\"application/oebps-package+xml\"/></rootfiles></container>".write(to: newDir.appendingPathComponent("META-INF/container.xml"), atomically: true, encoding: .utf8)
+        try EPUBManifestBuilder.containerXML.write(to: newDir.appendingPathComponent("META-INF/container.xml"), atomically: true, encoding: .utf8)
         return newDir
     }
     
-    // Engine Component: Cover Art Sticker Placer 
     private func createBadgedCover(from originalData: Data, partNumber: Int, placement: CoverBadgePlacement) -> Data? {
         guard placement != .hidden, let uiImage = UIImage(data: originalData) else { return originalData }
         if partNumber <= 1 { return originalData } // Only badge Part 2+
         
         let size = uiImage.size
-        UIGraphicsBeginImageContextWithOptions(size, false, 1.0)
-        defer { UIGraphicsEndImageContext() }
-        uiImage.draw(at: .zero)
+        // 🚨 ENFORCE sRGB Color Space. Wide-color (P3) JPEGs will hard-brick Kindle E-Ink screens.
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1.0
+        format.preferredRange = .standard // Forces sRGB instead of device-dependent P3
         
-        let text = "PART \(partNumber)"
-        let fontSize = max(size.width * 0.05, 40)
-        let font = UIFont.systemFont(ofSize: fontSize, weight: .black)
-        
-        let strokeTextAttributes: [NSAttributedString.Key: Any] = [
-            .strokeColor: UIColor.black,
-            .foregroundColor: UIColor.white,
-            .strokeWidth: -6.0,
-            .font: font
-        ]
-        
-        let attrStr = NSAttributedString(string: text, attributes: strokeTextAttributes)
-        let textSize = attrStr.size()
-        
-        let badgePadding: CGFloat = 16
-        let boxWidth = textSize.width + (badgePadding * 2)
-        let boxHeight = textSize.height + (badgePadding * 2)
-        let offset: CGFloat = size.width * 0.03
-        
-        var boxOrigin = CGPoint.zero
-        switch placement {
-        case .topLeft: boxOrigin = CGPoint(x: offset, y: offset)
-        case .topRight: boxOrigin = CGPoint(x: size.width - boxWidth - offset, y: offset)
-        case .bottomLeft: boxOrigin = CGPoint(x: offset, y: size.height - boxHeight - offset)
-        case .bottomRight: boxOrigin = CGPoint(x: size.width - boxWidth - offset, y: size.height - boxHeight - offset)
-        case .center: boxOrigin = CGPoint(x: (size.width - boxWidth)/2, y: (size.height - boxHeight)/2)
-        case .hidden: return originalData
-        }
-        
-        let rect = CGRect(origin: boxOrigin, size: CGSize(width: boxWidth, height: boxHeight))
-        let path = UIBezierPath(roundedRect: rect, cornerRadius: 10)
-        
-        if let ctx = UIGraphicsGetCurrentContext() {
-            ctx.saveGState()
-            ctx.setShadow(offset: CGSize(width: 4, height: 4), blur: 8, color: UIColor.black.withAlphaComponent(0.6).cgColor)
+        let renderer = UIGraphicsImageRenderer(size: size, format: format)
+        let finalImage = renderer.image { ctx in
+            uiImage.draw(at: .zero)
+            
+            let text = "PART \(partNumber)"
+            let fontSize = max(size.width * 0.05, 40)
+            let font = UIFont.systemFont(ofSize: fontSize, weight: .black)
+            
+            let strokeTextAttributes: [NSAttributedString.Key: Any] = [
+                .strokeColor: UIColor.black,
+                .foregroundColor: UIColor.white,
+                .strokeWidth: -6.0,
+                .font: font
+            ]
+            
+            let attrStr = NSAttributedString(string: text, attributes: strokeTextAttributes)
+            let textSize = attrStr.size()
+            
+            let badgePadding: CGFloat = 16
+            let boxWidth = textSize.width + (badgePadding * 2)
+            let boxHeight = textSize.height + (badgePadding * 2)
+            let offset: CGFloat = size.width * 0.03
+            
+            var boxOrigin = CGPoint.zero
+            switch placement {
+            case .topLeft: boxOrigin = CGPoint(x: offset, y: offset)
+            case .topRight: boxOrigin = CGPoint(x: size.width - boxWidth - offset, y: offset)
+            case .bottomLeft: boxOrigin = CGPoint(x: offset, y: size.height - boxHeight - offset)
+            case .bottomRight: boxOrigin = CGPoint(x: size.width - boxWidth - offset, y: size.height - boxHeight - offset)
+            case .center: boxOrigin = CGPoint(x: (size.width - boxWidth)/2, y: (size.height - boxHeight)/2)
+            case .hidden: return
+            }
+            
+            let rect = CGRect(origin: boxOrigin, size: CGSize(width: boxWidth, height: boxHeight))
+            let path = UIBezierPath(roundedRect: rect, cornerRadius: 10)
+            
+            let cgCtx = ctx.cgContext
+            cgCtx.saveGState()
+            cgCtx.setShadow(offset: CGSize(width: 4, height: 4), blur: 8, color: UIColor.black.withAlphaComponent(0.6).cgColor)
             UIColor.systemRed.setFill()
             path.fill()
-            ctx.restoreGState()
+            cgCtx.restoreGState()
+            
+            let textOrigin = CGPoint(x: boxOrigin.x + badgePadding, y: boxOrigin.y + badgePadding)
+            attrStr.draw(at: textOrigin)
         }
         
-        let textOrigin = CGPoint(x: boxOrigin.x + badgePadding, y: boxOrigin.y + badgePadding)
-        attrStr.draw(at: textOrigin)
+        return finalImage.jpegData(compressionQuality: 0.9)
+    }
+
+    private func copyAndPrepareImage(from srcURL: URL, to destURL: URL, settings: ConversionSettings) throws {
+        // Validate that the image file is not corrupt (e.g. an HTML error page)
+        guard let _ = UIImage(contentsOfFile: srcURL.path) else {
+            throw NSError(domain: "ImageProcessor", code: 404, userInfo: [
+                NSLocalizedDescriptionKey: "Invalid or corrupted image file '\(srcURL.lastPathComponent)' in source archive. This often happens when a downloader saves an HTML error page instead of the image. Please verify your source file."
+            ])
+        }
         
-        return UIGraphicsGetImageFromCurrentImageContext()?.jpegData(compressionQuality: 0.9)
+        let ext = srcURL.pathExtension.lowercased()
+        let needsConversion = ImageProcessor.isWideColor(url: srcURL)
+        
+        if needsConversion || ext == "webp" {
+            if let image = UIImage(contentsOfFile: srcURL.path) {
+                let format = UIGraphicsImageRendererFormat()
+                format.scale = 1.0
+                format.preferredRange = .standard // Forces standard sRGB color space
+                let renderer = UIGraphicsImageRenderer(size: image.size, format: format)
+                let srgbImage = renderer.image { _ in image.draw(at: .zero) }
+                
+                let data: Data?
+                if ext == "png" {
+                    data = srgbImage.pngData()
+                } else {
+                    data = srgbImage.jpegData(compressionQuality: settings.compressionQuality.value)
+                }
+                
+                if let finalData = data {
+                    try finalData.write(to: destURL)
+                    return
+                }
+            }
+        }
+        
+        // Fallback or if no conversion is needed
+        let data = try Data(contentsOf: srcURL)
+        try data.write(to: destURL)
     }
 
     private func findImages(in directory: URL) throws -> [URL] {

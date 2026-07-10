@@ -78,11 +78,6 @@ actor CloudCoverExtractor {
                     try await DropboxProvider.shared.getDownloadURL(fileID: remoteID)
                 }
                 authHeader = nil
-            } else if provider == "Google Drive" || provider == "GoogleDrive" {
-                downloadURL = try await withTimeout(seconds: 15) {
-                    try await GoogleDriveProvider.shared.getDownloadURL(fileID: remoteID)
-                }
-                authHeader = try await GoogleDriveProvider.shared.currentAuthHeader()
             } else {
                 return
             }
@@ -106,8 +101,15 @@ actor CloudCoverExtractor {
             }
 
             // ── Step 3: Decode → thumbnail ────────────────────────────────────
-            guard let image = UIImage(data: imageData),
-                  let thumbnail = image.preparingThumbnail(of: CGSize(width: 360, height: 540)) else {
+            let (thumbnailImage, jpegData) = autoreleasepool { () -> (UIImage?, Data?) in
+                guard let image = UIImage(data: imageData),
+                      let thumbnail = image.preparingThumbnail(of: CGSize(width: 360, height: 540)) else {
+                    return (nil, nil)
+                }
+                return (thumbnail, thumbnail.jpegData(compressionQuality: 0.85))
+            }
+
+            guard let thumbnail = thumbnailImage, let data = jpegData else {
                 Logger.shared.log(
                     "CloudCoverExtractor: Could not decode cover image for \(pdf.name)",
                     category: "Cloud", type: .error
@@ -115,14 +117,12 @@ actor CloudCoverExtractor {
                 return
             }
 
-            guard let jpegData = thumbnail.jpegData(compressionQuality: 0.85) else { return }
-
             // ── Step 4: Atomic write ──────────────────────────────────────────
             let coversDir = coversDirectory()
             let coverURL  = coversDir.appendingPathComponent("cover_\(pdf.id.uuidString).jpg")
             let tmpURL    = coversDir.appendingPathComponent("cover_\(pdf.id.uuidString).tmp.jpg")
 
-            try jpegData.write(to: tmpURL)
+            try data.write(to: tmpURL)
             _ = try FileManager.default.replaceItemAt(coverURL, withItemAt: tmpURL)
 
             // ── Step 5: Invalidate NSCache + wake SwiftUI cells ───────────────
@@ -191,8 +191,11 @@ actor CloudCoverExtractor {
             let localURL = try await CloudDownloadManager.shared.streamCloudFile(pdf: pdf)
             defer { try? FileManager.default.removeItem(at: localURL) }
 
-            guard let image = PhysicalFileSystemRouter.extractCoverImageStatic(from: localURL),
-                  let data = image.jpegData(compressionQuality: 0.85) else {
+            let extractedData = autoreleasepool { () -> Data? in
+                guard let image = PhysicalFileSystemRouter.extractCoverImageStatic(from: localURL) else { return nil }
+                return image.jpegData(compressionQuality: 0.85)
+            }
+            guard let data = extractedData else {
                 throw NSError(domain: "CloudCoverExtractor", code: 2,
                               userInfo: [NSLocalizedDescriptionKey: "Could not extract cover from downloaded CBR: \(pdfName)"])
             }
@@ -204,7 +207,7 @@ actor CloudCoverExtractor {
 
     private func shouldExtract(_ pdf: ConvertedPDF) -> Bool {
         guard !inFlight.contains(pdf.id) else { return false }
-        guard case .cloud(let provider, _) = pdf.sourceMode, ["Dropbox", "GoogleDrive", "Google Drive"].contains(provider) else { return false }
+        guard case .cloud(let provider, _) = pdf.sourceMode, provider == "Dropbox" else { return false }
 
         let ext = (pdf.name as NSString).pathExtension.lowercased()
         guard ["cbz", "zip", "cbr"].contains(ext) else { return false }
@@ -224,7 +227,7 @@ private func withTimeout<T: Sendable>(seconds: TimeInterval, operation: @escapin
             try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
             throw URLError(.timedOut)
         }
-        let result = try await group.next()!
+        guard let result = try await group.next() else { throw URLError(.unknown) }
         group.cancelAll()
         return result
     }

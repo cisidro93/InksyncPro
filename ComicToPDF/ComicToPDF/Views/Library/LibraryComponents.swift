@@ -61,11 +61,31 @@ struct LibraryGridItem: View {
                     .lineLimit(2)
                     .foregroundColor(.primary)
                 
-                HStack {
-                    if let collectionId = pdf.collectionId,
-                       let col = conversionManager.collections.first(where: { $0.id == collectionId }) {
+                HStack(spacing: 5) {
+                    if let col = matchingCollection {
                         Circle().fill(colorFor(col.color)).frame(width: 8, height: 8)
                     }
+                    
+                    if let vol = pdf.metadata.volume, !vol.trimmingCharacters(in: .whitespaces).isEmpty {
+                        Text("V.\(vol)")
+                            .font(.system(size: 9, weight: .bold))
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(Color.purple.opacity(0.12))
+                            .foregroundColor(.purple)
+                            .cornerRadius(3)
+                    }
+                    
+                    if let issue = pdf.metadata.issueNumber, !issue.trimmingCharacters(in: .whitespaces).isEmpty {
+                        Text("#\(issue)")
+                            .font(.system(size: 9, weight: .bold))
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(Color.blue.opacity(0.12))
+                            .foregroundColor(.blue)
+                            .cornerRadius(3)
+                    }
+                    
                     Text(pdf.formattedSize)
                         .font(.caption)
                         .foregroundColor(.secondary)
@@ -77,6 +97,11 @@ struct LibraryGridItem: View {
         .background(Color(UIColor.secondarySystemGroupedBackground))
         .cornerRadius(12)
         .contentShape(Rectangle())
+    }
+
+    private var matchingCollection: PDFCollection? {
+        guard let id = pdf.collectionId else { return nil }
+        return conversionManager.collections.first(where: { $0.id == id })
     }
 }
 
@@ -151,14 +176,32 @@ struct LibraryPDFRowWithCover: View {
                 }
                 
                 HStack {
-                    if let collectionId = pdf.collectionId,
-                       let collection = conversionManager.collections.first(where: { $0.id == collectionId }) {
+                    if let collection = matchingCollection {
                         Text(collection.name)
                             .font(.caption2)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
                             .background(Color(collection.color).opacity(0.2))
                             .foregroundColor(Color(collection.color))
+                            .cornerRadius(4)
+                    }
+                    if let vol = pdf.metadata.volume, !vol.trimmingCharacters(in: .whitespaces).isEmpty {
+                        Text("Vol. \(vol)")
+                            .font(.system(size: 10, weight: .bold))
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1.5)
+                            .background(Color.purple.opacity(0.12))
+                            .foregroundColor(.purple)
+                            .cornerRadius(4)
+                    }
+                    
+                    if let issue = pdf.metadata.issueNumber, !issue.trimmingCharacters(in: .whitespaces).isEmpty {
+                        Text("#\(issue)")
+                            .font(.system(size: 10, weight: .bold))
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1.5)
+                            .background(Color.blue.opacity(0.12))
+                            .foregroundColor(.blue)
                             .cornerRadius(4)
                     }
                     
@@ -189,27 +232,13 @@ struct LibraryPDFRowWithCover: View {
             if let cached = conversionManager.thumbnailCache.object(forKey: key) {
                 self.localCover = cached; return
             }
-            guard let coverURL = conversionManager.getCoverURL(for: pdf),
-                  FileManager.default.fileExists(atPath: coverURL.path) else { return }
-            
-            let generated = await Task.detached(priority: .userInitiated) { () -> UIImage? in
-                let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
-                guard let source = CGImageSourceCreateWithURL(coverURL as CFURL, sourceOptions) else { return nil }
-                let downsampleOptions = [
-                    kCGImageSourceCreateThumbnailFromImageAlways: true,
-                    kCGImageSourceShouldCacheImmediately: true,
-                    kCGImageSourceCreateThumbnailWithTransform: true,
-                    kCGImageSourceThumbnailMaxPixelSize: 300
-                ] as CFDictionary
-                guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, downsampleOptions) else { return nil }
-                return UIImage(cgImage: cgImage)
-            }.value
-            
-            if let image = generated {
-                conversionManager.thumbnailCache.setObject(image, forKey: key)
-                self.localCover = image
-            }
+            await ThumbnailGenerationQueue.shared.enqueue(pdf, manager: conversionManager)
         }
+    }
+
+    private var matchingCollection: PDFCollection? {
+        guard let id = pdf.collectionId else { return nil }
+        return conversionManager.collections.first(where: { $0.id == id })
     }
 }
 
@@ -376,22 +405,7 @@ private struct RecentlyReadCell: View {
             if let cached = conversionManager.thumbnailCache.object(forKey: key) {
                 cover = cached; return
             }
-            guard let coverURL = conversionManager.getCoverURL(for: pdf),
-                  FileManager.default.fileExists(atPath: coverURL.path) else { return }
-            let img = await Task.detached(priority: .userInitiated) { () -> UIImage? in
-                let src = [kCGImageSourceShouldCache: false] as CFDictionary
-                guard let source = CGImageSourceCreateWithURL(coverURL as CFURL, src) else { return nil }
-                let opts = [kCGImageSourceCreateThumbnailFromImageAlways: true,
-                            kCGImageSourceShouldCacheImmediately: true,
-                            kCGImageSourceCreateThumbnailWithTransform: true,
-                            kCGImageSourceThumbnailMaxPixelSize: 300] as CFDictionary
-                guard let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, opts) else { return nil }
-                return UIImage(cgImage: cg)
-            }.value
-            if let img {
-                conversionManager.thumbnailCache.setObject(img, forKey: key)
-                cover = img
-            }
+            await ThumbnailGenerationQueue.shared.enqueue(pdf, manager: conversionManager)
         }
     }
 }
@@ -408,7 +422,7 @@ struct UpNextBingeShelf: View {
         var nextToRead: [String: ConvertedPDF] = [:] // SeriesName : PDF
         
         // Group by series
-        let seriesGroups = Dictionary(grouping: allPDFs.filter { $0.metadata.series != nil && !$0.metadata.series!.isEmpty }, by: { $0.metadata.series! })
+        let seriesGroups = Dictionary(grouping: allPDFs.filter { $0.metadata.series?.isEmpty == false }, by: { $0.metadata.series ?? "" })
         
         for (seriesName, issues) in seriesGroups {
             // Sort issues by number
@@ -495,8 +509,18 @@ private struct UpNextCell: View {
             .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.1), lineWidth: 0.5))
             .shadow(color: .black.opacity(0.25), radius: 6, y: 4)
 
-            if let issue = pdf.metadata.issueNumber ?? pdf.metadata.volume {
-                Text("Vol. \(issue)")
+            if let issue = pdf.metadata.issueNumber, !issue.isEmpty {
+                Text("#\(issue)")
+                    .font(.system(size: 10, weight: .heavy))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(Theme.blue)
+                    .clipShape(Capsule())
+                    .offset(y: -20)
+                    .padding(.bottom, -20)
+            } else if let volume = pdf.metadata.volume, !volume.isEmpty {
+                Text("Vol. \(volume)")
                     .font(.system(size: 10, weight: .heavy))
                     .foregroundColor(.white)
                     .padding(.horizontal, 6)
@@ -519,22 +543,7 @@ private struct UpNextCell: View {
             if let cached = conversionManager.thumbnailCache.object(forKey: key) {
                 cover = cached; return
             }
-            guard let coverURL = conversionManager.getCoverURL(for: pdf),
-                  FileManager.default.fileExists(atPath: coverURL.path) else { return }
-            let img = await Task.detached(priority: .userInitiated) { () -> UIImage? in
-                let src = [kCGImageSourceShouldCache: false] as CFDictionary
-                guard let source = CGImageSourceCreateWithURL(coverURL as CFURL, src) else { return nil }
-                let opts = [kCGImageSourceCreateThumbnailFromImageAlways: true,
-                            kCGImageSourceShouldCacheImmediately: true,
-                            kCGImageSourceCreateThumbnailWithTransform: true,
-                            kCGImageSourceThumbnailMaxPixelSize: 360] as CFDictionary
-                guard let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, opts) else { return nil }
-                return UIImage(cgImage: cg)
-            }.value
-            if let img {
-                conversionManager.thumbnailCache.setObject(img, forKey: key)
-                cover = img
-            }
+            await ThumbnailGenerationQueue.shared.enqueue(pdf, manager: conversionManager)
         }
     }
 }
@@ -565,7 +574,7 @@ struct MissingIssueDetector {
         if gaps.count <= 5 {
             return "Missing: #" + gaps.joined(separator: ", #")
         } else {
-            return "Missing \(gaps.count) issues (#\(gaps.first!)...#\(gaps.last!))"
+            return "Missing \(gaps.count) issues (#\(gaps.first ?? "")...#\(gaps.last ?? ""))"
         }
     }
 }
@@ -635,30 +644,47 @@ struct BatchVolumeAssignmentSheet: View {
                     .foregroundColor(Theme.textSecondary)
                     .multilineTextAlignment(.center)
                 
-                TextField("Volume Number (e.g., 3)", text: $volumeText)
+                TextField("Volume Number (e.g., 3, 1.5, Special)", text: $volumeText)
                     .textFieldStyle(.roundedBorder)
-                    .keyboardType(.numberPad)
                     .padding(.horizontal, 40)
                 
-                Button {
-                    guard !volumeText.isEmpty else { return }
-                    for id in selectedIDs {
-                        if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == id }) {
-                            conversionManager.convertedPDFs[idx].metadata.volume = volumeText
+                VStack(spacing: 12) {
+                    Button {
+                        let finalVal = volumeText.trimmingCharacters(in: .whitespacesAndNewlines)
+                        for id in selectedIDs {
+                            if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == id }) {
+                                conversionManager.convertedPDFs[idx].metadata.volume = finalVal.isEmpty ? nil : finalVal
+                            }
+                        }
+                        conversionManager.saveLibrary()
+                        dismiss()
+                    } label: {
+                        Text(volumeText.isEmpty ? "Clear Volume Grouping" : "Assign Volume \(volumeText)")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(volumeText.isEmpty ? Theme.red : Theme.blue)
+                            .cornerRadius(12)
+                    }
+                    
+                    if !volumeText.isEmpty {
+                        Button {
+                            for id in selectedIDs {
+                                if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == id }) {
+                                    conversionManager.convertedPDFs[idx].metadata.volume = nil
+                                }
+                            }
+                            conversionManager.saveLibrary()
+                            dismiss()
+                        } label: {
+                            Text("Clear Volume Grouping")
+                                .font(.subheadline)
+                                .foregroundColor(Theme.red)
+                                .padding(.vertical, 8)
                         }
                     }
-                    conversionManager.saveLibrary()
-                    dismiss()
-                } label: {
-                    Text("Assign Volume \(volumeText.isEmpty ? "" : volumeText)")
-                        .font(.headline)
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                        .background(volumeText.isEmpty ? Color.gray : Theme.blue)
-                        .cornerRadius(12)
                 }
-                .disabled(volumeText.isEmpty)
                 .padding(.horizontal, 40)
                 
                 Spacer()

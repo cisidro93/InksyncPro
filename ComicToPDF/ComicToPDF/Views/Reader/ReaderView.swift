@@ -6,30 +6,7 @@ import ZIPFoundation
 import PencilKit
 import SwiftData
 
-// MARK: - Reader Color Filter
-enum ReaderColorFilter: String, CaseIterable, Codable {
-    case none     = "none"
-    case sepia    = "sepia"
-    case grayscale = "grayscale"
-    case warm     = "warm"   // reduce blue light
-    
-    var label: String {
-        switch self {
-        case .none:      return "Standard"
-        case .sepia:     return "Sepia"
-        case .grayscale: return "Grayscale"
-        case .warm:      return "Night Warm"
-        }
-    }
-    var icon: String {
-        switch self {
-        case .none:      return "photo"
-        case .sepia:     return "cup.and.saucer.fill"
-        case .grayscale: return "moon.circle"
-        case .warm:      return "flame.fill"
-        }
-    }
-}
+// ReaderColorFilter has been replaced by the unified ReadingFilter
 
 struct ReaderView: View {
     @State var fileURL: URL
@@ -41,6 +18,7 @@ struct ReaderView: View {
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var conversionManager: ConversionManager
     @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject var settingsManager: AppSettingsManager
     
     @AppStorage("isMangaMode") private var isMangaMode = false
     @State private var isPanelViewEnabled = true
@@ -54,15 +32,13 @@ struct ReaderView: View {
 
     // Advanced Reader Features
     @AppStorage("isVerticalScroll") private var isVerticalScroll = false
-    @AppStorage("isDoublePageMode") private var isDoublePageMode = false
     @AppStorage("autoLandscapeDualPage") private var autoLandscapeDualPage = true
     @State private var isDrawingMode = false
     @State private var canvasView = PKCanvasView()
     @State private var deviceOrientation: UIDeviceOrientation = UIDevice.current.orientation
     @State private var rotationDebounceTask: Task<Void, Never>? = nil
     
-    // Color Filter
-    @State private var colorFilter: ReaderColorFilter = .none
+    // Color Filter is unified under prefs.readingFilter
 
     // Settings sheet
     @State private var showReaderSettings = false
@@ -161,7 +137,7 @@ struct ReaderView: View {
                 // KOReader Casual Comforts Overlay
                 edgeSwipeOverlay(in: geo)
                 
-                // Manga Binge-Mode HUD
+                // Series Binge-Mode HUD
                 if showBingePrompt, let nextVol = nextVolumeToRead {
                     bingeModeOverlay(nextVol: nextVol)
                 }
@@ -276,17 +252,11 @@ struct ReaderView: View {
                 }
             }
             .onChange(of: isMangaMode) { savePerBookPreferences() }
-            .onChange(of: colorFilter) { savePerBookPreferences() }
+            .onChange(of: prefs.readingFilterRaw) { _, _ in savePerBookPreferences() }
             .onChange(of: sleepTimer.didFire) { _, fired in
                 if fired { if let onExit = onExit { onExit() } else { dismiss() } }
             }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("Reader_EndOfBookReached"))) { _ in nextPage() }
-            // Item 7 — Jump-to-source from Zettelkasten hub
-            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("Reader_JumpToPage"))) { note in
-                if let idx = note.userInfo?["pageIndex"] as? Int, idx >= 0, idx < pages.count {
-                    withAnimation { currentPageIndex = idx }
-                }
-            }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("Reader_BookmarkCurrentPage"))) { note in
                 if let idx = note.userInfo?["pageIndex"] as? Int {
                     NotificationCenter.default.post(name: NSNotification.Name("BookmarkAdded"),
@@ -298,7 +268,8 @@ struct ReaderView: View {
                 if let idx = note.userInfo?["pageIndex"] as? Int, idx < pages.count {
                     let pageURL = pages[idx]
                     Task.detached(priority: .userInitiated) {
-                        if let data = try? Data(contentsOf: pageURL),
+                        let optData = try? Data(contentsOf: pageURL)
+                        if let data = optData,
                            let img  = UIImage(data: data) {
                             await MainActor.run { shareImage = img; showShareSheet = true }
                         }
@@ -334,7 +305,7 @@ struct ReaderView: View {
                 Button("Go") {
                     if let n = Int(jumpToPageText), n >= 1, n <= pages.count {
                         let rawIndex = n - 1
-                        let isDual = (isDoublePageMode || autoLandscapeDualPage) && geo.size.width > geo.size.height
+                        let isDual = autoLandscapeDualPage && geo.size.width > geo.size.height
                         currentPageIndex = isDual
                             ? PageBufferManager.canonicalLeadIndex(for: rawIndex, isMangaMode: isMangaMode)
                             : rawIndex
@@ -358,14 +329,16 @@ struct ReaderView: View {
                 ReaderSettingsSheet(
                     isMangaMode: $isMangaMode,
                     isVerticalScroll: $isVerticalScroll,
-                    isDoublePageMode: $isDoublePageMode,
                     autoLandscapeDualPage: $autoLandscapeDualPage,
                     autoContrastLevel: $autoContrastLevel,
                     smartSharpen: $smartSharpen,
                     isAutoCropEnabled: $isAutoCropEnabled,
-                    colorFilter: $colorFilter,
+                    colorFilter: $prefs.readingFilter,
                     ambientBrightness: ambientBrightness,
+                    brightnessLevel: $brightnessLevel,
+                    warmthLevel: $warmthLevel,
                     isWebtoonAutoScrolling: $isWebtoonAutoScrolling,
+                    webtoonScrollSpeed: $webtoonScrollSpeed,
                     onJumpToPage: { jumpToPageText = ""; showJumpToPage = true },
                     onTOC: { showTOC = true },
                     onSleepTimer: { showSleepTimerPicker = true },
@@ -385,6 +358,9 @@ struct ReaderView: View {
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
             }
+            .onChange(of: brightnessLevel) { _, newValue in
+                UIScreen.main.brightness = newValue
+            }
     }
 
     // MARK: - ReaderChrome overlay (extracted to reduce type-check surface)
@@ -393,7 +369,7 @@ struct ReaderView: View {
         if !isLoading && errorMessage == nil {
             let pageText: String = {
                 if pages.isEmpty { return "" }
-                let isDual = (isDoublePageMode || autoLandscapeDualPage) && geo.size.width > geo.size.height
+                let isDual = autoLandscapeDualPage && geo.size.width > geo.size.height
                 if isDual && currentPageIndex > 0 {
                     let lead = PageBufferManager.canonicalLeadIndex(for: currentPageIndex, isMangaMode: isMangaMode)
                     let right = min(lead + 1, pages.count - 1)
@@ -416,7 +392,7 @@ struct ReaderView: View {
                     get: { pages.isEmpty ? 0 : Double(currentPageIndex) / Double(max(1, pages.count - 1)) },
                     set: { val in
                         let raw = Int((val * Double(max(1, pages.count - 1))).rounded())
-                        let isDual = isDoublePageMode || (autoLandscapeDualPage && geo.size.width > geo.size.height)
+                        let isDual = autoLandscapeDualPage && geo.size.width > geo.size.height
                         let snapped = isDual
                             ? PageBufferManager.canonicalLeadIndex(for: raw, isMangaMode: isMangaMode)
                             : raw
@@ -464,91 +440,92 @@ struct ReaderView: View {
                     }
                 } else {
                     // ✅ READER CONTENT
-                    if isVerticalScroll {
-                        // ✅ WEBTOON MODE: UIScrollView-backed with auto-scroll + position memory
-                        ZStack {
-                            WebtoonScrollView(
-                                pages: pages,
-                                currentPageIndex: $currentPageIndex,
-                                pdfID: pdf?.id,
-                                isAutoScrolling: isWebtoonAutoScrolling,
-                                scrollSpeed: webtoonScrollSpeed,
-                                onCenterTap: {
-                                    withAnimation(.easeInOut(duration: 0.2)) { isToolbarVisible.toggle() }
-                                },
-                                onEndReached: {
-                                    if let nextVol = getNextVolume() {
-                                        self.nextVolumeToRead = nextVol
-                                        withAnimation(.spring()) { self.showBingePrompt = true }
-                                    }
-                                }
-                            )
-                            WebtoonControlBar(isAutoScrolling: $isWebtoonAutoScrolling, scrollSpeed: $webtoonScrollSpeed)
-                        }
-                    } else {
-                        // ✅ ZERO-LATENCY METAL PPL READER
-                        if fileURL.pathExtension.lowercased() != "pdf" {
-                            if !pages.isEmpty {
-                                let effectiveDoublePage = isDoublePageMode || (autoLandscapeDualPage && geo.size.width > geo.size.height)
-                                PPLReaderView(pages: pages, currentPageIndex: $currentPageIndex, pdfID: pdf?.id, isMangaMode: isMangaMode, isDoublePageOverride: effectiveDoublePage, isDrawingMode: isDrawingMode, startWithGuidedReading: initialReadingMode == "panelNavigation") {
-                                    withAnimation(.easeInOut(duration: 0.2)) {
-                                        isToolbarVisible.toggle()
-                                    }
-                                }
-                                .ignoresSafeArea()
-                            }
-                        } else {
-                            PDFKitView(
-                                url: fileURL,
-                                currentPageIndex: $currentPageIndex,
-                                totalPages: $pages,
-                                isVerticalScroll: isVerticalScroll,
-                                isMangaMode: isMangaMode,
-                                isDoublePageMode: isDoublePageMode || (autoLandscapeDualPage && geo.size.width > geo.size.height),
-                                loadedDocument: $loadedPDFDocument,
-                                onSingleTap: {
-                                    withAnimation(.easeInOut(duration: 0.2)) { isToolbarVisible.toggle() }
-                                },
-                                onViewCreated: { ref in pdfViewRef = ref },
-                                onHighlightRequested: { selectedText in
-                                    guard let pdfID = pdf?.id else { return }
-                                    let ann = Annotation(
-                                        pdfID: pdfID,
-                                        pageIndex: currentPageIndex,
-                                        chapterTitle: "Page \(currentPageIndex + 1)",
-                                        kind: .highlight,
-                                        createdAt: Date(),
-                                        modifiedAt: Date(),
-                                        colorHex: "#ffd700",
-                                        selectedText: selectedText
-                                    )
-                                    AnnotationStore.shared.add(ann)
-                                    StudyNotesStore.shared.appendHighlight(selectedText, chapter: "Page \(currentPageIndex + 1)")
-                                }
-                            )
-                            .colorMultiply(.white)
-                            .colorInvertIfDark(theme: EBookPreferences.shared.activeTheme)
-                            
-                            // ✅ PHASE 30: PencilKit Overlay (GoodNotes Parity)
-                            if isDrawingMode {
-                                CanvasInkBearingView(
-                                    canvasView: $canvasView,
-                                    isDrawingMode: isDrawingMode,
-                                    onDrawingSaved: { drawing in
-                                        // Item 8 — delegated to helper to keep comicReaderContent type-checkable
-                                        saveInkAnnotation(drawing)
+                    Group {
+                        if isVerticalScroll {
+                            // ✅ WEBTOON MODE: UIScrollView-backed with auto-scroll + position memory
+                            ZStack {
+                                WebtoonScrollView(
+                                    pages: pages,
+                                    currentPageIndex: $currentPageIndex,
+                                    pdfID: pdf?.id,
+                                    isAutoScrolling: isWebtoonAutoScrolling,
+                                    scrollSpeed: webtoonScrollSpeed,
+                                    onCenterTap: {
+                                        withAnimation(.easeInOut(duration: 0.2)) { isToolbarVisible.toggle() }
+                                    },
+                                    onEndReached: {
+                                        if let nextVol = getNextVolume() {
+                                            self.nextVolumeToRead = nextVol
+                                            withAnimation(.spring()) { self.showBingePrompt = true }
+                                        }
                                     }
                                 )
-                                // Allows native PDF panning with 2 fingers while drawing with Pencil/1 finger
-                                .allowsHitTesting(true)
+                                WebtoonControlBar(isAutoScrolling: $isWebtoonAutoScrolling, scrollSpeed: $webtoonScrollSpeed)
+                            }
+                        } else {
+                            // ✅ ZERO-LATENCY METAL PPL READER
+                            if fileURL.pathExtension.lowercased() != "pdf" {
+                                if !pages.isEmpty {
+                                    // ⚠️  Do NOT pass isDoublePageOverride here.
+                                     // PPLReaderView already reads @AppStorage("autoLandscapeDualPage")
+                                     // internally. Passing it as a prop AND having the internal
+                                    // observer both fire setupBuffer on toggle creates a race:
+                                    // two concurrent setupDirectArchive() calls clear and repopulate
+                                    // currentImage at the same time → MetalCanvasView GPU crash.
+                                    PPLReaderView(
+                                        pages: pages,
+                                        currentPageIndex: $currentPageIndex,
+                                        pdfID: pdf?.id,
+                                        isMangaMode: isMangaMode,
+                                        isDrawingMode: isDrawingMode,
+                                        startWithGuidedReading: initialReadingMode == "panelNavigation"
+                                    ) {
+                                        withAnimation(.easeInOut(duration: 0.2)) {
+                                            isToolbarVisible.toggle()
+                                        }
+                                    }
+                                    .ignoresSafeArea()
+                                }
+                            } else {
+                                PDFKitView(
+                                    url: fileURL,
+                                    currentPageIndex: $currentPageIndex,
+                                    totalPages: $pages,
+                                    isVerticalScroll: isVerticalScroll,
+                                    isMangaMode: isMangaMode,
+                                    isDoublePageMode: autoLandscapeDualPage && geo.size.width > geo.size.height,
+                                    loadedDocument: $loadedPDFDocument,
+                                    onSingleTap: {
+                                        withAnimation(.easeInOut(duration: 0.2)) { isToolbarVisible.toggle() }
+                                    },
+                                    onViewCreated: { ref in pdfViewRef = ref },
+                                    onHighlightRequested: { _ in }
+                                )
+                                .colorMultiply(.white)
+                                .colorInvertIfDark(theme: EBookPreferences.shared.activeTheme)
+                                
+                                // ✅ PHASE 30: PencilKit Overlay (GoodNotes Parity)
+                                if isDrawingMode {
+                                    CanvasInkBearingView(
+                                        canvasView: $canvasView,
+                                        isDrawingMode: isDrawingMode,
+                                        pencilOnly: settingsManager.conversionSettings.pencilOnlyDrawing,
+                                        onDrawingSaved: { drawing in
+                                            // Item 8 — delegated to helper to keep comicReaderContent type-checkable
+                                            saveInkAnnotation(drawing)
+                                        }
+                                    )
+                                    // Allows native PDF panning with 2 fingers while drawing with Pencil/1 finger
+                                    .allowsHitTesting(true)
+                                }
                             }
                         }
                     }
+                    .readingFilter(prefs.readingFilter)
                 }
                 
                 // Apply overlays in a Group so modifiers chain cleanly
                 Group {
-                    colorFilterOverlay
                     // Ambient warmth overlay (time-of-day) — only if user hasn't manually adjusted
                     if !userHasManuallyAdjustedWarmth && ambientBrightness.recommendedWarmth > 0 {
                         Rectangle()
@@ -572,7 +549,7 @@ struct ReaderView: View {
                 if !isVerticalScroll && !pages.isEmpty && !isLoading && !isToolbarVisible {
                     VStack {
                         Spacer()
-                        let isDual = (isDoublePageMode || autoLandscapeDualPage) && geo.size.width > geo.size.height
+                        let isDual = autoLandscapeDualPage && geo.size.width > geo.size.height
                         let pillText: String = {
                             if isDual && currentPageIndex > 0 {
                                 let lead = PageBufferManager.canonicalLeadIndex(for: currentPageIndex, isMangaMode: isMangaMode)
@@ -608,8 +585,24 @@ struct ReaderView: View {
                 let img = await Task.detached(priority: .userInitiated) { () -> UIImage? in
                     guard let doc = PDFDocument(url: docURL),
                           let page = doc.page(at: pageIdx) else { return nil }
+                    
+                    let pageBounds = page.bounds(for: .mediaBox)
+                    guard pageBounds.width > 0 && pageBounds.height > 0 && !pageBounds.width.isNaN && !pageBounds.height.isNaN else { return nil }
                     let size = CGSize(width: 1024, height: 1408)
-                    return page.thumbnail(of: size, for: .mediaBox)
+                    let scale = min(size.width / pageBounds.width, size.height / pageBounds.height)
+                    let scaledSize = CGSize(width: pageBounds.width * scale, height: pageBounds.height * scale)
+                    guard scaledSize.width > 0 && scaledSize.height > 0 && !scaledSize.width.isNaN && !scaledSize.height.isNaN else { return nil }
+                    
+                    let renderer = UIGraphicsImageRenderer(size: scaledSize)
+                    return renderer.image { context in
+                        UIColor.white.setFill()
+                        context.fill(CGRect(origin: .zero, size: scaledSize))
+                        
+                        context.cgContext.translateBy(x: 0, y: scaledSize.height)
+                        context.cgContext.scaleBy(x: scale, y: -scale)
+                        
+                        page.draw(with: .mediaBox, to: context.cgContext)
+                    }
                 }.value
                 if let img {
                     self.shareImage = img
@@ -647,7 +640,8 @@ struct ReaderView: View {
     private func sampleAmbientColor(from pageURL: URL) {
         Task(priority: .utility) {
             let color = await Task.detached(priority: .utility) { () -> Color in
-                guard let data = try? Data(contentsOf: pageURL),
+                let optData = try? Data(contentsOf: pageURL)
+                guard let data = optData,
                       let img = UIImage(data: data) else { return .clear }
                 return img.dominantColor()
             }.value
@@ -905,6 +899,9 @@ struct ReaderView: View {
                     }
                 } catch {
                     Logger.shared.log("Direct ZIP streaming failed for \(activeFileURL.lastPathComponent): \(error.localizedDescription). Falling back to full extraction.", category: "ReaderView", type: .warning)
+                    // extractComic requires the caller to hold the security scope.
+                    let didAccess = activeFileURL.startAccessingSecurityScopedResource()
+                    defer { if didAccess { activeFileURL.stopAccessingSecurityScopedResource() } }
                     let result = try await ZipUtilities.extractComic(from: activeFileURL)
                     await MainActor.run {
                         self.unzippedDir = result.workingDir
@@ -935,7 +932,7 @@ struct ReaderView: View {
         if currentPageIndex < pages.count - 1 {
             currentPageIndex += 1
         } else {
-            // Trigger Manga Binge-Mode auto-continuation
+            // Trigger Series Binge-Mode auto-continuation (supports Books, Comics, and Manga)
             if let nextVol = getNextVolume() {
                 self.nextVolumeToRead = nextVol
                 withAnimation(.spring()) { self.showBingePrompt = true }
@@ -949,11 +946,12 @@ struct ReaderView: View {
         }
     }
     
-    // MARK: - Manga Binge-Mode Pipeline
+    // MARK: - Series Binge-Mode Pipeline
     
     private func getNextVolume() -> ConvertedPDF? {
         guard let current = pdf, let series = current.metadata.series else { return nil }
-        let seriesItems = conversionManager.convertedPDFs.filter { $0.metadata.series == series && $0.id != current.id && !$0.isPrivate }
+        let isVaultUnlocked = AppSettingsManager.shared.isVaultUnlocked
+        let seriesItems = conversionManager.convertedPDFs.filter { $0.metadata.series == series && $0.id != current.id && (isVaultUnlocked ? true : !$0.isPrivate) }
         
         let sorted = seriesItems.sorted { a, b in
             let aNum = Double(a.metadata.issueNumber ?? a.metadata.volume ?? "0") ?? 0
@@ -1191,32 +1189,7 @@ struct ReaderView: View {
         }
     }
 
-    // MARK: - Color Filter Overlay
-    @ViewBuilder
-    private var colorFilterOverlay: some View {
-        if colorFilter != .none {
-            Group {
-                switch colorFilter {
-                case .sepia:
-                    Color(red: 0.44, green: 0.26, blue: 0.08)
-                        .blendMode(.multiply)
-                        .opacity(0.28)
-                case .grayscale:
-                    Color.white
-                        .opacity(0)
-                        .overlay(Color.black.opacity(0)) // handled via .saturation modifier below
-                case .warm:
-                    Color(red: 1.0, green: 0.75, blue: 0.4)
-                        .blendMode(.multiply)
-                        .opacity(0.15)
-                case .none:
-                    EmptyView()
-                }
-            }
-            .ignoresSafeArea()
-            .allowsHitTesting(false)
-        }
-    }
+    // colorFilterOverlay has been replaced by the unified GPU readingFilter modifier
     
     // MARK: - Per-Book Preference Persistence
     private func restorePerBookPreferences() {
@@ -1234,8 +1207,8 @@ struct ReaderView: View {
                 isMangaMode = (p.contentType == .manga)
             }
             if let savedFilter = saved.colorFilter,
-               let filter = ReaderColorFilter(rawValue: savedFilter) {
-                colorFilter = filter
+               let filter = ReadingFilter(rawValue: savedFilter) {
+                prefs.readingFilter = filter
             }
         } else {
             Logger.shared.log("restorePerBookPreferences: no saved progress for '\(fileURL.lastPathComponent)'", category: "ReaderView", type: .info)
@@ -1249,7 +1222,7 @@ struct ReaderView: View {
             ?? ReadingProgress(pdfID: p.id, lastOpenedAt: Date(), currentPageIndex: currentPageIndex,
                                totalPagesRead: 1, completionFraction: 0, readingSessionDates: [])
         progress.prefersMangaMode = isMangaMode
-        progress.colorFilter = colorFilter.rawValue
+        progress.colorFilter = prefs.readingFilter.rawValue
         ReaderProgressTracker.shared.update(progress)
     }
 
@@ -1296,7 +1269,8 @@ struct ReaderView: View {
                     let refreshDescriptor = FetchDescriptor<SDAnnotation>(
                         predicate: #Predicate { $0.id == targetID }
                     )
-                    if let active = try? self.modelContext.fetch(refreshDescriptor).first, active.drawingOCRText != ocrText {
+                    let fetched = try? self.modelContext.fetch(refreshDescriptor)
+                    if let active = fetched?.first, active.drawingOCRText != ocrText {
                         active.drawingOCRText = ocrText
                         active.modifiedAt = Date()
                         try? self.modelContext.save()
@@ -1316,7 +1290,6 @@ struct ReaderView: View {
         progress.currentPageIndex = currentPageIndex
         if isPageTurn {
             progress.totalPagesRead += 1
-            GamificationManager.shared.logPageRead()
         }
         if !pages.isEmpty {
            progress.completionFraction = Double(currentPageIndex) / Double(max(1, pages.count - 1))
@@ -1389,10 +1362,8 @@ struct PDFKitView: UIViewRepresentable {
 
         // Wire highlight action
         let coordinator = context.coordinator
-        if let highlightable = pdfView as? PDFHighlightableView {
-            highlightable.onHighlightRequested = { [weak coordinator] in
-                coordinator?.applyHighlight(in: pdfView)
-            }
+        pdfView.onHighlightRequested = { [weak coordinator] in
+            coordinator?.applyHighlight(in: pdfView)
         }
 
         NotificationCenter.default.addObserver(
@@ -1403,12 +1374,18 @@ struct PDFKitView: UIViewRepresentable {
         )
 
         context.coordinator.loadTask = Task.detached(priority: .userInitiated) {
-            if let document = PDFDocument(url: url) {
+            let (document, pageCount): (PDFDocument?, Int) = {
+                if let doc = PDFDocument(url: url) {
+                    return (doc, doc.pageCount)
+                }
+                return (nil, 0)
+            }()
+            if let document = document {
                 if Task.isCancelled { return }
                 await MainActor.run {
                     if Task.isCancelled { return }
                     pdfView.document = document
-                    self.totalPages = Array(repeating: url, count: document.pageCount)
+                    self.totalPages = Array(repeating: url, count: pageCount)
                     self.loadedDocument = document
                 }
             }
