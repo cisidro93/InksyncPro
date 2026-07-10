@@ -2028,6 +2028,7 @@ struct ComicReaderEngine: View {
 
     private func prewarmOCR(for pageIndex: Int) async {
         isDialogueOCRing = true
+        narrationEngine.prewarmOCR(for: pageIndex)
         let blocks = await narrationEngine.fetchTextBlocks(for: pageIndex)
         currentDialogueBlocks = blocks
         isDialogueOCRing = false

@@ -21,7 +21,19 @@ final class InstallGuardService: @unchecked Sendable {
         }
         excludeDirectoryFromBackup(url: supportDir)
 
-        let shouldNuke = !sentinelExists
+        // Check if library database files already exist from a previous install/update
+        let dbURL = supportDir.appendingPathComponent("InkSyncPro/library.db")
+        let swiftDataURL = supportDir.appendingPathComponent("default.store")
+        var legacyJSONURL: URL? = nil
+        if let docDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first {
+            legacyJSONURL = docDir.appendingPathComponent("inksync_pro_library.json")
+        }
+        
+        let dbExists = fileManager.fileExists(atPath: dbURL.path) ||
+                       fileManager.fileExists(atPath: swiftDataURL.path) ||
+                       (legacyJSONURL != nil && fileManager.fileExists(atPath: legacyJSONURL!.path))
+
+        let shouldNuke = !sentinelExists && !dbExists
         
         if shouldNuke {
             performNuke(supportDir: supportDir)

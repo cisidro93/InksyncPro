@@ -254,7 +254,6 @@ final class WiFiServer: ObservableObject, Sendable {
 
 
     // Context to track state per connection
-    @MainActor
     private class ConnectionContext {
         var buffer = Data()
         var isHeaderParsed = false
@@ -263,7 +262,7 @@ final class WiFiServer: ObservableObject, Sendable {
         var fileHandle: FileHandle?
         var destinationURL: URL?
         var filename: String = ""
-        var relativePath: String? = nil // ✅ NEW: Track folder structure
+        var relativePath: String? = nil // ✅ Track folder structure
         var isAuthenticated = false // Track auth per request context
         var remoteIP: String = ""
     }
@@ -295,28 +294,49 @@ final class WiFiServer: ObservableObject, Sendable {
         receive(on: connection, context: context)
     }
     
-    private func receive(on connection: NWConnection, context: ConnectionContext) {
+    nonisolated private func receive(on connection: NWConnection, context: ConnectionContext) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] data, _, isComplete, error in
-            Task { @MainActor in
-                guard let self = self else { return }
-                
-                if let data = data, !data.isEmpty {
-                    self.processData(data, connection: connection, context: context)
+            guard let self = self else { return }
+            
+            if let data = data, !data.isEmpty {
+                if context.isHeaderParsed {
+                    // Streaming Mode: High-performance background write
+                    if let fileHandle = context.fileHandle {
+                        fileHandle.write(data)
+                        context.receivedLength += Int64(data.count)
+                        
+                        if context.expectedLength > 0 {
+                            let progress = Double(context.receivedLength) / Double(context.expectedLength)
+                            Task { @MainActor in
+                                self.uploadProgress = progress
+                            }
+                        }
+                    }
+                } else {
+                    // Headers not parsed yet: process on MainActor
+                    Task { @MainActor in
+                        self.processData(data, connection: connection, context: context)
+                    }
                 }
-                
-                if isComplete {
+            }
+            
+            if isComplete {
+                Task { @MainActor in
                     connection.cancel()
-                } else if let error = error {
+                    self.checkUploadCompletion(connection: connection, context: context)
+                }
+            } else if let error = error {
+                Task { @MainActor in
                     if case .posix(let code) = error, code == .ECANCELED {
                         // Silent cleanup on expected connection close
                     } else {
                         Logger.shared.log("Connection Error: \(error)", category: "Network", type: .error)
                     }
                     connection.cancel()
-                } else {
-                    // Continue reading
-                    self.receive(on: connection, context: context)
                 }
+            } else {
+                // Continue reading on the background queue
+                self.receive(on: connection, context: context)
             }
         }
     }
