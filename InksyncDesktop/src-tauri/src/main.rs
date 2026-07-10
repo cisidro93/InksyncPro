@@ -177,7 +177,7 @@ async fn transcode_book(
     
     let mut cmd = tokio::process::Command::new("python");
     #[cfg(target_os = "windows")]
-    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    cmd.as_std_mut().creation_flags(0x08000000); // CREATE_NO_WINDOW
     
     let output = cmd
         .arg(script_path)

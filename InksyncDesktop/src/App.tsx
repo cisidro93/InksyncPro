@@ -111,8 +111,9 @@ export default function App() {
     fetch("https://api.github.com/repos/cisidro93/InksyncPro/releases/latest")
       .then(res => res.json())
       .then(data => {
-        if (data && data.tag_name) {
-          const latest = data.tag_name.replace("v", "");
+        const payload = data as any;
+        if (payload && payload.tag_name) {
+          const latest = payload.tag_name.replace("v", "");
           if (latest !== CURRENT_VERSION) {
             setUpdateAvailable(latest);
           }
