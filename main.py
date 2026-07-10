@@ -518,21 +518,30 @@ def main(page):
                             
                             success_count = 0
                             fail_count = 0
+                            last_main_update = 0.0
                             for idx, src in enumerate(files_to_process):
                                 # Update global status text to show overall batch progress
                                 src_filename = os.path.basename(src)
-                                state["monitor_message"] = f"[{idx+1}/{total_files}] PREPPING {src_filename.upper()}..."
-                                page.update()
+                                current_time = time.time()
+                                if current_time - last_main_update >= 0.25 or idx == 0 or idx == total_files - 1:
+                                    state["monitor_message"] = f"[{idx+1}/{total_files}] PREPPING {src_filename.upper()}..."
+                                    page.update()
+                                    last_main_update = current_time
                                 
                                 out_ext = f".{state['output_format']}"
                                 out_filename = src_filename.replace(".cbz", out_ext).replace(".cbr", out_ext).replace(".CBZ", out_ext).replace(".CBR", out_ext)
                                 dst = os.path.join(downloads_dir, out_filename)
                                 
                                 # Callback wrapper to prepend batch status
+                                last_cb_update = 0.0
                                 def batch_progress(p, msg):
-                                    state["monitor_progress"] = p/100
-                                    state["monitor_message"] = f"[{idx+1}/{total_files}] {int(p)}% | {msg.upper()}"
-                                    page.update()
+                                    nonlocal last_cb_update
+                                    curr_cb_time = time.time()
+                                    if curr_cb_time - last_cb_update >= 0.25 or p == 100 or p == 0:
+                                        state["monitor_progress"] = p/100
+                                        state["monitor_message"] = f"[{idx+1}/{total_files}] {int(p)}% | {msg.upper()}"
+                                        page.update()
+                                        last_cb_update = curr_cb_time
                                 
                                 try:
                                     res = False
@@ -606,24 +615,35 @@ def main(page):
                             success_count = 0
                             fail_count = 0
                             new_selected = set()
+                            last_main_update = 0.0
                             for idx, src in enumerate(files_to_process):
                                 src_filename = os.path.basename(src)
-                                state["monitor_message"] = f"[{idx+1}/{total_files}] IMPORTING {src_filename.upper()}..."
-                                state["monitor_progress"] = (idx+1)/total_files
-                                page.update()
+                                current_time = time.time()
+                                if current_time - last_main_update >= 0.25 or idx == 0 or idx == total_files - 1:
+                                    state["monitor_message"] = f"[{idx+1}/{total_files}] IMPORTING {src_filename.upper()}..."
+                                    state["monitor_progress"] = (idx+1)/total_files
+                                    page.update()
+                                    last_main_update = current_time
                                 
                                 # Extract parent folder to maintain series grouping
-                                parent_name = os.path.basename(os.path.dirname(src))
-                                target_dir = os.path.join(comic_library_dir, parent_name)
-                                os.makedirs(target_dir, exist_ok=True)
+                                try:
+                                    parent_name = os.path.basename(os.path.dirname(src))
+                                    target_dir = os.path.join(comic_library_dir, parent_name)
+                                    os.makedirs(target_dir, exist_ok=True)
+                                    
+                                    dst = os.path.join(target_dir, src_filename)
+                                    new_selected.add(dst)
+                                except Exception as folder_e:
+                                    print(f"Skipping {src} due to folder creation error: {folder_e}")
+                                    fail_count += 1
+                                    continue
                                 
-                                dst = os.path.join(target_dir, src_filename)
-                                new_selected.add(dst)
                                 try:
                                     if not os.path.exists(dst):
                                         file_size = os.path.getsize(src)
                                         copied_size = 0
                                         chunk_size = 1024 * 1024 # 1MB chunks
+                                        last_chunk_update = 0.0
                                         with open(src, 'rb') as fsrc:
                                             with open(dst, 'wb') as fdst:
                                                 while True:
@@ -633,14 +653,17 @@ def main(page):
                                                     fdst.write(buf)
                                                     copied_size += len(buf)
                                                     
-                                                    # UI Update during heavy copy
-                                                    perc = copied_size / file_size if file_size > 0 else 1.0
-                                                    mb_copied = copied_size / (1024 * 1024)
-                                                    mb_total = file_size / (1024 * 1024)
-                                                    state["monitor_message"] = f"[{idx+1}/{total_files}] COPYING {src_filename.upper()}... {mb_copied:.1f}MB / {mb_total:.1f}MB ({int(perc*100)}%)"
-                                                    state["monitor_progress"] = perc
-                                                    page.update()
-                                                    
+                                                    # UI Update during heavy copy (throttled to at most once per 250ms)
+                                                    curr_chunk_time = time.time()
+                                                    if curr_chunk_time - last_chunk_update >= 0.25 or copied_size == file_size:
+                                                        perc = copied_size / file_size if file_size > 0 else 1.0
+                                                        mb_copied = copied_size / (1024 * 1024)
+                                                        mb_total = file_size / (1024 * 1024)
+                                                        state["monitor_message"] = f"[{idx+1}/{total_files}] COPYING {src_filename.upper()}... {mb_copied:.1f}MB / {mb_total:.1f}MB ({int(perc*100)}%)"
+                                                        state["monitor_progress"] = perc
+                                                        page.update()
+                                                        last_chunk_update = curr_chunk_time
+                                                        
                                     success_count += 1
                                 except Exception as inner_e:
                                     print(f"Skipping {src} setup due to error: {inner_e}")
