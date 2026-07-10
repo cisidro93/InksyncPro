@@ -37,7 +37,7 @@ impl DiscoveryManager {
     }
 
     pub fn advertise_sync(&self, port: u16, hostname: &str) -> Result<(), mdns_sd::Error> {
-        let service_type = "_inksyncdesk._tcp.local.";
+        let service_type = "_inksync._tcp.local.";
         let instance_name = format!("Inksync Sync ({})", hostname);
         let clean_host = hostname.replace(" ", "-").to_lowercase();
         let host_name = format!("{}.local.", clean_host);

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
+import { open } from "@tauri-apps/api/dialog";
 import { 
   Laptop, 
   Smartphone, 
@@ -11,10 +12,11 @@ import {
   Settings, 
   Activity, 
   Send,
-  BookMarked
+  BookMarked,
+  Trash2,
+  FolderOpen
 } from "lucide-react";
 
-// Mock Data
 interface Book {
   id: string;
   title: string;
@@ -36,54 +38,108 @@ interface Highlight {
 export default function App() {
   const [connectionInfo, setConnectionInfo] = useState<string>("Loading server...");
   const [activeTab, setActiveTab] = useState<"library" | "highlights" | "settings">("library");
-  const [logs, setLogs] = useState<string[]>([
-    "mDNS: Registered Calibre Wireless Service on port 9090",
-    "mDNS: Registered Inksync Sync Service on port 8080",
-    "Web Server: Listening on 0.0.0.0:8080",
-    "Calibre TCP: Listening on 0.0.0.0:9090"
-  ]);
-
-  const [books, setBooks] = useState<Book[]>([
-    { id: "1", title: "Manga Volume 01", path: "C:\\InksyncLibrary\\manga_v1.cbz", format: "CBZ", size: "48.2 MB", status: "synced" },
-    { id: "2", title: "Batman Special Edition", path: "C:\\InksyncLibrary\\batman_sp.cbr", format: "CBR", size: "124.5 MB", status: "ready" },
-    { id: "3", title: "Spiderman: Into the Spiderverse", path: "C:\\InksyncLibrary\\spidey.pdf", format: "PDF", size: "86.1 MB", status: "ready" },
-    { id: "4", title: "Attack on Titan Vol. 30", path: "C:\\InksyncLibrary\\aot_30.cbz", format: "CBZ", size: "52.9 MB", status: "converting" }
-  ]);
+  const [logs, setLogs] = useState<string[]>([]);
+  const [books, setBooks] = useState<Book[]>([]);
+  const [libraryPath, setLibraryPath] = useState<string>("");
+  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
 
   const [highlights] = useState<Highlight[]>([
     { id: "h1", bookTitle: "Manga Volume 01", text: "Even when things seem impossible, we must persevere.", note: "Inspirational quote from chapter 4", page: 12, time: "2 mins ago" },
     { id: "h2", bookTitle: "Spiderman", text: "With great power comes great responsibility.", note: "Classic line re-verified in notes", page: 54, time: "10 mins ago" }
   ]);
 
-  useEffect(() => {
-    // Fetch local network IP from Tauri backend
+  const fetchConnection = () => {
     invoke<string>("get_connection_info")
       .then((info) => setConnectionInfo(`http://${info}`))
-      .catch(() => setConnectionInfo("http://192.168.1.100:8080"));
+      .catch(() => setConnectionInfo("http://127.0.0.1:8080"));
+  };
 
-    // Simulate logs activity
-    const interval = setInterval(() => {
-      const randomLogs = [
-        "WebSocket: Heartbeat acknowledged from iPad Pro",
-        "Directory Watcher: Scan complete. 0 modifications found.",
-        "Calibre Client: Checking sync queue for newly discovered devices...",
-        "Kindle Service: Fixed-layout conversion worker idle."
-      ];
-      const log = randomLogs[Math.floor(Math.random() * randomLogs.length)];
-      setLogs(prev => [log, ...prev.slice(0, 19)]);
-    }, 15000);
+  const fetchLibraryPath = () => {
+    invoke<string>("get_library_dir")
+      .then((path) => setLibraryPath(path))
+      .catch((err) => console.error("Failed to load library dir:", err));
+  };
 
-    return () => clearInterval(interval);
+  const loadBooks = () => {
+    setIsRefreshing(true);
+    invoke<Book[]>("get_books")
+      .then((data) => {
+        // Map backend status or keep default 'ready'
+        setBooks(data.map(b => ({ ...b, status: "ready" })));
+      })
+      .catch((err) => console.error("Failed to load books:", err))
+      .finally(() => setIsRefreshing(false));
+  };
+
+  const loadLogs = () => {
+    invoke<string[]>("get_logs")
+      .then((data) => setLogs(data))
+      .catch((err) => console.error("Failed to load logs:", err));
+  };
+
+  useEffect(() => {
+    fetchConnection();
+    fetchLibraryPath();
+    loadBooks();
+    loadLogs();
+
+    // Poll logs and books list periodically
+    const logInterval = setInterval(loadLogs, 1500);
+    const bookInterval = setInterval(loadBooks, 8000);
+
+    return () => {
+      clearInterval(logInterval);
+      clearInterval(bookInterval);
+    };
   }, []);
 
-  const handleTranscode = (id: string) => {
+  const handleTranscode = (id: string, path: string, format: string) => {
     setBooks(prev => prev.map(b => b.id === id ? { ...b, status: "converting" } : b));
-    setLogs(prev => [`Kindle Engine: Starting Fixed-Layout EPUB transcoding for book ID ${id}...`, ...prev]);
     
-    setTimeout(() => {
-      setBooks(prev => prev.map(b => b.id === id ? { ...b, status: "synced" } : b));
-      setLogs(prev => [`Kindle Engine: Transcode finished. Sideloaded package pushed to device queue.`, ...prev]);
-    }, 4000);
+    // Default format target
+    const targetFormat = format === "CBZ" || format === "CBR" ? "PDF" : "EPUB";
+    
+    invoke("transcode_book", { path, format: targetFormat })
+      .then(() => {
+        loadBooks();
+        loadLogs();
+      })
+      .catch((err) => {
+        alert("Transcoding failed: " + err);
+        loadBooks();
+      });
+  };
+
+  const handleDelete = (path: string) => {
+    if (window.confirm("Are you sure you want to delete this file from the holding shelf?")) {
+      invoke("delete_book", { path })
+        .then(() => {
+          loadBooks();
+          loadLogs();
+        })
+        .catch((err) => alert("Failed to delete book: " + err));
+    }
+  };
+
+  const handleBrowse = async () => {
+    try {
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: "Select Library Holding Directory"
+      });
+      if (selected && typeof selected === "string") {
+        invoke("set_library_dir", { dir: selected })
+          .then(() => {
+            setLibraryPath(selected);
+            loadBooks();
+            loadLogs();
+          })
+          .catch((err) => alert("Failed to set directory: " + err));
+      }
+    } catch (err) {
+      console.error("Browse error:", err);
+    }
   };
 
   return (
@@ -104,7 +160,7 @@ export default function App() {
             style={{ ...styles.navItem, ...(activeTab === "library" ? styles.navItemActive : {}) }}
           >
             <BookOpen size={18} />
-            <span>Library Watcher</span>
+            <span>Library Shelf</span>
           </button>
           <button 
             onClick={() => setActiveTab("highlights")} 
@@ -130,7 +186,7 @@ export default function App() {
           <p style={styles.networkURL}>{connectionInfo}</p>
           <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 10 }}>
             <span style={styles.statusIndicator}></span>
-            <span style={styles.statusText}>mDNS active (_calibrewireless)</span>
+            <span style={styles.statusText}>Active (_inksync Bonjour)</span>
           </div>
         </div>
       </div>
@@ -154,8 +210,8 @@ export default function App() {
             <div style={styles.statCard}>
               <Smartphone size={16} color="#ff9500" />
               <div>
-                <span style={styles.statValue}>iPad Pro</span>
-                <span style={styles.statLabel}>Sync Connected</span>
+                <span style={styles.statValue}>Connected</span>
+                <span style={styles.statLabel}>Local Send API</span>
               </div>
             </div>
           </div>
@@ -167,40 +223,57 @@ export default function App() {
             {/* Library Grid */}
             <div style={styles.leftPane}>
               <div style={styles.panelHeader}>
-                <h3 style={styles.panelTitle}>Monitored Books & Comics</h3>
-                <button style={styles.actionButton}>
-                  <Plus size={14} /> Add Folder
+                <h3 style={styles.panelTitle}>Library Files ({books.length})</h3>
+                <button onClick={loadBooks} style={styles.actionButton}>
+                  <RefreshCw size={12} className={isRefreshing ? "spin-animation" : ""} /> Refresh
                 </button>
               </div>
 
               <div style={styles.bookList}>
-                {books.map(book => (
-                  <div key={book.id} style={styles.bookCard}>
-                    <div style={styles.bookFormatBadge}>{book.format}</div>
-                    <div style={{ flex: 1, marginLeft: 15 }}>
-                      <h4 style={styles.bookCardTitle}>{book.title}</h4>
-                      <p style={styles.bookCardPath}>{book.path}</p>
-                      <span style={styles.bookCardSize}>{book.size}</span>
-                    </div>
-                    <div>
-                      {book.status === "synced" ? (
-                        <div style={styles.badgeSynced}>Synced to iPad</div>
-                      ) : book.status === "converting" ? (
-                        <div style={styles.badgeConverting}>
-                          <RefreshCw size={12} className="spin-animation" style={{ marginRight: 6 }} />
-                          Converting...
-                        </div>
-                      ) : (
-                        <button 
-                          onClick={() => handleTranscode(book.id)} 
-                          style={styles.transcodeButton}
-                        >
-                          <Send size={12} style={{ marginRight: 6 }} /> Sideload / Sync
-                        </button>
-                      )}
-                    </div>
+                {books.length === 0 ? (
+                  <div style={{ padding: 40, textAlign: "center", color: "#888" }}>
+                    No books in the holding library. Drag/drop here or upload from device.
                   </div>
-                ))}
+                ) : (
+                  books.map(book => (
+                    <div key={book.id} style={styles.bookCard}>
+                      <div style={styles.bookFormatBadge}>{book.format}</div>
+                      <div style={{ flex: 1, marginLeft: 15 }}>
+                        <h4 style={styles.bookCardTitle}>{book.title}</h4>
+                        <p style={styles.bookCardPath}>{book.path}</p>
+                        <span style={styles.bookCardSize}>{book.size}</span>
+                      </div>
+                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                        {book.status === "synced" ? (
+                          <div style={styles.badgeSynced}>Synced</div>
+                        ) : book.status === "converting" ? (
+                          <div style={styles.badgeConverting}>
+                            <RefreshCw size={12} className="spin-animation" style={{ marginRight: 6 }} />
+                            Transcoding...
+                          </div>
+                        ) : (
+                          <>
+                            {(book.format === "CBZ" || book.format === "CBR") && (
+                              <button 
+                                onClick={() => handleTranscode(book.id, book.path, book.format)} 
+                                style={styles.transcodeButton}
+                              >
+                                <Send size={12} style={{ marginRight: 6 }} /> Transcode
+                              </button>
+                            )}
+                            <button 
+                              onClick={() => handleDelete(book.path)} 
+                              style={styles.deleteButton}
+                              title="Delete from Library"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
 
@@ -213,11 +286,15 @@ export default function App() {
                 </span>
               </div>
               <div style={styles.logTerminal}>
-                {logs.map((log, idx) => (
-                  <div key={idx} style={styles.logLine}>
-                    <span style={styles.logTimestamp}>[13:15:07]</span> {log}
-                  </div>
-                ))}
+                {logs.length === 0 ? (
+                  <div style={{ color: "#555" }}>System active. Waiting for events...</div>
+                ) : (
+                  logs.map((log, idx) => (
+                    <div key={idx} style={styles.logLine}>
+                      <span style={styles.logTimestamp}>[SYSTEM]</span> {log}
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           </div>
@@ -279,21 +356,20 @@ export default function App() {
                 <div style={styles.settingsRow}>
                   <label style={styles.settingsLabel}>Active Root Directory</label>
                   <div style={{ display: "flex", gap: 10, flex: 1 }}>
-                    <input type="text" value="C:\Users\User\Documents\InksyncLibrary" disabled style={styles.settingsInput} />
-                    <button style={styles.actionButton}>Browse</button>
+                    <input type="text" value={libraryPath} readOnly style={styles.settingsInput} />
+                    <button onClick={handleBrowse} style={{ ...styles.actionButton, backgroundColor: "#ff9500", color: "#000" }}>
+                      <FolderOpen size={14} style={{ marginRight: 4 }} /> Browse
+                    </button>
                   </div>
                 </div>
               </div>
 
               <div style={styles.settingsGroup}>
-                <h4 style={styles.settingsGroupTitle}>Cloud Storage Integrations</h4>
+                <h4 style={styles.settingsGroupTitle}>Bonjour Discovery</h4>
                 <div style={styles.settingsRow}>
-                  <label style={styles.settingsLabel}>Dropbox Link Status</label>
-                  <div style={{ display: "flex", alignItems: "center", gap: 15, flex: 1 }}>
-                    <span style={{ fontSize: 13, color: "#888" }}>Account: Not Linked</span>
-                    <button style={{ ...styles.actionButton, backgroundColor: "#0061FE", color: "#fff" }}>
-                      Link Dropbox Account
-                    </button>
+                  <label style={styles.settingsLabel}>Zeroconf Type</label>
+                  <div style={{ flex: 1, fontSize: 13, color: "#888" }}>
+                    _inksync._tcp.local. (Active)
                   </div>
                 </div>
               </div>
@@ -501,7 +577,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     borderRadius: 6,
     fontSize: 12,
     cursor: "pointer",
-    fontWeight: "bold"
+    fontWeight: "bold",
+    transition: "background 0.2s"
   },
   bookList: {
     display: "flex",
@@ -557,6 +634,18 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontSize: 12,
     cursor: "pointer",
     fontWeight: "bold"
+  },
+  deleteButton: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(239, 68, 68, 0.1)",
+    color: "#ef4444",
+    border: "1px solid rgba(239, 68, 68, 0.2)",
+    padding: 6,
+    borderRadius: 6,
+    cursor: "pointer",
+    transition: "background 0.2s"
   },
   badgeSynced: {
     fontSize: 11,

@@ -1,7 +1,7 @@
 use axum::{
     routing::get,
     Router,
-    extract::{ws::{WebSocket, WebSocketUpgrade, Message}, State},
+    extract::{ws::{WebSocket, WebSocketUpgrade, Message}, State, Path as AxumPath},
     response::IntoResponse,
     Json,
 };
@@ -13,7 +13,7 @@ use std::path::PathBuf;
 
 #[derive(Clone)]
 pub struct ServerState {
-    pub library_dir: PathBuf,
+    pub library_dir: std::sync::Arc<tokio::sync::Mutex<PathBuf>>,
     pub db_path: PathBuf,
 }
 
@@ -22,13 +22,13 @@ pub async fn start_server(port: u16, state: ServerState) {
         .route("/opds", get(serve_opds))
         .route("/sync", get(ws_handler))
         .route("/api/books", get(list_books))
+        .route("/upload/:filename", axum::routing::post(upload_file))
         .with_state(Arc::new(state))
         .layer(CorsLayer::permissive());
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     println!("Web Server: Listening on {}", addr);
     
-    // Launch server in background tokio loop
     tokio::spawn(async move {
         axum::Server::bind(&addr)
             .serve(app.into_make_service())
@@ -38,7 +38,6 @@ pub async fn start_server(port: u16, state: ServerState) {
 }
 
 async fn serve_opds(State(_state): State<Arc<ServerState>>) -> impl IntoResponse {
-    // Generate a simple OPDS XML Catalog Feed
     let xml = r#"<?xml version="1.0" encoding="utf-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom" xmlns:opds="http://opds-spec.org/2010/catalog">
   <id>urn:uuid:inksyncdesktop-catalog</id>
@@ -75,7 +74,6 @@ async fn handle_socket(mut socket: WebSocket, _state: Arc<ServerState>) {
     while let Some(Ok(msg)) = socket.recv().await {
         if let Message::Text(text) = msg {
             println!("WebSocket: Received event: {}", text);
-            // Echo acknowledgment
             if let Err(e) = socket.send(Message::Text(format!("{{\"status\":\"acknowledged\",\"event\":{}}}", text))).await {
                 println!("WebSocket Error: {}", e);
                 break;
@@ -91,9 +89,47 @@ struct BookInfo {
     path: String,
 }
 
-async fn list_books(State(_state): State<Arc<ServerState>>) -> Json<Vec<BookInfo>> {
-    let mock = vec![
-        BookInfo { title: "Inksync Desktop Guide".to_string(), path: "guide.epub".to_string() }
-    ];
-    Json(mock)
+async fn list_books(State(state): State<Arc<ServerState>>) -> Json<Vec<BookInfo>> {
+    let lib_dir = state.library_dir.lock().await.clone();
+    let mut books = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&lib_dir) {
+        for entry in entries {
+            if let Ok(entry) = entry {
+                let path = entry.path();
+                if path.is_file() {
+                    if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
+                        let ext_lower = ext.to_lowercase();
+                        if ext_lower == "cbz" || ext_lower == "cbr" || ext_lower == "pdf" || ext_lower == "epub" {
+                            let filename = path.file_name().and_then(|s| s.to_str()).unwrap_or("").to_string();
+                            books.push(BookInfo {
+                                title: filename.clone(),
+                                path: filename,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Json(books)
+}
+
+async fn upload_file(
+    AxumPath(filename): AxumPath<String>,
+    State(state): State<Arc<ServerState>>,
+    body: axum::body::Bytes,
+) -> impl IntoResponse {
+    let lib_dir = state.library_dir.lock().await.clone();
+    let file_path = lib_dir.join(&filename);
+    
+    match tokio::fs::write(&file_path, body).await {
+        Ok(_) => {
+            println!("Web Server: Received uploaded file saved to: {}", file_path.to_string_lossy());
+            (axum::http::StatusCode::OK, "Upload successful").into_response()
+        }
+        Err(e) => {
+            eprintln!("Web Server Error: Failed to save uploaded file: {}", e);
+            (axum::http::StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to save file: {}", e)).into_response()
+        }
+    }
 }
