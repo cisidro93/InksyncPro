@@ -8,7 +8,6 @@ import {
   BookOpen, 
   RefreshCw, 
   Download, 
-  Plus, 
   Settings, 
   Activity, 
   Send,
