@@ -33,7 +33,16 @@ jobs:
     - name: Build Tauri Desktop App
       run: |
         cd InksyncDesktop
-        npm run tauri build
+        npm run tauri build > build.log 2>&1
+      shell: bash
+
+    - name: Print build errors on failure
+      if: failure()
+      run: |
+        cd InksyncDesktop
+        echo "=== TAURI BUILD ERROR LOG ==="
+        tail -n 200 build.log
+      shell: bash
 
     - name: Upload Windows MSI Installer
       uses: actions/upload-artifact@v4
