@@ -34,6 +34,8 @@ interface Highlight {
   time: string;
 }
 
+const CURRENT_VERSION = "0.1.0";
+
 export default function App() {
   const [connectionInfo, setConnectionInfo] = useState<string>("Loading server...");
   const [activeTab, setActiveTab] = useState<"library" | "highlights" | "settings">("library");
@@ -44,6 +46,7 @@ export default function App() {
   const [devices, setDevices] = useState<{ip: string, port: number, alias: string}[]>([]);
   const [isScanning, setIsScanning] = useState<boolean>(false);
   const [activeDeviceDropdown, setActiveDeviceDropdown] = useState<string | null>(null);
+  const [updateAvailable, setUpdateAvailable] = useState<string | null>(null);
 
   const [highlights] = useState<Highlight[]>([
     { id: "h1", bookTitle: "Manga Volume 01", text: "Even when things seem impossible, we must persevere.", note: "Inspirational quote from chapter 4", page: 12, time: "2 mins ago" },
@@ -104,22 +107,39 @@ export default function App() {
       });
   };
 
+  const checkUpdates = () => {
+    fetch("https://api.github.com/repos/cisidro93/InksyncPro/releases/latest")
+      .then(res => res.json())
+      .then(data => {
+        if (data && data.tag_name) {
+          const latest = data.tag_name.replace("v", "");
+          if (latest !== CURRENT_VERSION) {
+            setUpdateAvailable(latest);
+          }
+        }
+      })
+      .catch(err => console.error("Failed to check for updates:", err));
+  };
+
   useEffect(() => {
     fetchConnection();
     fetchLibraryPath();
     loadBooks();
     loadLogs();
     scanDevices();
+    checkUpdates();
 
     // Poll logs, books, and devices
     const logInterval = setInterval(loadLogs, 1500);
     const bookInterval = setInterval(loadBooks, 8000);
     const deviceInterval = setInterval(scanDevices, 10000);
+    const updateInterval = setInterval(checkUpdates, 60000);
 
     return () => {
       clearInterval(logInterval);
       clearInterval(bookInterval);
       clearInterval(deviceInterval);
+      clearInterval(updateInterval);
     };
   }, []);
 
@@ -173,7 +193,43 @@ export default function App() {
   };
 
   return (
-    <div style={styles.container}>
+    <div style={{ ...styles.container, flexDirection: "column" }}>
+      {updateAvailable && (
+        <div style={{
+          backgroundColor: "#ff9500",
+          color: "#000",
+          padding: "10px 20px",
+          textAlign: "center",
+          fontWeight: "bold",
+          fontSize: 13,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 15,
+          zIndex: 1000
+        }}>
+          <span>A new update (v{updateAvailable}) is available for Inksync Companion!</span>
+          <button 
+            onClick={() => window.open("https://github.com/cisidro93/InksyncPro/releases/latest")}
+            style={{
+              backgroundColor: "#000",
+              color: "#fff",
+              border: "none",
+              padding: "6px 14px",
+              borderRadius: 6,
+              cursor: "pointer",
+              fontSize: 12,
+              fontWeight: "bold",
+              transition: "background 0.2s"
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#222"}
+            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "#000"}
+          >
+            Download Update
+          </button>
+        </div>
+      )}
+      <div style={{ display: "flex", flex: 1, overflow: "hidden", width: "100vw" }}>
       {/* Sidebar Navigation */}
       <div style={styles.sidebar}>
         <div style={styles.logoSection}>
@@ -457,6 +513,7 @@ export default function App() {
         )}
       </div>
     </div>
+  </div>
   );
 }
 

@@ -16,6 +16,9 @@ use tokio::net::TcpStream;
 use tokio::io::AsyncWriteExt;
 use mdns_sd::{ServiceDaemon, ServiceEvent};
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
 struct Book {
     id: String,
@@ -172,7 +175,11 @@ async fn transcode_book(
     
     let output_path = input_path.with_extension(&format_lower);
     
-    let output = tokio::process::Command::new("python")
+    let mut cmd = tokio::process::Command::new("python");
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    
+    let output = cmd
         .arg(script_path)
         .arg(&path)
         .arg(output_path.to_string_lossy().to_string())
@@ -239,7 +246,7 @@ async fn discover_devices() -> Result<Vec<serde_json::Value>, String> {
                     let ip = info.get_addresses().iter().next().map(|ip| ip.to_string()).unwrap_or_default();
                     let port = info.get_port();
                     let properties = info.get_properties();
-                    let alias = properties.get("alias").cloned().unwrap_or_else(|| {
+                    let alias = properties.get("alias").map(|s| s.to_string()).unwrap_or_else(|| {
                         info.get_name().replace("._inksync._tcp.local.", "")
                     });
                     
