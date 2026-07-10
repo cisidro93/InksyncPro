@@ -133,6 +133,13 @@ export default function App() {
       .catch(err => console.error("Failed to check for updates:", err));
   };
 
+  useEffect(() => {
+    fetchConnection();
+    fetchLibraryPath();
+    loadBooks();
+    loadLogs();
+    scanDevices();
+    checkUpdates();
     fetchObsidianPath();
     loadHighlights();
 
