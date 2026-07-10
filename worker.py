@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Optional, Dict
 from PySide6.QtCore import QThread, Signal
 import cbz_to_pdf
+import cbz_to_epub
 import email_sender
 
 class ConversionThread(QThread):
@@ -11,7 +12,7 @@ class ConversionThread(QThread):
 
     def __init__(self, input_path: str, compress: bool = False, max_size_mb: Optional[int] = None, 
                  output_dir: Optional[str] = None, send_to_kindle: bool = False, email_config: Optional[Dict] = None,
-                 output_name: Optional[str] = None):
+                 output_name: Optional[str] = None, output_format: str = "pdf"):
         super().__init__()
         self.input_path = Path(input_path)
         self.compress = compress
@@ -20,23 +21,28 @@ class ConversionThread(QThread):
         self.send_to_kindle = send_to_kindle
         self.email_config = email_config
         self.output_name = output_name
+        self.output_format = output_format.lower()
 
     def run(self):
         try:
             base_name = self.output_name if self.output_name else self.input_path.stem
+            ext = f".{self.output_format}"
             if self.output_dir:
-                output_path = self.output_dir / (base_name + ".pdf")
+                output_path = self.output_dir / (base_name + ext)
             else:
                 # Default to same directory as input
-                output_path = self.input_path.with_suffix(".pdf")
+                output_path = self.input_path.with_suffix(ext)
             
             def callback(percentage, message):
                 self.progress_signal.emit(percentage, message)
 
-            # Convert Path objects to strings for the underlying library if needed, 
-            # but let's try to pass strings to ensure compatibility with existing cbz_to_pdf
-            cbz_to_pdf.convert_cbz_to_pdf(str(self.input_path), str(output_path), progress_callback=callback, 
-                                        compress=self.compress, max_size_mb=self.max_size_mb)
+            if self.output_format == "epub":
+                cbz_to_epub.convert_cbz_to_epub(str(self.input_path), str(output_path), 
+                                                manga_mode=False, optimize=self.compress, 
+                                                progress_callback=callback)
+            else:
+                cbz_to_pdf.convert_cbz_to_pdf(str(self.input_path), str(output_path), progress_callback=callback, 
+                                            compress=self.compress, max_size_mb=self.max_size_mb)
             
             if self.send_to_kindle and self.email_config:
                 self.progress_signal.emit(99, "Sending to Kindle...")

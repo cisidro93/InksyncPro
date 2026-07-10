@@ -3,8 +3,9 @@ import os
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                              QLabel, QListWidget, QProgressBar, QMessageBox, 
                              QCheckBox, QSpinBox, QHBoxLayout, QPushButton, 
-                             QFileDialog, QComboBox, QListWidgetItem)
-from PySide6.QtGui import QIcon
+                             QFileDialog, QComboBox, QListWidgetItem, QTabWidget,
+                             QLineEdit, QSystemTrayIcon, QMenu)
+from PySide6.QtGui import QIcon, QAction
 from PySide6.QtCore import QSettings, Qt
 
 from worker import ConversionThread
@@ -15,15 +16,26 @@ from utils import resource_path
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("CBZ to PDF Converter")
+        self.setWindowTitle("Inksync Desktop Companion")
         self.setWindowIcon(QIcon(resource_path("app_icon.png")))
-        self.resize(500, 700)
+        self.resize(550, 750)
 
+        # Central Widget & Main Layout
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
-        layout = QVBoxLayout(central_widget)
-        layout.setSpacing(15)
-        layout.setContentsMargins(20, 20, 20, 20)
+        main_layout = QVBoxLayout(central_widget)
+        main_layout.setSpacing(10)
+        main_layout.setContentsMargins(15, 15, 15, 15)
+
+        # Tab Widget
+        self.tabs = QTabWidget()
+        main_layout.addWidget(self.tabs)
+
+        # --- TAB 1: CONVERTER & QUEUE ---
+        self.tab_converter = QWidget()
+        layout = QVBoxLayout(self.tab_converter)
+        layout.setSpacing(12)
+        layout.setContentsMargins(10, 10, 10, 10)
 
         self.drop_zone = DropZone()
         self.drop_zone.file_dropped.connect(self.add_to_queue)
@@ -32,8 +44,19 @@ class MainWindow(QMainWindow):
         # Options Group
         options_layout = QVBoxLayout()
         
+        # Format Option
+        format_layout = QHBoxLayout()
+        format_label = QLabel("Output Format:")
+        format_label.setStyleSheet("font-weight: bold;")
+        self.format_combo = QComboBox()
+        self.format_combo.addItems(["EPUB", "PDF"])
+        self.format_combo.currentIndexChanged.connect(self.on_format_changed)
+        format_layout.addWidget(format_label)
+        format_layout.addWidget(self.format_combo)
+        options_layout.addLayout(format_layout)
+
         # Compression Option
-        self.compress_checkbox = QCheckBox("Compress Output (Simple)")
+        self.compress_checkbox = QCheckBox("Compress Images / Optimize for E-Ink")
         options_layout.addWidget(self.compress_checkbox)
 
         # Max Size Option
@@ -62,7 +85,7 @@ class MainWindow(QMainWindow):
 
         # Kindle Option
         kindle_layout = QHBoxLayout()
-        self.kindle_checkbox = QCheckBox("Send to Kindle")
+        self.kindle_checkbox = QCheckBox("Send to Kindle (SMTP Email)")
         self.settings_btn = QPushButton("Email Settings")
         self.settings_btn.clicked.connect(self.open_settings)
         
@@ -72,9 +95,9 @@ class MainWindow(QMainWindow):
 
         # Output Folder Option
         folder_layout = QHBoxLayout()
-        self.select_folder_btn = QPushButton("Save PDF to...")
+        self.select_folder_btn = QPushButton("Change Holding Folder...")
         self.select_folder_btn.clicked.connect(self.select_output_folder)
-        self.folder_label = QLabel("Default (Same as Input)")
+        self.folder_label = QLabel("Default Shelf (webapp/downloads)")
         self.folder_label.setStyleSheet("color: #888; font-style: italic;")
         
         folder_layout.addWidget(self.select_folder_btn)
@@ -82,36 +105,6 @@ class MainWindow(QMainWindow):
         options_layout.addLayout(folder_layout)
         
         layout.addLayout(options_layout)
-
-        # Web Server Section
-        server_group = QVBoxLayout()
-        server_label_layout = QHBoxLayout()
-        server_label = QLabel("iPadOS / Remote Access:")
-        server_label.setStyleSheet("font-weight: bold; color: #60A5FA;")
-        server_label_layout.addWidget(server_label)
-        
-        self.server_status_indicator = QLabel("Stopped")
-        self.server_status_indicator.setStyleSheet("color: #F87171;") # Red for stopped
-        server_label_layout.addWidget(self.server_status_indicator)
-        server_label_layout.addStretch()
-        server_group.addLayout(server_label_layout)
-
-        server_btn_layout = QHBoxLayout()
-        self.start_server_btn = QPushButton("Start Web Server")
-        self.start_server_btn.clicked.connect(self.toggle_server)
-        server_btn_layout.addWidget(self.start_server_btn)
-
-        self.open_browser_btn = QPushButton("Open in Browser")
-        self.open_browser_btn.setEnabled(False)
-        self.open_browser_btn.clicked.connect(self.open_browser)
-        server_btn_layout.addWidget(self.open_browser_btn)
-        
-        server_group.addLayout(server_btn_layout)
-        self.server_url_label = QLabel("")
-        self.server_url_label.setStyleSheet("color: #888; font-size: 10px;")
-        server_group.addWidget(self.server_url_label)
-
-        layout.addLayout(server_group)
 
         # Progress Section
         self.progress_bar = QProgressBar()
@@ -143,15 +136,193 @@ class MainWindow(QMainWindow):
         action_layout.addWidget(self.clear_btn)
         
         layout.addLayout(action_layout)
+        self.tabs.addTab(self.tab_converter, "Converter Queue")
 
+        # --- TAB 2: HOLDING SHELF LIBRARY ---
+        self.tab_library = QWidget()
+        lib_layout = QVBoxLayout(self.tab_library)
+        lib_layout.setSpacing(10)
+        lib_layout.setContentsMargins(10, 10, 10, 10)
+
+        # Search / Filter & Refresh
+        lib_top = QHBoxLayout()
+        lib_search_label = QLabel("Search:")
+        lib_search_label.setStyleSheet("font-weight: bold;")
+        self.lib_search = QLineEdit()
+        self.lib_search.setPlaceholderText("Search library files...")
+        self.lib_search.textChanged.connect(self.filter_library)
+        
+        self.lib_refresh_btn = QPushButton("Refresh")
+        self.lib_refresh_btn.setFixedWidth(80)
+        self.lib_refresh_btn.clicked.connect(self.refresh_library)
+        
+        lib_top.addWidget(lib_search_label)
+        lib_top.addWidget(self.lib_search)
+        lib_top.addWidget(self.lib_refresh_btn)
+        lib_layout.addLayout(lib_top)
+
+        # List of holding files
+        self.lib_list = QListWidget()
+        self.lib_list.doubleClicked.connect(self.open_library_file)
+        lib_layout.addWidget(self.lib_list)
+
+        # Summary label
+        self.lib_summary_label = QLabel("Total: 0 files (0.0 MB)")
+        self.lib_summary_label.setStyleSheet("color: #FF9900; font-weight: bold;")
+        lib_layout.addWidget(self.lib_summary_label)
+
+        # Action Buttons
+        lib_actions = QHBoxLayout()
+        self.lib_open_btn = QPushButton("Open File")
+        self.lib_open_btn.clicked.connect(self.open_library_file)
+        
+        self.lib_reveal_btn = QPushButton("Show in Folder")
+        self.lib_reveal_btn.clicked.connect(self.reveal_library_folder)
+        
+        self.lib_delete_btn = QPushButton("Delete")
+        self.lib_delete_btn.setStyleSheet("background-color: #EF4444; color: white;")
+        self.lib_delete_btn.clicked.connect(self.delete_library_file)
+        
+        lib_actions.addWidget(self.lib_open_btn)
+        lib_actions.addWidget(self.lib_reveal_btn)
+        lib_actions.addWidget(self.lib_delete_btn)
+        lib_layout.addLayout(lib_actions)
+        self.tabs.addTab(self.tab_library, "Holding Shelf Library")
+
+        # Global Divider
+        divider = QWidget()
+        divider.setFixedHeight(2)
+        divider.setStyleSheet("background-color: #444444;")
+        main_layout.addWidget(divider)
+
+        # --- GLOBAL BOTTOM WEB SERVER CONTROL PANEL ---
+        server_group = QVBoxLayout()
+        server_label_layout = QHBoxLayout()
+        server_label = QLabel("iPadOS / Remote Access:")
+        server_label.setStyleSheet("font-weight: bold; color: #60A5FA;")
+        server_label_layout.addWidget(server_label)
+        
+        self.server_status_indicator = QLabel("Stopped")
+        self.server_status_indicator.setStyleSheet("color: #F87171;") # Red
+        server_label_layout.addWidget(self.server_status_indicator)
+        server_label_layout.addStretch()
+
+        self.autostart_server_checkbox = QCheckBox("Auto-Start Server")
+        server_label_layout.addWidget(self.autostart_server_checkbox)
+        server_group.addLayout(server_label_layout)
+
+        server_btn_layout = QHBoxLayout()
+        self.start_server_btn = QPushButton("Start Web Server")
+        self.start_server_btn.clicked.connect(self.toggle_server)
+        server_btn_layout.addWidget(self.start_server_btn)
+
+        self.open_browser_btn = QPushButton("Open in Browser")
+        self.open_browser_btn.setEnabled(False)
+        self.open_browser_btn.clicked.connect(self.open_browser)
+        server_btn_layout.addWidget(self.open_browser_btn)
+        server_group.addLayout(server_btn_layout)
+
+        self.server_url_label = QLabel("")
+        self.server_url_label.setStyleSheet("color: #888; font-size: 11px;")
+        server_group.addWidget(self.server_url_label)
+        main_layout.addLayout(server_group)
+
+        # System Tray Icon Setup
+        self.setup_tray_icon()
+
+        # State Variables
         self.is_processing = False
         self.current_thread = None
         self.output_dir = None
-        
         self.server_thread = None
         self.server_url = None
         self.zc = None
         self.zc_info = None
+
+        # Load persisted settings and refresh library
+        self.load_settings()
+        self.refresh_library()
+
+        # Auto-start server if enabled
+        if self.autostart_server_checkbox.isChecked():
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(500, self.toggle_server)
+
+    def setup_tray_icon(self):
+        self.tray_icon = QSystemTrayIcon(self)
+        self.tray_icon.setIcon(QIcon(resource_path("app_icon.png")))
+        
+        # Tray menu
+        tray_menu = QMenu(self)
+        restore_action = QAction("Open Companion", self)
+        restore_action.triggered.connect(self.showNormal)
+        
+        toggle_server_action = QAction("Start/Stop Server", self)
+        toggle_server_action.triggered.connect(self.toggle_server)
+        
+        open_folder_action = QAction("Open Library Folder", self)
+        open_folder_action.triggered.connect(self.reveal_library_folder)
+        
+        quit_action = QAction("Exit", self)
+        quit_action.triggered.connect(QApplication.instance().quit)
+        
+        tray_menu.addAction(restore_action)
+        tray_menu.addAction(toggle_server_action)
+        tray_menu.addAction(open_folder_action)
+        tray_menu.addSeparator()
+        tray_menu.addAction(quit_action)
+        
+        self.tray_icon.setContextMenu(tray_menu)
+        self.tray_icon.activated.connect(self.on_tray_icon_activated)
+        self.tray_icon.show()
+
+    def on_tray_icon_activated(self, reason):
+        if reason == QSystemTrayIcon.Trigger:
+            if self.isVisible():
+                self.hide()
+            else:
+                self.showNormal()
+                self.activateWindow()
+
+    def load_settings(self):
+        settings = QSettings("Antigravity", "InksyncDesktop")
+        
+        # Load Converter Options
+        self.format_combo.setCurrentText(settings.value("format", "PDF"))
+        self.compress_checkbox.setChecked(settings.value("compress", "false") == "true")
+        self.limit_size_checkbox.setChecked(settings.value("limit_size", "true") == "true")
+        self.size_preset_combo.setCurrentText(settings.value("size_preset", "200 MB"))
+        self.size_spinbox.setValue(int(settings.value("size_custom", 200)))
+        self.kindle_checkbox.setChecked(settings.value("send_to_kindle", "false") == "true")
+        
+        # Load Output Shelf Folder
+        saved_dir = settings.value("output_dir", "")
+        if saved_dir and os.path.exists(saved_dir):
+            self.output_dir = saved_dir
+            self.folder_label.setText(f"Output: {saved_dir}")
+            self.folder_label.setStyleSheet("") # reset style
+            
+        # Load Server Settings
+        self.autostart_server_checkbox.setChecked(settings.value("autostart_server", "false") == "true")
+        self.on_format_changed(self.format_combo.currentIndex())
+
+    def save_settings(self):
+        settings = QSettings("Antigravity", "InksyncDesktop")
+        
+        # Save Converter Options
+        settings.setValue("format", self.format_combo.currentText())
+        settings.setValue("compress", "true" if self.compress_checkbox.isChecked() else "false")
+        settings.setValue("limit_size", "true" if self.limit_size_checkbox.isChecked() else "false")
+        settings.setValue("size_preset", self.size_preset_combo.currentText())
+        settings.setValue("size_custom", self.size_spinbox.value())
+        settings.setValue("send_to_kindle", "true" if self.kindle_checkbox.isChecked() else "false")
+        
+        # Save Output Shelf Folder
+        if self.output_dir:
+            settings.setValue("output_dir", self.output_dir)
+            
+        # Save Server Settings
+        settings.setValue("autostart_server", "true" if self.autostart_server_checkbox.isChecked() else "false")
 
     def register_zeroconf(self):
         try:
@@ -241,10 +412,20 @@ class MainWindow(QMainWindow):
         self.on_server_stopped()
 
     def closeEvent(self, event):
-        self.unregister_zeroconf()
-        if self.server_thread and self.server_thread.is_running:
-            self.server_thread.stop()
-        event.accept()
+        if self.tray_icon.isVisible() and self.server_thread and self.server_thread.is_running:
+            event.ignore()
+            self.hide()
+            self.tray_icon.showMessage(
+                "Inksync Companion Running",
+                "The web server is still active in the background. Click the tray icon to restore.",
+                QSystemTrayIcon.Information, 3000
+            )
+        else:
+            self.unregister_zeroconf()
+            if self.server_thread and self.server_thread.is_running:
+                self.server_thread.stop()
+            self.save_settings()
+            event.accept()
 
     def open_browser(self):
         if self.server_url:
@@ -257,8 +438,8 @@ class MainWindow(QMainWindow):
             self.output_dir = folder
             self.folder_label.setText(f"Output: {folder}")
             self.folder_label.setStyleSheet("") # Reset style
-        else:
-            pass
+            # Refresh library to show files in the new output folder
+            self.refresh_library()
 
     def open_settings(self):
         dialog = EmailConfigDialog(self)
@@ -273,15 +454,12 @@ class MainWindow(QMainWindow):
         # Make editable
         item.setFlags(item.flags() | Qt.ItemIsEditable)
         item.setToolTip("Double-click to rename output file")
-        
         self.list_widget.addItem(item)
 
     def start_conversion(self):
         self.process_next()
 
     def clear_completed(self):
-        # Remove items that start with "Done:" or "Error:"
-        # Iterate backwards to avoid index issues
         for i in range(self.list_widget.count() - 1, -1, -1):
             item = self.list_widget.item(i)
             if item.text().startswith("Done:") or item.text().startswith("Error:"):
@@ -291,25 +469,11 @@ class MainWindow(QMainWindow):
         if self.is_processing:
             return
 
-        # Find next item to process
-        # We look for items that have UserRole data (file path) and are not marked done/error
-        # We can identify done/error items by their background color or disabled state, 
-        # OR we can simply look for items that are valid file paths in UserRole and haven't been modified to say "Done:"?
-        # A cleaner way: The "Done:" items are NEW items added by conversion_finished.
-        # The original Queue items are still there? NO, previously we didn't remove them.
-        # Let's iterate and find the first item that is editable (which means it's a queue item)
-        # AND likely needs processing.
-        # BETTER: We pop the item from the list? No, user might want to keep history.
-        # Let's use a custom role to mark status? Or just remove it from queue and add a log item?
-        # Removing from queue and adding log item is closest to previous behavior (queue list + log items).
-        
-        # Iterate to find first Queue Item
         queue_item = None
         queue_index = -1
         
         for i in range(self.list_widget.count()):
             item = self.list_widget.item(i)
-            # Check if it's a queue item (has file path in UserRole)
             file_path = item.data(Qt.UserRole)
             if file_path:
                 queue_item = item
@@ -320,29 +484,19 @@ class MainWindow(QMainWindow):
             return
 
         self.is_processing = True
-        
-        # Get data
         file_path = queue_item.data(Qt.UserRole)
-        # Output Name comes from the ITEM TEXT (which might have been edited)
         output_name = queue_item.text()
-        # Remove extension if user typed it, to be safe, or just pass it as stem?
-        # Worker expects stem or full name? Worker uses `output_name if ... else input.stem`.
-        # So we should pass the name without extension if we want worker to add .pdf, 
-        # OR just pass what the user typed?
-        # If user typed "MyComic.pdf", stem is "MyComic".
-        # Let's strip extension just in case user got confused.
         output_stem = os.path.splitext(output_name)[0]
         
-        # Remove item from queue (visual + logical)
+        # Remove item from queue
         self.list_widget.takeItem(queue_index)
-        
         self.status_label.setText(f"Processing: {output_stem}")
         self.progress_bar.setValue(0)
 
         compress = self.compress_checkbox.isChecked()
         max_size_mb = self.size_spinbox.value() if self.limit_size_checkbox.isChecked() else None
-        
         send_to_kindle = self.kindle_checkbox.isChecked()
+        
         email_config = None
         if send_to_kindle:
             settings = QSettings("Antigravity", "CBZtoPDF")
@@ -361,7 +515,8 @@ class MainWindow(QMainWindow):
 
         self.current_thread = ConversionThread(file_path, compress=compress, max_size_mb=max_size_mb, 
                                              output_dir=self.output_dir, send_to_kindle=send_to_kindle, 
-                                             email_config=email_config, output_name=output_stem)
+                                             email_config=email_config, output_name=output_stem,
+                                             output_format=self.format_combo.currentText())
         self.current_thread.progress_signal.connect(self.update_progress)
         self.current_thread.finished_signal.connect(lambda success, msg: self.conversion_finished(success, msg))
         self.current_thread.start()
@@ -378,6 +533,7 @@ class MainWindow(QMainWindow):
             self.list_widget.addItem(f"Done: {message}")
             self.status_label.setText("Ready")
             self.progress_bar.setValue(100)
+            self.refresh_library()
         else:
             self.list_widget.addItem(f"Error: {message}")
             self.status_label.setText("Error occurred")
@@ -387,8 +543,9 @@ class MainWindow(QMainWindow):
         self.process_next()
 
     def toggle_size_options(self, checked):
-        self.size_preset_combo.setEnabled(checked)
-        if checked and self.size_preset_combo.currentText() == "Custom":
+        is_pdf = self.format_combo.currentText() == "PDF"
+        self.size_preset_combo.setEnabled(checked and is_pdf)
+        if checked and is_pdf and self.size_preset_combo.currentText() == "Custom":
             self.size_spinbox.setVisible(True)
             self.size_spinbox.setEnabled(True)
         else:
@@ -403,13 +560,121 @@ class MainWindow(QMainWindow):
         else:
             self.size_spinbox.setVisible(False)
             self.size_spinbox.setEnabled(False)
-            # Update spinbox value to match preset for logic compatibility
             if "25 MB" in text:
                 self.size_spinbox.setValue(25)
             elif "50 MB" in text:
                 self.size_spinbox.setValue(50)
             elif "200 MB" in text:
                 self.size_spinbox.setValue(200)
+
+    def on_format_changed(self, index):
+        is_pdf = self.format_combo.currentText() == "PDF"
+        self.limit_size_checkbox.setEnabled(is_pdf)
+        self.size_preset_combo.setEnabled(is_pdf and self.limit_size_checkbox.isChecked())
+        if not is_pdf:
+            self.size_spinbox.setEnabled(False)
+            self.size_spinbox.hide()
+            self.limit_size_checkbox.setStyleSheet("color: #888888;")
+        else:
+            self.limit_size_checkbox.setStyleSheet("")
+            self.toggle_size_options(self.limit_size_checkbox.isChecked())
+
+    def get_library_dir(self):
+        if self.output_dir and os.path.exists(self.output_dir):
+            return self.output_dir
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        downloads_dir = os.path.join(base_dir, "webapp", "downloads")
+        os.makedirs(downloads_dir, exist_ok=True)
+        return downloads_dir
+
+    def refresh_library(self):
+        self.lib_list.clear()
+        lib_dir = self.get_library_dir()
+        total_size_bytes = 0
+        total_files = 0
+        
+        try:
+            for file in os.listdir(lib_dir):
+                if not file.startswith('.'):
+                    file_path = os.path.join(lib_dir, file)
+                    if os.path.isfile(file_path):
+                        total_files += 1
+                        size_bytes = os.path.getsize(file_path)
+                        total_size_bytes += size_bytes
+                        size_mb = size_bytes / (1024 * 1024)
+                        
+                        clean_name = file.split('_', 1)[1] if '_' in file else file
+                        
+                        item = QListWidgetItem(f"{clean_name.upper()} ({size_mb:.1f} MB)")
+                        item.setData(Qt.UserRole, file_path)
+                        self.lib_list.addItem(item)
+        except Exception as e:
+            print(f"Failed to scan library directory: {e}")
+            
+        mb_total = total_size_bytes / (1024 * 1024)
+        self.lib_summary_label.setText(f"Total: {total_files} files ({mb_total:.1f} MB)")
+        self.filter_library()
+
+    def filter_library(self):
+        filter_text = self.lib_search.text().lower().strip()
+        for i in range(self.lib_list.count()):
+            item = self.lib_list.item(i)
+            item.setHidden(filter_text not in item.text().lower())
+
+    def open_library_file(self):
+        item = self.lib_list.currentItem()
+        if not item:
+            QMessageBox.information(self, "No Selection", "Please select a file to open.")
+            return
+        file_path = item.data(Qt.UserRole)
+        if file_path and os.path.exists(file_path):
+            import webbrowser
+            webbrowser.open(file_path)
+
+    def reveal_library_folder(self):
+        item = self.lib_list.currentItem()
+        lib_dir = self.get_library_dir()
+        file_path = item.data(Qt.UserRole) if item else None
+        
+        import platform
+        import subprocess
+        
+        target = file_path if (file_path and os.path.exists(file_path)) else lib_dir
+        
+        try:
+            if platform.system() == "Windows":
+                if file_path and os.path.exists(file_path):
+                    subprocess.run(["explorer", "/select,", os.path.normpath(file_path)])
+                else:
+                    subprocess.run(["explorer", os.path.normpath(lib_dir)])
+            elif platform.system() == "Darwin": # macOS
+                subprocess.run(["open", "-R", target] if file_path else ["open", target])
+            else: # Linux / generic
+                subprocess.run(["xdg-open", os.path.dirname(target) if file_path else target])
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to reveal folder: {e}")
+
+    def delete_library_file(self):
+        item = self.lib_list.currentItem()
+        if not item:
+            QMessageBox.information(self, "No Selection", "Please select a file to delete.")
+            return
+        file_path = item.data(Qt.UserRole)
+        clean_name = item.text().split(' (')[0]
+        
+        reply = QMessageBox.question(
+            self, "Confirm Delete", 
+            f"Are you sure you want to delete \"{clean_name}\" from the holding library?",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            try:
+                if file_path and os.path.exists(file_path):
+                    os.remove(file_path)
+                    self.refresh_library()
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to delete file: {e}")
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
