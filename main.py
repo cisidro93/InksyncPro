@@ -66,6 +66,9 @@ def main(page):
         
         # Thumbnail Extractor
         def get_thumbnail(cbz_path):
+            from utils import active_upload_registry
+            if active_upload_registry.is_uploading(cbz_path):
+                return None
             import zipfile, hashlib
             try:
                 # Use a hash of the filepath plus modification time for robust caching
@@ -289,6 +292,8 @@ def main(page):
                             global web_server, zc, zc_info, zc_browser
                             try:
                                 import sys, os, socket
+                                from utils import active_upload_registry
+                                active_upload_registry.clear()
                                 from werkzeug.serving import make_server
                                 webapp_path = os.path.join(os.path.dirname(__file__), "webapp")
                                 if webapp_path not in sys.path: sys.path.append(webapp_path)
@@ -354,6 +359,8 @@ def main(page):
                     else:
                         try:
                             web_server.shutdown()
+                            from utils import active_upload_registry
+                            active_upload_registry.clear()
                             global zc, zc_info, zc_browser
                             if 'zc' in globals() and zc is not None:
                                 try:
@@ -706,19 +713,32 @@ def main(page):
                     render_ui()
 
                 def list_item(text, icon, full_path, is_dir=False, is_file=False):
+                    from utils import active_upload_registry
+                    is_uploading = active_upload_registry.is_uploading(full_path)
+                    
                     is_selected = full_path in state["selected_items"]
                     display_mode = state.get("library_display_mode", "list") if state["view_mode"] == "internal" and state["current_path"] == comic_library_dir else "list"
                     
                     def on_check(e):
+                        if is_uploading:
+                            e.control.value = False
+                            page.update()
+                            return
                         toggle_selection(full_path, e.control.value)
                         
                     def on_row_click(e):
+                        if is_uploading:
+                            return
                         if is_dir: navigate(full_path)
                         elif is_file: toggle_selection(full_path, not is_selected)
                         
                     if display_mode in ["grid", "cover"] and is_file and full_path.lower().endswith(('.cbz', '.cbr')):
-                        thumb_path = get_thumbnail(full_path)
-                        img_content = ft.Image(src=thumb_path, fit=ft.ImageFit.COVER) if thumb_path else ft.Container(bgcolor="grey")
+                        thumb_path = None if is_uploading else get_thumbnail(full_path)
+                        img_content = ft.Image(src=thumb_path, fit=ft.ImageFit.COVER) if thumb_path else ft.Container(
+                            content=ft.ProgressRing(color="black", width=30, height=30) if is_uploading else ft.Icon(ft.icons.IMAGE, color="grey"),
+                            alignment=ft.alignment.center,
+                            bgcolor="#EEEEEE"
+                        )
                         
                         return ft.Container(
                             content=ft.Stack([
@@ -730,7 +750,7 @@ def main(page):
                                     bottom=0, left=0, right=0, padding=4
                                 ),
                                 ft.Container(
-                                    content=ft.Checkbox(value=is_selected, on_change=on_check, active_color="black"),
+                                    content=ft.Checkbox(value=is_selected, on_change=on_check, active_color="black", disabled=is_uploading),
                                     top=4, right=4
                                 )
                             ]),
@@ -739,7 +759,20 @@ def main(page):
                             border=ft.border.all(4 if is_selected else 2, "black" if is_selected else "transparent"),
                             border_radius=8,
                             clip_behavior=ft.ClipBehavior.HARD_EDGE,
-                            ink=True
+                            ink=not is_uploading
+                        )
+                        
+                    if is_uploading:
+                        return ft.Container(
+                            content=ft.Row([
+                                ft.Checkbox(value=False, disabled=True, active_color="black"),
+                                ft.ProgressRing(color="black", width=20, height=20),
+                                ft.Text(text, size=20, weight="w700", color="grey", no_wrap=True, expand=True),
+                                ft.Text("UPLOADING...", size=14, weight="w900", color="grey")
+                            ]),
+                            bgcolor="#F0F0F0",
+                            border=ft.border.all(2, "#DDDDDD"),
+                            padding=15
                         )
                         
                     return ft.Container(

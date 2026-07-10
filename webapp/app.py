@@ -127,7 +127,13 @@ def upload_file():
         task_id = str(uuid.uuid4())
         filename = f"{task_id}_{file.filename}"
         input_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        file.save(input_path)
+        
+        from utils import active_upload_registry
+        active_upload_registry.register(input_path)
+        try:
+            file.save(input_path)
+        finally:
+            active_upload_registry.unregister(input_path)
         
         # Options
         optimize = request.form.get('optimize') == 'true'
@@ -174,6 +180,8 @@ def localsend_upload(file_id):
     
     output_path = os.path.join(app.config['OUTPUT_FOLDER'], file_name)
     
+    from utils import active_upload_registry
+    active_upload_registry.register(output_path)
     try:
         # Stream directly to disk to bypass RAM limits on Android
         with open(output_path, "wb") as f:
@@ -187,6 +195,8 @@ def localsend_upload(file_id):
         return jsonify({'message': 'Success', 'file_id': file_id}), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+    finally:
+        active_upload_registry.unregister(output_path)
 
 @app.route('/status/<task_id>')
 def get_status(task_id):
