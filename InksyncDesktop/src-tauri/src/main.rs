@@ -14,7 +14,7 @@ use crate::protocol::CalibreSession;
 use crate::server::ServerState;
 use tokio::net::TcpStream;
 use tokio::io::AsyncWriteExt;
-use mdns_sd::ServiceEvent;
+use mdns_sd::{ServiceDaemon, ServiceEvent};
 
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
 struct Book {
