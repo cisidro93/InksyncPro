@@ -49,10 +49,20 @@ export default function App() {
   const [activeDeviceDropdown, setActiveDeviceDropdown] = useState<string | null>(null);
   const [updateAvailable, setUpdateAvailable] = useState<string | null>(null);
 
-  const [highlights] = useState<Highlight[]>([
-    { id: "h1", bookTitle: "Manga Volume 01", text: "Even when things seem impossible, we must persevere.", note: "Inspirational quote from chapter 4", page: 12, time: "2 mins ago" },
-    { id: "h2", bookTitle: "Spiderman", text: "With great power comes great responsibility.", note: "Classic line re-verified in notes", page: 54, time: "10 mins ago" }
-  ]);
+  const [highlights, setHighlights] = useState<any[]>([]);
+  const [obsidianVaultPath, setObsidianVaultPath] = useState<string>("");
+
+  const loadHighlights = () => {
+    invoke<any[]>("get_annotations")
+      .then((data) => setHighlights(data))
+      .catch((err) => console.error("Failed to load highlights:", err));
+  };
+
+  const fetchObsidianPath = () => {
+    invoke<string>("get_obsidian_vault_path")
+      .then((path) => setObsidianVaultPath(path))
+      .catch((err) => console.error("Failed to load obsidian path:", err));
+  };
 
   const fetchConnection = () => {
     invoke<string>("get_connection_info")
@@ -123,25 +133,22 @@ export default function App() {
       .catch(err => console.error("Failed to check for updates:", err));
   };
 
-  useEffect(() => {
-    fetchConnection();
-    fetchLibraryPath();
-    loadBooks();
-    loadLogs();
-    scanDevices();
-    checkUpdates();
+    fetchObsidianPath();
+    loadHighlights();
 
-    // Poll logs, books, and devices
+    // Poll logs, books, devices, and highlights
     const logInterval = setInterval(loadLogs, 1500);
     const bookInterval = setInterval(loadBooks, 8000);
     const deviceInterval = setInterval(scanDevices, 10000);
     const updateInterval = setInterval(checkUpdates, 60000);
+    const highlightInterval = setInterval(loadHighlights, 5000);
 
     return () => {
       clearInterval(logInterval);
       clearInterval(bookInterval);
       clearInterval(deviceInterval);
       clearInterval(updateInterval);
+      clearInterval(highlightInterval);
     };
   }, []);
 
@@ -192,6 +199,40 @@ export default function App() {
     } catch (err) {
       console.error("Browse error:", err);
     }
+  };
+
+  const handleBrowseObsidian = async () => {
+    try {
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: "Select Obsidian Vault Directory"
+      });
+      if (selected && typeof selected === "string") {
+        invoke("set_obsidian_vault_path", { path: selected })
+          .then(() => {
+            setObsidianVaultPath(selected);
+            loadLogs();
+          })
+          .catch((err) => alert("Failed to set Obsidian path: " + err));
+      }
+    } catch (err) {
+      console.error("Obsidian browse error:", err);
+    }
+  };
+
+  const handleExportToObsidian = () => {
+    if (!obsidianVaultPath) {
+      alert("Please configure your Obsidian Vault path in the Settings tab first!");
+      setActiveTab("settings");
+      return;
+    }
+    invoke<string>("export_to_obsidian", { highlights })
+      .then((msg) => {
+        alert(msg);
+        loadLogs();
+      })
+      .catch((err) => alert("Export failed: " + err));
   };
 
   const handleAddBooks = async () => {
@@ -296,6 +337,17 @@ export default function App() {
             <span style={styles.networkTitle}>WiFi Discovery Server</span>
           </div>
           <p style={styles.networkURL}>{connectionInfo}</p>
+          
+          {connectionInfo && !connectionInfo.includes("Loading") && (
+            <div style={{ display: "flex", justifyContent: "center", marginTop: 12, padding: 8, backgroundColor: "rgba(0,0,0,0.2)", borderRadius: 8 }}>
+              <img 
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=110x110&color=ff9500&bgcolor=1e1e24&margin=4&data=${encodeURIComponent(connectionInfo)}`} 
+                alt="Scan to Connect"
+                style={{ width: 110, height: 110 }}
+              />
+            </div>
+          )}
+
           <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 10 }}>
             <span style={styles.statusIndicator}></span>
             <span style={styles.statusText}>Active (_inksync Bonjour)</span>
@@ -469,31 +521,46 @@ export default function App() {
         {activeTab === "highlights" && (
           <div style={styles.pageLayoutSingle}>
             <div style={styles.panelHeader}>
-              <h3 style={styles.panelTitle}>Aggregated Annotation Log</h3>
-              <button style={styles.actionButton}>
-                <Download size={14} style={{ marginRight: 6 }} /> Export to Markdown
+              <h3 style={styles.panelTitle}>Aggregated Annotation Log ({highlights.length})</h3>
+              <button onClick={handleExportToObsidian} style={{ ...styles.actionButton, backgroundColor: "#ff9500", color: "#000" }}>
+                <Download size={14} style={{ marginRight: 6 }} /> Export to Obsidian
               </button>
             </div>
 
             <div style={styles.highlightsGrid}>
-              {highlights.map(h => (
-                <div key={h.id} style={styles.highlightCard}>
-                  <div style={styles.highlightHeader}>
-                    <span style={styles.highlightBook}>{h.bookTitle}</span>
-                    <span style={styles.highlightTime}>{h.time}</span>
-                  </div>
-                  <p style={styles.highlightText}>"{h.text}"</p>
-                  {h.note && (
-                    <div style={styles.highlightNoteCard}>
-                      <span style={{ fontSize: 10, fontWeight: "bold", color: "#ff9500", textTransform: "uppercase" }}>Analysis Notes</span>
-                      <p style={styles.highlightNoteText}>{h.note}</p>
-                    </div>
-                  )}
-                  <div style={styles.highlightFooter}>
-                    <span>Page {h.page}</span>
-                  </div>
+              {highlights.length === 0 ? (
+                <div style={{ padding: 40, textAlign: "center", color: "#888", width: "100%" }}>
+                  No annotations synced yet. Annotations created on your iOS or Android app will sync here over WiFi.
                 </div>
-              ))}
+              ) : (
+                highlights.map(h => {
+                  const bookTitle = h.readwise_book_title || "Unknown Book";
+                  const text = h.selected_text || "";
+                  const note = h.note_text || "";
+                  const page = h.page_index >= 0 ? h.page_index + 1 : 1;
+                  const dateStr = h.modified_at ? new Date(h.modified_at).toLocaleDateString() : "Just now";
+                  
+                  return (
+                    <div key={h.id} style={styles.highlightCard}>
+                      <div style={styles.highlightHeader}>
+                        <span style={styles.highlightBook}>{bookTitle}</span>
+                        <span style={styles.highlightTime}>{dateStr}</span>
+                      </div>
+                      {text && <p style={styles.highlightText}>"{text}"</p>}
+                      {note && (
+                        <div style={styles.highlightNoteCard}>
+                          <span style={{ fontSize: 10, fontWeight: "bold", color: "#ff9500", textTransform: "uppercase" }}>Analysis Notes</span>
+                          <p style={styles.highlightNoteText}>{note}</p>
+                        </div>
+                      )}
+                      <div style={styles.highlightFooter}>
+                        <span>Page {page}</span>
+                        {h.tags && <span style={{ color: "#aaa", fontSize: 11 }}>🏷️ {h.tags}</span>}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>
         )}
@@ -525,6 +592,19 @@ export default function App() {
                     <input type="text" value={libraryPath} readOnly style={styles.settingsInput} />
                     <button onClick={handleBrowse} style={{ ...styles.actionButton, backgroundColor: "#ff9500", color: "#000" }}>
                       <FolderOpen size={14} style={{ marginRight: 4 }} /> Browse
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div style={styles.settingsGroup}>
+                <h4 style={styles.settingsGroupTitle}>Obsidian Zettelkasten Integration</h4>
+                <div style={styles.settingsRow}>
+                  <label style={styles.settingsLabel}>Obsidian Vault Path</label>
+                  <div style={{ display: "flex", gap: 10, flex: 1 }}>
+                    <input type="text" value={obsidianVaultPath} readOnly placeholder="Not connected. Select your Obsidian Vault folder..." style={styles.settingsInput} />
+                    <button onClick={handleBrowseObsidian} style={{ ...styles.actionButton, backgroundColor: "#ff9500", color: "#000" }}>
+                      <FolderOpen size={14} style={{ marginRight: 4 }} /> Link Vault
                     </button>
                   </div>
                 </div>

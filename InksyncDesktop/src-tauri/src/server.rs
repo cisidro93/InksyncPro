@@ -23,6 +23,7 @@ pub async fn start_server(port: u16, state: ServerState) {
         .route("/opds", get(serve_opds))
         .route("/sync", get(ws_handler))
         .route("/api/books", get(list_books))
+        .route("/api/sync/annotations", axum::routing::post(sync_annotations))
         .route("/upload/:filename", axum::routing::post(upload_file))
         .with_state(Arc::new(state))
         .layer(CorsLayer::permissive());
@@ -310,4 +311,59 @@ async fn serve_index(State(state): State<Arc<ServerState>>) -> impl IntoResponse
         [(axum::http::header::CONTENT_TYPE, "text/html;charset=utf-8")],
         html,
     )
+}
+
+#[derive(serde::Deserialize)]
+struct AnnotationDTO {
+    id: String,
+    pdfID: String,
+    pageIndex: i32,
+    chapterTitle: Option<String>,
+    kind: String,
+    createdAt: i64,
+    modifiedAt: i64,
+    colorHex: Option<String>,
+    selectedText: Option<String>,
+    noteText: Option<String>,
+    tags: Option<Vec<String>>,
+    readwiseBookTitle: Option<String>,
+}
+
+async fn sync_annotations(
+    State(state): State<Arc<ServerState>>,
+    Json(payload): Json<Vec<AnnotationDTO>>,
+) -> impl IntoResponse {
+    let conn = match rusqlite::Connection::open(&state.db_path) {
+        Ok(c) => c,
+        Err(e) => return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to open DB: {}", e)).into_response(),
+    };
+    
+    for a in payload {
+        let tags_str = a.tags.map(|t| t.join(","));
+        
+        let res = conn.execute(
+            "INSERT OR REPLACE INTO annotations (id, pdf_id, page_index, chapter_title, kind, created_at, modified_at, color_hex, selected_text, note_text, tags, readwise_book_title) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+            rusqlite::params![
+                a.id,
+                a.pdfID,
+                a.pageIndex,
+                a.chapterTitle,
+                a.kind,
+                a.createdAt,
+                a.modifiedAt,
+                a.colorHex,
+                a.selectedText,
+                a.noteText,
+                tags_str,
+                a.readwiseBookTitle
+            ],
+        );
+        if let Err(e) = res {
+            eprintln!("Failed to save annotation: {}", e);
+            return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to save annotation: {}", e)).into_response();
+        }
+    }
+    
+    (axum::http::StatusCode::OK, "Annotations synced successfully").into_response()
 }

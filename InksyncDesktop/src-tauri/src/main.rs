@@ -316,6 +316,157 @@ async fn add_books_to_library(paths: Vec<String>, state: tauri::State<'_, AppSta
     Ok(())
 }
 
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+struct Annotation {
+    id: String,
+    pdf_id: String,
+    page_index: i32,
+    chapter_title: Option<String>,
+    kind: String,
+    created_at: i64,
+    modified_at: i64,
+    color_hex: Option<String>,
+    selected_text: Option<String>,
+    note_text: Option<String>,
+    tags: Option<String>,
+    readwise_book_title: Option<String>,
+}
+
+#[tauri::command]
+async fn get_annotations(state: tauri::State<'_, AppState>) -> Result<Vec<Annotation>, String> {
+    let conn = rusqlite::Connection::open(&state.db_path).map_err(|e| e.to_string())?;
+    let mut stmt = conn.prepare(
+        "SELECT id, pdf_id, page_index, chapter_title, kind, created_at, modified_at, color_hex, selected_text, note_text, tags, readwise_book_title FROM annotations ORDER BY modified_at DESC"
+    ).map_err(|e| e.to_string())?;
+    
+    let rows = stmt.query_map([], |row| {
+        Ok(Annotation {
+            id: row.get(0)?,
+            pdf_id: row.get(1)?,
+            page_index: row.get(2)?,
+            chapter_title: row.get(3)?,
+            kind: row.get(4)?,
+            created_at: row.get(5)?,
+            modified_at: row.get(6)?,
+            color_hex: row.get(7)?,
+            selected_text: row.get(8)?,
+            note_text: row.get(9)?,
+            tags: row.get(10)?,
+            readwise_book_title: row.get(11)?,
+        })
+    }).map_err(|e| e.to_string())?;
+    
+    let mut list = Vec::new();
+    for r in rows {
+        if let Ok(item) = r {
+            list.push(item);
+        }
+    }
+    Ok(list)
+}
+
+#[tauri::command]
+async fn get_obsidian_vault_path(state: tauri::State<'_, AppState>) -> Result<String, String> {
+    let conn = rusqlite::Connection::open(&state.db_path).map_err(|e| e.to_string())?;
+    let mut stmt = conn.prepare("SELECT value FROM settings WHERE key = 'obsidian_vault_path'").map_err(|e| e.to_string())?;
+    let mut rows = stmt.query([]).map_err(|e| e.to_string())?;
+    if let Some(row) = rows.next().map_err(|e| e.to_string())? {
+        let val: String = row.get(0).map_err(|e| e.to_string())?;
+        Ok(val)
+    } else {
+        Ok("".to_string())
+    }
+}
+
+#[tauri::command]
+async fn set_obsidian_vault_path(path: String, state: tauri::State<'_, AppState>) -> Result<(), String> {
+    let conn = rusqlite::Connection::open(&state.db_path).map_err(|e| e.to_string())?;
+    conn.execute(
+        "INSERT OR REPLACE INTO settings (key, value) VALUES ('obsidian_vault_path', ?1)",
+        [&path],
+    ).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+async fn export_to_obsidian(highlights: Vec<Annotation>, state: tauri::State<'_, AppState>) -> Result<String, String> {
+    let conn = rusqlite::Connection::open(&state.db_path).map_err(|e| e.to_string())?;
+    let mut stmt = conn.prepare("SELECT value FROM settings WHERE key = 'obsidian_vault_path'").map_err(|e| e.to_string())?;
+    let mut rows = stmt.query([]).map_err(|e| e.to_string())?;
+    let vault_path = if let Some(row) = rows.next().map_err(|e| e.to_string())? {
+        let val: String = row.get(0).map_err(|e| e.to_string())?;
+        val
+    } else {
+        return Err("Obsidian Vault Path is not set".to_string());
+    };
+    
+    let path = std::path::Path::new(&vault_path);
+    if !path.exists() {
+        return Err(format!("Obsidian Vault path '{}' does not exist", vault_path));
+    }
+    
+    // Group highlights by book title
+    let mut grouped = std::collections::HashMap::new();
+    for h in highlights {
+        let book_title = h.readwise_book_title.clone().unwrap_or_else(|| "Unknown Book".to_string());
+        grouped.entry(book_title).or_insert_with(Vec::new).push(h);
+    }
+    
+    let mut exported_count = 0;
+    for (book_title, notes) in grouped {
+        // Build Obsidian Markdown content
+        let mut markdown = format!(
+            "---\nbook: \"{}\"\nsource: \"Inksync Companion\"\ntags: [zettelkasten, manga_highlight, inksyncpro]\n---\n\n# 📖 {}\n\n",
+            book_title,
+            book_title
+        );
+        
+        let mut sorted = notes.clone();
+        sorted.sort_by_key(|n| n.modified_at);
+        
+        for note in sorted {
+            let page_lbl = if note.page_index >= 0 {
+                format!("Page {}", note.page_index + 1)
+            } else {
+                "Unknown Page".to_string()
+            };
+            
+            markdown.push_str(&format!("## {}\n", page_lbl));
+            if let Some(text) = &note.selected_text {
+                if !text.is_empty() {
+                    markdown.push_str(&format!("> {}\n\n", text.replace("\n", "\n> ")));
+                }
+            }
+            if let Some(user_note) = &note.note_text {
+                if !user_note.is_empty() {
+                    markdown.push_str(&format!("**Note:** {}\n\n", user_note));
+                }
+            }
+            if let Some(tags_str) = &note.tags {
+                if !tags_str.is_empty() {
+                    let hashed: Vec<String> = tags_str.split(',')
+                        .map(|t| format!("#{}", t.trim().replace(" ", "_")))
+                        .collect();
+                    markdown.push_str(&format!("🏷️ *Tags:* {}\n\n", hashed.join(", ")));
+                }
+            }
+            markdown.push_str("---\n\n");
+        }
+        
+        // Write to Obsidian markdown file
+        let safe_title = book_title.chars().filter(|c| c.is_alphanumeric() || *c == ' ' || *c == '-' || *c == '_').collect::<String>();
+        let file_path = path.join(format!("{}.md", safe_title));
+        tokio::fs::write(&file_path, markdown.as_bytes()).await.map_err(|e| format!("Failed to write {}.md: {}", safe_title, e))?;
+        exported_count += 1;
+    }
+    
+    let log_msg = format!("Obsidian: Exported {} book outlines to vault", exported_count);
+    state.logs.lock().await.insert(0, log_msg);
+    
+    Ok(format!("Successfully exported {} books to Obsidian!", exported_count))
+}
+
+
 
 #[tokio::main]
 async fn main() {
@@ -347,6 +498,24 @@ async fn main() {
         "CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL
+        )",
+        [],
+    ).unwrap();
+
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS annotations (
+            id TEXT PRIMARY KEY,
+            pdf_id TEXT NOT NULL,
+            page_index INTEGER NOT NULL,
+            chapter_title TEXT,
+            kind TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            modified_at INTEGER NOT NULL,
+            color_hex TEXT,
+            selected_text TEXT,
+            note_text TEXT,
+            tags TEXT,
+            readwise_book_title TEXT
         )",
         [],
     ).unwrap();
@@ -458,7 +627,11 @@ async fn main() {
             get_logs,
             discover_devices,
             send_book_to_device,
-            add_books_to_library
+            add_books_to_library,
+            get_annotations,
+            get_obsidian_vault_path,
+            set_obsidian_vault_path,
+            export_to_obsidian
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
