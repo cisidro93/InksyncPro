@@ -2,9 +2,9 @@ name: Build Beta iOS App
 
 on:
   push:
-    branches: [ "beta" ]
+    branches: [ "main" ]
   pull_request:
-    branches: [ "beta" ]
+    branches: [ "main" ]
 
 jobs:
   build:
