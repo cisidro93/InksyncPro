@@ -293,6 +293,30 @@ async fn send_book_to_device(
     Ok("Success".to_string())
 }
 
+#[tauri::command]
+async fn add_books_to_library(paths: Vec<String>, state: tauri::State<'_, AppState>) -> Result<(), String> {
+    let lib_dir = state.library_dir.lock().await.clone();
+    if !lib_dir.exists() {
+        return Err("Library directory does not exist".to_string());
+    }
+    
+    for path in paths {
+        let src_path = std::path::Path::new(&path);
+        if src_path.is_file() {
+            if let Some(filename) = src_path.file_name() {
+                let dest_path = lib_dir.join(filename);
+                std::fs::copy(src_path, &dest_path)
+                    .map_err(|e| format!("Failed to copy file {}: {}", filename.to_string_lossy(), e))?;
+                
+                let log_msg = format!("Library: Copied {} into watched folder", filename.to_string_lossy());
+                state.logs.lock().await.insert(0, log_msg);
+            }
+        }
+    }
+    Ok(())
+}
+
+
 #[tokio::main]
 async fn main() {
     let hostname = std::env::var("COMPUTERNAME")
@@ -433,7 +457,8 @@ async fn main() {
             transcode_book,
             get_logs,
             discover_devices,
-            send_book_to_device
+            send_book_to_device,
+            add_books_to_library
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

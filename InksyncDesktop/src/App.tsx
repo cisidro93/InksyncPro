@@ -13,7 +13,8 @@ import {
   Send,
   BookMarked,
   Trash2,
-  FolderOpen
+  FolderOpen,
+  Plus
 } from "lucide-react";
 
 interface Book {
@@ -193,6 +194,30 @@ export default function App() {
     }
   };
 
+  const handleAddBooks = async () => {
+    try {
+      const selected = await open({
+        multiple: true,
+        filters: [{
+          name: "Books",
+          extensions: ["cbz", "cbr", "pdf", "epub"]
+        }],
+        title: "Select Books to Add"
+      });
+      if (selected) {
+        const paths = Array.isArray(selected) ? selected : [selected];
+        invoke("add_books_to_library", { paths })
+          .then(() => {
+            loadBooks();
+            loadLogs();
+          })
+          .catch((err) => alert("Failed to add books: " + err));
+      }
+    } catch (err) {
+      console.error("Add books error:", err);
+    }
+  };
+
   return (
     <div style={{ ...styles.container, flexDirection: "column" }}>
       {updateAvailable && (
@@ -311,9 +336,14 @@ export default function App() {
             <div style={styles.leftPane}>
               <div style={styles.panelHeader}>
                 <h3 style={styles.panelTitle}>Library Files ({books.length})</h3>
-                <button onClick={loadBooks} style={styles.actionButton}>
-                  <RefreshCw size={12} className={isRefreshing ? "spin-animation" : ""} /> Refresh
-                </button>
+                <div style={{ display: "flex", gap: 10 }}>
+                  <button onClick={handleAddBooks} style={{ ...styles.actionButton, backgroundColor: "#ff9500", color: "#000" }}>
+                    <Plus size={12} style={{ marginRight: 4 }} /> Add Books
+                  </button>
+                  <button onClick={loadBooks} style={styles.actionButton}>
+                    <RefreshCw size={12} className={isRefreshing ? "spin-animation" : ""} /> Refresh
+                  </button>
+                </div>
               </div>
 
               <div style={styles.bookList}>
