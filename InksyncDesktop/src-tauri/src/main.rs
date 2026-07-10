@@ -390,14 +390,16 @@ async fn set_obsidian_vault_path(path: String, state: tauri::State<'_, AppState>
 
 #[tauri::command]
 async fn export_to_obsidian(highlights: Vec<Annotation>, state: tauri::State<'_, AppState>) -> Result<String, String> {
-    let conn = rusqlite::Connection::open(&state.db_path).map_err(|e| e.to_string())?;
-    let mut stmt = conn.prepare("SELECT value FROM settings WHERE key = 'obsidian_vault_path'").map_err(|e| e.to_string())?;
-    let mut rows = stmt.query([]).map_err(|e| e.to_string())?;
-    let vault_path = if let Some(row) = rows.next().map_err(|e| e.to_string())? {
-        let val: String = row.get(0).map_err(|e| e.to_string())?;
-        val
-    } else {
-        return Err("Obsidian Vault Path is not set".to_string());
+    let vault_path = {
+        let conn = rusqlite::Connection::open(&state.db_path).map_err(|e| e.to_string())?;
+        let mut stmt = conn.prepare("SELECT value FROM settings WHERE key = 'obsidian_vault_path'").map_err(|e| e.to_string())?;
+        let mut rows = stmt.query([]).map_err(|e| e.to_string())?;
+        if let Some(row) = rows.next().map_err(|e| e.to_string())? {
+            let val: String = row.get(0).map_err(|e| e.to_string())?;
+            val
+        } else {
+            return Err("Obsidian Vault Path is not set".to_string());
+        }
     };
     
     let path = std::path::Path::new(&vault_path);
