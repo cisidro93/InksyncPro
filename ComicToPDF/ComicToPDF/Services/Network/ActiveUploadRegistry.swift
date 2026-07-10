@@ -2,7 +2,7 @@ import Foundation
 
 /// A thread-safe registry to track files currently being written to by the WiFi server.
 /// This prevents background tasks like the LibraryScanner from reading incomplete archives.
-final class ActiveUploadRegistry: Sendable {
+final class ActiveUploadRegistry: @unchecked Sendable {
     static let shared = ActiveUploadRegistry()
     
     private let lock = NSLock()
