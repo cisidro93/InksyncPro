@@ -12,6 +12,9 @@ use tokio::net::TcpListener;
 use crate::discovery::DiscoveryManager;
 use crate::protocol::CalibreSession;
 use crate::server::ServerState;
+use tokio::net::TcpStream;
+use tokio::io::AsyncWriteExt;
+use mdns_sd::ServiceEvent;
 
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
 struct Book {
@@ -190,6 +193,98 @@ async fn transcode_book(
     Ok("Success".to_string())
 }
 
+async fn post_file(ip: &str, port: u16, filename: &str, file_bytes: &[u8]) -> Result<(), String> {
+    let addr = format!("{}:{}", ip, port);
+    let mut stream = TcpStream::connect(&addr).await.map_err(|e| format!("Connection to {} failed: {}", addr, e))?;
+    
+    let request_header = format!(
+        "POST /upload/{} HTTP/1.1\r\n\
+         Host: {}\r\n\
+         Content-Length: {}\r\n\
+         X-File-Name: {}\r\n\
+         Connection: close\r\n\r\n",
+        uuid::Uuid::new_v4().simple(),
+        addr,
+        file_bytes.len(),
+        filename
+    );
+    
+    stream.write_all(request_header.as_bytes()).await.map_err(|e| e.to_string())?;
+    stream.write_all(file_bytes).await.map_err(|e| e.to_string())?;
+    stream.flush().await.map_err(|e| e.to_string())?;
+    
+    let mut response = [0u8; 1024];
+    use tokio::io::AsyncReadExt;
+    let n = stream.read(&mut response).await.map_err(|e| e.to_string())?;
+    let resp_str = String::from_utf8_lossy(&response[..n]);
+    if resp_str.contains("200 OK") || resp_str.contains("200") {
+        Ok(())
+    } else {
+        Err(format!("Server returned error: {}", resp_str.split("\r\n").next().unwrap_or("Unknown")))
+    }
+}
+
+#[tauri::command]
+async fn discover_devices() -> Result<Vec<serde_json::Value>, String> {
+    let daemon = ServiceDaemon::new().map_err(|e| e.to_string())?;
+    let receiver = daemon.browse("_inksync._tcp.local.").map_err(|e| e.to_string())?;
+    
+    let mut devices = std::collections::HashMap::new();
+    let start = std::time::Instant::now();
+    while start.elapsed() < std::time::Duration::from_millis(1500) {
+        if let Ok(event) = receiver.recv_timeout(std::time::Duration::from_millis(100)) {
+            match event {
+                ServiceEvent::ServiceResolved(info) => {
+                    let name = info.get_fullname().to_string();
+                    let ip = info.get_addresses().iter().next().map(|ip| ip.to_string()).unwrap_or_default();
+                    let port = info.get_port();
+                    let properties = info.get_properties();
+                    let alias = properties.get("alias").cloned().unwrap_or_else(|| {
+                        info.get_name().replace("._inksync._tcp.local.", "")
+                    });
+                    
+                    if !ip.is_empty() {
+                        devices.insert(name, serde_json::json!({
+                            "ip": ip,
+                            "port": port,
+                            "alias": alias,
+                        }));
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    
+    Ok(devices.into_values().collect())
+}
+
+#[tauri::command]
+async fn send_book_to_device(
+    path: String,
+    device_ip: String,
+    device_port: u16,
+    state: tauri::State<'_, AppState>
+) -> Result<String, String> {
+    let file_path = PathBuf::from(&path);
+    if !file_path.exists() {
+        return Err("File does not exist".to_string());
+    }
+    
+    let filename = file_path.file_name().and_then(|s| s.to_str()).unwrap_or("book.cbz").to_string();
+    let file_bytes = tokio::fs::read(&file_path).await.map_err(|e| format!("Failed to read file: {}", e))?;
+    
+    let log_msg = format!("Sync: Sending {} to http://{}:{}", filename, device_ip, device_port);
+    state.logs.lock().await.insert(0, log_msg);
+    
+    post_file(&device_ip, device_port, &filename, &file_bytes).await?;
+    
+    let log_msg = format!("Sync Success: Transferred {} successfully!", filename);
+    state.logs.lock().await.insert(0, log_msg);
+    
+    Ok("Success".to_string())
+}
+
 #[tokio::main]
 async fn main() {
     let hostname = std::env::var("COMPUTERNAME")
@@ -328,7 +423,9 @@ async fn main() {
             get_books,
             delete_book,
             transcode_book,
-            get_logs
+            get_logs,
+            discover_devices,
+            send_book_to_device
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

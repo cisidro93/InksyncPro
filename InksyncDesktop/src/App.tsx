@@ -41,6 +41,9 @@ export default function App() {
   const [books, setBooks] = useState<Book[]>([]);
   const [libraryPath, setLibraryPath] = useState<string>("");
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+  const [devices, setDevices] = useState<{ip: string, port: number, alias: string}[]>([]);
+  const [isScanning, setIsScanning] = useState<boolean>(false);
+  const [activeDeviceDropdown, setActiveDeviceDropdown] = useState<string | null>(null);
 
   const [highlights] = useState<Highlight[]>([
     { id: "h1", bookTitle: "Manga Volume 01", text: "Even when things seem impossible, we must persevere.", note: "Inspirational quote from chapter 4", page: 12, time: "2 mins ago" },
@@ -76,19 +79,47 @@ export default function App() {
       .catch((err) => console.error("Failed to load logs:", err));
   };
 
+  const scanDevices = () => {
+    setIsScanning(true);
+    invoke<{ip: string, port: number, alias: string}[]>("discover_devices")
+      .then((res) => {
+        setDevices(res);
+      })
+      .catch((err) => console.error("Device scan failed:", err))
+      .finally(() => setIsScanning(false));
+  };
+
+  const handleSendToDevice = (bookId: string, path: string, device: {ip: string, port: number, alias: string}) => {
+    setBooks(prev => prev.map(b => b.id === bookId ? { ...b, status: "converting" } : b));
+    setActiveDeviceDropdown(null);
+    
+    invoke("send_book_to_device", { path, deviceIp: device.ip, devicePort: device.port })
+      .then(() => {
+        setBooks(prev => prev.map(b => b.id === bookId ? { ...b, status: "synced" } : b));
+        loadLogs();
+      })
+      .catch((err) => {
+        alert(`Failed to send to ${device.alias}: ${err}`);
+        loadBooks();
+      });
+  };
+
   useEffect(() => {
     fetchConnection();
     fetchLibraryPath();
     loadBooks();
     loadLogs();
+    scanDevices();
 
-    // Poll logs and books list periodically
+    // Poll logs, books, and devices
     const logInterval = setInterval(loadLogs, 1500);
     const bookInterval = setInterval(loadBooks, 8000);
+    const deviceInterval = setInterval(scanDevices, 10000);
 
     return () => {
       clearInterval(logInterval);
       clearInterval(bookInterval);
+      clearInterval(deviceInterval);
     };
   }, []);
 
@@ -248,7 +279,7 @@ export default function App() {
                         ) : book.status === "converting" ? (
                           <div style={styles.badgeConverting}>
                             <RefreshCw size={12} className="spin-animation" style={{ marginRight: 6 }} />
-                            Transcoding...
+                            Processing...
                           </div>
                         ) : (
                           <>
@@ -260,6 +291,55 @@ export default function App() {
                                 <Send size={12} style={{ marginRight: 6 }} /> Transcode
                               </button>
                             )}
+                            
+                            <div style={{ position: "relative" }}>
+                              <button 
+                                onClick={() => {
+                                  setActiveDeviceDropdown(activeDeviceDropdown === book.id ? null : book.id);
+                                  scanDevices();
+                                }} 
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  backgroundColor: "#34c759",
+                                  color: "#000",
+                                  border: "none",
+                                  padding: "6px 12px",
+                                  borderRadius: 6,
+                                  fontSize: 12,
+                                  cursor: "pointer",
+                                  fontWeight: "bold",
+                                  transition: "background 0.2s"
+                                }}
+                              >
+                                <Smartphone size={12} style={{ marginRight: 6 }} /> Send to...
+                              </button>
+                              
+                              {activeDeviceDropdown === book.id && (
+                                <div style={styles.deviceDropdown}>
+                                  <div style={styles.deviceDropdownHeader}>Discovered Devices</div>
+                                  {isScanning && devices.length === 0 && (
+                                    <div style={styles.deviceDropdownEmpty}>Scanning...</div>
+                                  )}
+                                  {!isScanning && devices.length === 0 && (
+                                    <div style={styles.deviceDropdownEmpty}>No active devices found. Make sure Wi-Fi Transfer is started on iPad/Android.</div>
+                                  )}
+                                  {devices.map(dev => (
+                                    <button
+                                      key={dev.ip}
+                                      onClick={() => handleSendToDevice(book.id, book.path, dev)}
+                                      style={styles.deviceDropdownItem}
+                                      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "rgba(255, 255, 255, 0.05)"}
+                                      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "transparent"}
+                                    >
+                                      <Smartphone size={12} color="#ff9500" />
+                                      <span>{dev.alias.toUpperCase()}</span>
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+
                             <button 
                               onClick={() => handleDelete(book.path)} 
                               style={styles.deleteButton}
@@ -776,5 +856,49 @@ const styles: { [key: string]: React.CSSProperties } = {
     borderRadius: 6,
     color: "#fff",
     fontSize: 13
+  },
+  deviceDropdown: {
+    position: "absolute",
+    right: 0,
+    top: "100%",
+    backgroundColor: "#1e1e28",
+    border: "1px solid rgba(255, 255, 255, 0.1)",
+    borderRadius: 8,
+    boxShadow: "0 4px 12px rgba(0,0,0,0.5)",
+    zIndex: 100,
+    width: 220,
+    padding: 6,
+    marginTop: 4,
+    display: "flex",
+    flexDirection: "column",
+    gap: 4
+  },
+  deviceDropdownItem: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "transparent",
+    color: "#fff",
+    border: "none",
+    padding: "8px 12px",
+    borderRadius: 6,
+    fontSize: 12,
+    cursor: "pointer",
+    textAlign: "left",
+    transition: "background 0.2s",
+    width: "100%"
+  },
+  deviceDropdownHeader: {
+    fontSize: 10,
+    color: "#888",
+    padding: "4px 8px",
+    fontWeight: "bold",
+    textTransform: "uppercase"
+  },
+  deviceDropdownEmpty: {
+    fontSize: 11,
+    color: "#aaa",
+    padding: "8px",
+    textAlign: "center"
   }
 };
