@@ -245,10 +245,11 @@ async fn discover_devices() -> Result<Vec<serde_json::Value>, String> {
                     let name = info.get_fullname().to_string();
                     let ip = info.get_addresses().iter().next().map(|ip| ip.to_string()).unwrap_or_default();
                     let port = info.get_port();
-                    let properties = info.get_properties();
-                    let alias = properties.get("alias").map(|s| s.to_string()).unwrap_or_else(|| {
-                        info.get_name().replace("._inksync._tcp.local.", "")
-                    });
+                    let alias = info.get_property_val_str("alias")
+                        .map(|s| s.to_string())
+                        .unwrap_or_else(|| {
+                            info.get_name().replace("._inksync._tcp.local.", "")
+                        });
                     
                     if !ip.is_empty() {
                         devices.insert(name, serde_json::json!({
