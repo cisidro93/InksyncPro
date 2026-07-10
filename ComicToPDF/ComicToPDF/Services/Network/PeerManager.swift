@@ -29,9 +29,9 @@ class PeerManager: ObservableObject {
     private var browser: NWBrowser?
     @Published private(set) var availablePeers: [PeerNode] = []
     @Published private(set) var isSearching = false
-    /// Cache of resolved IPs keyed by endpoint string — prevents creating a new NWConnection
+    /// Cache of resolved IP and port tuple keyed by endpoint string — prevents creating a new NWConnection
     /// on every mDNS TTL refresh for already-known peers.
-    private var resolvedCache: [String: String] = [:]
+    private var resolvedCache: [String: (ip: String, port: Int)] = [:]
 
     private init() {}
     
@@ -89,11 +89,9 @@ class PeerManager: ObservableObject {
         for result in results {
             if case .service(let name, _, _, _) = result.endpoint {
                 let endpointKey = "\(result.endpoint)"
-
-                // If we already resolved this endpoint, update the peer list without
-                // creating a new NWConnection (avoids connection proliferation on TTL refreshes).
-                if let cachedIP = resolvedCache[endpointKey] {
-                    let peer = PeerNode(id: UUID(), name: name, ipAddress: cachedIP, port: 8080,
+ 
+                if let cached = resolvedCache[endpointKey] {
+                    let peer = PeerNode(id: UUID(), name: name, ipAddress: cached.ip, port: cached.port,
                                        os: "Unknown", deviceModel: "Unknown", protocolType: "Inksync")
                     if !self.availablePeers.contains(peer) {
                         self.availablePeers.append(peer)
@@ -103,10 +101,10 @@ class PeerManager: ObservableObject {
                 }
 
                 Task {
-                    if let ip = await resolveIP(from: result.endpoint) {
-                        self.resolvedCache[endpointKey] = ip
+                    if let resolved = await resolveIP(from: result.endpoint) {
+                        self.resolvedCache[endpointKey] = resolved
 
-                        let peer = PeerNode(id: UUID(), name: name, ipAddress: ip, port: 8080,
+                        let peer = PeerNode(id: UUID(), name: name, ipAddress: resolved.ip, port: resolved.port,
                                            os: "Unknown", deviceModel: "Unknown", protocolType: "Inksync")
                         if !self.availablePeers.contains(peer) {
                             self.availablePeers.append(peer)
@@ -118,27 +116,50 @@ class PeerManager: ObservableObject {
         }
     }
     
-    // Natively resolves the endpoint to an IP without requiring unencrypted broadcast text.
-    private nonisolated func resolveIP(from endpoint: NWEndpoint) async -> String? {
+    // Natively resolves the endpoint to an IP and port with a 2.0-second connection timeout.
+    private nonisolated func resolveIP(from endpoint: NWEndpoint) async -> (ip: String, port: Int)? {
         await withCheckedContinuation { continuation in
             let connection = NWConnection(to: endpoint, using: .tcp)
             let state = ResolveState(continuation: continuation, connection: connection)
+            
             connection.stateUpdateHandler = { [weak state] connectionState in
                 state?.handle(connectionState)
             }
+            
             connection.start(queue: .global(qos: .userInitiated))
+            
+            // 2.0s connection timeout guard to prevent unreachable nodes from stalling discovery
+            DispatchQueue.global().asyncAfter(deadline: .now() + 2.0) { [weak state] in
+                state?.timeout()
+            }
         }
     }
     
     private final class ResolveState: @unchecked Sendable {
         private let lock = NSLock()
         private var hasCompleted = false
-        private var continuation: CheckedContinuation<String?, Never>?
+        private var continuation: CheckedContinuation<(ip: String, port: Int)?, Never>?
         private let connection: NWConnection
         
-        init(continuation: CheckedContinuation<String?, Never>, connection: NWConnection) {
+        init(continuation: CheckedContinuation<(ip: String, port: Int)?, Never>, connection: NWConnection) {
             self.continuation = continuation
             self.connection = connection
+        }
+        
+        func timeout() {
+            lock.lock()
+            guard !hasCompleted else {
+                lock.unlock()
+                return
+            }
+            hasCompleted = true
+            let cont = self.continuation
+            self.continuation = nil
+            lock.unlock()
+            
+            cont?.resume(returning: nil)
+            connection.cancel()
+            Logger.shared.log("PeerManager: Resolve IP/Port timed out after 2s", category: "Network", type: .warning)
         }
         
         func handle(_ state: NWConnection.State) {
@@ -156,8 +177,9 @@ class PeerManager: ObservableObject {
                 lock.unlock()
                 
                 var ipAddress: String? = nil
+                var portNumber = 8080
                 if let remote = connection.currentPath?.remoteEndpoint,
-                   case .hostPort(let host, _) = remote {
+                   case .hostPort(let host, let port) = remote {
                     switch host {
                     case .ipv4(let ipv4):
                         ipAddress = "\(ipv4)".components(separatedBy: "%").first
@@ -167,7 +189,13 @@ class PeerManager: ObservableObject {
                         break
                     }
                     let finalIP = ipAddress ?? "\(host)".components(separatedBy: "%").first
-                    cont?.resume(returning: finalIP)
+                    portNumber = Int(port.rawValue)
+                    
+                    if let finalIP = finalIP {
+                        cont?.resume(returning: (ip: finalIP, port: portNumber))
+                    } else {
+                        cont?.resume(returning: nil)
+                    }
                 } else {
                     cont?.resume(returning: nil)
                 }

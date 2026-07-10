@@ -1188,8 +1188,13 @@ enum PageCoordinateSystem: String, Codable, Equatable, Hashable {
     
     // Bridge to Legacy Architecture during Phase 2 transitions
     func toDTO() -> ConvertedPDF {
-        // coverImageData is passed through — was previously hardcoded nil, losing stored cover art
-        var pdf = ConvertedPDF(id: self.id, name: self.name, url: self.url, pageCount: self.pageCount, fileSize: self.fileSize, metadata: self.metadata, collectionId: self.collectionId, isFavorite: self.isFavorite, isPrivate: self.isPrivate, coverImageData: self.coverImageData)
+        let resolvedURL = LibraryFileRecord.resolveSandboxURL(self.url.absoluteString)
+        var resolvedMetadata = self.metadata
+        resolvedMetadata.coverVariants = self.metadata.coverVariants.reduce(into: [:]) { acc, kv in
+            acc[kv.key] = LibraryFileRecord.resolveSandboxURL(kv.value.absoluteString)
+        }
+        
+        var pdf = ConvertedPDF(id: self.id, name: self.name, url: resolvedURL, pageCount: self.pageCount, fileSize: self.fileSize, metadata: resolvedMetadata, collectionId: self.collectionId, isFavorite: self.isFavorite, isPrivate: self.isPrivate, coverImageData: self.coverImageData)
         pdf.contentType = self.contentType
         pdf.chapters = self.chapters
         pdf.addedByMode = self.addedByMode

@@ -90,6 +90,47 @@ struct LibraryFileRecord: Codable, Equatable {
         )
     }
 
+    static func resolveSandboxURL(_ originalURLString: String) -> URL {
+        guard let originalURL = URL(string: originalURLString) else {
+            return URL(fileURLWithPath: originalURLString)
+        }
+        
+        guard originalURL.isFileURL else {
+            return originalURL
+        }
+        
+        let fileManager = FileManager.default
+        let currentDocsDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first
+        let currentSupportDir = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+        
+        let pathComponents = originalURL.pathComponents
+        
+        if let appIdx = pathComponents.firstIndex(of: "Application"), appIdx + 1 < pathComponents.count {
+            let relativeComponents = pathComponents[(appIdx + 2)...]
+            
+            if relativeComponents.first == "Documents", let currentDocs = currentDocsDir {
+                let subComponents = relativeComponents.dropFirst()
+                var resolvedURL = currentDocs
+                for component in subComponents {
+                    resolvedURL = resolvedURL.appendingPathComponent(component)
+                }
+                return resolvedURL
+            } else if relativeComponents.first == "Library", let currentSupport = currentSupportDir {
+                let libSub = relativeComponents.dropFirst()
+                if libSub.first == "Application Support" {
+                    let subComponents = libSub.dropFirst()
+                    var resolvedURL = currentSupport
+                    for component in subComponents {
+                        resolvedURL = resolvedURL.appendingPathComponent(component)
+                    }
+                    return resolvedURL
+                }
+            }
+        }
+        
+        return originalURL
+    }
+
     func toDomainModel() -> ConvertedPDF {
         let decoder = JSONDecoder()
         func decodeOrEmpty<T: Decodable>(_ str: String?, as: T.Type) -> T? {
@@ -98,7 +139,7 @@ struct LibraryFileRecord: Codable, Equatable {
         }
 
         let id = UUID(uuidString: self.id) ?? UUID()
-        let url = URL(string: path) ?? URL(fileURLWithPath: path)
+        let url = LibraryFileRecord.resolveSandboxURL(path)
 
         var metadata = PDFMetadata(title: title ?? filename)
         metadata.series = series
@@ -121,8 +162,8 @@ struct LibraryFileRecord: Codable, Equatable {
         if let varStr = coverVariants,
            let varDict = decodeOrEmpty(varStr, as: [String: String].self) {
             metadata.coverVariants = varDict.reduce(into: [:]) { acc, kv in
-                if let k = UUID(uuidString: kv.key), let v = URL(string: kv.value) {
-                    acc[k] = v
+                if let k = UUID(uuidString: kv.key) {
+                    acc[k] = LibraryFileRecord.resolveSandboxURL(kv.value)
                 }
             }
         }

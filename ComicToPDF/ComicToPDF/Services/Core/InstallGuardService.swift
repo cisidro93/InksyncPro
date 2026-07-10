@@ -21,15 +21,7 @@ final class InstallGuardService: @unchecked Sendable {
         }
         excludeDirectoryFromBackup(url: supportDir)
 
-        var shouldNuke = !sentinelExists
-        
-        if sentinelExists {
-            if let savedPath = try? String(contentsOf: sentinelURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines),
-               savedPath != supportDir.path {
-                // Sandbox container UUID changed (detected sideload update, restore, or reinstall). Nuke ghost records!
-                shouldNuke = true
-            }
-        }
+        let shouldNuke = !sentinelExists
         
         if shouldNuke {
             performNuke(supportDir: supportDir)
