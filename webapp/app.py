@@ -209,6 +209,41 @@ def get_status(task_id):
 def download_file(filename):
     return send_from_directory(app.config['OUTPUT_FOLDER'], filename, as_attachment=True, download_name=filename.split('_', 1)[1])
 
+@app.route('/api/library')
+def get_library_files():
+    folder = app.config['OUTPUT_FOLDER']
+    file_list = []
+    for file in os.listdir(folder):
+        if not file.startswith('.'):
+            path = os.path.join(folder, file)
+            if os.path.isfile(path):
+                clean_name = file.split('_', 1)[1] if '_' in file else file
+                size_mb = os.path.getsize(path) / (1024 * 1024)
+                file_list.append({
+                    'filename': file,
+                    'clean_name': clean_name,
+                    'size_mb': round(size_mb, 2),
+                    'download_url': f'/download/{file}'
+                })
+    # Sort files alphabetically by clean_name
+    file_list.sort(key=lambda x: x['clean_name'].lower())
+    return jsonify(file_list)
+
+@app.route('/delete/<filename>', methods=['POST'])
+def delete_file(filename):
+    folder = app.config['OUTPUT_FOLDER']
+    file_path = os.path.join(folder, filename)
+    if os.path.dirname(os.path.abspath(file_path)) != os.path.abspath(folder):
+        return jsonify({'error': 'Unauthorized path'}), 403
+        
+    if os.path.exists(file_path):
+        try:
+            os.remove(file_path)
+            return jsonify({'message': 'File deleted successfully'}), 200
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+    return jsonify({'error': 'File not found'}), 404
+
 @app.route('/download_all')
 def download_all():
     import io
