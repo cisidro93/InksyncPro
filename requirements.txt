@@ -2,3 +2,5 @@ flet
 Flask
 img2pdf
 Pillow
+zeroconf
+requests

@@ -150,6 +150,53 @@ class MainWindow(QMainWindow):
         
         self.server_thread = None
         self.server_url = None
+        self.zc = None
+        self.zc_info = None
+
+    def register_zeroconf(self):
+        try:
+            from zeroconf import Zeroconf, ServiceInfo
+            import socket
+            
+            # Get local IP
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            try:
+                s.connect(("8.8.8.8", 80))
+                local_ip = s.getsockname()[0]
+            except Exception:
+                local_ip = "127.0.0.1"
+            finally:
+                s.close()
+                
+            self.zc = Zeroconf()
+            hostname = socket.gethostname() or "DesktopCompanion"
+            desc = {'alias': 'Inksync Desktop Companion'}
+            self.zc_info = ServiceInfo(
+                "_inksync._tcp.local.",
+                f"{hostname}._inksync._tcp.local.",
+                addresses=[socket.inet_aton(local_ip)],
+                port=5000,
+                properties=desc,
+                server=f"{hostname}.local.",
+            )
+            self.zc.register_service(self.zc_info)
+            print(f"Registered desktop companion as Zeroconf service: {hostname} at {local_ip}")
+        except Exception as e:
+            print(f"Failed to register Zeroconf service: {e}")
+            self.zc = None
+            self.zc_info = None
+
+    def unregister_zeroconf(self):
+        try:
+            if hasattr(self, 'zc') and self.zc:
+                if hasattr(self, 'zc_info') and self.zc_info:
+                    self.zc.unregister_service(self.zc_info)
+                self.zc.close()
+                self.zc = None
+                self.zc_info = None
+                print("Unregistered desktop companion Zeroconf service")
+        except Exception as e:
+            print(f"Failed to unregister Zeroconf service: {e}")
 
     def toggle_server(self):
         if self.server_thread and self.server_thread.is_running:
@@ -157,6 +204,7 @@ class MainWindow(QMainWindow):
             self.server_thread.stop()
             self.start_server_btn.setText("Stopping...")
             self.start_server_btn.setEnabled(False)
+            self.unregister_zeroconf()
         else:
             # Start Server
             from web_server_thread import WebServerThread
@@ -176,6 +224,7 @@ class MainWindow(QMainWindow):
         self.server_status_indicator.setStyleSheet("color: #34D399;") # Green
         self.open_browser_btn.setEnabled(True)
         self.server_url_label.setText(f"Serving at {url}")
+        self.register_zeroconf()
 
     def on_server_stopped(self):
         self.server_url = None
@@ -185,10 +234,17 @@ class MainWindow(QMainWindow):
         self.server_status_indicator.setStyleSheet("color: #F87171;")
         self.open_browser_btn.setEnabled(False)
         self.server_url_label.setText("")
+        self.unregister_zeroconf()
 
     def on_server_error(self, error_msg):
         QMessageBox.critical(self, "Server Error", f"Web Server failed: {error_msg}")
         self.on_server_stopped()
+
+    def closeEvent(self, event):
+        self.unregister_zeroconf()
+        if self.server_thread and self.server_thread.is_running:
+            self.server_thread.stop()
+        event.accept()
 
     def open_browser(self):
         if self.server_url:

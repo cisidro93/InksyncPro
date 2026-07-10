@@ -447,101 +447,158 @@ def main(page):
                 # Batch Converter Logic removed, replaced by dynamic state tracker
                 # --- OUTGOING P2P SEND UI ---
                 peers_controls = []
-                if state["server_running"] and state.get("discovered_peers"):
-                    peers_controls.append(ft.Text("DISCOVERED DEVICES (TAP TO SEND QUEUE):", size=16, weight="w900"))
-                    for peer_name, peer_data in state["discovered_peers"].items():
-                        def send_to_peer(e, p_data=peer_data):
-                            if not state["selected_items"]:
-                                state["monitor_active"] = False
-                                state["monitor_title"] = "Selection Empty"
-                                state["monitor_message"] = "PLEASE STAGE FILES TO SEND FIRST."
-                                state["show_report"] = True
+                if state["server_running"]:
+                    peers_controls.append(ft.Container(bgcolor="black", height=2))
+                    peers_controls.append(
+                        ft.Row([
+                            ft.Icon(ft.icons.WIFI_TETHERING_ROUNDED, color="black", size=20),
+                            ft.Text("WI-FI DIRECT TRANSFERS", size=16, weight="w900", color="black")
+                        ])
+                    )
+                    
+                    if not state.get("discovered_peers"):
+                        peers_controls.append(
+                            ft.Container(
+                                content=ft.Row([
+                                    ft.ProgressRing(color="black", width=16, height=16, stroke_width=2),
+                                    ft.Text("SCANNING FOR IPAD / DESKTOP PEERS...", size=12, weight="w900", color="grey")
+                                ], alignment=ft.MainAxisAlignment.CENTER),
+                                border=ft.border.all(2, "#DDDDDD"),
+                                padding=12,
+                                border_radius=6,
+                                alignment=ft.alignment.center
+                            )
+                        )
+                    else:
+                        for peer_name, peer_data in state["discovered_peers"].items():
+                            alias_upper = peer_data['alias'].upper()
+                            device_icon = ft.icons.DESKTOP_MAC_ROUNDED
+                            if any(k in alias_upper for k in ["IPAD", "IPHONE", "IOS", "TABLET", "PHONE", "MOBILE"]):
+                                device_icon = ft.icons.TABLET_MAC_ROUNDED
+                            elif "ANDROID" in alias_upper:
+                                device_icon = ft.icons.ANDROID_ROUNDED
+                                
+                            def make_send_handler(p_data):
+                                return lambda e: send_to_peer(e, p_data)
+                                
+                            def send_to_peer(e, p_data=peer_data):
+                                if not state["selected_items"]:
+                                    state["monitor_active"] = False
+                                    state["monitor_title"] = "Selection Empty"
+                                    state["monitor_message"] = "PLEASE STAGE FILES TO SEND FIRST."
+                                    state["show_report"] = True
+                                    page.update()
+                                    return
+                                
+                                state["monitor_active"] = True
+                                state["monitor_message"] = f"CONNECTING TO {p_data['alias'].upper()}..."
+                                state["monitor_progress"] = 0.0
                                 page.update()
-                                return
-                            
-                            state["monitor_active"] = True
-                            state["monitor_message"] = f"CONNECTING TO {p_data['alias'].upper()}..."
-                            state["monitor_progress"] = 0.0
-                            page.update()
-                            
-                            def s_worker():
-                                try:
-                                    import requests, uuid
-                                    
-                                    # List of dicts: {"abs_path": ..., "rel_path": ...}
-                                    files_to_send = []
-                                    for p in list(state["selected_items"]):
-                                        if os.path.isdir(p):
-                                            parent_folder_name = os.path.basename(p)
-                                            for root, _, files in os.walk(p):
-                                                for f in files:
-                                                    if f.lower().endswith(('.cbz', '.cbr', '.pdf', '.epub')):
-                                                        abs_path = os.path.join(root, f)
-                                                        # e.g. root = "/storage/Manga/Bleach/Vol1", p = "/storage/Manga/Bleach"
-                                                        # relative_to_selected = "Vol1/file.cbz"
-                                                        rel_to_p = os.path.relpath(abs_path, p)
-                                                        # final logical path: "Bleach/Vol1/file.cbz"
-                                                        logical_path = os.path.join(parent_folder_name, rel_to_p).replace('\\', '/')
-                                                        files_to_send.append({"abs_path": abs_path, "rel_path": logical_path})
-                                        elif os.path.isfile(p):
-                                            if p.lower().endswith(('.cbz', '.cbr', '.pdf', '.epub')):
-                                                files_to_send.append({"abs_path": p, "rel_path": os.path.basename(p)})
-                                            
-                                    total_send = len(files_to_send)
-                                    if total_send == 0:
-                                        state["monitor_active"] = False
-                                        state["monitor_message"] = "NO VALID FILES TO SEND."
-                                        page.update()
-                                        return
+                                
+                                def s_worker():
+                                    try:
+                                        import requests, uuid
                                         
-                                    s_count = 0
-                                    f_count = 0
-                                    for idx, send_data in enumerate(files_to_send):
-                                        s_path = send_data["abs_path"]
-                                        s_rel_path = send_data["rel_path"]
-                                        s_name = os.path.basename(s_path)
-                                        
-                                        state["monitor_message"] = f"[{idx+1}/{total_send}] SENDING {s_name.upper()}..."
-                                        state["monitor_progress"] = (idx+1)/total_send
-                                        page.update()
-                                        
-                                        upload_url = f"http://{p_data['ip']}:{p_data['port']}/upload/{uuid.uuid4().hex}"
-                                        headers = {
-                                            'X-File-Name': s_name,
-                                            'X-Relative-Path': s_rel_path
-                                        }
-                                        
-                                        try:
-                                            with open(s_path, 'rb') as vf:
-                                                resp = requests.post(upload_url, data=vf, headers=headers)
-                                                if resp.status_code == 200:
-                                                    s_count += 1
-                                                else:
-                                                    f_count += 1
-                                        except:
-                                            f_count += 1
+                                        files_to_send = []
+                                        for p in list(state["selected_items"]):
+                                            if os.path.isdir(p):
+                                                parent_folder_name = os.path.basename(p)
+                                                for root, _, files in os.walk(p):
+                                                    for f in files:
+                                                        if f.lower().endswith(('.cbz', '.cbr', '.pdf', '.epub')):
+                                                            abs_path = os.path.join(root, f)
+                                                            rel_to_p = os.path.relpath(abs_path, p)
+                                                            logical_path = os.path.join(parent_folder_name, rel_to_p).replace('\\', '/')
+                                                            files_to_send.append({"abs_path": abs_path, "rel_path": logical_path})
+                                            elif os.path.isfile(p):
+                                                if p.lower().endswith(('.cbz', '.cbr', '.pdf', '.epub')):
+                                                    files_to_send.append({"abs_path": p, "rel_path": os.path.basename(p)})
                                                 
-                                    state["monitor_active"] = False
-                                    state["monitor_success"] = s_count
-                                    state["monitor_fail"] = f_count
-                                    state["monitor_total"] = total_send
-                                    state["monitor_title"] = "Transmission Complete"
-                                    state["monitor_message"] = f"Delivered {s_count} items.\nFailed {f_count} items."
-                                    state["show_report"] = True
-                                    page.update()
-                                except Exception as err:
-                                    state["monitor_active"] = False
-                                    state["monitor_title"] = "Transfer Error"
-                                    state["monitor_message"] = str(err).upper()
-                                    state["show_report"] = True
-                                    page.update()
-                                    
-                            import threading
-                            threading.Thread(target=s_worker, daemon=True).start()
-                            
-                        peers_controls.append(eink_button(f"SEND TO {peer_data['alias'].upper()}", on_click=send_to_peer, expand=True, is_primary=True))
+                                        total_send = len(files_to_send)
+                                        if total_send == 0:
+                                            state["monitor_active"] = False
+                                            state["monitor_message"] = "NO VALID FILES TO SEND."
+                                            page.update()
+                                            return
+                                            
+                                        s_count = 0
+                                        f_count = 0
+                                        last_send_update = 0.0
+                                        for idx, send_data in enumerate(files_to_send):
+                                            s_path = send_data["abs_path"]
+                                            s_rel_path = send_data["rel_path"]
+                                            s_name = os.path.basename(s_path)
+                                            
+                                            current_time = time.time()
+                                            if current_time - last_send_update >= 0.25 or idx == 0 or idx == total_send - 1:
+                                                state["monitor_message"] = f"[{idx+1}/{total_send}] SENDING {s_name.upper()}..."
+                                                state["monitor_progress"] = (idx+1)/total_send
+                                                page.update()
+                                                last_send_update = current_time
+                                            
+                                            upload_url = f"http://{p_data['ip']}:{p_data['port']}/upload/{uuid.uuid4().hex}"
+                                            headers = {
+                                                'X-File-Name': s_name,
+                                                'X-Relative-Path': s_rel_path
+                                            }
+                                            
+                                            try:
+                                                with open(s_path, 'rb') as vf:
+                                                    resp = requests.post(upload_url, data=vf, headers=headers)
+                                                    if resp.status_code == 200:
+                                                        s_count += 1
+                                                    else:
+                                                        f_count += 1
+                                            except:
+                                                f_count += 1
+                                                    
+                                        state["monitor_active"] = False
+                                        state["monitor_success"] = s_count
+                                        state["monitor_fail"] = f_count
+                                        state["monitor_total"] = total_send
+                                        state["monitor_title"] = "Transmission Complete"
+                                        state["monitor_message"] = f"Delivered {s_count} items.\nFailed {f_count} items."
+                                        state["show_report"] = True
+                                        page.update()
+                                    except Exception as err:
+                                        state["monitor_active"] = False
+                                        state["monitor_title"] = "Transfer Error"
+                                        state["monitor_message"] = str(err).upper()
+                                        state["show_report"] = True
+                                        page.update()
+                                        
+                                import threading
+                                threading.Thread(target=s_worker, daemon=True).start()
+                                
+                            peers_controls.append(
+                                ft.Container(
+                                    content=ft.Row([
+                                        ft.Icon(device_icon, color="black", size=32),
+                                        ft.Column([
+                                            ft.Text(alias_upper, size=16, weight="w900", color="black"),
+                                            ft.Text(f"IP: {peer_data['ip']}:{peer_data['port']}", size=11, color="grey", weight="w700")
+                                        ], expand=True, spacing=2),
+                                        ft.Container(
+                                            content=ft.Row([
+                                                ft.Text("SEND", size=12, weight="w900", color="white"),
+                                                ft.Icon(ft.icons.SEND_ROUNDED, color="white", size=16)
+                                            ]),
+                                            bgcolor="black",
+                                            padding=ft.padding.symmetric(horizontal=12, vertical=8),
+                                            border_radius=4,
+                                            ink=True,
+                                            on_click=make_send_handler(peer_data)
+                                        )
+                                    ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                                    border=ft.border.all(2, "black"),
+                                    padding=12,
+                                    bgcolor="white",
+                                    ink=True,
+                                    on_click=make_send_handler(peer_data)
+                                )
+                            )
                 
-                peers_col = ft.Column(peers_controls) if peers_controls else ft.Container()
+                peers_col = ft.Column(peers_controls, spacing=8) if peers_controls else ft.Container()
 
                 def run_convert(e):
                     if not state["selected_items"]: return
