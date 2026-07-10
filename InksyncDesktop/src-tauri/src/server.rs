@@ -19,6 +19,7 @@ pub struct ServerState {
 
 pub async fn start_server(port: u16, state: ServerState) {
     let app = Router::new()
+        .route("/", get(serve_index))
         .route("/opds", get(serve_opds))
         .route("/sync", get(ws_handler))
         .route("/api/books", get(list_books))
@@ -161,4 +162,152 @@ async fn upload_file(
             (axum::http::StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to save file: {}", e)).into_response()
         }
     }
+}
+
+async fn serve_index(State(state): State<Arc<ServerState>>) -> impl IntoResponse {
+    let lib_dir = state.library_dir.lock().await.clone();
+    let mut books_list_html = String::new();
+    
+    if let Ok(entries) = std::fs::read_dir(&lib_dir) {
+        let mut count = 0;
+        for entry in entries {
+            if let Ok(entry) = entry {
+                let path = entry.path();
+                if path.is_file() {
+                    if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
+                        let ext_lower = ext.to_lowercase();
+                        if ext_lower == "cbz" || ext_lower == "cbr" || ext_lower == "pdf" || ext_lower == "epub" {
+                            let filename = path.file_name().and_then(|s| s.to_str()).unwrap_or("").to_string();
+                            let size_bytes = entry.metadata().map(|m| m.len()).unwrap_or(0);
+                            let size_mb = size_bytes as f64 / (1024.0 * 1024.0);
+                            
+                            books_list_html.push_str(&format!(
+                                "<div style='background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.05); padding:12px; border-radius:8px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center;'>\
+                                   <div>\
+                                     <div style='font-weight:bold; color:#fff;'>{}</div>\
+                                     <div style='font-size:11px; color:#888;'>{}</div>\
+                                   </div>\
+                                   <div style='font-size:11px; background:rgba(255,149,0,0.1); border:1px solid rgba(255,149,0,0.2); color:#ff9500; padding:2px 6px; border-radius:4px; font-weight:bold;'>{}</div>\
+                                 </div>",
+                                filename,
+                                format!("{:.1} MB", size_mb),
+                                ext_lower.to_uppercase()
+                            ));
+                            count += 1;
+                        }
+                    }
+                }
+            }
+        }
+        if count == 0 {
+            books_list_html = "<div style='color:#666; font-style:italic;'>No books on the library shelf yet. Click 'Add Books' on the companion dashboard.</div>".to_string();
+        }
+    } else {
+        books_list_html = "<div style='color:#ef4444;'>Failed to scan library directory.</div>".to_string();
+    }
+
+    let html = format!(
+        r#"<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Inksync Sync Server</title>
+  <style>
+    body {{
+      font-family: system-ui, -apple-system, sans-serif;
+      background-color: #0d0d12;
+      color: #fff;
+      margin: 0;
+      padding: 40px 20px;
+      display: flex;
+      justify-content: center;
+    }}
+    .card {{
+      background-color: #13131a;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 14px;
+      padding: 30px;
+      max-width: 600px;
+      width: 100%;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    }}
+    .header {{
+      display: flex;
+      align-items: center;
+      gap: 15px;
+      margin-bottom: 25px;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      padding-bottom: 20px;
+    }}
+    .status-badge {{
+      background-color: rgba(52, 199, 89, 0.1);
+      border: 1px solid rgba(52, 199, 89, 0.2);
+      color: #34c759;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: bold;
+      margin-left: auto;
+    }}
+    .title {{
+      font-size: 20px;
+      font-weight: bold;
+      margin: 0;
+    }}
+    .subtitle {{
+      color: #888;
+      font-size: 13px;
+      margin-top: 4px;
+    }}
+    h3 {{
+      font-size: 14px;
+      color: #ff9500;
+      text-transform: uppercase;
+      margin-top: 25px;
+      margin-bottom: 12px;
+      letter-spacing: 0.5px;
+    }}
+    .instructions {{
+      background: rgba(255,255,255,0.02);
+      border-left: 3px solid #ff9500;
+      padding: 12px 16px;
+      border-radius: 4px;
+      font-size: 13px;
+      color: #aaa;
+      line-height: 1.5;
+    }}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <div style="background:#ff9500; color:#000; width:36px; height:36px; border-radius:8px; display:flex; align-items:center; justify-content:center; font-weight:bold; font-size:20px;">I</div>
+      <div>
+        <div class="title">Inksync Sync Service</div>
+        <div class="subtitle">Active Wireless Transfer & OPDS Catalog Node</div>
+      </div>
+      <div class="status-badge">ONLINE</div>
+    </div>
+    
+    <h3>OPDS Feed Endpoint</h3>
+    <div class="instructions">
+      Connect your e-reader app (like Marvin, KyBook, or KOReader) to:<br>
+      <code style="color:#ff9500; font-size:14px; font-weight:bold; display:block; margin-top:6px;">http://[ServerIP]:8080/opds</code>
+    </div>
+
+    <h3>Library Shelf Files</h3>
+    <div style="max-height: 250px; overflow-y: auto; padding-right: 4px;">
+      {}
+    </div>
+  </div>
+</body>
+</html>
+"#,
+        books_list_html
+    );
+
+    (
+        [(axum::http::header::CONTENT_TYPE, "text/html;charset=utf-8")],
+        html,
+    )
 }
