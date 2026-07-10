@@ -61,6 +61,7 @@ final class WiFiServer: ObservableObject, Sendable {
         failedAttempts.removeAll()
         sessionLock.unlock()
 
+        ActiveUploadRegistry.shared.clear()
         scheduleAutoShutdown()
 
         if !hasTriggeredLocalNetworkPermission {
@@ -208,6 +209,8 @@ final class WiFiServer: ObservableObject, Sendable {
         self.sessionLock.lock()
         self.validSessions.removeAll()
         self.sessionLock.unlock()
+        
+        ActiveUploadRegistry.shared.clear()
     }
 
     func revokeAllSessions() {
