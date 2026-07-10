@@ -26,14 +26,7 @@ interface Book {
   status: "ready" | "converting" | "synced";
 }
 
-interface Highlight {
-  id: string;
-  bookTitle: string;
-  text: string;
-  note: string;
-  page: number;
-  time: string;
-}
+
 
 const CURRENT_VERSION = "0.1.0";
 
