@@ -155,6 +155,67 @@ def main(page):
                     page.snack_bar = ft.SnackBar(ft.Text(f"Failed to request permission mapping: {err}"), open=True)
                     page.update()
 
+        # Open file in external reader app (e.g. KOReader, Moon+, Mihon) via Android Intent
+        def open_file_in_external_app(file_path):
+            try:
+                from jnius import autoclass, cast
+                
+                # Get Android classes
+                PythonActivity = autoclass('org.kivy.android.PythonActivity')
+                currentActivity = cast('android.app.Activity', PythonActivity.mActivity)
+                Intent = autoclass('android.content.Intent')
+                Uri = autoclass('android.net.Uri')
+                File = autoclass('java.io.File')
+                
+                # Determine MIME type based on extension
+                ext = os.path.splitext(file_path)[1].lower()
+                mime_type = "*/*"
+                if ext == ".cbz":
+                    mime_type = "application/x-cbz"
+                elif ext == ".cbr":
+                    mime_type = "application/x-cbr"
+                elif ext == ".epub":
+                    mime_type = "application/epub+zip"
+                elif ext == ".pdf":
+                    mime_type = "application/pdf"
+                
+                # If file is inside our app's private sandbox, copy it to a public directory first
+                if base_dir in file_path:
+                    public_dir = "/storage/emulated/0/Download/InkSyncPro"
+                    os.makedirs(public_dir, exist_ok=True)
+                    public_path = os.path.join(public_dir, os.path.basename(file_path))
+                    if not os.path.exists(public_path) or os.path.getsize(file_path) != os.path.getsize(public_path):
+                        import shutil
+                        shutil.copy2(file_path, public_path)
+                    file_obj = File(public_path)
+                else:
+                    file_obj = File(file_path)
+                
+                # StrictMode bypass for file:// URIs on Android 7.0+
+                StrictMode = autoclass('android.os.StrictMode')
+                StrictMode.disableDeathOnFileUriExposure()
+                
+                uri = Uri.fromFile(file_obj)
+                intent = Intent(Intent.ACTION_VIEW)
+                intent.setDataAndType(uri, mime_type)
+                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                
+                chooser = Intent.createChooser(intent, cast('java.lang.CharSequence', autoclass('java.lang.String')("Open in Reader")))
+                currentActivity.startActivity(chooser)
+                return True
+            except ImportError:
+                # Desktop fallback (open via default system app)
+                try:
+                    import webbrowser
+                    webbrowser.open(file_path)
+                    return True
+                except:
+                    return False
+            except Exception as err:
+                page.snack_bar = ft.SnackBar(ft.Text(f"Failed to open in external reader: {err}"), open=True)
+                page.update()
+                return False
+
         def render_ui():
             try:
                 page.clean()
@@ -775,6 +836,18 @@ def main(page):
                                 ft.Container(
                                     content=ft.Checkbox(value=is_selected, on_change=on_check, active_color="black", disabled=is_uploading),
                                     top=4, right=4
+                                ),
+                                ft.Container(
+                                    content=ft.IconButton(
+                                        icon=ft.icons.PLAY_ARROW_ROUNDED,
+                                        icon_color="white",
+                                        bgcolor=ft.colors.with_opacity(0.7, "black"),
+                                        icon_size=16,
+                                        width=30, height=30,
+                                        tooltip="Read in External App",
+                                        on_click=lambda _: open_file_in_external_app(full_path)
+                                    ),
+                                    top=4, left=4
                                 )
                             ]),
                             on_click=on_row_click,
@@ -798,12 +871,22 @@ def main(page):
                             padding=15
                         )
                         
+                    row_controls = [
+                        ft.Checkbox(value=is_selected, on_change=on_check, active_color="black"),
+                        ft.Text(icon, size=24),
+                        ft.Text(text, size=20, weight="w900" if is_dir else "w700", color="white" if is_file else "black", no_wrap=True, expand=True)
+                    ]
+                    if is_file:
+                        row_controls.append(
+                            ft.IconButton(
+                                icon=ft.icons.PLAY_ARROW_ROUNDED if text.lower().endswith(('.cbz', '.cbr')) else ft.icons.BOOK_ROUNDED,
+                                icon_color="white",
+                                tooltip="Read in External App",
+                                on_click=lambda _: open_file_in_external_app(full_path)
+                            )
+                        )
                     return ft.Container(
-                        content=ft.Row([
-                            ft.Checkbox(value=is_selected, on_change=on_check, active_color="black"),
-                            ft.Text(icon, size=24),
-                            ft.Text(text, size=20, weight="w900" if is_dir else "w700", color="white" if is_file else "black", no_wrap=True, expand=True)
-                        ]),
+                        content=ft.Row(row_controls),
                         on_click=on_row_click,
                         bgcolor="black" if is_file else "white",
                         border=ft.border.all(4 if is_selected else 2, "black"),
