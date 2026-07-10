@@ -650,8 +650,9 @@ class PhysicalFileSystemRouter {
     
     nonisolated static func containsDisclaimerText(in image: UIImage) -> Bool {
         guard UserDefaults.standard.bool(forKey: "skipDisclaimerPages") else { return false }
-        return autoreleasepool {
-            guard let cgImage = image.cgImage else { return false }
+        var result = false
+        autoreleasepool {
+            guard let cgImage = image.cgImage else { return }
             let request = VNRecognizeTextRequest()
             request.recognitionLevel = .fast
             request.usesLanguageCorrection = false
@@ -659,7 +660,7 @@ class PhysicalFileSystemRouter {
             let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
             do {
                 try handler.perform([request])
-                guard let observations = request.results else { return false }
+                guard let observations = request.results else { return }
                 
                 let keywords = [
                     "pirat", "illegal", "scanlation", "disclaimer", "not for sale",
@@ -671,15 +672,16 @@ class PhysicalFileSystemRouter {
                     let text = topCandidate.string.lowercased()
                     for keyword in keywords {
                         if text.contains(keyword) {
-                            return true
+                            result = true
+                            return
                         }
                     }
                 }
             } catch {
                 Logger.shared.log("[Disclaimer Detector] Vision OCR Error: \(error.localizedDescription)", category: "AI", type: .error)
             }
-            return false
         }
+        return result
     }
     
     nonisolated static func extractCoverImageStatic(from url: URL) -> UIImage? {
