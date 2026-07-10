@@ -254,7 +254,7 @@ final class WiFiServer: ObservableObject, Sendable {
 
 
     // Context to track state per connection
-    private class ConnectionContext {
+    private final class ConnectionContext: @unchecked Sendable {
         var buffer = Data()
         var isHeaderParsed = false
         var expectedLength: Int64 = 0
