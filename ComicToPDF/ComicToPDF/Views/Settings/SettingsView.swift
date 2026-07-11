@@ -1251,6 +1251,15 @@ struct SettingsView: View {
                 }
             }
         }
+
+        // Clear iCloud Ubiquity Documents container if available
+        if let iCloudDocDir = FileManager.default.url(forUbiquityContainerIdentifier: nil)?.appendingPathComponent("Documents") {
+            if let items = try? fm.contentsOfDirectory(at: iCloudDocDir, includingPropertiesForKeys: nil) {
+                for item in items {
+                    try? fm.removeItem(at: item)
+                }
+            }
+        }
         
         // 4. Clear Application Support directory
         if let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {

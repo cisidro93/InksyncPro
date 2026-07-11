@@ -1207,7 +1207,7 @@ final class WiFiServer: ObservableObject, Sendable {
                     let fileURL = rawFileURL.resolvingSymlinksInPath()
                     let ext = fileURL.pathExtension.lowercased()
                     
-                    if ["pdf", "epub", "cbz"].contains(ext) {
+                    if ["pdf", "epub", "cbz", "cbr", "cb7", "cbt", "zip"].contains(ext) {
                         var relativePath = fileURL.path.replacingOccurrences(of: dir.path, with: "")
                         if relativePath.hasPrefix("/") {
                             relativePath.removeFirst()
@@ -1463,6 +1463,10 @@ final class WiFiServer: ObservableObject, Sendable {
                     border: 4px dashed var(--accent-blue);
                     margin: 0;
                     padding: 0;
+                }
+
+                #dragOverlay * {
+                    pointer-events: none;
                 }
 
                 .overlay-content {
@@ -1763,6 +1767,10 @@ final class WiFiServer: ObservableObject, Sendable {
                 .file-type-badge.cbz { background: var(--cbz-color); }
                 .file-type-badge.epub { background: var(--epub-color); }
                 .file-type-badge.pdf { background: var(--pdf-color); }
+                .file-type-badge.cbr { background: var(--cbz-color); }
+                .file-type-badge.cb7 { background: var(--cbz-color); }
+                .file-type-badge.cbt { background: var(--cbz-color); }
+                .file-type-badge.zip { background: var(--accent-purple); }
 
                 .file-text {
                     min-width: 0;
@@ -1904,8 +1912,8 @@ final class WiFiServer: ObservableObject, Sendable {
                 <div class="dropzone" id="dropzone" onclick="document.getElementById('fileInput').click()">
                     <div class="dropzone-icon">📥</div>
                     <h2>Drag & Drop Files Here</h2>
-                    <p class="subtitle">Supports CBZ, EPUB, and PDF files. Or click to browse.</p>
-                    <input type="file" id="fileInput" style="display:none" multiple onchange="handleFileSelect(event)">
+                    <p class="subtitle">Supports CBZ, CBR, EPUB, PDF, and ZIP files. Or click to browse.</p>
+                    <input type="file" id="fileInput" style="display:none" multiple accept=".pdf,.epub,.cbz,.cbr,.cb7,.cbt,.zip" onchange="handleFileSelect(event)">
                 </div>
 
                 <!-- Library Container -->
@@ -2043,27 +2051,34 @@ final class WiFiServer: ObservableObject, Sendable {
 
                 function setupDragAndDrop() {
                     const overlay = document.getElementById('dragOverlay');
-                    const dropzone = document.getElementById('dropzone');
+                    let dragCounter = 0;
 
                     window.addEventListener('dragenter', (e) => {
                         e.preventDefault();
+                        dragCounter++;
                         overlay.style.display = 'flex';
                     });
 
-                    overlay.addEventListener('dragover', (e) => {
+                    window.addEventListener('dragover', (e) => {
                         e.preventDefault();
                     });
 
-                    overlay.addEventListener('dragleave', (e) => {
+                    window.addEventListener('dragleave', (e) => {
                         e.preventDefault();
-                        if (e.clientX === 0 && e.clientY === 0) {
+                        dragCounter--;
+                        if (dragCounter === 0) {
                             overlay.style.display = 'none';
                         }
                     });
 
+                    window.addEventListener('drop', (e) => {
+                        e.preventDefault();
+                        dragCounter = 0;
+                        overlay.style.display = 'none';
+                    });
+
                     overlay.addEventListener('drop', (e) => {
                         e.preventDefault();
-                        overlay.style.display = 'none';
                         if (e.dataTransfer.files.length > 0) {
                             addFilesToQueue(e.dataTransfer.files);
                         }
@@ -2095,7 +2110,7 @@ final class WiFiServer: ObservableObject, Sendable {
                     for (let i = 0; i < files.length; i++) {
                         const file = files[i];
                         const ext = file.name.split('.').pop().toLowerCase();
-                        if (!['pdf', 'epub', 'cbz'].includes(ext)) {
+                        if (!['pdf', 'epub', 'cbz', 'cbr', 'cb7', 'cbt', 'zip'].includes(ext)) {
                             showNotification('"' + file.name + '" ignored (unsupported file format).', 'error');
                             continue;
                         }

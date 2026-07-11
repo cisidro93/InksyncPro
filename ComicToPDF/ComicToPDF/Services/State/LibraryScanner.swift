@@ -9,6 +9,10 @@ actor LibraryScanner {
     static let shared = LibraryScanner()
 
     func scanLibrary(addedByMode: AppUIMode? = nil, manager: ConversionManager) async {
+        if UserDefaults.standard.bool(forKey: "pendingFreshInstallCleanup") {
+            await InstallGuardService.shared.runDeferredCleanup()
+        }
+
         let fileManager = FileManager.default
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
         let inboxDir  = appSupport.appendingPathComponent("InksyncVault/Inbox", isDirectory: true)

@@ -29,10 +29,18 @@ final class InstallGuardService: @unchecked Sendable {
         // We nuke ONLY if the sandbox sentinel file is missing (indicating the app sandbox was deleted)
         // BUT the keychain sentinel is present (indicating it was previously run on this device).
         // This represents a clean reinstall on the same device.
-        let shouldNuke = !sentinelExists && keychainSentinelExists
+        // On simulator, since the keychain is wiped on app delete, we always nuke if the sandbox sentinel is missing.
+        let shouldNuke: Bool
+        #if targetEnvironment(simulator)
+        shouldNuke = !sentinelExists
+        #else
+        shouldNuke = !sentinelExists && keychainSentinelExists
+        #endif
         
         if shouldNuke {
             performNuke(supportDir: supportDir)
+            userDefaults.set(true, forKey: "pendingFreshInstallCleanup")
+            startDeferredCleanupTask()
         }
         
         // Always write (or re-write) the sandbox sentinel file
@@ -47,6 +55,53 @@ final class InstallGuardService: @unchecked Sendable {
         userDefaults.set(true, forKey: "hasCompletedOnboarding")
         userDefaults.set(true, forKey: "hasSeenOnboarding")
         userDefaults.set(true, forKey: "isNotFreshInstall_v3")
+    }
+
+    private func startDeferredCleanupTask() {
+        Task { @MainActor in
+            // Run a periodic cleanup loop for the first 10 seconds of app launch
+            // to catch files/folders that sync down asynchronously from iCloud Drive.
+            for _ in 0..<10 {
+                try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
+                await runDeferredCleanup()
+            }
+            userDefaults.set(false, forKey: "pendingFreshInstallCleanup")
+        }
+    }
+    
+    func runDeferredCleanup() async {
+        await Task.detached(priority: .background) { [fileManager] in
+            let docDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first
+            let supportDir = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            
+            // 1. Delete local documents
+            if let docDir = docDir {
+                if let items = try? fileManager.contentsOfDirectory(at: docDir, includingPropertiesForKeys: nil) {
+                    for item in items {
+                        try? fileManager.removeItem(at: item)
+                    }
+                }
+            }
+            
+            // 2. Delete local sandbox Inbox directory
+            if let supportDir = supportDir {
+                let inboxDir = supportDir.appendingPathComponent("InksyncVault/Inbox", isDirectory: true)
+                if let items = try? fileManager.contentsOfDirectory(at: inboxDir, includingPropertiesForKeys: nil) {
+                    for item in items {
+                        try? fileManager.removeItem(at: item)
+                    }
+                }
+            }
+            
+            // 3. Vaporize iCloud Ubiquity container Documents if available
+            if let iCloudDocDir = FileManager.default.url(forUbiquityContainerIdentifier: nil)?.appendingPathComponent("Documents") {
+                if let items = try? fileManager.contentsOfDirectory(at: iCloudDocDir, includingPropertiesForKeys: nil) {
+                    for item in items {
+                        try? fileManager.removeItem(at: item)
+                    }
+                }
+            }
+        }.value
     }
     
     private func excludeDirectoryFromBackup(url: URL) {
