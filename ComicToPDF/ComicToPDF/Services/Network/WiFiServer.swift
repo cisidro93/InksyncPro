@@ -2210,26 +2210,69 @@ final class WiFiServer: ObservableObject, Sendable {
             <div class="toast-container" id="toastContainer"></div>
 
             <script>
+                const MAX_LOGS = 100;
+                
+                function getPersistedLogs() {
+                    try {
+                        const raw = sessionStorage.getItem('inksync_logs');
+                        return raw ? JSON.parse(raw) : [];
+                    } catch (e) {
+                        return [];
+                    }
+                }
+                
+                function savePersistedLogs(logs) {
+                    try {
+                        sessionStorage.setItem('inksync_logs', JSON.stringify(logs));
+                    } catch (e) {}
+                }
+
                 // Diagnostic log helper
                 function logDebug(message, type = 'info') {
+                    const time = new Date().toLocaleTimeString();
+                    const entryObj = { time: time, message: message, type: type };
+                    
+                    // Persist log entry in sessionStorage
+                    try {
+                        const currentLogs = getPersistedLogs();
+                        currentLogs.push(entryObj);
+                        if (currentLogs.length > MAX_LOGS) {
+                            currentLogs.shift();
+                        }
+                        savePersistedLogs(currentLogs);
+                    } catch (e) {}
+
                     console.log(`[DEBUG] [${type.toUpperCase()}] ${message}`);
+                    
                     const logContainer = document.getElementById('debugLogContainer');
                     if (logContainer) {
-                        const entry = document.createElement('div');
-                        entry.style.color = type === 'error' ? 'var(--error-color)' : (type === 'warning' ? 'var(--warning-color)' : 'var(--text-secondary)');
-                        entry.style.fontSize = '12px';
-                        entry.style.fontFamily = 'monospace';
-                        entry.style.marginBottom = '4px';
-                        entry.style.borderBottom = '1px solid rgba(255,255,255,0.03)';
-                        entry.style.paddingBottom = '4px';
-                        entry.innerText = `[${new Date().toLocaleTimeString()}] [${type.toUpperCase()}] ${message}`;
-                        logContainer.appendChild(entry);
-                        
-                        // Prevent DOM bloat by pruning old entries
-                        while (logContainer.children.length > 100) {
-                            logContainer.removeChild(logContainer.firstChild);
-                        }
-                        
+                        appendLogToDOM(entryObj, logContainer);
+                        logContainer.scrollTop = logContainer.scrollHeight;
+                    }
+                }
+
+                function appendLogToDOM(entryObj, container) {
+                    const entry = document.createElement('div');
+                    entry.style.color = entryObj.type === 'error' ? 'var(--error-color)' : (entryObj.type === 'warning' ? 'var(--warning-color)' : 'var(--text-secondary)');
+                    entry.style.fontSize = '12px';
+                    entry.style.fontFamily = 'monospace';
+                    entry.style.marginBottom = '4px';
+                    entry.style.borderBottom = '1px solid rgba(255,255,255,0.03)';
+                    entry.style.paddingBottom = '4px';
+                    entry.innerText = `[${entryObj.time}] [${entryObj.type.toUpperCase()}] ${entryObj.message}`;
+                    container.appendChild(entry);
+                    
+                    while (container.children.length > MAX_LOGS) {
+                        container.removeChild(container.firstChild);
+                    }
+                }
+
+                function restoreLogs() {
+                    const logContainer = document.getElementById('debugLogContainer');
+                    if (logContainer) {
+                        logContainer.innerHTML = '';
+                        const currentLogs = getPersistedLogs();
+                        currentLogs.forEach(log => appendLogToDOM(log, logContainer));
                         logContainer.scrollTop = logContainer.scrollHeight;
                     }
                 }
@@ -2313,6 +2356,11 @@ final class WiFiServer: ObservableObject, Sendable {
                 let uploadStartTime = 0;
 
                 document.addEventListener('DOMContentLoaded', () => {
+                    // Restore persisted logs first
+                    try {
+                        restoreLogs();
+                    } catch (e) {}
+
                     logDebug("Initializing Inksync Sharing Server Web Interface...");
                     
                     // Initialize theme preferences and E-Ink checks
