@@ -2031,6 +2031,89 @@ final class WiFiServer: ObservableObject, Sendable {
                 .retry-action-btn:active {
                     transform: translateY(0);
                 }
+
+                /* High-Contrast E-Ink Mode Styles */
+                body.eink-mode {
+                    --bg-color: #FFFFFF !important;
+                    --card-bg: #FFFFFF !important;
+                    --card-border: #000000 !important;
+                    --text-primary: #000000 !important;
+                    --text-secondary: #222222 !important;
+                    --accent-blue: #000000 !important;
+                    --accent-purple: #000000 !important;
+                    --accent-cyan: #000000 !important;
+                    --success-color: #000000 !important;
+                    --warning-color: #000000 !important;
+                    --error-color: #000000 !important;
+                    --cbz-color: #000000 !important;
+                    --epub-color: #000000 !important;
+                    --pdf-color: #000000 !important;
+                    --shadow: none !important;
+                    --glass-blur: none !important;
+                }
+
+                body.eink-mode .ambient-glow {
+                    display: none !important;
+                }
+
+                body.eink-mode .dashboard-container {
+                    max-width: 900px !important;
+                }
+
+                body.eink-mode .queue-card,
+                body.eink-mode .dropzone,
+                body.eink-mode .library-section,
+                body.eink-mode #debugLogContainer {
+                    background: #FFFFFF !important;
+                    border: 2px solid #000000 !important;
+                    border-radius: 4px !important;
+                    box-shadow: none !important;
+                    backdrop-filter: none !important;
+                    -webkit-backdrop-filter: none !important;
+                }
+
+                body.eink-mode .dropzone {
+                    border-style: dashed !important;
+                }
+
+                body.eink-mode .library-item {
+                    border: 1px solid #000000 !important;
+                    background: #FFFFFF !important;
+                    border-radius: 4px !important;
+                    margin-bottom: 8px !important;
+                    box-shadow: none !important;
+                }
+
+                body.eink-mode .file-type-badge {
+                    background: #000000 !important;
+                    color: #FFFFFF !important;
+                    border: 1px solid #000000 !important;
+                    border-radius: 2px !important;
+                }
+
+                body.eink-mode .download-action-btn,
+                body.eink-mode .retry-action-btn,
+                body.eink-mode .zip-btn {
+                    background: #FFFFFF !important;
+                    color: #000000 !important;
+                    border: 2px solid #000000 !important;
+                    border-radius: 4px !important;
+                    box-shadow: none !important;
+                    text-decoration: none !important;
+                }
+                
+                body.eink-mode .download-action-btn:hover,
+                body.eink-mode .retry-action-btn:hover,
+                body.eink-mode .zip-btn:hover {
+                    background: #000000 !important;
+                    color: #FFFFFF !important;
+                }
+                
+                body.eink-mode #debugLogContainer {
+                    color: #000000 !important;
+                    background: #FFFFFF !important;
+                    border: 2px solid #000000 !important;
+                }
             </style>
         </head>
         <body>
@@ -2046,10 +2129,18 @@ final class WiFiServer: ObservableObject, Sendable {
                             <div class="subtitle">WiFi File Sharing Server</div>
                         </div>
                     </div>
-                    <div class="header-right">
+                    <div class="header-right" style="display:flex; gap:12px; align-items:center;">
+                        <button onclick="toggleEInkMode()" id="einkToggleBtn" style="background:var(--card-bg); border:1px solid var(--card-border); color:var(--text-primary); padding:8px 16px; border-radius:12px; font-size:13px; font-weight:600; cursor:pointer; display:flex; align-items:center; gap:6px; transition:all 0.2s;">
+                            <span>🌑</span> High-Contrast E-Ink
+                        </button>
                         \(queueButtonHTML)
                     </div>
                 </header>
+
+                <!-- Memory Warning Banner -->
+                <div class="warning-banner" id="memoryWarningBanner" style="display:none; background:#FFFBEB; border:2px solid #D97706; color:#B45309; padding:16px; border-radius:12px; font-size:14px; margin-bottom:20px; font-weight:600; text-align:center; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+                    ⚠️ Low System Memory: The browser reloaded while you were selecting files. Please close other open tabs or use drag-and-drop to upload files.
+                </div>
 
                 <!-- Staged upload queue -->
                 <div class="queue-card" id="queueCard">
@@ -2061,7 +2152,7 @@ final class WiFiServer: ObservableObject, Sendable {
                 </div>
 
                 <!-- Dropzone / File Select -->
-                <div class="dropzone" id="dropzone" onclick="document.getElementById('fileInput').click()">
+                <div class="dropzone" id="dropzone" onclick="triggerFileSelect()">
                     <div class="dropzone-icon">📥</div>
                     <h2>Drag & Drop Files Here</h2>
                     <p class="subtitle">Supports CBZ, CBR, EPUB, PDF, and ZIP files. Or click to browse.</p>
@@ -2162,6 +2253,57 @@ final class WiFiServer: ObservableObject, Sendable {
                     }
                 }
 
+                function triggerFileSelect() {
+                    try {
+                        sessionStorage.setItem('upload_initiated', 'true');
+                    } catch (e) {}
+                    document.getElementById('fileInput').click();
+                }
+
+                function toggleEInkMode() {
+                    try {
+                        const body = document.body;
+                        const btn = document.getElementById('einkToggleBtn');
+                        const isEInk = body.classList.toggle('eink-mode');
+                        
+                        localStorage.setItem('eink_mode_enabled', isEInk ? 'true' : 'false');
+                        
+                        if (btn) {
+                            btn.innerHTML = isEInk ? '<span>☀️</span> Disable E-Ink' : '<span>🌑</span> High-Contrast E-Ink';
+                            btn.style.background = isEInk ? '#FFFFFF' : 'var(--card-bg)';
+                            btn.style.color = isEInk ? '#000000' : 'var(--text-primary)';
+                            btn.style.border = isEInk ? '2px solid #000000' : '1px solid var(--card-border)';
+                        }
+                        
+                        logDebug(`E-Ink High-Contrast Mode ${isEInk ? 'enabled' : 'disabled'}`);
+                    } catch (e) {
+                        console.error("Error toggling E-Ink: ", e);
+                    }
+                }
+
+                function initEInkSettings() {
+                    try {
+                        const ua = navigator.userAgent.toLowerCase();
+                        const isOnyxBoox = ua.includes('boox') || ua.includes('onyx') || ua.includes('ereader');
+                        const savedPref = localStorage.getItem('eink_mode_enabled');
+                        
+                        if (savedPref === 'true' || (savedPref === null && isOnyxBoox)) {
+                            const body = document.body;
+                            body.classList.add('eink-mode');
+                            const btn = document.getElementById('einkToggleBtn');
+                            if (btn) {
+                                btn.innerHTML = '<span>☀️</span> Disable E-Ink';
+                                btn.style.background = '#FFFFFF';
+                                btn.style.color = '#000000';
+                                btn.style.border = '2px solid #000000';
+                            }
+                            logDebug("Auto-detected E-Ink device / user preference. High-contrast theme loaded.");
+                        }
+                    } catch (e) {
+                        console.error("Error initializing E-Ink settings: ", e);
+                    }
+                }
+
                 let libraryFiles = \(filesJSONString);
                 let activeFilter = 'all';
                 let searchQuery = '';
@@ -2172,6 +2314,28 @@ final class WiFiServer: ObservableObject, Sendable {
 
                 document.addEventListener('DOMContentLoaded', () => {
                     logDebug("Initializing Inksync Sharing Server Web Interface...");
+                    
+                    // Initialize theme preferences and E-Ink checks
+                    try {
+                        initEInkSettings();
+                    } catch (err) {
+                        console.error("Error setting up e-ink: ", err);
+                    }
+
+                    // Check for memory-pressure reloads
+                    try {
+                        if (sessionStorage.getItem('upload_initiated') === 'true') {
+                            sessionStorage.removeItem('upload_initiated');
+                            const banner = document.getElementById('memoryWarningBanner');
+                            if (banner) {
+                                banner.style.display = 'block';
+                            }
+                            logDebug("⚠️ System memory pressure detected. The page reloaded while the file picker was open.", "warning");
+                        }
+                    } catch (err) {
+                        console.error("Error checking reload: ", err);
+                    }
+
                     try {
                         renderLibrary();
                         logDebug("Library files list rendered successfully.");
