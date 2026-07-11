@@ -255,16 +255,78 @@ final class WiFiServer: ObservableObject, Sendable {
 
     // Context to track state per connection
     private final class ConnectionContext: @unchecked Sendable {
-        var buffer = Data()
-        var isHeaderParsed = false
-        var expectedLength: Int64 = 0
-        var receivedLength: Int64 = 0
-        var fileHandle: FileHandle?
-        var destinationURL: URL?
-        var filename: String = ""
-        var relativePath: String? = nil // ✅ Track folder structure
-        var isAuthenticated = false // Track auth per request context
+        private let lock = NSLock()
+        private var _buffer = Data()
+        private var _isHeaderParsed = false
+        private var _isInitialBodyWritten = false
+        private var _expectedLength: Int64 = 0
+        private var _receivedLength: Int64 = 0
+        private var _fileHandle: FileHandle?
+        private var _destinationURL: URL?
+        private var _filename: String = ""
+        private var _relativePath: String? = nil
+        
+        var buffer: Data {
+            get { lock.lock(); defer { lock.unlock() }; return _buffer }
+            set { lock.lock(); defer { lock.unlock() }; _buffer = newValue }
+        }
+        
+        var isHeaderParsed: Bool {
+            get { lock.lock(); defer { lock.unlock() }; return _isHeaderParsed }
+            set { lock.lock(); defer { lock.unlock() }; _isHeaderParsed = newValue }
+        }
+        
+        var isInitialBodyWritten: Bool {
+            get { lock.lock(); defer { lock.unlock() }; return _isInitialBodyWritten }
+            set { lock.lock(); defer { lock.unlock() }; _isInitialBodyWritten = newValue }
+        }
+        
+        var expectedLength: Int64 {
+            get { lock.lock(); defer { lock.unlock() }; return _expectedLength }
+            set { lock.lock(); defer { lock.unlock() }; _expectedLength = newValue }
+        }
+        
+        var receivedLength: Int64 {
+            get { lock.lock(); defer { lock.unlock() }; return _receivedLength }
+            set { lock.lock(); defer { lock.unlock() }; _receivedLength = newValue }
+        }
+        
+        var fileHandle: FileHandle? {
+            get { lock.lock(); defer { lock.unlock() }; return _fileHandle }
+            set { lock.lock(); defer { lock.unlock() }; _fileHandle = newValue }
+        }
+        
+        var destinationURL: URL? {
+            get { lock.lock(); defer { lock.unlock() }; return _destinationURL }
+            set { lock.lock(); defer { lock.unlock() }; _destinationURL = newValue }
+        }
+        
+        var filename: String {
+            get { lock.lock(); defer { lock.unlock() }; return _filename }
+            set { lock.lock(); defer { lock.unlock() }; _filename = newValue }
+        }
+        
+        var relativePath: String? {
+            get { lock.lock(); defer { lock.unlock() }; return _relativePath }
+            set { lock.lock(); defer { lock.unlock() }; _relativePath = newValue }
+        }
+        
+        var isAuthenticated = false
         var remoteIP: String = ""
+        
+        func appendToBuffer(_ data: Data) {
+            lock.lock()
+            defer { lock.unlock() }
+            _buffer.append(data)
+        }
+        
+        func extractBuffer() -> Data {
+            lock.lock()
+            defer { lock.unlock() }
+            let data = _buffer
+            _buffer = Data()
+            return data
+        }
     }
     
     private func handleConnection(_ connection: NWConnection) {
@@ -299,7 +361,7 @@ final class WiFiServer: ObservableObject, Sendable {
             guard let self = self else { return }
             
             if let data = data, !data.isEmpty {
-                if context.isHeaderParsed {
+                if context.isHeaderParsed && context.isInitialBodyWritten {
                     // Streaming Mode: High-performance background write
                     if let fileHandle = context.fileHandle {
                         fileHandle.write(data)
@@ -310,12 +372,45 @@ final class WiFiServer: ObservableObject, Sendable {
                             Task { @MainActor in
                                 self.uploadProgress = progress
                             }
+                            
+                            // Immediately complete upload if all bytes are received, breaking TCP deadlock
+                            if context.receivedLength >= context.expectedLength {
+                                Task { @MainActor in
+                                    self.checkUploadCompletion(connection: connection, context: context)
+                                }
+                                return
+                            }
                         }
                     }
+                } else if context.isHeaderParsed {
+                    // Headers are parsed, but initial body has not been written yet on MainActor.
+                    // Append to thread-safe buffer to prevent packet loss or out-of-order writes.
+                    context.appendToBuffer(data)
                 } else {
-                    // Headers not parsed yet: process on MainActor
-                    Task { @MainActor in
-                        self.processData(data, connection: connection, context: context)
+                    // Headers not parsed yet: check synchronously on the background queue
+                    context.appendToBuffer(data)
+                    
+                    let currentBuffer = context.buffer
+                    if let headerEndRange = currentBuffer.range(of: Data([0x0D, 0x0A, 0x0D, 0x0A])) {
+                        // Found boundary! Set parsed flag synchronously to block racing packets
+                        context.isHeaderParsed = true
+                        
+                        let headerData = currentBuffer.subdata(in: 0..<headerEndRange.lowerBound)
+                        // Retain only body bytes in the buffer
+                        context.buffer = currentBuffer.subdata(in: headerEndRange.upperBound..<currentBuffer.count)
+                        
+                        if let headerString = String(data: headerData, encoding: .utf8) {
+                            Task { @MainActor in
+                                self.parseHeaders(headerString, connection: connection, context: context)
+                            }
+                        }
+                    } else {
+                        // Limit headers to 32KB to prevent memory exhaustion DoS
+                        if currentBuffer.count > 32768 {
+                            Logger.shared.log("Connection Terminated - Header Payload Too Large", category: "Network", type: .warning)
+                            connection.cancel()
+                            return
+                        }
                     }
                 }
             }
@@ -341,39 +436,7 @@ final class WiFiServer: ObservableObject, Sendable {
         }
     }
     
-    private func processData(_ data: Data, connection: NWConnection, context: ConnectionContext) {
-        if !context.isHeaderParsed {
-            context.buffer.append(data)
-            
-            // SECURITY: Limit headers to 32KB to prevent memory exhaustion DoS
-            guard context.buffer.count <= 32768 else {
-                Logger.shared.log("Connection Terminated - Header Payload Too Large", category: "Network", type: .warning)
-                connection.cancel()
-                return
-            }
-            
-            // Look for Double CRLF (End of Headers)
-            if let range = context.buffer.range(of: Data("\r\n\r\n".utf8)) {
-                let headerData = context.buffer[..<range.lowerBound]
-                let bodyData = context.buffer[range.upperBound...] // Remaining data is part of body or POST payload
-                
-                if let headerString = String(data: headerData, encoding: .utf8) {
-                    parseHeaders(headerString, bodyData: bodyData, connection: connection, context: context)
-                }
-                
-                // Note: We don't clear buffer here immediately because POST requests might need the body data we just split
-            }
-        } else {
-            // Streaming Mode (Uploads)
-            // Only write if we are authenticated and expecting a file
-            if context.isAuthenticated && context.fileHandle != nil {
-                writeBodyData(data, context: context)
-                checkUploadCompletion(connection: connection, context: context)
-            }
-        }
-    }
-    
-    private func parseHeaders(_ headerString: String, bodyData: Data, connection: NWConnection, context: ConnectionContext) {
+    private func parseHeaders(_ headerString: String, connection: NWConnection, context: ConnectionContext) {
         let lines = headerString.components(separatedBy: "\r\n")
         guard let firstLine = lines.first else { return }
         
@@ -384,14 +447,12 @@ final class WiFiServer: ObservableObject, Sendable {
         var sessionToken: String?
         for line in lines {
             if line.lowercased().hasPrefix("cookie:") {
-                let components = line.components(separatedBy: ":")
-                if components.count > 1 {
-                    let cookies = components[1].components(separatedBy: ";")
-                    for cookie in cookies {
-                        let trimmed = cookie.trimmingCharacters(in: .whitespaces)
-                        if trimmed.hasPrefix("session=") {
-                            sessionToken = String(trimmed.dropFirst("session=".count))
-                        }
+                let cookiesString = line.dropFirst("cookie:".count).trimmingCharacters(in: .whitespaces)
+                let cookies = cookiesString.components(separatedBy: ";")
+                for cookie in cookies {
+                    let trimmed = cookie.trimmingCharacters(in: .whitespaces)
+                    if trimmed.hasPrefix("session=") {
+                        sessionToken = String(trimmed.dropFirst("session=".count))
                     }
                 }
             }
@@ -430,7 +491,8 @@ final class WiFiServer: ObservableObject, Sendable {
         
         // 2. Handle Login POST separately (Does not require auth)
         if method == "POST" && cleanPath == "/login" {
-            handleLogin(lines: lines, bodyData: bodyData, connection: connection, remoteIP: context.remoteIP)
+            let loginBody = context.extractBuffer()
+            handleLogin(lines: lines, bodyData: loginBody, connection: connection, remoteIP: context.remoteIP)
             return
         }
         
@@ -486,12 +548,23 @@ final class WiFiServer: ObservableObject, Sendable {
             // Streaming Logic
             context.isHeaderParsed = true 
             
-            if !bodyData.isEmpty {
-                writeBodyData(bodyData, context: context)
-                checkUploadCompletion(connection: connection, context: context)
+            // Write any initial body data that got buffered on the background queue
+            let initialBody = context.extractBuffer()
+            if !initialBody.isEmpty {
+                writeBodyData(initialBody, context: context)
             }
             
-            context.buffer = Data()
+            // Set flag so subsequent packets can be written on background queue
+            context.isInitialBodyWritten = true
+            
+            // Check if any additional packets arrived and were buffered while we were writing the initial body
+            let extraBody = context.extractBuffer()
+            if !extraBody.isEmpty {
+                writeBodyData(extraBody, context: context)
+            }
+            
+            // Check if upload is already complete
+            checkUploadCompletion(connection: connection, context: context)
         }
     }
     
@@ -1020,7 +1093,6 @@ final class WiFiServer: ObservableObject, Sendable {
             do {
                 // Determine a safe intermediate temp file for the zip
                 let tempZipURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".zip")
-                defer { try? FileManager.default.removeItem(at: tempZipURL) }
                 
                 let newArchive: ZIPFoundation.Archive
                 do {
@@ -1042,8 +1114,7 @@ final class WiFiServer: ObservableObject, Sendable {
                 // FLUSH ZIP FOOTERS TO DISK!
                 archive = nil
                 
-                let zipData = try Data(contentsOf: tempZipURL, options: .mappedIfSafe)
-                sendResponse(connection, 200, data: zipData, contentType: "application/zip", filename: "Inksync_Queue.zip")
+                sendFileResponse(connection, fileURL: tempZipURL, contentType: "application/zip", filename: "Inksync_Queue.zip", deleteAfterSend: true)
             } catch {
                 Logger.shared.log("WiFi Transfer ZIP Error: \(error.localizedDescription)", category: "Network", type: .error)
                 sendResponse(connection, 500, "Internal Server Error during ZIP creation.")
@@ -1083,15 +1154,7 @@ final class WiFiServer: ObservableObject, Sendable {
                 }
                 
                 let downloadFilename = fileURL.lastPathComponent
-                
-                do {
-                    // Mapped memory for large files
-                    let data = try Data(contentsOf: fileURL, options: .mappedIfSafe)
-                     sendResponse(connection, 200, data: data, contentType: contentType, filename: downloadFilename)
-                } catch {
-                    Logger.shared.log("WiFi Transfer Internal Mapping Error: \(error.localizedDescription)", category: "Network", type: .error)
-                    sendResponse(connection, 500, "Internal Server Error")
-                }
+                sendFileResponse(connection, fileURL: fileURL, contentType: contentType, filename: downloadFilename)
             } else {
                 Logger.shared.log("WiFi Transfer - File not found: \(fileURL.lastPathComponent)", category: "Network", type: .warning)
                 sendResponse(connection, 404, "Not Found")
@@ -1181,6 +1244,85 @@ final class WiFiServer: ObservableObject, Sendable {
         
         connection.send(content: header.data(using: .utf8), completion: .idempotent)
         connection.send(content: data, completion: .contentProcessed({ _ in connection.cancel() }))
+    }
+    
+    private func sendFileResponse(_ connection: NWConnection, fileURL: URL, contentType: String, filename: String, deleteAfterSend: Bool = false) {
+        guard let fileHandle = try? FileHandle(forReadingFrom: fileURL) else {
+            sendResponse(connection, 500, "Internal Server Error - Cannot open file")
+            return
+        }
+        
+        let fileSize: UInt64
+        if let attr = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
+           let size = attr[.size] as? UInt64 {
+            fileSize = size
+        } else {
+            fileSize = 0
+        }
+        
+        var header = "HTTP/1.1 200 OK\r\n"
+            + "Content-Type: \(contentType)\r\n"
+            + "Content-Length: \(fileSize)\r\n"
+            + "Content-Disposition: attachment; filename=\"\(filename)\"\r\n"
+            + "Connection: close\r\n"
+            + "\r\n"
+        
+        guard let headerData = header.data(using: .utf8) else {
+            try? fileHandle.close()
+            connection.cancel()
+            return
+        }
+        
+        connection.send(content: headerData, completion: .idempotent)
+        streamFileChunks(connection: connection, fileHandle: fileHandle, fileURL: fileURL, deleteAfterSend: deleteAfterSend)
+    }
+    
+    private func streamFileChunks(connection: NWConnection, fileHandle: FileHandle, fileURL: URL?, deleteAfterSend: Bool) {
+        let chunkSize = 65536 // 64KB chunks
+        let data: Data
+        do {
+            if #available(iOS 13.4, *) {
+                if let chunk = try fileHandle.read(upToCount: chunkSize) {
+                    data = chunk
+                } else {
+                    data = Data()
+                }
+            } else {
+                data = fileHandle.readData(ofLength: chunkSize)
+            }
+        } catch {
+            Logger.shared.log("Error reading file chunk: \(error)", category: "Network", type: .error)
+            try? fileHandle.close()
+            if deleteAfterSend, let fileURL = fileURL {
+                try? FileManager.default.removeItem(at: fileURL)
+            }
+            connection.cancel()
+            return
+        }
+        
+        if data.isEmpty {
+            try? fileHandle.close()
+            if deleteAfterSend, let fileURL = fileURL {
+                try? FileManager.default.removeItem(at: fileURL)
+                Logger.shared.log("Cleaned up temp archive: \(fileURL.lastPathComponent)", category: "Network")
+            }
+            connection.send(content: nil, contentContext: .defaultStream, isComplete: true, completion: .contentProcessed({ _ in
+                connection.cancel()
+            }))
+        } else {
+            connection.send(content: data, contentContext: .defaultMessage, isComplete: false, completion: .contentProcessed({ [weak self] error in
+                if let error = error {
+                    Logger.shared.log("Error sending chunk: \(error)", category: "Network", type: .error)
+                    try? fileHandle.close()
+                    if deleteAfterSend, let fileURL = fileURL {
+                        try? FileManager.default.removeItem(at: fileURL)
+                    }
+                    connection.cancel()
+                } else {
+                    self?.streamFileChunks(connection: connection, fileHandle: fileHandle, fileURL: fileURL, deleteAfterSend: deleteAfterSend)
+                }
+            }))
+        }
     }
     
     // MARK: - Background Task

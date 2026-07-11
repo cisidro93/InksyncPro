@@ -227,7 +227,8 @@ extension PeerManager {
     /// Attempts to authenticate with a peer's server using the provided PIN.
     /// Returns the session token cookie string if successful, or throws an error.
     func authenticate(ipAddress: String, port: Int, pin: String) async throws -> String? {
-        guard let loginURL = URL(string: "http://\(ipAddress):\(port)/login") else {
+        let host = ipAddress.contains(":") ? "[\(ipAddress)]" : ipAddress
+        guard let loginURL = URL(string: "http://\(host):\(port)/login") else {
             throw NSError(domain: "InksyncPeer", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid Peer URL"])
         }
         var request = URLRequest(url: loginURL)

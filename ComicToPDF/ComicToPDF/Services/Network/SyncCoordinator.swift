@@ -142,7 +142,8 @@ class SyncCoordinator: ObservableObject {
         
         let sessionCookie = try await PeerManager.shared.authenticate(ipAddress: peerIP, port: 8080, pin: pin)
         
-        guard let url = URL(string: "http://\(peerIP):8080/api/sync") else {
+        let host = peerIP.contains(":") ? "[\(peerIP)]" : peerIP
+        guard let url = URL(string: "http://\(host):8080/api/sync") else {
             throw NSError(domain: "SyncCoordinator", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid Peer IP configuration."])
         }
         
@@ -203,8 +204,9 @@ class SyncCoordinator: ObservableObject {
                 continue
             }
 
+            let host = peerIP.contains(":") ? "[\(peerIP)]" : peerIP
             guard let encodedName = filename.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
-                  let url = URL(string: "http://\(peerIP):8080/\(encodedName)") else { continue }
+                  let url = URL(string: "http://\(host):8080/\(encodedName)") else { continue }
             
             var request = URLRequest(url: url)
             if let cookie = cookie {
