@@ -534,7 +534,8 @@ final class WiFiServer: ObservableObject, Sendable {
             
             // Setup File Writing
             let rawName = parts[1].replacingOccurrences(of: "/upload/", with: "").replacingOccurrences(of: "/", with: "")
-            let fallbackName = rawName.isEmpty || rawName == "upload" ? "upload_\(Date().timeIntervalSince1970).cbz" : rawName
+            let decodedName = rawName.removingPercentEncoding ?? rawName
+            let fallbackName = decodedName.isEmpty || decodedName == "upload" ? "upload_\(Date().timeIntervalSince1970).cbz" : decodedName
             let fileName = explicitFileName ?? fallbackName
             
             context.filename = fileName
@@ -2132,6 +2133,12 @@ final class WiFiServer: ObservableObject, Sendable {
                         entry.style.paddingBottom = '4px';
                         entry.innerText = `[${new Date().toLocaleTimeString()}] [${type.toUpperCase()}] ${message}`;
                         logContainer.appendChild(entry);
+                        
+                        // Prevent DOM bloat by pruning old entries
+                        while (logContainer.children.length > 100) {
+                            logContainer.removeChild(logContainer.firstChild);
+                        }
+                        
                         logContainer.scrollTop = logContainer.scrollHeight;
                     }
                 }
