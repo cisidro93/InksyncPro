@@ -2152,7 +2152,7 @@ final class WiFiServer: ObservableObject, Sendable {
                 </div>
 
                 <!-- Dropzone / File Select -->
-                <div class="dropzone" id="dropzone" onclick="triggerFileSelect()">
+                <div class="dropzone" id="dropzone" onclick="try { sessionStorage.setItem('upload_initiated', 'true'); } catch(e) {} document.getElementById('fileInput').click();">
                     <div class="dropzone-icon">📥</div>
                     <h2>Drag & Drop Files Here</h2>
                     <p class="subtitle">Supports CBZ, CBR, EPUB, PDF, and ZIP files. Or click to browse.</p>
@@ -2294,13 +2294,6 @@ final class WiFiServer: ObservableObject, Sendable {
                     if (el) {
                         el.style.display = el.style.display === 'none' ? 'block' : 'none';
                     }
-                }
-
-                function triggerFileSelect() {
-                    try {
-                        sessionStorage.setItem('upload_initiated', 'true');
-                    } catch (e) {}
-                    document.getElementById('fileInput').click();
                 }
 
                 function toggleEInkMode() {
