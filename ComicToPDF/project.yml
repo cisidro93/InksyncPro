@@ -36,9 +36,9 @@ targets:
         CODE_SIGNING_ALLOWED: NO
         CODE_SIGNING_REQUIRED: NO
         CODE_SIGN_IDENTITY: ""
-        INFOPLIST_FILE: ComicToPDF/Info.plist
+        INFOPLIST_FILE: ComicToPDF/ComicToPDF/Info.plist
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-        Input_File_Path: $(SRCROOT)/ComicToPDF/Info.plist
+        Input_File_Path: $(SRCROOT)/ComicToPDF/ComicToPDF/Info.plist
         SWIFT_VERSION: "6.0"
         SWIFT_STRICT_CONCURRENCY: complete
       configs:
@@ -61,7 +61,7 @@ targets:
           COMPRESS_PNG_FILES: YES
           ASSETCATALOG_COMPILER_OPTIMIZATION: space
     info:
-      path: ComicToPDF/Info.plist
+      path: ComicToPDF/ComicToPDF/Info.plist
       properties:
         CFBundleVersion: "2"
         CFBundleShortVersionString: "1.0.1"
@@ -91,8 +91,6 @@ targets:
           - OpenDyslexic-Bold.otf
           - OpenDyslexic-Italic.otf
           - OpenDyslexic-BoldItalic.otf
-          - SourceSerif4-Regular.ttf
-          - SourceSerif4-Italic.ttf
           - Merriweather-Regular.ttf
           - Merriweather-Bold.ttf
           - Merriweather-Italic.ttf
