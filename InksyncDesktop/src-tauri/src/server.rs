@@ -15,6 +15,7 @@ use std::path::PathBuf;
 pub struct ServerState {
     pub library_dir: std::sync::Arc<tokio::sync::Mutex<PathBuf>>,
     pub db_path: PathBuf,
+    pub pairing_pin: String,
 }
 
 pub async fn start_server(port: u16, state: ServerState) {
@@ -25,6 +26,7 @@ pub async fn start_server(port: u16, state: ServerState) {
         .route("/api/books", get(list_books))
         .route("/api/sync/annotations", axum::routing::post(sync_annotations))
         .route("/upload/:filename", axum::routing::post(upload_file))
+        .route("/login", axum::routing::post(handle_login))
         .with_state(Arc::new(state))
         .layer(CorsLayer::permissive());
 
@@ -366,4 +368,26 @@ async fn sync_annotations(
     }
     
     (axum::http::StatusCode::OK, "Annotations synced successfully").into_response()
+}
+
+#[derive(serde::Deserialize)]
+struct LoginPayload {
+    pin: String,
+}
+
+async fn handle_login(
+    State(state): State<Arc<ServerState>>,
+    axum::extract::Form(payload): axum::extract::Form<LoginPayload>,
+) -> impl IntoResponse {
+    if state.pairing_pin == payload.pin {
+        (
+            axum::http::StatusCode::OK,
+            [
+                (axum::http::header::SET_COOKIE, "session=authorized_session_token_value; Path=/"),
+            ],
+            "Authenticated",
+        ).into_response()
+    } else {
+        (axum::http::StatusCode::UNAUTHORIZED, "Invalid PIN").into_response()
+    }
 }

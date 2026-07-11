@@ -59,4 +59,8 @@ impl DiscoveryManager {
         println!("mDNS: Registered Inksync Sync Service on port {}", port);
         Ok(())
     }
+
+    pub fn get_daemon(&self) -> ServiceDaemon {
+        self.daemon.clone()
+    }
 }

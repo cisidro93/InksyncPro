@@ -44,6 +44,7 @@ export default function App() {
 
   const [highlights, setHighlights] = useState<any[]>([]);
   const [obsidianVaultPath, setObsidianVaultPath] = useState<string>("");
+  const [pairingPin, setPairingPin] = useState<string>("");
 
   const loadHighlights = () => {
     invoke<any[]>("get_annotations")
@@ -55,6 +56,12 @@ export default function App() {
     invoke<string>("get_obsidian_vault_path")
       .then((path) => setObsidianVaultPath(path))
       .catch((err) => console.error("Failed to load obsidian path:", err));
+  };
+
+  const fetchPairingPin = () => {
+    invoke<string>("get_pairing_pin")
+      .then((pin) => setPairingPin(pin))
+      .catch((err) => console.error("Failed to load pairing PIN:", err));
   };
 
   const fetchConnection = () => {
@@ -135,6 +142,7 @@ export default function App() {
     checkUpdates();
     fetchObsidianPath();
     loadHighlights();
+    fetchPairingPin();
 
     // Poll logs, books, devices, and highlights
     const logInterval = setInterval(loadLogs, 1500);
@@ -345,6 +353,22 @@ export default function App() {
                 alt="Scan to Connect"
                 style={{ width: 110, height: 110 }}
               />
+            </div>
+          )}
+
+          {pairingPin && (
+            <div style={{ 
+              display: "flex", 
+              flexDirection: "column", 
+              alignItems: "center", 
+              marginTop: 10,
+              padding: "6px 12px", 
+              backgroundColor: "rgba(255, 149, 0, 0.1)", 
+              border: "1px dashed rgba(255, 149, 0, 0.3)",
+              borderRadius: 6 
+            }}>
+              <span style={{ fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: 0.5 }}>Pairing PIN</span>
+              <span style={{ fontSize: 18, fontWeight: "bold", color: "#ff9500", letterSpacing: 2, fontFamily: "monospace", marginTop: 2 }}>{pairingPin}</span>
             </div>
           )}
 

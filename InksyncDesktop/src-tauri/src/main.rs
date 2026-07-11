@@ -33,6 +33,8 @@ struct AppState {
     db_path: PathBuf,
     library_dir: std::sync::Arc<tokio::sync::Mutex<PathBuf>>,
     logs: std::sync::Arc<tokio::sync::Mutex<Vec<String>>>,
+    mdns_daemon: mdns_sd::ServiceDaemon,
+    pairing_pin: String,
 }
 
 #[tauri::command]
@@ -232,9 +234,8 @@ async fn post_file(ip: &str, port: u16, filename: &str, file_bytes: &[u8]) -> Re
 }
 
 #[tauri::command]
-async fn discover_devices() -> Result<Vec<serde_json::Value>, String> {
-    let daemon = ServiceDaemon::new().map_err(|e| e.to_string())?;
-    let receiver = daemon.browse("_inksync._tcp.local.").map_err(|e| e.to_string())?;
+async fn discover_devices(state: tauri::State<'_, AppState>) -> Result<Vec<serde_json::Value>, String> {
+    let receiver = state.mdns_daemon.browse("_inksync._tcp.local.").map_err(|e| e.to_string())?;
     
     let mut devices = std::collections::HashMap::new();
     let start = std::time::Instant::now();
@@ -266,6 +267,12 @@ async fn discover_devices() -> Result<Vec<serde_json::Value>, String> {
     
     Ok(devices.into_values().collect())
 }
+
+#[tauri::command]
+fn get_pairing_pin(state: tauri::State<'_, AppState>) -> String {
+    state.pairing_pin.clone()
+}
+
 
 #[tauri::command]
 async fn send_book_to_device(
@@ -544,19 +551,29 @@ async fn main() {
         "Calibre TCP: Listening on 0.0.0.0:9090".to_string(),
     ]));
 
+    let discovery = DiscoveryManager::new().expect("Failed to initialize mDNS");
+    discovery.advertise_calibre(9090, &hostname).ok();
+    discovery.advertise_sync(8080, &hostname).ok();
+    let mdns_daemon = discovery.get_daemon();
+
+    let seconds = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let pairing_pin = format!("{:04}", (seconds % 9000) + 1000);
+
     let app_state = AppState {
         db_path: db_path.clone(),
         library_dir: shared_lib_dir.clone(),
         logs: logs_vec.clone(),
+        mdns_daemon,
+        pairing_pin: pairing_pin.clone(),
     };
-
-    let discovery = DiscoveryManager::new().expect("Failed to initialize mDNS");
-    discovery.advertise_calibre(9090, &hostname).ok();
-    discovery.advertise_sync(8080, &hostname).ok();
 
     let server_state = ServerState {
         library_dir: shared_lib_dir.clone(),
         db_path: db_path.clone(),
+        pairing_pin: pairing_pin.clone(),
     };
     server::start_server(8080, server_state).await;
 
@@ -633,7 +650,8 @@ async fn main() {
             get_annotations,
             get_obsidian_vault_path,
             set_obsidian_vault_path,
-            export_to_obsidian
+            export_to_obsidian,
+            get_pairing_pin
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
