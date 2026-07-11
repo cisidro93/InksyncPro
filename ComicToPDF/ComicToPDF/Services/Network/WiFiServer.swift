@@ -1139,41 +1139,69 @@ final class WiFiServer: ObservableObject, Sendable {
         } else {
             // URL Decode the path (critical for filenames with spaces!)
             // e.g. /my%20comic.epub -> my comic.epub
-            let fileName = cleanPath.hasPrefix("/") ? String(cleanPath.dropFirst()) : cleanPath
+            let decodedPath = cleanPath.removingPercentEncoding ?? cleanPath
+            let fileName = decodedPath.hasPrefix("/") ? String(decodedPath.dropFirst()) : decodedPath
             
-            guard let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { sendResponse(connection, 500, "Internal Server Error"); return }
-            let inboxDir = appSupport.appendingPathComponent("InksyncVault/Inbox", isDirectory: true)
+            var fileURL: URL? = nil
             
-            let docFileURL = docDir.appendingPathComponent(fileName).standardizedFileURL
-            let inboxFileURL = inboxDir.appendingPathComponent(fileName).standardizedFileURL
+            // 1. Look up in active library items first (supports external/linked files too!)
+            let activeItems = LibraryService.shared.items
+            for item in activeItems {
+                let itemURL = item.url
+                
+                var relativePath = itemURL.lastPathComponent
+                if itemURL.path.hasPrefix(docDir.path) {
+                    relativePath = itemURL.path.replacingOccurrences(of: docDir.path, with: "")
+                } else if let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+                    let inboxDir = appSupport.appendingPathComponent("InksyncVault/Inbox", isDirectory: true)
+                    if itemURL.path.hasPrefix(inboxDir.path) {
+                        relativePath = itemURL.path.replacingOccurrences(of: inboxDir.path, with: "")
+                    }
+                }
+                if relativePath.hasPrefix("/") {
+                    relativePath.removeFirst()
+                }
+                
+                if relativePath == fileName || itemURL.lastPathComponent == fileName {
+                    fileURL = itemURL
+                    break
+                }
+            }
             
-            let fileURL: URL
-            if FileManager.default.fileExists(atPath: inboxFileURL.path) && inboxFileURL.path.hasPrefix(inboxDir.standardizedFileURL.path) {
-                fileURL = inboxFileURL
-            } else if FileManager.default.fileExists(atPath: docFileURL.path) && docFileURL.path.hasPrefix(docDir.standardizedFileURL.path) {
-                fileURL = docFileURL
-            } else {
-                Logger.shared.log("WiFi Transfer - File not found or Path Traversal rejected: \(cleanPath)", category: "Network", type: .warning)
+            // 2. Fallback to physical lookup in standard sandboxed directories
+            if fileURL == nil {
+                guard let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { sendResponse(connection, 500, "Internal Server Error"); return }
+                let inboxDir = appSupport.appendingPathComponent("InksyncVault/Inbox", isDirectory: true)
+                let docFileURL = docDir.appendingPathComponent(fileName).standardizedFileURL
+                let inboxFileURL = inboxDir.appendingPathComponent(fileName).standardizedFileURL
+                
+                if FileManager.default.fileExists(atPath: inboxFileURL.path) && inboxFileURL.path.hasPrefix(inboxDir.standardizedFileURL.path) {
+                    fileURL = inboxFileURL
+                } else if FileManager.default.fileExists(atPath: docFileURL.path) && docFileURL.path.hasPrefix(docDir.standardizedFileURL.path) {
+                    fileURL = docFileURL
+                }
+            }
+            
+            guard let finalURL = fileURL, FileManager.default.fileExists(atPath: finalURL.path) else {
+                Logger.shared.log("WiFi Transfer - File not found: \(fileName)", category: "Network", type: .warning)
                 sendResponse(connection, 404, "Not Found")
                 return
             }
             
-            if FileManager.default.fileExists(atPath: fileURL.path) {
-                // Standard Content Type Strategy
-                let ext = fileURL.pathExtension.lowercased()
-                let contentType: String
-                if ext == "html" {
-                     contentType = "text/html"
-                } else {
-                     contentType = "application/octet-stream"
+            // Access security scoped resource if external/linked file
+            let isSandbox = PhysicalFileSystemRouter.isSandboxURL(finalURL)
+            let isSecScoped = !isSandbox && finalURL.startAccessingSecurityScopedResource()
+            defer {
+                if isSecScoped {
+                    finalURL.stopAccessingSecurityScopedResource()
                 }
-                
-                let downloadFilename = fileURL.lastPathComponent
-                sendFileResponse(connection, fileURL: fileURL, contentType: contentType, filename: downloadFilename)
-            } else {
-                Logger.shared.log("WiFi Transfer - File not found: \(fileURL.lastPathComponent)", category: "Network", type: .warning)
-                sendResponse(connection, 404, "Not Found")
             }
+            
+            let ext = finalURL.pathExtension.lowercased()
+            let contentType = (ext == "html") ? "text/html" : "application/octet-stream"
+            let downloadFilename = finalURL.lastPathComponent
+            
+            sendFileResponse(connection, fileURL: finalURL, contentType: contentType, filename: downloadFilename)
         }
     }
     
@@ -1243,6 +1271,9 @@ final class WiFiServer: ObservableObject, Sendable {
         let header = "HTTP/1.1 \(code) OK\r\n"
             + "Content-Type: \(contentType); charset=utf-8\r\n"
             + "Content-Length: \(bodyData.count)\r\n"
+            + "Cache-Control: no-store, no-cache, must-revalidate\r\n"
+            + "Pragma: no-cache\r\n"
+            + "Expires: 0\r\n"
             + "Connection: close\r\n"
             + "\r\n"
         guard var response = header.data(using: .utf8) else { return }
@@ -1358,36 +1389,37 @@ final class WiFiServer: ObservableObject, Sendable {
     // MARK: - HTML Generator
     
     private func getLibraryFilesList() -> [[String: Any]] {
+        let items = LibraryService.shared.items
+        var files: [[String: Any]] = []
+        
         let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.resolvingSymlinksInPath() ?? URL(fileURLWithPath: NSTemporaryDirectory())
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?.resolvingSymlinksInPath() ?? URL(fileURLWithPath: NSTemporaryDirectory())
         let inboxDir = appSupport.appendingPathComponent("InksyncVault/Inbox", isDirectory: true)
         
-        var files: [[String: Any]] = []
-        let keys: [URLResourceKey] = [.nameKey, .isDirectoryKey, .fileSizeKey]
-        
-        for dir in [docDir, inboxDir] {
-            if let enumerator = FileManager.default.enumerator(at: dir, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) {
-                for case let rawFileURL as URL in enumerator {
-                    let fileURL = rawFileURL.resolvingSymlinksInPath()
-                    let ext = fileURL.pathExtension.lowercased()
-                    
-                    if ["pdf", "epub", "cbz", "cbr", "cb7", "cbt", "zip"].contains(ext) {
-                        var relativePath = fileURL.path.replacingOccurrences(of: dir.path, with: "")
-                        if relativePath.hasPrefix("/") {
-                            relativePath.removeFirst()
-                        }
-                        let linkPath = relativePath.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? relativePath
-                        let size = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-                        
-                        files.append([
-                            "name": fileURL.lastPathComponent,
-                            "sizeBytes": size,
-                            "link": "/\(linkPath)",
-                            "type": ext
-                        ])
-                    }
-                }
+        for item in items {
+            let fileURL = item.url
+            let ext = fileURL.pathExtension.lowercased()
+            let size = item.fileSize
+            
+            var relativePath = fileURL.lastPathComponent
+            if fileURL.path.hasPrefix(docDir.path) {
+                relativePath = fileURL.path.replacingOccurrences(of: docDir.path, with: "")
+            } else if fileURL.path.hasPrefix(inboxDir.path) {
+                relativePath = fileURL.path.replacingOccurrences(of: inboxDir.path, with: "")
             }
+            
+            if relativePath.hasPrefix("/") {
+                relativePath.removeFirst()
+            }
+            let linkPath = relativePath.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? relativePath
+            let fileType = ext.isEmpty ? "pdf" : ext
+            
+            files.append([
+                "name": item.name,
+                "sizeBytes": size,
+                "link": "/\(linkPath)",
+                "type": fileType
+            ])
         }
         
         return files.sorted {
