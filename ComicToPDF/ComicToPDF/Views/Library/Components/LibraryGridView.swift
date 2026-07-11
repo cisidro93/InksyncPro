@@ -365,6 +365,10 @@ struct LibraryGridView: View {
                         Divider()
                         Button(role: .destructive) {
                             for issue in group.issues { conversionManager.deletePDF(issue) }
+                            if let folderUUID = UUID(uuidString: group.id),
+                               let col = conversionManager.collections.first(where: { $0.id == folderUUID }) {
+                                conversionManager.deleteCollection(col)
+                            }
                         } label: { Label("Delete Folder", systemImage: "trash") }
                     }
                 } else {

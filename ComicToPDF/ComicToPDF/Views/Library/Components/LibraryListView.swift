@@ -466,6 +466,9 @@ struct LibraryListView: View {
                         Divider()
                         Button(role: .destructive) {
                             for issue in group.issues { conversionManager.deletePDF(issue) }
+                            if let col = conversionManager.collections.first(where: { $0.id == folderUUID }) {
+                                conversionManager.deleteCollection(col)
+                            }
                         } label: { Label("Delete Folder", systemImage: "trash") }
                     }
                     .swipeActions(edge: .leading, allowsFullSwipe: true) {
@@ -485,6 +488,9 @@ struct LibraryListView: View {
                         .tint(.green)
                         Button(role: .destructive) {
                             for issue in group.issues { conversionManager.deletePDF(issue) }
+                            if let col = conversionManager.collections.first(where: { $0.id == folderUUID }) {
+                                conversionManager.deleteCollection(col)
+                            }
                         } label: { Label("Delete Folder", systemImage: "trash") }
                     }
                 } else {
