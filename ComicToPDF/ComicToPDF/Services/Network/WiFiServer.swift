@@ -14,6 +14,17 @@ final class WiFiServer: ObservableObject, Sendable {
     @Published var isRunning = false
     @Published var serverURL: String?
     
+    private var lastSeenIPs: [String: Date] = [:]
+    
+    private func updateActiveConnectionsCount() {
+        let now = Date()
+        lastSeenIPs = lastSeenIPs.filter { now.timeIntervalSince($0.value) < 15.0 }
+        let count = lastSeenIPs.count
+        if activeConnections != count {
+            activeConnections = count
+        }
+    }
+    
     // Session State
     private var validSessions: Set<String> = []
     private let sessionLock = NSLock()
@@ -332,23 +343,28 @@ final class WiFiServer: ObservableObject, Sendable {
     }
     
     private func handleConnection(_ connection: NWConnection) {
-        // Track Connection Start
-        self.activeConnections += 1
-        Logger.shared.log("New Connection from \(connection.endpoint)", category: "Network")
-        
-        // Track Connection End
         let context = ConnectionContext()
+        let cleanIP: String
         if case let .hostPort(host, _) = connection.endpoint {
-            context.remoteIP = "\(host)"
+            let ipStr = "\(host)".components(separatedBy: "%").first ?? "\(host)"
+            cleanIP = ipStr
+            context.remoteIP = ipStr
+            
+            lastSeenIPs[ipStr] = Date()
+            updateActiveConnectionsCount()
+        } else {
+            cleanIP = ""
         }
+        
+        Logger.shared.log("New Connection from \(connection.endpoint)", category: "Network")
         
         connection.stateUpdateHandler = { [weak self] state in
             Task { @MainActor in
                 switch state {
                 case .cancelled, .failed:
-                    self?.activeConnections = max(0, (self?.activeConnections ?? 1) - 1)
                     self?.cleanup(context: context)
                     self?.endBackgroundTask()
+                    self?.updateActiveConnectionsCount()
                 default: break
                 }
             }
@@ -366,7 +382,7 @@ final class WiFiServer: ObservableObject, Sendable {
                 if context.isHeaderParsed && context.isInitialBodyWritten {
                     // Streaming Mode: High-performance background write
                     if let fileHandle = context.fileHandle {
-                        fileHandle.write(data)
+                        try? fileHandle.write(contentsOf: data)
                         context.receivedLength += Int64(data.count)
                         
                         if context.expectedLength > 0 {
@@ -997,7 +1013,7 @@ final class WiFiServer: ObservableObject, Sendable {
         guard let fileHandle = context.fileHandle else { return }
         
         // Write to disk
-        fileHandle.write(data)
+        try? fileHandle.write(contentsOf: data)
         context.receivedLength += Int64(data.count)
         
         // Update Progress
@@ -1055,6 +1071,12 @@ final class WiFiServer: ObservableObject, Sendable {
     // MARK: - Handlers
     
     private func handleGetRequest(cleanPath: String, queryItems: [URLQueryItem], connection: NWConnection) {
+        if case let .hostPort(host, _) = connection.endpoint {
+            let ipStr = "\(host)".components(separatedBy: "%").first ?? "\(host)"
+            lastSeenIPs[ipStr] = Date()
+            updateActiveConnectionsCount()
+        }
+        
         guard let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
         
         if cleanPath == "/" {

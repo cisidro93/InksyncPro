@@ -65,6 +65,9 @@ struct InksyncProApp: App {
     }()
     
     init() {
+        // Ignore SIGPIPE to prevent socket/descriptor write failures from crashing the app
+        signal(SIGPIPE, SIG_IGN)
+        
         // 💥 ANNIHILATE GHOST DATA ON FRESH INSTALLS 💥
         InstallGuardService.shared.executeGuard()
         
