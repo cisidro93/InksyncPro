@@ -112,8 +112,9 @@ class SyncCoordinator: ObservableObject {
                 // File exists on the other device, but not locally!
                 missingFiles.append(filename)
                 
-                let localDocDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
-                let localURL = localDocDir.appendingPathComponent(filename)
+                let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
+                let inboxDir = appSupport.appendingPathComponent("InksyncVault/Inbox", isDirectory: true)
+                let localURL = inboxDir.appendingPathComponent(filename)
                 
                 // Inject placeholder record into SwiftData. It will be downloaded later via P2P.
                 let doc = SDConvertedPDF(id: incomingPDF.id, name: incomingPDF.name, url: localURL, pageCount: incomingPDF.pageCount, fileSize: incomingPDF.fileSize, metadata: incomingPDF.metadata, collectionId: assignedLocalCollectionID, isFavorite: incomingPDF.isFavorite, isPrivate: incomingPDF.isPrivate, coverImageData: incomingPDF.coverImageData, contentType: incomingPDF.contentType, chapters: incomingPDF.chapters, addedByMode: incomingPDF.addedByMode)
@@ -181,7 +182,9 @@ class SyncCoordinator: ObservableObject {
     
     /// Silent background daemon to fetch the raw physical CBZ files for newly synced placeholder items.
     nonisolated private func downloadMissingPayloads(_ filenames: [String], from peerIP: String, cookie: String?) async {
-        let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
+        let destinationDir = appSupport.appendingPathComponent("InksyncVault/Inbox", isDirectory: true)
+        try? FileManager.default.createDirectory(at: destinationDir, withIntermediateDirectories: true)
         let config = URLSessionConfiguration.default
         let session = URLSession(configuration: config)
         
@@ -212,7 +215,7 @@ class SyncCoordinator: ObservableObject {
                 let (tempURL, response) = try await session.download(for: request)
                 guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else { continue }
                 
-                let destURL = docDir.appendingPathComponent(filename)
+                let destURL = destinationDir.appendingPathComponent(filename)
                 
                 // Safely move file
                 if FileManager.default.fileExists(atPath: destURL.path) {

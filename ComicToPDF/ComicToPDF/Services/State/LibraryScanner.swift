@@ -8,7 +8,34 @@ import ZIPFoundation
 actor LibraryScanner {
     static let shared = LibraryScanner()
 
+    private var isScanning = false
+    private var needsScanAgain = false
+    private var pendingMode: AppUIMode?
+
     func scanLibrary(addedByMode: AppUIMode? = nil, manager: ConversionManager) async {
+        if isScanning {
+            needsScanAgain = true
+            if let mode = addedByMode {
+                pendingMode = mode
+            }
+            return
+        }
+        
+        isScanning = true
+        needsScanAgain = false
+        let modeToUse = addedByMode ?? pendingMode
+        pendingMode = nil
+        
+        await performScan(addedByMode: modeToUse, manager: manager)
+        
+        isScanning = false
+        
+        if needsScanAgain {
+            await scanLibrary(addedByMode: nil, manager: manager)
+        }
+    }
+
+    private func performScan(addedByMode: AppUIMode? = nil, manager: ConversionManager) async {
         if UserDefaults.standard.bool(forKey: "pendingFreshInstallCleanup") {
             await InstallGuardService.shared.runDeferredCleanup()
         }

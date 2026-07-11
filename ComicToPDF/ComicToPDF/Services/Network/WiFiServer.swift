@@ -962,11 +962,18 @@ final class WiFiServer: ObservableObject, Sendable {
     }
     
     private func cleanup(context: ConnectionContext) {
-        if let url = context.destinationURL {
-            ActiveUploadRegistry.shared.unregister(url)
-        }
         try? context.fileHandle?.close()
         context.fileHandle = nil
+        
+        if let url = context.destinationURL {
+            ActiveUploadRegistry.shared.unregister(url)
+            
+            // Delete partial or corrupted upload file if connection was aborted/cancelled mid-transfer
+            if context.expectedLength > 0 && context.receivedLength < context.expectedLength {
+                try? FileManager.default.removeItem(at: url)
+                Logger.shared.log("WiFi Transfer - Deleted partial/corrupted upload: \(url.lastPathComponent)", category: "Network", type: .warning)
+            }
+        }
     }
     
     // MARK: - Handlers
