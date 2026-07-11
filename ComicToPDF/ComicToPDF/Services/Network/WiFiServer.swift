@@ -2131,7 +2131,7 @@ final class WiFiServer: ObservableObject, Sendable {
                     </div>
                     <div class="header-right" style="display:flex; gap:12px; align-items:center;">
                         <button onclick="toggleEInkMode()" id="einkToggleBtn" style="background:var(--card-bg); border:1px solid var(--card-border); color:var(--text-primary); padding:8px 16px; border-radius:12px; font-size:13px; font-weight:600; cursor:pointer; display:flex; align-items:center; gap:6px; transition:all 0.2s;">
-                            <span>🌑</span> High-Contrast E-Ink
+                            <span>\u{1F311}</span> High-Contrast E-Ink
                         </button>
                         \(queueButtonHTML)
                     </div>
@@ -2139,7 +2139,7 @@ final class WiFiServer: ObservableObject, Sendable {
 
                 <!-- Memory Warning Banner -->
                 <div class="warning-banner" id="memoryWarningBanner" style="display:none; background:#FFFBEB; border:2px solid #D97706; color:#B45309; padding:16px; border-radius:12px; font-size:14px; margin-bottom:20px; font-weight:600; text-align:center; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
-                    ⚠️ Low System Memory: The browser reloaded while you were selecting files. Please close other open tabs or use drag-and-drop to upload files.
+                    \u{26A0}\u{FE0F} Low System Memory: The browser reloaded while you were selecting files. Please close other open tabs or use drag-and-drop to upload files.
                 </div>
 
                 <!-- Staged upload queue -->
@@ -2312,7 +2312,7 @@ final class WiFiServer: ObservableObject, Sendable {
                         localStorage.setItem('eink_mode_enabled', isEInk ? 'true' : 'false');
                         
                         if (btn) {
-                            btn.innerHTML = isEInk ? '<span>☀️</span> Disable E-Ink' : '<span>🌑</span> High-Contrast E-Ink';
+                            btn.innerHTML = isEInk ? '<span>\u{2600}\u{FE0F}</span> Disable E-Ink' : '<span>\u{1F311}</span> High-Contrast E-Ink';
                             btn.style.background = isEInk ? '#FFFFFF' : 'var(--card-bg)';
                             btn.style.color = isEInk ? '#000000' : 'var(--text-primary)';
                             btn.style.border = isEInk ? '2px solid #000000' : '1px solid var(--card-border)';
@@ -2335,7 +2335,7 @@ final class WiFiServer: ObservableObject, Sendable {
                             body.classList.add('eink-mode');
                             const btn = document.getElementById('einkToggleBtn');
                             if (btn) {
-                                btn.innerHTML = '<span>☀️</span> Disable E-Ink';
+                                btn.innerHTML = '<span>\u{2600}\u{FE0F}</span> Disable E-Ink';
                                 btn.style.background = '#FFFFFF';
                                 btn.style.color = '#000000';
                                 btn.style.border = '2px solid #000000';
@@ -2378,7 +2378,7 @@ final class WiFiServer: ObservableObject, Sendable {
                             if (banner) {
                                 banner.style.display = 'block';
                             }
-                            logDebug("⚠️ System memory pressure detected. The page reloaded while the file picker was open.", "warning");
+                            logDebug("\u{26A0}\u{FE0F} System memory pressure detected. The page reloaded while the file picker was open.", "warning");
                         }
                     } catch (err) {
                         console.error("Error checking reload: ", err);
