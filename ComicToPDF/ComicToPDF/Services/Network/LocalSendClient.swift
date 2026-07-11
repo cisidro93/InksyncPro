@@ -24,7 +24,8 @@ class LocalSendClient: ObservableObject {
     /// Starts a chunked upload sequence to a discovered peer.
     func transferFiles(_ files: [ConvertedPDF], to peer: PeerNode, pin: String) async throws {
         guard !files.isEmpty else { return }
-        let host = peer.ipAddress.contains(":") ? "[\(peer.ipAddress)]" : peer.ipAddress
+        let cleanIP = peer.ipAddress.components(separatedBy: "%").first ?? peer.ipAddress
+        let host = cleanIP.contains(":") ? "[\(cleanIP)]" : cleanIP
         guard let baseURL = URL(string: "http://\(host):\(peer.port)") else {
             throw NSError(domain: "LocalSend", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid Peer URL"])
         }

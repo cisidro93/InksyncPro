@@ -103,7 +103,9 @@ final class WiFiServer: ObservableObject, Sendable {
                         self.bindRetryCount = 0
                         self.isRunning = true
                         let ip = Self.getIPAddress() ?? "localhost"
-                        self.serverURL = "http://\(ip):\(port)"
+                        let cleanIP = ip.components(separatedBy: "%").first ?? ip
+                        let host = cleanIP.contains(":") ? "[\(cleanIP)]" : cleanIP
+                        self.serverURL = "http://\(host):\(port)"
                         self.advertiseBonjourService(port: port)
 
                     case .failed(let error):
