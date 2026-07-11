@@ -1058,14 +1058,18 @@ final class WiFiServer: ObservableObject, Sendable {
         guard let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
         
         if cleanPath == "/" {
+            let count = LibraryService.shared.items.count
+            Logger.shared.log("WiFiServer - handleGetRequest: serving dashboard HTML. Staged items in memory: \(count)", category: "Network")
             let html = generateHTML()
             sendResponse(connection, 200, html, contentType: "text/html")
         } else if cleanPath == "/api/library" {
             let files = getLibraryFilesList()
+            Logger.shared.log("WiFiServer - handleGetRequest: /api/library requested. Returning \(files.count) serialized files.", category: "Network")
             if let data = try? JSONSerialization.data(withJSONObject: files, options: []),
                let jsonString = String(data: data, encoding: .utf8) {
                 sendResponse(connection, 200, jsonString, contentType: "application/json")
             } else {
+                Logger.shared.log("WiFiServer - handleGetRequest: /api/library JSON serialization failed!", category: "Network", type: .error)
                 sendResponse(connection, 500, "{\"error\": \"Failed to serialize library\"}", contentType: "application/json")
             }
         } else if cleanPath == "/api/logs" {
@@ -1390,6 +1394,11 @@ final class WiFiServer: ObservableObject, Sendable {
     
     private func getLibraryFilesList() -> [[String: Any]] {
         let items = LibraryService.shared.items
+        Logger.shared.log("WiFiServer - getLibraryFilesList: found \(items.count) items in LibraryService.shared.items", category: "Network")
+        if !items.isEmpty {
+            let samples = items.prefix(3).map { "\($0.name) (size: \($0.fileSize))" }.joined(separator: ", ")
+            Logger.shared.log("WiFiServer - getLibraryFilesList sample: \(samples)", category: "Network")
+        }
         var files: [[String: Any]] = []
         
         let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.resolvingSymlinksInPath() ?? URL(fileURLWithPath: NSTemporaryDirectory())
