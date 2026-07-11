@@ -197,14 +197,20 @@ jobs:
       if: ${{ env.HAS_SIGNING_SECRET == '' }}
       run: |
         cd ComicToPDF
-        echo "Uploading to BashUpload..."
-        UPLOAD_RESPONSE=$(curl -s https://bashupload.com/ -T InksyncPro_Unsigned_${{ env.SHORT_SHA }}.ipa || true)
-        DOWNLOAD_URL=$(echo "$UPLOAD_RESPONSE" | grep -o -E "https://bashupload.com/[a-zA-Z0-9./_-]+")
+        echo "Uploading to x0.at..."
+        UPLOAD_RESPONSE=$(curl -s -F "file=@InksyncPro_Unsigned_${{ env.SHORT_SHA }}.ipa" https://x0.at/ || true)
+        DOWNLOAD_URL=$(echo "$UPLOAD_RESPONSE" | grep -o -E "https://x0.at/[a-zA-Z0-9./_-]+" || true)
+        
+        if [ -z "$DOWNLOAD_URL" ]; then
+          echo "x0.at failed, trying BashUpload..."
+          UPLOAD_RESPONSE=$(curl -s https://bashupload.com/ -T InksyncPro_Unsigned_${{ env.SHORT_SHA }}.ipa || true)
+          DOWNLOAD_URL=$(echo "$UPLOAD_RESPONSE" | grep -o -E "https://bashupload.com/[a-zA-Z0-9./_-]+" || true)
+        fi
         
         if [ -z "$DOWNLOAD_URL" ]; then
           echo "BashUpload failed, trying transfer.sh..."
           UPLOAD_RESPONSE=$(curl -s --upload-file InksyncPro_Unsigned_${{ env.SHORT_SHA }}.ipa https://transfer.sh/InksyncPro_Unsigned_${{ env.SHORT_SHA }}.ipa || true)
-          DOWNLOAD_URL=$(echo "$UPLOAD_RESPONSE" | grep -o -E "https://transfer.sh/[a-zA-Z0-9./_-]+")
+          DOWNLOAD_URL=$(echo "$UPLOAD_RESPONSE" | grep -o -E "https://transfer.sh/[a-zA-Z0-9./_-]+" || true)
         fi
         
         if [ -n "$DOWNLOAD_URL" ]; then
@@ -223,7 +229,7 @@ jobs:
             -d @comment.json \
             "https://api.github.com/repos/${{ github.repository }}/commits/${{ github.sha }}/comments"
         else
-          echo "Error: Both upload hosts failed."
+          echo "Warning: All upload hosts failed."
         fi
 
     - name: Validate and Upload to App Store Connect (TestFlight)
