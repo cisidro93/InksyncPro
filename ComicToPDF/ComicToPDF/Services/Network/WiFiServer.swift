@@ -224,6 +224,7 @@ final class WiFiServer: ObservableObject, Sendable {
         self.sessionLock.unlock()
         
         ActiveUploadRegistry.shared.clear()
+        self.endBackgroundTaskImmediately()
     }
 
     func revokeAllSessions() {
@@ -1400,16 +1401,39 @@ final class WiFiServer: ObservableObject, Sendable {
     
     // MARK: - Background Task
     
+    private var endTaskWorkItem: DispatchWorkItem?
+
     private func startBackgroundTask() {
-        backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "WiFiUpload") {
-            self.endBackgroundTask()
+        endTaskWorkItem?.cancel()
+        endTaskWorkItem = nil
+        
+        if backgroundTask == .invalid {
+            backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "WiFiUpload") { [weak self] in
+                self?.endBackgroundTaskImmediately()
+            }
+            Logger.shared.log("WiFiServer - Background Task Started", category: "Network")
         }
     }
     
     private func endBackgroundTask() {
+        // Delay ending the background task by 15 seconds to allow the browser 
+        // to query library updates and start the next file in the queue without 
+        // iOS suspending the app in the 1-2 second gap between uploads.
+        endTaskWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.endBackgroundTaskImmediately()
+        }
+        endTaskWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 15.0, execute: workItem)
+    }
+    
+    private func endBackgroundTaskImmediately() {
+        endTaskWorkItem?.cancel()
+        endTaskWorkItem = nil
         if backgroundTask != .invalid {
             UIApplication.shared.endBackgroundTask(backgroundTask)
             backgroundTask = .invalid
+            Logger.shared.log("WiFiServer - Background Task Ended", category: "Network")
         }
     }
     
