@@ -2734,7 +2734,7 @@ final class WiFiServer: ObservableObject, Sendable {
                         if (item.status === 'completed') statusColorClass = 'completed';
                         if (item.status === 'failed') {
                             statusColorClass = 'failed';
-                            retryBtn = ' <button class="retry-action-btn" onclick="retryUpload(\'' + item.id + '\')">Retry</button>';
+                            retryBtn = ' <button class="retry-action-btn" onclick="retryUpload(\\\'' + item.id + '\\\')">Retry</button>';
                         }
 
                         div.innerHTML = 
