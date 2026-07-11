@@ -2612,11 +2612,49 @@ final class WiFiServer: ObservableObject, Sendable {
 
                     overlay.addEventListener('drop', (e) => {
                         e.preventDefault();
-                        if (e.dataTransfer.files.length > 0) {
-                            logDebug(`Dropped ${e.dataTransfer.files.length} files onto drop zone`);
+                        dragCounter = 0;
+                        overlay.style.display = 'none';
+
+                        const items = e.dataTransfer.items;
+                        if (items && items.length > 0) {
+                            logDebug(`Dropped ${items.length} items onto drop zone`);
+                            for (let i = 0; i < items.length; i++) {
+                                const item = items[i];
+                                if (item.kind === 'file') {
+                                    const entry = item.webkitGetAsEntry();
+                                    if (entry) {
+                                        traverseFileTree(entry);
+                                    }
+                                }
+                            }
+                        } else if (e.dataTransfer.files.length > 0) {
+                            logDebug(`Fallback: Dropped ${e.dataTransfer.files.length} files onto drop zone`);
                             addFilesToQueue(e.dataTransfer.files);
                         }
                     });
+                }
+
+                function traverseFileTree(item, path) {
+                    path = path || "";
+                    if (item.isFile) {
+                        item.file((file) => {
+                            file.customRelativePath = path + item.name;
+                            addFilesToQueue([file]);
+                        });
+                    } else if (item.isDirectory) {
+                        const dirReader = item.createReader();
+                        const readEntries = () => {
+                            dirReader.readEntries((entries) => {
+                                if (entries.length > 0) {
+                                    for (let i = 0; i < entries.length; i++) {
+                                        traverseFileTree(entries[i], path + item.name + "/");
+                                    }
+                                    readEntries();
+                                }
+                            });
+                        };
+                        readEntries();
+                    }
                 }
 
                 function handleFileSelect(e) {
@@ -2747,7 +2785,9 @@ final class WiFiServer: ObservableObject, Sendable {
                     xhr.withCredentials = true;
                     
                     xhr.setRequestHeader("X-File-Name", nextItem.file.name);
-                    if (nextItem.file.webkitRelativePath) {
+                    if (nextItem.file.customRelativePath) {
+                        xhr.setRequestHeader("X-Relative-Path", nextItem.file.customRelativePath);
+                    } else if (nextItem.file.webkitRelativePath) {
                         xhr.setRequestHeader("X-Relative-Path", nextItem.file.webkitRelativePath);
                     }
 
