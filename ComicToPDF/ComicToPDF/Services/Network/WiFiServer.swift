@@ -1920,8 +1920,8 @@ final class WiFiServer: ObservableObject, Sendable {
                     <div class="dropzone-icon">📥</div>
                     <h2>Drag & Drop Files Here</h2>
                     <p class="subtitle">Supports CBZ, CBR, EPUB, PDF, and ZIP files. Or click to browse.</p>
-                    <input type="file" id="fileInput" style="display:none" multiple accept=".pdf,.epub,.cbz,.cbr,.cb7,.cbt,.zip" onchange="handleFileSelect(event)">
                 </div>
+                <input type="file" id="fileInput" style="display:none" multiple accept=".pdf,.epub,.cbz,.cbr,.cb7,.cbt,.zip" onchange="handleFileSelect(event)">
 
                 <!-- Library Container -->
                 <div class="library-section">
@@ -1948,6 +1948,17 @@ final class WiFiServer: ObservableObject, Sendable {
                         <!-- Injected via JavaScript -->
                     </ul>
                 </div>
+                
+                <!-- Diagnostics Section -->
+                <div class="library-section" style="margin-top: 16px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span style="font-size:14px; font-weight:600; color:var(--text-secondary);">🔧 System Diagnostics & Activity Log</span>
+                        <button onclick="toggleDebugLog()" style="background:none; border:1px solid var(--card-border); color:var(--text-secondary); padding:4px 8px; border-radius:6px; font-size:11px; cursor:pointer;">Toggle Log</button>
+                    </div>
+                    <div id="debugLogContainer" style="display:block; max-height:200px; overflow-y:auto; background:rgba(0,0,0,0.3); border:1px solid var(--card-border); border-radius:10px; padding:12px; margin-top:8px;">
+                        <!-- Logs will populate here -->
+                    </div>
+                </div>
             </div>
 
             <!-- Drag overlay -->
@@ -1963,6 +1974,43 @@ final class WiFiServer: ObservableObject, Sendable {
             <div class="toast-container" id="toastContainer"></div>
 
             <script>
+                // Diagnostic log helper
+                function logDebug(message, type = 'info') {
+                    console.log(`[DEBUG] [${type.toUpperCase()}] ${message}`);
+                    const logContainer = document.getElementById('debugLogContainer');
+                    if (logContainer) {
+                        const entry = document.createElement('div');
+                        entry.style.color = type === 'error' ? 'var(--error-color)' : (type === 'warning' ? 'var(--warning-color)' : 'var(--text-secondary)');
+                        entry.style.fontSize = '12px';
+                        entry.style.fontFamily = 'monospace';
+                        entry.style.marginBottom = '4px';
+                        entry.style.borderBottom = '1px solid rgba(255,255,255,0.03)';
+                        entry.style.paddingBottom = '4px';
+                        entry.innerText = `[${new Date().toLocaleTimeString()}] [${type.toUpperCase()}] ${message}`;
+                        logContainer.appendChild(entry);
+                        logContainer.scrollTop = logContainer.scrollHeight;
+                    }
+                }
+
+                // Global Error Hooking
+                window.onerror = function(message, source, lineno, colno, error) {
+                    const errStr = `${message} at ${source}:${lineno}:${colno}`;
+                    logDebug(errStr, 'error');
+                    return false;
+                };
+
+                window.onunhandledrejection = function(event) {
+                    const reason = event.reason ? (event.reason.message || event.reason) : 'Unknown reason';
+                    logDebug(`Unhandled Promise Rejection: ${reason}`, 'error');
+                };
+
+                function toggleDebugLog() {
+                    const el = document.getElementById('debugLogContainer');
+                    if (el) {
+                        el.style.display = el.style.display === 'none' ? 'block' : 'none';
+                    }
+                }
+
                 let libraryFiles = \(filesJSONString);
                 let activeFilter = 'all';
                 let searchQuery = '';
@@ -1972,8 +2020,19 @@ final class WiFiServer: ObservableObject, Sendable {
                 let uploadStartTime = 0;
 
                 document.addEventListener('DOMContentLoaded', () => {
-                    renderLibrary();
-                    setupDragAndDrop();
+                    logDebug("Initializing Inksync Sharing Server Web Interface...");
+                    try {
+                        renderLibrary();
+                        logDebug("Library files list rendered successfully.");
+                    } catch (err) {
+                        logDebug("Error rendering library files: " + err.message, 'error');
+                    }
+                    try {
+                        setupDragAndDrop();
+                        logDebug("Drag-and-drop systems initialized.");
+                    } catch (err) {
+                        logDebug("Error setting up drag-and-drop systems: " + err.message, 'error');
+                    }
                 });
 
                 function formatBytes(bytes) {
@@ -2038,6 +2097,7 @@ final class WiFiServer: ObservableObject, Sendable {
                     document.querySelectorAll('.filter-tab').forEach(tab => tab.classList.remove('active'));
                     event.target.classList.add('active');
                     activeFilter = type;
+                    logDebug(`Filter changed to: ${type}`);
                     renderLibrary();
                 }
 
@@ -2087,14 +2147,19 @@ final class WiFiServer: ObservableObject, Sendable {
                     overlay.addEventListener('drop', (e) => {
                         e.preventDefault();
                         if (e.dataTransfer.files.length > 0) {
+                            logDebug(`Dropped ${e.dataTransfer.files.length} files onto drop zone`);
                             addFilesToQueue(e.dataTransfer.files);
                         }
                     });
                 }
 
                 function handleFileSelect(e) {
+                    logDebug("File input change event triggered");
                     if (e.target.files.length > 0) {
+                        logDebug(`Selected ${e.target.files.length} files from picker`);
                         addFilesToQueue(e.target.files);
+                    } else {
+                        logDebug("No files selected in file picker");
                     }
                 }
 
@@ -2114,10 +2179,13 @@ final class WiFiServer: ObservableObject, Sendable {
                 }
 
                 function addFilesToQueue(files) {
+                    logDebug(`Adding ${files.length} files to queue...`);
                     for (let i = 0; i < files.length; i++) {
                         const file = files[i];
                         const ext = file.name.split('.').pop().toLowerCase();
+                        logDebug(`Checking file: ${file.name} (extension: ${ext}, size: ${file.size} bytes)`);
                         if (!['pdf', 'epub', 'cbz', 'cbr', 'cb7', 'cbt', 'zip'].includes(ext)) {
+                            logDebug(`Rejected file: ${file.name} (unsupported format)`, 'warning');
                             showNotification('"' + file.name + '" ignored (unsupported file format).', 'error');
                             continue;
                         }
@@ -2130,6 +2198,7 @@ final class WiFiServer: ObservableObject, Sendable {
                             speed: '',
                             eta: ''
                         });
+                        logDebug(`Queued: ${file.name}`);
                     }
                     renderQueue();
                     processQueue();
@@ -2191,15 +2260,20 @@ final class WiFiServer: ObservableObject, Sendable {
                 }
 
                 function processQueue() {
-                    if (isUploading) return;
+                    if (isUploading) {
+                        logDebug("Queue processing deferred (already uploading)");
+                        return;
+                    }
 
                     const nextItem = uploadQueue.find(item => item.status === 'queued');
                     if (!nextItem) {
+                        logDebug("Queue processing completed (no queued items remaining)");
                         return;
                     }
 
                     isUploading = true;
                     nextItem.status = 'uploading';
+                    logDebug(`Starting upload for: ${nextItem.file.name}`);
                     renderQueue();
 
                     const xhr = new XMLHttpRequest();
@@ -2243,22 +2317,26 @@ final class WiFiServer: ObservableObject, Sendable {
 
                     xhr.onload = function() {
                         isUploading = false;
+                        logDebug(`Upload request returned status: ${xhr.status} ${xhr.statusText}`);
                         if (xhr.status === 200) {
                             nextItem.status = 'completed';
                             nextItem.progress = 100;
                             nextItem.speed = '';
                             nextItem.eta = 'Complete';
+                            logDebug(`Upload success: ${nextItem.file.name}`);
                             showNotification('"' + nextItem.file.name + '" uploaded successfully.', 'success');
                             fetchLibraryUpdates();
                         } else if (xhr.status === 409) {
                             nextItem.status = 'failed';
                             nextItem.progress = 100;
                             nextItem.eta = 'Already Exists';
+                            logDebug(`Upload duplicate: ${nextItem.file.name}`, 'warning');
                             showNotification('"' + nextItem.file.name + '" already exists on device.', 'warning');
                         } else {
                             nextItem.status = 'failed';
                             nextItem.progress = 100;
                             nextItem.eta = 'Error: ' + xhr.statusText;
+                            logDebug(`Upload failed: ${nextItem.file.name} (${xhr.statusText})`, 'error');
                             showNotification('Failed to upload "' + nextItem.file.name + '".', 'error');
                         }
                         renderQueue();
@@ -2270,22 +2348,30 @@ final class WiFiServer: ObservableObject, Sendable {
                         nextItem.status = 'failed';
                         nextItem.progress = 100;
                         nextItem.eta = 'Network Error';
+                        logDebug(`Upload network error for: ${nextItem.file.name}`, 'error');
                         showNotification('Network error uploading "' + nextItem.file.name + '".', 'error');
                         renderQueue();
                         processQueue();
                     };
 
+                    logDebug(`Sending payload request for: ${nextItem.file.name} (size: ${formatBytes(nextItem.file.size)})`);
                     xhr.send(nextItem.file);
                 }
 
                 function fetchLibraryUpdates() {
+                    logDebug("Fetching library updates dynamically...");
                     fetch('/api/library')
-                        .then(res => res.json())
+                        .then(res => {
+                            logDebug(`Library API returned status: ${res.status}`);
+                            return res.json();
+                        })
                         .then(data => {
                             libraryFiles = data;
+                            logDebug(`Retrieved library details. Render list showing ${data.length} files.`);
                             renderLibrary();
                         })
                         .catch(err => {
+                            logDebug("Failed to load library updates dynamically: " + err.message, 'error');
                             console.error("Failed to load library updates dynamically:", err);
                         });
                 }
@@ -2293,6 +2379,7 @@ final class WiFiServer: ObservableObject, Sendable {
                 function retryUpload(id) {
                     const item = uploadQueue.find(x => x.id === id);
                     if (item) {
+                        logDebug(`Retrying upload for: ${item.file.name}`);
                         item.status = 'queued';
                         item.progress = 0;
                         item.speed = '';
@@ -2306,7 +2393,6 @@ final class WiFiServer: ObservableObject, Sendable {
         </html>
         """
     }
-    
 
     
     // MARK: - Utilities
