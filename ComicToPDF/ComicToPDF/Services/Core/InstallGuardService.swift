@@ -7,6 +7,8 @@ final class InstallGuardService: @unchecked Sendable {
     
     private let userDefaults = UserDefaults.standard
     private let fileManager = FileManager.default
+    private let keychainService = "com.antigravity.InksyncPro.installguard"
+    private let keychainAccount = "sentinel"
     
     private init() {}
     
@@ -21,26 +23,25 @@ final class InstallGuardService: @unchecked Sendable {
         }
         excludeDirectoryFromBackup(url: supportDir)
 
-        // Check if library database files already exist from a previous install/update
-        let dbURL = supportDir.appendingPathComponent("InkSyncPro/library.db")
-        let swiftDataURL = supportDir.appendingPathComponent("default.store")
-        var legacyJSONURL: URL? = nil
-        if let docDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first {
-            legacyJSONURL = docDir.appendingPathComponent("inksync_pro_library.json")
-        }
-        
-        let dbExists = fileManager.fileExists(atPath: dbURL.path) ||
-                       fileManager.fileExists(atPath: swiftDataURL.path) ||
-                       (legacyJSONURL != nil && fileManager.fileExists(atPath: legacyJSONURL!.path))
+        // Check if our install sentinel exists in the Keychain
+        let keychainSentinelExists = KeychainHelper.standard.read(service: keychainService, account: keychainAccount) != nil
 
-        let shouldNuke = !sentinelExists && !dbExists
+        // We nuke ONLY if the sandbox sentinel file is missing (indicating the app sandbox was deleted)
+        // BUT the keychain sentinel is present (indicating it was previously run on this device).
+        // This represents a clean reinstall on the same device.
+        let shouldNuke = !sentinelExists && keychainSentinelExists
         
         if shouldNuke {
             performNuke(supportDir: supportDir)
         }
         
-        // Always write (or re-write) the sentinel containing the current container path
+        // Always write (or re-write) the sandbox sentinel file
         writeSentinel(at: sentinelURL, supportDir: supportDir)
+        
+        // Always write the Keychain sentinel so subsequent runs/updates are tracked
+        if let data = "exists".data(using: .utf8) {
+            KeychainHelper.standard.save(data, service: keychainService, account: keychainAccount)
+        }
         
         // Auto-complete onboarding flags for clean runs
         userDefaults.set(true, forKey: "hasCompletedOnboarding")
@@ -78,7 +79,31 @@ final class InstallGuardService: @unchecked Sendable {
             userDefaults.synchronize()
         }
         
+        // 4. Vaporize App Group UserDefaults (wipes widgets cache/metadata)
+        let groupSuiteName = "group.com.antigravity.inksync"
+        if let groupDefaults = UserDefaults(suiteName: groupSuiteName) {
+            groupDefaults.removePersistentDomain(forName: groupSuiteName)
+            groupDefaults.synchronize()
+        }
+        
+        // 5. Vaporize all secure Keychain items for a fresh start
+        wipeKeychain()
+        
         Logger.shared.log("InksyncProApp: Fresh install nuke complete. Ghost data eradicated.", category: "Migration", type: .warning)
+    }
+    
+    private func wipeKeychain() {
+        let secClasses = [
+            kSecClassGenericPassword,
+            kSecClassInternetPassword,
+            kSecClassCertificate,
+            kSecClassKey,
+            kSecClassIdentity
+        ]
+        for secClass in secClasses {
+            let query = [kSecClass: secClass] as [String: Any]
+            SecItemDelete(query as CFDictionary)
+        }
     }
     
     private func writeSentinel(at url: URL, supportDir: URL) {
@@ -86,8 +111,7 @@ final class InstallGuardService: @unchecked Sendable {
         do {
             // Ensure the parent directory exists — on fresh Signulous-signed installs
             // iOS does NOT pre-create applicationSupportDirectory, so the write fails
-            // silently and leaves the sentinel permanently absent. Every subsequent
-            // crash would then trigger performNuke and wipe library.json.
+            // silently and leaves the sentinel permanently absent.
             let parentDir = url.deletingLastPathComponent()
             if !fileManager.fileExists(atPath: parentDir.path) {
                 try fileManager.createDirectory(at: parentDir, withIntermediateDirectories: true)
