@@ -685,15 +685,16 @@ class PhysicalFileSystemRouter {
         return result
     }
     
+    nonisolated static func isSandboxURL(_ url: URL) -> Bool {
+        let resolvedPath = url.standardizedFileURL.resolvingSymlinksInPath().path
+        let homePath = URL(fileURLWithPath: NSHomeDirectory()).standardizedFileURL.resolvingSymlinksInPath().path
+        return resolvedPath.hasPrefix(homePath)
+    }
+
     nonisolated static func extractCoverImageStatic(from url: URL) -> UIImage? {
         let ext = url.pathExtension.lowercased()
         if ext == "pdf" {
-            let accessing: Bool
-            if url.path.contains("Documents") || url.path.contains("tmp") {
-                accessing = false
-            } else {
-                accessing = url.startAccessingSecurityScopedResource()
-            }
+            let accessing = !isSandboxURL(url) ? url.startAccessingSecurityScopedResource() : false
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }
             
             return autoreleasepool { () -> UIImage? in
@@ -761,12 +762,7 @@ class PhysicalFileSystemRouter {
         }
 
         if ["cbz", "zip", "epub"].contains(ext) {
-            let accessing: Bool
-            if url.path.contains("Documents") || url.path.contains("tmp") {
-                accessing = false
-            } else {
-                accessing = url.startAccessingSecurityScopedResource()
-            }
+            let accessing = !isSandboxURL(url) ? url.startAccessingSecurityScopedResource() : false
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }
             
             guard FileManager.default.fileExists(atPath: url.path) else { return nil }
@@ -873,7 +869,7 @@ class PhysicalFileSystemRouter {
             }
         }
         if ext == "cbr" || ext == "rar" {
-            let accessing = url.startAccessingSecurityScopedResource()
+            let accessing = !isSandboxURL(url) ? url.startAccessingSecurityScopedResource() : false
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }
             guard FileManager.default.fileExists(atPath: url.path) else { return nil }
 
@@ -951,14 +947,14 @@ class PhysicalFileSystemRouter {
     nonisolated static func getPageCountStatic(from url: URL) -> Int {
         let ext = url.pathExtension.lowercased()
         if ext == "pdf" {
-            let accessing = url.startAccessingSecurityScopedResource()
+            let accessing = !isSandboxURL(url) ? url.startAccessingSecurityScopedResource() : false
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }
             
             return PDFDocument(url: url)?.pageCount ?? 0
         }
 
         if ["cbz", "zip", "epub"].contains(ext) {
-            let accessing = url.startAccessingSecurityScopedResource()
+            let accessing = !isSandboxURL(url) ? url.startAccessingSecurityScopedResource() : false
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }
             
             guard FileManager.default.fileExists(atPath: url.path) else { return 0 }
@@ -983,7 +979,7 @@ class PhysicalFileSystemRouter {
 
         // ── CBR / RAR Archives ─────────────────────────────────────────────────
         if ext == "cbr" || ext == "rar" {
-            let accessing = url.startAccessingSecurityScopedResource()
+            let accessing = !isSandboxURL(url) ? url.startAccessingSecurityScopedResource() : false
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }
             guard FileManager.default.fileExists(atPath: url.path) else { return 0 }
             let imageExts: Set<String> = ["jpg", "jpeg", "png", "webp"]
@@ -1014,7 +1010,7 @@ class PhysicalFileSystemRouter {
     nonisolated static func extractPageImage(from url: URL, pageIndex: Int) -> UIImage? {
         let ext = url.pathExtension.lowercased()
         if ext == "pdf" {
-            let accessing = url.startAccessingSecurityScopedResource()
+            let accessing = !isSandboxURL(url) ? url.startAccessingSecurityScopedResource() : false
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }
             
             guard let document = PDFDocument(url: url) else { return nil }
@@ -1041,7 +1037,7 @@ class PhysicalFileSystemRouter {
         }
 
         if ["cbz", "zip", "epub"].contains(ext) {
-            let accessing = url.startAccessingSecurityScopedResource()
+            let accessing = !isSandboxURL(url) ? url.startAccessingSecurityScopedResource() : false
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }
             
             guard FileManager.default.fileExists(atPath: url.path) else { return nil }
@@ -1091,7 +1087,7 @@ class PhysicalFileSystemRouter {
         }
 
         if ext == "cbr" || ext == "rar" {
-            let accessing = url.startAccessingSecurityScopedResource()
+            let accessing = !isSandboxURL(url) ? url.startAccessingSecurityScopedResource() : false
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }
             guard FileManager.default.fileExists(atPath: url.path) else { return nil }
 
