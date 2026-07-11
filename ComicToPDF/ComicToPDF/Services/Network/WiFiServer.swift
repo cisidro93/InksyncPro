@@ -1275,7 +1275,7 @@ final class WiFiServer: ObservableObject, Sendable {
             fileSize = 0
         }
         
-        var header = "HTTP/1.1 200 OK\r\n"
+        let header = "HTTP/1.1 200 OK\r\n"
             + "Content-Type: \(contentType)\r\n"
             + "Content-Length: \(fileSize)\r\n"
             + "Content-Disposition: attachment; filename=\"\(filename)\"\r\n"
@@ -1292,7 +1292,7 @@ final class WiFiServer: ObservableObject, Sendable {
         streamFileChunks(connection: connection, fileHandle: fileHandle, fileURL: fileURL, deleteAfterSend: deleteAfterSend)
     }
     
-    private func streamFileChunks(connection: NWConnection, fileHandle: FileHandle, fileURL: URL?, deleteAfterSend: Bool) {
+    nonisolated private func streamFileChunks(connection: NWConnection, fileHandle: FileHandle, fileURL: URL?, deleteAfterSend: Bool) {
         let chunkSize = 65536 // 64KB chunks
         let data: Data
         do {
