@@ -326,12 +326,10 @@ struct LinkedDriveBrowserView: View {
         )
         pdf.sourceMode = .linked(bookmarkData: bm)
 
-        Task { @MainActor in
-            guard !conversionManager.convertedPDFs.contains(where: {
-                $0.url.lastPathComponent == url.lastPathComponent && $0.isLinked
-            }) else { return }
-            conversionManager.convertedPDFs.append(pdf)
-            conversionManager.saveLibrary()
-        }
+        guard !conversionManager.convertedPDFs.contains(where: {
+            $0.url.lastPathComponent == url.lastPathComponent && $0.isLinked
+        }) else { return }
+        conversionManager.convertedPDFs.append(pdf)
+        conversionManager.saveLibrary()
     }
 }

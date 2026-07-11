@@ -579,7 +579,7 @@ final class LinkedLibraryScanner: ObservableObject {
                         } else {
                             img = PhysicalFileSystemRouter.extractCoverImageStatic(from: url)
                         }
-                        return img?.pngData()
+                        return img?.jpegData(compressionQuality: 0.7)
                     }.value
                     return (index, data)
                 }
