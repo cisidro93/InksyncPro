@@ -1068,6 +1068,18 @@ final class WiFiServer: ObservableObject, Sendable {
             } else {
                 sendResponse(connection, 500, "{\"error\": \"Failed to serialize library\"}", contentType: "application/json")
             }
+        } else if cleanPath == "/api/logs" {
+            Task { @MainActor in
+                let logs = Logger.shared.parsedLogs
+                let encoder = JSONEncoder()
+                encoder.dateEncodingStrategy = .iso8601
+                if let data = try? encoder.encode(logs),
+                   let jsonString = String(data: data, encoding: .utf8) {
+                    self.sendResponse(connection, 200, jsonString, contentType: "application/json")
+                } else {
+                    self.sendResponse(connection, 500, "{\"error\": \"Failed to serialize logs\"}", contentType: "application/json")
+                }
+            }
         } else if cleanPath == "/api/sync" {
             // ✅ NEW: Full P2P SwiftData Cross-Device Payload Export
             Task { @MainActor in
@@ -2227,10 +2239,12 @@ final class WiFiServer: ObservableObject, Sendable {
                     } catch (e) {}
                 }
 
+                let serverLogs = [];
+
                 // Diagnostic log helper
                 function logDebug(message, type = 'info') {
-                    const time = new Date().toLocaleTimeString();
-                    const entryObj = { time: time, message: message, type: type };
+                    const timestamp = new Date().toISOString();
+                    const entryObj = { timestamp: timestamp, message: message, type: type };
                     
                     // Persist log entry in sessionStorage
                     try {
@@ -2243,38 +2257,68 @@ final class WiFiServer: ObservableObject, Sendable {
                     } catch (e) {}
 
                     console.log(`[DEBUG] [${type.toUpperCase()}] ${message}`);
-                    
-                    const logContainer = document.getElementById('debugLogContainer');
-                    if (logContainer) {
-                        appendLogToDOM(entryObj, logContainer);
-                        logContainer.scrollTop = logContainer.scrollHeight;
-                    }
+                    refreshLogs();
                 }
 
-                function appendLogToDOM(entryObj, container) {
-                    const entry = document.createElement('div');
-                    entry.style.color = entryObj.type === 'error' ? 'var(--error-color)' : (entryObj.type === 'warning' ? 'var(--warning-color)' : 'var(--text-secondary)');
-                    entry.style.fontSize = '12px';
-                    entry.style.fontFamily = 'monospace';
-                    entry.style.marginBottom = '4px';
-                    entry.style.borderBottom = '1px solid rgba(255,255,255,0.03)';
-                    entry.style.paddingBottom = '4px';
-                    entry.innerText = `[${entryObj.time}] [${entryObj.type.toUpperCase()}] ${entryObj.message}`;
-                    container.appendChild(entry);
-                    
-                    while (container.children.length > MAX_LOGS) {
-                        container.removeChild(container.firstChild);
-                    }
+                function refreshLogs() {
+                    const logContainer = document.getElementById('debugLogContainer');
+                    if (!logContainer) return;
+
+                    fetch('/api/logs')
+                        .then(res => res.ok ? res.json() : [])
+                        .then(data => {
+                            serverLogs = data.map(entry => ({
+                                timestamp: entry.timestamp,
+                                type: entry.type.toLowerCase(),
+                                message: `[${entry.category}] ${entry.message}`
+                            }));
+                            renderLogs();
+                        })
+                        .catch(err => {
+                            console.error("Failed to fetch server logs:", err);
+                            renderLogs(); // fallback to render local logs only
+                        });
                 }
 
-                function restoreLogs() {
+                function renderLogs() {
                     const logContainer = document.getElementById('debugLogContainer');
-                    if (logContainer) {
-                        logContainer.innerHTML = '';
-                        const currentLogs = getPersistedLogs();
-                        currentLogs.forEach(log => appendLogToDOM(log, logContainer));
-                        logContainer.scrollTop = logContainer.scrollHeight;
-                    }
+                    if (!logContainer) return;
+
+                    const clientLogs = getPersistedLogs().map(entry => ({
+                        timestamp: entry.timestamp,
+                        type: entry.type,
+                        message: `[Client] ${entry.message}`
+                    }));
+
+                    const combined = [...serverLogs, ...clientLogs];
+                    // Sort oldest first (chronological order)
+                    combined.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+
+                    logContainer.innerHTML = '';
+                    
+                    // Display last MAX_LOGS
+                    const toDisplay = combined.slice(-MAX_LOGS);
+                    toDisplay.forEach(entry => {
+                        const div = document.createElement('div');
+                        div.style.color = entry.type === 'error' ? 'var(--error-color)' : (entry.type === 'warning' ? 'var(--warning-color)' : 'var(--text-secondary)');
+                        div.style.fontSize = '12px';
+                        div.style.fontFamily = 'monospace';
+                        div.style.marginBottom = '4px';
+                        div.style.borderBottom = '1px solid rgba(255,255,255,0.03)';
+                        div.style.paddingBottom = '4px';
+                        
+                        let timeStr = '';
+                        try {
+                            timeStr = new Date(entry.timestamp).toLocaleTimeString();
+                        } catch (e) {
+                            timeStr = entry.timestamp;
+                        }
+
+                        div.innerText = `[${timeStr}] [${entry.type.toUpperCase()}] ${entry.message}`;
+                        logContainer.appendChild(div);
+                    });
+                    
+                    logContainer.scrollTop = logContainer.scrollHeight;
                 }
 
                 // Global Error Hooking
@@ -2349,9 +2393,10 @@ final class WiFiServer: ObservableObject, Sendable {
                 let uploadStartTime = 0;
 
                 document.addEventListener('DOMContentLoaded', () => {
-                    // Restore persisted logs first
+                    // Poll server logs periodically and merge with local logs
                     try {
-                        restoreLogs();
+                        refreshLogs();
+                        setInterval(refreshLogs, 4000);
                     } catch (e) {}
 
                     logDebug("Initializing Inksync Sharing Server Web Interface...");
