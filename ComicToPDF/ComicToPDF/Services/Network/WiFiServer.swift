@@ -2224,20 +2224,17 @@ final class WiFiServer: ObservableObject, Sendable {
             <script>
                 const MAX_LOGS = 100;
                 
-                function getPersistedLogs() {
-                    try {
-                        const raw = sessionStorage.getItem('inksync_logs');
-                        return raw ? JSON.parse(raw) : [];
-                    } catch (e) {
-                        return [];
+                // Keep local logs in memory as fallback, and try loading from sessionStorage
+                const localClientLogs = [];
+                try {
+                    const raw = sessionStorage.getItem('inksync_logs');
+                    if (raw) {
+                        const parsed = JSON.parse(raw);
+                        if (Array.isArray(parsed)) {
+                            localClientLogs.push(...parsed);
+                        }
                     }
-                }
-                
-                function savePersistedLogs(logs) {
-                    try {
-                        sessionStorage.setItem('inksync_logs', JSON.stringify(logs));
-                    } catch (e) {}
-                }
+                } catch (e) {}
 
                 let serverLogs = [];
 
@@ -2246,14 +2243,14 @@ final class WiFiServer: ObservableObject, Sendable {
                     const timestamp = new Date().toISOString();
                     const entryObj = { timestamp: timestamp, message: message, type: type };
                     
-                    // Persist log entry in sessionStorage
+                    localClientLogs.push(entryObj);
+                    if (localClientLogs.length > MAX_LOGS) {
+                        localClientLogs.shift();
+                    }
+                    
+                    // Attempt persisting in sessionStorage, but degrade gracefully if blocked
                     try {
-                        const currentLogs = getPersistedLogs();
-                        currentLogs.push(entryObj);
-                        if (currentLogs.length > MAX_LOGS) {
-                            currentLogs.shift();
-                        }
-                        savePersistedLogs(currentLogs);
+                        sessionStorage.setItem('inksync_logs', JSON.stringify(localClientLogs));
                     } catch (e) {}
 
                     console.log(`[DEBUG] [${type.toUpperCase()}] ${message}`);
@@ -2264,7 +2261,7 @@ final class WiFiServer: ObservableObject, Sendable {
                     const logContainer = document.getElementById('debugLogContainer');
                     if (!logContainer) return;
 
-                    fetch('/api/logs')
+                    fetch('/api/logs', { credentials: 'include' })
                         .then(res => res.ok ? res.json() : [])
                         .then(data => {
                             serverLogs = data.map(entry => ({
@@ -2284,7 +2281,7 @@ final class WiFiServer: ObservableObject, Sendable {
                     const logContainer = document.getElementById('debugLogContainer');
                     if (!logContainer) return;
 
-                    const clientLogs = getPersistedLogs().map(entry => ({
+                    const clientLogs = localClientLogs.map(entry => ({
                         timestamp: entry.timestamp,
                         type: entry.type,
                         message: `[Client] ${entry.message}`
@@ -2393,10 +2390,14 @@ final class WiFiServer: ObservableObject, Sendable {
                 let uploadStartTime = 0;
 
                 document.addEventListener('DOMContentLoaded', () => {
-                    // Poll server logs periodically and merge with local logs
+                    // Poll server logs and library updates periodically
                     try {
                         refreshLogs();
                         setInterval(refreshLogs, 4000);
+                    } catch (e) {}
+                    try {
+                        fetchLibraryUpdates();
+                        setInterval(fetchLibraryUpdates, 5000);
                     } catch (e) {}
 
                     logDebug("Initializing Inksync Sharing Server Web Interface...");
@@ -2679,6 +2680,7 @@ final class WiFiServer: ObservableObject, Sendable {
 
                     const xhr = new XMLHttpRequest();
                     xhr.open("POST", '/upload/' + encodeURIComponent(nextItem.file.name), true);
+                    xhr.withCredentials = true;
                     
                     xhr.setRequestHeader("X-File-Name", nextItem.file.name);
                     if (nextItem.file.webkitRelativePath) {
@@ -2761,7 +2763,7 @@ final class WiFiServer: ObservableObject, Sendable {
 
                 function fetchLibraryUpdates() {
                     logDebug("Fetching library updates dynamically...");
-                    fetch('/api/library')
+                    fetch('/api/library', { credentials: 'include' })
                         .then(res => {
                             logDebug(`Library API returned status: ${res.status}`);
                             return res.json();
