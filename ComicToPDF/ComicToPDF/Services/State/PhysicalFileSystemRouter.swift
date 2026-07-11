@@ -138,6 +138,7 @@ class PhysicalFileSystemRouter {
         // 1. Remove from UI state instantly for perceived zero-latency
         if let idx = manager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
             manager.convertedPDFs.remove(at: idx)
+            manager.pruneEmptyCollections()
             manager.saveLibrary()
         }
         

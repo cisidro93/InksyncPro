@@ -307,6 +307,7 @@ actor LibraryScanner {
                         manager.convertedPDFs[idx].url = url
                     }
                 }
+                manager.pruneEmptyCollections()
                 Logger.shared.log("Library Pruned: Repaired \(repairedURLs.count) sandbox-shifted URLs and removed \(missingIDs.count) missing files", category: "Library")
                 manager.saveLibrary()
             }

@@ -25,7 +25,8 @@ extension ConversionManager {
     
     func movePDFToCollection(_ pdf: ConvertedPDF, collectionId: UUID?) {
         if let idx = convertedPDFs.firstIndex(where: { $0.id == pdf.id }) { 
-            convertedPDFs[idx].collectionId = collectionId; 
+            convertedPDFs[idx].collectionId = collectionId
+            pruneEmptyCollections()
             saveLibrary() 
         }
     }
@@ -54,5 +55,42 @@ extension ConversionManager {
         
         self.saveLibrary()
         self.objectWillChange.send()
+    }
+    
+    func pruneEmptyCollections() {
+        // Find all collection IDs that are referenced by any PDF in our library
+        let activeCollectionIDs = Set(convertedPDFs.compactMap { $0.collectionId })
+        
+        // Build a hierarchy map of parentId -> children collections to handle nested folders
+        var parentToChildren: [UUID: [PDFCollection]] = [:]
+        for col in collections {
+            if let pid = col.parentId {
+                parentToChildren[pid, default: []].append(col)
+            }
+        }
+        
+        // Recursive helper to check if a collection is empty.
+        // A collection is empty if it contains no PDFs directly, AND all of its child collections are empty.
+        func isCollectionEmpty(_ col: PDFCollection) -> Bool {
+            if activeCollectionIDs.contains(col.id) {
+                return false
+            }
+            if let children = parentToChildren[col.id] {
+                for child in children {
+                    if !isCollectionEmpty(child) {
+                        return false
+                    }
+                }
+            }
+            return true
+        }
+        
+        let initialCount = collections.count
+        collections.removeAll { isCollectionEmpty($0) }
+        
+        if collections.count != initialCount {
+            Logger.shared.log("Pruning: Eradicated \(initialCount - collections.count) empty collections.", category: "Library", type: .warning)
+            saveLibrary()
+        }
     }
 }
