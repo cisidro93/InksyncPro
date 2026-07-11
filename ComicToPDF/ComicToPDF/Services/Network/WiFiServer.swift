@@ -1066,6 +1066,7 @@ final class WiFiServer: ObservableObject, Sendable {
                 Logger.shared.log("WiFi Transfer - Deleted partial/corrupted upload: \(url.lastPathComponent)", category: "Network", type: .warning)
             }
         }
+        self.isUploading = false
     }
     
     // MARK: - Handlers
