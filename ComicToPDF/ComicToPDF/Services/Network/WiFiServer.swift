@@ -2152,12 +2152,12 @@ final class WiFiServer: ObservableObject, Sendable {
                 </div>
 
                 <!-- Dropzone / File Select -->
-                <div class="dropzone" id="dropzone" onclick="try { sessionStorage.setItem('upload_initiated', 'true'); } catch(e) {} document.getElementById('fileInput').click();">
+                <div class="dropzone" id="dropzone" onclick="document.getElementById('fileInput').click();">
                     <div class="dropzone-icon">📥</div>
                     <h2>Drag & Drop Files Here</h2>
                     <p class="subtitle">Supports CBZ, CBR, EPUB, PDF, and ZIP files. Or click to browse.</p>
                 </div>
-                <input type="file" id="fileInput" style="display:none" multiple accept=".pdf,.epub,.cbz,.cbr,.cb7,.cbt,.zip" onchange="handleFileSelect(event)">
+                <input type="file" id="fileInput" style="display:none" multiple accept=".pdf,.epub,.cbz,.cbr,.cb7,.cbt,.zip" onchange="handleFileSelect(event)" onclick="try { sessionStorage.setItem('upload_initiated', 'true'); } catch(e) {}">
 
                 <!-- Library Container -->
                 <div class="library-section">
