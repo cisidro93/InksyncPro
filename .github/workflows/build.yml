@@ -193,6 +193,39 @@ jobs:
         # Name the IPA with the SHA so Signulous sees a unique file each upload
         zip -ry InksyncPro_Unsigned_${{ env.SHORT_SHA }}.ipa Payload
 
+    - name: Upload Unsigned IPA to File Host and Post Commit Comment
+      if: ${{ env.HAS_SIGNING_SECRET == '' }}
+      run: |
+        cd ComicToPDF
+        echo "Uploading to BashUpload..."
+        UPLOAD_RESPONSE=$(curl -s https://bashupload.com/ -T InksyncPro_Unsigned_${{ env.SHORT_SHA }}.ipa || true)
+        DOWNLOAD_URL=$(echo "$UPLOAD_RESPONSE" | grep -o -E "https://bashupload.com/[a-zA-Z0-9./_-]+")
+        
+        if [ -z "$DOWNLOAD_URL" ]; then
+          echo "BashUpload failed, trying transfer.sh..."
+          UPLOAD_RESPONSE=$(curl -s --upload-file InksyncPro_Unsigned_${{ env.SHORT_SHA }}.ipa https://transfer.sh/InksyncPro_Unsigned_${{ env.SHORT_SHA }}.ipa || true)
+          DOWNLOAD_URL=$(echo "$UPLOAD_RESPONSE" | grep -o -E "https://transfer.sh/[a-zA-Z0-9./_-]+")
+        fi
+        
+        if [ -n "$DOWNLOAD_URL" ]; then
+          echo "Direct download URL: $DOWNLOAD_URL"
+          echo "### Unsigned Build Complete 🚀" > comment.txt
+          echo "" >> comment.txt
+          echo "Download the raw \`.ipa\` file directly on your iPad using this link (no extraction or GitHub login required):" >> comment.txt
+          echo "" >> comment.txt
+          echo "👉 **[Download InksyncPro_Unsigned_${{ env.SHORT_SHA }}.ipa]($DOWNLOAD_URL)**" >> comment.txt
+          
+          jq -n --arg body "$(cat comment.txt)" '{"body": $body}' > comment.json
+          
+          curl -s -X POST \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            -d @comment.json \
+            "https://api.github.com/repos/${{ github.repository }}/commits/${{ github.sha }}/comments"
+        else
+          echo "Error: Both upload hosts failed."
+        fi
+
     - name: Validate and Upload to App Store Connect (TestFlight)
       if: ${{ env.HAS_SIGNING_SECRET != '' }}
       env:
