@@ -495,17 +495,18 @@ struct CBZToEPUBConverter: Sendable {
                         try FileManager.default.removeItem(at: capturedOutputURL)
                     }
 
-                    guard let archive = try? Archive(url: capturedOutputURL, accessMode: .create, pathEncoding: .utf8) else {
+                    var archive: Archive? = try? Archive(url: capturedOutputURL, accessMode: .create, pathEncoding: .utf8)
+                    guard let activeArchive = archive else {
                         throw NSError(domain: "Converter", code: 2, userInfo: [NSLocalizedDescriptionKey: "Could not create EPUB archive"])
                     }
 
                     let mimetypePath = capturedBatchDir.appendingPathComponent("mimetype")
                     try "application/epub+zip".write(to: mimetypePath, atomically: true, encoding: .ascii)
                     // mimetype MUST be the first entry and stored uncompressed per EPUB spec §3.3
-                    try archive.addEntry(with: "mimetype", fileURL: mimetypePath, compressionMethod: .none)
+                    try activeArchive.addEntry(with: "mimetype", fileURL: mimetypePath, compressionMethod: .none)
 
                     let containerPath = capturedBatchDir.appendingPathComponent("META-INF/container.xml")
-                    try archive.addEntry(with: "META-INF/container.xml", fileURL: containerPath, compressionMethod: .none)
+                    try activeArchive.addEntry(with: "META-INF/container.xml", fileURL: containerPath, compressionMethod: .none)
 
                     let oebpsDir = capturedBatchDir.appendingPathComponent("OEBPS")
                     if let enumerator = FileManager.default.enumerator(at: oebpsDir, includingPropertiesForKeys: nil) {
@@ -516,9 +517,10 @@ struct CBZToEPUBConverter: Sendable {
                             let normalizedBase = capturedBatchDir.path.replacingOccurrences(of: "\\", with: "/")
                             let prefix = normalizedBase.hasSuffix("/") ? normalizedBase : normalizedBase + "/"
                             let relativePath = normalizedFile.replacingOccurrences(of: prefix, with: "")
-                            try archive.addEntry(with: relativePath, fileURL: fileURL, compressionMethod: .deflate)
+                            try activeArchive.addEntry(with: relativePath, fileURL: fileURL, compressionMethod: .deflate)
                         }
                     }
+                    archive = nil
                     continuation.resume()
                 } catch {
                     continuation.resume(throwing: error)

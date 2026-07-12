@@ -535,7 +535,7 @@ final class ConversionOrchestrator: Sendable {
                     fileSize: finalFileSize,
                     metadata: PDFMetadata(title: outputFilename, series: overrideSeries, sourceFileIDs: sourceFiles.map { $0.id }, isManga: mangaMode),
                     collectionId: sourceFiles.first?.collectionId,
-                    contentType: sourceFiles.first?.contentType ?? .comic,
+                    contentType: .book,
                     addedByMode: inferredMode
                 )
                 newMergedPDFs.append(outputPDF)

@@ -98,7 +98,8 @@ struct ZipUtilities {
                         //             O(all images) — eliminates the iOS memory pressure crash.
 
                         // ── Phase 1: Enumerate qualifying entry paths (no I/O, metadata only) ──
-                        guard let enumerationArchive = ZIPFoundation.Archive(url: sourceURL, accessMode: .read) else {
+                        var enumerationArchive: ZIPFoundation.Archive? = ZIPFoundation.Archive(url: sourceURL, accessMode: .read)
+                        guard let activeEnumerationArchive = enumerationArchive else {
                             throw NSError(domain: "ZipError", code: 1,
                                           userInfo: [NSLocalizedDescriptionKey:
                                             "Could not open CBZ archive '\(sourceURL.lastPathComponent)'"])
@@ -107,7 +108,7 @@ struct ZipUtilities {
                         let imageExtensions: Set<String> = ["jpg", "jpeg", "png", "webp", "gif", "heic"]
                         var qualifiedPaths: [String] = []
 
-                        for entry in enumerationArchive {
+                        for entry in activeEnumerationArchive {
                             let path = entry.path
                             let filename = (path as NSString).lastPathComponent
                             guard !path.contains("__MACOSX"),
@@ -193,9 +194,11 @@ struct ZipUtilities {
                     }
                     
                     Logger.shared.log("Successfully unpacked \(sortedURLs.count) files", category: "System", type: .success)
+                    enumerationArchive = nil
                     continuation.resume(returning: (tempDir, sortedURLs))
                     
                 } catch {
+                    enumerationArchive = nil
                     Logger.shared.log("Crash/Error in ZipUtilities: \(error.localizedDescription)", category: "System", type: .error)
                     try? fileManager.removeItem(at: tempDir)
                     continuation.resume(throwing: error)
@@ -211,10 +214,11 @@ struct ZipUtilities {
                     let secure = sourceURL.startAccessingSecurityScopedResource()
                     defer { if secure { sourceURL.stopAccessingSecurityScopedResource() } }
                     
-                    guard let archive = Archive(url: sourceURL, accessMode: .read) else {
+                    var archive: Archive? = Archive(url: sourceURL, accessMode: .read)
+                    guard let activeArchive = archive else {
                         throw NSError(domain: "ZipError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to read archive"])
                     }
-                    let entries = archive.filter { entry in
+                    let entries = activeArchive.filter { entry in
                         let name = entry.path
                         let ext = URL(fileURLWithPath: name).pathExtension.lowercased()
                         let filename = URL(fileURLWithPath: name).lastPathComponent
@@ -227,8 +231,10 @@ struct ZipUtilities {
                         $0.path.localizedStandardCompare($1.path) == .orderedAscending
                     }
                     let virtualURLs = entries.map { sourceURL.appendingPathComponent($0.path) }
+                    archive = nil
                     continuation.resume(returning: virtualURLs)
                 } catch {
+                    archive = nil
                     continuation.resume(throwing: error)
                 }
             }
@@ -250,8 +256,8 @@ struct ZipUtilities {
                         try fileManager.removeItem(at: destinationURL)
                     }
                     
-                    // Creates a new archive at destinationURL
-                    guard let archive = Archive(url: destinationURL, accessMode: .create) else {
+                    var archive: Archive? = Archive(url: destinationURL, accessMode: .create)
+                    guard let activeArchive = archive else {
                         throw NSError(domain: "ZipError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to create archive"])
                     }
                     
@@ -263,13 +269,15 @@ struct ZipUtilities {
                         // Skip hidden system files
                         if fileName.hasPrefix("._") || fileName == ".DS_Store" || fileName == "__MACOSX" { continue }
                         
-                        try archive.addEntry(with: fileName, relativeTo: sourceURL)
+                        try activeArchive.addEntry(with: fileName, relativeTo: sourceURL)
                     }
                     
+                    archive = nil
                     Logger.shared.log("Successfully zipped to \(destinationURL.lastPathComponent)", category: "System", type: .success)
                     continuation.resume()
                     
                 } catch {
+                    archive = nil
                     Logger.shared.log("Zipping failed: \(error.localizedDescription)", category: "System", type: .error)
                     continuation.resume(throwing: error)
                 }
