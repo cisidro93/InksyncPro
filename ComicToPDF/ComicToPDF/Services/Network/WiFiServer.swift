@@ -75,6 +75,7 @@ final class WiFiServer: ObservableObject, Sendable {
 
         ActiveUploadRegistry.shared.clear()
         scheduleAutoShutdown()
+        cleanStagingDirectory()
 
         if !hasTriggeredLocalNetworkPermission {
             // First ever run: fire the probe so iOS shows the permission dialog,
@@ -232,8 +233,19 @@ final class WiFiServer: ObservableObject, Sendable {
         }
         connections.removeAll()
         
+        cleanStagingDirectory()
         ActiveUploadRegistry.shared.clear()
         self.endBackgroundTaskImmediately()
+    }
+    
+    private func cleanStagingDirectory() {
+        guard let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { return }
+        let stagingDir = appSupport.appendingPathComponent("InksyncVault/Staging", isDirectory: true)
+        if let files = try? FileManager.default.contentsOfDirectory(at: stagingDir, includingPropertiesForKeys: nil) {
+            for fileURL in files {
+                try? FileManager.default.removeItem(at: fileURL)
+            }
+        }
     }
 
     func revokeAllSessions() {
