@@ -197,6 +197,7 @@ struct LibraryGridView: View {
                                 }
                                 .padding(.top, 12)
                                 .padding(.bottom, 100)   // overshoots tab bar + home indicator
+                            }
                         }
                         .coordinateSpace(name: "libraryScroll")
                         .refreshable {
