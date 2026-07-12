@@ -388,6 +388,8 @@ struct PDFKitRepresentedView: UIViewRepresentable {
     @Binding var isPencilMode: Bool
     @Binding var pdfViewRef: PDFView?
     
+    @ObservedObject private var prefs = EBookPreferences.shared
+    
     private func makePdfViewTransparent(_ pdfView: PDFView) {
         pdfView.isOpaque = false
         pdfView.backgroundColor = .clear
@@ -399,15 +401,33 @@ struct PDFKitRepresentedView: UIViewRepresentable {
         }
     }
     
+    private func configureDisplayMode(_ pdfView: PDFView, context: Context) {
+        let currentMode = prefs.paginationMode
+        context.coordinator.lastConfiguredPaginationMode = currentMode
+        let isPaged = currentMode == EBookPaginationMode.paged.rawValue
+        
+        if isPaged {
+            pdfView.displayMode = .singlePage
+            pdfView.displayDirection = .horizontal
+            pdfView.usePageViewController(true, withViewOptions: nil)
+        } else {
+            pdfView.usePageViewController(false)
+            pdfView.displayMode = .singlePageContinuous
+            pdfView.displayDirection = .vertical
+        }
+        pdfView.layoutDocumentView()
+    }
+
     func makeUIView(context: Context) -> UIView {
         let pdfView = HighlightablePDFView()
+        context.coordinator.pdfView = pdfView
         DispatchQueue.main.async {
             self.pdfViewRef = pdfView
         }
         pdfView.document = document
         pdfView.autoScales = true
-        pdfView.displayDirection = .vertical
-        pdfView.displayMode = pdf.documentSubtype == .magazine ? .singlePageContinuous : .singlePageContinuous
+        
+        configureDisplayMode(pdfView, context: context)
         pdfView.delegate = context.coordinator
         
         makePdfViewTransparent(pdfView)
@@ -498,6 +518,10 @@ struct PDFKitRepresentedView: UIViewRepresentable {
         }
         
         if let pdfView = context.coordinator.pdfView {
+            let currentMode = prefs.paginationMode
+            if context.coordinator.lastConfiguredPaginationMode != currentMode {
+                configureDisplayMode(pdfView, context: context)
+            }
             makePdfViewTransparent(pdfView)
             
             // Sync outer page change to the PDFView
@@ -538,6 +562,7 @@ struct PDFKitRepresentedView: UIViewRepresentable {
         weak var pdfView: PDFView?
         weak var canvasView: PKCanvasView?
         var toolPicker = PKToolPicker()
+        var lastConfiguredPaginationMode: String?
         
         init(_ parent: PDFKitRepresentedView) {
             self.parent = parent
@@ -556,13 +581,21 @@ struct PDFKitRepresentedView: UIViewRepresentable {
             if location.x < width * zones.leftEdge {
                 // Page backward
                 if parent.currentPageIndex > 0 {
-                    parent.currentPageIndex -= 1
+                    if let pv = pdfView, pv.canGoToPreviousPage {
+                        pv.goToPreviousPage(nil)
+                    } else {
+                        parent.currentPageIndex -= 1
+                    }
                     HapticEngine.light()
                 }
             } else if location.x > width * zones.rightEdge {
                 // Page forward
                 if let doc = pdfView?.document, parent.currentPageIndex < doc.pageCount - 1 {
-                    parent.currentPageIndex += 1
+                    if let pv = pdfView, pv.canGoToNextPage {
+                        pv.goToNextPage(nil)
+                    } else {
+                        parent.currentPageIndex += 1
+                    }
                     HapticEngine.light()
                 }
             } else {
