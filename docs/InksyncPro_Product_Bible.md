@@ -166,6 +166,7 @@ All import operations follow a strict sequence:
   - *Offline Mode & CORS Support:* The server handles preflight `OPTIONS` requests, parses custom `X-WiFi-PIN` and `Origin` headers, and responds with dynamic CORS permissions so that the page can run locally from a static `.html` file.
   - *IndexedDB Persistent Queue:* Queue structures are backed by browser-side IndexedDB storage (`InksyncUploadQueueDB`), preventing file loss on reloads, connection loss, or browser closure.
   - *Synchronous EPUB Parsing:* Synchronously parses the OPF spine count inside ZIP archives to deliver accurate page count diagnostics before importing.
+  - *Persistent background and view lifecycles:* Automatically cancels pending background end task work items on new activity/connection events, and guards background execution against active upload operations. Dismissing or hiding the Wi-Fi Sharing view does not shut down the server, allowing background file imports while the user interacts with the app or locks their screen.
 
 ---
 
