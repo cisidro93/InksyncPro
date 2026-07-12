@@ -325,6 +325,12 @@ final class WiFiServer: ObservableObject, Sendable {
             set { lock.lock(); defer { lock.unlock() }; _relativePath = newValue }
         }
         
+        private var _finalDestinationURL: URL?
+        var finalDestinationURL: URL? {
+            get { lock.lock(); defer { lock.unlock() }; return _finalDestinationURL }
+            set { lock.lock(); defer { lock.unlock() }; _finalDestinationURL = newValue }
+        }
+        
         private var _requestOrigin: String = "*"
         var requestOrigin: String {
             get { lock.lock(); defer { lock.unlock() }; return _requestOrigin }
@@ -989,53 +995,60 @@ final class WiFiServer: ObservableObject, Sendable {
     private func setupUpload(context: ConnectionContext) -> Bool {
         context.isHeaderParsed = true
 
-        // Write incoming files to the InksyncVault Inbox directory so the library
-        // scanner picks them up automatically. The old Documents/ destination was
-        // invisible to the import pipeline — files arrived but never appeared in the app.
+        // Reconstruct final target destination path in the Inbox folder
         guard let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { return false }
         let inbox = appSupport.appendingPathComponent("InksyncVault/Inbox", isDirectory: true)
         try? FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
 
-        var destURL: URL
+        var finalDestURL: URL
 
         if let relPathString = context.relativePath, !relPathString.isEmpty {
-            // Reconstruct the nested folder structure under the inbox
-            destURL = inbox.appendingPathComponent(relPathString).standardizedFileURL
+            finalDestURL = inbox.appendingPathComponent(relPathString).standardizedFileURL
 
-            guard destURL.path.hasPrefix(inbox.standardizedFileURL.path) else {
+            guard finalDestURL.path.hasPrefix(inbox.standardizedFileURL.path) else {
                 Logger.shared.log("WiFi Transfer - Rejected Traversal Upload Attempt: \(relPathString)", category: "Network", type: .error)
                 return false
             }
-
-            let directoryURL = destURL.deletingLastPathComponent()
-            try? FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
         } else {
             let sanitizedFileName = URL(fileURLWithPath: context.filename).lastPathComponent
-            destURL = inbox.appendingPathComponent(sanitizedFileName).standardizedFileURL
+            finalDestURL = inbox.appendingPathComponent(sanitizedFileName).standardizedFileURL
         }
 
-        context.destinationURL = destURL
+        context.finalDestinationURL = finalDestURL
 
-        // Duplicate file prevention: delete existing file to allow overwrite/retry
-        if FileManager.default.fileExists(atPath: destURL.path) {
-            Logger.shared.log("WiFi Transfer - File already exists. Removing existing file to overwrite/retry: \(destURL.lastPathComponent)", category: "Network")
-            try? FileManager.default.removeItem(at: destURL)
+        // Write the active uploading file to a staging directory (completely hidden from the scanner)
+        let stagingDir = appSupport.appendingPathComponent("InksyncVault/Staging", isDirectory: true)
+        try? FileManager.default.createDirectory(at: stagingDir, withIntermediateDirectories: true)
+        
+        let stagingUUID = UUID().uuidString
+        let stagingURL = stagingDir.appendingPathComponent("\(stagingUUID).tmp").standardizedFileURL
+        
+        context.destinationURL = stagingURL
+
+        // Duplicate final file prevention: delete existing final file to allow overwrite
+        if FileManager.default.fileExists(atPath: finalDestURL.path) {
+            Logger.shared.log("WiFi Transfer - File already exists. Removing existing file to overwrite/retry: \(finalDestURL.lastPathComponent)", category: "Network")
+            try? FileManager.default.removeItem(at: finalDestURL)
         }
 
-        ActiveUploadRegistry.shared.register(destURL)
-        FileManager.default.createFile(atPath: destURL.path, contents: nil, attributes: nil)
-        Logger.shared.log("Starting Upload: \(destURL.lastPathComponent) -> \(destURL.path)", category: "Network")
+        // Track both staging and final paths in the active uploads registry
+        ActiveUploadRegistry.shared.register(stagingURL)
+        ActiveUploadRegistry.shared.register(finalDestURL)
+        
+        FileManager.default.createFile(atPath: stagingURL.path, contents: nil, attributes: nil)
+        Logger.shared.log("Starting Staged Upload: \(context.filename) -> \(stagingURL.lastPathComponent)", category: "Network")
 
         do {
-            context.fileHandle = try FileHandle(forWritingTo: destURL)
+            context.fileHandle = try FileHandle(forWritingTo: stagingURL)
             self.isUploading = true
-            self.currentUploadFilename = destURL.lastPathComponent
+            self.currentUploadFilename = context.filename
             self.uploadProgress = 0.0
             self.startBackgroundTask()
             return true
         } catch {
-            ActiveUploadRegistry.shared.unregister(destURL)
-            Logger.shared.log("WiFi Transfer Failed to open file for writing: \(error.localizedDescription)", category: "Network", type: .error)
+            ActiveUploadRegistry.shared.unregister(stagingURL)
+            ActiveUploadRegistry.shared.unregister(finalDestURL)
+            Logger.shared.log("WiFi Transfer Failed to open staging file for writing: \(error.localizedDescription)", category: "Network", type: .error)
             return false
         }
     }
@@ -1057,8 +1070,28 @@ final class WiFiServer: ObservableObject, Sendable {
     
     private func checkUploadCompletion(connection: NWConnection, context: ConnectionContext) {
         if context.expectedLength > 0 && context.receivedLength >= context.expectedLength {
-            Logger.shared.log("Upload Complete: \(context.filename) (\(context.receivedLength) bytes)", category: "Network")
+            Logger.shared.log("Staged Upload Complete: \(context.filename) (\(context.receivedLength) bytes)", category: "Network")
             
+            // 1. Close file handle first so the file is locked and flushed
+            try? context.fileHandle?.close()
+            context.fileHandle = nil
+            
+            // 2. Move file from staging to final Inbox destination atomically
+            if let tempURL = context.destinationURL, let finalURL = context.finalDestinationURL {
+                // Ensure parent directory exists for final URL
+                let parentDir = finalURL.deletingLastPathComponent()
+                try? FileManager.default.createDirectory(at: parentDir, withIntermediateDirectories: true)
+                
+                do {
+                    try FileManager.default.moveItem(at: tempURL, to: finalURL)
+                    Logger.shared.log("WiFi Transfer - Atomically moved completed file to Inbox: \(finalURL.lastPathComponent)", category: "Network")
+                } catch {
+                    Logger.shared.log("WiFi Transfer - Failed to move completed file to Inbox: \(error.localizedDescription)", category: "Network", type: .error)
+                    try? FileManager.default.removeItem(at: tempURL)
+                }
+            }
+            
+            // 3. Perform cleanup of connection and registry
             cleanup(context: context)
             sendResponse(connection, 200, "Upload Complete", origin: context.requestOrigin)
             
@@ -1096,6 +1129,9 @@ final class WiFiServer: ObservableObject, Sendable {
                 try? FileManager.default.removeItem(at: url)
                 Logger.shared.log("WiFi Transfer - Deleted partial/corrupted upload: \(url.lastPathComponent)", category: "Network", type: .warning)
             }
+        }
+        if let finalURL = context.finalDestinationURL {
+            ActiveUploadRegistry.shared.unregister(finalURL)
         }
         self.isUploading = false
     }
