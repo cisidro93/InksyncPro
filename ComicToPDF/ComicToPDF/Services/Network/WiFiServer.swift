@@ -604,23 +604,36 @@ final class WiFiServer: ObservableObject, Sendable {
             // Streaming Logic
             context.isHeaderParsed = true 
             
-            // Write any initial body data that got buffered on the background queue
-            let initialBody = context.extractBuffer()
-            if !initialBody.isEmpty {
-                writeBodyData(initialBody, context: context)
+            let queue = connection.queue ?? .global()
+            queue.async { [weak self] in
+                guard let self = self else { return }
+                
+                // Write any initial body data that got buffered on the background queue
+                let initialBody = context.extractBuffer()
+                if !initialBody.isEmpty {
+                    if let fileHandle = context.fileHandle {
+                        try? fileHandle.write(contentsOf: initialBody)
+                        context.receivedLength += Int64(initialBody.count)
+                    }
+                }
+                
+                // Set flag so subsequent packets can be written on background queue
+                context.isInitialBodyWritten = true
+                
+                // Check if any additional packets arrived and were buffered while we were writing the initial body
+                let extraBody = context.extractBuffer()
+                if !extraBody.isEmpty {
+                    if let fileHandle = context.fileHandle {
+                        try? fileHandle.write(contentsOf: extraBody)
+                        context.receivedLength += Int64(extraBody.count)
+                    }
+                }
+                
+                // Check if upload is already complete
+                Task { @MainActor in
+                    self.checkUploadCompletion(connection: connection, context: context)
+                }
             }
-            
-            // Set flag so subsequent packets can be written on background queue
-            context.isInitialBodyWritten = true
-            
-            // Check if any additional packets arrived and were buffered while we were writing the initial body
-            let extraBody = context.extractBuffer()
-            if !extraBody.isEmpty {
-                writeBodyData(extraBody, context: context)
-            }
-            
-            // Check if upload is already complete
-            checkUploadCompletion(connection: connection, context: context)
         }
     }
     
