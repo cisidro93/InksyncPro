@@ -1268,7 +1268,7 @@ actor ThumbnailGenerationQueue {
             let key = pdf.id.uuidString as NSString
             let cached = await MainActor.run { manager.thumbnailCache.object(forKey: key) != nil }
             var onDisk = false
-            if let url = PhysicalFileSystemRouter.shared.getCoverURL(for: pdf) {
+            if let url = await PhysicalFileSystemRouter.shared.getCoverURL(for: pdf) {
                 onDisk = FileManager.default.fileExists(atPath: url.path)
             }
             let success = cached || onDisk
