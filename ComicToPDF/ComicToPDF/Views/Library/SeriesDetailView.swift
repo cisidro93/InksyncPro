@@ -172,6 +172,7 @@ struct SeriesDetailView: View {
     @State private var cachedSeriesArtist: String? = nil
     @State private var cachedSeriesTags: [String] = []
     @State private var cachedSeriesSummary: String? = nil
+    @State private var cachedSeriesVirtualOmnibuses: [VirtualOmnibus] = []
     
     var seriesWriter: String? { cachedSeriesWriter }
     var seriesArtist: String? { cachedSeriesArtist }
@@ -260,6 +261,37 @@ struct SeriesDetailView: View {
         
         let allTags = currentIssues.flatMap { $0.metadata.tags }.map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
         self.cachedSeriesTags = Array(Set(allTags)).sorted()
+        
+        // Cache virtual omnibuses for this series
+        let allOmnibuses = conversionManager.virtualOmnibuses
+        Logger.shared.log("🔍 [Flight Recorder] 👁️ [Virtual Volume] Caching visibility. total omnibuses: \(allOmnibuses.count), series title: '\(series.title)', series ID: '\(series.id)'", category: "Debug")
+        
+        self.cachedSeriesVirtualOmnibuses = allOmnibuses.filter { omnibus in
+            // 1. Explicit connection context (parentSeriesID) matches series.id
+            if let parent = omnibus.parentSeriesID {
+                if parent.localizedCaseInsensitiveCompare(series.id) == .orderedSame { return true }
+            }
+            
+            // 2. Match by virtual volume name (case-insensitive, substring/contains allowed)
+            let nameMatch = omnibus.name.localizedCaseInsensitiveCompare(series.title) == .orderedSame ||
+                            omnibus.name.localizedCaseInsensitiveContains(series.title) ||
+                            series.title.localizedCaseInsensitiveContains(omnibus.name)
+            if nameMatch { return true }
+            
+            // 3. Match if any issue inside the omnibus belongs to this series (case-insensitive)
+            let resolvedFiles = omnibus.fileIDs.compactMap { id in
+                conversionManager.convertedPDFs.first(where: { $0.id == id })
+            }
+            
+            // 4. Match if this is a custom collection (folder) and any file in the omnibus belongs to it
+            if let folderUUID = UUID(uuidString: series.id) {
+                return resolvedFiles.contains { $0.collectionId == folderUUID }
+            }
+            
+            return resolvedFiles.contains { pdf in
+                pdf.metadata.series?.localizedCaseInsensitiveCompare(series.title) == .orderedSame
+            }
+        }
     }
     
     /// True if any issues have volume metadata worth grouping by
@@ -271,48 +303,7 @@ struct SeriesDetailView: View {
         SeriesSortOption.allCases.filter { $0 != .manual || isCollection }
     }
     
-    var seriesVirtualOmnibuses: [VirtualOmnibus] {
-        let allOmnibuses = conversionManager.virtualOmnibuses
-        Logger.shared.log("🔍 [Flight Recorder] 👁️ [Virtual Volume] Evaluating visibility. total omnibuses: \(allOmnibuses.count), series title: '\(series.title)', series ID: '\(series.id)'", category: "Debug")
-        
-        return allOmnibuses.filter { omnibus in
-            // 1. Explicit connection context (parentSeriesID) matches series.id
-            if let parent = omnibus.parentSeriesID {
-                let parentMatch = parent.localizedCaseInsensitiveCompare(series.id) == .orderedSame
-                Logger.shared.log("🔍 [Flight Recorder] 👁️ [Virtual Volume] Checked '\(omnibus.name)' - parentSeriesID: '\(parent)', match = \(parentMatch)", category: "Debug")
-                if parentMatch { return true }
-            }
-            
-            // 2. Match by virtual volume name (case-insensitive, substring/contains allowed)
-            let nameMatch = omnibus.name.localizedCaseInsensitiveCompare(series.title) == .orderedSame ||
-                            omnibus.name.localizedCaseInsensitiveContains(series.title) ||
-                            series.title.localizedCaseInsensitiveContains(omnibus.name)
-            Logger.shared.log("🔍 [Flight Recorder] 👁️ [Virtual Volume] Checked '\(omnibus.name)' - nameMatch = \(nameMatch)", category: "Debug")
-            if nameMatch { return true }
-            
-            // 3. Match if any issue inside the omnibus belongs to this series (case-insensitive)
-            let resolvedFiles = omnibus.fileIDs.compactMap { id in
-                conversionManager.convertedPDFs.first(where: { $0.id == id })
-            }
-            
-            // 4. Match if this is a custom collection (folder) and any file in the omnibus belongs to it
-            if let folderUUID = UUID(uuidString: series.id) {
-                let collectionMatch = resolvedFiles.contains { $0.collectionId == folderUUID }
-                Logger.shared.log("🔍 [Flight Recorder] 👁️ [Virtual Volume] Checked '\(omnibus.name)' - collectionMatch = \(collectionMatch)", category: "Debug")
-                return collectionMatch
-            }
-            
-            let fileMatch = resolvedFiles.contains { pdf in
-                let matches = pdf.metadata.series?.localizedCaseInsensitiveCompare(series.title) == .orderedSame
-                if matches {
-                    Logger.shared.log("🔍 [Flight Recorder] 👁️ [Virtual Volume] Matched pdf '\(pdf.name)' with series '\(pdf.metadata.series ?? "nil")'", category: "Debug")
-                }
-                return matches
-            }
-            Logger.shared.log("🔍 [Flight Recorder] 👁️ [Virtual Volume] Checked '\(omnibus.name)' - fileMatch = \(fileMatch)", category: "Debug")
-            return fileMatch
-        }
-    }
+    var seriesVirtualOmnibuses: [VirtualOmnibus] { cachedSeriesVirtualOmnibuses }
     
     @ViewBuilder
     private var seriesVirtualOmnibusesSection: some View {
@@ -407,6 +398,7 @@ struct SeriesDetailView: View {
         .onChange(of: conversionManager.collections) { localIssues = sortedIssues }
         .onChange(of: settingsManager.isVaultUnlocked) { localIssues = sortedIssues }
         .onChange(of: localIssues) { updateVolumeGroups() }
+        .onChange(of: conversionManager.virtualOmnibuses) { updateVolumeGroups() }
         .onChange(of: selectedVolumeFilter) { _, newValue in
             if let newValue = newValue {
                 collapsedVolumes.remove(newValue)
