@@ -608,10 +608,10 @@ final class PDFToEPUBConverter: Sendable {
 
 extension PDFToEPUBConverter {
     
-    /// Quick convert with default options
-    static func convert(pdf pdfURL: URL, to outputURL: URL) async throws -> (url: URL, pageCount: Int) {
+    /// Quick convert with options
+    static func convert(pdf pdfURL: URL, to outputURL: URL, options: ConversionOptions = .default) async throws -> (url: URL, pageCount: Int) {
         let converter = PDFToEPUBConverter()
-        let (url, pageCount) = try await converter.convert(pdfURL: pdfURL, to: outputURL)
+        let (url, pageCount) = try await converter.convert(pdfURL: pdfURL, to: outputURL, options: options)
         return (url, pageCount)
     }
     

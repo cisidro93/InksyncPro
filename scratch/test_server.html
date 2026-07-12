@@ -1,0 +1,1357 @@
+﻿
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Inksync Pro | WiFi Sharing</title>
+            <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+            <style>
+                :root {
+                    --bg-color: #080A10;
+                    --card-bg: rgba(17, 22, 39, 0.7);
+                    --card-border: rgba(255, 255, 255, 0.06);
+                    --text-primary: #F3F4F6;
+                    --text-secondary: #9CA3AF;
+                    --accent-blue: #3B82F6;
+                    --accent-purple: #8B5CF6;
+                    --accent-cyan: #06B6D4;
+                    --success-color: #10B981;
+                    --warning-color: #F59E0B;
+                    --error-color: #EF4444;
+                    --cbz-color: #EC4899;
+                    --epub-color: #10B981;
+                    --pdf-color: #F97316;
+                    --shadow: 0 10px 15px -3px rgba(0,0,0,0.3);
+                    --glass-blur: blur(20px);
+                }
+
+                @media (prefers-color-scheme: light) {
+                    :root {
+                        --bg-color: #F3F4F6;
+                        --card-bg: rgba(255, 255, 255, 0.85);
+                        --card-border: rgba(0, 0, 0, 0.05);
+                        --text-primary: #111827;
+                        --text-secondary: #6B7280;
+                        --accent-blue: #2563EB;
+                        --accent-purple: #7C3AED;
+                        --accent-cyan: #0891B2;
+                        --success-color: #059669;
+                        --warning-color: #D97706;
+                        --error-color: #DC2626;
+                        --cbz-color: #DB2777;
+                        --epub-color: #059669;
+                        --pdf-color: #EA580C;
+                        --shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05);
+                    }
+                }
+
+                * {
+                    box-sizing: border-box;
+                    margin: 0;
+                    padding: 0;
+                    font-family: 'Inter', -apple-system, sans-serif;
+                }
+
+                body {
+                    background-color: var(--bg-color);
+                    color: var(--text-primary);
+                    min-height: 100vh;
+                    padding: 40px 20px;
+                    display: flex;
+                    justify-content: center;
+                    position: relative;
+                }
+
+                /* Background blur effects */
+                .ambient-glow {
+                    position: fixed;
+                    width: 500px;
+                    height: 500px;
+                    border-radius: 50%;
+                    filter: blur(120px);
+                    opacity: 0.15;
+                    z-index: -1;
+                    pointer-events: none;
+                }
+                .glow-1 {
+                    background: var(--accent-blue);
+                    top: -100px;
+                    left: -100px;
+                }
+                .glow-2 {
+                    background: var(--accent-purple);
+                    bottom: -100px;
+                    right: -100px;
+                }
+
+                .dashboard-container {
+                    width: 100%;
+                    max-width: 900px;
+                    z-index: 10;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 24px;
+                }
+
+                /* Glassmorphic header card */
+                header {
+                    background: var(--card-bg);
+                    backdrop-filter: var(--glass-blur);
+                    -webkit-backdrop-filter: var(--glass-blur);
+                    border: 1px solid var(--card-border);
+                    border-radius: 24px;
+                    padding: 24px 32px;
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    box-shadow: var(--shadow);
+                    flex-wrap: wrap;
+                    gap: 16px;
+                }
+
+                .header-left {
+                    display: flex;
+                    align-items: center;
+                    gap: 16px;
+                }
+
+                .logo-icon {
+                    font-size: 32px;
+                    background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+                    -webkit-background-clip: text;
+                    -webkit-text-fill-color: transparent;
+                    font-weight: 800;
+                }
+
+                h1 {
+                    font-size: 20px;
+                    font-weight: 700;
+                    letter-spacing: -0.025em;
+                }
+
+                .subtitle {
+                    font-size: 13px;
+                    color: var(--text-secondary);
+                }
+
+                .header-right {
+                    display: flex;
+                    align-items: center;
+                    gap: 12px;
+                }
+
+                /* ZIP Button */
+                .zip-btn {
+                    background: linear-gradient(135deg, var(--accent-purple), #EC4899);
+                    color: white;
+                    text-decoration: none;
+                    padding: 10px 20px;
+                    border-radius: 14px;
+                    font-size: 14px;
+                    font-weight: 600;
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    box-shadow: 0 4px 6px -1px rgba(139, 92, 246, 0.2);
+                    transition: all 0.2s;
+                }
+
+                .zip-btn:hover {
+                    opacity: 0.95;
+                    transform: translateY(-1px);
+                }
+
+                /* Dropzone layout */
+                .dropzone {
+                    background: var(--card-bg);
+                    backdrop-filter: var(--glass-blur);
+                    -webkit-backdrop-filter: var(--glass-blur);
+                    border: 2px dashed var(--card-border);
+                    border-radius: 24px;
+                    padding: 40px;
+                    text-align: center;
+                    cursor: pointer;
+                    box-shadow: var(--shadow);
+                    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    gap: 12px;
+                }
+
+                .dropzone:hover, .dropzone.dragover {
+                    border-color: var(--accent-blue);
+                    background: rgba(59, 130, 246, 0.04);
+                    transform: scale(1.01);
+                }
+
+                .dropzone-icon {
+                    font-size: 40px;
+                    color: var(--accent-blue);
+                    margin-bottom: 8px;
+                    animation: pulse 2s infinite;
+                }
+
+                @keyframes pulse {
+                    0%, 100% { transform: scale(1); opacity: 1; }
+                    50% { transform: scale(1.08); opacity: 0.8; }
+                }
+
+                /* Full page drag overlay */
+                #dragOverlay {
+                    position: fixed;
+                    top: 0;
+                    left: 0;
+                    width: 100vw;
+                    height: 100vh;
+                    background: rgba(8, 10, 16, 0.85);
+                    backdrop-filter: blur(15px);
+                    -webkit-backdrop-filter: blur(15px);
+                    z-index: 1000;
+                    display: none;
+                    justify-content: center;
+                    align-items: center;
+                    border: 4px dashed var(--accent-blue);
+                    margin: 0;
+                    padding: 0;
+                }
+
+                #dragOverlay * {
+                    pointer-events: none;
+                }
+
+                .overlay-content {
+                    text-align: center;
+                    color: white;
+                }
+
+                .overlay-icon {
+                    font-size: 72px;
+                    color: var(--accent-blue);
+                    margin-bottom: 24px;
+                    animation: bounce 1s infinite;
+                }
+
+                @keyframes bounce {
+                    0%, 100% { transform: translateY(0); }
+                    50% { transform: translateY(-15px); }
+                }
+
+                /* Queue Card layout */
+                .queue-card {
+                    background: var(--card-bg);
+                    backdrop-filter: var(--glass-blur);
+                    -webkit-backdrop-filter: var(--glass-blur);
+                    border: 1px solid var(--card-border);
+                    border-radius: 24px;
+                    padding: 24px;
+                    box-shadow: var(--shadow);
+                    display: none;
+                    flex-direction: column;
+                    gap: 16px;
+                }
+
+                .queue-header {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    border-bottom: 1px solid var(--card-border);
+                    padding-bottom: 12px;
+                }
+
+                .queue-title {
+                    font-size: 16px;
+                    font-weight: 700;
+                }
+
+                .queue-items {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 12px;
+                    max-height: 300px;
+                    overflow-y: auto;
+                }
+
+                .queue-item {
+                    background: rgba(0, 0, 0, 0.1);
+                    padding: 12px 16px;
+                    border-radius: 14px;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 8px;
+                    position: relative;
+                    border: 1px solid var(--card-border);
+                }
+
+                @media (prefers-color-scheme: dark) {
+                    .queue-item {
+                        background: rgba(255, 255, 255, 0.02);
+                    }
+                }
+
+                .queue-item-meta {
+                    display: flex;
+                    justify-content: space-between;
+                    font-size: 13px;
+                }
+
+                .queue-item-name {
+                    font-weight: 500;
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    max-width: 60%;
+                }
+
+                .queue-item-stats {
+                    color: var(--text-secondary);
+                }
+
+                .progress-bar-container {
+                    width: 100%;
+                    height: 6px;
+                    background: rgba(255, 255, 255, 0.1);
+                    border-radius: 3px;
+                    overflow: hidden;
+                    position: relative;
+                }
+
+                .progress-bar-fill {
+                    height: 100%;
+                    width: 0%;
+                    background: linear-gradient(90deg, var(--accent-blue), var(--accent-cyan));
+                    border-radius: 3px;
+                    transition: width 0.2s ease-out;
+                }
+
+                .progress-bar-fill.completed {
+                    background: var(--success-color);
+                }
+
+                .progress-bar-fill.failed {
+                    background: var(--error-color);
+                }
+
+                /* Library card section */
+                .library-section {
+                    background: var(--card-bg);
+                    backdrop-filter: var(--glass-blur);
+                    -webkit-backdrop-filter: var(--glass-blur);
+                    border: 1px solid var(--card-border);
+                    border-radius: 24px;
+                    padding: 32px;
+                    box-shadow: var(--shadow);
+                    display: flex;
+                    flex-direction: column;
+                    gap: 20px;
+                }
+
+                .library-toolbar {
+                    display: flex;
+                    gap: 16px;
+                    flex-wrap: wrap;
+                    align-items: center;
+                    justify-content: space-between;
+                }
+
+                .search-wrapper {
+                    position: relative;
+                    flex: 1;
+                    min-width: 280px;
+                }
+
+                .search-input {
+                    width: 100%;
+                    height: 44px;
+                    background: rgba(0, 0, 0, 0.15);
+                    border: 1px solid var(--card-border);
+                    border-radius: 14px;
+                    padding: 0 16px 0 44px;
+                    color: var(--text-primary);
+                    font-size: 14px;
+                    outline: none;
+                    transition: all 0.2s;
+                }
+
+                @media (prefers-color-scheme: dark) {
+                    .search-input {
+                        background: rgba(255, 255, 255, 0.03);
+                    }
+                }
+
+                .search-input:focus {
+                    border-color: var(--accent-blue);
+                    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+                }
+
+                .search-icon {
+                    position: absolute;
+                    left: 16px;
+                    top: 50%;
+                    transform: translateY(-50%);
+                    color: var(--text-secondary);
+                    pointer-events: none;
+                }
+
+                .clear-search-btn {
+                    position: absolute;
+                    right: 16px;
+                    top: 50%;
+                    transform: translateY(-50%);
+                    background: none;
+                    border: none;
+                    color: var(--text-secondary);
+                    cursor: pointer;
+                    outline: none;
+                    display: none;
+                    font-size: 16px;
+                }
+
+                .filter-tabs {
+                    display: flex;
+                    gap: 8px;
+                    background: rgba(0, 0, 0, 0.1);
+                    padding: 4px;
+                    border-radius: 12px;
+                    border: 1px solid var(--card-border);
+                }
+
+                @media (prefers-color-scheme: dark) {
+                    .filter-tabs {
+                        background: rgba(255, 255, 255, 0.02);
+                    }
+                }
+
+                .filter-tab {
+                    background: none;
+                    border: none;
+                    color: var(--text-secondary);
+                    padding: 8px 16px;
+                    font-size: 13px;
+                    font-weight: 600;
+                    border-radius: 8px;
+                    cursor: pointer;
+                    transition: all 0.2s;
+                }
+
+                .filter-tab:hover {
+                    color: var(--text-primary);
+                }
+
+                .filter-tab.active {
+                    background: var(--accent-blue);
+                    color: white;
+                    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+                }
+
+                .library-header {
+                    display: flex;
+                    justify-content: space-between;
+                    font-size: 14px;
+                    color: var(--text-secondary);
+                    border-bottom: 1px solid var(--card-border);
+                    padding-bottom: 12px;
+                }
+
+                .library-list {
+                    list-style: none;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 12px;
+                    max-height: 600px;
+                    overflow-y: auto;
+                    padding-right: 4px;
+                }
+
+                .library-item {
+                    background: rgba(0, 0, 0, 0.08);
+                    border: 1px solid var(--card-border);
+                    border-radius: 16px;
+                    padding: 16px 20px;
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    gap: 16px;
+                    transition: all 0.2s;
+                }
+
+                @media (prefers-color-scheme: dark) {
+                    .library-item {
+                        background: rgba(255, 255, 255, 0.015);
+                    }
+                }
+
+                .library-item:hover {
+                    background: rgba(0, 0, 0, 0.12);
+                    transform: translateY(-1px);
+                }
+
+                @media (prefers-color-scheme: dark) {
+                    .library-item:hover {
+                        background: rgba(255, 255, 255, 0.03);
+                    }
+                }
+
+                .file-details {
+                    display: flex;
+                    align-items: center;
+                    gap: 16px;
+                    min-width: 0;
+                    flex: 1;
+                }
+
+                .file-type-badge {
+                    width: 48px;
+                    height: 48px;
+                    border-radius: 12px;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                    font-size: 11px;
+                    font-weight: 700;
+                    color: white;
+                    flex-shrink: 0;
+                    text-transform: uppercase;
+                }
+
+                .file-type-badge.cbz { background: var(--cbz-color); }
+                .file-type-badge.epub { background: var(--epub-color); }
+                .file-type-badge.pdf { background: var(--pdf-color); }
+                .file-type-badge.cbr { background: var(--cbz-color); }
+                .file-type-badge.cb7 { background: var(--cbz-color); }
+                .file-type-badge.cbt { background: var(--cbz-color); }
+                .file-type-badge.zip { background: var(--accent-purple); }
+
+                .file-text {
+                    min-width: 0;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 4px;
+                }
+
+                .file-name {
+                    font-size: 15px;
+                    font-weight: 600;
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                }
+
+                .file-size {
+                    font-size: 12px;
+                    color: var(--text-secondary);
+                }
+
+                .download-action-btn {
+                    background: rgba(255, 255, 255, 0.1);
+                    border: 1px solid var(--card-border);
+                    color: var(--text-primary);
+                    text-decoration: none;
+                    padding: 8px 16px;
+                    border-radius: 10px;
+                    font-size: 13px;
+                    font-weight: 600;
+                    white-space: nowrap;
+                    transition: all 0.2s;
+                }
+
+                @media (prefers-color-scheme: light) {
+                    .download-action-btn {
+                        background: rgba(0, 0, 0, 0.05);
+                    }
+                }
+
+                .download-action-btn:hover {
+                    background: var(--accent-blue);
+                    color: white;
+                    border-color: var(--accent-blue);
+                }
+
+                /* Notifications toast */
+                .toast-container {
+                    position: fixed;
+                    bottom: 24px;
+                    right: 24px;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 8px;
+                    z-index: 2000;
+                }
+
+                .toast {
+                    background: var(--card-bg);
+                    backdrop-filter: var(--glass-blur);
+                    -webkit-backdrop-filter: var(--glass-blur);
+                    border: 1px solid var(--card-border);
+                    border-left-width: 4px;
+                    padding: 16px 20px;
+                    border-radius: 12px;
+                    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2);
+                    color: var(--text-primary);
+                    font-size: 14px;
+                    font-weight: 500;
+                    display: flex;
+                    align-items: center;
+                    gap: 12px;
+                    animation: toastIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+                    max-width: 350px;
+                }
+
+                @keyframes toastIn {
+                    from { opacity: 0; transform: translateY(12px) scale(0.95); }
+                    to { opacity: 1; transform: translateY(0) scale(1); }
+                }
+
+                .toast.success { border-left-color: var(--success-color); }
+                .toast.error { border-left-color: var(--error-color); }
+                .toast.warning { border-left-color: var(--warning-color); }
+
+                /* Retry button in queue */
+                .retry-action-btn {
+                    background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+                    color: white;
+                    border: none;
+                    border-radius: 6px;
+                    padding: 4px 10px;
+                    font-size: 11px;
+                    font-weight: 600;
+                    cursor: pointer;
+                    margin-left: 10px;
+                    display: inline-block;
+                    transition: all 0.2s ease-in-out;
+                    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+                }
+                .retry-action-btn:hover {
+                    opacity: 0.9;
+                    transform: translateY(-1px);
+                    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+                }
+                .retry-action-btn:active {
+                    transform: translateY(0);
+                }
+
+                /* High-Contrast E-Ink Mode Styles */
+                body.eink-mode {
+                    --bg-color: #FFFFFF !important;
+                    --card-bg: #FFFFFF !important;
+                    --card-border: #000000 !important;
+                    --text-primary: #000000 !important;
+                    --text-secondary: #222222 !important;
+                    --accent-blue: #000000 !important;
+                    --accent-purple: #000000 !important;
+                    --accent-cyan: #000000 !important;
+                    --success-color: #000000 !important;
+                    --warning-color: #000000 !important;
+                    --error-color: #000000 !important;
+                    --cbz-color: #000000 !important;
+                    --epub-color: #000000 !important;
+                    --pdf-color: #000000 !important;
+                    --shadow: none !important;
+                    --glass-blur: none !important;
+                }
+
+                body.eink-mode .ambient-glow {
+                    display: none !important;
+                }
+
+                body.eink-mode .dashboard-container {
+                    max-width: 900px !important;
+                }
+
+                body.eink-mode .queue-card,
+                body.eink-mode .dropzone,
+                body.eink-mode .library-section,
+                body.eink-mode #debugLogContainer {
+                    background: #FFFFFF !important;
+                    border: 2px solid #000000 !important;
+                    border-radius: 4px !important;
+                    box-shadow: none !important;
+                    backdrop-filter: none !important;
+                    -webkit-backdrop-filter: none !important;
+                }
+
+                body.eink-mode .dropzone {
+                    border-style: dashed !important;
+                }
+
+                body.eink-mode .library-item {
+                    border: 1px solid #000000 !important;
+                    background: #FFFFFF !important;
+                    border-radius: 4px !important;
+                    margin-bottom: 8px !important;
+                    box-shadow: none !important;
+                }
+
+                body.eink-mode .file-type-badge {
+                    background: #000000 !important;
+                    color: #FFFFFF !important;
+                    border: 1px solid #000000 !important;
+                    border-radius: 2px !important;
+                }
+
+                body.eink-mode .download-action-btn,
+                body.eink-mode .retry-action-btn,
+                body.eink-mode .zip-btn {
+                    background: #FFFFFF !important;
+                    color: #000000 !important;
+                    border: 2px solid #000000 !important;
+                    border-radius: 4px !important;
+                    box-shadow: none !important;
+                    text-decoration: none !important;
+                }
+                
+                body.eink-mode .download-action-btn:hover,
+                body.eink-mode .retry-action-btn:hover,
+                body.eink-mode .zip-btn:hover {
+                    background: #000000 !important;
+                    color: #FFFFFF !important;
+                }
+                
+                body.eink-mode #debugLogContainer {
+                    color: #000000 !important;
+                    background: #FFFFFF !important;
+                    border: 2px solid #000000 !important;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="ambient-glow glow-1"></div>
+            <div class="ambient-glow glow-2"></div>
+
+            <div class="dashboard-container">
+                <header>
+                    <div class="header-left">
+                        <div class="logo-icon">âš¡</div>
+                        <div>
+                            <h1>Inksync Pro</h1>
+                            <div class="subtitle">WiFi File Sharing Server</div>
+                        </div>
+                    </div>
+                    <div class="header-right" style="display:flex; gap:12px; align-items:center;">
+                        <button onclick="toggleEInkMode()" id="einkToggleBtn" style="background:var(--card-bg); border:1px solid var(--card-border); color:var(--text-primary); padding:8px 16px; border-radius:12px; font-size:13px; font-weight:600; cursor:pointer; display:flex; align-items:center; gap:6px; transition:all 0.2s;">
+                            <span>\u{1F311}</span> High-Contrast E-Ink
+                        </button>
+                        
+                    </div>
+                </header>
+
+                <!-- Memory Warning Banner -->
+                <div class="warning-banner" id="memoryWarningBanner" style="display:none; background:#FFFBEB; border:2px solid #D97706; color:#B45309; padding:16px; border-radius:12px; font-size:14px; margin-bottom:20px; font-weight:600; text-align:center; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+                    \u{26A0}\u{FE0F} Low System Memory: The browser reloaded while you were selecting files. Please close other open tabs or use drag-and-drop to upload files.
+                </div>
+
+                <!-- Staged upload queue -->
+                <div class="queue-card" id="queueCard">
+                    <div class="queue-header">
+                        <span class="queue-title">Upload Progress</span>
+                        <span class="subtitle" id="queueCount">0 files remaining</span>
+                    </div>
+                    <div class="queue-items" id="queueItems"></div>
+                </div>
+
+                <!-- Dropzone / File Select -->
+                <div class="dropzone" id="dropzone" onclick="triggerFileSelect()">
+                    <div class="dropzone-icon">ðŸ“¥</div>
+                    <h2>Drag & Drop Files Here</h2>
+                    <p class="subtitle">Supports CBZ, CBR, EPUB, PDF, and ZIP files. Or click to browse.</p>
+                </div>
+                <input type="file" id="fileInput" style="display:none" multiple accept=".pdf,.epub,.cbz,.cbr,.cb7,.cbt,.zip" onchange="handleFileSelect(event)">
+
+                <!-- Library Container -->
+                <div class="library-section">
+                    <div class="library-toolbar">
+                        <div class="search-wrapper">
+                            <span class="search-icon">ðŸ”</span>
+                            <input type="text" class="search-input" id="searchInput" placeholder="Search files by name..." oninput="handleSearch(event)">
+                            <button class="clear-search-btn" id="clearSearchBtn" onclick="clearSearch()">âœ•</button>
+                        </div>
+                        <div class="filter-tabs">
+                            <button class="filter-tab active" onclick="setFilter('all', event)">All</button>
+                            <button class="filter-tab" onclick="setFilter('cbz', event)">CBZ</button>
+                            <button class="filter-tab" onclick="setFilter('epub', event)">EPUB</button>
+                            <button class="filter-tab" onclick="setFilter('pdf', event)">PDF</button>
+                        </div>
+                    </div>
+
+                    <div class="library-header">
+                        <span id="libraryTitle">Library Files</span>
+                        <span id="libraryCount">Showing 0 files</span>
+                    </div>
+
+                    <ul class="library-list" id="libraryList">
+                        <!-- Injected via JavaScript -->
+                    </ul>
+                </div>
+                
+                <!-- Diagnostics Section -->
+                <div class="library-section" style="margin-top: 16px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span style="font-size:14px; font-weight:600; color:var(--text-secondary);">ðŸ”§ System Diagnostics & Activity Log</span>
+                        <button onclick="toggleDebugLog()" style="background:none; border:1px solid var(--card-border); color:var(--text-secondary); padding:4px 8px; border-radius:6px; font-size:11px; cursor:pointer;">Toggle Log</button>
+                    </div>
+                    <div id="debugLogContainer" style="display:block; max-height:200px; overflow-y:auto; background:rgba(0,0,0,0.3); border:1px solid var(--card-border); border-radius:10px; padding:12px; margin-top:8px;">
+                        <!-- Logs will populate here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Drag overlay -->
+            <div id="dragOverlay">
+                <div class="overlay-content">
+                    <div class="overlay-icon">ðŸ“¥</div>
+                    <h2>Drop Files Here</h2>
+                    <p>Drop your CBZ, EPUB, or PDF files to start uploading them immediately.</p>
+                </div>
+            </div>
+
+            <!-- Toast container -->
+            <div class="toast-container" id="toastContainer"></div>
+
+            <script>
+                const MAX_LOGS = 100;
+                
+                function getPersistedLogs() {
+                    try {
+                        const raw = sessionStorage.getItem('inksync_logs');
+                        return raw ? JSON.parse(raw) : [];
+                    } catch (e) {
+                        return [];
+                    }
+                }
+                
+                function savePersistedLogs(logs) {
+                    try {
+                        sessionStorage.setItem('inksync_logs', JSON.stringify(logs));
+                    } catch (e) {}
+                }
+
+                // Diagnostic log helper
+                function logDebug(message, type = 'info') {
+                    const time = new Date().toLocaleTimeString();
+                    const entryObj = { time: time, message: message, type: type };
+                    
+                    // Persist log entry in sessionStorage
+                    try {
+                        const currentLogs = getPersistedLogs();
+                        currentLogs.push(entryObj);
+                        if (currentLogs.length > MAX_LOGS) {
+                            currentLogs.shift();
+                        }
+                        savePersistedLogs(currentLogs);
+                    } catch (e) {}
+
+                    console.log(`[DEBUG] [${type.toUpperCase()}] ${message}`);
+                    
+                    const logContainer = document.getElementById('debugLogContainer');
+                    if (logContainer) {
+                        appendLogToDOM(entryObj, logContainer);
+                        logContainer.scrollTop = logContainer.scrollHeight;
+                    }
+                }
+
+                function appendLogToDOM(entryObj, container) {
+                    const entry = document.createElement('div');
+                    entry.style.color = entryObj.type === 'error' ? 'var(--error-color)' : (entryObj.type === 'warning' ? 'var(--warning-color)' : 'var(--text-secondary)');
+                    entry.style.fontSize = '12px';
+                    entry.style.fontFamily = 'monospace';
+                    entry.style.marginBottom = '4px';
+                    entry.style.borderBottom = '1px solid rgba(255,255,255,0.03)';
+                    entry.style.paddingBottom = '4px';
+                    entry.innerText = `[${entryObj.time}] [${entryObj.type.toUpperCase()}] ${entryObj.message}`;
+                    container.appendChild(entry);
+                    
+                    while (container.children.length > MAX_LOGS) {
+                        container.removeChild(container.firstChild);
+                    }
+                }
+
+                function restoreLogs() {
+                    const logContainer = document.getElementById('debugLogContainer');
+                    if (logContainer) {
+                        logContainer.innerHTML = '';
+                        const currentLogs = getPersistedLogs();
+                        currentLogs.forEach(log => appendLogToDOM(log, logContainer));
+                        logContainer.scrollTop = logContainer.scrollHeight;
+                    }
+                }
+
+                // Global Error Hooking
+                window.onerror = function(message, source, lineno, colno, error) {
+                    const errStr = `${message} at ${source}:${lineno}:${colno}`;
+                    logDebug(errStr, 'error');
+                    return false;
+                };
+
+                window.onunhandledrejection = function(event) {
+                    const reason = event.reason ? (event.reason.message || event.reason) : 'Unknown reason';
+                    logDebug(`Unhandled Promise Rejection: ${reason}`, 'error');
+                };
+
+                function toggleDebugLog() {
+                    const el = document.getElementById('debugLogContainer');
+                    if (el) {
+                        el.style.display = el.style.display === 'none' ? 'block' : 'none';
+                    }
+                }
+
+                function triggerFileSelect() {
+                    try {
+                        sessionStorage.setItem('upload_initiated', 'true');
+                    } catch (e) {}
+                    document.getElementById('fileInput').click();
+                }
+
+                function toggleEInkMode() {
+                    try {
+                        const body = document.body;
+                        const btn = document.getElementById('einkToggleBtn');
+                        const isEInk = body.classList.toggle('eink-mode');
+                        
+                        localStorage.setItem('eink_mode_enabled', isEInk ? 'true' : 'false');
+                        
+                        if (btn) {
+                            btn.innerHTML = isEInk ? '<span>\u{2600}\u{FE0F}</span> Disable E-Ink' : '<span>\u{1F311}</span> High-Contrast E-Ink';
+                            btn.style.background = isEInk ? '#FFFFFF' : 'var(--card-bg)';
+                            btn.style.color = isEInk ? '#000000' : 'var(--text-primary)';
+                            btn.style.border = isEInk ? '2px solid #000000' : '1px solid var(--card-border)';
+                        }
+                        
+                        logDebug(`E-Ink High-Contrast Mode ${isEInk ? 'enabled' : 'disabled'}`);
+                    } catch (e) {
+                        console.error("Error toggling E-Ink: ", e);
+                    }
+                }
+
+                function initEInkSettings() {
+                    try {
+                        const ua = navigator.userAgent.toLowerCase();
+                        const isOnyxBoox = ua.includes('boox') || ua.includes('onyx') || ua.includes('ereader');
+                        const savedPref = localStorage.getItem('eink_mode_enabled');
+                        
+                        if (savedPref === 'true' || (savedPref === null && isOnyxBoox)) {
+                            const body = document.body;
+                            body.classList.add('eink-mode');
+                            const btn = document.getElementById('einkToggleBtn');
+                            if (btn) {
+                                btn.innerHTML = '<span>\u{2600}\u{FE0F}</span> Disable E-Ink';
+                                btn.style.background = '#FFFFFF';
+                                btn.style.color = '#000000';
+                                btn.style.border = '2px solid #000000';
+                            }
+                            logDebug("Auto-detected E-Ink device / user preference. High-contrast theme loaded.");
+                        }
+                    } catch (e) {
+                        console.error("Error initializing E-Ink settings: ", e);
+                    }
+                }
+
+                let libraryFiles = [];
+                let activeFilter = 'all';
+                let searchQuery = '';
+
+                const uploadQueue = [];
+                let isUploading = false;
+                let uploadStartTime = 0;
+
+                document.addEventListener('DOMContentLoaded', () => {
+                    // Restore persisted logs first
+                    try {
+                        restoreLogs();
+                    } catch (e) {}
+
+                    logDebug("Initializing Inksync Sharing Server Web Interface...");
+                    
+                    // Initialize theme preferences and E-Ink checks
+                    try {
+                        initEInkSettings();
+                    } catch (err) {
+                        console.error("Error setting up e-ink: ", err);
+                    }
+
+                    // Check for memory-pressure reloads
+                    try {
+                        if (sessionStorage.getItem('upload_initiated') === 'true') {
+                            sessionStorage.removeItem('upload_initiated');
+                            const banner = document.getElementById('memoryWarningBanner');
+                            if (banner) {
+                                banner.style.display = 'block';
+                            }
+                            logDebug("\u{26A0}\u{FE0F} System memory pressure detected. The page reloaded while the file picker was open.", "warning");
+                        }
+                    } catch (err) {
+                        console.error("Error checking reload: ", err);
+                    }
+
+                    try {
+                        renderLibrary();
+                        logDebug("Library files list rendered successfully.");
+                    } catch (err) {
+                        logDebug("Error rendering library files: " + err.message, 'error');
+                    }
+                    try {
+                        setupDragAndDrop();
+                        logDebug("Drag-and-drop systems initialized.");
+                    } catch (err) {
+                        logDebug("Error setting up drag-and-drop systems: " + err.message, 'error');
+                    }
+                });
+
+                function formatBytes(bytes) {
+                    if (bytes === 0) return '0 Bytes';
+                    const k = 1024;
+                    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+                    const i = Math.floor(Math.log(bytes) / Math.log(k));
+                    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+                }
+
+                function formatSpeed(bytesPerSec) {
+                    return formatBytes(bytesPerSec) + '/s';
+                }
+
+                function formatTime(seconds) {
+                    if (seconds < 60) return seconds + 's';
+                    const mins = Math.floor(seconds / 60);
+                    const secs = seconds % 60;
+                    return mins + 'm ' + secs + 's';
+                }
+
+                function generateId() {
+                    return Math.random().toString(36).substring(2, 9);
+                }
+
+                function renderLibrary() {
+                    const list = document.getElementById('libraryList');
+                    const countLabel = document.getElementById('libraryCount');
+                    list.innerHTML = '';
+
+                    const filtered = libraryFiles.filter(file => {
+                        const matchesType = activeFilter === 'all' || file.type === activeFilter;
+                        const matchesSearch = file.name.toLowerCase().includes(searchQuery.toLowerCase());
+                        return matchesType && matchesSearch;
+                    });
+
+                    if (filtered.length === 0) {
+                        list.innerHTML = '<li style="justify-content:center; padding: 40px; color: var(--text-secondary); font-size: 14px;">No files match your query.</li>';
+                        countLabel.innerText = '0 files';
+                        return;
+                    }
+
+                    filtered.forEach(file => {
+                        const li = document.createElement('li');
+                        li.className = 'library-item';
+                        li.innerHTML = 
+                            '<div class="file-details">' +
+                                '<div class="file-type-badge ' + file.type + '">' + file.type + '</div>' +
+                                '<div class="file-text">' +
+                                    '<span class="file-name" title="' + file.name + '">' + file.name + '</span>' +
+                                    '<span class="file-size">' + formatBytes(file.sizeBytes) + '</span>' +
+                                '</div>' +
+                            '</div>' +
+                            '<a href="' + file.link + '" class="download-action-btn" download>Download</a>';
+                        list.appendChild(li);
+                    });
+
+                    countLabel.innerText = 'Showing ' + filtered.length + ' of ' + libraryFiles.length + ' files';
+                }
+
+                function setFilter(type, event) {
+                    document.querySelectorAll('.filter-tab').forEach(tab => tab.classList.remove('active'));
+                    event.target.classList.add('active');
+                    activeFilter = type;
+                    logDebug(`Filter changed to: ${type}`);
+                    renderLibrary();
+                }
+
+                function handleSearch(e) {
+                    searchQuery = e.target.value;
+                    const clearBtn = document.getElementById('clearSearchBtn');
+                    clearBtn.style.display = searchQuery ? 'block' : 'none';
+                    renderLibrary();
+                }
+
+                function clearSearch() {
+                    const input = document.getElementById('searchInput');
+                    input.value = '';
+                    searchQuery = '';
+                    document.getElementById('clearSearchBtn').style.display = 'none';
+                    renderLibrary();
+                }
+
+                function setupDragAndDrop() {
+                    const overlay = document.getElementById('dragOverlay');
+                    let dragCounter = 0;
+
+                    window.addEventListener('dragenter', (e) => {
+                        e.preventDefault();
+                        dragCounter++;
+                        overlay.style.display = 'flex';
+                    });
+
+                    window.addEventListener('dragover', (e) => {
+                        e.preventDefault();
+                    });
+
+                    window.addEventListener('dragleave', (e) => {
+                        e.preventDefault();
+                        dragCounter--;
+                        if (dragCounter === 0) {
+                            overlay.style.display = 'none';
+                        }
+                    });
+
+                    window.addEventListener('drop', (e) => {
+                        e.preventDefault();
+                        dragCounter = 0;
+                        overlay.style.display = 'none';
+                    });
+
+                    overlay.addEventListener('drop', (e) => {
+                        e.preventDefault();
+                        if (e.dataTransfer.files.length > 0) {
+                            logDebug(`Dropped ${e.dataTransfer.files.length} files onto drop zone`);
+                            addFilesToQueue(e.dataTransfer.files);
+                        }
+                    });
+                }
+
+                function handleFileSelect(e) {
+                    logDebug("File input change event triggered");
+                    if (e.target.files.length > 0) {
+                        logDebug(`Selected ${e.target.files.length} files from picker`);
+                        addFilesToQueue(e.target.files);
+                    } else {
+                        logDebug("No files selected in file picker");
+                    }
+                }
+
+                function showNotification(message, type) {
+                    const container = document.getElementById('toastContainer');
+                    const toast = document.createElement('div');
+                    toast.className = 'toast ' + type;
+                    toast.innerText = message;
+                    container.appendChild(toast);
+
+                    setTimeout(() => {
+                        toast.style.opacity = '0';
+                        toast.style.transform = 'translateY(12px) scale(0.95)';
+                        toast.style.transition = 'all 0.3s ease-out';
+                        setTimeout(() => toast.remove(), 300);
+                    }, 3000);
+                }
+
+                function addFilesToQueue(files) {
+                    logDebug(`Adding ${files.length} files to queue...`);
+                    for (let i = 0; i < files.length; i++) {
+                        const file = files[i];
+                        const ext = file.name.split('.').pop().toLowerCase();
+                        logDebug(`Checking file: ${file.name} (extension: ${ext}, size: ${file.size} bytes)`);
+                        if (!['pdf', 'epub', 'cbz', 'cbr', 'cb7', 'cbt', 'zip'].includes(ext)) {
+                            logDebug(`Rejected file: ${file.name} (unsupported format)`, 'warning');
+                            showNotification('"' + file.name + '" ignored (unsupported file format).', 'error');
+                            continue;
+                        }
+
+                        uploadQueue.push({
+                            id: generateId(),
+                            file: file,
+                            status: 'queued',
+                            progress: 0,
+                            speed: '',
+                            eta: ''
+                        });
+                        logDebug(`Queued: ${file.name}`);
+                    }
+                    renderQueue();
+                    processQueue();
+                }
+
+                function renderQueue() {
+                    const container = document.getElementById('queueCard');
+                    const itemsList = document.getElementById('queueItems');
+                    const countLabel = document.getElementById('queueCount');
+
+                    const activeItems = uploadQueue.filter(item => item.status === 'queued' || item.status === 'uploading');
+                    
+                    if (uploadQueue.length === 0) {
+                        container.style.display = 'none';
+                        return;
+                    }
+
+                    container.style.display = 'flex';
+                    countLabel.innerText = activeItems.length + ' files remaining';
+                    itemsList.innerHTML = '';
+
+                    uploadQueue.forEach(item => {
+                        const div = document.createElement('div');
+                        div.className = 'queue-item';
+                        div.id = 'queue-item-' + item.id;
+                        
+                        let statusColorClass = '';
+                        let retryBtn = '';
+                        if (item.status === 'completed') statusColorClass = 'completed';
+                        if (item.status === 'failed') {
+                            statusColorClass = 'failed';
+                            retryBtn = ' <button class="retry-action-btn" onclick="retryUpload(\'' + item.id + '\')">Retry</button>';
+                        }
+
+                        div.innerHTML = 
+                            '<div class="queue-item-meta">' +
+                                '<span class="queue-item-name" title="' + item.file.name + '">' + item.file.name + '</span>' +
+                                '<span class="queue-item-stats">' +
+                                    (item.status === 'uploading' ? item.speed + ' â€¢ ' + item.eta : item.status.toUpperCase()) +
+                                    retryBtn +
+                                '</span>' +
+                            '</div>' +
+                            '<div class="progress-bar-container">' +
+                                '<div class="progress-bar-fill ' + statusColorClass + '" style="width: ' + item.progress + '%"></div>' +
+                            '</div>';
+                        itemsList.appendChild(div);
+                    });
+                }
+
+                function updateQueueProgress(item) {
+                    const itemElement = document.getElementById('queue-item-' + item.id);
+                    if (!itemElement) return;
+
+                    const statsLabel = itemElement.querySelector('.queue-item-stats');
+                    const barFill = itemElement.querySelector('.progress-bar-fill');
+
+                    statsLabel.innerText = item.speed + ' â€¢ ' + item.eta;
+                    barFill.style.width = item.progress + '%';
+                }
+
+                function processQueue() {
+                    if (isUploading) {
+                        logDebug("Queue processing deferred (already uploading)");
+                        return;
+                    }
+
+                    const nextItem = uploadQueue.find(item => item.status === 'queued');
+                    if (!nextItem) {
+                        logDebug("Queue processing completed (no queued items remaining)");
+                        return;
+                    }
+
+                    isUploading = true;
+                    nextItem.status = 'uploading';
+                    logDebug(`Starting upload for: ${nextItem.file.name}`);
+                    renderQueue();
+
+                    const xhr = new XMLHttpRequest();
+                    xhr.open("POST", '/upload/' + encodeURIComponent(nextItem.file.name), true);
+                    
+                    xhr.setRequestHeader("X-File-Name", nextItem.file.name);
+                    if (nextItem.file.webkitRelativePath) {
+                        xhr.setRequestHeader("X-Relative-Path", nextItem.file.webkitRelativePath);
+                    }
+
+                    let lastLoaded = 0;
+                    let lastTime = Date.now();
+                    uploadStartTime = Date.now();
+
+                    xhr.upload.onprogress = function(e) {
+                        if (e.lengthComputable) {
+                            const currentTime = Date.now();
+                            const timeDiff = (currentTime - lastTime) / 1000;
+
+                            if (timeDiff >= 0.3 || e.loaded === e.total) {
+                                const loadedDiff = e.loaded - lastLoaded;
+                                const speed = loadedDiff / timeDiff;
+                                
+                                const percent = (e.loaded / e.total) * 100;
+                                nextItem.progress = percent;
+
+                                const avgSpeed = e.loaded / ((currentTime - uploadStartTime) / 1000);
+                                nextItem.speed = formatSpeed(avgSpeed);
+
+                                const remainingBytes = e.total - e.loaded;
+                                const etaSeconds = Math.round(remainingBytes / avgSpeed);
+                                nextItem.eta = isFinite(etaSeconds) && etaSeconds > 0 ? formatTime(etaSeconds) + ' left' : 'calculating...';
+
+                                lastLoaded = e.loaded;
+                                lastTime = currentTime;
+
+                                updateQueueProgress(nextItem);
+                            }
+                        }
+                    };
+
+                    xhr.onload = function() {
+                        isUploading = false;
+                        logDebug(`Upload request returned status: ${xhr.status} ${xhr.statusText}`);
+                        if (xhr.status === 200) {
+                            nextItem.status = 'completed';
+                            nextItem.progress = 100;
+                            nextItem.speed = '';
+                            nextItem.eta = 'Complete';
+                            logDebug(`Upload success: ${nextItem.file.name}`);
+                            showNotification('"' + nextItem.file.name + '" uploaded successfully.', 'success');
+                            fetchLibraryUpdates();
+                        } else if (xhr.status === 409) {
+                            nextItem.status = 'failed';
+                            nextItem.progress = 100;
+                            nextItem.eta = 'Already Exists';
+                            logDebug(`Upload duplicate: ${nextItem.file.name}`, 'warning');
+                            showNotification('"' + nextItem.file.name + '" already exists on device.', 'warning');
+                        } else {
+                            nextItem.status = 'failed';
+                            nextItem.progress = 100;
+                            nextItem.eta = 'Error: ' + xhr.statusText;
+                            logDebug(`Upload failed: ${nextItem.file.name} (${xhr.statusText})`, 'error');
+                            showNotification('Failed to upload "' + nextItem.file.name + '".', 'error');
+                        }
+                        renderQueue();
+                        processQueue();
+                    };
+
+                    xhr.onerror = function() {
+                        isUploading = false;
+                        nextItem.status = 'failed';
+                        nextItem.progress = 100;
+                        nextItem.eta = 'Network Error';
+                        logDebug(`Upload network error for: ${nextItem.file.name}`, 'error');
+                        showNotification('Network error uploading "' + nextItem.file.name + '".', 'error');
+                        renderQueue();
+                        processQueue();
+                    };
+
+                    logDebug(`Sending payload request for: ${nextItem.file.name} (size: ${formatBytes(nextItem.file.size)})`);
+                    xhr.send(nextItem.file);
+                }
+
+                function fetchLibraryUpdates() {
+                    logDebug("Fetching library updates dynamically...");
+                    fetch('/api/library')
+                        .then(res => {
+                            logDebug(`Library API returned status: ${res.status}`);
+                            return res.json();
+                        })
+                        .then(data => {
+                            libraryFiles = data;
+                            logDebug(`Retrieved library details. Render list showing ${data.length} files.`);
+                            renderLibrary();
+                        })
+                        .catch(err => {
+                            logDebug("Failed to load library updates dynamically: " + err.message, 'error');
+                            console.error("Failed to load library updates dynamically:", err);
+                        });
+                }
+
+                function retryUpload(id) {
+                    const item = uploadQueue.find(x => x.id === id);
+                    if (item) {
+                        logDebug(`Retrying upload for: ${item.file.name}`);
+                        item.status = 'queued';
+                        item.progress = 0;
+                        item.speed = '';
+                        item.eta = '';
+                        renderQueue();
+                        processQueue();
+                    }
+                }
+            </script>
+        </body>
+        </html>
+        

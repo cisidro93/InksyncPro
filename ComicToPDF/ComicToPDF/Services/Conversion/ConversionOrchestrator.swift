@@ -99,7 +99,9 @@ final class ConversionOrchestrator: Sendable {
                 let newURLs = try await pvConverter.convert(sourceURL: resolvedSourceURL, settings: jobSettings, panels: combinedManifest, sourceIsMangaPDF: false, coverOverrideData: coverOverrideData, customOutputName: pdf.name) { progress in
                     Task { @MainActor in manager.conversionProgress = progress; manager.processingStatus = "Converting \(Int(progress * 100))%" }
                 }
-                for epubURL in newURLs { try? await manager.injectMetadata(into: epubURL, panels: combinedManifest, metadata: pdf.metadata) }
+                var targetMetadata = pdf.metadata
+                targetMetadata.isManga = jobSettings.mangaMode
+                for epubURL in newURLs { try? await manager.injectMetadata(into: epubURL, panels: combinedManifest, metadata: targetMetadata) }
                 // 📦 Kindle size audit — alert if file will be too large for email delivery
                 if let firstEPUB = newURLs.first {
                     await KindleSizeGuard.auditAndNotify(epubURL: firstEPUB, manager: manager)
@@ -111,7 +113,9 @@ final class ConversionOrchestrator: Sendable {
                 let newURLs = try await converter.convert(sourceURL: resolvedSourceURL, settings: jobSettings, manualManifest: nil, sourceIsMangaPDF: false, coverOverrideData: coverOverrideData, customOutputName: pdf.name) { progress in
                     Task { @MainActor in manager.conversionProgress = progress; manager.processingStatus = "Converting \(Int(progress * 100))%" }
                 }
-                for epubURL in newURLs { try? await manager.injectMetadata(into: epubURL, panels: [:], metadata: pdf.metadata) }
+                var targetMetadata = pdf.metadata
+                targetMetadata.isManga = jobSettings.mangaMode
+                for epubURL in newURLs { try? await manager.injectMetadata(into: epubURL, panels: [:], metadata: targetMetadata) }
                 // 📦 Kindle size audit — alert if file will be too large for email delivery
                 if let firstEPUB = newURLs.first {
                     await KindleSizeGuard.auditAndNotify(epubURL: firstEPUB, manager: manager)
@@ -176,7 +180,9 @@ final class ConversionOrchestrator: Sendable {
             
             await MainActor.run { manager.processingStatus = "Converting \(currentNum) of \(total)"; manager.statusMessage = "Processing \(pdf.name)..."; manager.conversionProgress = 0.0 }
             
+            let isMangaMode = await MainActor.run { pdf.metadata.isManga ?? AppSettingsManager.shared.conversionSettings.mangaMode }
             var jobSettings = await MainActor.run { AppSettingsManager.shared.conversionSettings }
+            jobSettings.mangaMode = isMangaMode
             if pdf.contentType == .book {
                 jobSettings.mangaMode = false; jobSettings.enablePanelSplit = false; jobSettings.outputPipeline = .standard; jobSettings.splitWebtoon = false
             }
@@ -227,14 +233,18 @@ final class ConversionOrchestrator: Sendable {
                     let newURLs = try await pvConverter.convert(sourceURL: resolvedSourceURL, settings: jobSettings, panels: combinedManifest, sourceIsMangaPDF: false, coverOverrideData: coverOverrideData, customOutputName: pdf.name) { p in
                         Task { @MainActor in manager.conversionProgress = p; manager.processingStatus = "Converting \(currentNum) of \(total) (\(Int(p * 100))%)" }
                     }
-                    for epubURL in newURLs { try? await manager.injectMetadata(into: epubURL, panels: combinedManifest, metadata: pdf.metadata) }
+                    var targetMetadata = pdf.metadata
+                    targetMetadata.isManga = jobSettings.mangaMode
+                    for epubURL in newURLs { try? await manager.injectMetadata(into: epubURL, panels: combinedManifest, metadata: targetMetadata) }
                     await MainActor.run { manager.scanLibrary() }
                 } else {
                     let converter = CBZToEPUBConverter()
                     let newURLs = try await converter.convert(sourceURL: resolvedSourceURL, settings: jobSettings, manualManifest: nil, sourceIsMangaPDF: false, coverOverrideData: coverOverrideData, customOutputName: pdf.name) { p in
                         Task { @MainActor in manager.conversionProgress = p; manager.processingStatus = "Converting \(currentNum) of \(total) (\(Int(p * 100))%)" }
                     }
-                    for epubURL in newURLs { try? await manager.injectMetadata(into: epubURL, panels: [:], metadata: pdf.metadata) }
+                    var targetMetadata = pdf.metadata
+                    targetMetadata.isManga = jobSettings.mangaMode
+                    for epubURL in newURLs { try? await manager.injectMetadata(into: epubURL, panels: [:], metadata: targetMetadata) }
                     await MainActor.run { manager.scanLibrary() }
                 }
                 if let jid = jobID { await ConversionLedger.shared.markSucceeded(jid) }
@@ -472,7 +482,9 @@ final class ConversionOrchestrator: Sendable {
                 
                 currentEPUBBatch.append(contentsOf: resultingURLs)
                 currentEPUBBatchSize += fileSize
-                for epubURL in resultingURLs { try? await manager.injectMetadata(into: epubURL, panels: combinedManifest, metadata: file.metadata) }
+                var targetMetadata = file.metadata
+                targetMetadata.isManga = jobSettings.mangaMode
+                for epubURL in resultingURLs { try? await manager.injectMetadata(into: epubURL, panels: combinedManifest, metadata: targetMetadata) }
             }
             
             if !currentEPUBBatch.isEmpty { generatedBatches.append(currentEPUBBatch) }

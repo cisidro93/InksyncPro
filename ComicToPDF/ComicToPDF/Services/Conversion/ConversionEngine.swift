@@ -121,9 +121,16 @@ actor ConversionEngine {
         // report granular progress mock
         progressSubject.send(.progress(file: url, current: 0, total: 100, message: "Analyzing PDF..."))
         
-        // In a full implementation, we'd hook into PDFToEPUBConverter's progress callback
-        // For now, let's assume we call a robust converter
-        let (epubURL, _) = try await PDFToEPUBConverter.convert(pdf: url, to: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".epub"))
+        let options = PDFToEPUBConverter.ConversionOptions(
+            title: url.deletingPathExtension().lastPathComponent,
+            settings: settings,
+            mangaMode: settings.mangaMode
+        )
+        let (epubURL, _) = try await PDFToEPUBConverter.convert(
+            pdf: url,
+            to: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".epub"),
+            options: options
+        )
         
         progressSubject.send(.progress(file: url, current: 100, total: 100, message: "Finalizing..."))
         return epubURL
