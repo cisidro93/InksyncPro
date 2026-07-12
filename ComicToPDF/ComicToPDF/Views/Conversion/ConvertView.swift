@@ -13,6 +13,33 @@ struct ConvertView: View {
         ScrollView {
             VStack(spacing: 16) {
 
+                // MARK: Output Filename
+                InkCard(header: "Output Filename") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Output Name")
+                            .font(.system(size: 12, design: .monospaced))
+                            .foregroundColor(.inkTextSecondary)
+                        HStack(spacing: 8) {
+                            TextField("Enter filename", text: $viewModel.targetFilename)
+                                .textFieldStyle(PlainTextFieldStyle())
+                                .font(.system(size: 15))
+                                .padding(12)
+                                .background(Color.inkSurfaceRaised)
+                                .clipShape(RoundedRectangle(cornerRadius: 10))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 10)
+                                        .stroke(Color.inkBorderSubtle, lineWidth: 1)
+                                )
+                                .disabled(conversionManager.isConverting)
+                            
+                            Text(".\(settingsManager.conversionSettings.outputFormat.rawValue)")
+                                .font(.system(size: 14, design: .monospaced))
+                                .foregroundColor(.inkTextSecondary)
+                                .padding(.horizontal, 8)
+                        }
+                    }
+                }
+
                 // MARK: Source Details
                 InkCard(header: "Source Details") {
                     InfoRow(label: "File Name", value: pdf.name)
@@ -217,7 +244,7 @@ struct ConvertView: View {
                 Button(action: {
                     Task {
                         viewModel.applyPipeline(viewModel.selectedPipeline, to: &settingsManager.conversionSettings)
-                        await conversionManager.convertComic(pdf, mangaMode: viewModel.isMangaMode)
+                        await conversionManager.convertComic(pdf, mangaMode: viewModel.isMangaMode, customOutputName: viewModel.targetFilename)
                     }
                 }) {
                     HStack(spacing: 10) {
@@ -268,6 +295,14 @@ struct ConvertView: View {
                 }
             }
             viewModel.selectedPipeline = settingsManager.conversionSettings.outputPipeline
+            
+            var derived = pdf.name
+            while derived.contains(".") {
+                let stripped = (derived as NSString).deletingPathExtension
+                if stripped == derived { break }
+                derived = stripped
+            }
+            viewModel.targetFilename = derived
         }
         .sheet(isPresented: $viewModel.showingPreview) {
             PrecisionCanvasView(pdf: pdf, pageIndex: .constant(3), totalCount: pdf.pageCount, conversionManager: conversionManager)

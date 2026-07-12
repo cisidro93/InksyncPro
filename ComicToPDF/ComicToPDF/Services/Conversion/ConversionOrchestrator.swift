@@ -5,7 +5,7 @@ final class ConversionOrchestrator: Sendable {
     static let shared = ConversionOrchestrator()
     private init() {}
     
-    func convertComic(_ pdf: ConvertedPDF, mangaMode: Bool? = nil, manager: ConversionManager) async {
+    func convertComic(_ pdf: ConvertedPDF, mangaMode: Bool? = nil, customOutputName: String? = nil, manager: ConversionManager) async {
         #if os(iOS)
         let bgTask = await MainActor.run {
             UIApplication.shared.isIdleTimerDisabled = true
@@ -60,7 +60,12 @@ final class ConversionOrchestrator: Sendable {
         
         do {
             if jobSettings.outputFormat == .pdf {
-                let pName = pdf.name.replacingOccurrences(of: ".cbz", with: "").replacingOccurrences(of: ".zip", with: "") + "_Converted.pdf"
+                let pName: String
+                if let custom = customOutputName, !custom.isEmpty {
+                    pName = custom.hasSuffix(".pdf") ? custom : (custom + ".pdf")
+                } else {
+                    pName = pdf.name.replacingOccurrences(of: ".cbz", with: "").replacingOccurrences(of: ".zip", with: "") + "_Converted.pdf"
+                }
                 let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? URL(fileURLWithPath: NSTemporaryDirectory())
                 let outputURL = docDir.appendingPathComponent(pName)
                 let imageURLs = try await manager.extractImageURLs(from: resolvedSourceURL)
@@ -71,7 +76,12 @@ final class ConversionOrchestrator: Sendable {
                 await MainActor.run { manager.isConverting = false; manager.conversionProgress = 1.0; manager.statusMessage = "✅ Conversion Complete!"; manager.scanLibrary() }
                 Logger.shared.log("Conversion Successful: \(pdf.name) -> PDF", category: "Converter")
             } else if jobSettings.outputFormat == .cbz {
-                let pName = pdf.name.replacingOccurrences(of: ".cbz", with: "").replacingOccurrences(of: ".pdf", with: "").replacingOccurrences(of: ".zip", with: "") + "_Converted.cbz"
+                let pName: String
+                if let custom = customOutputName, !custom.isEmpty {
+                    pName = custom.hasSuffix(".cbz") ? custom : (custom + ".cbz")
+                } else {
+                    pName = pdf.name.replacingOccurrences(of: ".cbz", with: "").replacingOccurrences(of: ".pdf", with: "").replacingOccurrences(of: ".zip", with: "") + "_Converted.cbz"
+                }
                 let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? URL(fileURLWithPath: NSTemporaryDirectory())
                 let outputURL = docDir.appendingPathComponent(pName)
                 
@@ -96,11 +106,15 @@ final class ConversionOrchestrator: Sendable {
                 await MainActor.run { manager.processingStatus = "Loading Panel Data..." }
                 let combinedManifest = await manager.getCombinedManifest(for: pdf)
                 let pvConverter = PanelViewEPUBConverter()
-                let newURLs = try await pvConverter.convert(sourceURL: resolvedSourceURL, settings: jobSettings, panels: combinedManifest, sourceIsMangaPDF: false, coverOverrideData: coverOverrideData, customOutputName: pdf.name) { progress in
+                let resolvedOutputName = customOutputName ?? pdf.name
+                let newURLs = try await pvConverter.convert(sourceURL: resolvedSourceURL, settings: jobSettings, panels: combinedManifest, sourceIsMangaPDF: false, coverOverrideData: coverOverrideData, customOutputName: resolvedOutputName) { progress in
                     Task { @MainActor in manager.conversionProgress = progress; manager.processingStatus = "Converting \(Int(progress * 100))%" }
                 }
                 var targetMetadata = pdf.metadata
                 targetMetadata.isManga = jobSettings.mangaMode
+                if let custom = customOutputName, !custom.isEmpty {
+                    targetMetadata.title = URL(fileURLWithPath: custom).deletingPathExtension().lastPathComponent
+                }
                 for epubURL in newURLs { try? await manager.injectMetadata(into: epubURL, panels: combinedManifest, metadata: targetMetadata) }
                 // 📦 Kindle size audit — alert if file will be too large for email delivery
                 if let firstEPUB = newURLs.first {
@@ -110,11 +124,15 @@ final class ConversionOrchestrator: Sendable {
                 Logger.shared.log("PanelView Conversion Successful: \(pdf.name)", category: "Converter")
             } else {
                 let converter = CBZToEPUBConverter()
-                let newURLs = try await converter.convert(sourceURL: resolvedSourceURL, settings: jobSettings, manualManifest: nil, sourceIsMangaPDF: false, coverOverrideData: coverOverrideData, customOutputName: pdf.name) { progress in
+                let resolvedOutputName = customOutputName ?? pdf.name
+                let newURLs = try await converter.convert(sourceURL: resolvedSourceURL, settings: jobSettings, manualManifest: nil, sourceIsMangaPDF: false, coverOverrideData: coverOverrideData, customOutputName: resolvedOutputName) { progress in
                     Task { @MainActor in manager.conversionProgress = progress; manager.processingStatus = "Converting \(Int(progress * 100))%" }
                 }
                 var targetMetadata = pdf.metadata
                 targetMetadata.isManga = jobSettings.mangaMode
+                if let custom = customOutputName, !custom.isEmpty {
+                    targetMetadata.title = URL(fileURLWithPath: custom).deletingPathExtension().lastPathComponent
+                }
                 for epubURL in newURLs { try? await manager.injectMetadata(into: epubURL, panels: [:], metadata: targetMetadata) }
                 // 📦 Kindle size audit — alert if file will be too large for email delivery
                 if let firstEPUB = newURLs.first {

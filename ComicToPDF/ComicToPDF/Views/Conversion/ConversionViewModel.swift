@@ -3,6 +3,7 @@ import SwiftUI
 class ConversionViewModel: ObservableObject {
     @Published var selectedPipeline: OutputPipeline = .standard
     @Published var isMangaMode: Bool = false
+    @Published var targetFilename: String = ""
     @Published var showingPreview: Bool = false
     @Published var showingCalibreGuide: Bool = false
     

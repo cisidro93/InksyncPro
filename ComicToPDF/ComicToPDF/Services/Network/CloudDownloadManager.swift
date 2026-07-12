@@ -60,7 +60,8 @@ class CloudDownloadManager: NSObject, ObservableObject, URLSessionDownloadDelega
         pdf: ConvertedPDF,
         thenConvert: Bool = false,
         manager: ConversionManager? = nil,
-        mangaMode: Bool? = nil
+        mangaMode: Bool? = nil,
+        customOutputName: String? = nil
     ) async {
         let ext: String
         if let lastDot = pdf.name.lastIndex(of: ".") {
@@ -105,7 +106,7 @@ class CloudDownloadManager: NSObject, ObservableObject, URLSessionDownloadDelega
                     // Step 4: Kick off conversion if requested
                     if thenConvert {
                         let updatedPDF = mgr.convertedPDFs[idx]
-                        Task { await ConversionOrchestrator.shared.convertComic(updatedPDF, mangaMode: mangaMode, manager: mgr) }
+                        Task { await ConversionOrchestrator.shared.convertComic(updatedPDF, mangaMode: mangaMode, customOutputName: customOutputName, manager: mgr) }
                     }
                 }
                 manager?.processingStatus = ""

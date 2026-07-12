@@ -270,7 +270,7 @@ extension ConversionManager {
         }
     }
     
-    func convertComic(_ pdf: ConvertedPDF, mangaMode: Bool? = nil) async {
+    func convertComic(_ pdf: ConvertedPDF, mangaMode: Bool? = nil, customOutputName: String? = nil) async {
         if case .cloud = pdf.sourceMode {
             await MainActor.run {
                 self.processingStatus = "Queuing Cloud Download..."
@@ -282,11 +282,12 @@ extension ConversionManager {
                 pdf: pdf,
                 thenConvert: true,
                 manager: self,
-                mangaMode: mangaMode
+                mangaMode: mangaMode,
+                customOutputName: customOutputName
             )
             return
         }
-        await ConversionOrchestrator.shared.convertComic(pdf, mangaMode: mangaMode, manager: self)
+        await ConversionOrchestrator.shared.convertComic(pdf, mangaMode: mangaMode, customOutputName: customOutputName, manager: self)
     }
     
     func convertQueue(_ pdfs: [ConvertedPDF]) async {
