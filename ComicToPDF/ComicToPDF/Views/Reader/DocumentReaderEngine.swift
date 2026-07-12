@@ -254,14 +254,20 @@ struct DocumentReaderEngine: View {
     }
     
     private func pageForward() {
-        if currentPageIndex < totalPages - 1 {
+        if let pv = pdfViewReference, pv.canGoToNextPage {
+            pv.goToNextPage(nil)
+            HapticEngine.light()
+        } else if currentPageIndex < totalPages - 1 {
             currentPageIndex += 1
             HapticEngine.light()
         }
     }
     
     private func pageBackward() {
-        if currentPageIndex > 0 {
+        if let pv = pdfViewReference, pv.canGoToPreviousPage {
+            pv.goToPreviousPage(nil)
+            HapticEngine.light()
+        } else if currentPageIndex > 0 {
             currentPageIndex -= 1
             HapticEngine.light()
         }
