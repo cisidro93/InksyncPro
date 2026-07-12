@@ -126,6 +126,11 @@ final class ComicImageCache: ObservableObject {
     private var extractedTempDir: URL? = nil
     let isPreExtracted: Bool
     
+    // Cache for composite/virtual omnibus pre-extracted source files
+    private var lastExtractedVirtualURL: URL? = nil
+    private var lastExtractedVirtualTempDir: URL? = nil
+    private var lastExtractedVirtualImageURLs: [URL] = []
+    
     // ✅ OPDS-style cloud page streaming
     private var cloudPageSource: CloudPageSource?
     
@@ -363,6 +368,9 @@ final class ComicImageCache: ObservableObject {
         if let tempDir = extractedTempDir {
             try? FileManager.default.removeItem(at: tempDir)
         }
+        if let vTempDir = lastExtractedVirtualTempDir {
+            try? FileManager.default.removeItem(at: vTempDir)
+        }
         if !isPDF && !isStream && !isPreExtracted {
             Task { await ArchiveManager.shared.clearCache() }
         }
@@ -567,6 +575,16 @@ final class ComicImageCache: ObservableObject {
         let bounds = UIScreen.main.bounds
         let scale = UIScreen.main.scale
         
+        // Check if we already have the extracted image URLs cached for this virtual source file
+        var cachedURL: URL? = nil
+        if isPreExtracted {
+            if pdf.url == self.lastExtractedVirtualURL {
+                if localPageIndex < self.lastExtractedVirtualImageURLs.count {
+                    cachedURL = self.lastExtractedVirtualImageURLs[localPageIndex]
+                }
+            }
+        }
+        
         let task = Task.detached(priority: priority) { [weak self] in
             guard let self = self else { return }
             
@@ -599,24 +617,12 @@ final class ComicImageCache: ObservableObject {
                 _ = await PDFRenderActor.shared.loadDocument(at: resolvedURL)
                 img = await PDFRenderActor.shared.renderPage(at: localPageIndex, scale: scale)
             } else if isPreExtracted {
-                let (tempDir, imageURLs): (URL, [URL])
-                if isCBTFile {
-                    (tempDir, imageURLs) = (try? await CBTExtractor.extract(from: resolvedURL)) ?? (FileManager.default.temporaryDirectory, [])
-                } else {
-                    (tempDir, imageURLs) = (try? await CBRExtractor.extract(from: resolvedURL)) ?? (FileManager.default.temporaryDirectory, [])
-                }
-                defer {
-                    if tempDir != FileManager.default.temporaryDirectory {
-                        try? FileManager.default.removeItem(at: tempDir)
-                    }
-                }
-                
-                if localPageIndex < imageURLs.count {
-                    let imageURL = imageURLs[localPageIndex]
+                if let cached = cachedURL {
+                    // Cache hit: read directly from the cached path
                     img = autoreleasepool {
                         let srcOpts: [CFString: Any] = [kCGImageSourceShouldCache: false]
-                        guard let source = CGImageSourceCreateWithURL(imageURL as CFURL, srcOpts as CFDictionary) else {
-                            return UIImage(data: (try? Data(contentsOf: imageURL)) ?? Data())
+                        guard let source = CGImageSourceCreateWithURL(cached as CFURL, srcOpts as CFDictionary) else {
+                            return UIImage(data: (try? Data(contentsOf: cached)) ?? Data())
                         }
                         let maxPixelSize = max(bounds.width, bounds.height) * scale
                         let downOpts: [CFString: Any] = [
@@ -626,12 +632,54 @@ final class ComicImageCache: ObservableObject {
                             kCGImageSourceThumbnailMaxPixelSize: maxPixelSize
                         ]
                         guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, downOpts as CFDictionary) else {
-                            return UIImage(data: (try? Data(contentsOf: imageURL)) ?? Data())
+                            return UIImage(data: (try? Data(contentsOf: cached)) ?? Data())
                         }
                         return UIImage(cgImage: cgImage)
                     }
                 } else {
-                    img = nil
+                    // Cache miss: extract the archive and cache the resulting files on MainActor
+                    let (tempDir, imageURLs): (URL, [URL])
+                    if isCBTFile {
+                        (tempDir, imageURLs) = (try? await CBTExtractor.extract(from: resolvedURL)) ?? (FileManager.default.temporaryDirectory, [])
+                    } else {
+                        (tempDir, imageURLs) = (try? await CBRExtractor.extract(from: resolvedURL)) ?? (FileManager.default.temporaryDirectory, [])
+                    }
+                    
+                    await MainActor.run { [weak self] in
+                        guard let self = self else {
+                            try? FileManager.default.removeItem(at: tempDir)
+                            return
+                        }
+                        if let oldTemp = self.lastExtractedVirtualTempDir {
+                            try? FileManager.default.removeItem(at: oldTemp)
+                        }
+                        self.lastExtractedVirtualURL = pdf.url
+                        self.lastExtractedVirtualTempDir = tempDir
+                        self.lastExtractedVirtualImageURLs = imageURLs
+                    }
+                    
+                    if localPageIndex < imageURLs.count {
+                        let imageURL = imageURLs[localPageIndex]
+                        img = autoreleasepool {
+                            let srcOpts: [CFString: Any] = [kCGImageSourceShouldCache: false]
+                            guard let source = CGImageSourceCreateWithURL(imageURL as CFURL, srcOpts as CFDictionary) else {
+                                return UIImage(data: (try? Data(contentsOf: imageURL)) ?? Data())
+                            }
+                            let maxPixelSize = max(bounds.width, bounds.height) * scale
+                            let downOpts: [CFString: Any] = [
+                                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                                kCGImageSourceShouldCacheImmediately: true,
+                                kCGImageSourceCreateThumbnailWithTransform: true,
+                                kCGImageSourceThumbnailMaxPixelSize: maxPixelSize
+                            ]
+                            guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, downOpts as CFDictionary) else {
+                                return UIImage(data: (try? Data(contentsOf: imageURL)) ?? Data())
+                            }
+                            return UIImage(cgImage: cgImage)
+                        }
+                    } else {
+                        img = nil
+                    }
                 }
             } else {
                 guard let archive = try? Archive(url: resolvedURL, accessMode: .read, pathEncoding: .utf8) else {

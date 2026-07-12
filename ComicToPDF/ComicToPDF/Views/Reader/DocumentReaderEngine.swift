@@ -468,7 +468,7 @@ struct PDFKitRepresentedView: UIViewRepresentable {
             // but without this write, the highlight is lost when the app is relaunched.
             // We use a background Task to avoid blocking the main thread.
             let writeURL = pdf.url
-            Task { @MainActor in
+            Task.detached(priority: .background) {
                 document.write(to: writeURL)
             }
         }
