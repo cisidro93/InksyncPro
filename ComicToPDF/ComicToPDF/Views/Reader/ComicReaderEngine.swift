@@ -682,25 +682,10 @@ final class ComicImageCache: ObservableObject {
                     }
                 }
             } else {
-                guard let archive = try? Archive(url: resolvedURL, accessMode: .read, pathEncoding: .utf8) else {
-                    await MainActor.run {
-                        self.stopFetching(index)
-                        self.removePrefetchTask(index)
-                    }
-                    return
-                }
-                let imageExtensions: Set<String> = ["jpg", "jpeg", "png", "webp", "gif", "heic"]
-                let sortedEntries = archive.filter { entry in
-                    let path = entry.path
-                    let name = (path as NSString).lastPathComponent
-                    guard !path.contains("__MACOSX"), !name.hasPrefix("._"), name != ".DS_Store", !path.hasSuffix("/") else { return false }
-                    let ext = (name as NSString).pathExtension.lowercased()
-                    return imageExtensions.contains(ext)
-                }.sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
-                
-                if localPageIndex < sortedEntries.count {
-                    let entryPath = sortedEntries[localPageIndex].path
-                    do {
+                do {
+                    let sortedPaths = try await ArchiveManager.shared.getSortedImagePaths(for: resolvedURL)
+                    if localPageIndex < sortedPaths.count {
+                        let entryPath = sortedPaths[localPageIndex]
                         let data = try await ArchiveManager.shared.extractEntry(from: resolvedURL, path: entryPath)
                         img = autoreleasepool {
                             let options: [CFString: Any] = [kCGImageSourceShouldCache: false]
@@ -719,10 +704,10 @@ final class ComicImageCache: ObservableObject {
                             }
                             return UIImage(cgImage: downsampledImage)
                         }
-                    } catch {
+                    } else {
                         img = nil
                     }
-                } else {
+                } catch {
                     img = nil
                 }
             }

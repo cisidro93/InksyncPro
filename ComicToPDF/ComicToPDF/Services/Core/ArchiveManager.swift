@@ -9,9 +9,31 @@ public actor ArchiveManager {
     private var cachedArchive: Archive?
     private var cachedURL: URL?
     private var cachedEntries: [String: Entry] = [:]
+    private var cachedSortedImagePaths: [String] = []
     
     private init() {}
     
+    /// Returns the sorted list of image entry paths within a ZIP archive.
+    /// Caches the result to avoid redundant directory traversal and sorting (performance optimization).
+    public func getSortedImagePaths(for url: URL) throws -> [String] {
+        if cachedURL == url && !cachedSortedImagePaths.isEmpty {
+            return cachedSortedImagePaths
+        }
+        
+        let (_, entries) = try getArchiveAndEntries(for: url)
+        
+        let imageExtensions: Set<String> = ["jpg", "jpeg", "png", "webp", "gif", "heic"]
+        let sortedPaths = entries.keys.filter { path in
+            let name = (path as NSString).lastPathComponent
+            guard !path.contains("__MACOSX"), !name.hasPrefix("._"), name != ".DS_Store", !path.hasSuffix("/") else { return false }
+            let ext = (name as NSString).pathExtension.lowercased()
+            return imageExtensions.contains(ext)
+        }.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+        
+        self.cachedSortedImagePaths = sortedPaths
+        return sortedPaths
+    }
+
     /// Extracts entry data for a given file path from a ZIP archive.
     /// Uses standard String path to look up the entry within the cached Archive.
     public func extractEntry(from url: URL, path: String) throws -> Data {
@@ -44,6 +66,7 @@ public actor ArchiveManager {
         cachedArchive = nil
         cachedURL = nil
         cachedEntries = [:]
+        cachedSortedImagePaths = []
         
         let archive = try Archive(url: url, accessMode: .read, pathEncoding: .utf8)
         
@@ -65,6 +88,7 @@ public actor ArchiveManager {
         cachedArchive = nil
         cachedURL = nil
         cachedEntries = [:]
+        cachedSortedImagePaths = []
     }
 }
 
