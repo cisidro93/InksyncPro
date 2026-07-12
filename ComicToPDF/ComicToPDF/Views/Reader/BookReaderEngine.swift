@@ -1331,25 +1331,26 @@ struct BookReaderEngine: View {
         if isPaged {
             let width = webView.bounds.width
             let currentOffset = scroll.contentOffset.x
-            let targetOffset = currentOffset - width
             
-            if targetOffset <= 4 {
+            if currentOffset <= 4 {
                 if vm.currentChapterIndex > 0 {
+                    scrollToLastPageOnLoad = true
                     vm.loadChapter(index: vm.currentChapterIndex - 1)
                 }
             } else {
+                let targetOffset = currentOffset - width
                 scroll.setContentOffset(CGPoint(x: max(0, targetOffset), y: 0), animated: true)
             }
         } else {
             let height = webView.bounds.height
             let currentOffset = scroll.contentOffset.y
-            let targetOffset = currentOffset - height * 0.9
             
-            if targetOffset <= 4 {
+            if currentOffset <= 4 {
                 if vm.currentChapterIndex > 0 {
                     vm.loadChapter(index: vm.currentChapterIndex - 1)
                 }
             } else {
+                let targetOffset = currentOffset - height * 0.9
                 scroll.setContentOffset(CGPoint(x: 0, y: max(0, targetOffset)), animated: true)
             }
         }
