@@ -451,10 +451,14 @@ struct SeriesDetailView: View {
                 : nil
             )
             .onPreferenceChange(ScrollOffsetPreferenceKey.self) { value in
-                self.scrollOffset = value
+                if isSelectionMode {
+                    self.scrollOffset = value
+                }
             }
             .onPreferenceChange(CellFramePreferenceKey.self) { value in
-                self.cellFrames = value
+                if isSelectionMode {
+                    self.cellFrames = value
+                }
             }
             // ── Volume Jump: ensure target is expanded then scroll to its anchor ──
             .onChange(of: jumpToVolume) { _, targetKey in
@@ -1006,10 +1010,14 @@ struct SeriesDetailView: View {
             }
             .coordinateSpace(name: "SeriesDetailViewport")
             .onPreferenceChange(ScrollOffsetPreferenceKey.self) { value in
-                self.scrollOffset = value
+                if isSelectionMode {
+                    self.scrollOffset = value
+                }
             }
             .onPreferenceChange(CellFramePreferenceKey.self) { value in
-                self.cellFrames = value
+                if isSelectionMode {
+                    self.cellFrames = value
+                }
             }
         }
     }
@@ -1100,42 +1108,44 @@ struct SeriesDetailView: View {
             }
         }
     }
-    @ViewBuilder
     private func gridIssueCell(_ pdf: ConvertedPDF) -> some View {
-        if isSelectionMode {
-            Button {
-                if selection.contains(pdf.id) {
-                    selection.remove(pdf.id)
-                } else {
-                    selection.insert(pdf.id)
+        Group {
+            if isSelectionMode {
+                Button {
+                    if selection.contains(pdf.id) {
+                        selection.remove(pdf.id)
+                    } else {
+                        selection.insert(pdf.id)
+                    }
+                } label: {
+                    ModernGridFileCell(pdf: pdf, isSelected: selection.contains(pdf.id), isBatch: true)
                 }
-            } label: {
-                ModernGridFileCell(pdf: pdf, isSelected: selection.contains(pdf.id), isBatch: true)
+                .buttonStyle(PlainButtonStyle())
+                .background(
+                    GeometryReader { geo in
+                        Color.clear
+                            .preference(
+                                key: CellFramePreferenceKey.self,
+                                value: [pdf.id: geo.frame(in: .named("SeriesDetailScrollView"))]
+                            )
+                    }
+                )
+            } else {
+                Button {
+                    if tapAction == .read {
+                        pdfToRead = pdf
+                    } else {
+                        pendingActionPDF = pdf
+                        showingActionSheet = true
+                    }
+                } label: {
+                    ModernGridFileCell(pdf: pdf, isSelected: selectedPDF?.id == pdf.id, isBatch: false)
+                }
+                .buttonStyle(PlainButtonStyle())
+                .contextMenu { contextMenuContent(pdf) }
             }
-            .buttonStyle(PlainButtonStyle())
-            .background(
-                GeometryReader { geo in
-                    Color.clear
-                        .preference(
-                            key: CellFramePreferenceKey.self,
-                            value: [pdf.id: geo.frame(in: .named("SeriesDetailScrollView"))]
-                        )
-                }
-            )
-        } else {
-            Button {
-                if tapAction == .read {
-                    pdfToRead = pdf
-                } else {
-                    pendingActionPDF = pdf
-                    showingActionSheet = true
-                }
-            } label: {
-                ModernGridFileCell(pdf: pdf, isSelected: selectedPDF?.id == pdf.id, isBatch: false)
-            }
-            .buttonStyle(PlainButtonStyle())
-            .contextMenu { contextMenuContent(pdf) }
         }
+        .id(pdf.id)
     }
     var body: some View {
         let view = mainContent
@@ -1390,107 +1400,109 @@ struct SeriesDetailView: View {
     
     // MARK: - Issue Row (Shared by flat + volume grouped views)
     
-    @ViewBuilder
     private func issueRow(_ pdf: ConvertedPDF, isInVolume: Bool = false, volumeKey: String = "") -> some View {
-        if isSelectionMode {
-            HStack(spacing: 0) {
-                if isInVolume && volumeKey != "Ungrouped" {
-                    RoundedRectangle(cornerRadius: 1.5)
-                        .fill(Theme.orange.opacity(0.8))
-                        .frame(width: 3)
-                        .padding(.vertical, 8)
-                        .padding(.trailing, 12)
-                }
-                
-                Button {
-                    if selection.contains(pdf.id) {
-                        selection.remove(pdf.id)
-                    } else {
-                        selection.insert(pdf.id)
+        Group {
+            if isSelectionMode {
+                HStack(spacing: 0) {
+                    if isInVolume && volumeKey != "Ungrouped" {
+                        RoundedRectangle(cornerRadius: 1.5)
+                            .fill(Theme.orange.opacity(0.8))
+                            .frame(width: 3)
+                            .padding(.vertical, 8)
+                            .padding(.trailing, 12)
                     }
-                } label: {
-                    HStack {
-                        LibraryPDFRowWithCover(pdf: pdf, isSelected: false)
-                        
-                        if conversionManager.convertedPDFs.contains(where: { $0.metadata.sourceFileIDs?.contains(pdf.id) == true }) {
-                            Image(systemName: "link")
-                                .font(.footnote)
-                                .foregroundColor(Theme.orange)
-                                .padding(.trailing, 8)
+                    
+                    Button {
+                        if selection.contains(pdf.id) {
+                            selection.remove(pdf.id)
+                        } else {
+                            selection.insert(pdf.id)
                         }
-                        
-                        Spacer()
-                        Image(systemName: selection.contains(pdf.id) ? "checkmark.circle.fill" : "circle")
-                            .foregroundColor(selection.contains(pdf.id) ? .blue : .gray)
-                            .font(.title2)
+                    } label: {
+                        HStack {
+                            LibraryPDFRowWithCover(pdf: pdf, isSelected: false)
+                            
+                            if conversionManager.convertedPDFs.contains(where: { $0.metadata.sourceFileIDs?.contains(pdf.id) == true }) {
+                                Image(systemName: "link")
+                                    .font(.footnote)
+                                    .foregroundColor(Theme.orange)
+                                    .padding(.trailing, 8)
+                            }
+                            
+                            Spacer()
+                            Image(systemName: selection.contains(pdf.id) ? "checkmark.circle.fill" : "circle")
+                                .foregroundColor(selection.contains(pdf.id) ? .blue : .gray)
+                                .font(.title2)
+                        }
                     }
+                    .buttonStyle(PlainButtonStyle())
                 }
-                .buttonStyle(PlainButtonStyle())
-            }
-            .padding(.leading, isInVolume && volumeKey != "Ungrouped" ? 14 : 0)
-            .listRowBackground(selection.contains(pdf.id) ? Color.blue.opacity(0.1) : Theme.bg)
-            .background(
-                GeometryReader { geo in
-                    Color.clear
-                        .preference(
-                            key: CellFramePreferenceKey.self,
-                            value: [pdf.id: geo.frame(in: .named("SeriesDetailScrollView"))]
-                        )
-                }
-            )
-        } else {
-            HStack(spacing: 0) {
-                if isInVolume && volumeKey != "Ungrouped" {
-                    RoundedRectangle(cornerRadius: 1.5)
-                        .fill(Theme.orange.opacity(0.8))
-                        .frame(width: 3)
-                        .padding(.vertical, 8)
-                        .padding(.trailing, 12)
-                }
-                
-                Button {
-                    if tapAction == .read {
-                        pdfToRead = pdf
-                    } else { // tapAction == .convert
-                        if case .cloud = pdf.sourceMode {
-                            Task {
-                                await CloudDownloadManager.shared.downloadAndStore(
-                                    pdf: pdf,
-                                    thenConvert: false,
-                                    manager: conversionManager
-                                )
-                                await MainActor.run {
-                                    if let updated = conversionManager.convertedPDFs.first(where: { $0.id == pdf.id }) {
-                                        DispatchQueue.main.async {
-                                            AppRouter.shared.presentSheet(.convert(updated))
+                .padding(.leading, isInVolume && volumeKey != "Ungrouped" ? 14 : 0)
+                .listRowBackground(selection.contains(pdf.id) ? Color.blue.opacity(0.1) : Theme.bg)
+                .background(
+                    GeometryReader { geo in
+                        Color.clear
+                            .preference(
+                                key: CellFramePreferenceKey.self,
+                                value: [pdf.id: geo.frame(in: .named("SeriesDetailScrollView"))]
+                            )
+                    }
+                )
+            } else {
+                HStack(spacing: 0) {
+                    if isInVolume && volumeKey != "Ungrouped" {
+                        RoundedRectangle(cornerRadius: 1.5)
+                            .fill(Theme.orange.opacity(0.8))
+                            .frame(width: 3)
+                            .padding(.vertical, 8)
+                            .padding(.trailing, 12)
+                    }
+                    
+                    Button {
+                        if tapAction == .read {
+                            pdfToRead = pdf
+                        } else { // tapAction == .convert
+                            if case .cloud = pdf.sourceMode {
+                                Task {
+                                    await CloudDownloadManager.shared.downloadAndStore(
+                                        pdf: pdf,
+                                        thenConvert: false,
+                                        manager: conversionManager
+                                    )
+                                    await MainActor.run {
+                                        if let updated = conversionManager.convertedPDFs.first(where: { $0.id == pdf.id }) {
+                                            DispatchQueue.main.async {
+                                                AppRouter.shared.presentSheet(.convert(updated))
+                                            }
                                         }
                                     }
                                 }
+                            } else {
+                                AppRouter.shared.presentSheet(.convert(pdf))
                             }
-                        } else {
-                            AppRouter.shared.presentSheet(.convert(pdf))
+                        }
+                    } label: {
+                        HStack {
+                            LibraryPDFRowWithCover(pdf: pdf, isSelected: selectedPDF?.id == pdf.id)
+                            
+                            if conversionManager.convertedPDFs.contains(where: { $0.metadata.sourceFileIDs?.contains(pdf.id) == true }) {
+                                Image(systemName: "link")
+                                    .font(.footnote)
+                                    .foregroundColor(Theme.orange)
+                                    .padding(.trailing, 8)
+                            }
                         }
                     }
-                } label: {
-                    HStack {
-                        LibraryPDFRowWithCover(pdf: pdf, isSelected: selectedPDF?.id == pdf.id)
-                        
-                        if conversionManager.convertedPDFs.contains(where: { $0.metadata.sourceFileIDs?.contains(pdf.id) == true }) {
-                            Image(systemName: "link")
-                                .font(.footnote)
-                                .foregroundColor(Theme.orange)
-                                .padding(.trailing, 8)
-                        }
-                    }
+                    .buttonStyle(CellButtonStyle())
                 }
-                .buttonStyle(CellButtonStyle())
+                .padding(.leading, isInVolume && volumeKey != "Ungrouped" ? 14 : 0)
+                .listRowBackground(selectedPDF?.id == pdf.id ? Theme.surfaceElevated : Theme.bg)
+                .swipeActions(edge: .leading) { swipeActionsLeading(pdf) }
+                .swipeActions(edge: .trailing) { swipeActionsTrailing(pdf) }
+                .contextMenu { contextMenuContent(pdf) }
             }
-            .padding(.leading, isInVolume && volumeKey != "Ungrouped" ? 14 : 0)
-            .listRowBackground(selectedPDF?.id == pdf.id ? Theme.surfaceElevated : Theme.bg)
-            .swipeActions(edge: .leading) { swipeActionsLeading(pdf) }
-            .swipeActions(edge: .trailing) { swipeActionsTrailing(pdf) }
-            .contextMenu { contextMenuContent(pdf) }
         }
+        .id(pdf.id)
     }
 
     var headerView: some View {
@@ -1686,11 +1698,15 @@ struct SeriesDetailView: View {
         .padding(.vertical)
         .background(
             GeometryReader { geo in
-                Color.clear
-                    .preference(
-                        key: ScrollOffsetPreferenceKey.self,
-                        value: geo.frame(in: .named("SeriesDetailViewport")).minY
-                    )
+                if isSelectionMode {
+                    Color.clear
+                        .preference(
+                            key: ScrollOffsetPreferenceKey.self,
+                            value: geo.frame(in: .named("SeriesDetailViewport")).minY
+                        )
+                } else {
+                    Color.clear
+                }
             }
         )
     }

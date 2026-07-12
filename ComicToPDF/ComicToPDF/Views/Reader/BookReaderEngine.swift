@@ -421,7 +421,7 @@ struct EPUBWebView: UIViewRepresentable {
                 initialPinchFontSize = parent.prefs.fontSize
             } else if gesture.state == .changed {
                 let newSize = initialPinchFontSize * Double(gesture.scale)
-                let roundedSize = round(max(12.0, min(48.0, newSize)))
+                let roundedSize = round(max(12.0, min(80.0, newSize)))
                 if parent.prefs.fontSize != roundedSize {
                     parent.prefs.fontSize = roundedSize
                     if parent.prefs.isTypographyLockedForBook(parent.pdf.id.uuidString) {
@@ -926,6 +926,17 @@ struct EPUBWebView: UIViewRepresentable {
             -webkit-hyphens: \(hyphenCSS) !important;
             hyphens: \(hyphenCSS) !important;
         }
+        body, p, span, li, td, th, div, a {
+            font-family: \(fontFamily) !important;
+        }
+        body, p, li, td, th, a {
+            font-size: \(fontSize)px !important;
+        }
+        h1 { font-size: \(Double(fontSize) * 1.5)px !important; font-family: \(fontFamily) !important; }
+        h2 { font-size: \(Double(fontSize) * 1.3)px !important; font-family: \(fontFamily) !important; }
+        h3 { font-size: \(Double(fontSize) * 1.15)px !important; font-family: \(fontFamily) !important; }
+        h4 { font-size: \(Double(fontSize) * 1.05)px !important; font-family: \(fontFamily) !important; }
+        h5, h6 { font-size: \(Double(fontSize) * 1.0)px !important; font-family: \(fontFamily) !important; }
         div, section, article {
             column-count: auto !important;
             column-width: auto !important;

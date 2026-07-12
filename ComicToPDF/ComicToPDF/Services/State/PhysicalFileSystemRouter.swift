@@ -125,7 +125,9 @@ class PhysicalFileSystemRouter {
                     manager.thumbnailCache.setObject(thumb, forKey: key, cost: cost)
                 }
                 if let index = manager.convertedPDFs.firstIndex(where: { $0.id == pdfID }) {
-                    manager.convertedPDFs[index].coverImageData = nil
+                    if manager.convertedPDFs[index].coverImageData != nil {
+                        manager.convertedPDFs[index].coverImageData = nil
+                    }
                     // Route through the debounced subject so rapid backfill saves coalesce
                     // into one SwiftUI diff per 150ms window instead of one per cover write.
                     manager.thumbnailReadySubject.send(pdfID)

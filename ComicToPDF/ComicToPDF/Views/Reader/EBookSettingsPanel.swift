@@ -350,7 +350,7 @@ struct EBookSettingsPanel: View {
                             .font(.system(size: 14, weight: .semibold, design: .rounded).monospacedDigit())
                             .foregroundStyle(Color.inkTextPrimary)
                             .frame(width: 44, alignment: .center)
-                        Button { prefs.fontSize = min(40, prefs.fontSize + 1) } label: {
+                        Button { prefs.fontSize = min(80, prefs.fontSize + 1) } label: {
                             Image(systemName: "plus.circle.fill")
                                 .font(.system(size: 24))
                                 .foregroundStyle(Color.orange)
