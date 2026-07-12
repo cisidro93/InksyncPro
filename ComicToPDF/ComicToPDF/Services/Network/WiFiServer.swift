@@ -1557,6 +1557,8 @@ final class WiFiServer: ObservableObject, Sendable {
             
             files.append([
                 "name": item.name,
+                "filename": fileURL.lastPathComponent,
+                "relativePath": relativePath,
                 "sizeBytes": size,
                 "link": "/\(linkPath)",
                 "type": fileType
@@ -3027,7 +3029,17 @@ final class WiFiServer: ObservableObject, Sendable {
                             continue;
                         }
 
-                        const exists = libraryFiles.some(f => f.name.toLowerCase() === file.name.toLowerCase() && f.size === file.size);
+                        const exists = libraryFiles.some(f => {
+                            const sizeMatches = f.sizeBytes === file.size;
+                            if (!sizeMatches) return false;
+                            
+                            const fileRelPath = (file.customRelativePath || file.webkitRelativePath || '').toLowerCase();
+                            if (fileRelPath) {
+                                return f.relativePath.toLowerCase() === fileRelPath;
+                            } else {
+                                return (f.filename || f.name).toLowerCase() === file.name.toLowerCase();
+                            }
+                        });
                         if (exists) {
                             skippedCount++;
                         }
