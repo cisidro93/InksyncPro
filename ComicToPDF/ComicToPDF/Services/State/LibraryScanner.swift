@@ -2,6 +2,7 @@ import Foundation
 import UIKit
 import Combine
 import ZIPFoundation
+import SwiftUI
 
 /// Resolves the 'God Object' bottleneck by handling intensive O(N) file system
 /// enumeration strictly off the Main Thread.
@@ -199,55 +200,51 @@ actor LibraryScanner {
 
         if !pdfsToProcess.isEmpty {
             // Materialise the work list as a plain value-type array before crossing into
-            // Task.detached isolation. The original code captured a mutable iterator and an
-            // Int counter by reference across actor boundaries — a data race in strict concurrency.
+            // Task.detached isolation.
             let workItems: [(id: UUID, url: URL)] = pdfsToProcess
                 .filter { !ActiveUploadRegistry.shared.isUploading($0.url) }
                 .map { ($0.id, $0.url) }
             let perfClass = ProcessInfo.processInfo.performanceClass
             let maxConcurrency = perfClass == .low ? 2 : 4
 
-            Task.detached(priority: .background) {
-                await withTaskGroup(of: (UUID, Int)?.self) { group in
+            Task.detached(priority: .background) { [weak self] in
+                guard let self else { return }
+                await withTaskGroup(of: BackfillResult?.self) { group in
                     var nextIndex = 0
 
-                    // Seed initial slots
                     func enqueueNext() {
                         guard nextIndex < workItems.count else { return }
                         let item = workItems[nextIndex]
                         nextIndex += 1
                         group.addTask {
                             let image = PhysicalFileSystemRouter.extractCoverImageStatic(from: item.url)
-                            if let image, let jpegData = image.jpegData(compressionQuality: 0.7) {
-                                let capturedID = item.id
-                                await MainActor.run {
-                                    // Look up the full ConvertedPDF on MainActor — saveCoverImage
-                                    // requires the ConvertedPDF object, not just a UUID.
-                                    if let pdf = manager.convertedPDFs.first(where: { $0.id == capturedID }) {
-                                        PhysicalFileSystemRouter.shared.saveCoverImage(
-                                            jpegData, for: pdf, manager: manager)
-                                    }
-                                }
-                            }
+                            let jpegData = image?.jpegData(compressionQuality: 0.7)
                             let count = PhysicalFileSystemRouter.getPageCountStatic(from: item.url)
-                            return count > 0 ? (item.id, count) : nil
+                            return BackfillResult(id: item.id, pageCount: count, coverData: jpegData)
                         }
                     }
 
                     for _ in 0..<min(maxConcurrency, workItems.count) { enqueueNext() }
 
+                    var results: [BackfillResult] = []
                     for await result in group {
-                        if let (id, count) = result {
-                            await MainActor.run {
-                                if let idx = manager.convertedPDFs.firstIndex(where: { $0.id == id }) {
-                                    manager.convertedPDFs[idx].pageCount = count
-                                }
+                        if let res = result {
+                            results.append(res)
+                            
+                            // Apply in batches of 10 to keep progress moving without rapid UI updates
+                            if results.count >= 10 {
+                                let batch = results
+                                results.removeAll()
+                                await self.applyMetadataBatch(batch, manager: manager)
                             }
                         }
                         enqueueNext()
                     }
+                    
+                    if !results.isEmpty {
+                        await self.applyMetadataBatch(results, manager: manager)
+                    }
                 }
-                await MainActor.run { manager.saveLibrary() }
             }
         }
 
@@ -342,6 +339,52 @@ actor LibraryScanner {
                 Logger.shared.log("Library Pruned: Repaired \(repairedURLs.count) sandbox-shifted URLs and removed \(missingIDs.count) missing files", category: "Library")
                 manager.saveLibrary()
             }
+        }
+    }
+
+    struct BackfillResult: Sendable {
+        let id: UUID
+        let pageCount: Int
+        let coverData: Data?
+    }
+
+    private func applyMetadataBatch(_ batch: [BackfillResult], manager: ConversionManager) async {
+        await MainActor.run {
+            var modified = manager.convertedPDFs
+            for item in batch {
+                if let idx = modified.firstIndex(where: { $0.id == item.id }) {
+                    if item.pageCount > 0 {
+                        modified[idx].pageCount = item.pageCount
+                    }
+                    if let coverData = item.coverData {
+                        // Clear ThumbnailDaemon cache
+                        let pdfID = item.id
+                        Task {
+                            await ThumbnailDaemon.shared.clearCache(for: pdfID)
+                        }
+                        
+                        // Write cover image to disk in a separate background thread
+                        if let coverURL = PhysicalFileSystemRouter.shared.getCoverURL(for: modified[idx]) {
+                            Task.detached(priority: .background) {
+                                try? coverData.write(to: coverURL)
+                            }
+                        }
+                        
+                        let key = pdfID.uuidString as NSString
+                        if let image = UIImage(data: coverData) {
+                            let thumbnail = image.preparingThumbnail(of: CGSize(width: 300, height: 450)) ?? image
+                            let cost = Int(thumbnail.size.width * thumbnail.size.height * thumbnail.scale * thumbnail.scale * 4)
+                            manager.thumbnailCache.setObject(thumbnail, forKey: key, cost: cost)
+                        }
+                        modified[idx].coverImageData = nil
+                        manager.thumbnailReadySubject.send(pdfID)
+                    }
+                }
+            }
+            withAnimation(.easeInOut(duration: 0.25)) {
+                manager.convertedPDFs = modified
+            }
+            manager.saveLibrary()
         }
     }
 }

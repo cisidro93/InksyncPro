@@ -5,6 +5,7 @@ import CoreImage.CIFilterBuiltins
 
 struct WiFiView: View {
     @StateObject private var server = WiFiServer()
+    @ObservedObject private var transferLog = WiFiTransferLog.shared
     @ObservedObject private var peerManager = PeerManager.shared
     @ObservedObject private var queueManager = TransferQueueManager.shared
     @ObservedObject private var localSendClient = LocalSendClient.shared
@@ -266,8 +267,9 @@ struct WiFiView: View {
             Form {
                 serverStatusSection
                 stagedFilesSection
-                browserFallbackSection
                 progressSection
+                successfulImportsSection
+                browserFallbackSection
                 alternativeTransferSection
             }
             .scrollContentBackground(.hidden)
@@ -386,6 +388,37 @@ struct WiFiView: View {
                 self.qrCodeImage = UIImage(cgImage: cgImage)
             }
         }
+    }
+    
+    @ViewBuilder
+    private var successfulImportsSection: some View {
+        let events = transferLog.recentEvents().filter { $0.succeeded }
+        if !events.isEmpty {
+            Section(header: Text("Successfully Transferred")) {
+                ForEach(events) { event in
+                    HStack(spacing: 12) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(event.filename)
+                                .font(.subheadline)
+                                .lineLimit(1)
+                            Text("Masked IP: \(event.maskedIP) • \(formatBytes(event.sizeBytes))")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+            }
+        }
+    }
+    
+    private func formatBytes(_ bytes: Int64) -> String {
+        let formatter = ByteCountFormatter()
+        formatter.allowedUnits = [.useAll]
+        formatter.countStyle = .file
+        return formatter.string(fromByteCount: bytes)
     }
 }
 
