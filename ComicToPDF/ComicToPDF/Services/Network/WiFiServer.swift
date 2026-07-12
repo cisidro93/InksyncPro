@@ -1760,6 +1760,28 @@ final class WiFiServer: ObservableObject, Sendable {
                     padding-bottom: 12px;
                 }
 
+                .queue-actions {
+                    display: flex;
+                    gap: 8px;
+                }
+
+                .queue-action-btn-global {
+                    background: rgba(255, 255, 255, 0.08);
+                    border: 1px solid var(--card-border);
+                    color: var(--text-primary);
+                    padding: 6px 12px;
+                    border-radius: 8px;
+                    font-size: 12px;
+                    font-weight: 600;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                }
+
+                .queue-action-btn-global:hover {
+                    background: rgba(255, 255, 255, 0.15);
+                    border-color: var(--text-secondary);
+                }
+
                 .queue-title {
                     font-size: 16px;
                     font-weight: 700;
@@ -2245,8 +2267,14 @@ final class WiFiServer: ObservableObject, Sendable {
                 <!-- Staged upload queue -->
                 <div class="queue-card" id="queueCard">
                     <div class="queue-header">
-                        <span class="queue-title">Upload Progress</span>
-                        <span class="subtitle" id="queueCount">0 files remaining</span>
+                        <div style="display:flex; flex-direction:column; gap:4px;">
+                            <span class="queue-title">Upload Progress</span>
+                            <span class="subtitle" id="queueCount" style="margin-left:0;">0 files remaining</span>
+                        </div>
+                        <div class="queue-actions">
+                            <button class="queue-action-btn-global" onclick="retryAllFailed()">Retry Failed</button>
+                            <button class="queue-action-btn-global" onclick="clearCompleted()">Clear Completed</button>
+                        </div>
                     </div>
                     <div class="queue-items" id="queueItems"></div>
                 </div>
@@ -2476,6 +2504,8 @@ final class WiFiServer: ObservableObject, Sendable {
                 const uploadQueue = [];
                 let isUploading = false;
                 let uploadStartTime = 0;
+                let isPaused = false;
+                let reconnectTimer = null;
 
                 document.addEventListener('DOMContentLoaded', () => {
                     // Poll server logs and library updates periodically
@@ -2708,6 +2738,7 @@ final class WiFiServer: ObservableObject, Sendable {
 
                 function addFilesToQueue(files) {
                     logDebug(`Adding ${files.length} files to queue...`);
+                    let skippedCount = 0;
                     for (let i = 0; i < files.length; i++) {
                         const file = files[i];
                         const ext = file.name.split('.').pop().toLowerCase();
@@ -2718,15 +2749,23 @@ final class WiFiServer: ObservableObject, Sendable {
                             continue;
                         }
 
+                        const exists = libraryFiles.some(f => f.name.toLowerCase() === file.name.toLowerCase() && f.size === file.size);
+                        if (exists) {
+                            skippedCount++;
+                        }
+
                         uploadQueue.push({
                             id: generateId(),
                             file: file,
-                            status: 'queued',
-                            progress: 0,
+                            status: exists ? 'completed' : 'queued',
+                            progress: exists ? 100 : 0,
                             speed: '',
-                            eta: ''
+                            eta: exists ? 'Already on device' : ''
                         });
-                        logDebug(`Queued: ${file.name}`);
+                        logDebug(`Queued: ${file.name} (exists: ${exists})`);
+                    }
+                    if (skippedCount > 0) {
+                        showNotification(`Skipped ${skippedCount} file(s) already present on the iPad.`, 'success');
                     }
                     renderQueue();
                     processQueue();
@@ -2788,6 +2827,10 @@ final class WiFiServer: ObservableObject, Sendable {
                 }
 
                 function processQueue() {
+                    if (isPaused) {
+                        logDebug("Queue processing deferred (queue is paused due to network error)");
+                        return;
+                    }
                     if (isUploading) {
                         logDebug("Queue processing deferred (already uploading)");
                         return;
@@ -2882,11 +2925,64 @@ final class WiFiServer: ObservableObject, Sendable {
                         logDebug(`Upload network error for: ${nextItem.file.name}`, 'error');
                         showNotification('Network error uploading "' + nextItem.file.name + '".', 'error');
                         renderQueue();
-                        processQueue();
+                        
+                        // Auto-pause the queue and start polling for reconnection
+                        handleConnectionLoss();
                     };
 
                     logDebug(`Sending payload request for: ${nextItem.file.name} (size: ${formatBytes(nextItem.file.size)})`);
                     xhr.send(nextItem.file);
+                }
+
+                function retryAllFailed() {
+                    logDebug("Retrying all failed queue items...");
+                    uploadQueue.forEach(item => {
+                        if (item.status === 'failed') {
+                            item.status = 'queued';
+                            item.progress = 0;
+                            item.speed = '';
+                            item.eta = '';
+                        }
+                    });
+                    renderQueue();
+                    processQueue();
+                }
+
+                function clearCompleted() {
+                    logDebug("Clearing completed queue items...");
+                    uploadQueue.splice(0, uploadQueue.length, ...uploadQueue.filter(item => item.status !== 'completed'));
+                    renderQueue();
+                }
+
+                function handleConnectionLoss() {
+                    if (reconnectTimer) return;
+                    isPaused = true;
+                    showNotification("Connection lost. Queue paused. Retrying to connect...", "warning");
+                    
+                    reconnectTimer = setInterval(() => {
+                        fetch('/page_sync')
+                            .then(res => {
+                                if (res.ok) {
+                                    clearInterval(reconnectTimer);
+                                    reconnectTimer = null;
+                                    isPaused = false;
+                                    showNotification("Connection restored! Resuming uploads...", "success");
+                                    uploadQueue.forEach(item => {
+                                        if (item.status === 'failed') {
+                                            item.status = 'queued';
+                                            item.progress = 0;
+                                            item.speed = '';
+                                            item.eta = '';
+                                        }
+                                    });
+                                    renderQueue();
+                                    processQueue();
+                                }
+                            })
+                            .catch(err => {
+                                logDebug("Reconnect attempt failed (server still offline)...");
+                            });
+                    }, 5000);
                 }
 
                 function fetchLibraryUpdates() {
