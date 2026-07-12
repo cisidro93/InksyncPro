@@ -44,8 +44,7 @@ final class WiFiServer: ObservableObject, Sendable {
     // ✅ NEW: Background Task Support
     private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
     
-    // Cache variables protected by a dedicated lock to avoid data races
-    private let cacheLock = NSLock()
+    // Cache variables (accessed exclusively on @MainActor)
     private var cachedLibraryJSON: String? = nil
     private var cachedLibraryItemsHash: Int = 0
     
@@ -1621,20 +1620,15 @@ final class WiFiServer: ObservableObject, Sendable {
         }
         let currentHash = hasher.finalize()
         
-        cacheLock.lock()
         if let cached = cachedLibraryJSON, currentHash == cachedLibraryItemsHash {
-            cacheLock.unlock()
             return cached
         }
-        cacheLock.unlock()
         
         let files = getLibraryFilesList()
         if let data = try? JSONSerialization.data(withJSONObject: files, options: []),
            let str = String(data: data, encoding: .utf8) {
-            cacheLock.lock()
             cachedLibraryJSON = str
             cachedLibraryItemsHash = currentHash
-            cacheLock.unlock()
             return str
         }
         return "[]"
