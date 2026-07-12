@@ -72,6 +72,19 @@ struct EBookReaderView: View {
     private var fractionKey: String { "ebook_fraction_\(fileURL.lastPathComponent.hashValue)" }
 
     private var totalChapters: Int { metadata?.spineItems.count ?? 1 }
+    private var visibleChapters: [(index: Int, label: String)] {
+        guard let spine = metadata?.spineItems else { return [] }
+        let hasTOC = spine.contains(where: { !$0.label.isEmpty })
+        
+        if hasTOC {
+            return spine.enumerated()
+                .filter { !$0.element.label.isEmpty }
+                .map { (index: $0.offset, label: $0.element.label) }
+        } else {
+            return spine.enumerated()
+                .map { (index: $0.offset, label: "Chapter \($0.offset + 1)") }
+        }
+    }
     private var progressFraction: Double {
         guard totalChapters > 1 else { return 0 }
         return Double(currentIndex) / Double(totalChapters - 1)
@@ -543,35 +556,35 @@ struct EBookReaderView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(Array((metadata?.spineItems ?? []).enumerated()), id: \.offset) { idx, chapter in
+                        ForEach(visibleChapters, id: \.index) { item in
                             Button {
-                                withAnimation(.spring()) { currentIndex = idx; showChapterList = false }
+                                withAnimation(.spring()) { currentIndex = item.index; showChapterList = false }
                                 saveProgress()
                             } label: {
                                 HStack(spacing: 12) {
                                     RoundedRectangle(cornerRadius: 2)
-                                        .fill(idx == currentIndex ? Color(hex: "#7B5EA7") : Color.clear)
+                                        .fill(item.index == currentIndex ? Color(hex: "#7B5EA7") : Color.clear)
                                         .frame(width: 3, height: 22)
-                                    Text(chapter.label)
+                                    Text(item.label)
                                         .font(.subheadline)
-                                        .fontWeight(idx == currentIndex ? .semibold : .regular)
+                                        .fontWeight(item.index == currentIndex ? .semibold : .regular)
                                         .foregroundStyle(
-                                            idx == currentIndex
+                                            item.index == currentIndex
                                                 ? Color(hex: "#7B5EA7")
                                                 : prefs.activeTheme.foreground(colorScheme: colorScheme)
                                         )
                                     Spacer()
-                                    if idx == currentIndex {
+                                    if item.index == currentIndex {
                                         Image(systemName: "book.fill")
                                             .font(.system(size: 10))
                                             .foregroundStyle(Color(hex: "#7B5EA7").opacity(0.7))
                                     }
                                 }
                                 .padding(.horizontal, 16).padding(.vertical, 13)
-                                .background(idx == currentIndex ? Color(hex: "#7B5EA7").opacity(0.08) : Color.clear)
+                                .background(item.index == currentIndex ? Color(hex: "#7B5EA7").opacity(0.08) : Color.clear)
                             }
                             .buttonStyle(.plain)
-                            .id(idx)
+                            .id(item.index)
                             Divider().opacity(0.3)
                         }
                     }

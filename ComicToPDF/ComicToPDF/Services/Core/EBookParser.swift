@@ -18,6 +18,7 @@ struct EBookMetadata {
         let id: String        // manifest id
         let href: String      // path relative to OPF file
         var label: String     // display name (from NCX/nav or derived from href)
+        var tocTitle: String? // actual matched title from TOC
     }
 }
 
@@ -174,19 +175,20 @@ actor EBookParser {
         
         // Spine items from <spine> → <itemref idref="...">
         let spineIds = parser.spineItemRefs()
-        metadata.spineItems = spineIds.compactMap { idref in
-            guard let fullHref = parser.manifestHref(forId: idref, opfDir: opfDir) else { return nil }
+        var items: [EBookMetadata.SpineItem] = []
+        for idref in spineIds {
+            guard let fullHref = parser.manifestHref(forId: idref, opfDir: opfDir) else { continue }
             
             // Match the TOC href strictly locally as found in the OPF
             let localHref = parser.manifestHref(forId: idref, opfDir: "") ?? ""
             let baseHref = localHref.components(separatedBy: "#").first ?? localHref
             
-            let label = tocMap[baseHref] ?? URL(string: fullHref)?.deletingPathExtension().lastPathComponent
-                             .replacingOccurrences(of: "_", with: " ")
-                             .capitalized ?? idref
-                             
-            return EBookMetadata.SpineItem(id: idref, href: fullHref, label: label)
+            let tocTitle = tocMap[baseHref]
+            let label = tocTitle ?? ""
+            
+            items.append(EBookMetadata.SpineItem(id: idref, href: fullHref, label: label, tocTitle: tocTitle))
         }
+        metadata.spineItems = items
         
         return metadata
     }
