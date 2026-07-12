@@ -277,7 +277,6 @@ struct WiFiView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Close") { 
-                        server.stop()
                         dismiss() 
                     }
                 }
@@ -289,7 +288,6 @@ struct WiFiView: View {
             .onChange(of: server.isRunning) { _, isRunning in
                 if isRunning { generateQRCode() } else { qrCodeImage = nil }
             }
-            .onDisappear { server.stop() }
             // ✅ NEW: Error Alert
             .alert(item: Binding<ErrorWrapper?>(
                 get: { server.errorMessage.map { ErrorWrapper(id: UUID(), message: $0) } },

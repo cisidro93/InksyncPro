@@ -1444,6 +1444,7 @@ final class WiFiServer: ObservableObject, Sendable {
     private var endTaskWorkItem: DispatchWorkItem?
 
     private func startBackgroundTask() {
+        // Cancel any pending end task work item since we have active transfer/connection activity
         endTaskWorkItem?.cancel()
         endTaskWorkItem = nil
         
@@ -1456,12 +1457,20 @@ final class WiFiServer: ObservableObject, Sendable {
     }
     
     private func endBackgroundTask() {
+        // Only end the background task if we are not currently uploading
+        guard !isUploading else {
+            endTaskWorkItem?.cancel()
+            endTaskWorkItem = nil
+            return
+        }
+        
         // Delay ending the background task by 15 seconds to allow the browser 
         // to query library updates and start the next file in the queue without 
         // iOS suspending the app in the 1-2 second gap between uploads.
         endTaskWorkItem?.cancel()
         let workItem = DispatchWorkItem { [weak self] in
-            self?.endBackgroundTaskImmediately()
+            guard let self = self, !self.isUploading else { return }
+            self.endBackgroundTaskImmediately()
         }
         endTaskWorkItem = workItem
         DispatchQueue.main.asyncAfter(deadline: .now() + 15.0, execute: workItem)
