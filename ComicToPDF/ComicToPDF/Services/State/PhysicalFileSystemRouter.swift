@@ -883,7 +883,7 @@ class PhysicalFileSystemRouter {
                             }
                             return nil
                         } catch {
-                            Logger.shared.log("Failed to extract \(entry.path): \(error.localizedDescription)", category: "Archive", type: .error)
+                            Logger.shared.log("Failed to extract \(entry.path): \(error.localizedDescription)", category: "Archive", type: .warning)
                             return nil
                         }
                     }
@@ -899,7 +899,7 @@ class PhysicalFileSystemRouter {
                 
                 return firstSpreadImage
             } catch {
-                Logger.shared.log("Failed to extract archive: \(error.localizedDescription)", category: "Archive", type: .error)
+                Logger.shared.log("Failed to extract archive: \(error.localizedDescription)", category: "Archive", type: .warning)
             }
         }
         if isRAR {
@@ -965,7 +965,7 @@ class PhysicalFileSystemRouter {
                     }
                     return firstSpread  // fallback if every page is landscape
                 } catch {
-                    Logger.shared.log("PhysicalFileSystemRouter: CBR cover extraction failed for '\(url.lastPathComponent)': \(error.localizedDescription)", category: "Archive", type: .error)
+                    Logger.shared.log("PhysicalFileSystemRouter: CBR cover extraction failed for '\(url.lastPathComponent)': \(error.localizedDescription)", category: "Archive", type: .warning)
                     return nil
                 }
             }
@@ -1047,7 +1047,7 @@ class PhysicalFileSystemRouter {
                         }
                     }
                 } catch {
-                    Logger.shared.log("EPUB page count parsing failed: \(error.localizedDescription)", category: "Archive", type: .error)
+                    Logger.shared.log("EPUB page count parsing failed: \(error.localizedDescription)", category: "Archive", type: .warning)
                 }
             }
             
@@ -1064,7 +1064,7 @@ class PhysicalFileSystemRouter {
                 }
                 return count
             } catch {
-                Logger.shared.log("Failed to count pages in archive: \(error.localizedDescription)", category: "Archive", type: .error)
+                Logger.shared.log("Failed to count pages in archive: \(error.localizedDescription)", category: "Archive", type: .warning)
             }
             return 0
         }
@@ -1086,7 +1086,7 @@ class PhysicalFileSystemRouter {
                         return imageExts.contains((entry.fileName as NSString).pathExtension.lowercased())
                     }.count
                 } catch {
-                    Logger.shared.log("PhysicalFileSystemRouter: CBR page count failed for '\(url.lastPathComponent)': \(error.localizedDescription)", category: "Archive", type: .error)
+                    Logger.shared.log("PhysicalFileSystemRouter: CBR page count failed for '\(url.lastPathComponent)': \(error.localizedDescription)", category: "Archive", type: .warning)
                     return 0
                 }
             }
