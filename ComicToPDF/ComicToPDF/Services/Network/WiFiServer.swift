@@ -15,6 +15,7 @@ final class WiFiServer: ObservableObject, Sendable {
     @Published var serverURL: String?
     
     private var lastSeenIPs: [String: Date] = [:]
+    private var connections: [NWConnection] = []
     
     private func updateActiveConnectionsCount() {
         let now = Date()
@@ -155,7 +156,9 @@ final class WiFiServer: ObservableObject, Sendable {
 
             listener.newConnectionHandler = { [weak self] connection in
                 Task { @MainActor in
-                    self?.handleConnection(connection)
+                    guard let self = self else { return }
+                    self.connections.append(connection)
+                    self.handleConnection(connection)
                 }
             }
 
@@ -222,6 +225,12 @@ final class WiFiServer: ObservableObject, Sendable {
         self.sessionLock.lock()
         self.validSessions.removeAll()
         self.sessionLock.unlock()
+        
+        // Explicitly cancel all active connections so the port is released instantly
+        for connection in connections {
+            connection.cancel()
+        }
+        connections.removeAll()
         
         ActiveUploadRegistry.shared.clear()
         self.endBackgroundTaskImmediately()
@@ -376,6 +385,11 @@ final class WiFiServer: ObservableObject, Sendable {
                 switch state {
                 case .cancelled, .failed:
                     self?.cleanup(context: context)
+                    if let self = self {
+                        if let idx = self.connections.firstIndex(where: { $0 === connection }) {
+                            self.connections.remove(at: idx)
+                        }
+                    }
                     self?.endBackgroundTask()
                     self?.updateActiveConnectionsCount()
                 default: break
@@ -448,8 +462,8 @@ final class WiFiServer: ObservableObject, Sendable {
             
             if isComplete {
                 Task { @MainActor in
-                    connection.cancel()
                     self.checkUploadCompletion(connection: connection, context: context)
+                    connection.cancel()
                 }
             } else if let error = error {
                 Task { @MainActor in
