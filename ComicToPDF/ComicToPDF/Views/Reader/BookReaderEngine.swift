@@ -1050,10 +1050,12 @@ struct BookReaderEngine: View {
                         pdf: pdf,
                         onHighlightCreated: { selectedText, _ in
 
+                        let rawLabel = vm.tocItems[safe: vm.currentChapterIndex]?.label ?? ""
+                        let spineLabel = !rawLabel.isEmpty ? rawLabel : nil
                         let highlight = Annotation(
                             pdfID: pdf.id,
                             pageIndex: vm.currentChapterIndex,
-                            chapterTitle: "Chapter \(vm.currentChapterIndex + 1)",
+                            chapterTitle: spineLabel,
                             kind: .highlight,
                             createdAt: Date(),
                             modifiedAt: Date(),
@@ -1061,7 +1063,7 @@ struct BookReaderEngine: View {
                             selectedText: selectedText
                         )
                         AnnotationStore.shared.add(highlight)
-                        StudyNotesStore.shared.appendHighlight(selectedText, chapter: "Chapter \(vm.currentChapterIndex + 1)")
+                        StudyNotesStore.shared.appendHighlight(selectedText, chapter: spineLabel ?? "Chapter \(vm.currentChapterIndex + 1)")
 
                         // Zettelkasten Integration: Instantly pop up editor for new highlight
                         let sdAnnotation = SDAnnotation(from: highlight)
@@ -1138,7 +1140,9 @@ struct BookReaderEngine: View {
                 isVisible: $chromeVisible,
                 onBack: onDismiss,
                 onBookmark: {
-                    let bookmark = Annotation(pdfID: pdf.id, pageIndex: vm.currentChapterIndex, chapterTitle: "Chapter \(vm.currentChapterIndex + 1)", kind: .bookmark, createdAt: Date(), modifiedAt: Date())
+                    let rawLabel = vm.tocItems[safe: vm.currentChapterIndex]?.label ?? ""
+                    let spineLabel = !rawLabel.isEmpty ? rawLabel : nil
+                    let bookmark = Annotation(pdfID: pdf.id, pageIndex: vm.currentChapterIndex, chapterTitle: spineLabel, kind: .bookmark, createdAt: Date(), modifiedAt: Date())
                     AnnotationStore.shared.add(bookmark)
                 },
                 onSettingsToggle: {

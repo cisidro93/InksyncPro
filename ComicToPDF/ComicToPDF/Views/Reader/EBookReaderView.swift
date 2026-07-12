@@ -134,7 +134,8 @@ struct EBookReaderView: View {
                                 // via the onColorSelected callback in HighlightQuickPopoverView.
                                 onHighlightCreated: { selectedText in
                                     guard let p = pdf else { return }
-                                    let spineLabel = metadata?.spineItems[safe: currentIndex]?.label ?? "Chapter \(currentIndex + 1)"
+                                    let rawLabel = metadata?.spineItems[safe: currentIndex]?.label ?? ""
+                                    let spineLabel = !rawLabel.isEmpty ? rawLabel : nil
                                     let highlight = Annotation(
                                         pdfID: p.id,
                                         pageIndex: currentIndex,
