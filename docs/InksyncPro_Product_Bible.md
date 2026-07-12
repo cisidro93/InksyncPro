@@ -167,6 +167,7 @@ All import operations follow a strict sequence:
   - *IndexedDB Persistent Queue:* Queue structures are backed by browser-side IndexedDB storage (`InksyncUploadQueueDB`), preventing file loss on reloads, connection loss, or browser closure.
   - *Synchronous EPUB Parsing:* Synchronously parses the OPF spine count inside ZIP archives to deliver accurate page count diagnostics before importing.
   - *Persistent background and view lifecycles:* Automatically cancels pending background end task work items on new activity/connection events, and guards background execution against active upload operations. Dismissing or hiding the Wi-Fi Sharing view does not shut down the server, allowing background file imports while the user interacts with the app or locks their screen.
+  - *Silent background logging:* Downgrades non-fatal archive cover and page-count extraction catch blocks from `.error` to `.warning` to prevent automatic modal alert popups from stealing focus and terminating active network sharing sessions.
 
 ---
 
