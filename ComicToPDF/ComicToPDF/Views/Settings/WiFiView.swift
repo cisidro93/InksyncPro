@@ -10,6 +10,7 @@ struct WiFiView: View {
     @ObservedObject private var queueManager = TransferQueueManager.shared
     @ObservedObject private var localSendClient = LocalSendClient.shared
     @Environment(\.dismiss) var dismiss
+    @EnvironmentObject private var conversionManager: ConversionManager
     @State private var qrCodeImage: UIImage?
     
     // ✅ NEW: Sync Architecture
@@ -366,6 +367,9 @@ struct WiFiView: View {
                         .shadow(radius: 10)
                     }
                 }
+            }
+            .onDisappear {
+                conversionManager.scanLibrary()
             }
         }
     }

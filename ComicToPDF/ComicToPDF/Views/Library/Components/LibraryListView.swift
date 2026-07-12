@@ -106,6 +106,9 @@ struct LibraryListView: View {
                         .scrollContentBackground(.hidden)
                         .background(Color.clear)
                         .coordinateSpace(name: "libraryListScroll")
+                        .refreshable {
+                            conversionManager.scanLibrary()
+                        }
                         .gesture(
                             isBatchMode ?
                             LongPressGesture(minimumDuration: 0.08)
