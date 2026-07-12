@@ -44,6 +44,11 @@ final class WiFiServer: ObservableObject, Sendable {
     // ✅ NEW: Background Task Support
     private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
     
+    // Cache variables protected by a dedicated lock to avoid data races
+    private let cacheLock = NSLock()
+    private var cachedLibraryJSON: String? = nil
+    private var cachedLibraryItemsHash: Int = 0
+    
     // Tracks whether we've previously triggered the LAN permission dialog.
     // After the first successful trigger the permission entry appears in Settings,
     // so we never need to probe again — and probing while already-granted can
@@ -1192,15 +1197,10 @@ final class WiFiServer: ObservableObject, Sendable {
             let html = generateHTML()
             sendResponse(connection, 200, html, contentType: "text/html", origin: origin)
         } else if cleanPath == "/api/library" {
-            let files = getLibraryFilesList()
-            Logger.shared.log("WiFiServer - handleGetRequest: /api/library requested. Returning \(files.count) serialized files.", category: "Network")
-            if let data = try? JSONSerialization.data(withJSONObject: files, options: []),
-               let jsonString = String(data: data, encoding: .utf8) {
-                sendResponse(connection, 200, jsonString, contentType: "application/json", origin: origin)
-            } else {
-                Logger.shared.log("WiFiServer - handleGetRequest: /api/library JSON serialization failed!", category: "Network", type: .error)
-                sendResponse(connection, 500, "{\"error\": \"Failed to serialize library\"}", contentType: "application/json", origin: origin)
-            }
+            let jsonString = getLibraryFilesListJSON()
+            let count = LibraryService.shared.items.count
+            Logger.shared.log("WiFiServer - handleGetRequest: /api/library requested. Returning \(count) serialized files.", category: "Network")
+            sendResponse(connection, 200, jsonString, contentType: "application/json", origin: origin)
         } else if cleanPath == "/api/logs" {
             Task { @MainActor in
                 let logs = Logger.shared.parsedLogs
@@ -1611,15 +1611,37 @@ final class WiFiServer: ObservableObject, Sendable {
         }
     }
 
-    private func generateHTML() -> String {
+    private func getLibraryFilesListJSON() -> String {
+        let items = LibraryService.shared.items
+        var hasher = Hasher()
+        hasher.combine(items.count)
+        for item in items {
+            hasher.combine(item.id)
+            hasher.combine(item.name)
+        }
+        let currentHash = hasher.finalize()
+        
+        cacheLock.lock()
+        if let cached = cachedLibraryJSON, currentHash == cachedLibraryItemsHash {
+            cacheLock.unlock()
+            return cached
+        }
+        cacheLock.unlock()
+        
         let files = getLibraryFilesList()
-        let filesJSONString: String
         if let data = try? JSONSerialization.data(withJSONObject: files, options: []),
            let str = String(data: data, encoding: .utf8) {
-            filesJSONString = str
-        } else {
-            filesJSONString = "[]"
+            cacheLock.lock()
+            cachedLibraryJSON = str
+            cachedLibraryItemsHash = currentHash
+            cacheLock.unlock()
+            return str
         }
+        return "[]"
+    }
+
+    private func generateHTML() -> String {
+        let filesJSONString = getLibraryFilesListJSON()
         
         let stagedCount = TransferQueueManager.shared.stagedFilesSnapshot().count
         let queueButtonHTML = stagedCount > 0 ? "<a href='/queue.zip' class='zip-btn'>📦 Download \(stagedCount) Staged Files as ZIP</a>" : ""

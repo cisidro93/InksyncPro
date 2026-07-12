@@ -355,6 +355,8 @@ actor LibraryScanner {
                 if let idx = modified.firstIndex(where: { $0.id == item.id }) {
                     if item.pageCount > 0 {
                         modified[idx].pageCount = item.pageCount
+                    } else {
+                        modified[idx].pageCount = -1
                     }
                     if let coverData = item.coverData {
                         // Clear ThumbnailDaemon cache

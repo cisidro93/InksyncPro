@@ -511,7 +511,7 @@ struct SeriesDetailView: View {
                                 .font(.system(size: 11, design: .rounded))
                                 .foregroundColor(Theme.orange)
                         } else {
-                            Text("Page \((nextIssue.metadata.lastReadPage ?? 0) + 1) of \(nextIssue.pageCount)")
+                            Text("Page \((nextIssue.metadata.lastReadPage ?? 0) + 1) of \(max(0, nextIssue.pageCount))")
                                 .font(.system(size: 11, design: .rounded))
                                 .foregroundColor(Theme.orange)
                         }
@@ -910,7 +910,7 @@ struct SeriesDetailView: View {
                                             .font(.system(size: 11, design: .rounded))
                                             .foregroundColor(Theme.orange)
                                     } else {
-                                        Text("Page \((nextIssue.metadata.lastReadPage ?? 0) + 1) of \(nextIssue.pageCount)")
+                                        Text("Page \((nextIssue.metadata.lastReadPage ?? 0) + 1) of \(max(0, nextIssue.pageCount))")
                                             .font(.system(size: 11, design: .rounded))
                                             .foregroundColor(Theme.orange)
                                     }

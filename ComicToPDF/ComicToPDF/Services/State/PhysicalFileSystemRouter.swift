@@ -1241,11 +1241,13 @@ actor ThumbnailGenerationQueue {
     // but since it's an ObservableObject (reference type), it's safe to pass.
     private var pending: [(ConvertedPDF, ConversionManager)] = []
     private var inFlight: Set<UUID> = []
+    private var failedIDs: Set<UUID> = []
     private var activeCount = 0
     private let maxConcurrent = 2
     
     func enqueue(_ pdf: ConvertedPDF, manager: ConversionManager) {
         // Prevent duplicate queuing for the same file
+        guard !failedIDs.contains(pdf.id) else { return }
         guard !inFlight.contains(pdf.id) else { return }
         if pending.contains(where: { $0.0.id == pdf.id }) { return }
         
@@ -1262,13 +1264,26 @@ actor ThumbnailGenerationQueue {
         
         Task.detached(priority: .background) {
             await PhysicalFileSystemRouter.shared.generateCoverThumbnail(for: pdf, manager: manager)
-            await ThumbnailGenerationQueue.shared.taskDidFinish(id: pdf.id)
+            
+            let key = pdf.id.uuidString as NSString
+            let cached = await MainActor.run { manager.thumbnailCache.object(forKey: key) != nil }
+            let onDisk = if let url = PhysicalFileSystemRouter.shared.getCoverURL(for: pdf) {
+                FileManager.default.fileExists(atPath: url.path)
+            } else {
+                false
+            }
+            let success = cached || onDisk
+            
+            await ThumbnailGenerationQueue.shared.taskDidFinish(id: pdf.id, success: success)
         }
     }
     
-    func taskDidFinish(id: UUID) {
+    func taskDidFinish(id: UUID, success: Bool) {
         activeCount -= 1
         inFlight.remove(id)
+        if !success {
+            failedIDs.insert(id)
+        }
         dequeue()
     }
     
