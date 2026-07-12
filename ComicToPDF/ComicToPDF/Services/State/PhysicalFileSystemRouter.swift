@@ -1000,6 +1000,57 @@ class PhysicalFileSystemRouter {
             
             guard FileManager.default.fileExists(atPath: url.path) else { return 0 }
             
+            if ext == "epub" {
+                // Parse EPUB spine count synchronously
+                do {
+                    let archive = try Archive(url: url, accessMode: .read)
+                    
+                    // 1. Read META-INF/container.xml
+                    var containerData = Data()
+                    if let containerEntry = archive["META-INF/container.xml"] {
+                        _ = try archive.extract(containerEntry) { chunk in containerData.append(chunk) }
+                    } else {
+                        // case-insensitive fallback
+                        for entry in archive {
+                            if entry.path.lowercased() == "meta-inf/container.xml" {
+                                _ = try archive.extract(entry) { chunk in containerData.append(chunk) }
+                                break
+                            }
+                        }
+                    }
+                    
+                    if !containerData.isEmpty {
+                        let containerParser = MiniXMLParser(data: containerData)
+                        if let opfPath = containerParser.firstAttributeValue(tag: "rootfile", attribute: "full-path") {
+                            // 2. Read OPF
+                            var opfData = Data()
+                            let cleanOpfPath = opfPath.hasPrefix("/") ? String(opfPath.dropFirst()) : opfPath
+                            if let opfEntry = archive[cleanOpfPath] {
+                                _ = try archive.extract(opfEntry) { chunk in opfData.append(chunk) }
+                            } else {
+                                let lowerOpf = cleanOpfPath.lowercased()
+                                for entry in archive {
+                                    if entry.path.lowercased() == lowerOpf || entry.path.lowercased().hasSuffix(lowerOpf) {
+                                        _ = try archive.extract(entry) { chunk in opfData.append(chunk) }
+                                        break
+                                    }
+                                }
+                            }
+                            
+                            if !opfData.isEmpty {
+                                let opfParser = MiniXMLParser(data: opfData)
+                                let spineIds = opfParser.spineItemRefs()
+                                if !spineIds.isEmpty {
+                                    return spineIds.count
+                                }
+                            }
+                        }
+                    }
+                } catch {
+                    Logger.shared.log("EPUB page count parsing failed: \(error.localizedDescription)", category: "Archive", type: .error)
+                }
+            }
+            
             do {
                 let archive = try Archive(url: url, accessMode: .read)
                 var count = 0

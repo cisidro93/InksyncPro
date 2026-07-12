@@ -260,7 +260,7 @@ private class TOCParser: NSObject, XMLParserDelegate {
 // MARK: - MiniXMLParser
 /// Zero-dependency XML parser built on Foundation's SAX-style XMLParser.
 /// Only reads what we need — no DOM built in memory.
-private class MiniXMLParser: NSObject, XMLParserDelegate {
+class MiniXMLParser: NSObject, XMLParserDelegate {
     
     private let data: Data
     private var tagStack: [String] = []

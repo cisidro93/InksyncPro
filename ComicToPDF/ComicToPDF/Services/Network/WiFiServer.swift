@@ -325,6 +325,12 @@ final class WiFiServer: ObservableObject, Sendable {
             set { lock.lock(); defer { lock.unlock() }; _relativePath = newValue }
         }
         
+        private var _requestOrigin: String = "*"
+        var requestOrigin: String {
+            get { lock.lock(); defer { lock.unlock() }; return _requestOrigin }
+            set { lock.lock(); defer { lock.unlock() }; _requestOrigin = newValue }
+        }
+        
         var isAuthenticated = false
         var remoteIP: String = ""
         
@@ -462,8 +468,9 @@ final class WiFiServer: ObservableObject, Sendable {
         let parts = firstLine.components(separatedBy: " ")
         guard parts.count >= 2 else { return }
         
-        // 1. Check Authentication (Cookie)
+        // 1. Check Authentication (Cookie / Custom Headers)
         var sessionToken: String?
+        var pinHeader: String?
         for line in lines {
             if line.lowercased().hasPrefix("cookie:") {
                 let cookiesString = line.dropFirst("cookie:".count).trimmingCharacters(in: .whitespaces)
@@ -474,16 +481,26 @@ final class WiFiServer: ObservableObject, Sendable {
                         sessionToken = String(trimmed.dropFirst("session=".count))
                     }
                 }
+            } else if line.lowercased().hasPrefix("x-session-token:") {
+                sessionToken = line.dropFirst("x-session-token:".count).trimmingCharacters(in: .whitespaces)
+            } else if line.lowercased().hasPrefix("x-wifi-pin:") {
+                pinHeader = line.dropFirst("x-wifi-pin:".count).trimmingCharacters(in: .whitespaces)
+            } else if line.lowercased().hasPrefix("origin:") {
+                context.requestOrigin = line.dropFirst("origin:".count).trimmingCharacters(in: .whitespaces)
             }
         }
         
-        // Validate Session
+        // Validate Session or Direct PIN
         if let token = sessionToken {
             sessionLock.lock()
             if validSessions.contains(token) {
                 context.isAuthenticated = true
             }
             sessionLock.unlock()
+        }
+        
+        if let pin = pinHeader, pin == self.securityCode {
+            context.isAuthenticated = true
         }
         
         let method = parts[0]
@@ -515,6 +532,19 @@ final class WiFiServer: ObservableObject, Sendable {
             return
         }
         
+        // Handle OPTIONS preflight CORS requests (pre-authentication)
+        if method == "OPTIONS" {
+            let response = "HTTP/1.1 204 No Content\r\n"
+                + "Access-Control-Allow-Origin: \(context.requestOrigin)\r\n"
+                + "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n"
+                + "Access-Control-Allow-Headers: Content-Type, X-File-Name, X-Relative-Path, X-Session-Token, X-WiFi-PIN\r\n"
+                + "Access-Control-Allow-Credentials: true\r\n"
+                + "Connection: close\r\n"
+                + "\r\n"
+            connection.send(content: response.data(using: .utf8), completion: .contentProcessed({ _ in connection.cancel() }))
+            return
+        }
+
         // 3. Enforce Auth for everything else (except page_sync GET)
         let isPageSync = (method == "GET" && cleanPath == "/page_sync")
         guard context.isAuthenticated || isPageSync else {
@@ -531,7 +561,7 @@ final class WiFiServer: ObservableObject, Sendable {
         
         // 4. Handle Requests
         if method == "GET" {
-            handleGetRequest(cleanPath: cleanPath, queryItems: queryItems, connection: connection)
+            handleGetRequest(cleanPath: cleanPath, queryItems: queryItems, connection: connection, origin: context.requestOrigin)
         } else if method == "POST" {
             // Extract Headers
             var explicitFileName: String? = nil
@@ -561,7 +591,7 @@ final class WiFiServer: ObservableObject, Sendable {
             let success = setupUpload(context: context)
             if !success {
                 // Reject duplicate or errored uploads instantly
-                sendResponse(connection, 409, "File already exists or cannot be created.")
+                sendResponse(connection, 409, "File already exists or cannot be created.", origin: context.requestOrigin)
                 return
             }
             
@@ -1030,7 +1060,7 @@ final class WiFiServer: ObservableObject, Sendable {
             Logger.shared.log("Upload Complete: \(context.filename) (\(context.receivedLength) bytes)", category: "Network")
             
             cleanup(context: context)
-            sendResponse(connection, 200, "Upload Complete")
+            sendResponse(connection, 200, "Upload Complete", origin: context.requestOrigin)
             
             let size = context.receivedLength
             let name = context.filename
@@ -1072,7 +1102,7 @@ final class WiFiServer: ObservableObject, Sendable {
     
     // MARK: - Handlers
     
-    private func handleGetRequest(cleanPath: String, queryItems: [URLQueryItem], connection: NWConnection) {
+    private func handleGetRequest(cleanPath: String, queryItems: [URLQueryItem], connection: NWConnection, origin: String) {
         if case let .hostPort(host, _) = connection.endpoint {
             let ipStr = "\(host)".components(separatedBy: "%").first ?? "\(host)"
             lastSeenIPs[ipStr] = Date()
@@ -1085,16 +1115,16 @@ final class WiFiServer: ObservableObject, Sendable {
             let count = LibraryService.shared.items.count
             Logger.shared.log("WiFiServer - handleGetRequest: serving dashboard HTML. Staged items in memory: \(count)", category: "Network")
             let html = generateHTML()
-            sendResponse(connection, 200, html, contentType: "text/html")
+            sendResponse(connection, 200, html, contentType: "text/html", origin: origin)
         } else if cleanPath == "/api/library" {
             let files = getLibraryFilesList()
             Logger.shared.log("WiFiServer - handleGetRequest: /api/library requested. Returning \(files.count) serialized files.", category: "Network")
             if let data = try? JSONSerialization.data(withJSONObject: files, options: []),
                let jsonString = String(data: data, encoding: .utf8) {
-                sendResponse(connection, 200, jsonString, contentType: "application/json")
+                sendResponse(connection, 200, jsonString, contentType: "application/json", origin: origin)
             } else {
                 Logger.shared.log("WiFiServer - handleGetRequest: /api/library JSON serialization failed!", category: "Network", type: .error)
-                sendResponse(connection, 500, "{\"error\": \"Failed to serialize library\"}", contentType: "application/json")
+                sendResponse(connection, 500, "{\"error\": \"Failed to serialize library\"}", contentType: "application/json", origin: origin)
             }
         } else if cleanPath == "/api/logs" {
             Task { @MainActor in
@@ -1103,9 +1133,9 @@ final class WiFiServer: ObservableObject, Sendable {
                 encoder.dateEncodingStrategy = .iso8601
                 if let data = try? encoder.encode(logs),
                    let jsonString = String(data: data, encoding: .utf8) {
-                    self.sendResponse(connection, 200, jsonString, contentType: "application/json")
+                    self.sendResponse(connection, 200, jsonString, contentType: "application/json", origin: origin)
                 } else {
-                    self.sendResponse(connection, 500, "{\"error\": \"Failed to serialize logs\"}", contentType: "application/json")
+                    self.sendResponse(connection, 500, "{\"error\": \"Failed to serialize logs\"}", contentType: "application/json", origin: origin)
                 }
             }
         } else if cleanPath == "/api/sync" {
@@ -1117,10 +1147,10 @@ final class WiFiServer: ObservableObject, Sendable {
                     let data = try JSONEncoder().encode(payload)
                     
                     // Route bytes directly to client
-                    self.sendResponse(connection, 200, data: data, contentType: "application/json", filename: "Inksync_Database.json")
+                    self.sendResponse(connection, 200, data: data, contentType: "application/json", filename: "Inksync_Database.json", origin: origin)
                 } catch {
                     Logger.shared.log("WiFi Transfer - Sync API Crash: \(error.localizedDescription)", category: "Network", type: .error)
-                    self.sendResponse(connection, 500, "Internal Sync Formatting Error")
+                    self.sendResponse(connection, 500, "Internal Sync Formatting Error", origin: origin)
                 }
             }
         } else if cleanPath == "/queue.zip" {
@@ -1129,7 +1159,7 @@ final class WiFiServer: ObservableObject, Sendable {
             let stagedFiles = TransferQueueManager.shared.stagedFilesSnapshot()
             
             guard !stagedFiles.isEmpty else {
-                sendResponse(connection, 404, "No staged files in the Transfer Queue.")
+                sendResponse(connection, 404, "No staged files in the Transfer Queue.", origin: origin)
                 return
             }
             
@@ -1141,12 +1171,12 @@ final class WiFiServer: ObservableObject, Sendable {
                 do {
                     newArchive = try ZIPFoundation.Archive(url: tempZipURL, accessMode: .create)
                 } catch {
-                    sendResponse(connection, 500, "Failed to create archive stream: \(error.localizedDescription)")
+                    sendResponse(connection, 500, "Failed to create archive stream: \(error.localizedDescription)", origin: origin)
                     return
                 }
                 var archive: ZIPFoundation.Archive? = newArchive
                 guard let validArchive = archive else {
-                    sendResponse(connection, 500, "Failed to create archive stream.")
+                    sendResponse(connection, 500, "Failed to create archive stream.", origin: origin)
                     return
                 }
                 
@@ -1160,7 +1190,7 @@ final class WiFiServer: ObservableObject, Sendable {
                 sendFileResponse(connection, fileURL: tempZipURL, contentType: "application/zip", filename: "Inksync_Queue.zip", deleteAfterSend: true)
             } catch {
                 Logger.shared.log("WiFi Transfer ZIP Error: \(error.localizedDescription)", category: "Network", type: .error)
-                sendResponse(connection, 500, "Internal Server Error during ZIP creation.")
+                sendResponse(connection, 500, "Internal Server Error during ZIP creation.", origin: origin)
             }
         } else if cleanPath == "/page_sync" {
             handlePageSync(queryItems: queryItems, connection: connection)
@@ -1294,11 +1324,15 @@ final class WiFiServer: ObservableObject, Sendable {
         }
     }
 
-    private func sendResponse(_ connection: NWConnection, _ code: Int, _ body: String, contentType: String = "text/plain") {
+    private func sendResponse(_ connection: NWConnection, _ code: Int, _ body: String, contentType: String = "text/plain", origin: String = "*") {
         let bodyData = body.data(using: .utf8) ?? Data()
         let header = "HTTP/1.1 \(code) OK\r\n"
             + "Content-Type: \(contentType); charset=utf-8\r\n"
             + "Content-Length: \(bodyData.count)\r\n"
+            + "Access-Control-Allow-Origin: \(origin)\r\n"
+            + "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n"
+            + "Access-Control-Allow-Headers: Content-Type, X-File-Name, X-Relative-Path, X-Session-Token, X-WiFi-PIN\r\n"
+            + "Access-Control-Allow-Credentials: true\r\n"
             + "Cache-Control: no-store, no-cache, must-revalidate\r\n"
             + "Pragma: no-cache\r\n"
             + "Expires: 0\r\n"
@@ -1309,8 +1343,14 @@ final class WiFiServer: ObservableObject, Sendable {
         connection.send(content: response, completion: .contentProcessed({ _ in connection.cancel() }))
     }
     
-    private func sendResponse(_ connection: NWConnection, _ code: Int, data: Data, contentType: String, filename: String? = nil) {
-        var header = "HTTP/1.1 \(code) OK\r\nContent-Type: \(contentType)\r\nContent-Length: \(data.count)\r\n"
+    private func sendResponse(_ connection: NWConnection, _ code: Int, data: Data, contentType: String, filename: String? = nil, origin: String = "*") {
+        var header = "HTTP/1.1 \(code) OK\r\n"
+            + "Content-Type: \(contentType)\r\n"
+            + "Content-Length: \(data.count)\r\n"
+            + "Access-Control-Allow-Origin: \(origin)\r\n"
+            + "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n"
+            + "Access-Control-Allow-Headers: Content-Type, X-File-Name, X-Relative-Path, X-Session-Token, X-WiFi-PIN\r\n"
+            + "Access-Control-Allow-Credentials: true\r\n"
         if let filename = filename {
             header += "Content-Disposition: attachment; filename=\"\(filename)\"\r\n"
         }
@@ -1617,11 +1657,14 @@ final class WiFiServer: ObservableObject, Sendable {
                 }
 
                 .logo-icon {
-                    font-size: 32px;
-                    background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
-                    -webkit-background-clip: text;
-                    -webkit-text-fill-color: transparent;
-                    font-weight: 800;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    width: 40px;
+                    height: 40px;
+                }
+                .logo-svg path, .logo-svg circle {
+                    transition: stroke 0.2s, fill 0.2s;
                 }
 
                 h1 {
@@ -2174,6 +2217,16 @@ final class WiFiServer: ObservableObject, Sendable {
                     --glass-blur: none !important;
                 }
 
+                body.eink-mode .logo-svg path {
+                    stroke: #000000 !important;
+                    fill: none !important;
+                    filter: none !important;
+                }
+                body.eink-mode .logo-svg circle {
+                    fill: #000000 !important;
+                    filter: none !important;
+                }
+
                 body.eink-mode .ambient-glow {
                     display: none !important;
                 }
@@ -2245,7 +2298,31 @@ final class WiFiServer: ObservableObject, Sendable {
             <div class="dashboard-container">
                 <header>
                     <div class="header-left">
-                        <div class="logo-icon">⚡</div>
+                        <div class="logo-icon">
+                            <svg class="logo-svg" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" style="width:40px; height:40px;">
+                                <defs>
+                                    <linearGradient id="logoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                                        <stop offset="0%" stop-color="#3B82F6"/>
+                                        <stop offset="50%" stop-color="#6366F1"/>
+                                        <stop offset="100%" stop-color="#EC4899"/>
+                                    </linearGradient>
+                                    <filter id="logoGlow" x="-20%" y="-20%" width="140%" height="140%">
+                                        <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+                                        <feMerge>
+                                            <feMergeNode in="coloredBlur"/>
+                                            <feMergeNode in="SourceGraphic"/>
+                                        </feMerge>
+                                    </filter>
+                                </defs>
+                                <path d="M50 15L32 48C32 48 45 52 50 52C55 52 68 48 68 48L50 15Z" fill="url(#logoGrad)" filter="url(#logoGlow)"/>
+                                <path d="M50 15V38" stroke="#0B0F19" stroke-width="3" stroke-linecap="round"/>
+                                <circle cx="50" cy="38" r="3" fill="#0B0F19"/>
+                                <path d="M22 68C22 75 32 82 45 84" stroke="url(#logoGrad)" stroke-width="3.5" stroke-linecap="round"/>
+                                <path d="M45 80L49 84L45 88" stroke="url(#logoGrad)" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+                                <path d="M78 52C78 45 68 38 55 36" stroke="url(#logoGrad)" stroke-width="3.5" stroke-linecap="round"/>
+                                <path d="M55 40L51 36L55 32" stroke="url(#logoGrad)" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+                            </svg>
+                        </div>
                         <div>
                             <h1>Inksync Pro</h1>
                             <div class="subtitle">WiFi File Sharing Server</div>
@@ -2258,6 +2335,19 @@ final class WiFiServer: ObservableObject, Sendable {
                         \(queueButtonHTML)
                     </div>
                 </header>
+
+                <!-- Offline Settings Panel -->
+                <div class="card" id="offlineSettings" style="display:none; margin-bottom: 20px; background: rgba(59, 130, 246, 0.05); border: 1px solid var(--accent-blue); padding: 20px; border-radius: 16px;">
+                    <div style="font-weight: 700; font-size: 15px; margin-bottom: 8px; color: var(--accent-blue); display:flex; align-items:center; gap:6px;">
+                        <span>🌐</span> Offline Mode Settings
+                    </div>
+                    <div style="font-size: 13px; color: var(--text-secondary); margin-bottom: 16px;">You are running this page from a local file. Set your target iPad's IP address and Security PIN code to enable remote transfers:</div>
+                    <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+                        <input type="text" id="ipadIp" placeholder="iPad IP Address (e.g. 192.168.1.17:8080)" style="background: rgba(0,0,0,0.15); border: 1px solid var(--card-border); color: var(--text-primary); padding: 10px 14px; border-radius: 10px; font-size: 14px; flex: 2; min-width: 200px;">
+                        <input type="text" id="ipadPin" placeholder="PIN Code" style="background: rgba(0,0,0,0.15); border: 1px solid var(--card-border); color: var(--text-primary); padding: 10px 14px; border-radius: 10px; font-size: 14px; flex: 1; min-width: 100px;">
+                        <button class="queue-action-btn-global" onclick="saveOfflineSettings()" style="padding: 11px 20px; border-radius: 10px; background: var(--accent-blue); color:#fff; border:none; font-weight:700; cursor:pointer;">Apply Connection</button>
+                    </div>
+                </div>
 
                 <!-- Memory Warning Banner -->
                 <div class="warning-banner" id="memoryWarningBanner" style="display:none; background:#FFFBEB; border:2px solid #D97706; color:#B45309; padding:16px; border-radius:12px; font-size:14px; margin-bottom:20px; font-weight:600; text-align:center; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
@@ -2342,6 +2432,118 @@ final class WiFiServer: ObservableObject, Sendable {
                 
                 // Keep local logs in memory as fallback, and try loading from sessionStorage
                 const localClientLogs = [];
+
+                // Offline support & dynamic routing
+                function getTargetUrl(path) {
+                    const localIp = localStorage.getItem('ipad_ip');
+                    if (localIp) {
+                        const cleanPath = path.startsWith('/') ? path : '/' + path;
+                        return 'http://' + localIp + cleanPath;
+                    }
+                    return path;
+                }
+
+                function getHeaders(customHeaders = {}) {
+                    const pin = localStorage.getItem('ipad_pin');
+                    if (pin) {
+                        customHeaders['X-WiFi-PIN'] = pin;
+                    }
+                    return customHeaders;
+                }
+
+                // IndexedDB local queue persistence
+                let db;
+                const DB_NAME = 'inksynpro_uploads';
+                const STORE_NAME = 'files';
+
+                function initDB(callback) {
+                    try {
+                        const request = indexedDB.open(DB_NAME, 1);
+                        request.onupgradeneeded = (e) => {
+                            db = e.target.result;
+                            db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+                        };
+                        request.onsuccess = (e) => {
+                            db = e.target.result;
+                            if (callback) callback();
+                        };
+                        request.onerror = (e) => {
+                            logDebug("IndexedDB failed to initialize", 'error');
+                            if (callback) callback();
+                        };
+                    } catch (err) {
+                        logDebug("IndexedDB check ignored: " + err.message, 'warning');
+                        if (callback) callback();
+                    }
+                }
+
+                function saveFileToIndexedDB(item) {
+                    if (!db) return;
+                    try {
+                        const tx = db.transaction(STORE_NAME, 'readwrite');
+                        const store = tx.objectStore(STORE_NAME);
+                        store.put({
+                            id: item.id,
+                            file: item.file,
+                            relativePath: item.file.customRelativePath || item.file.webkitRelativePath || ''
+                        });
+                    } catch (e) {
+                        logDebug("Failed to save file to IndexedDB: " + e.message, 'warning');
+                    }
+                }
+
+                function removeFileFromIndexedDB(id) {
+                    if (!db) return;
+                    try {
+                        const tx = db.transaction(STORE_NAME, 'readwrite');
+                        const store = tx.objectStore(STORE_NAME);
+                        store.delete(id);
+                    } catch (e) {}
+                }
+
+                function loadQueueFromIndexedDB() {
+                    if (!db) return;
+                    try {
+                        const tx = db.transaction(STORE_NAME, 'readonly');
+                        const store = tx.objectStore(STORE_NAME);
+                        const request = store.getAll();
+                        request.onsuccess = (e) => {
+                            const items = e.target.result || [];
+                            if (items.length > 0) {
+                                logDebug(`Restored ${items.length} files from local IndexedDB storage.`);
+                                items.forEach(item => {
+                                    item.file.customRelativePath = item.relativePath;
+                                    uploadQueue.push({
+                                        id: item.id,
+                                        file: item.file,
+                                        status: 'queued',
+                                        progress: 0,
+                                        speed: '',
+                                        eta: ''
+                                    });
+                                });
+                                renderQueue();
+                            }
+                        };
+                    } catch (e) {}
+                }
+
+                // Dynamic Status & Library Polling timers based on E-Ink Mode
+                let logsTimer = null;
+                let libraryTimer = null;
+
+                function startIntervals() {
+                    if (logsTimer) clearInterval(logsTimer);
+                    if (libraryTimer) clearInterval(libraryTimer);
+
+                    const isEink = document.body.classList.contains('eink-mode');
+                    const logsDelay = isEink ? 20000 : 4000;
+                    const libraryDelay = isEink ? 15000 : 5000;
+
+                    logsTimer = setInterval(refreshLogs, logsDelay);
+                    libraryTimer = setInterval(fetchLibraryUpdates, libraryDelay);
+                    logDebug(`Dynamic status intervals loaded. Logs: ${logsDelay}ms, Library: ${libraryDelay}ms.`);
+                }
                 try {
                     const raw = sessionStorage.getItem('inksync_logs');
                     if (raw) {
@@ -2377,7 +2579,10 @@ final class WiFiServer: ObservableObject, Sendable {
                     const logContainer = document.getElementById('debugLogContainer');
                     if (!logContainer) return;
 
-                    fetch('/api/logs', { credentials: 'include' })
+                    fetch(getTargetUrl('/api/logs'), { 
+                        credentials: 'include',
+                        headers: getHeaders()
+                    })
                         .then(res => res.ok ? res.json() : [])
                         .then(data => {
                             serverLogs = data.map(entry => ({
@@ -2469,6 +2674,7 @@ final class WiFiServer: ObservableObject, Sendable {
                         }
                         
                         logDebug(`E-Ink High-Contrast Mode ${isEInk ? 'enabled' : 'disabled'}`);
+                        startIntervals();
                     } catch (e) {
                         console.error("Error toggling E-Ink: ", e);
                     }
@@ -2508,24 +2714,36 @@ final class WiFiServer: ObservableObject, Sendable {
                 let reconnectTimer = null;
 
                 document.addEventListener('DOMContentLoaded', () => {
-                    // Poll server logs and library updates periodically
-                    try {
-                        refreshLogs();
-                        setInterval(refreshLogs, 4000);
-                    } catch (e) {}
-                    try {
-                        fetchLibraryUpdates();
-                        setInterval(fetchLibraryUpdates, 5000);
-                    } catch (e) {}
-
-                    logDebug("Initializing Inksync Sharing Server Web Interface...");
-                    
                     // Initialize theme preferences and E-Ink checks
                     try {
                         initEInkSettings();
                     } catch (err) {
                         console.error("Error setting up e-ink: ", err);
                     }
+
+                    // Start dynamic timers
+                    try {
+                        refreshLogs();
+                        fetchLibraryUpdates();
+                        startIntervals();
+                    } catch (e) {}
+
+                    // Staging settings for offline file origin
+                    if (location.protocol === 'file:') {
+                        const panel = document.getElementById('offlineSettings');
+                        if (panel) {
+                            panel.style.display = 'block';
+                            document.getElementById('ipadIp').value = localStorage.getItem('ipad_ip') || '';
+                            document.getElementById('ipadPin').value = localStorage.getItem('ipad_pin') || '';
+                        }
+                    }
+
+                    // Restore staging queue from IndexedDB
+                    initDB(() => {
+                        loadQueueFromIndexedDB();
+                    });
+
+                    logDebug("Initializing Inksync Sharing Server Web Interface...");
 
                     // Check for memory-pressure reloads
                     try {
@@ -2554,6 +2772,21 @@ final class WiFiServer: ObservableObject, Sendable {
                         logDebug("Error setting up drag-and-drop systems: " + err.message, 'error');
                     }
                 });
+
+                function saveOfflineSettings() {
+                    try {
+                        const ip = document.getElementById('ipadIp').value.trim();
+                        const pin = document.getElementById('ipadPin').value.trim();
+                        
+                        localStorage.setItem('ipad_ip', ip);
+                        localStorage.setItem('ipad_pin', pin);
+                        
+                        showNotification("Connection settings updated! Reloading...", "success");
+                        setTimeout(() => location.reload(), 1200);
+                    } catch (e) {
+                        console.error("Error saving offline settings:", e);
+                    }
+                }
 
                 function formatBytes(bytes) {
                     if (bytes === 0) return '0 Bytes';
@@ -2754,14 +2987,18 @@ final class WiFiServer: ObservableObject, Sendable {
                             skippedCount++;
                         }
 
-                        uploadQueue.push({
+                        const item = {
                             id: generateId(),
                             file: file,
                             status: exists ? 'completed' : 'queued',
                             progress: exists ? 100 : 0,
                             speed: '',
                             eta: exists ? 'Already on device' : ''
-                        });
+                        };
+                        uploadQueue.push(item);
+                        if (!exists) {
+                            saveFileToIndexedDB(item);
+                        }
                         logDebug(`Queued: ${file.name} (exists: ${exists})`);
                     }
                     if (skippedCount > 0) {
@@ -2848,7 +3085,7 @@ final class WiFiServer: ObservableObject, Sendable {
                     renderQueue();
 
                     const xhr = new XMLHttpRequest();
-                    xhr.open("POST", '/upload/' + encodeURIComponent(nextItem.file.name), true);
+                    xhr.open("POST", getTargetUrl('/upload/' + encodeURIComponent(nextItem.file.name)), true);
                     xhr.withCredentials = true;
                     
                     xhr.setRequestHeader("X-File-Name", nextItem.file.name);
@@ -2856,6 +3093,11 @@ final class WiFiServer: ObservableObject, Sendable {
                         xhr.setRequestHeader("X-Relative-Path", nextItem.file.customRelativePath);
                     } else if (nextItem.file.webkitRelativePath) {
                         xhr.setRequestHeader("X-Relative-Path", nextItem.file.webkitRelativePath);
+                    }
+
+                    const customHeaders = getHeaders();
+                    for (const key in customHeaders) {
+                        xhr.setRequestHeader(key, customHeaders[key]);
                     }
 
                     let lastLoaded = 0;
@@ -2899,6 +3141,7 @@ final class WiFiServer: ObservableObject, Sendable {
                             nextItem.eta = 'Complete';
                             logDebug(`Upload success: ${nextItem.file.name}`);
                             showNotification('"' + nextItem.file.name + '" uploaded successfully.', 'success');
+                            removeFileFromIndexedDB(nextItem.id);
                             fetchLibraryUpdates();
                         } else if (xhr.status === 409) {
                             nextItem.status = 'failed';
@@ -2906,6 +3149,7 @@ final class WiFiServer: ObservableObject, Sendable {
                             nextItem.eta = 'Already Exists';
                             logDebug(`Upload duplicate: ${nextItem.file.name}`, 'warning');
                             showNotification('"' + nextItem.file.name + '" already exists on device.', 'warning');
+                            removeFileFromIndexedDB(nextItem.id);
                         } else {
                             nextItem.status = 'failed';
                             nextItem.progress = 100;
@@ -2960,7 +3204,7 @@ final class WiFiServer: ObservableObject, Sendable {
                     showNotification("Connection lost. Queue paused. Retrying to connect...", "warning");
                     
                     reconnectTimer = setInterval(() => {
-                        fetch('/page_sync')
+                        fetch(getTargetUrl('/page_sync'), { headers: getHeaders() })
                             .then(res => {
                                 if (res.ok) {
                                     clearInterval(reconnectTimer);
@@ -2987,7 +3231,10 @@ final class WiFiServer: ObservableObject, Sendable {
 
                 function fetchLibraryUpdates() {
                     logDebug("Fetching library updates dynamically...");
-                    fetch('/api/library', { credentials: 'include' })
+                    fetch(getTargetUrl('/api/library'), { 
+                        credentials: 'include',
+                        headers: getHeaders()
+                    })
                         .then(res => {
                             logDebug(`Library API returned status: ${res.status}`);
                             return res.json();
