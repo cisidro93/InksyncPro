@@ -1,6 +1,6 @@
 # InksyncPro Product Bible
 
-**Last Updated:** June 12, 2026
+**Last Updated:** July 12, 2026
 
 ---
 
@@ -59,6 +59,10 @@ The user experience philosophy: **the app should feel like a beautifully crafted
 - **Panel Navigation (Guided View):** Intelligent, Vision-framework-powered panel detection (`EnsemblePanelDetector`). Provides a curated, panel-by-panel guided reading experience with graceful fallbacks and frosted HUD overlays. **Pure-Text Safety:** If a page contains a high concentration of text blocks (15+) and no detected structural rectangles, it is classified as a pure text/index page and panel segmentation is skipped, allowing it to be read intact as a full-page spread.
 
 - **Manga Native:** Fully supports right-to-left orientation and specifically tracks books requiring this mode.
+
+- **Premium PDF Paging & Transitions:** The PDF reader dynamically configures its display layout according to the user's `EBookPaginationMode` preference. When `paged` is active, it utilizes a horizontal single-page view controller layout (`pdfView.usePageViewController(true)`) with native horizontal slide/page curl transitions and animated edge taps (`goToNextPage` / `goToPreviousPage`), syncing cleanly with `.PDFViewPageChanged` notifications.
+- **EPUB Chapter Paging & Transition Safety:** The EPUB reader corrects page backward offsets by checking `currentOffset <= 4` (rather than projected offsets) before loading a preceding chapter. On chapter change, it sets `scrollToLastPageOnLoad = true` to cleanly land on the final page of that chapter.
+- **Strict Table of Contents Integrity:** The EPUB metadata parser assigns an empty label (`""`) to any spine section that does not carry an explicit mapping in the book's Table of Contents. Drawer outlines automatically filter out empty labels (or fall back to sequential `"Chapter X"` counters if no TOC exists), while annotation highlights store `nil` titles to trigger safe `"Page X"` fallbacks in the global notebook.
 
 ---
 
@@ -157,7 +161,11 @@ All import operations follow a strict sequence:
 
 - **Streaming Architecture:** Remote files require a `resolveLocalURL` gate to safely cache and process without mutating the cloud source.
 
-- **Wi-Fi Server:** A secure, rate-limited local server for wireless, high-speed comic importing via a web browser.
+- **Wi-Fi Server:** A secure, rate-limited local server for wireless, high-speed comic importing via a web browser. Redesigned to match the Inksync Pro dark glassmorphism system, featuring:
+  - *Dynamic SVG Vector Logo:* Inline vector SVG branding (pen nib + sync rings) glowing with a blue-to-pink gradient, automatically falling back to solid black monochrome outlines in E-Ink mode.
+  - *Offline Mode & CORS Support:* The server handles preflight `OPTIONS` requests, parses custom `X-WiFi-PIN` and `Origin` headers, and responds with dynamic CORS permissions so that the page can run locally from a static `.html` file.
+  - *IndexedDB Persistent Queue:* Queue structures are backed by browser-side IndexedDB storage (`InksyncUploadQueueDB`), preventing file loss on reloads, connection loss, or browser closure.
+  - *Synchronous EPUB Parsing:* Synchronously parses the OPF spine count inside ZIP archives to deliver accurate page count diagnostics before importing.
 
 ---
 
