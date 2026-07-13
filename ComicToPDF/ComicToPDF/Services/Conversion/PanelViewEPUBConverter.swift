@@ -405,7 +405,7 @@ class PanelViewEPUBConverter {
             <dc:date>\(pubDate)</dc:date>
             <meta property="dcterms:modified">\(ISO8601DateFormatter().string(from: Date()))</meta>
             
-            <meta name="cover" content="\(coverMetaID)"/>
+            \(settings.linkCoverAsSpread ? "" : "<meta name=\"cover\" content=\"\(coverMetaID)\"/>")
             <meta name="comic-panel-view" content="guided"/>
 
             <!-- Fixed Layout Metadata -->

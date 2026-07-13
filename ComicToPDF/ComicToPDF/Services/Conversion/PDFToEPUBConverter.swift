@@ -321,7 +321,9 @@ final class PDFToEPUBConverter: Sendable {
         var xhtmlFiles: [String] = []
         
         // Skip the first page of the book (original cover) to prevent duplicate cover pages on Kindle
-        let skipFirst = (batchIndex == 0)
+        // unless we want to link the cover page as a spread.
+        let linkCoverAsSpread = options.settings?.linkCoverAsSpread ?? false
+        let skipFirst = (batchIndex == 0) && !linkCoverAsSpread
         let filteredImageFiles = skipFirst ? Array(imageFiles.dropFirst()) : imageFiles
         
         // Group images into chunks to prevent single massive HTML files while still allowing dynamic spreads
@@ -343,7 +345,8 @@ final class PDFToEPUBConverter: Sendable {
             xhtmlFiles.append(chunkFileName)
         }
         
-            let coverMetaContent = (firstBatchCoverData != nil && batchDirectories.count > 1) ? "cover-image" : "img1"
+            // Suppress OPF cover meta tag on spread-linked covers to prevent Kindle double cover duplication.
+            let coverMetaContent = linkCoverAsSpread ? nil : ((firstBatchCoverData != nil && batchDirectories.count > 1) ? "cover-image" : "img1")
 
             // Generate content.opf
             let contentOPF = generateContentOPF(
@@ -357,7 +360,8 @@ final class PDFToEPUBConverter: Sendable {
                 coverManifest: coverManifestItem,
                 coverSpine: coverSpineItem,
                 coverMetaID: coverMetaContent,
-                mangaMode: options.mangaMode
+                mangaMode: options.mangaMode,
+                linkCoverAsSpread: linkCoverAsSpread
             )
             try contentOPF.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: String.Encoding.utf8)
         
@@ -395,7 +399,7 @@ final class PDFToEPUBConverter: Sendable {
     
     // MARK: - Private Methods
     
-    private func generateContentOPF(title: String, author: String, bookID: String, imageFiles: [String], xhtmlFiles: [String], width: Int, height: Int, coverManifest: String = "", coverSpine: String = "", coverMetaID: String = "img1", mangaMode: Bool = false) -> String {
+    private func generateContentOPF(title: String, author: String, bookID: String, imageFiles: [String], xhtmlFiles: [String], width: Int, height: Int, coverManifest: String = "", coverSpine: String = "", coverMetaID: String? = "img1", mangaMode: Bool = false, linkCoverAsSpread: Bool = false) -> String {
         var manifestItems = coverManifest
         
         // Add XHTML HTML files
@@ -416,7 +420,25 @@ final class PDFToEPUBConverter: Sendable {
         
         var spineItems = coverSpine
         for (index, _) in xhtmlFiles.enumerated() {
-            spineItems += "<itemref idref=\"chunk\(index + 1)\"/>\n        "
+            let pageNum = index + 1
+            let spreadTag: String
+            if linkCoverAsSpread {
+                if mangaMode {
+                    spreadTag = (pageNum % 2 == 1) ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
+                } else {
+                    spreadTag = (pageNum % 2 == 1) ? " properties=\"page-spread-left\"" : " properties=\"page-spread-right\""
+                }
+            } else {
+                spreadTag = ""
+            }
+            spineItems += "<itemref idref=\"chunk\(pageNum)\"\(spreadTag)/>\n        "
+        }
+        
+        let coverMetaTag: String
+        if let cid = coverMetaID {
+            coverMetaTag = "\n                <meta name=\"cover\" content=\"\(cid)\"/>"
+        } else {
+            coverMetaTag = ""
         }
         
         return """
@@ -439,8 +461,7 @@ final class PDFToEPUBConverter: Sendable {
                 <meta name="zero-gutter" content="true"/>
                 <meta name="zero-margin" content="true"/>
                 <meta name="ke-border-color" content="#000000"/>
-                <meta name="ke-border-width" content="0"/>
-                <meta name="cover" content="\(coverMetaID)"/>
+                <meta name="ke-border-width" content="0"/>\(coverMetaTag)
                 <meta name="primary-writing-mode" content="\(mangaMode ? "horizontal-rl" : "horizontal-lr")"/>
                 
                 <meta property="rendition:layout">pre-paginated</meta>
