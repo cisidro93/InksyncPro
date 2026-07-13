@@ -41,6 +41,7 @@ struct ZipUtilities {
                     try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
                     
                     var extractedFiles: [URL] = []
+                    var enumerationArchive: ZIPFoundation.Archive? = nil
                     
                     // 3. Extraction Strategy
                     if ext == "pdf" {
@@ -98,7 +99,7 @@ struct ZipUtilities {
                         //             O(all images) — eliminates the iOS memory pressure crash.
 
                         // ── Phase 1: Enumerate qualifying entry paths (no I/O, metadata only) ──
-                        var enumerationArchive: ZIPFoundation.Archive? = ZIPFoundation.Archive(url: sourceURL, accessMode: .read)
+                        enumerationArchive = ZIPFoundation.Archive(url: sourceURL, accessMode: .read)
                         guard let activeEnumerationArchive = enumerationArchive else {
                             throw NSError(domain: "ZipError", code: 1,
                                           userInfo: [NSLocalizedDescriptionKey:
@@ -210,11 +211,12 @@ struct ZipUtilities {
     static func listComicEntries(from sourceURL: URL) async throws -> [URL] {
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
+                var archive: ZIPFoundation.Archive? = nil
                 do {
                     let secure = sourceURL.startAccessingSecurityScopedResource()
                     defer { if secure { sourceURL.stopAccessingSecurityScopedResource() } }
                     
-                    var archive: Archive? = Archive(url: sourceURL, accessMode: .read)
+                    archive = ZIPFoundation.Archive(url: sourceURL, accessMode: .read)
                     guard let activeArchive = archive else {
                         throw NSError(domain: "ZipError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to read archive"])
                     }
@@ -248,6 +250,7 @@ struct ZipUtilities {
     static func zipDirectory(_ sourceURL: URL, to destinationURL: URL) async throws {
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
+                var archive: ZIPFoundation.Archive? = nil
                 do {
                     let fileManager = FileManager.default
                     
@@ -256,7 +259,7 @@ struct ZipUtilities {
                         try fileManager.removeItem(at: destinationURL)
                     }
                     
-                    var archive: Archive? = Archive(url: destinationURL, accessMode: .create)
+                    archive = ZIPFoundation.Archive(url: destinationURL, accessMode: .create)
                     guard let activeArchive = archive else {
                         throw NSError(domain: "ZipError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to create archive"])
                     }
