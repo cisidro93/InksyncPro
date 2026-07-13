@@ -99,6 +99,10 @@ class ConversionManager: ObservableObject {
         performStartupOptimization()
         migrateCoversToDisk()  // @MainActor class — direct call, no Task wrapper needed
         
+        Task {
+            await PhysicalFileSystemRouter.shared.migrateFlatFilesToSeriesDirectories(manager: self)
+        }
+        
         // Removed global thumbnailPulseCancellable to prevent full-tree invalidations.
         // Grid cells now observe thumbnailReadySubject locally for their specific PDF ID.
         

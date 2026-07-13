@@ -58,6 +58,84 @@ class PhysicalFileSystemRouter {
         if updated { manager.saveLibrary() }
     }
     
+    func migrateFlatFilesToSeriesDirectories(manager: ConversionManager) async {
+        let fileManager = FileManager.default
+        guard let docDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
+        
+        var updated = false
+        
+        for i in 0..<manager.convertedPDFs.count {
+            let pdf = manager.convertedPDFs[i]
+            let fileURL = pdf.url
+            
+            // Check if the file is currently flat in the Documents directory
+            let parentDir = fileURL.deletingLastPathComponent()
+            if parentDir.path == docDir.path {
+                // Yes, it is flat. Let's find its Series name.
+                let series = pdf.metadata.series ?? "Unknown"
+                let cleanSeries = series.trimmingCharacters(in: .whitespacesAndNewlines)
+                                       .replacingOccurrences(of: "/", with: "-")
+                                       .replacingOccurrences(of: "\\", with: "-")
+                                       .replacingOccurrences(of: ":", with: "-")
+                                       .replacingOccurrences(of: "*", with: "")
+                                       .replacingOccurrences(of: "?", with: "")
+                                       .replacingOccurrences(of: "\"", with: "'")
+                                       .replacingOccurrences(of: "<", with: "(")
+                                       .replacingOccurrences(of: ">", with: ")")
+                                       .replacingOccurrences(of: "|", with: "-")
+                
+                guard !cleanSeries.isEmpty else { continue }
+                
+                let targetDir = docDir.appendingPathComponent(cleanSeries, isDirectory: true)
+                let destURL = targetDir.appendingPathComponent(fileURL.lastPathComponent)
+                
+                do {
+                    // Create target directory if needed
+                    try fileManager.createDirectory(at: targetDir, withIntermediateDirectories: true)
+                    
+                    // If target file already exists, generate a unique suffix
+                    var resolvedDestURL = destURL
+                    if fileManager.fileExists(atPath: resolvedDestURL.path) {
+                        let nameWithoutExt = resolvedDestURL.deletingPathExtension().lastPathComponent
+                        let ext = resolvedDestURL.pathExtension
+                        var counter = 1
+                        var checkURL = targetDir.appendingPathComponent("\(nameWithoutExt) (\(counter)).\(ext)")
+                        while fileManager.fileExists(atPath: checkURL.path) {
+                            counter += 1
+                            checkURL = targetDir.appendingPathComponent("\(nameWithoutExt) (\(counter)).\(ext)")
+                        }
+                        resolvedDestURL = checkURL
+                    }
+                    
+                    // Move the file on disk
+                    try fileManager.moveItem(at: fileURL, to: resolvedDestURL)
+                    PhysicalFileSystemRouter.excludeFromBackup(at: resolvedDestURL)
+                    
+                    // Update the model url
+                    manager.convertedPDFs[i].url = resolvedDestURL
+                    
+                    // Re-register bookmark if linked
+                    if case .linked = manager.convertedPDFs[i].sourceMode {
+                        let accessing = resolvedDestURL.startAccessingSecurityScopedResource()
+                        if let newBM = try? resolvedDestURL.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil) {
+                            manager.convertedPDFs[i].sourceMode = .linked(bookmarkData: newBM)
+                        }
+                        if accessing { resolvedDestURL.stopAccessingSecurityScopedResource() }
+                    }
+                    
+                    updated = true
+                    Logger.shared.log("Migrated flat file \(fileURL.lastPathComponent) to series directory \(cleanSeries)", category: "FileSystem", type: .success)
+                } catch {
+                    Logger.shared.log("Failed to migrate flat file \(fileURL.lastPathComponent) to series directory: \(error.localizedDescription)", category: "FileSystem", type: .error)
+                }
+            }
+        }
+        
+        if updated {
+            manager.saveLibrary()
+        }
+    }
+    
     func loadCoverThumbnail(for pdf: ConvertedPDF, manager: ConversionManager) async -> UIImage? {
         let keyStr = pdf.id.uuidString
         if let cached = manager.thumbnailCache.object(forKey: keyStr as NSString) { return cached }
