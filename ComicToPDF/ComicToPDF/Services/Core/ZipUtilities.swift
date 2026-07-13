@@ -33,6 +33,7 @@ struct ZipUtilities {
                 let filename = sourceURL.deletingPathExtension().lastPathComponent
                 let uniqueID = UUID().uuidString.prefix(8)
                 let tempDir = fileManager.temporaryDirectory.appendingPathComponent("extract_\(filename)_\(uniqueID)")
+                var enumerationArchive: ZIPFoundation.Archive? = nil
                 do {
                     // Security scope is managed by the CALLER — do not open it here.
                     // See doc comment on extractComic for the ownership contract.
@@ -41,7 +42,6 @@ struct ZipUtilities {
                     try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
                     
                     var extractedFiles: [URL] = []
-                    var enumerationArchive: ZIPFoundation.Archive? = nil
                     
                     // 3. Extraction Strategy
                     if ext == "pdf" {
