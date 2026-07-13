@@ -369,11 +369,12 @@ struct StudyNotebookView: View {
                 createdAt: Date()
             )
             newNote.kindRaw = "note"
-            modelContext.insert(newNote)
-            self.activeNoteAnnotation = newNote
-            self.localNotes = ""
-            Logger.shared.log("New note created and inserted for '\(bookTitle)'", category: "Notebook", type: .success)
-        }
+             modelContext.insert(newNote)
+             try? modelContext.save()
+             self.activeNoteAnnotation = newNote
+             self.localNotes = ""
+             Logger.shared.log("New note created, inserted and saved for '\(bookTitle)'", category: "Notebook", type: .success)
+         }
         
         // Fetch existing highlights for this book
         let hDescriptor = FetchDescriptor<SDAnnotation>(predicate: #Predicate { $0.kindRaw == "highlight" && $0.pdfID == targetPDFID })
@@ -421,6 +422,7 @@ struct StudyNotebookView: View {
                     if let annotation = self.activeNoteAnnotation {
                         SpotlightIndexer.shared.indexAnnotation(annotation)
                     }
+                    try? self.modelContext.save()
                 }
                 
                 if !drawing.bounds.isEmpty {
