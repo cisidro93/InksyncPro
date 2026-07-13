@@ -445,7 +445,8 @@ struct CBZToEPUBConverter: Sendable {
         
         // For single-volume: cover image is img_1 (with properties="cover-image").
         // For multi-batch: the badged cover written above is "cover-image".
-        let coverMetaID = (totalBatches > 1 && hasBadgedCover) ? "cover-image" : "img_1"
+        // Suppress OPF cover meta tag on spread-linked covers to prevent Kindle double cover duplication.
+        let coverMetaID = settings.linkCoverAsSpread ? nil : ((totalBatches > 1 && hasBadgedCover) ? "cover-image" : "img_1")
         let opfContent = EPUBManifestBuilder.buildOPFContent(
             bookUUID: bookUUID,
             baseFilename: baseFilename,

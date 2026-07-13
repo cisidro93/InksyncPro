@@ -78,7 +78,7 @@ public struct EPUBManifestBuilder {
     public static func buildOPFContent(
         bookUUID: String,
         baseFilename: String,
-        coverMetaID: String,
+        coverMetaID: String?,
         manifestItems: [String],
         spineItems: [String],
         isManga: Bool,
@@ -91,6 +91,14 @@ public struct EPUBManifestBuilder {
         // Kindle can pre-scale images to native pixels rather than stretching from an
         // unknown source size. Without it renders are blurry on high-DPI screens.
         let originalResolution = "1980x2640"
+        
+        let coverMetaTag: String
+        if let cid = coverMetaID {
+            coverMetaTag = "\n                <meta name=\"cover\" content=\"\(cid)\"/>"
+        } else {
+            coverMetaTag = ""
+        }
+        
         // dc:language is fixed to "en" — see buildCoverXHTML comment. The reading
         // direction (RTL for manga) is set on the spine's page-progression-direction.
         return """
@@ -107,8 +115,7 @@ public struct EPUBManifestBuilder {
                 <meta property="rendition:orientation">auto</meta>
                 <meta property="rendition:spread">auto</meta>
                 <meta name="fixed-layout" content="true"/>
-                <meta name="original-resolution" content="\(originalResolution)"/>
-                <meta name="cover" content="\(coverMetaID)"/>
+                <meta name="original-resolution" content="\(originalResolution)"/>\(coverMetaTag)
                 <meta name="cdetype" content="pdoc"/>
                 <meta name="amzn:kindle:book-type" content="image-based"/>
                 <meta name="zero-gutter" content="true"/>

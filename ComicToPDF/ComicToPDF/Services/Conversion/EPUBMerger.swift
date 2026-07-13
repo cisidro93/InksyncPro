@@ -150,7 +150,8 @@ struct EPUBMerger: Sendable {
         // 4. Metadata (OPF)
         let opfTitle = sourceMetadata?.series ?? sourceMetadata?.title ?? "Merged Comic Collection"
         let bookUUID = UUID().uuidString
-        let coverMeta = (activeCoverData != nil) ? "cover_img" : "img_1"
+        // Suppress OPF cover meta tag on spread-linked covers to prevent Kindle double cover duplication.
+        let coverMeta = settings.linkCoverAsSpread ? nil : ((activeCoverData != nil) ? "cover_img" : "img_1")
         
         let opfContent = EPUBManifestBuilder.buildOPFContent(
             bookUUID: bookUUID,
@@ -253,7 +254,8 @@ struct EPUBMerger: Sendable {
             
 
             let bookUUID = UUID().uuidString
-            let coverMeta = (activeCoverData != nil) ? "cover_img" : "img_1"
+            // Suppress OPF cover meta tag on spread-linked covers to prevent Kindle double cover duplication.
+            let coverMeta = settings.linkCoverAsSpread ? nil : ((activeCoverData != nil) ? "cover_img" : "img_1")
             let firstPageHref = (activeCoverData != nil) ? "text/cover.xhtml" : "text/page_00001.xhtml"
             let opfTitle = "\(baseOutputName) (Vol \(volIdx))"
             
