@@ -330,6 +330,16 @@ struct EBookReaderView: View {
                 )
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("Reader_JumpToPage"))) { notification in
+            if let pageIndex = notification.userInfo?["pageIndex"] as? Int, pageIndex >= 0, pageIndex < totalChapters {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                    isGoingForward = pageIndex >= currentIndex
+                    currentIndex = pageIndex
+                    chapterPage = 0
+                    saveProgress()
+                }
+            }
+        }
         // Gap B: After chapter navigation, inject window.find() into the live WebView
         .onChange(of: currentIndex) { _, _ in
             guard let match = pendingSearchMatch, !match.isEmpty else { return }

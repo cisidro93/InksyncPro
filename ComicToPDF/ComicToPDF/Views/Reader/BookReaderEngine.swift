@@ -1215,6 +1215,13 @@ struct BookReaderEngine: View {
         .onChange(of: sleepTimer.didFire) { _, fired in
             if fired { onDismiss() }
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("Reader_JumpToPage"))) { notification in
+            if let pageIndex = notification.userInfo?["pageIndex"] as? Int, pageIndex >= 0, pageIndex < vm.chapterHtmlFiles.count {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                    vm.loadChapter(index: pageIndex)
+                }
+            }
+        }
 
         .popover(item: $activeHighlightToEdit) { annotation in
             HighlightQuickPopoverView(

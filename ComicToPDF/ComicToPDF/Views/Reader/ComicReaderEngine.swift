@@ -1445,6 +1445,13 @@ struct ComicReaderEngine: View {
         .onDisappear {
             BackTapManager.shared.isEnabled = false
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("Reader_JumpToPage"))) { notification in
+            if let pageIndex = notification.userInfo?["pageIndex"] as? Int, pageIndex >= 0, pageIndex < cache.pageCount {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                    currentIndex = pageIndex
+                }
+            }
+        }
         .onChange(of: backTapEnabled) { _, newValue in
             BackTapManager.shared.isEnabled = newValue
         }

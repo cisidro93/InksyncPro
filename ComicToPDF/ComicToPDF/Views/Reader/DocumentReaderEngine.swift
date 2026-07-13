@@ -244,6 +244,13 @@ struct DocumentReaderEngine: View {
             onDismiss()
             return .handled
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("Reader_JumpToPage"))) { notification in
+            if let pageIndex = notification.userInfo?["pageIndex"] as? Int, pageIndex >= 0, pageIndex < totalPages {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                    currentPageIndex = pageIndex
+                }
+            }
+        }
         .preferredColorScheme(prefs.activeTheme.isDark ? .dark : .light)
     }
     
