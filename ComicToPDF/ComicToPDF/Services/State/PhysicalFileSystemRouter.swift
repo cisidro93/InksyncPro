@@ -68,13 +68,18 @@ class PhysicalFileSystemRouter {
             let pdf = manager.convertedPDFs[i]
             let fileURL = pdf.url
             
-            // Check if the file is currently flat in the Documents directory
+            // Only migrate local files that are flat in the Documents directory
+            guard case .local = pdf.sourceMode else { continue }
+            
             let parentDir = fileURL.deletingLastPathComponent()
             if parentDir.path == docDir.path {
-                // Yes, it is flat. Let's find its Series name.
-                let series = pdf.metadata.series ?? "Unknown"
-                let cleanSeries = series.trimmingCharacters(in: .whitespacesAndNewlines)
-                                       .replacingOccurrences(of: "/", with: "-")
+                // Find or infer the Series name using same fallback logic as database/UI grouping
+                let rawSeries = (pdf.metadata.series?.isEmpty == false) ? pdf.metadata.series! : MetadataHeuristics.cleanFilename(pdf.name)
+                let series = SeriesNameParser.cleanFolderName(rawSeries).trimmingCharacters(in: .whitespacesAndNewlines)
+                
+                guard !series.isEmpty else { continue }
+                
+                let cleanSeries = series.replacingOccurrences(of: "/", with: "-")
                                        .replacingOccurrences(of: "\\", with: "-")
                                        .replacingOccurrences(of: ":", with: "-")
                                        .replacingOccurrences(of: "*", with: "")
@@ -114,13 +119,9 @@ class PhysicalFileSystemRouter {
                     // Update the model url
                     manager.convertedPDFs[i].url = resolvedDestURL
                     
-                    // Re-register bookmark if linked
-                    if case .linked = manager.convertedPDFs[i].sourceMode {
-                        let accessing = resolvedDestURL.startAccessingSecurityScopedResource()
-                        if let newBM = try? resolvedDestURL.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil) {
-                            manager.convertedPDFs[i].sourceMode = .linked(bookmarkData: newBM)
-                        }
-                        if accessing { resolvedDestURL.stopAccessingSecurityScopedResource() }
+                    // Keep the model's logical series metadata in perfect sync with the grouping
+                    if manager.convertedPDFs[i].metadata.series != series {
+                        manager.convertedPDFs[i].metadata.series = series
                     }
                     
                     updated = true
