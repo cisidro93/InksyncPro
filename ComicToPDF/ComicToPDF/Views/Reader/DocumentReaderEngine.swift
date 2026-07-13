@@ -466,10 +466,10 @@ struct PDFKitRepresentedView: UIViewRepresentable {
             // Gap C fix: Write the annotation back to the PDF document on disk.
             // PDFAnnotation is added to the in-memory PDFPage above in customHighlightAction,
             // but without this write, the highlight is lost when the app is relaunched.
-            // We use a background Task to avoid blocking the main thread.
             let writeURL = pdf.url
+            let doc = document
             DispatchQueue.global(qos: .background).async {
-                document.write(to: writeURL)
+                doc.write(to: writeURL)
             }
         }
         
