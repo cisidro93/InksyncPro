@@ -758,7 +758,7 @@ class PageBufferManager: ObservableObject {
         }
 
         let url = pageURLs[index]
-        let scale = await MainActor.run { UIScreen.main.scale }
+        let scale = UIScreen.main.scale
         let perfClass = ProcessInfo.processInfo.performanceClass
         let maxPixelSize: CGFloat? = {
             if let b = bounds, b.width > 0, b.height > 0 {
