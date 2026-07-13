@@ -51,7 +51,7 @@ struct StudyNotebookView: View {
     var body: some View {
         ZStack(alignment: .bottom) {
             // MARK: Premium Background Base
-            Color(UIColor.systemBackground).ignoresSafeArea()
+            Color.inkBackground.ignoresSafeArea()
             
             VStack(spacing: 0) {
                 // MARK: Glassmorphic Header
@@ -220,7 +220,7 @@ struct StudyNotebookView: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
                 .background(
-                    Color(UIColor.systemBackground).opacity(0.85)
+                    Color.inkBackground.opacity(0.85)
                         .background(.ultraThinMaterial)
                 )
                 .overlay(Rectangle().frame(height: 1).foregroundColor(Color.primary.opacity(0.05)), alignment: .bottom)
@@ -674,7 +674,7 @@ struct StudyNotebookView: View {
             .frame(width: 320)
             .background(
                 RoundedRectangle(cornerRadius: 16)
-                    .fill(Color(UIColor.systemBackground).opacity(0.85))
+                    .fill(Color.inkSurface.opacity(0.85))
                     .background(.ultraThinMaterial)
             )
             .overlay(
@@ -973,7 +973,7 @@ struct StudyNotebookView: View {
                     }
                     .padding(12)
                 }
-                .background(Color(UIColor.secondarySystemBackground).opacity(0.95))
+                .background(Color.inkSurface.opacity(0.95))
             }
             .frame(width: 250)
             .background(.ultraThinMaterial)
