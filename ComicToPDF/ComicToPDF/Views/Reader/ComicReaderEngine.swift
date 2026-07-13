@@ -1436,9 +1436,7 @@ struct ComicReaderEngine: View {
                 pageIndex: currentIndex
             )
         }
-        .sheet(isPresented: $showAnnotations) {
-            StudyNotebookView(bookID: pdf.id.uuidString, bookTitle: pdf.name, fileURL: pdf.url)
-        }
+
         .sheet(item: $activeHighlightToEdit) { annotation in
             AnnotationEditSheet(annotation: annotation)
                 .presentationDetents([.height(180), .medium])
@@ -1771,7 +1769,7 @@ struct ComicReaderEngine: View {
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { showingSettingsHUD.toggle() }
             },
             onAnnotationsToggle: {
-                showAnnotations = true
+                NotificationCenter.default.post(name: .toggleStudyNotebook, object: nil)
             },
             onCharacterMapToggle: {
                 showingCharacterMap.toggle()

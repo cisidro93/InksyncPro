@@ -1160,7 +1160,7 @@ struct BookReaderEngine: View {
                     withAnimation { showTypographyHUD = true }
                 },
                 onTOCToggle: { showTOC = true },
-                onAnnotationsToggle: { showAnnotations = true },
+                onAnnotationsToggle: { NotificationCenter.default.post(name: .toggleStudyNotebook, object: nil) },
                 currentProgress: Binding(
                     get: { Double(vm.currentChapterIndex) / Double(max(1, vm.chapterHtmlFiles.count - 1)) },
                     set: { newVal in
@@ -1215,9 +1215,7 @@ struct BookReaderEngine: View {
         .onChange(of: sleepTimer.didFire) { _, fired in
             if fired { onDismiss() }
         }
-        .sheet(isPresented: $showAnnotations) {
-            StudyNotebookView(bookID: pdf.id.uuidString, bookTitle: pdf.name, fileURL: pdf.url)
-        }
+
         .popover(item: $activeHighlightToEdit) { annotation in
             HighlightQuickPopoverView(
                 annotation: annotation,

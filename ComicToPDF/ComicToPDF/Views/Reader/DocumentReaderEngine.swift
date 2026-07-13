@@ -112,7 +112,7 @@ struct DocumentReaderEngine: View {
                     AnnotationStore.shared.add(bookmark)
                 },
                 onSettingsToggle: { showingSettings = true },
-                onTOCToggle: { showAnnotations = true },
+                onTOCToggle: { NotificationCenter.default.post(name: .toggleStudyNotebook, object: nil) },
                 onAnnotationsToggle: { isPencilMode.toggle() },
                 onSearchToggle: { showSearch = true },
                 currentProgress: Binding(
@@ -212,13 +212,7 @@ struct DocumentReaderEngine: View {
             EBookSettingsPanel(bookID: pdf.id.uuidString)
                 .presentationDetents([.medium, .large])
         }
-        .sheet(isPresented: $showAnnotations) {
-            StudyNotebookView(
-                bookID: pdf.id.uuidString,
-                bookTitle: pdf.name,
-                fileURL: pdf.url
-            )
-        }
+
         .sheet(isPresented: $showSearch) {
             if let doc = pdfDocument, let pdfV = pdfViewReference {
                 ReaderSearchView(document: doc, pdfView: pdfV)

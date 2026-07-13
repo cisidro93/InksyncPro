@@ -37,4 +37,10 @@ extension Notification.Name {
     static let inkTabDoubleTapLibrary = Notification.Name("InkTab_DoubleTap_0")
     /// Fired when a series row's context menu "Rename" is tapped.
     static let requestSeriesRename    = Notification.Name("RequestSeriesRename")
+
+    // MARK: Notebook Side Panel
+    /// Toggles the sliding side notebook panel in the active reader view.
+    static let toggleStudyNotebook    = Notification.Name("ToggleStudyNotebook")
+    /// Hides the sliding side notebook panel in the active reader view.
+    static let hideStudyNotebook      = Notification.Name("HideStudyNotebook")
 }

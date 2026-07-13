@@ -205,6 +205,17 @@ struct StudyNotebookView: View {
                                 .clipShape(Circle())
                         }
                     }
+                    
+                    Button {
+                        NotificationCenter.default.post(name: .hideStudyNotebook, object: nil)
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(.primary)
+                            .padding(8)
+                            .background(Color.primary.opacity(0.08))
+                            .clipShape(Circle())
+                    }
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)

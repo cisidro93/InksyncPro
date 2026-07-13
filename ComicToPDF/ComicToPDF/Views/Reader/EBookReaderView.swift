@@ -293,13 +293,7 @@ struct EBookReaderView: View {
                 .presentationDragIndicator(.visible)
         }
         // Gap A: Annotations / highlights panel — same StudyNotebookView used by BookReaderEngine
-        .sheet(isPresented: $showAnnotations) {
-            StudyNotebookView(
-                bookID: pdf?.id.uuidString ?? "",
-                bookTitle: title,
-                fileURL: pdf?.url
-            )
-        }
+
         // Gap B: Full-text EPUB search sheet
         .sheet(isPresented: $showSearch) {
             if let meta = metadata {
@@ -432,7 +426,7 @@ struct EBookReaderView: View {
                 }
                 Section("Tools") {
                     // Gap A: Annotations + highlights panel
-                    Button { showAnnotations = true } label: {
+                    Button { NotificationCenter.default.post(name: .toggleStudyNotebook, object: nil) } label: {
                         Label("Highlights & Notes", systemImage: "highlighter")
                     }
                     Button { showShareSheet = true } label: {
