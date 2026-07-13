@@ -75,6 +75,11 @@ final class LibraryService: ObservableObject {
             
             // 4. Reload from SwiftData to memory to update UI
             await loadLibrary()
+            
+            // Organize flat library files under series subdirectories retroactively
+            if let manager = ConversionManager.shared {
+                await PhysicalFileSystemRouter.shared.migrateFlatFilesToSeriesDirectories(manager: manager)
+            }
         } catch {
             Logger.shared.log("LibraryService: smart grouping failed: \(error.localizedDescription)", category: "Library", type: .error)
         }

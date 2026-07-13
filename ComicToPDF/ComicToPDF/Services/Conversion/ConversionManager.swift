@@ -89,19 +89,18 @@ class ConversionManager: ObservableObject {
         proLibraryPDFs = convertedPDFs.filter { (unlocked ? true : !$0.isPrivate) && $0.addedByMode == .pro }
     }
     
+    @MainActor static weak var shared: ConversionManager? = nil
+    
     private var taskEngineRelay: AnyCancellable?
     private var importMonitorRelay: AnyCancellable?
 
     init() {
+        Self.shared = self
         loadLibrary()
         
         createWelcomeFile()
         performStartupOptimization()
         migrateCoversToDisk()  // @MainActor class — direct call, no Task wrapper needed
-        
-        Task {
-            await PhysicalFileSystemRouter.shared.migrateFlatFilesToSeriesDirectories(manager: self)
-        }
         
         // Removed global thumbnailPulseCancellable to prevent full-tree invalidations.
         // Grid cells now observe thumbnailReadySubject locally for their specific PDF ID.

@@ -57,6 +57,9 @@ class LibraryPersistenceManager {
                 manager.convertedPDFs = legacyPDFs
                 manager.collections = legacyCols
                 
+                // Organize flat library files under series subdirectories retroactively
+                await PhysicalFileSystemRouter.shared.migrateFlatFilesToSeriesDirectories(manager: manager)
+                
                 let dirURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
                 if let url = dirURL?.appendingPathComponent(self.libraryFileName),
                    FileManager.default.fileExists(atPath: url.path) {
