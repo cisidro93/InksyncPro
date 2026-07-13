@@ -1057,6 +1057,21 @@ final class WiFiServer: ObservableObject, Sendable {
             finalDestURL = inbox.appendingPathComponent(sanitizedFileName).standardizedFileURL
         }
 
+        var resolvedDestURL = finalDestURL
+        if FileManager.default.fileExists(atPath: resolvedDestURL.path) {
+            let nameWithoutExt = resolvedDestURL.deletingPathExtension().lastPathComponent
+            let ext = resolvedDestURL.pathExtension
+            var counter = 1
+            var checkURL = resolvedDestURL.deletingLastPathComponent().appendingPathComponent("\(nameWithoutExt) (\(counter)).\(ext)")
+            while FileManager.default.fileExists(atPath: checkURL.path) {
+                counter += 1
+                checkURL = resolvedDestURL.deletingLastPathComponent().appendingPathComponent("\(nameWithoutExt) (\(counter)).\(ext)")
+            }
+            resolvedDestURL = checkURL
+            context.filename = resolvedDestURL.lastPathComponent
+            Logger.shared.log("WiFi Transfer - File already exists. Generated unique destination: \(context.filename)", category: "Network")
+        }
+        finalDestURL = resolvedDestURL
         context.finalDestinationURL = finalDestURL
 
         // Write the active uploading file to a staging directory (completely hidden from the scanner)
@@ -1067,12 +1082,6 @@ final class WiFiServer: ObservableObject, Sendable {
         let stagingURL = stagingDir.appendingPathComponent("\(stagingUUID).tmp").standardizedFileURL
         
         context.destinationURL = stagingURL
-
-        // Duplicate final file prevention: delete existing final file to allow overwrite
-        if FileManager.default.fileExists(atPath: finalDestURL.path) {
-            Logger.shared.log("WiFi Transfer - File already exists. Removing existing file to overwrite/retry: \(finalDestURL.lastPathComponent)", category: "Network")
-            try? FileManager.default.removeItem(at: finalDestURL)
-        }
 
         // Track both staging and final paths in the active uploads registry
         ActiveUploadRegistry.shared.register(stagingURL)

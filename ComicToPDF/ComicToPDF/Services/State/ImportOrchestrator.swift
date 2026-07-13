@@ -65,8 +65,13 @@ actor ImportOrchestrator {
             guard let enumerator = fileManager.enumerator(at: folderURL, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) else { return [] }
             
             // O(1) in-batch dedup — avoids O(n²) newlyImported.contains(where:) scan
-            var batchFileNames = Set<String>()
+            var batchDestPaths = Set<String>()
             var fileCount = 0
+            
+            let folderName = folderURL.lastPathComponent
+            let invalidParents = ["documents", "inbox", "tmp", "caches", "file provider storage", "downloads"]
+            let shouldIncludeFolder = !invalidParents.contains(where: { folderName.lowercased().hasPrefix($0) })
+
             while let fileURL = enumerator.nextObject() as? URL {
                 fileCount += 1
                 if fileCount % 25 == 0 {
@@ -82,14 +87,34 @@ actor ImportOrchestrator {
                 guard ["pdf", "epub", "cbz", "cbr", "cb7", "cbt", "zip"].contains(ext) else { continue }
                 
                 let fileName = fileURL.lastPathComponent
-                let destURL = documentsDir.appendingPathComponent(fileName)
                 
-                // O(1) dedup using pre-built sets (FIX: was O(n) contains(where:) per file)
-                guard !existingPaths.contains(fileName) && !batchFileNames.contains(fileName) else { continue }
+                // Determine destination URL preserving subfolders
+                let relativePath: String
+                let absoluteFolderPath = folderURL.standardizedFileURL.path
+                let absoluteFilePath = fileURL.standardizedFileURL.path
+                if absoluteFilePath.hasPrefix(absoluteFolderPath) {
+                    let suffix = String(absoluteFilePath.dropFirst(absoluteFolderPath.count)).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+                    if suffix.contains("/") {
+                        relativePath = suffix
+                    } else if shouldIncludeFolder {
+                        relativePath = (folderName as NSString).appendingPathComponent(suffix)
+                    } else {
+                        relativePath = suffix
+                    }
+                } else {
+                    relativePath = fileURL.lastPathComponent
+                }
+                
+                let destURL = documentsDir.appendingPathComponent(relativePath)
+                
+                // O(1) duplicate path checks
+                guard !existingPaths.contains(destURL.path) && !batchDestPaths.contains(destURL.path) else { continue }
                 
                 do {
                     await MainActor.run { manager.processingStatus = "Importing \(fileName)..." }
                     try autoreleasepool {
+                        let parentDir = destURL.deletingLastPathComponent()
+                        try fileManager.createDirectory(at: parentDir, withIntermediateDirectories: true)
                         if fileManager.fileExists(atPath: destURL.path) { try fileManager.removeItem(at: destURL) }
                         try fileManager.copyItem(at: fileURL, to: destURL)
                         PhysicalFileSystemRouter.excludeFromBackup(at: destURL)
@@ -174,7 +199,7 @@ actor ImportOrchestrator {
                     if pdf.contentType == .hybrid || pdf.contentType == .book {
                         pdf.documentSubtype = await self.detectDocumentSubtype(url: destURL, fileSize: size)
                     }
-                    batchFileNames.insert(fileName)
+                    batchDestPaths.insert(destURL.path)
                     newlyImported.append(pdf)
                 } catch {
                     Logger.shared.log("Failed to sync \(fileName): \(error.localizedDescription)", category: "Import", type: .error)
@@ -185,7 +210,7 @@ actor ImportOrchestrator {
         
         await MainActor.run {
             for pdf in newPDFs {
-                manager.convertedPDFs.removeAll(where: { $0.url.lastPathComponent == pdf.url.lastPathComponent })
+                manager.convertedPDFs.removeAll(where: { $0.url.path == pdf.url.path })
                 manager.convertedPDFs.append(pdf)
             }
             manager.saveLibrary()
@@ -211,9 +236,9 @@ actor ImportOrchestrator {
         // A file is a "size clone" when its size appears in the library (likely a renamed copy).
         // New files (neither match) are always imported.
         let existingKeys: Set<String> = await MainActor.run {
-            Set(manager.convertedPDFs.map { "\($0.url.lastPathComponent)||\($0.fileSize)" })
+            Set(manager.convertedPDFs.map { "\($0.url.path)||\($0.fileSize)" })
         }
-        let existingPaths = await MainActor.run { Set(manager.convertedPDFs.map { $0.url.lastPathComponent }) }
+        let existingPaths = await MainActor.run { Set(manager.convertedPDFs.map { $0.url.path }) }
         let isVaultUnlocked = await MainActor.run { !SecurityManager.shared.isVaultLocked }
 
         await MainActor.run { ImportMonitorManager.shared.startImport(totalCount: urls.count) }
@@ -225,8 +250,8 @@ actor ImportOrchestrator {
             var unstoredPDFs: [ConvertedPDF] = []
 
             // O(1) in-batch dedup set — replaces the O(n²) newPDFs.contains(where:) scan
-            var batchKeys = Set<String>()        // "filename||size"
-            var batchFileNames = Set<String>()   // filename only (for collision rename logic)
+            var batchKeys = Set<String>()        // "path||size"
+            var batchDestPaths = Set<String>()   // path only
 
             var loopIndex = 0
             for url in urls {
@@ -247,38 +272,56 @@ actor ImportOrchestrator {
                 defer { if accessing { url.stopAccessingSecurityScopedResource() } }
 
                 var fileName = url.lastPathComponent
-                var destURL = documentsDir.appendingPathComponent(fileName)
                 let overrideMeta = overrides[url]
+                let parsedTokens = DeterministicFilenameParser.parse(filename: fileName)
+                let series = overrideMeta?.series ?? parsedTokens.seriesName ?? "Unknown"
+                let cleanSeries = series.trimmingCharacters(in: .whitespacesAndNewlines)
+                                       .replacingOccurrences(of: "/", with: "-")
+                                       .replacingOccurrences(of: "\\", with: "-")
+                                       .replacingOccurrences(of: ":", with: "-")
+                                       .replacingOccurrences(of: "*", with: "")
+                                       .replacingOccurrences(of: "?", with: "")
+                                       .replacingOccurrences(of: "\"", with: "'")
+                                       .replacingOccurrences(of: "<", with: "(")
+                                       .replacingOccurrences(of: ">", with: ")")
+                                       .replacingOccurrences(of: "|", with: "-")
+                
+                var targetDir = documentsDir
+                if !cleanSeries.isEmpty {
+                    targetDir = documentsDir.appendingPathComponent(cleanSeries, isDirectory: true)
+                }
+                var destURL = targetDir.appendingPathComponent(fileName)
 
                 // ── Duplicate Detection ────────────────────────────────────────────────
                 let attrs = try? fileManager.attributesOfItem(atPath: url.path)
                 let incomingSize: Int64 = (attrs?[.size] as? Int64) ?? 0
-                let compositeKey = "\(fileName)||\(incomingSize)"
+                let compositeKey = "\(destURL.path)||\(incomingSize)"
 
-                // 1. Exact match: same filename AND same byte-count in library → true duplicate, skip
+                // 1. Exact match: same path AND same byte-count in library → true duplicate, skip
                 if incomingSize > 0 && (existingKeys.contains(compositeKey) || batchKeys.contains(compositeKey)) {
                     Logger.shared.log("Skipping duplicate: \(fileName) (\(incomingSize) bytes)", category: "Import", type: .info)
                     continue
                 }
 
-                // 2. Filename collision — rename to avoid overwriting a different file with the same name
-                if existingPaths.contains(fileName) || batchFileNames.contains(fileName) {
-                    if let seriesPrefix = overrideMeta?.series, !seriesPrefix.isEmpty {
-                        fileName = "\(seriesPrefix) - \(fileName)"
-                        destURL = documentsDir.appendingPathComponent(fileName)
+                // 2. Filename collision inside the same series directory — rename to avoid overwriting
+                if existingPaths.contains(destURL.path) || batchDestPaths.contains(destURL.path) || fileManager.fileExists(atPath: destURL.path) {
+                    let nameWithoutExt = (fileName as NSString).deletingPathExtension
+                    let ext = (fileName as NSString).pathExtension
+                    var counter = 1
+                    var checkURL = targetDir.appendingPathComponent("\(nameWithoutExt) (\(counter)).\(ext)")
+                    while existingPaths.contains(checkURL.path) || batchDestPaths.contains(checkURL.path) || fileManager.fileExists(atPath: checkURL.path) {
+                        counter += 1
+                        checkURL = targetDir.appendingPathComponent("\(nameWithoutExt) (\(counter)).\(ext)")
                     }
-                    // Failsafe UUID suffix for repeated collisions
-                    while existingPaths.contains(fileName) || batchFileNames.contains(fileName) || fileManager.fileExists(atPath: destURL.path) {
-                        let nameWithoutExt = (fileName as NSString).deletingPathExtension
-                        let ext = (fileName as NSString).pathExtension
-                        fileName = "\(nameWithoutExt)_\(UUID().uuidString.prefix(6)).\(ext)"
-                        destURL = documentsDir.appendingPathComponent(fileName)
-                    }
+                    destURL = checkURL
+                    fileName = destURL.lastPathComponent
                 }
 
                 do {
                     try autoreleasepool {
                         let useMove = url.path.contains("InksyncStaging_")
+                        let parentDir = destURL.deletingLastPathComponent()
+                        try fileManager.createDirectory(at: parentDir, withIntermediateDirectories: true)
                         try AtomicFileCoordinator.importFile(from: url, to: destURL, useMoveIfStaged: useMove)
                         PhysicalFileSystemRouter.excludeFromBackup(at: destURL)
                     }
@@ -405,8 +448,8 @@ actor ImportOrchestrator {
                     pdf.contentHash = nil // Deferred to prevent UI freeze
 
                     // Register in O(1) dedup sets
-                    batchKeys.insert("\(fileName)||\(size)")
-                    batchFileNames.insert(fileName)
+                    batchKeys.insert("\(destURL.path)||\(size)")
+                    batchDestPaths.insert(destURL.path)
 
                     newPDFs.append(pdf)
                     unstoredPDFs.append(pdf)
@@ -418,8 +461,8 @@ actor ImportOrchestrator {
                         unstoredPDFs.removeAll()
                         await MainActor.run {
                             // Build a snapshot set once for O(1) per-item lookup
-                            let existing = Set(manager.convertedPDFs.map { $0.url.lastPathComponent })
-                            for chunkPdf in chunk where !existing.contains(chunkPdf.url.lastPathComponent) {
+                            let existing = Set(manager.convertedPDFs.map { $0.url.path })
+                            for chunkPdf in chunk where !existing.contains(chunkPdf.url.path) {
                                 manager.convertedPDFs.append(chunkPdf)
                             }
                             // Intentionally no saveLibrary() here — avoids 10× expensive JSON serializations
@@ -437,8 +480,8 @@ actor ImportOrchestrator {
             if !unstoredPDFs.isEmpty {
                 let chunk = unstoredPDFs
                 await MainActor.run {
-                    let existing = Set(manager.convertedPDFs.map { $0.url.lastPathComponent })
-                    for chunkPdf in chunk where !existing.contains(chunkPdf.url.lastPathComponent) {
+                    let existing = Set(manager.convertedPDFs.map { $0.url.path })
+                    for chunkPdf in chunk where !existing.contains(chunkPdf.url.path) {
                         manager.convertedPDFs.append(chunkPdf)
                     }
                 }

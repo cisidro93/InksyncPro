@@ -5,7 +5,7 @@ import SwiftData
 
 struct CBZToEPUBConverter: Sendable {
     
-    func convert(sourceURL: URL, settings: ConversionSettings, manualManifest: [Int: [PanelExtractor.Panel]]?, sourceIsMangaPDF: Bool = false, coverOverrideData: Data? = nil, customOutputName: String? = nil, progress: @escaping @Sendable (Double) -> Void) async throws -> [URL] {
+    func convert(sourceURL: URL, settings: ConversionSettings, manualManifest: [Int: [PanelExtractor.Panel]]?, sourceIsMangaPDF: Bool = false, coverOverrideData: Data? = nil, customOutputName: String? = nil, seriesName: String? = nil, progress: @escaping @Sendable (Double) -> Void) async throws -> [URL] {
         Logger.shared.log("Starting Enterprise Conversion (No TOC). Manual Manifest: \(manualManifest?.count ?? 0) pages", category: "Converter")
         
         let fileManager = FileManager.default
@@ -74,7 +74,7 @@ struct CBZToEPUBConverter: Sendable {
                 isCoverOverrideActive: coverOverrideData != nil
             )
             
-            let outputURL = try await packageEPUB(batchDir: batchDir, outputName: epubName)
+            let outputURL = try await packageEPUB(batchDir: batchDir, outputName: epubName, seriesName: seriesName)
             generatedFiles.append(outputURL)
             
             progress(0.5 + (0.5 * Double(batchIndex + 1) / Double(totalBatches)))
@@ -465,7 +465,7 @@ struct CBZToEPUBConverter: Sendable {
     // Stage 4 — Zip EPUB directory into a final .epub file.
     // ZIPFoundation performs synchronous disk I/O: move it off the Swift cooperative
     // thread pool via DispatchQueue.global so we don't starve other async tasks.
-    private func packageEPUB(batchDir: URL, outputName: String) async throws -> URL {
+    private func packageEPUB(batchDir: URL, outputName: String, seriesName: String?) async throws -> URL {
         Logger.shared.log("Stage 4 Start: Packaging EPUB \(outputName)", category: "Converter")
         let fileManager = FileManager.default
         // batchDir holds the full unzipped EPUB tree — must always be cleaned up.
@@ -483,7 +483,24 @@ struct CBZToEPUBConverter: Sendable {
         guard let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
             throw NSError(domain: "Converter", code: 3, userInfo: [NSLocalizedDescriptionKey: "Documents directory not found"])
         }
-        let outputURL = docDir.appendingPathComponent(outputFilename)
+        var outputDir = docDir
+        if let series = seriesName, !series.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let cleanSeries = series.trimmingCharacters(in: .whitespacesAndNewlines)
+                                   .replacingOccurrences(of: "/", with: "-")
+                                   .replacingOccurrences(of: "\\", with: "-")
+                                   .replacingOccurrences(of: ":", with: "-")
+                                   .replacingOccurrences(of: "*", with: "")
+                                   .replacingOccurrences(of: "?", with: "")
+                                   .replacingOccurrences(of: "\"", with: "'")
+                                   .replacingOccurrences(of: "<", with: "(")
+                                   .replacingOccurrences(of: ">", with: ")")
+                                   .replacingOccurrences(of: "|", with: "-")
+            if !cleanSeries.isEmpty {
+                outputDir = docDir.appendingPathComponent(cleanSeries, isDirectory: true)
+                try? fileManager.createDirectory(at: outputDir, withIntermediateDirectories: true)
+            }
+        }
+        let outputURL = outputDir.appendingPathComponent(outputFilename)
 
         // Capture values so they are Sendable across the continuation boundary.
         let capturedBatchDir = batchDir

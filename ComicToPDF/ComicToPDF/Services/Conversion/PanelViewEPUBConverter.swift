@@ -97,6 +97,7 @@ class PanelViewEPUBConverter {
         sourceIsMangaPDF: Bool = false,
         coverOverrideData: Data? = nil,
         customOutputName: String? = nil,
+        seriesName: String? = nil,
         progress: @escaping (Double) -> Void
     ) async throws -> [URL] {
         Logger.shared.log("PanelViewEPUBConverter: Starting. Pages with panels: \(panels.count)", category: "PVConverter")
@@ -322,7 +323,24 @@ class PanelViewEPUBConverter {
 
             // Assemble ZIP → .epub
             let outputName = sanitizeFilename(batchName) + ".epub"
-            let outputURL  = docs.appendingPathComponent(outputName)
+            var outputDir = docs
+            if let series = seriesName, !series.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                let cleanSeries = series.trimmingCharacters(in: .whitespacesAndNewlines)
+                                       .replacingOccurrences(of: "/", with: "-")
+                                       .replacingOccurrences(of: "\\", with: "-")
+                                       .replacingOccurrences(of: ":", with: "-")
+                                       .replacingOccurrences(of: "*", with: "")
+                                       .replacingOccurrences(of: "?", with: "")
+                                       .replacingOccurrences(of: "\"", with: "'")
+                                       .replacingOccurrences(of: "<", with: "(")
+                                       .replacingOccurrences(of: ">", with: ")")
+                                       .replacingOccurrences(of: "|", with: "-")
+                if !cleanSeries.isEmpty {
+                    outputDir = docs.appendingPathComponent(cleanSeries, isDirectory: true)
+                    try? fileManager.createDirectory(at: outputDir, withIntermediateDirectories: true)
+                }
+            }
+            let outputURL  = outputDir.appendingPathComponent(outputName)
             if fileManager.fileExists(atPath: outputURL.path) {
                 try fileManager.removeItem(at: outputURL)
             }

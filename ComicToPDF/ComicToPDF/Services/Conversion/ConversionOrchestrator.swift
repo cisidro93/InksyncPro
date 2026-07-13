@@ -67,7 +67,24 @@ final class ConversionOrchestrator: Sendable {
                     pName = pdf.name.replacingOccurrences(of: ".cbz", with: "").replacingOccurrences(of: ".zip", with: "") + "_Converted.pdf"
                 }
                 let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? URL(fileURLWithPath: NSTemporaryDirectory())
-                let outputURL = docDir.appendingPathComponent(pName)
+                var outputDir = docDir
+                if let series = pdf.metadata.series, !series.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    let cleanSeries = series.trimmingCharacters(in: .whitespacesAndNewlines)
+                                           .replacingOccurrences(of: "/", with: "-")
+                                           .replacingOccurrences(of: "\\", with: "-")
+                                           .replacingOccurrences(of: ":", with: "-")
+                                           .replacingOccurrences(of: "*", with: "")
+                                           .replacingOccurrences(of: "?", with: "")
+                                           .replacingOccurrences(of: "\"", with: "'")
+                                           .replacingOccurrences(of: "<", with: "(")
+                                           .replacingOccurrences(of: ">", with: ")")
+                                           .replacingOccurrences(of: "|", with: "-")
+                    if !cleanSeries.isEmpty {
+                        outputDir = docDir.appendingPathComponent(cleanSeries, isDirectory: true)
+                        try? FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)
+                    }
+                }
+                let outputURL = outputDir.appendingPathComponent(pName)
                 let imageURLs = try await manager.extractImageURLs(from: resolvedSourceURL)
                 try PDFGenerator.generate(from: imageURLs, to: outputURL, mangaMode: jobSettings.mangaMode, chapters: pdf.chapters, settings: jobSettings, coverOverrideData: coverOverrideData) { progress in
                     Task { @MainActor in manager.conversionProgress = progress; manager.processingStatus = "Converting \(Int(progress * 100))%" }
@@ -83,7 +100,24 @@ final class ConversionOrchestrator: Sendable {
                     pName = pdf.name.replacingOccurrences(of: ".cbz", with: "").replacingOccurrences(of: ".pdf", with: "").replacingOccurrences(of: ".zip", with: "") + "_Converted.cbz"
                 }
                 let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? URL(fileURLWithPath: NSTemporaryDirectory())
-                let outputURL = docDir.appendingPathComponent(pName)
+                var outputDir = docDir
+                if let series = pdf.metadata.series, !series.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    let cleanSeries = series.trimmingCharacters(in: .whitespacesAndNewlines)
+                                           .replacingOccurrences(of: "/", with: "-")
+                                           .replacingOccurrences(of: "\\", with: "-")
+                                           .replacingOccurrences(of: ":", with: "-")
+                                           .replacingOccurrences(of: "*", with: "")
+                                           .replacingOccurrences(of: "?", with: "")
+                                           .replacingOccurrences(of: "\"", with: "'")
+                                           .replacingOccurrences(of: "<", with: "(")
+                                           .replacingOccurrences(of: ">", with: ")")
+                                           .replacingOccurrences(of: "|", with: "-")
+                    if !cleanSeries.isEmpty {
+                        outputDir = docDir.appendingPathComponent(cleanSeries, isDirectory: true)
+                        try? FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)
+                    }
+                }
+                let outputURL = outputDir.appendingPathComponent(pName)
                 
                 await MainActor.run { manager.processingStatus = "Extracting Images..." }
                 let imageURLs = try await manager.extractImageURLs(from: resolvedSourceURL)
@@ -107,7 +141,7 @@ final class ConversionOrchestrator: Sendable {
                 let combinedManifest = await manager.getCombinedManifest(for: pdf)
                 let pvConverter = PanelViewEPUBConverter()
                 let resolvedOutputName = customOutputName ?? pdf.name
-                let newURLs = try await pvConverter.convert(sourceURL: resolvedSourceURL, settings: jobSettings, panels: combinedManifest, sourceIsMangaPDF: false, coverOverrideData: coverOverrideData, customOutputName: resolvedOutputName) { progress in
+                let newURLs = try await pvConverter.convert(sourceURL: resolvedSourceURL, settings: jobSettings, panels: combinedManifest, sourceIsMangaPDF: false, coverOverrideData: coverOverrideData, customOutputName: resolvedOutputName, seriesName: pdf.metadata.series) { progress in
                     Task { @MainActor in manager.conversionProgress = progress; manager.processingStatus = "Converting \(Int(progress * 100))%" }
                 }
                 var targetMetadata = pdf.metadata
@@ -125,7 +159,7 @@ final class ConversionOrchestrator: Sendable {
             } else {
                 let converter = CBZToEPUBConverter()
                 let resolvedOutputName = customOutputName ?? pdf.name
-                let newURLs = try await converter.convert(sourceURL: resolvedSourceURL, settings: jobSettings, manualManifest: nil, sourceIsMangaPDF: false, coverOverrideData: coverOverrideData, customOutputName: resolvedOutputName) { progress in
+                let newURLs = try await converter.convert(sourceURL: resolvedSourceURL, settings: jobSettings, manualManifest: nil, sourceIsMangaPDF: false, coverOverrideData: coverOverrideData, customOutputName: resolvedOutputName, seriesName: pdf.metadata.series) { progress in
                     Task { @MainActor in manager.conversionProgress = progress; manager.processingStatus = "Converting \(Int(progress * 100))%" }
                 }
                 var targetMetadata = pdf.metadata
@@ -219,7 +253,24 @@ final class ConversionOrchestrator: Sendable {
                 if jobSettings.outputFormat == .pdf {
                     let pName = pdf.name.replacingOccurrences(of: ".cbz", with: "").replacingOccurrences(of: ".zip", with: "") + "_Converted.pdf"
                     let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? URL(fileURLWithPath: NSTemporaryDirectory())
-                    let outputURL = docDir.appendingPathComponent(pName)
+                    var outputDir = docDir
+                    if let series = pdf.metadata.series, !series.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        let cleanSeries = series.trimmingCharacters(in: .whitespacesAndNewlines)
+                                               .replacingOccurrences(of: "/", with: "-")
+                                               .replacingOccurrences(of: "\\", with: "-")
+                                               .replacingOccurrences(of: ":", with: "-")
+                                               .replacingOccurrences(of: "*", with: "")
+                                               .replacingOccurrences(of: "?", with: "")
+                                               .replacingOccurrences(of: "\"", with: "'")
+                                               .replacingOccurrences(of: "<", with: "(")
+                                               .replacingOccurrences(of: ">", with: ")")
+                                               .replacingOccurrences(of: "|", with: "-")
+                        if !cleanSeries.isEmpty {
+                            outputDir = docDir.appendingPathComponent(cleanSeries, isDirectory: true)
+                            try? FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)
+                        }
+                    }
+                    let outputURL = outputDir.appendingPathComponent(pName)
                     let imageURLs = try await manager.extractImageURLs(from: resolvedSourceURL)
                     try PDFGenerator.generate(from: imageURLs, to: outputURL, mangaMode: jobSettings.mangaMode, chapters: pdf.chapters, settings: jobSettings, coverOverrideData: coverOverrideData) { p in
                         Task { @MainActor in manager.conversionProgress = p; manager.processingStatus = "Converting \(currentNum) of \(total) (\(Int(p * 100))%)" }
@@ -229,7 +280,24 @@ final class ConversionOrchestrator: Sendable {
                 } else if jobSettings.outputFormat == .cbz {
                     let pName = pdf.name.replacingOccurrences(of: ".cbz", with: "").replacingOccurrences(of: ".pdf", with: "").replacingOccurrences(of: ".zip", with: "") + "_Converted.cbz"
                     let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? URL(fileURLWithPath: NSTemporaryDirectory())
-                    let outputURL = docDir.appendingPathComponent(pName)
+                    var outputDir = docDir
+                    if let series = pdf.metadata.series, !series.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        let cleanSeries = series.trimmingCharacters(in: .whitespacesAndNewlines)
+                                               .replacingOccurrences(of: "/", with: "-")
+                                               .replacingOccurrences(of: "\\", with: "-")
+                                               .replacingOccurrences(of: ":", with: "-")
+                                               .replacingOccurrences(of: "*", with: "")
+                                               .replacingOccurrences(of: "?", with: "")
+                                               .replacingOccurrences(of: "\"", with: "'")
+                                               .replacingOccurrences(of: "<", with: "(")
+                                               .replacingOccurrences(of: ">", with: ")")
+                                               .replacingOccurrences(of: "|", with: "-")
+                        if !cleanSeries.isEmpty {
+                            outputDir = docDir.appendingPathComponent(cleanSeries, isDirectory: true)
+                            try? FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)
+                        }
+                    }
+                    let outputURL = outputDir.appendingPathComponent(pName)
                     
                     let imageURLs = try await manager.extractImageURLs(from: resolvedSourceURL)
                     try await CBZProcessor.processAndPackage(
@@ -248,7 +316,7 @@ final class ConversionOrchestrator: Sendable {
                     await MainActor.run { manager.processingStatus = "Reading panels for \(pdf.name)..." }
                     let combinedManifest = await manager.getCombinedManifest(for: pdf)
                     let pvConverter = PanelViewEPUBConverter()
-                    let newURLs = try await pvConverter.convert(sourceURL: resolvedSourceURL, settings: jobSettings, panels: combinedManifest, sourceIsMangaPDF: false, coverOverrideData: coverOverrideData, customOutputName: pdf.name) { p in
+                    let newURLs = try await pvConverter.convert(sourceURL: resolvedSourceURL, settings: jobSettings, panels: combinedManifest, sourceIsMangaPDF: false, coverOverrideData: coverOverrideData, customOutputName: pdf.name, seriesName: pdf.metadata.series) { p in
                         Task { @MainActor in manager.conversionProgress = p; manager.processingStatus = "Converting \(currentNum) of \(total) (\(Int(p * 100))%)" }
                     }
                     var targetMetadata = pdf.metadata
@@ -257,7 +325,7 @@ final class ConversionOrchestrator: Sendable {
                     await MainActor.run { manager.scanLibrary() }
                 } else {
                     let converter = CBZToEPUBConverter()
-                    let newURLs = try await converter.convert(sourceURL: resolvedSourceURL, settings: jobSettings, manualManifest: nil, sourceIsMangaPDF: false, coverOverrideData: coverOverrideData, customOutputName: pdf.name) { p in
+                    let newURLs = try await converter.convert(sourceURL: resolvedSourceURL, settings: jobSettings, manualManifest: nil, sourceIsMangaPDF: false, coverOverrideData: coverOverrideData, customOutputName: pdf.name, seriesName: pdf.metadata.series) { p in
                         Task { @MainActor in manager.conversionProgress = p; manager.processingStatus = "Converting \(currentNum) of \(total) (\(Int(p * 100))%)" }
                     }
                     var targetMetadata = pdf.metadata
@@ -373,7 +441,24 @@ final class ConversionOrchestrator: Sendable {
                 for (batchIndex, batch) in batches.enumerated() {
                     let partSuffix = batches.count > 1 ? " (pt \(batchIndex + 1))" : ""
                     let outputFilename = (outputName.isEmpty ? "Merged Collection" : outputName) + partSuffix + ext
-                    let finalOutputURL = documentsDir.appendingPathComponent(outputFilename)
+                    var outputDir = documentsDir
+                    if let series = overrideSeries, !series.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        let cleanSeries = series.trimmingCharacters(in: .whitespacesAndNewlines)
+                                               .replacingOccurrences(of: "/", with: "-")
+                                               .replacingOccurrences(of: "\\", with: "-")
+                                               .replacingOccurrences(of: ":", with: "-")
+                                               .replacingOccurrences(of: "*", with: "")
+                                               .replacingOccurrences(of: "?", with: "")
+                                               .replacingOccurrences(of: "\"", with: "'")
+                                               .replacingOccurrences(of: "<", with: "(")
+                                               .replacingOccurrences(of: ">", with: ")")
+                                               .replacingOccurrences(of: "|", with: "-")
+                        if !cleanSeries.isEmpty {
+                            outputDir = docRoot.appendingPathComponent(cleanSeries, isDirectory: true)
+                            try? fileManager.createDirectory(at: outputDir, withIntermediateDirectories: true)
+                        }
+                    }
+                    let finalOutputURL = outputDir.appendingPathComponent(outputFilename)
                     if fileManager.fileExists(atPath: finalOutputURL.path) { try fileManager.removeItem(at: finalOutputURL) }
                     
                     var batchImages = batch.map { $0.url }
@@ -488,12 +573,12 @@ final class ConversionOrchestrator: Sendable {
                 
                 if jobSettings.outputPipeline == .proPanel {
                     let converter = PanelViewEPUBConverter()
-                    resultingURLs = try await converter.convert(sourceURL: resolvedFileURL, settings: jobSettings, panels: combinedManifest, sourceIsMangaPDF: isMangaPDF, coverOverrideData: currentCoverOverride, customOutputName: file.name) { progress in
+                    resultingURLs = try await converter.convert(sourceURL: resolvedFileURL, settings: jobSettings, panels: combinedManifest, sourceIsMangaPDF: isMangaPDF, coverOverrideData: currentCoverOverride, customOutputName: file.name, seriesName: file.metadata.series) { progress in
                         Task { @MainActor in manager.conversionProgress = progress }
                     }
                 } else {
                     let converter = CBZToEPUBConverter()
-                    resultingURLs = try await converter.convert(sourceURL: resolvedFileURL, settings: jobSettings, manualManifest: nil, sourceIsMangaPDF: isMangaPDF, coverOverrideData: currentCoverOverride, customOutputName: file.name) { progress in
+                    resultingURLs = try await converter.convert(sourceURL: resolvedFileURL, settings: jobSettings, manualManifest: nil, sourceIsMangaPDF: isMangaPDF, coverOverrideData: currentCoverOverride, customOutputName: file.name, seriesName: file.metadata.series) { progress in
                         Task { @MainActor in manager.conversionProgress = progress }
                     }
                 }
@@ -515,7 +600,24 @@ final class ConversionOrchestrator: Sendable {
             for (batchIndex, batch) in generatedBatches.enumerated() {
                 let partSuffix = generatedBatches.count > 1 ? " (pt \(batchIndex + 1))" : ""
                 let outputFilename = (outputName.isEmpty ? "Merged Collection" : outputName) + partSuffix + ".epub"
-                let finalOutputURL = documentsDir.appendingPathComponent(outputFilename)
+                var outputDir = documentsDir
+                if let series = overrideSeries, !series.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    let cleanSeries = series.trimmingCharacters(in: .whitespacesAndNewlines)
+                                           .replacingOccurrences(of: "/", with: "-")
+                                           .replacingOccurrences(of: "\\", with: "-")
+                                           .replacingOccurrences(of: ":", with: "-")
+                                           .replacingOccurrences(of: "*", with: "")
+                                           .replacingOccurrences(of: "?", with: "")
+                                           .replacingOccurrences(of: "\"", with: "'")
+                                           .replacingOccurrences(of: "<", with: "(")
+                                           .replacingOccurrences(of: ">", with: ")")
+                                           .replacingOccurrences(of: "|", with: "-")
+                    if !cleanSeries.isEmpty {
+                        outputDir = docRoot.appendingPathComponent(cleanSeries, isDirectory: true)
+                        try? fileManager.createDirectory(at: outputDir, withIntermediateDirectories: true)
+                    }
+                }
+                let finalOutputURL = outputDir.appendingPathComponent(outputFilename)
                 
                 var overrideCover: Data? = nil
                 if let baseCover = firstEPUBFileCoverData, generatedBatches.count > 1 { overrideCover = CoverGenerator.generateCover(from: baseCover, partNumber: batchIndex + 1, totalParts: generatedBatches.count) }
