@@ -907,16 +907,20 @@ final class ComicImageCache: ObservableObject {
             for i in 1...targetAhead {
                 prefetchIndices.insert(index + i)
             }
-            for i in 1...targetBehind where targetBehind > 0 {
-                prefetchIndices.insert(index - i)
+            if targetBehind > 0 {
+                for i in 1...targetBehind {
+                    prefetchIndices.insert(index - i)
+                }
             }
         } else {
             // Backward movement
             for i in 1...targetAhead {
                 prefetchIndices.insert(index - i)
             }
-            for i in 1...targetBehind where targetBehind > 0 {
-                prefetchIndices.insert(index + i)
+            if targetBehind > 0 {
+                for i in 1...targetBehind {
+                    prefetchIndices.insert(index + i)
+                }
             }
         }
         
