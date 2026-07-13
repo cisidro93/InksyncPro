@@ -127,12 +127,22 @@ struct SeriesDetailView: View {
                 if let v1 = n1, let v2 = n2 { return v1 < v2 }
                 if n1 != nil && n2 == nil { return true }
                 if n1 == nil && n2 != nil { return false }
-                return $0.name.localizedStandardCompare($1.name) == .orderedAscending
+                let t1 = $0.metadata.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? $0.name : $0.metadata.title
+                let t2 = $1.metadata.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? $1.name : $1.metadata.title
+                return t1.localizedStandardCompare(t2) == .orderedAscending
             }
         case .titleAsc:
-            sorted.sort { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+            sorted.sort {
+                let t1 = $0.metadata.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? $0.name : $0.metadata.title
+                let t2 = $1.metadata.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? $1.name : $1.metadata.title
+                return t1.localizedStandardCompare(t2) == .orderedAscending
+            }
         case .titleDesc:
-            sorted.sort { $0.name.localizedStandardCompare($1.name) == .orderedDescending }
+            sorted.sort {
+                let t1 = $0.metadata.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? $0.name : $0.metadata.title
+                let t2 = $1.metadata.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? $1.name : $1.metadata.title
+                return t1.localizedStandardCompare(t2) == .orderedDescending
+            }
         case .dateNewest:
             sorted = freshIssues.reversed() // Fallback to inverted addition (approximating dateNewest for legacy items)
         case .dateOldest:

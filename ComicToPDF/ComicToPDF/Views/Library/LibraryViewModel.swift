@@ -263,7 +263,9 @@ class LibraryViewModel: ObservableObject {
                     let idx1 = orderDict[pdf1.id] ?? Int.max
                     let idx2 = orderDict[pdf2.id] ?? Int.max
                     if idx1 == idx2 {
-                        return pdf1.name.localizedStandardCompare(pdf2.name) == .orderedAscending
+                        let t1 = pdf1.metadata.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? pdf1.name : pdf1.metadata.title
+                        let t2 = pdf2.metadata.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? pdf2.name : pdf2.metadata.title
+                        return t1.localizedStandardCompare(t2) == .orderedAscending
                     }
                     return idx1 < idx2
                 }
@@ -318,7 +320,9 @@ class LibraryViewModel: ObservableObject {
                 .sorted { a, b in
                     if hasVols, a.1 != b.1 { return a.1 < b.1 }
                     if a.2 != b.2 { return a.2 < b.2 }
-                    return a.0.name.localizedStandardCompare(b.0.name) == .orderedAscending
+                    let t1 = a.0.metadata.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? a.0.name : a.0.metadata.title
+                    let t2 = b.0.metadata.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? b.0.name : b.0.metadata.title
+                    return t1.localizedStandardCompare(t2) == .orderedAscending
                 }
                 .map(\.0)
 
@@ -454,6 +458,11 @@ class LibraryViewModel: ObservableObject {
     }
     
     // Additional Logic Handlers...
+    static nonisolated func getDisplayTitle(_ pdf: ConvertedPDF) -> String {
+        let title = pdf.metadata.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return title.isEmpty ? pdf.name : pdf.metadata.title
+    }
+
     static nonisolated func sortPDFs(_ pdfs: [ConvertedPDF], sortOption: ModernLibraryView.SortOption) -> [ConvertedPDF] {
         switch sortOption {
         case .dateAdded: return pdfs.reversed() // Returns newest imported first, which places it natively at index 0 and top-left.
@@ -467,7 +476,7 @@ class LibraryViewModel: ObservableObject {
                     return v1 < v2
                 }
             }
-            return $0.name.localizedStandardCompare($1.name) == .orderedAscending
+            return getDisplayTitle($0).localizedStandardCompare(getDisplayTitle($1)) == .orderedAscending
         }
         case .size: return pdfs.sorted { $0.fileSize > $1.fileSize }
         case .favorites:
@@ -480,7 +489,7 @@ class LibraryViewModel: ObservableObject {
                 let s1 = ($0.metadata.series ?? "").isEmpty
                 let s2 = ($1.metadata.series ?? "").isEmpty
                 if s1 != s2 { return s2 } // Place series first
-                return $0.name.localizedStandardCompare($1.name) == .orderedAscending
+                return getDisplayTitle($0).localizedStandardCompare(getDisplayTitle($1)) == .orderedAscending
             }
         case .extensionType:
             return pdfs.sorted {
@@ -491,7 +500,7 @@ class LibraryViewModel: ObservableObject {
                 let rank0 = $0.sourceMode.isCloud ? 2 : ($0.sourceMode.isLinked ? 1 : 0)
                 let rank1 = $1.sourceMode.isCloud ? 2 : ($1.sourceMode.isLinked ? 1 : 0)
                 if rank0 != rank1 { return rank0 < rank1 }
-                return $0.name.localizedStandardCompare($1.name) == .orderedAscending
+                return getDisplayTitle($0).localizedStandardCompare(getDisplayTitle($1)) == .orderedAscending
             }
         }
     }
