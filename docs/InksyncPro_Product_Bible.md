@@ -1,4 +1,4 @@
-# InksyncPro Product Bible
+﻿# InksyncPro Product Bible
 
 **Last Updated:** July 12, 2026
 
@@ -255,22 +255,22 @@ The following features and their corresponding code/view files are currently mov
 
 ### 1. Incomplete Cloud Integrations
 
-* **Google Drive Provider:** [GoogleDriveProvider.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToZip/ComicToPDF/Services/Network/GoogleDriveProvider.swift) — Contains a prototype for OAuth 2.0 authorization which is not fully completed or compiled in the main application target.
+- **Google Drive Provider:** [GoogleDriveProvider.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToZip/ComicToPDF/Services/Network/GoogleDriveProvider.swift) — Contains a prototype for OAuth 2.0 authorization which is not fully completed or compiled in the main application target.
 
 ### 2. Library Gamification & Engagement
 
-* **Badges & Streaks:** Visual indicators for series completion, trophies, and consecutive daily reading streaks.
+- **Badges & Streaks:** Visual indicators for series completion, trophies, and consecutive daily reading streaks.
   - [GamificationManager.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/GamificationManager.swift)
   - [GamificationDashboardView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/GamificationDashboardView.swift)
 
 ### 3. Universe Metadata Graph
 
-* **Universe Graph:** A visual relationships interface exploring series, characters, and thematic links in the library.
+- **Universe Graph:** A visual relationships interface exploring series, characters, and thematic links in the library.
   - [UniverseGraphView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/UniverseGraphView.swift)
 
 ### 4. Precision Page Editor & Studio Canvas
 
-* **Creative Work Area / Focus List:** Workspace showing sent files specifically queued for annotation/research, avoiding main library clutter.
+- **Creative Work Area / Focus List:** Workspace showing sent files specifically queued for annotation/research, avoiding main library clutter.
 - **Precision Canvas & Trimming:** High-fidelity cropping, splitting, margin adjustments, and page trimming.
 - **PencilKit Overlays:** Integrated Apple Pencil drawing/writing zones.
 - **Page Rearrangement & Panel Manipulation:** Tools to rotate, delete, insert, or reorder pages and inspect underlying panel coordinates.
@@ -288,7 +288,7 @@ The following features and their corresponding code/view files are currently mov
 
 ### 5. Manuscript Outlining & Writing
 
-* **Manuscript Projects:** Kanban outlining cards, outlining board dashboards, draft manuscript compilation interfaces, and outlining corkboards.
+- **Manuscript Projects:** Kanban outlining cards, outlining board dashboards, draft manuscript compilation interfaces, and outlining corkboards.
 - **Daily Spaced-Repetition Reviews:** User reviews of notes and highlights.
 - **Device Rendering Simulator:** Simulating page rendering across Kindle and e-reader PPI targets inside the editor view.
   - [EditorDashboardView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/EditorDashboardView.swift)
@@ -331,7 +331,7 @@ graph TD
     E --> F
 ```
 
-#### Swift Implementation Specifications
+#### Swift Implementation Specifications for Metadata Reconciliation
 
 ```swift
 import Foundation
@@ -398,7 +398,7 @@ graph TD
     F --> H[Present UI Relink prompt to user]
 ```
 
-#### Swift Implementation Specifications
+#### Swift Implementation Specifications for Relinking Logic
 
 ```swift
 import Foundation
@@ -478,7 +478,7 @@ graph TD
     D --> F[Trigger @MainActor UI error warning card]
 ```
 
-#### Swift Implementation Specifications
+#### Swift Implementation Specifications for DRM Detection
 
 ```swift
 import Foundation
@@ -542,7 +542,7 @@ stateDiagram-v2
     UserPinning --> Idle : Anchor pinned node coordinate / bypass forces
 ```
 
-#### Swift Implementation Specifications
+#### Swift Implementation Specifications for Zettelkasten Graph
 
 ```swift
 import SwiftUI
@@ -636,7 +636,7 @@ graph TD
     G --> H[Queue files in OfflineVerificationService]
 ```
 
-#### Swift Implementation Specifications
+#### Swift Implementation Specifications for Offline Sync
 
 ```swift
 import Foundation
@@ -691,7 +691,7 @@ graph TD
     F --> G[Pass to UIActivityViewController Share Pane]
 ```
 
-#### Swift Implementation Specifications
+#### Swift Implementation Specifications for Diagnostics
 
 ```swift
 import Foundation
