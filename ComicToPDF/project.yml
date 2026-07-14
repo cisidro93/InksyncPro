@@ -38,7 +38,7 @@ targets:
         CODE_SIGNING_ALLOWED: NO
         CODE_SIGNING_REQUIRED: NO
         CODE_SIGN_IDENTITY: ""
-        CODE_SIGN_ENTITLEMENTS: ComicToPDF/ComicToPDF/ComicToPDF.entitlements
+        CODE_SIGN_ENTITLEMENTS: ComicToPDF/ComicToPDF.entitlements
         INFOPLIST_FILE: ComicToPDF/Info.plist
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         Input_File_Path: $(SRCROOT)/ComicToPDF/Info.plist
@@ -134,13 +134,13 @@ targets:
     type: app-extension
     platform: iOS
     sources:
-      - path: ComicToPDF/ComicToPDFShare
+      - path: ComicToPDFShare
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.antigravity.InksyncPro.ComicToPDFShare
-        INFOPLIST_FILE: ComicToPDF/ComicToPDFShare/Info.plist
+        INFOPLIST_FILE: ComicToPDFShare/Info.plist
         CODE_SIGNING_ALLOWED: NO
         CODE_SIGNING_REQUIRED: NO
         CODE_SIGN_IDENTITY: ""
-        CODE_SIGN_ENTITLEMENTS: ComicToPDF/ComicToPDFShare/ComicToPDFShare.entitlements
+        CODE_SIGN_ENTITLEMENTS: ComicToPDFShare/ComicToPDFShare.entitlements
         SWIFT_VERSION: "6.0"
