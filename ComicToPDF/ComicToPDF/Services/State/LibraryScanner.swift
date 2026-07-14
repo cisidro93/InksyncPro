@@ -435,7 +435,7 @@ actor LibraryScanner {
         switch ext {
         case "pdf":
             guard let doc = PDFDocument(url: url) else { return false }
-            return doc.pageCount > 0 && !doc.isLocked
+            return doc.pageCount > 0 || doc.isLocked
         case "cbz", "zip", "epub":
             do {
                 _ = try ZIPFoundation.Archive(url: url, accessMode: .read)
