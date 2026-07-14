@@ -3,6 +3,7 @@ import SwiftData
 import UniformTypeIdentifiers
 import SwiftUI
 import ZIPFoundation
+import PencilKit
 
 /// Export format for sharing securely with iOS ecosystem.
 struct ZettelArchiveDocument: FileDocument {
@@ -29,52 +30,129 @@ struct ZettelArchiveDocument: FileDocument {
     
     /// Compiles all SDAnnotations into an Obsidian-ready Markdown archive
     func exportToMarkdownZip(annotations: [Annotation], pdfs: [ConvertedPDF]) async throws -> URL {
-        // Execute file-writing and archiving off the Main Actor to prevent UI frames drop
+        // 1. On MainActor: Pre-render PKDrawing drawings to PNGs
+        var drawingsMap: [UUID: Data] = [:]
+        for ann in annotations {
+            if let drawingData = ann.drawingData,
+               let drawing = try? PKDrawing(data: drawingData),
+               !drawing.bounds.isEmpty {
+                // Render drawing as a transparent high-resolution image
+                let image = drawing.image(rect: drawing.bounds, scale: 2.0)
+                if let pngData = image.pngData() {
+                    drawingsMap[ann.id] = pngData
+                }
+            }
+        }
+        
+        let drawings = drawingsMap
+        
         let task = Task.detached(priority: .userInitiated) {
             let fileManager = FileManager.default
             let tempDir = fileManager.temporaryDirectory.appendingPathComponent("MindPalaceExport_\(UUID().uuidString)")
             
             try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true, attributes: nil)
             
-            let grouped = Dictionary(grouping: annotations) { ann -> String in
-                // Fallback to Readwise title or exact UUID mapping to pdf.name
-                if let title = ann.readwiseBookTitle { return title }
-                if let matchingPDF = pdfs.first(where: { $0.id == ann.pdfID }) {
-                    return matchingPDF.name
-                }
-                return "Book_\(ann.pdfID.uuidString.prefix(6))"
+            // Create an attachments directory inside the vault
+            let attachmentsDir = tempDir.appendingPathComponent("attachments")
+            try fileManager.createDirectory(at: attachmentsDir, withIntermediateDirectories: true, attributes: nil)
+            
+            // Write the PNG drawing attachments
+            for (id, pngData) in drawings {
+                let attachmentURL = attachmentsDir.appendingPathComponent("drawing_\(id.uuidString).png")
+                try pngData.write(to: attachmentURL)
             }
             
-            for (bookTitle, notes) in grouped {
-                var markdown = "# 📖 [[\(bookTitle)]]\n\n"
-                markdown += "**Exported from InksyncPro Zettelkasten**\n"
-                markdown += "**Tags:** #zettelkasten #manga_highlight #inksyncpro\n\n---\n\n"
+            // Build series lookup dictionary to place notes inside series subdirectories
+            var pdfToSeries: [UUID: (title: String, series: String?, author: String?)] = [:]
+            for pdf in pdfs {
+                pdfToSeries[pdf.id] = (
+                    title: pdf.name,
+                    series: pdf.metadata.series?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? pdf.metadata.series : nil,
+                    author: pdf.metadata.author?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? pdf.metadata.author : nil
+                )
+            }
+            
+            // Group annotations by Book (pdfID)
+            let groupedByBook = Dictionary(grouping: annotations) { $0.pdfID }
+            
+            for (pdfID, bookNotes) in groupedByBook {
+                let bookInfo = pdfToSeries[pdfID]
+                let bookTitle = bookInfo?.title ?? bookNotes.first?.readwiseBookTitle ?? "Book_\(pdfID.uuidString.prefix(6))"
+                let cleanBookTitle = bookTitle.components(separatedBy: CharacterSet.alphanumerics.inverted.subtracting(.whitespaces)).joined().replacingOccurrences(of: "/", with: "-").trimmingCharacters(in: .whitespacesAndNewlines)
                 
-                // Sort notes by date older -> newer
-                let sortedNotes = notes.sorted { $0.modifiedAt < $1.modifiedAt }
-                
-                for note in sortedNotes {
-                    markdown += "### ⚡ Atomic Note\n\n"
-                    if let text = note.selectedText, !text.isEmpty {
-                        markdown += "> \(text.replacingOccurrences(of: "\n", with: "\n> "))\n\n"
-                    }
-                    if let userNote = note.noteText, !userNote.isEmpty {
-                        markdown += "**Note:** \(userNote)\n\n"
-                    }
-                    
-                    // Add NLP Tags
-                    if let tags = note.tags, !tags.isEmpty {
-                        let hashedTags = tags.map { "#\($0.replacingOccurrences(of: " ", with: "_"))" }.joined(separator: ", ")
-                        markdown += "🏷️ *Tags:* \(hashedTags)\n\n"
-                    }
-                    
-                    markdown += "---\n\n"
+                // Determine output directory based on book's series
+                let bookDirectoryURL: URL
+                if let series = bookInfo?.series {
+                    let cleanSeries = series.components(separatedBy: CharacterSet.alphanumerics.inverted.subtracting(.whitespaces)).joined().replacingOccurrences(of: "/", with: "-").trimmingCharacters(in: .whitespacesAndNewlines)
+                    bookDirectoryURL = tempDir.appendingPathComponent(cleanSeries)
+                } else {
+                    bookDirectoryURL = tempDir
                 }
                 
-                // Clean filename
-                let safeTitle = bookTitle.components(separatedBy: .illegalCharacters).joined().replacingOccurrences(of: "/", with: "-")
-                let fileURL = tempDir.appendingPathComponent("\(safeTitle).md")
-                try markdown.write(to: fileURL, atomically: true, encoding: .utf8)
+                try fileManager.createDirectory(at: bookDirectoryURL, withIntermediateDirectories: true, attributes: nil)
+                
+                // Sort notes by date older -> newer
+                let sortedNotes = bookNotes.sorted { $0.createdAt < $1.createdAt }
+                
+                var atomicWikiLinks: [String] = []
+                
+                // Write Atomic Note Files
+                for note in sortedNotes {
+                    let pageNum = note.pageIndex + 1
+                    let chapterText = note.chapterTitle?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? note.chapterTitle! : "Page \(pageNum)"
+                    let atomicTitle = "⚡ \(cleanBookTitle) - \(chapterText) - \(note.id.uuidString.prefix(6))"
+                    let cleanAtomicTitle = atomicTitle.components(separatedBy: CharacterSet.alphanumerics.inverted.subtracting(.whitespaces)).joined().replacingOccurrences(of: "/", with: "-").trimmingCharacters(in: .whitespacesAndNewlines)
+                    
+                    var atomicMarkdown = "# \(cleanAtomicTitle)\n\n"
+                    atomicMarkdown += "**Source:** [[📖 \(cleanBookTitle)]]\n"
+                    atomicMarkdown += "**Location:** Page \(pageNum) (Chapter: \(chapterText))\n"
+                    atomicMarkdown += "**Created:** \(note.createdAt.formatted())\n\n"
+                    atomicMarkdown += "---\n\n"
+                    
+                    if let text = note.selectedText, !text.isEmpty {
+                        atomicMarkdown += "### 📖 Highlight\n> \(text.replacingOccurrences(of: "\n", with: "\n> "))\n\n"
+                    }
+                    
+                    if let userNote = note.noteText, !userNote.isEmpty {
+                        atomicMarkdown += "### ✍️ My Note\n\(userNote)\n\n"
+                    }
+                    
+                    if let tags = note.tags, !tags.isEmpty {
+                        let hashedTags = tags.map { "#\($0.replacingOccurrences(of: " ", with: "_"))" }.joined(separator: ", ")
+                        atomicMarkdown += "🏷️ *Tags:* \(hashedTags)\n\n"
+                    }
+                    
+                    if drawings[note.id] != nil {
+                        atomicMarkdown += "### 🎨 Canvas Handwriting\n![[drawing_\(note.id.uuidString).png]]\n\n"
+                        if let ocr = note.drawingOCRText, !ocr.isEmpty {
+                            atomicMarkdown += "**OCR Transcript:** *\(ocr)*\n\n"
+                        }
+                    }
+                    
+                    atomicMarkdown += "---\n"
+                    
+                    let noteFileURL = bookDirectoryURL.appendingPathComponent("\(cleanAtomicTitle).md")
+                    try atomicMarkdown.write(to: noteFileURL, atomically: true, encoding: .utf8)
+                    
+                    atomicWikiLinks.append("- [[\(cleanAtomicTitle)]]")
+                }
+                
+                // Write Book Index Note File (Hub)
+                var hubMarkdown = "# 📖 \(cleanBookTitle)\n\n"
+                if let author = bookInfo?.author {
+                    hubMarkdown += "**Author:** \(author)\n"
+                }
+                if let series = bookInfo?.series {
+                    hubMarkdown += "**Series:** [[Hub - \(series)]]\n"
+                }
+                hubMarkdown += "**Total Notes:** \(bookNotes.count)\n"
+                hubMarkdown += "**Exported:** \(Date().formatted())\n"
+                hubMarkdown += "**Tags:** #zettelkasten #book-hub\n\n---\n\n"
+                hubMarkdown += "## ⚡ Linked Atomic Notes\n"
+                hubMarkdown += atomicWikiLinks.joined(separator: "\n") + "\n\n---\n"
+                
+                let hubFileURL = tempDir.appendingPathComponent("📖 \(cleanBookTitle).md")
+                try hubMarkdown.write(to: hubFileURL, atomically: true, encoding: .utf8)
             }
             
             let archiveURL = fileManager.temporaryDirectory.appendingPathComponent("InksyncPro_MindPalace.zip")
