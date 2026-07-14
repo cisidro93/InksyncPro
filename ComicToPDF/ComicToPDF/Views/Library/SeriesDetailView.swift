@@ -386,12 +386,14 @@ struct SeriesDetailView: View {
     }
 
     private var mainContent: some View {
-        ScrollViewReader { scrollProxy in
-            Group {
-                if viewStyle == .grid {
-                    gridView(scrollProxy: scrollProxy)
-                } else {
-                    listView(scrollProxy: scrollProxy)
+        GeometryReader { viewportGeo in
+            ScrollViewReader { scrollProxy in
+                Group {
+                    if viewStyle == .grid {
+                        gridView(scrollProxy: scrollProxy, viewportHeight: viewportGeo.size.height)
+                    } else {
+                        listView(scrollProxy: scrollProxy, viewportHeight: viewportGeo.size.height)
+                    }
                 }
             }
         }
@@ -414,62 +416,59 @@ struct SeriesDetailView: View {
                 collapsedVolumes.remove(newValue)
             }
         }
-    }
-    
-    private func listView(scrollProxy: ScrollViewProxy) -> some View {
-        GeometryReader { viewportGeo in
-            List {
-                Section(header: headerView) {
-                    continueReadingSection
-                    missingIssuesSection
-                    
-                    seriesVirtualOmnibusesSection
-                    
-                    if hasVolumeData {
-                        volumeFilterBar
-                            .listRowInsets(EdgeInsets())
-                            .listRowBackground(Color.clear)
-                    }
-                    
-                    if showVolumeGrouping && hasVolumeData {
-                        volumeGroupingSection
-                    } else {
-                        flatListSection
-                    }
+    private func listView(scrollProxy: ScrollViewProxy, viewportHeight: CGFloat) -> some View {
+        List {
+            Section(header: headerView) {
+                continueReadingSection
+                missingIssuesSection
+                
+                seriesVirtualOmnibusesSection
+                
+                if hasVolumeData {
+                    volumeFilterBar
+                        .listRowInsets(EdgeInsets())
+                        .listRowBackground(Color.clear)
+                }
+                
+                if showVolumeGrouping && hasVolumeData {
+                    volumeGroupingSection
+                } else {
+                    flatListSection
                 }
             }
-            .listStyle(InsetGroupedListStyle())
-            .coordinateSpace(name: "SeriesDetailScrollView")
-            .coordinateSpace(name: "SeriesDetailViewport")
-            .gesture(
-                isSelectionMode ?
-                LongPressGesture(minimumDuration: 0.08)
-                    .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .named("SeriesDetailViewport")))
-                    .onChanged { value in
-                        switch value {
-                        case .first:
-                            break
-                        case .second(_, let dragValue):
-                            if let drag = dragValue {
-                                handleDragUpdate(to: drag.location, viewportHeight: viewportGeo.size.height, scrollProxy: scrollProxy)
-                            }
+        }
+        .listStyle(InsetGroupedListStyle())
+        .coordinateSpace(name: "SeriesDetailScrollView")
+        .coordinateSpace(name: "SeriesDetailViewport")
+        .gesture(
+            isSelectionMode ?
+            LongPressGesture(minimumDuration: 0.08)
+                .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .named("SeriesDetailViewport")))
+                .onChanged { value in
+                    switch value {
+                    case .first:
+                        break
+                    case .second(_, let dragValue):
+                        if let drag = dragValue {
+                            handleDragUpdate(to: drag.location, viewportHeight: viewportHeight, scrollProxy: scrollProxy)
                         }
                     }
-                    .onEnded { _ in
-                        handleDragEnded()
-                    }
-                : nil
-            )
-            .onPreferenceChange(ScrollOffsetPreferenceKey.self) { value in
-                if isSelectionMode {
-                    self.scrollOffset = value
                 }
-            }
-            .onPreferenceChange(CellFramePreferenceKey.self) { value in
-                if isSelectionMode {
-                    self.cellFrames = value
+                .onEnded { _ in
+                    handleDragEnded()
                 }
+            : nil
+        )
+        .onPreferenceChange(ScrollOffsetPreferenceKey.self) { value in
+            if isSelectionMode {
+                self.scrollOffset = value
             }
+        }
+        .onPreferenceChange(CellFramePreferenceKey.self) { value in
+            if isSelectionMode {
+                self.cellFrames = value
+            }
+        }  }
             // ── Volume Jump: ensure target is expanded then scroll to its anchor ──
             .onChange(of: jumpToVolume) { _, targetKey in
                 guard let targetKey else { return }
@@ -883,151 +882,149 @@ struct SeriesDetailView: View {
         }
     }
 
-    private func gridView(scrollProxy: ScrollViewProxy) -> some View {
-        GeometryReader { viewportGeo in
-            ScrollView {
-                LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
-                    headerView
-                        .padding(.horizontal)
-                        .padding(.bottom, 16)
-                    
-                    if let nextIssue = nextUnreadIssue {
-                        Button {
-                            pdfToRead = nextIssue
-                        } label: {
-                            HStack(spacing: 12) {
-                                Image(systemName: "play.circle.fill")
-                                    .font(.system(size: 28))
-                                    .foregroundStyle(
-                                        LinearGradient(colors: [Theme.orange, Theme.red],
-                                                       startPoint: .topLeading, endPoint: .bottomTrailing)
-                                    )
-                                
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("Continue Reading")
-                                        .font(.system(size: 11, weight: .bold))
-                                        .foregroundColor(Theme.textSecondary)
-                                        .tracking(0.8)
-                                    
-                                    Text(nextIssue.name)
-                                        .font(.system(size: 14, weight: .semibold))
-                                        .foregroundColor(Theme.text)
-                                        .lineLimit(1)
-                                    
-                                    if let vol = nextIssue.metadata.volume, !vol.isEmpty,
-                                       let issue = nextIssue.metadata.issueNumber {
-                                        Text("Vol. \(vol) • Ch. \(issue) • Page \((nextIssue.metadata.lastReadPage ?? 0) + 1)")
-                                            .font(.system(size: 11, design: .rounded))
-                                            .foregroundColor(Theme.orange)
-                                    } else {
-                                        Text("Page \((nextIssue.metadata.lastReadPage ?? 0) + 1) of \(max(0, nextIssue.pageCount))")
-                                            .font(.system(size: 11, design: .rounded))
-                                            .foregroundColor(Theme.orange)
-                                    }
-                                }
-                                
-                                Spacer()
-                                
-                                Image(systemName: "chevron.right")
-                                    .font(.system(size: 14, weight: .semibold))
-                                    .foregroundColor(Theme.textSecondary)
-                            }
-                            .padding(.vertical, 8)
-                            .padding(.horizontal, 12)
-                            .background(
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .fill(Theme.orange.opacity(0.1))
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                            .stroke(Theme.orange.opacity(0.2), lineWidth: 1)
-                                    )
-                            )
-                        }
-                        .buttonStyle(.plain)
-                        .padding(.horizontal)
-                        .padding(.bottom, 16)
-                    }
-                    
-                    if !missingIssues.isEmpty {
-                        MissingIssueBanner(gaps: missingIssues)
-                            .padding(.horizontal)
-                            .padding(.bottom, 16)
-                    }
-                    
-                    seriesVirtualOmnibusesSection
-                        .padding(.bottom, 16)
-                    
-                    volumeFilterBar
-                        .padding(.bottom, 8)
-
-                    let hPad: CGFloat = hSizeClass == .regular ? 24 : 12
-                    let colSpacing: CGFloat = hSizeClass == .regular ? 20 : 10
-                    let colCount = hSizeClass == .regular ? 5 : 3
-                    let columns = Array(repeating: GridItem(.flexible(), spacing: colSpacing), count: colCount)
-
-                    if showVolumeGrouping && hasVolumeData {
-                        ForEach(volumeGroups, id: \.key) { group in
-                            let isCollapsed = collapsedVolumes.contains(group.key)
-                            let progress = readingProgress(for: group.issues)
-                            let completed = completedCount(for: group.issues)
+    private func gridView(scrollProxy: ScrollViewProxy, viewportHeight: CGFloat) -> some View {
+        ScrollView {
+            LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
+                headerView
+                    .padding(.horizontal)
+                    .padding(.bottom, 16)
+                
+                if let nextIssue = nextUnreadIssue {
+                    Button {
+                        pdfToRead = nextIssue
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "play.circle.fill")
+                                .font(.system(size: 28))
+                                .foregroundStyle(
+                                    LinearGradient(colors: [Theme.orange, Theme.red],
+                                                   startPoint: .topLeading, endPoint: .bottomTrailing)
+                                )
                             
-                            Section(header: 
-                                volumeHeaderView(group: group, isCollapsed: isCollapsed, progress: progress, completed: completed)
-                                    .background(.ultraThinMaterial)
-                                    .id("vol_\(group.key)")
-                            ) {
-                                if !isCollapsed {
-                                    LazyVGrid(columns: columns, spacing: hSizeClass == .regular ? 28 : 14) {
-                                        ForEach(group.issues) { pdf in
-                                            gridIssueCell(pdf)
-                                        }
-                                    }
-                                    .padding(.horizontal, hPad)
-                                    .padding(.vertical, 16)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Continue Reading")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundColor(Theme.textSecondary)
+                                    .tracking(0.8)
+                                
+                                Text(nextIssue.name)
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundColor(Theme.text)
+                                    .lineLimit(1)
+                                
+                                if let vol = nextIssue.metadata.volume, !vol.isEmpty,
+                                   let issue = nextIssue.metadata.issueNumber {
+                                    Text("Vol. \(vol) • Ch. \(issue) • Page \((nextIssue.metadata.lastReadPage ?? 0) + 1)")
+                                        .font(.system(size: 11, design: .rounded))
+                                        .foregroundColor(Theme.orange)
+                                } else {
+                                    Text("Page \((nextIssue.metadata.lastReadPage ?? 0) + 1) of \(max(0, nextIssue.pageCount))")
+                                        .font(.system(size: 11, design: .rounded))
+                                        .foregroundColor(Theme.orange)
                                 }
                             }
+                            
+                            Spacer()
+                            
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(Theme.textSecondary)
                         }
-                    } else {
-                        LazyVGrid(columns: columns, spacing: hSizeClass == .regular ? 28 : 14) {
-                            ForEach(filteredIssues) { pdf in
-                                gridIssueCell(pdf)
-                            }
-                        }
-                        .padding(.horizontal, hPad)
-                        .padding(.bottom, 120)
+                        .padding(.vertical, 8)
+                        .padding(.horizontal, 12)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(Theme.orange.opacity(0.1))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .stroke(Theme.orange.opacity(0.2), lineWidth: 1)
+                                )
+                        )
                     }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal)
+                    .padding(.bottom, 16)
                 }
-                .coordinateSpace(name: "SeriesDetailScrollView")
-                .gesture(
-                    isSelectionMode ?
-                    LongPressGesture(minimumDuration: 0.08)
-                        .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .named("SeriesDetailViewport")))
-                        .onChanged { value in
-                            switch value {
-                            case .first:
-                                break
-                            case .second(_, let dragValue):
-                                if let drag = dragValue {
-                                    handleDragUpdate(to: drag.location, viewportHeight: viewportGeo.size.height, scrollProxy: scrollProxy)
+                
+                if !missingIssues.isEmpty {
+                    MissingIssueBanner(gaps: missingIssues)
+                        .padding(.horizontal)
+                        .padding(.bottom, 16)
+                }
+                
+                seriesVirtualOmnibusesSection
+                    .padding(.bottom, 16)
+                
+                volumeFilterBar
+                    .padding(.bottom, 8)
+
+                let hPad: CGFloat = hSizeClass == .regular ? 24 : 12
+                let colSpacing: CGFloat = hSizeClass == .regular ? 20 : 10
+                let colCount = hSizeClass == .regular ? 5 : 3
+                let columns = Array(repeating: GridItem(.flexible(), spacing: colSpacing), count: colCount)
+
+                if showVolumeGrouping && hasVolumeData {
+                    ForEach(volumeGroups, id: \.key) { group in
+                        let isCollapsed = collapsedVolumes.contains(group.key)
+                        let progress = readingProgress(for: group.issues)
+                        let completed = completedCount(for: group.issues)
+                        
+                        Section(header: 
+                            volumeHeaderView(group: group, isCollapsed: isCollapsed, progress: progress, completed: completed)
+                                .background(.ultraThinMaterial)
+                                .id("vol_\(group.key)")
+                        ) {
+                            if !isCollapsed {
+                                LazyVGrid(columns: columns, spacing: hSizeClass == .regular ? 28 : 14) {
+                                    ForEach(group.issues) { pdf in
+                                        gridIssueCell(pdf)
+                                    }
                                 }
+                                .padding(.horizontal, hPad)
+                                .padding(.vertical, 16)
                             }
                         }
-                        .onEnded { _ in
-                            handleDragEnded()
+                    }
+                } else {
+                    LazyVGrid(columns: columns, spacing: hSizeClass == .regular ? 28 : 14) {
+                        ForEach(filteredIssues) { pdf in
+                            gridIssueCell(pdf)
                         }
-                    : nil
-                )
-            }
-            .coordinateSpace(name: "SeriesDetailViewport")
-            .onPreferenceChange(ScrollOffsetPreferenceKey.self) { value in
-                if isSelectionMode {
-                    self.scrollOffset = value
+                    }
+                    .padding(.horizontal, hPad)
+                    .padding(.bottom, 120)
                 }
             }
-            .onPreferenceChange(CellFramePreferenceKey.self) { value in
-                if isSelectionMode {
-                    self.cellFrames = value
-                }
+            .coordinateSpace(name: "SeriesDetailScrollView")
+            .gesture(
+                isSelectionMode ?
+                LongPressGesture(minimumDuration: 0.08)
+                    .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .named("SeriesDetailViewport")))
+                    .onChanged { value in
+                        switch value {
+                        case .first:
+                            break
+                        case .second(_, let dragValue):
+                            if let drag = dragValue {
+                                handleDragUpdate(to: drag.location, viewportHeight: viewportHeight, scrollProxy: scrollProxy)
+                            }
+                        }
+                    }
+                    .onEnded { _ in
+                        handleDragEnded()
+                    }
+                : nil
+            )
+        }
+        .coordinateSpace(name: "SeriesDetailViewport")
+        .onPreferenceChange(ScrollOffsetPreferenceKey.self) { value in
+            if isSelectionMode {
+                self.scrollOffset = value
+            }
+        }
+        .onPreferenceChange(CellFramePreferenceKey.self) { value in
+            if isSelectionMode {
+                self.cellFrames = value
             }
         }
     }
