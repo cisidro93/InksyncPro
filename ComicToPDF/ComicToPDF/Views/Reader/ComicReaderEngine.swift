@@ -1204,11 +1204,16 @@ final class ComicImageCache: ObservableObject {
         }
         
         // Cancel tasks that are no longer in the active prefetch window
-        let tasksToCancel = inFlightPrefetchTasks.filter { !prefetchIndices.contains($0.key) && $0.key != index }
-        for (idx, task) in tasksToCancel {
-            task.cancel()
+        var cancelledKeys: [Int] = []
+        for (idx, task) in inFlightPrefetchTasks {
+            if !prefetchIndices.contains(idx) && idx != index {
+                task.cancel()
+                stopFetching(idx)
+                cancelledKeys.append(idx)
+            }
+        }
+        for idx in cancelledKeys {
             inFlightPrefetchTasks.removeValue(forKey: idx)
-            stopFetching(idx)
         }
         
         // Filter out of bounds and trigger prefetch
