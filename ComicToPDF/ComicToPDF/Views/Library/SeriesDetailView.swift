@@ -486,10 +486,9 @@ struct SeriesDetailView: View {
                     }
                     HapticEngine.medium()
                     jumpToVolume = nil  // reset so same volume can be re-selected
-                }
-            }
         }
     }
+}
 
     @ViewBuilder
     private var continueReadingSection: some View {
