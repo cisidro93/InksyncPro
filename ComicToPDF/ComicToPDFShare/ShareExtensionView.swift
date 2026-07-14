@@ -187,7 +187,11 @@ struct ShareExtensionView: View {
                 if let error = error {
                     continuation.resume(throwing: error)
                 } else if let url = url {
-                    continuation.resume(returning: url)
+                    if let sharedURL = self.copyToSharedContainer(url) {
+                        continuation.resume(returning: sharedURL)
+                    } else {
+                        continuation.resume(throwing: NSError(domain: "ShareExtension", code: -2, userInfo: [NSLocalizedDescriptionKey: "Failed to copy file to shared container"]))
+                    }
                 } else {
                     continuation.resume(throwing: NSError(domain: "ShareExtension", code: -1, userInfo: nil))
                 }
@@ -251,19 +255,17 @@ struct ShareExtensionView: View {
                     // If we resolved a valid type identifier, try to load it
                     if let typeId = bestTypeIdentifier, let type = UTType(typeId) {
                         do {
-                            let url = try await loadFileRepresentation(provider: provider, type: type)
-                            let filename = url.lastPathComponent
-                            let ext = url.pathExtension.lowercased()
+                            let sharedURL = try await loadFileRepresentation(provider: provider, type: type)
+                            let filename = sharedURL.lastPathComponent
+                            let ext = sharedURL.pathExtension.lowercased()
                             
                             guard ext == "cbz" || ext == "cbr" || ext == "pdf" || ext == "epub" else { continue }
                             
-                            if let sharedURL = self.copyToSharedContainer(url) {
-                                filesToProcess.append(SharedFile(
-                                    name: filename,
-                                    url: sharedURL,
-                                    fileExtension: ext
-                                ))
-                            }
+                            filesToProcess.append(SharedFile(
+                                name: filename,
+                                url: sharedURL,
+                                fileExtension: ext
+                            ))
                         } catch {
                             print("Failed to load file representation for type \(typeId): \(error)")
                         }
