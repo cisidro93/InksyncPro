@@ -1828,6 +1828,10 @@ struct ComicReaderEngine: View {
                     isMangaMode: readingMode == .mangaRTL
                 )
             ),
+            onJumpToPage: {
+                jumpToPageText = ""
+                showJumpToPage = true
+            },
             isAutoCropEnabled: isAutoCropEnabled,
             onCropToggle: {
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
@@ -1848,10 +1852,6 @@ struct ComicReaderEngine: View {
                 } else {
                     readingRoom.startHosting(bookID: pdf.id.uuidString)
                 }
-            },
-            onJumpToPage: {
-                jumpToPageText = ""
-                showJumpToPage = true
             },
             onSwipeDown: saveProgressAndDismiss
         )

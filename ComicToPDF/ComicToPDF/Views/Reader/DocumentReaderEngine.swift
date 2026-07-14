@@ -123,16 +123,16 @@ struct DocumentReaderEngine: View {
                     }
                 ),
                 totalPages: totalPages,
+                onJumpToPage: {
+                    jumpToPageText = ""
+                    showJumpToPage = true
+                },
                 isPDF: true,
                 isReflowActive: isReflowMode,
                 onCropToggle: { applySmartCrop() },
                 onReflowToggle: {
                     isReflowMode.toggle()
                     if isReflowMode { updateReflowText() }
-                },
-                onJumpToPage: {
-                    jumpToPageText = ""
-                    showJumpToPage = true
                 },
                 isSettingsActive: showingSettings
             )
