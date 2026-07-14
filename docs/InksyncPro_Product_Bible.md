@@ -33,6 +33,7 @@ The user experience philosophy: **the app should feel like a beautifully crafted
 ### 1. Library & Organization
 
 - **Modern Grid & List:** High-performance SwiftData-backed library views featuring dynamic sorting (Date Added, Title, Size, Favorites, Type, Extension Type, Location) and live filtering (Unread, Reading, Completed, On Drive, Cloud).
+- **Direct Card & Folder Sorting:** Dynamic rebuilding cache logic directly sorts the list representation (`LibraryListItem`) to prevent empty custom folders from clustering at the top. Alphabetical name sorting and chronological date sorting use actual title checks and `lastModified` timestamps rather than reversed index hacks.
 
 - **Apple Books-Style Content Shelves:** Persisted shelf selector tab strip (All / Comics / Manga / Books) featuring custom icons, label names, live item count badges, accent colors (Blue, Red-Orange, Teal), and micro-animated scale transitions.
 
@@ -187,9 +188,19 @@ All import operations follow a strict sequence:
 
 ---
 
+### 6. Active Zettelkasten Study & Annotation Suite
+
+- **Integrated Split-Screen Study Notebook:** Frosted-glass note-taking canvas supporting dual markdown typing and Apple Pencil handwriting side-by-side with reading. Includes dynamic keyboard toggle controls and database synchronization.
+- **Relational Obsidian Vault Exporter:** Packages all annotations, quotes, and thoughts into a nested Obsidian vault structure matching series hierarchies. Automatically pre-renders PencilKit handwriting strokes to transparent PNGs, saving them to `attachments/` and wiki-linking them directly inside markdown files.
+- **Bidirectional Navigation Linkage:** Connects quotes, tags, and highlights back to the reader view, allowing users to jump directly to page locations in the active book.
+
+---
+
 ## UI / UX Design Language
 
 - **Theme System:** Adheres to a strict, centralized `Theme` struct utilizing `Theme.bg`, `Theme.surface`, `Theme.text`, and `Theme.orange` for highlights.
+- **Adaptive Appearance Themes:** Dynamic system-wide color scheme updates propagating automatically across the app window when selecting Light, Dark, or System mode in the Settings page.
+- **Handedness-Adjustable Placement:** Supports left- or right-handed notebook positioning. On iPad landscape, users can dynamically flip the notebook panel side-to-side using a quick toolbar toggle.
 
 - **Materials:** Extensive use of `.ultraThinMaterial` and `.regularMaterial` over gradient backgrounds to create a deep, layered, iOS-native feel.
 
@@ -292,16 +303,12 @@ The following features and their corresponding code/view files are currently mov
 
 ### 6. Study Notes & Zettelkasten Knowledge Graph
 
-* **Zettelkasten Graph:** Frosted-glass graph visualization mapping highlight nodes, tags, and topics.
+- **Zettelkasten Graph:** Frosted-glass graph visualization mapping highlight nodes, tags, and topics.
 - **Zettel Kanban Board:** High-performance Kanban column outliner to organize highlights and build outline cards.
-- **Study Notebook:** Hierarchical folders and organizer for highlights, tags, and topics.
-- **Obsidian-Compliant Markdown Exporter:** Headless export routines formatting highlights and panels to Obsidian syntax.
 - **Intelligent Auto-Tagging:** Background NLP analysis mapping extracted keywords.
   - [GlobalZettelkastenHubView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/GlobalZettelkastenHubView.swift)
   - [ZettelkastenGraphView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/ZettelkastenGraphView.swift)
   - [ZettelkastenBoardView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/ZettelkastenBoardView.swift)
-  - [StudyNotebookView.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/StudyNotebookView.swift)
-  - [ZettelkastenExporter.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/ZettelkastenExporter.swift)
   - [SplitStudyWorkspace.swift](file:///c:/Users/chris/.gemini/antigravity/scratch/InksyncPro/ComicToPDF/V2_Archive/Editor/SplitStudyWorkspace.swift)
 
 ---
