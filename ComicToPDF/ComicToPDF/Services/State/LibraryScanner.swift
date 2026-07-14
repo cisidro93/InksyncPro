@@ -438,7 +438,7 @@ actor LibraryScanner {
             return doc.pageCount > 0 && !doc.isLocked
         case "cbz", "zip", "epub":
             do {
-                _ = try Archive(url: url, accessMode: .read)
+                _ = try ZIPFoundation.Archive(url: url, accessMode: .read)
                 return true
             } catch {
                 return false
