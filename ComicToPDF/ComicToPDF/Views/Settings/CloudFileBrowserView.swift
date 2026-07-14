@@ -227,7 +227,7 @@ struct CloudFileBrowserView: View {
             VStack(spacing: 20) {
                 ProgressView()
                     .controlSize(.large)
-                    .tint(.primary)
+                    .tint(Color.primary)
                 if let folderName = scanningFolderName {
                     Text("Scanning \"\(folderName)\"…")
                         .font(.subheadline.bold())

@@ -528,11 +528,11 @@ struct ModernGridSeriesCell: View {
                 if !isBatch {
                     Text("\(group.count)")
                         .font(.system(size: 10, weight: .black, design: .rounded))
-                        .foregroundColor(.primary)
+                        .foregroundColor(Color.primary)
                         .padding(.horizontal, 7)
                         .padding(.vertical, 4)
                         .background(.ultraThinMaterial, in: Capsule())
-                        .overlay(Capsule().stroke(.primary.opacity(0.2), lineWidth: 0.5))
+                        .overlay(Capsule().stroke(Color.primary.opacity(0.2), lineWidth: 0.5))
                         .shadow(color: .black.opacity(0.25), radius: 3, y: 1)
                         .padding(6)
                 }

@@ -181,10 +181,10 @@ struct PPLReaderView: View {
                         .foregroundStyle(Color.orange)
                     Text("Panel \(guidedPanelIndex + 1) / \(guidedPanels.count)")
                         .font(.system(size: 12, weight: .bold, design: .rounded))
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(Color.primary)
                     Text("· Double-tap to exit")
                         .font(.system(size: 10, weight: .regular))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.secondary)
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)

@@ -396,7 +396,7 @@ struct ReaderChrome: View {
                 HStack(spacing: 4) {
                     barButton(
                         icon: onBookmarkActive ? "bookmark.fill" : "bookmark",
-                        tint: onBookmarkActive ? .yellow : .primary
+                        tint: onBookmarkActive ? Color.yellow : Color.primary
                     ) {
                         Haptics.shared.playImpact(style: .light)
                         onBookmark()
@@ -528,7 +528,7 @@ struct ReaderChrome: View {
             VStack(spacing: 1) {
                 Image(systemName: icon)
                     .font(.system(size: 15, weight: .medium))
-                    .foregroundColor(active ? activeColor : .primary.opacity(0.85))
+                    .foregroundColor(active ? activeColor : Color.primary.opacity(0.85))
                 if let badge = badgeText {
                     Text(badge)
                         .font(.system(size: 7, weight: .bold))
