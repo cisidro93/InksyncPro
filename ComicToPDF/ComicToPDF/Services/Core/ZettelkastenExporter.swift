@@ -37,7 +37,7 @@ struct ZettelArchiveDocument: FileDocument {
                let drawing = try? PKDrawing(data: drawingData),
                !drawing.bounds.isEmpty {
                 // Render drawing as a transparent high-resolution image
-                let image = drawing.image(rect: drawing.bounds, scale: 2.0)
+                let image = drawing.image(from: drawing.bounds, scale: 2.0)
                 if let pngData = image.pngData() {
                     drawingsMap[ann.id] = pngData
                 }
