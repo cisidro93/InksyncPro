@@ -416,6 +416,8 @@ struct SeriesDetailView: View {
                 collapsedVolumes.remove(newValue)
             }
         }
+    }
+    
     private func listView(scrollProxy: ScrollViewProxy, viewportHeight: CGFloat) -> some View {
         List {
             Section(header: headerView) {
