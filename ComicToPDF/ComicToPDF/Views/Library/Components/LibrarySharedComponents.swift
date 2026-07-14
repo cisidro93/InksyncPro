@@ -185,95 +185,103 @@ struct ModernEmptyState: View {
         .background(Theme.bg)
     }
 }
-// MARK: - Library Index Scrubber (on-demand, Contacts-style)
-// At rest: FULLY INVISIBLE — no permanent ribbon on the right edge.
-// On touch/drag: springs open to the full letter list with selection haptics.
-// Auto-hides 1.5 seconds after the user lifts their finger.
-struct LibraryIndexScrubber: View {
-    let onScrub: (String) -> Void
-    let letters: [String] = "#ABCDEFGHIJKLMNOPQRSTUVWXYZ".map { String($0) }
-
-    @State private var isExpanded: Bool = false
-    @State private var activeLetter: String? = nil
-    @State private var hideTask: Task<Void, Never>? = nil
-
+// MARK: - 7. Quick Jump Overlay (Dynamic grid selector for small screens)
+struct QuickJumpOverlay: View {
+    @Binding var isPresented: Bool
+    let availableLetters: Set<String>
+    let onJump: (String) -> Void
+    
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: 10), count: 4)
+    private let letters = "#ABCDEFGHIJKLMNOPQRSTUVWXYZ".map { String($0) }
+    
     var body: some View {
-        GeometryReader { geo in
-            let itemHeight = geo.size.height / CGFloat(letters.count)
-
-            ZStack(alignment: .trailing) {
-                // ── Invisible wide hit area (touch anywhere on right 28pt strip) ──
-                Color.clear
-                    .frame(width: 28)
-
-                // ── Expanded letter list ──────────────────────────────────────────────
-                if isExpanded {
-                    VStack(spacing: 0) {
-                        ForEach(letters, id: \.self) { char in
-                            Text(char)
-                                .font(.system(size: 11, weight: .heavy, design: .rounded))
-                                .foregroundColor(
-                                    activeLetter == char
-                                        ? Theme.blue
-                                        : Theme.textSecondary.opacity(0.75)
-                                )
-                                .frame(maxWidth: .infinity)
-                                .frame(height: itemHeight)
-                                .scaleEffect(activeLetter == char ? 1.25 : 1.0)
-                        }
+        ZStack {
+            // Semi-transparent backdrop to blur out background
+            Color.black.opacity(0.35)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                        isPresented = false
                     }
-                    .frame(width: 28)
-                    .background(
-                        Capsule()
-                            .fill(.ultraThinMaterial)
-                            .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
-                    )
-                    .overlay(
-                        Capsule()
-                            .stroke(Theme.text.opacity(0.08), lineWidth: 0.5)
-                    )
-                    .transition(.opacity.combined(with: .scale(scale: 0.85, anchor: .trailing)))
                 }
-                // NO collapsed handle — completely invisible at rest
+            
+            VStack(spacing: 16) {
+                // Header
+                HStack {
+                    Label {
+                        Text("Jump to Section")
+                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                            .foregroundStyle(.white)
+                    } icon: {
+                        Image(systemName: "abc")
+                            .foregroundStyle(Theme.blue)
+                    }
+                    
+                    Spacer()
+                    
+                    Button {
+                        withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                            isPresented = false
+                        }
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 22))
+                            .foregroundColor(Theme.textSecondary)
+                            .symbolRenderingMode(.hierarchical)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 4)
+                
+                // Grid of Letters
+                LazyVGrid(columns: columns, spacing: 10) {
+                    ForEach(letters, id: \.self) { char in
+                        let hasItems = availableLetters.contains(char)
+                        Button {
+                            if hasItems {
+                                onJump(char)
+                                withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                                    isPresented = false
+                                }
+                                HapticEngine.medium()
+                            }
+                        } label: {
+                            Text(char)
+                                .font(.system(size: 15, weight: .bold, design: .rounded))
+                                .foregroundColor(hasItems ? .white : .white.opacity(0.2))
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 44)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .fill(hasItems ? Theme.blue.opacity(0.55) : Color.white.opacity(0.04))
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .stroke(hasItems ? Theme.blue.opacity(0.3) : Color.clear, lineWidth: 1)
+                                )
+                        }
+                        .disabled(!hasItems)
+                        .buttonStyle(.plain)
+                    }
+                }
             }
-            .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { value in
-                        // Cancel any pending hide on new touch
-                        hideTask?.cancel()
-
-                        // Expand on first touch
-                        if !isExpanded {
-                            withAnimation(.spring(response: 0.22, dampingFraction: 0.72)) {
-                                isExpanded = true
-                            }
-                            HapticEngine.light()
-                        }
-
-                        // Letter tracking
-                        let idx = max(0, min(letters.count - 1, Int(value.location.y / itemHeight)))
-                        let letter = letters[idx]
-                        if activeLetter != letter {
-                            activeLetter = letter
-                            onScrub(letter)
-                            HapticEngine.selection()
-                        }
-                    }
-                    .onEnded { _ in
-                        activeLetter = nil
-                        // Auto-collapse after 1.5 seconds of inactivity
-                        hideTask = Task {
-                            try? await Task.sleep(nanoseconds: 1_500_000_000)
-                            guard !Task.isCancelled else { return }
-                            await MainActor.run {
-                                withAnimation(.easeOut(duration: 0.2)) { isExpanded = false }
-                            }
-                        }
-                    }
+            .padding(18)
+            .background(
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .fill(.ultraThinMaterial)
+                    .background(
+                        RoundedRectangle(cornerRadius: 24, style: .continuous)
+                            .fill(Color(hex: "#0e0e16").opacity(0.85))
+                    )
             )
+            .overlay(
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .stroke(Color.white.opacity(0.12), lineWidth: 1)
+            )
+            .padding(.horizontal, 28)
+            .shadow(color: .black.opacity(0.4), radius: 16, y: 8)
+            .transition(.scale(scale: 0.92).combined(with: .opacity))
         }
-        .frame(width: 28)
     }
 }
 

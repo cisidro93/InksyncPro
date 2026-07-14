@@ -55,6 +55,7 @@ struct LibraryGridView: View {
     @State private var initialSelectionBeforeDrag: Set<UUID> = []
     @State private var lastDragLocation: CGPoint = .zero
     @State private var autoScrollTask: Task<Void, Never>? = nil
+    @State private var showingQuickJump = false
 
     private var rows: [GridRowItem] {
         let chunked = chunkedItems(items)
@@ -132,7 +133,8 @@ struct LibraryGridView: View {
             } else {
                 GeometryReader { viewportGeo in
                     ScrollViewReader { proxy in
-                        ScrollView {
+                        ZStack {
+                            ScrollView {
                             LazyVStack(spacing: 0, pinnedViews: []) {
                                 // ── Scroll offset anchor ─────────────────────────
                                 // A zero-height GeometryReader pinned at the very top of
@@ -235,15 +237,41 @@ struct LibraryGridView: View {
                         .inkTabBarScrollDetect()
                         .background(Color.clear)
                         .overlay(alignment: .trailing) {
-                            LibraryIndexScrubber { letter in
-                                if let targetID = firstItemId(for: letter) {
-                                    withAnimation { proxy.scrollTo(targetID, anchor: .top) }
+                            Button {
+                                withAnimation(.spring(response: 0.28, dampingFraction: 0.78)) {
+                                    showingQuickJump = true
                                 }
+                                HapticEngine.light()
+                            } label: {
+                                Image(systemName: "abc")
+                                    .font(.system(size: 13, weight: .bold))
+                                    .foregroundColor(.white)
+                                    .frame(width: 36, height: 36)
+                                    .background(
+                                        Circle()
+                                            .fill(.ultraThinMaterial)
+                                            .background(Circle().fill(Theme.blue.opacity(0.35)))
+                                    )
+                                    .overlay(Circle().stroke(Color.white.opacity(0.12), lineWidth: 1))
+                                    .shadow(color: .black.opacity(0.15), radius: 6, y: 3)
                             }
-                            .padding(.vertical, 30)
-                            .padding(.trailing, 2)
+                            .padding(.trailing, 8)
                         }
                         .id(tapAction)
+                        
+                        if showingQuickJump {
+                            QuickJumpOverlay(
+                                isPresented: $showingQuickJump,
+                                availableLetters: availableLetters,
+                                onJump: { letter in
+                                    if let targetID = firstItemId(for: letter) {
+                                        withAnimation { proxy.scrollTo(targetID, anchor: .top) }
+                                    }
+                                }
+                            )
+                            .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                            .zIndex(100)
+                        }
                     }
                 }
                 .coordinateSpace(name: "libraryViewport")
@@ -774,6 +802,28 @@ struct LibraryGridView: View {
         
         // Fallback: if no greater letter exists, return the last item in the list
         return items.last?.id
+    }
+
+    private var availableLetters: Set<String> {
+        let getTitle: (LibraryItem) -> String = { item in
+            switch item {
+            case .series(let group):      return group.title
+            case .single(let pdf):        return pdf.name
+            case .driveFolder(let entry): return entry.displayName
+            }
+        }
+        var lettersSet = Set<String>()
+        for item in items {
+            let title = getTitle(item)
+            if let firstChar = title.first {
+                if firstChar.isNumber || !firstChar.isLetter {
+                    lettersSet.insert("#")
+                } else {
+                    lettersSet.insert(String(firstChar).uppercased())
+                }
+            }
+        }
+        return lettersSet
     }
 
     // MARK: - Context Menu
