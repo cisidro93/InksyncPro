@@ -35,6 +35,7 @@ struct ReaderChrome: View {
     @Binding var currentProgress: Double
     let totalPages: Int
     var customScrubber: AnyView? = nil
+    var getPageThumbnail: ((Int) async -> UIImage?)? = nil
     
     // Progress Intelligence
     var timeRemainingText: String? = nil
@@ -91,6 +92,7 @@ struct ReaderChrome: View {
         currentProgress: Binding<Double>,
         totalPages: Int,
         customScrubber: AnyView? = nil,
+        getPageThumbnail: ((Int) async -> UIImage?)? = nil,
         timeRemainingText: String? = nil,
         onProgressModeToggle: (() -> Void)? = nil,
         onJumpToPage: (() -> Void)? = nil,
@@ -127,6 +129,7 @@ struct ReaderChrome: View {
         self._currentProgress = currentProgress
         self.totalPages = totalPages
         self.customScrubber = customScrubber
+        self.getPageThumbnail = getPageThumbnail
         self.timeRemainingText = timeRemainingText
         self.onProgressModeToggle = onProgressModeToggle
         self.onJumpToPage = onJumpToPage
@@ -310,20 +313,52 @@ struct ReaderChrome: View {
                     .overlay(
                         GeometryReader { sliderGeo in
                             if isScrubbing {
-                                let pageNum = max(1, Int(currentProgress * Double(max(totalPages, 1))))
-                                Text("Page \(pageNum)")
-                                    .font(.system(size: 13, weight: .bold, design: .rounded))
-                                    .foregroundColor(.white)
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 6)
-                                    .background(Color(white: 0.15).opacity(0.85), in: Capsule())
-                                    .overlay(Capsule().stroke(Color.white.opacity(0.2), lineWidth: 0.5))
-                                    .shadow(color: .black.opacity(0.4), radius: 8, y: 4)
+                                let pageNum = max(1, Int(round(currentProgress * Double(max(totalPages - 1, 1))))) + 1
+                                if getPageThumbnail != nil {
+                                    VStack(spacing: 6) {
+                                        ZStack {
+                                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                                .fill(.ultraThinMaterial)
+                                                .frame(width: 72, height: 104)
+                                            
+                                            if let getThumb = getPageThumbnail {
+                                                FloatingThumbnailView(index: pageNum - 1, getPageThumbnail: getThumb)
+                                            }
+                                        }
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                                .stroke(Color.white.opacity(0.2), lineWidth: 0.5)
+                                        )
+                                        .shadow(color: .black.opacity(0.5), radius: 14, y: 6)
+                                        
+                                        Text("Page \(pageNum)")
+                                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                                            .foregroundColor(.white)
+                                            .padding(.horizontal, 10)
+                                            .padding(.vertical, 4)
+                                            .background(.ultraThinMaterial, in: Capsule())
+                                            .overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 0.5))
+                                    }
                                     .position(
                                         x: 14 + (sliderGeo.size.width - 28) * CGFloat(currentProgress),
-                                        y: -24
+                                        y: -70
                                     )
                                     .transition(.scale(scale: 0.8).combined(with: .opacity))
+                                } else {
+                                    Text("Page \(pageNum)")
+                                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                                        .foregroundColor(.white)
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 6)
+                                        .background(Color(white: 0.15).opacity(0.85), in: Capsule())
+                                        .overlay(Capsule().stroke(Color.white.opacity(0.2), lineWidth: 0.5))
+                                        .shadow(color: .black.opacity(0.4), radius: 8, y: 4)
+                                        .position(
+                                            x: 14 + (sliderGeo.size.width - 28) * CGFloat(currentProgress),
+                                            y: -24
+                                        )
+                                        .transition(.scale(scale: 0.8).combined(with: .opacity))
+                                }
                             }
                         }
                     )
@@ -516,6 +551,34 @@ struct ReaderChrome: View {
                 .foregroundColor(tint)
                 .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
+        }
+    }
+}
+
+struct FloatingThumbnailView: View {
+    let index: Int
+    let getPageThumbnail: (Int) async -> UIImage?
+    @State private var image: UIImage? = nil
+    
+    var body: some View {
+        ZStack {
+            if let image = image {
+                Image(uiImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 72, height: 104)
+                    .cornerRadius(8)
+            } else {
+                ProgressView()
+                    .progressViewStyle(CircularProgressViewStyle(tint: .white.opacity(0.5)))
+                    .frame(width: 72, height: 104)
+            }
+        }
+        .task(id: index) {
+            image = nil
+            if let img = await getPageThumbnail(index) {
+                image = img
+            }
         }
     }
 }

@@ -123,6 +123,9 @@ struct DocumentReaderEngine: View {
                     }
                 ),
                 totalPages: totalPages,
+                getPageThumbnail: { index in
+                    await PDFRenderActor.shared.renderPage(at: index, scale: 0.15)
+                },
                 onJumpToPage: {
                     jumpToPageText = ""
                     showJumpToPage = true

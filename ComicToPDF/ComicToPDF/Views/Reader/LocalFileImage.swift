@@ -6,6 +6,7 @@ import UIKit
 /// in the global URLCache, guaranteeing Jetsam crashes on Webtoon scrolling.
 struct LocalFileImage: View {
     let url: URL
+    var isThumbnail: Bool = false
     
     @State private var loadedImage: UIImage? = nil
     @State private var isFailed = false
@@ -13,10 +14,16 @@ struct LocalFileImage: View {
     var body: some View {
         Group {
             if let uiImage = loadedImage {
-                ZoomableScrollView {
+                if isThumbnail {
                     Image(uiImage: uiImage)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
+                } else {
+                    ZoomableScrollView {
+                        Image(uiImage: uiImage)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                    }
                 }
             } else if isFailed {
                 VStack {
@@ -51,6 +58,16 @@ struct LocalFileImage: View {
     private func loadImage() async {
         let localURL = url
         let decoded = await Task.detached(priority: .userInitiated) { () -> UIImage? in
+            if isThumbnail {
+                guard let source = CGImageSourceCreateWithURL(localURL as CFURL, nil) else { return nil }
+                let options: [CFString: Any] = [
+                    kCGImageSourceCreateThumbnailFromImageAlways: true,
+                    kCGImageSourceShouldCacheImmediately: true,
+                    kCGImageSourceThumbnailMaxPixelSize: 150
+                ]
+                guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
+                return UIImage(cgImage: cgImage)
+            }
             let optData = try? Data(contentsOf: localURL, options: .mappedIfSafe)
             guard let data = optData,
                   let image = UIImage(data: data) else {
@@ -65,6 +82,10 @@ struct LocalFileImage: View {
         guard !Task.isCancelled else { return }
 
         if let rawDecoded = decoded {
+            if isThumbnail {
+                self.loadedImage = rawDecoded
+                return
+            }
             let prefs = EBookPreferences.shared
             let processed = await ReaderImageFilterEngine.shared.process(
                 url: localURL,

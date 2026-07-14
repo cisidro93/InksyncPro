@@ -1644,7 +1644,7 @@ struct ReaderScrubber: View {
                 let isCenter = idx == center
                 if idx >= 0 && idx < pages.count {
                     VStack(spacing: 3) {
-                        LocalFileImage(url: pages[idx])
+                        LocalFileImage(url: pages[idx], isThumbnail: true)
                             .frame(
                                 width: isCenter ? 70 : 52,
                                 height: isCenter ? 100 : 74

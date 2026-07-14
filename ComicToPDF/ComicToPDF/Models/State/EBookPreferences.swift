@@ -71,7 +71,7 @@ class EBookPreferences: ObservableObject {
     @AppStorage("ebook_progressMode")   var progressMode: Int = 0  // 0=page, 1=chapter, 2=timeLeft
 
     // MARK: - Customizable Tap Zones Layout
-    @AppStorage("ebook_tapZoneStyle") var tapZoneStyleRaw: String = TapZoneStyle.classic.rawValue
+    @AppStorage("tapZoneStyle") var tapZoneStyleRaw: String = TapZoneStyle.classic.rawValue
     var tapZoneStyle: TapZoneStyle {
         get { TapZoneStyle(rawValue: tapZoneStyleRaw) ?? .classic }
         set { 

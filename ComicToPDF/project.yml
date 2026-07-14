@@ -98,6 +98,27 @@ targets:
           - Merriweather-Bold.ttf
           - Merriweather-Italic.ttf
           - Merriweather-BoldItalic.ttf
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: "Comic Book ZIP Archive"
+            LSHandlerRank: Owner
+            LSItemContentTypes:
+              - com.macrabbit.comicbookzip
+              - com.antigravity.cbz
+              - public.cbz-archive
+          - CFBundleTypeName: "Comic Book RAR Archive"
+            LSHandlerRank: Owner
+            LSItemContentTypes:
+              - com.macrabbit.comicbookrar
+              - com.antigravity.cbr
+              - public.cbr-archive
+          - CFBundleTypeName: "PDF Document"
+            LSHandlerRank: Alternate
+            LSItemContentTypes:
+              - com.adobe.pdf
+          - CFBundleTypeName: "EPUB eBook"
+            LSHandlerRank: Alternate
+            LSItemContentTypes:
+              - org.idpf.epub-container
         UTImportedTypeDeclarations:
           - UTTypeIdentifier: public.comma-separated-values-text
             UTTypeDescription: CSV File
@@ -114,21 +135,40 @@ targets:
             UTTypeConformsTo: [public.text]
             UTTypeTagSpecification:
               public.filename-extension: [txt]
-          - UTTypeIdentifier: com.antigravity.cbz-archive
-            UTTypeDescription: Comic Book Archive
+          - UTTypeIdentifier: com.macrabbit.comicbookzip
+            UTTypeDescription: Comic Book ZIP Archive
             UTTypeConformsTo: [public.zip-archive]
             UTTypeTagSpecification:
               public.filename-extension: [cbz]
-          - UTTypeIdentifier: com.antigravity.cbr-archive
+          - UTTypeIdentifier: com.macrabbit.comicbookrar
             UTTypeDescription: Comic Book RAR Archive
             UTTypeConformsTo: [public.archive]
             UTTypeTagSpecification:
               public.filename-extension: [cbr]
-          - UTTypeIdentifier: com.antigravity.cbt-archive
-            UTTypeDescription: Comic Book TAR Archive
-            UTTypeConformsTo: [public.tar-archive]
+          - UTTypeIdentifier: org.idpf.epub-container
+            UTTypeDescription: EPUB eBook
+            UTTypeConformsTo: [public.data]
             UTTypeTagSpecification:
-              public.filename-extension: [cbt]
+              public.filename-extension: [epub]
+          - UTTypeIdentifier: com.adobe.pdf
+            UTTypeDescription: PDF Document
+            UTTypeConformsTo: [public.data]
+            UTTypeTagSpecification:
+              public.filename-extension: [pdf]
+        UTExportedTypeDeclarations:
+          - UTTypeIdentifier: com.antigravity.cbz
+            UTTypeDescription: Comic Book Archive (Zip)
+            UTTypeConformsTo: [public.data, public.archive]
+            UTTypeTagSpecification:
+              public.filename-extension: [cbz]
+          - UTTypeIdentifier: com.antigravity.cbr
+            UTTypeDescription: Comic Book Archive (Rar)
+            UTTypeConformsTo: [public.data, public.archive]
+            UTTypeTagSpecification:
+              public.filename-extension: [cbr]
+          - UTTypeIdentifier: com.inksyncpro.library.dragpayload
+            UTTypeDescription: InksyncPro Library Drag Payload
+            UTTypeConformsTo: [public.data]
 
   ComicToPDFShare:
     type: app-extension
