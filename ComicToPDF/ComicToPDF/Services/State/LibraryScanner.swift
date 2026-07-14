@@ -4,6 +4,7 @@ import Combine
 import ZIPFoundation
 import SwiftUI
 import PDFKit
+import Unrar
 
 /// Resolves the 'God Object' bottleneck by handling intensive O(N) file system
 /// enumeration strictly off the Main Thread.
