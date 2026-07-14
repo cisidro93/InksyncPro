@@ -205,9 +205,8 @@ struct LibraryListView: View {
         }
     }
     
-    // ✅ NEW: Fast Index Search
-    private func firstItemId(for letter: String) -> String? {
-        let getTitle: (LibraryItem) -> String = { item in
+     private func firstItemId(for letter: String) -> String? {
+        let getTitle: (LibraryListItem) -> String = { item in
             switch item {
             case .series(let group):      return group.title
             case .single(let pdf):        return pdf.name
@@ -238,10 +237,10 @@ struct LibraryListView: View {
         
         // Fallback: if no greater letter exists, return the last item in the list
         return items.last?.id
-     }
+      }
 
     private var availableLetters: Set<String> {
-        let getTitle: (LibraryItem) -> String = { item in
+        let getTitle: (LibraryListItem) -> String = { item in
             switch item {
             case .series(let group):      return group.title
             case .single(let pdf):        return pdf.name

@@ -772,7 +772,7 @@ struct LibraryGridView: View {
     // MARK: - Index Scrubber helper
 
     private func firstItemId(for letter: String) -> String? {
-        let getTitle: (LibraryItem) -> String = { item in
+        let getTitle: (LibraryListItem) -> String = { item in
             switch item {
             case .series(let group):      return group.title
             case .single(let pdf):        return pdf.name
@@ -806,7 +806,7 @@ struct LibraryGridView: View {
     }
 
     private var availableLetters: Set<String> {
-        let getTitle: (LibraryItem) -> String = { item in
+        let getTitle: (LibraryListItem) -> String = { item in
             switch item {
             case .series(let group):      return group.title
             case .single(let pdf):        return pdf.name
