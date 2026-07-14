@@ -179,29 +179,38 @@ struct LibraryListView: View {
     
     // ✅ NEW: Fast Index Search
     private func firstItemId(for letter: String) -> String? {
-        if letter == "#" {
-            return items.first { item in
-                let title: String
-                switch item {
-                case .series(let group): title = group.title
-                case .single(let pdf):  title = pdf.name
-                case .driveFolder(let e): title = e.displayName
-                }
-                guard let firstChar = title.first else { return false }
-                return firstChar.isNumber || !firstChar.isLetter
-            }?.id
+        let getTitle: (LibraryItem) -> String = { item in
+            switch item {
+            case .series(let group):      return group.title
+            case .single(let pdf):        return pdf.name
+            case .driveFolder(let entry): return entry.displayName
+            }
         }
         
-        return items.first { item in
-            let title: String
-            switch item {
-            case .series(let group): title = group.title
-            case .single(let pdf):  title = pdf.name
-            case .driveFolder(let e): title = e.displayName
+        if letter == "#" {
+            if let firstNumeric = items.first(where: { item in
+                let title = getTitle(item)
+                guard let firstChar = title.first else { return false }
+                return firstChar.isNumber || !firstChar.isLetter
+            }) {
+                return firstNumeric.id
             }
-            return title.uppercased().hasPrefix(letter)
-        }?.id
-    }
+            return items.first?.id
+        }
+
+        // Find the first item starting with this letter
+        if let match = items.first(where: { getTitle($0).uppercased().hasPrefix(letter) }) {
+            return match.id
+        }
+        
+        // Fallback: find the first item starting with a letter alphabetically greater than the target letter
+        if let nextMatch = items.first(where: { getTitle($0).uppercased() > letter }) {
+            return nextMatch.id
+        }
+        
+        // Fallback: if no greater letter exists, return the last item in the list
+        return items.last?.id
+     }
     
     /// Returns the lowest-progress issue in a series that is not yet finished (< 95% read).
     /// Falls back to the first issue if everything is complete (re-read from start).

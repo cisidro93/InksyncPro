@@ -191,7 +191,7 @@ struct ModernEmptyState: View {
 // Auto-hides 1.5 seconds after the user lifts their finger.
 struct LibraryIndexScrubber: View {
     let onScrub: (String) -> Void
-    let letters: [String] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ#".map { String($0) }
+    let letters: [String] = "#ABCDEFGHIJKLMNOPQRSTUVWXYZ".map { String($0) }
 
     @State private var isExpanded: Bool = false
     @State private var activeLetter: String? = nil

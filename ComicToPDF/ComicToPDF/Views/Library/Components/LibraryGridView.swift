@@ -743,28 +743,37 @@ struct LibraryGridView: View {
     // MARK: - Index Scrubber helper
 
     private func firstItemId(for letter: String) -> String? {
+        let getTitle: (LibraryItem) -> String = { item in
+            switch item {
+            case .series(let group):      return group.title
+            case .single(let pdf):        return pdf.name
+            case .driveFolder(let entry): return entry.displayName
+            }
+        }
+        
         if letter == "#" {
-            return items.first { item in
-                let title: String
-                switch item {
-                case .series(let group):      title = group.title
-                case .single(let pdf):        title = pdf.name
-                case .driveFolder(let entry): title = entry.displayName
-                }
+            if let firstNumeric = items.first(where: { item in
+                let title = getTitle(item)
                 guard let firstChar = title.first else { return false }
                 return firstChar.isNumber || !firstChar.isLetter
-            }?.id
+            }) {
+                return firstNumeric.id
+            }
+            return items.first?.id
         }
 
-        return items.first { item in
-            let title: String
-            switch item {
-            case .series(let group):      title = group.title
-            case .single(let pdf):        title = pdf.name
-            case .driveFolder(let entry): title = entry.displayName
-            }
-            return title.uppercased().hasPrefix(letter)
-        }?.id
+        // Find the first item starting with this letter
+        if let match = items.first(where: { getTitle($0).uppercased().hasPrefix(letter) }) {
+            return match.id
+        }
+        
+        // Fallback: find the first item starting with a letter alphabetically greater than the target letter
+        if let nextMatch = items.first(where: { getTitle($0).uppercased() > letter }) {
+            return nextMatch.id
+        }
+        
+        // Fallback: if no greater letter exists, return the last item in the list
+        return items.last?.id
     }
 
     // MARK: - Context Menu
