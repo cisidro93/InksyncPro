@@ -17,6 +17,7 @@ struct StudyNotebookView: View {
     
     @State private var localNotes: String = ""
     @State private var saveTask: Task<Void, Never>? = nil
+    @State private var ocrTask: Task<Void, Never>? = nil
     
     // ✅ Phase 2: PencilKit Integration
     enum InputMode: String {
@@ -302,6 +303,7 @@ struct StudyNotebookView: View {
             // Final explicit sync flush layer
             Logger.shared.log("StudyNotebook disappearing — flushing note to SwiftData for '\(bookTitle)'", category: "Notebook", type: .info)
             saveTask?.cancel()
+            ocrTask?.cancel()
             let note = localNotes
             let drawing = canvasView.drawing
             let drawingData = drawing.dataRepresentation()
@@ -424,7 +426,7 @@ struct StudyNotebookView: View {
     private func debounceSave() {
         saveTask?.cancel()
         saveTask = Task {
-            try? await Task.sleep(nanoseconds: 400_000_000)
+            try? await Task.sleep(nanoseconds: 1_200_000_000) // 1.2 seconds for data saving debounce
             if !Task.isCancelled {
                 let note = self.localNotes
                 let drawing = self.canvasView.drawing
@@ -440,15 +442,23 @@ struct StudyNotebookView: View {
                     try? self.modelContext.save()
                 }
                 
-                if !drawing.bounds.isEmpty {
-                    Task.detached(priority: .background) {
-                        if let ocrText = await HandwritingOCRManager.shared.recognizeHandwriting(in: drawing) {
-                            await MainActor.run {
-                                if let active = self.activeNoteAnnotation, active.drawingOCRText != ocrText {
-                                    active.drawingOCRText = ocrText
-                                    active.modifiedAt = Date()
-                                    Logger.shared.log("Handwriting OCR updated for '\(self.bookTitle)': \(ocrText.prefix(40))...", category: "OCR", type: .success)
-                                    SpotlightIndexer.shared.indexAnnotation(active)
+                // Decouple and high-duration debounce expensive Vision OCR tasks to save battery
+                ocrTask?.cancel()
+                ocrTask = Task {
+                    try? await Task.sleep(nanoseconds: 5_000_000_000) // 5.0 seconds of absolute pause before running OCR
+                    guard !Task.isCancelled else { return }
+                    
+                    if !drawing.bounds.isEmpty {
+                        Task.detached(priority: .background) {
+                            if let ocrText = await HandwritingOCRManager.shared.recognizeHandwriting(in: drawing) {
+                                await MainActor.run {
+                                    if let active = self.activeNoteAnnotation, active.drawingOCRText != ocrText {
+                                        active.drawingOCRText = ocrText
+                                        active.modifiedAt = Date()
+                                        Logger.shared.log("Handwriting OCR updated (debounced 5s) for '\(self.bookTitle)': \(ocrText.prefix(40))...", category: "OCR", type: .success)
+                                        SpotlightIndexer.shared.indexAnnotation(active)
+                                        try? self.modelContext.save()
+                                    }
                                 }
                             }
                         }
