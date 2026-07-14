@@ -81,11 +81,14 @@ struct InksyncProApp: App {
         }
     }
     
+    @AppStorage("selectedTheme") private var selectedTheme: AppearanceMode = .system
+    
     var body: some Scene {
         WindowGroup { 
             ContentView()
                 // ✅ SwiftData Engine Attachment (Injected globally)
                 .modelContainer(InksyncProApp.sharedModelContainer)
+                .preferredColorScheme(selectedTheme.colorScheme)
                 .onAppear {
                     // MigrationService is invoked inside ContentView.onAppear
                     // where the SwiftData model context is available via @Environment.

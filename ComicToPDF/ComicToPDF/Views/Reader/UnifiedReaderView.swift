@@ -8,10 +8,25 @@ struct UnifiedReaderView: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     
     @State private var showNotebookPanel = false
+    @AppStorage("studyNotebookPlacement") private var notebookPlacement: SidebarPlacement = .right
     
     var body: some View {
         GeometryReader { geo in
             HStack(spacing: 0) {
+                if notebookPlacement == .left && showNotebookPanel && sizeClass == .regular {
+                    StudyNotebookView(
+                        bookID: pdf.id.uuidString,
+                        bookTitle: pdf.name,
+                        fileURL: pdf.url
+                    )
+                    .frame(width: min(geo.size.width * 0.38, 420))
+                    .transition(.move(edge: .leading).combined(with: .opacity))
+                    .id("sidebar_notebook_\(pdf.id)")
+                    
+                    Divider()
+                        .background(Color.white.opacity(0.12))
+                }
+                
                 ZStack {
                     Color(hex: "#0a0a0f").edgesIgnoringSafeArea(.all)
                     
@@ -30,7 +45,7 @@ struct UnifiedReaderView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 
-                if showNotebookPanel && sizeClass == .regular {
+                if notebookPlacement == .right && showNotebookPanel && sizeClass == .regular {
                     Divider()
                         .background(Color.white.opacity(0.12))
                     
@@ -45,6 +60,7 @@ struct UnifiedReaderView: View {
                 }
             }
             .animation(.spring(response: 0.35, dampingFraction: 0.85), value: showNotebookPanel)
+            .animation(.spring(response: 0.35, dampingFraction: 0.85), value: notebookPlacement)
         }
         .navigationBarHidden(true)
         .statusBar(hidden: true)

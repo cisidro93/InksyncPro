@@ -11,6 +11,7 @@ struct SettingsView: View {
     @AppStorage("essentialReaderMode") private var essentialReaderMode = false
     @AppStorage("isHapticsEnabled") private var isHapticsEnabled = true
     @AppStorage("backTapEnabled") private var backTapEnabled = false
+    @AppStorage("selectedTheme") private var selectedTheme: AppearanceMode = .system
 
     // Kindle Email Storage
     @AppStorage("kindleEmail") private var kindleEmail: String = ""
@@ -249,6 +250,16 @@ struct SettingsView: View {
                 Picker("App Mode", selection: $appUIMode) {
                     Text("Go Mode  (Quick Convert)").tag(AppUIMode.go)
                     Text("Pro Mode (Full Library)").tag(AppUIMode.pro)
+                }
+                .pickerStyle(.menu)
+            }
+
+            HStack {
+                settingsIcon("paintpalette.fill", color: .purple)
+                Picker("Appearance Theme", selection: $selectedTheme) {
+                    ForEach(AppearanceMode.allCases) { mode in
+                        Text(mode.rawValue).tag(mode)
+                    }
                 }
                 .pickerStyle(.menu)
             }

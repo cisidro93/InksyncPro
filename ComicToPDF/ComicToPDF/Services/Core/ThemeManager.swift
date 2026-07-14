@@ -19,3 +19,10 @@ enum AppearanceMode: String, CaseIterable, Identifiable, Codable {
 class ThemeManager: ObservableObject {
     @AppStorage("selectedTheme") var selectedTheme: AppearanceMode = .system
 }
+
+enum SidebarPlacement: String, CaseIterable, Identifiable, Codable {
+    case left = "Left"
+    case right = "Right"
+    
+    var id: String { rawValue }
+}

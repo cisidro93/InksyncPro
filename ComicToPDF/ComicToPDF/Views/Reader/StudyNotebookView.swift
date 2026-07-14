@@ -25,6 +25,7 @@ struct StudyNotebookView: View {
     }
     @AppStorage("studyNotebookInputMode") private var inputMode: InputMode = .markdown
     @AppStorage("studyNotebookPaperStyle") private var paperStyle: PaperStyle = .plain
+    @AppStorage("studyNotebookPlacement") private var notebookPlacement: SidebarPlacement = .right
     @State private var canvasView = PKCanvasView()
     
     // ✅ Phase 3: Highlights Drawer
@@ -204,6 +205,20 @@ struct StudyNotebookView: View {
                                 .background(Color.primary.opacity(0.08))
                                 .clipShape(Circle())
                         }
+                    }
+                    
+                    // Quick Flip side button (Left/Right handed mode)
+                    Button {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                            notebookPlacement = (notebookPlacement == .right) ? .left : .right
+                        }
+                    } label: {
+                        Image(systemName: notebookPlacement == .right ? "sidebar.left" : "sidebar.right")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(.primary)
+                            .padding(8)
+                            .background(Color.primary.opacity(0.08))
+                            .clipShape(Circle())
                     }
                     
                     Button {

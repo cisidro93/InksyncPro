@@ -75,3 +75,82 @@ struct SeriesGroup: Identifiable, Hashable {
         return lhs.id == rhs.id && lhs.count == rhs.count && lhs.coverIssueID == rhs.coverIssueID && lhs.readCount == rhs.readCount && lhs.newCount == rhs.newCount
     }
 }
+
+extension LibraryListItem {
+    var title: String {
+        switch self {
+        case .single(let pdf):
+            let t = pdf.metadata.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            return t.isEmpty ? pdf.name : pdf.metadata.title
+        case .series(let group):
+            return group.title
+        case .driveFolder(let entry):
+            return entry.displayName
+        }
+    }
+
+    var dateAdded: Date {
+        switch self {
+        case .single(let pdf):
+            return pdf.lastModified
+        case .series(let group):
+            return group.issues.map(\.lastModified).max() ?? Date.distantPast
+        case .driveFolder:
+            return Date.distantPast
+        }
+    }
+
+    var size: Int64 {
+        switch self {
+        case .single(let pdf):
+            return pdf.fileSize
+        case .series(let group):
+            return group.issues.map(\.fileSize).reduce(0, +)
+        case .driveFolder:
+            return 0
+        }
+    }
+
+    var isFavorite: Bool {
+        switch self {
+        case .single(let pdf):
+            return pdf.isFavorite
+        case .series(let group):
+            return group.issues.contains { $0.isFavorite }
+        case .driveFolder:
+            return false
+        }
+    }
+
+    var isSeries: Bool {
+        switch self {
+        case .series: return true
+        default: return false
+        }
+    }
+
+    var fileExtensionString: String {
+        switch self {
+        case .single(let pdf):
+            return pdf.fileExtensionString
+        case .series(let group):
+            return group.issues.first?.fileExtensionString ?? ""
+        case .driveFolder:
+            return ""
+        }
+    }
+
+    var locationRank: Int {
+        switch self {
+        case .single(let pdf):
+            return pdf.sourceMode.isCloud ? 2 : (pdf.sourceMode.isLinked ? 1 : 0)
+        case .series(let group):
+            if let first = group.issues.first {
+                return first.sourceMode.isCloud ? 2 : (first.sourceMode.isLinked ? 1 : 0)
+            }
+            return 0
+        case .driveFolder:
+            return 1
+        }
+    }
+}

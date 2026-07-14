@@ -126,8 +126,8 @@ class LibraryViewModel: ObservableObject {
     ) -> [LibraryListItem] {
         guard !Task.isCancelled else { return [] }
 
-        // Perform sorting on the background thread
-        let sortedPDFs = sortPDFs(pdfs, sortOption: sortOption)
+        // We no longer pre-sort raw PDFs because we sort grouped list items directly.
+        let sortedPDFs = pdfs
 
         var groups: [String: SeriesGroup] = [:]
         var singles: [ConvertedPDF] = []
@@ -302,7 +302,7 @@ class LibraryViewModel: ObservableObject {
             groups.removeValue(forKey: k)
         }
         
-        var items: [(Int, LibraryListItem)] = []
+        var items: [LibraryListItem] = []
 
         for (key, var group) in groups {
             guard !Task.isCancelled else { return [] }
@@ -338,18 +338,18 @@ class LibraryViewModel: ObservableObject {
                 progressSnapshot[$0.id] == nil
             }.count
 
-            items.append((firstAppearanceIndex[key] ?? 0, LibraryListItem.series(group)))
+            items.append(.series(group))
         }
 
         for single in singles {
             guard !Task.isCancelled else { return [] }
-            items.append((firstAppearanceIndex["single_\(single.id)"] ?? 0, LibraryListItem.single(single)))
+            items.append(.single(single))
         }
 
         // Search Filtering
         if !currentSearchText.isEmpty {
-            items = items.filter { tuple in
-                switch tuple.1 {
+            items = items.filter { item in
+                switch item {
                 case .single(let pdf):
                     return pdf.name.localizedCaseInsensitiveContains(currentSearchText) ||
                            pdf.metadata.title.localizedCaseInsensitiveContains(currentSearchText) ||
@@ -362,12 +362,48 @@ class LibraryViewModel: ObservableObject {
             }
         }
 
-        items.sort { $0.0 < $1.0 }
+        // Sort items directly based on user preference!
+        items.sort { item1, item2 in
+            switch sortOption {
+            case .dateAdded:
+                let d1 = item1.dateAdded
+                let d2 = item2.dateAdded
+                if d1 != d2 { return d1 > d2 } // Newest first
+                return item1.title.localizedStandardCompare(item2.title) == .orderedAscending
+            case .name:
+                return item1.title.localizedStandardCompare(item2.title) == .orderedAscending
+            case .size:
+                let s1 = item1.size
+                let s2 = item2.size
+                if s1 != s2 { return s1 > s2 } // Largest first
+                return item1.title.localizedStandardCompare(item2.title) == .orderedAscending
+            case .favorites:
+                let f1 = item1.isFavorite
+                let f2 = item2.isFavorite
+                if f1 != f2 { return f1 && !f2 } // Favorites first
+                return item1.title.localizedStandardCompare(item2.title) == .orderedAscending
+            case .type:
+                let s1 = item1.isSeries
+                let s2 = item2.isSeries
+                if s1 != s2 { return s1 && !s2 } // Series first
+                return item1.title.localizedStandardCompare(item2.title) == .orderedAscending
+            case .extensionType:
+                let ext1 = item1.fileExtensionString
+                let ext2 = item2.fileExtensionString
+                if ext1 != ext2 { return ext1.localizedStandardCompare(ext2) == .orderedAscending }
+                return item1.title.localizedStandardCompare(item2.title) == .orderedAscending
+            case .location:
+                let rank1 = item1.locationRank
+                let rank2 = item2.locationRank
+                if rank1 != rank2 { return rank1 < rank2 }
+                return item1.title.localizedStandardCompare(item2.title) == .orderedAscending
+            }
+        }
 
         guard !Task.isCancelled else { return [] }
 
         // Prepend large drive cards (always pinned to top of library grid)
-        return driveFolderItems + items.map { $0.1 }
+        return driveFolderItems + items
     }
     
     // MARK: - Action Router Endpoint
@@ -465,7 +501,7 @@ class LibraryViewModel: ObservableObject {
 
     static nonisolated func sortPDFs(_ pdfs: [ConvertedPDF], sortOption: ModernLibraryView.SortOption) -> [ConvertedPDF] {
         switch sortOption {
-        case .dateAdded: return pdfs.reversed() // Returns newest imported first, which places it natively at index 0 and top-left.
+        case .dateAdded: return pdfs.sorted { $0.lastModified > $1.lastModified }
         case .name: return pdfs.sorted {
             let s1 = $0.metadata.series ?? ""
             let s2 = $1.metadata.series ?? ""

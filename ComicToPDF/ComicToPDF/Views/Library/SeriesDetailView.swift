@@ -144,9 +144,9 @@ struct SeriesDetailView: View {
                 return t1.localizedStandardCompare(t2) == .orderedDescending
             }
         case .dateNewest:
-            sorted = freshIssues.reversed() // Fallback to inverted addition (approximating dateNewest for legacy items)
+            sorted.sort { $0.lastModified > $1.lastModified }
         case .dateOldest:
-            break // Native loop append order is Date Added
+            sorted.sort { $0.lastModified < $1.lastModified }
         case .sizeLargest:
             sorted.sort { $0.fileSize > $1.fileSize }
         case .sizeSmallest:
