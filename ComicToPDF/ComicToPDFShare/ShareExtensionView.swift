@@ -199,6 +199,24 @@ struct ShareExtensionView: View {
         }
     }
     
+    private func loadURLItem(provider: NSItemProvider, typeIdentifier: String) async throws -> URL {
+        try await withCheckedThrowingContinuation { continuation in
+            provider.loadItem(forTypeIdentifier: typeIdentifier, options: nil) { item, error in
+                if let error = error {
+                    continuation.resume(throwing: error)
+                } else if let url = item as? URL {
+                    continuation.resume(returning: url)
+                } else if let nsURL = item as? NSURL {
+                    continuation.resume(returning: nsURL as URL)
+                } else if let data = item as? Data, let urlString = String(data: data, encoding: .utf8), let url = URL(string: urlString) {
+                    continuation.resume(returning: url)
+                } else {
+                    continuation.resume(throwing: NSError(domain: "ShareExtension", code: -3, userInfo: [NSLocalizedDescriptionKey: "Item is not a URL"]))
+                }
+            }
+        }
+    }
+    
     private func loadSharedFiles() {
         guard let extensionContext = extensionContext,
               let inputItems = extensionContext.inputItems as? [NSExtensionItem] else {
@@ -213,62 +231,99 @@ struct ShareExtensionView: View {
                 guard let attachments = item.attachments else { continue }
                 
                 for provider in attachments {
-                    // Find the best type identifier from registeredTypeIdentifiers that we support.
-                    var bestTypeIdentifier: String? = nil
+                    var loadedURL: URL? = nil
                     
-                    // 1. Check for specific matching types first (PDF and EPUB)
-                    for typeId in provider.registeredTypeIdentifiers {
-                        guard let utType = UTType(typeId) else { continue }
-                        if utType.conforms(to: .pdf) {
-                            bestTypeIdentifier = typeId
-                            break
-                        } else if typeId.contains("epub") || utType.conforms(to: UTType(filenameExtension: "epub") ?? .data) {
-                            if typeId.contains("epub") {
-                                bestTypeIdentifier = typeId
-                                break
-                            }
-                        }
-                    }
-                    
-                    // 2. Check for comic archive types (CBZ, CBR) and ZIP/RAR
-                    if bestTypeIdentifier == nil {
-                        for typeId in provider.registeredTypeIdentifiers {
-                            guard let utType = UTType(typeId) else { continue }
-                            if typeId.contains("cbz") || typeId.contains("cbr") || typeId.contains("comic") || utType.conforms(to: .zip) {
-                                bestTypeIdentifier = typeId
-                                break
-                            }
-                        }
-                    }
-                    
-                    // 3. Fallback to generic archive or fileURL or data
-                    if bestTypeIdentifier == nil {
-                        for typeId in provider.registeredTypeIdentifiers {
-                            guard let utType = UTType(typeId) else { continue }
-                            if utType.conforms(to: .archive) || utType.conforms(to: .fileURL) || utType.conforms(to: .data) {
-                                bestTypeIdentifier = typeId
-                                break
-                            }
-                        }
-                    }
-                    
-                    // If we resolved a valid type identifier, try to load it
-                    if let typeId = bestTypeIdentifier, let type = UTType(typeId) {
+                    // 1. Try public.file-url first (most direct way to get file from Files app)
+                    if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
                         do {
-                            let sharedURL = try await loadFileRepresentation(provider: provider, type: type)
-                            let filename = sharedURL.lastPathComponent
-                            let ext = sharedURL.pathExtension.lowercased()
-                            
-                            guard ext == "cbz" || ext == "cbr" || ext == "pdf" || ext == "epub" else { continue }
-                            
-                            filesToProcess.append(SharedFile(
-                                name: filename,
-                                url: sharedURL,
-                                fileExtension: ext
-                            ))
+                            let url = try await self.loadURLItem(provider: provider, typeIdentifier: UTType.fileURL.identifier)
+                            loadedURL = url
                         } catch {
-                            print("Failed to load file representation for type \(typeId): \(error)")
+                            print("Failed to load file-url: \(error)")
                         }
+                    }
+                    
+                    // 2. Fallback to public.url
+                    if loadedURL == nil && provider.hasItemConformingToTypeIdentifier(UTType.url.identifier) {
+                        do {
+                            let url = try await self.loadURLItem(provider: provider, typeIdentifier: UTType.url.identifier)
+                            if url.isFileURL {
+                                loadedURL = url
+                            }
+                        } catch {
+                            print("Failed to load url: \(error)")
+                        }
+                    }
+                    
+                    // 3. Fallback to loadFileRepresentation (for files that need on-demand extraction like iCloud/Google Drive)
+                    if loadedURL == nil {
+                        var bestTypeIdentifier: String? = nil
+                        
+                        // Check for specific matching types first (PDF and EPUB)
+                        for typeId in provider.registeredTypeIdentifiers {
+                            guard let utType = UTType(typeId) else { continue }
+                            if utType.conforms(to: .pdf) {
+                                bestTypeIdentifier = typeId
+                                break
+                            } else if typeId.contains("epub") || utType.conforms(to: UTType(filenameExtension: "epub") ?? .data) {
+                                if typeId.contains("epub") {
+                                    bestTypeIdentifier = typeId
+                                    break
+                                }
+                            }
+                        }
+                        
+                        // Check for comic archive types (CBZ, CBR) and ZIP/RAR
+                        if bestTypeIdentifier == nil {
+                            for typeId in provider.registeredTypeIdentifiers {
+                                guard let utType = UTType(typeId) else { continue }
+                                if typeId.contains("cbz") || typeId.contains("cbr") || typeId.contains("comic") || utType.conforms(to: .zip) {
+                                    bestTypeIdentifier = typeId
+                                    break
+                                }
+                            }
+                        }
+                        
+                        // Fallback to generic archive or data
+                        if bestTypeIdentifier == nil {
+                            for typeId in provider.registeredTypeIdentifiers {
+                                guard let utType = UTType(typeId) else { continue }
+                                if utType.conforms(to: .archive) || utType.conforms(to: .data) {
+                                    bestTypeIdentifier = typeId
+                                    break
+                                }
+                            }
+                        }
+                        
+                        if let typeId = bestTypeIdentifier, let type = UTType(typeId) {
+                            do {
+                                let url = try await self.loadFileRepresentation(provider: provider, type: type)
+                                loadedURL = url
+                            } catch {
+                                print("Failed to load file representation for type \(typeId): \(error)")
+                            }
+                        }
+                    }
+                    
+                    if var url = loadedURL {
+                        let filename = url.lastPathComponent
+                        let ext = url.pathExtension.lowercased()
+                        
+                        guard ext == "cbz" || ext == "cbr" || ext == "pdf" || ext == "epub" else { continue }
+                        
+                        if !url.path.contains("group.com.antigravity.ComicToPDF") {
+                            if let sharedURL = self.copyToSharedContainer(url) {
+                                url = sharedURL
+                            } else {
+                                continue
+                            }
+                        }
+                        
+                        filesToProcess.append(SharedFile(
+                            name: filename,
+                            url: url,
+                            fileExtension: ext
+                        ))
                     }
                 }
             }
@@ -292,6 +347,9 @@ struct ShareExtensionView: View {
         
         // Remove existing file if any
         try? FileManager.default.removeItem(at: destURL)
+        
+        let accessing = sourceURL.startAccessingSecurityScopedResource()
+        defer { if accessing { sourceURL.stopAccessingSecurityScopedResource() } }
         
         do {
             try FileManager.default.copyItem(at: sourceURL, to: destURL)
