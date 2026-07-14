@@ -204,11 +204,14 @@ struct ShareExtensionView: View {
             provider.loadItem(forTypeIdentifier: typeIdentifier, options: nil) { item, error in
                 if let error = error {
                     continuation.resume(throwing: error)
-                } else if let url = item as? URL {
-                    continuation.resume(returning: url)
                 } else if let nsURL = item as? NSURL {
                     continuation.resume(returning: nsURL as URL)
-                } else if let data = item as? Data, let urlString = String(data: data, encoding: .utf8), let url = URL(string: urlString) {
+                } else if let nsData = item as? NSData,
+                          let urlString = String(data: nsData as Data, encoding: .utf8),
+                          let url = URL(string: urlString) {
+                    continuation.resume(returning: url)
+                } else if let nsString = item as? NSString,
+                          let url = URL(string: nsString as String) {
                     continuation.resume(returning: url)
                 } else {
                     continuation.resume(throwing: NSError(domain: "ShareExtension", code: -3, userInfo: [NSLocalizedDescriptionKey: "Item is not a URL"]))

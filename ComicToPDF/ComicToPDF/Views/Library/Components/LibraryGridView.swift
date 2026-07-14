@@ -274,9 +274,10 @@ struct LibraryGridView: View {
                         }
                     }
                 }
-                .coordinateSpace(name: "libraryViewport")
             }
+            .coordinateSpace(name: "libraryViewport")
         }
+    }
         // MARK: Rename Alert
         .alert("Rename Series", isPresented: Binding<Bool>(
             get: { renamingGroup != nil },
