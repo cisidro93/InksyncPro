@@ -181,6 +181,20 @@ struct ShareExtensionView: View {
     
     // MARK: - Load Shared Files
     
+    private func loadFileRepresentation(provider: NSItemProvider, type: UTType) async throws -> URL {
+        try await withCheckedThrowingContinuation { continuation in
+            provider.loadFileRepresentation(forTypeIdentifier: type.identifier) { url, error in
+                if let error = error {
+                    continuation.resume(throwing: error)
+                } else if let url = url {
+                    continuation.resume(returning: url)
+                } else {
+                    continuation.resume(throwing: NSError(domain: "ShareExtension", code: -1, userInfo: nil))
+                }
+            }
+        }
+    }
+    
     private func loadSharedFiles() {
         guard let extensionContext = extensionContext,
               let inputItems = extensionContext.inputItems as? [NSExtensionItem] else {
@@ -188,55 +202,47 @@ struct ShareExtensionView: View {
             return
         }
         
-        let supportedTypes: [UTType] = [
-            UTType(filenameExtension: "cbz") ?? .archive,
-            UTType(filenameExtension: "cbr") ?? .archive,
-            UTType(filenameExtension: "epub") ?? .data,
-            .pdf,
-            .zip,
-            .archive
-        ]
-        
-        var filesToProcess: [SharedFile] = []
-        let group = DispatchGroup()
-        
-        for item in inputItems {
-            guard let attachments = item.attachments else { continue }
+        Task { @MainActor in
+            let supportedTypes: [UTType] = [
+                UTType(filenameExtension: "cbz") ?? .archive,
+                UTType(filenameExtension: "cbr") ?? .archive,
+                UTType(filenameExtension: "epub") ?? .data,
+                .pdf,
+                .zip,
+                .archive
+            ]
             
-            for provider in attachments {
-                for type in supportedTypes {
-                    if provider.hasItemConformingToTypeIdentifier(type.identifier) {
-                        group.enter()
-                        
-                        provider.loadFileRepresentation(forTypeIdentifier: type.identifier) { url, error in
-                            defer { group.leave() }
-                            
-                            guard let url = url else { return }
-                            
-                            let filename = url.lastPathComponent
-                            let ext = url.pathExtension.lowercased()
-                            
-                            // Accept CBZ, CBR, PDF, EPUB files
-                            guard ext == "cbz" || ext == "cbr" || ext == "pdf" || ext == "epub" else { return }
-                            
-                            // Copy to shared container
-                            if let sharedURL = self.copyToSharedContainer(url) {
-                                DispatchQueue.main.async {
+            var filesToProcess: [SharedFile] = []
+            
+            for item in inputItems {
+                guard let attachments = item.attachments else { continue }
+                
+                for provider in attachments {
+                    for type in supportedTypes {
+                        if provider.hasItemConformingToTypeIdentifier(type.identifier) {
+                            do {
+                                let url = try await loadFileRepresentation(provider: provider, type: type)
+                                let filename = url.lastPathComponent
+                                let ext = url.pathExtension.lowercased()
+                                
+                                guard ext == "cbz" || ext == "cbr" || ext == "pdf" || ext == "epub" else { continue }
+                                
+                                if let sharedURL = self.copyToSharedContainer(url) {
                                     filesToProcess.append(SharedFile(
                                         name: filename,
                                         url: sharedURL,
                                         fileExtension: ext
                                     ))
                                 }
+                            } catch {
+                                print("Failed to load file representation: \(error)")
                             }
+                            break
                         }
-                        break
                     }
                 }
             }
-        }
-        
-        group.notify(queue: .main) {
+            
             self.selectedFiles = filesToProcess
             self.isLoading = false
         }
