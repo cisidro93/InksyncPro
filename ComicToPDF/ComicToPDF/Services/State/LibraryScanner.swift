@@ -46,6 +46,34 @@ actor LibraryScanner {
         let inboxDir  = appSupport.appendingPathComponent("InksyncVault/Inbox", isDirectory: true)
         let docDir    = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
 
+        // Bridge Shared container files from iOS Share Extension into local Inbox
+        if let groupURL = fileManager.containerURL(forSecurityApplicationGroupIdentifier: "group.com.antigravity.ComicToPDF") {
+            let sharedDirs = [
+                groupURL.appendingPathComponent("PendingConversions", isDirectory: true),
+                groupURL.appendingPathComponent("Inbox", isDirectory: true)
+            ]
+            for sharedDir in sharedDirs {
+                if let sharedFiles = try? fileManager.contentsOfDirectory(at: sharedDir, includingPropertiesForKeys: nil) {
+                    for fileURL in sharedFiles {
+                        let ext = fileURL.pathExtension.lowercased()
+                        if ext == "manifest" || fileURL.lastPathComponent.contains(".manifest.json") {
+                            try? fileManager.removeItem(at: fileURL)
+                        } else if ext == "cbz" || ext == "cbr" || ext == "pdf" || ext == "epub" {
+                            try? fileManager.createDirectory(at: inboxDir, withIntermediateDirectories: true)
+                            let dest = inboxDir.appendingPathComponent(fileURL.lastPathComponent)
+                            try? fileManager.removeItem(at: dest)
+                            do {
+                                try fileManager.moveItem(at: fileURL, to: dest)
+                                Logger.shared.log("LibraryScanner: imported shared file '\(fileURL.lastPathComponent)'", category: "Import", type: .success)
+                            } catch {
+                                Logger.shared.log("LibraryScanner: failed to import shared file: \(error.localizedDescription)", category: "Import", type: .error)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         func relativePath(for url: URL) -> String {
             let path = url.path
             if let range = path.range(of: "/Documents/") {

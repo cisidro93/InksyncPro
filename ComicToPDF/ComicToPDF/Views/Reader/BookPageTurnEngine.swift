@@ -237,21 +237,24 @@ extension PageCurlReader {
             // Cooperative gesture helper
         }
         
+        private var tapZoneStyle: TapZoneStyle {
+            TapZoneStyle(rawValue: UserDefaults.standard.string(forKey: "tapZoneStyle") ?? "") ?? .classic
+        }
+        
         @objc func handleSingleTap(_ gesture: UITapGestureRecognizer) {
             guard let view = gesture.view, let pvc = pageViewController else { return }
             let location = gesture.location(in: view)
             let width = view.bounds.width
             
-            let hSizeClass = view.traitCollection.horizontalSizeClass
-            let zoneW = hSizeClass == .regular ? width * 0.15 : width / 3.0
+            let zones = tapZoneStyle.zones
             
-            if location.x < zoneW {
+            if location.x < width * zones.leftEdge {
                 if parent.isMangaRTL {
                     turnForward(pvc)
                 } else {
                     turnBackward(pvc)
                 }
-            } else if location.x > width - zoneW {
+            } else if location.x > width * zones.rightEdge {
                 if parent.isMangaRTL {
                     turnBackward(pvc)
                 } else {

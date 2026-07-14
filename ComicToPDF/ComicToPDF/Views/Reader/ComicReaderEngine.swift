@@ -1043,6 +1043,8 @@ struct ComicReaderEngine: View {
     @AppStorage("hasSeenReaderOnboarding") private var hasSeenReaderOnboarding = false
     @State private var chromeVisible = false
     @State private var currentIndex: Int = 0
+    @State private var showJumpToPage = false
+    @State private var jumpToPageText = ""
     @State private var readingMode: ComicReadingMode = .pageHorizontal
     @AppStorage("prefersTwoUpSpreads") private var prefersTwoUpSpreads = true
     @State private var activeFilterPreset: ReadingFilterPreset = .original
@@ -1471,6 +1473,20 @@ struct ComicReaderEngine: View {
         .focusable()
         .focused($isReaderFocused)
         .focusEffectDisabled()
+        .alert("Go to Page", isPresented: $showJumpToPage) {
+            TextField("Page number (1-\(cache.pageCount))", text: $jumpToPageText)
+                .keyboardType(.numberPad)
+            Button("Cancel", role: .cancel) { }
+            Button("Go") {
+                if let pageNum = Int(jumpToPageText), pageNum >= 1 && pageNum <= cache.pageCount {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                        currentIndex = pageNum - 1
+                    }
+                }
+            }
+        } message: {
+            Text("Enter a page number between 1 and \(cache.pageCount).")
+        }
         .onKeyPress(.leftArrow) {
             if readingMode == .mangaRTL {
                 nextPage()
@@ -1508,6 +1524,7 @@ struct ComicReaderEngine: View {
                     panels: panelsForPage,
                     masterIndex: $currentIndex,
                     totalPages: cache.pageCount,
+                    isMangaMode: readingMode == .mangaRTL,
                     onTapChrome: { chromeVisible.toggle() }
                 )
                 .applyFilterPreset(activeFilterPreset)
@@ -1831,6 +1848,10 @@ struct ComicReaderEngine: View {
                 } else {
                     readingRoom.startHosting(bookID: pdf.id.uuidString)
                 }
+            },
+            onJumpToPage: {
+                jumpToPageText = ""
+                showJumpToPage = true
             },
             onSwipeDown: saveProgressAndDismiss
         )
@@ -2547,10 +2568,15 @@ struct ComicGuidedPageView: View {
     let panels: [PanelExtractor.Panel]
     @Binding var masterIndex: Int
     let totalPages: Int
+    var isMangaMode: Bool = false
     var onTapChrome: () -> Void
     
     @State private var image: UIImage? = nil
     @State private var currentPanelIndex: Int = -1 // -1 means Zoomed Out
+    
+    private var tapZoneStyle: TapZoneStyle {
+        TapZoneStyle(rawValue: UserDefaults.standard.string(forKey: "tapZoneStyle") ?? "") ?? .classic
+    }
     
     var body: some View {
         GeometryReader { geo in
@@ -2568,11 +2594,12 @@ struct ComicGuidedPageView: View {
                         .offset(x: metrics.offsetX, y: metrics.offsetY)
                         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: currentPanelIndex)
                         .onTapGesture { loc in
-                            let third = geo.size.width / 3
-                            if loc.x < third {
-                                rewind()
-                            } else if loc.x > geo.size.width - third {
-                                advance()
+                            let w = geo.size.width
+                            let zones = tapZoneStyle.zones
+                            if loc.x < w * zones.leftEdge {
+                                if isMangaMode { advance() } else { rewind() }
+                            } else if loc.x > w * zones.rightEdge {
+                                if isMangaMode { rewind() } else { advance() }
                             } else {
                                 onTapChrome()
                             }

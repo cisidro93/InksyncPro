@@ -30,7 +30,7 @@ struct ShareExtensionView: View {
                                 .foregroundColor(.secondary)
                             Text("No Compatible Files")
                                 .font(.headline)
-                            Text("Select CBZ or CBR files to convert")
+                            Text("Select CBZ, CBR, PDF, or EPUB files to import")
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
                         }
@@ -70,11 +70,11 @@ struct ShareExtensionView: View {
                                     .padding(.vertical, 4)
                                 }
                             } header: {
-                                Text("\(selectedFiles.count) file\(selectedFiles.count > 1 ? "s" : "") to convert")
+                                Text("\(selectedFiles.count) file\(selectedFiles.count > 1 ? "s" : "") to import")
                             }
                         }
                         
-                        // Convert button
+                        // Import button
                         VStack(spacing: 12) {
                             if let error = errorMessage {
                                 HStack {
@@ -89,7 +89,7 @@ struct ShareExtensionView: View {
                             Button(action: processFiles) {
                                 HStack {
                                     Image(systemName: "arrow.triangle.2.circlepath")
-                                    Text("Convert to PDF")
+                                    Text("Import to Inksync Pro")
                                         .fontWeight(.semibold)
                                 }
                                 .foregroundColor(.white)
@@ -114,7 +114,7 @@ struct ShareExtensionView: View {
                             .progressViewStyle(CircularProgressViewStyle(tint: .white))
                             .scaleEffect(1.5)
                         
-                        Text("Converting...")
+                        Text("Importing...")
                             .font(.headline)
                             .foregroundColor(.white)
                         
@@ -142,11 +142,11 @@ struct ShareExtensionView: View {
                             .font(.system(size: 60))
                             .foregroundColor(.green)
                         
-                        Text("Conversion Complete!")
+                        Text("Import Complete!")
                             .font(.headline)
                             .foregroundColor(.white)
                         
-                        Text("\(processedCount) PDF\(processedCount > 1 ? "s" : "") added to library")
+                        Text("\(processedCount) file\(processedCount > 1 ? "s" : "") added to library")
                             .font(.subheadline)
                             .foregroundColor(.white.opacity(0.8))
                         
@@ -191,6 +191,8 @@ struct ShareExtensionView: View {
         let supportedTypes: [UTType] = [
             UTType(filenameExtension: "cbz") ?? .archive,
             UTType(filenameExtension: "cbr") ?? .archive,
+            UTType(filenameExtension: "epub") ?? .data,
+            .pdf,
             .zip,
             .archive
         ]
@@ -214,8 +216,8 @@ struct ShareExtensionView: View {
                             let filename = url.lastPathComponent
                             let ext = url.pathExtension.lowercased()
                             
-                            // Only process CBZ/CBR files
-                            guard ext == "cbz" || ext == "cbr" else { return }
+                            // Accept CBZ, CBR, PDF, EPUB files
+                            guard ext == "cbz" || ext == "cbr" || ext == "pdf" || ext == "epub" else { return }
                             
                             // Copy to shared container
                             if let sharedURL = self.copyToSharedContainer(url) {

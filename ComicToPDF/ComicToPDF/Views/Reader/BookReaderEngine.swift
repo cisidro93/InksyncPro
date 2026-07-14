@@ -1013,6 +1013,8 @@ struct BookReaderEngine: View {
     @State private var showAnnotations = false
     @State private var showTypographyHUD = false
     @State private var showTOC = false
+    @State private var showJumpToPage = false
+    @State private var jumpToPageText = ""
     @State private var activeHighlightToEdit: SDAnnotation? = nil
     @ObservedObject private var prefs = EBookPreferences.shared
     @ObservedObject private var sleepTimer = SleepTimerManager.shared
@@ -1172,6 +1174,10 @@ struct BookReaderEngine: View {
                     }
                 ),
                 totalPages: vm.chapterHtmlFiles.count,
+                onJumpToPage: {
+                    jumpToPageText = ""
+                    showJumpToPage = true
+                },
                 hasCopyAction: true,
                 onCopyToggle: {
                     webViewReference?.evaluateJavaScript("document.body.innerText") { result, _ in
@@ -1266,6 +1272,20 @@ struct BookReaderEngine: View {
         .focusable()
         .focused($isReaderFocused)
         .focusEffectDisabled()
+        .alert("Go to Chapter", isPresented: $showJumpToPage) {
+            TextField("Chapter number (1-\(vm.chapterHtmlFiles.count))", text: $jumpToPageText)
+                .keyboardType(.numberPad)
+            Button("Cancel", role: .cancel) { }
+            Button("Go") {
+                if let chapterNum = Int(jumpToPageText), chapterNum >= 1 && chapterNum <= vm.chapterHtmlFiles.count {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                        vm.loadChapter(index: chapterNum - 1)
+                    }
+                }
+            }
+        } message: {
+            Text("Enter a chapter number between 1 and \(vm.chapterHtmlFiles.count).")
+        }
         .onKeyPress(.leftArrow) {
             pageBackward()
             return .handled

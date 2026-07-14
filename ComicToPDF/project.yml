@@ -21,10 +21,12 @@ targets:
           - "**/*.md"
           - "**/*.txt"
           - "reference files/**"
+          - "ComicToPDFShare/**"
 
     dependencies:
       - package: ZIPFoundation
       - package: Unrar
+      - target: ComicToPDFShare
 
     configFiles:
       Debug: Config.xcconfig
@@ -36,6 +38,7 @@ targets:
         CODE_SIGNING_ALLOWED: NO
         CODE_SIGNING_REQUIRED: NO
         CODE_SIGN_IDENTITY: ""
+        CODE_SIGN_ENTITLEMENTS: ComicToPDF/ComicToPDF/ComicToPDF.entitlements
         INFOPLIST_FILE: ComicToPDF/Info.plist
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         Input_File_Path: $(SRCROOT)/ComicToPDF/Info.plist
@@ -126,3 +129,18 @@ targets:
             UTTypeConformsTo: [public.tar-archive]
             UTTypeTagSpecification:
               public.filename-extension: [cbt]
+
+  ComicToPDFShare:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: ComicToPDF/ComicToPDFShare
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.antigravity.InksyncPro.ComicToPDFShare
+        INFOPLIST_FILE: ComicToPDF/ComicToPDFShare/Info.plist
+        CODE_SIGNING_ALLOWED: NO
+        CODE_SIGNING_REQUIRED: NO
+        CODE_SIGN_IDENTITY: ""
+        CODE_SIGN_ENTITLEMENTS: ComicToPDF/ComicToPDFShare/ComicToPDFShare.entitlements
+        SWIFT_VERSION: "6.0"

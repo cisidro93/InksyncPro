@@ -39,6 +39,7 @@ struct ReaderChrome: View {
     // Progress Intelligence
     var timeRemainingText: String? = nil
     var onProgressModeToggle: (() -> Void)? = nil
+    var onJumpToPage: (() -> Void)? = nil
 
     // Copy Text Action (replaces TTS)
     var hasCopyAction: Bool = false
@@ -92,6 +93,7 @@ struct ReaderChrome: View {
         customScrubber: AnyView? = nil,
         timeRemainingText: String? = nil,
         onProgressModeToggle: (() -> Void)? = nil,
+        onJumpToPage: (() -> Void)? = nil,
         hasCopyAction: Bool = false,
         onCopyToggle: (() -> Void)? = nil,
         isPDF: Bool = false,
@@ -127,6 +129,7 @@ struct ReaderChrome: View {
         self.customScrubber = customScrubber
         self.timeRemainingText = timeRemainingText
         self.onProgressModeToggle = onProgressModeToggle
+        self.onJumpToPage = onJumpToPage
         self.hasCopyAction = hasCopyAction
         self.onCopyToggle = onCopyToggle
         self.isPDF = isPDF
@@ -397,6 +400,13 @@ struct ReaderChrome: View {
                     .background(Color.white.opacity(0.12), in: Capsule())
                 }
                 .buttonStyle(.plain)
+                .simultaneousGesture(
+                    LongPressGesture(minimumDuration: 0.5)
+                        .onEnded { _ in
+                            Haptics.shared.playImpact(style: .medium)
+                            onJumpToPage?()
+                        }
+                )
 
                 Spacer()
 

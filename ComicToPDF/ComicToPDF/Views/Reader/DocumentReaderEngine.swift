@@ -20,8 +20,9 @@ struct DocumentReaderEngine: View {
     @State private var isReflowMode = false
     @State private var reflowText: String = "Extracting text..."
     @State private var showingSettings = false
-    @State private var showAnnotations = false
     @State private var showSearch = false
+    @State private var showJumpToPage = false
+    @State private var jumpToPageText = ""
     @State private var pdfViewReference: PDFView? = nil
     @State private var resolvedURL: URL? = nil
     @ObservedObject private var prefs = EBookPreferences.shared
@@ -129,6 +130,10 @@ struct DocumentReaderEngine: View {
                     isReflowMode.toggle()
                     if isReflowMode { updateReflowText() }
                 },
+                onJumpToPage: {
+                    jumpToPageText = ""
+                    showJumpToPage = true
+                },
                 isSettingsActive: showingSettings
             )
             
@@ -222,6 +227,20 @@ struct DocumentReaderEngine: View {
         .focusable()
         .focused($isReaderFocused)
         .focusEffectDisabled()
+        .alert("Go to Page", isPresented: $showJumpToPage) {
+            TextField("Page number (1-\(totalPages))", text: $jumpToPageText)
+                .keyboardType(.numberPad)
+            Button("Cancel", role: .cancel) { }
+            Button("Go") {
+                if let pageNum = Int(jumpToPageText), pageNum >= 1 && pageNum <= totalPages {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                        currentPageIndex = pageNum - 1
+                    }
+                }
+            }
+        } message: {
+            Text("Enter a page number between 1 and \(totalPages).")
+        }
         .onKeyPress(.leftArrow) {
             pageBackward()
             return .handled

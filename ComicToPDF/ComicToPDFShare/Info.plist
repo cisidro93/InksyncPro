@@ -32,6 +32,8 @@
                     $extensionItem.attachments,
                     $attachment,
                     ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.archive"
+                    OR ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "com.adobe.pdf"
+                    OR ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "org.idpf.epub-container"
                 ).@count > 0
             ).@count > 0</string>
         </dict>
