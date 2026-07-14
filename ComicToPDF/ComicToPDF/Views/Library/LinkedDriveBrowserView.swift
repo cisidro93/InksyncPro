@@ -293,7 +293,7 @@ struct LinkedDriveBrowserView: View {
         if let rootURL = try? BookmarkResolver.shared.resolve(driveEntry.volumeBookmarkData) {
             let accessing = rootURL.startAccessingSecurityScopedResource()
             defer { if accessing { rootURL.stopAccessingSecurityScopedResource() } }
-            if let bm = try? url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil) {
+            if let bm = try? url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil) {
                 tempPDF.sourceMode = .linked(bookmarkData: bm)
             }
         }
@@ -307,7 +307,7 @@ struct LinkedDriveBrowserView: View {
         if let rootURL = try? BookmarkResolver.shared.resolve(driveEntry.volumeBookmarkData) {
             let accessing = rootURL.startAccessingSecurityScopedResource()
             defer { if accessing { rootURL.stopAccessingSecurityScopedResource() } }
-            bookmarkData = try? url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil)
+            bookmarkData = try? url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
         }
         
         guard let bm = bookmarkData else { return }
