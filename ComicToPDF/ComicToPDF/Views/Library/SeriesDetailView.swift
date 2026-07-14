@@ -470,9 +470,9 @@ struct SeriesDetailView: View {
             if isSelectionMode {
                 self.cellFrames = value
             }
-        }  }
-            // ── Volume Jump: ensure target is expanded then scroll to its anchor ──
-            .onChange(of: jumpToVolume) { _, targetKey in
+        }
+        // ── Volume Jump: ensure target is expanded then scroll to its anchor ──
+        .onChange(of: jumpToVolume) { _, targetKey in
                 guard let targetKey else { return }
                 // 1. Expand the volume if it was collapsed
                 let _ = withAnimation(.easeInOut(duration: 0.2)) {
