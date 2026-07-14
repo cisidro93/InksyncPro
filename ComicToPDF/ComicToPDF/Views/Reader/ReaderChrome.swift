@@ -186,7 +186,7 @@ struct ReaderChrome: View {
             Button(action: onBack) {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(.white)
+                    .foregroundColor(.primary)
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }
@@ -197,7 +197,7 @@ struct ReaderChrome: View {
             // ── Title ──────────────────────────────────────────────────────────
             Text(title)
                 .font(.system(size: 14, weight: .semibold))
-                .foregroundColor(.white)
+                .foregroundColor(.primary)
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .frame(maxWidth: .infinity)
@@ -333,11 +333,11 @@ struct ReaderChrome: View {
                                         
                                         Text("Page \(pageNum)")
                                             .font(.system(size: 11, weight: .bold, design: .rounded))
-                                            .foregroundColor(.white)
+                                            .foregroundColor(.primary)
                                             .padding(.horizontal, 10)
                                             .padding(.vertical, 4)
                                             .background(.ultraThinMaterial, in: Capsule())
-                                            .overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 0.5))
+                                            .overlay(Capsule().stroke(Color.primary.opacity(0.15), lineWidth: 0.5))
                                     }
                                     .position(
                                         x: 14 + (sliderGeo.size.width - 28) * CGFloat(currentProgress),
@@ -365,7 +365,7 @@ struct ReaderChrome: View {
 
                     Text("\(totalPages)")
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(.white.opacity(0.5))
+                        .foregroundColor(.secondary)
                         .frame(width: 20, alignment: .trailing)
                 }
                 .padding(.horizontal, 16)
@@ -376,7 +376,7 @@ struct ReaderChrome: View {
             if !isScrubbing {
                 Text("\(Int(currentProgress * 100))%")
                     .font(.system(size: 10, weight: .bold, design: .rounded))
-                    .foregroundColor(.white.opacity(0.4))
+                    .foregroundColor(.secondary)
                     .padding(.bottom, 8)
             } else {
                 Text(" ") // Keeps layout stable
@@ -386,7 +386,7 @@ struct ReaderChrome: View {
 
             // ── Thin divider ───────────────────────────────────────────────────
             Rectangle()
-                .fill(Color.white.opacity(0.08))
+                .fill(Color.primary.opacity(0.08))
                 .frame(height: 0.5)
                 .padding(.horizontal, 16)
 
@@ -396,7 +396,7 @@ struct ReaderChrome: View {
                 HStack(spacing: 4) {
                     barButton(
                         icon: onBookmarkActive ? "bookmark.fill" : "bookmark",
-                        tint: onBookmarkActive ? .yellow : .white
+                        tint: onBookmarkActive ? .yellow : .primary
                     ) {
                         Haptics.shared.playImpact(style: .light)
                         onBookmark()
@@ -405,7 +405,7 @@ struct ReaderChrome: View {
                     if hasCopyAction {
                         barButton(
                             icon: "doc.on.doc",
-                            tint: .white
+                            tint: .primary
                         ) {
                             Haptics.shared.playImpact(style: .light)
                             onCopyToggle?()
@@ -423,16 +423,16 @@ struct ReaderChrome: View {
                     VStack(spacing: 2) {
                         Text(pageText)
                             .font(.system(size: 13, weight: .semibold, design: .rounded))
-                            .foregroundColor(.white)
+                            .foregroundColor(.primary)
                         if let tr = timeRemainingText {
                             Text(tr)
                                 .font(.system(size: 9, weight: .medium, design: .rounded))
-                                .foregroundColor(.white.opacity(0.7))
+                                .foregroundColor(.secondary)
                         }
                     }
                     .padding(.horizontal, 14)
                     .padding(.vertical, 6)
-                    .background(Color.white.opacity(0.12), in: Capsule())
+                    .background(Color.primary.opacity(0.12), in: Capsule())
                 }
                 .buttonStyle(.plain)
                 .simultaneousGesture(
@@ -448,19 +448,19 @@ struct ReaderChrome: View {
                 // Right cluster
                 HStack(spacing: 4) {
                     if let onTOC = onTOCToggle {
-                        barButton(icon: "list.bullet", tint: .white) {
+                        barButton(icon: "list.bullet", tint: .primary) {
                             Haptics.shared.playImpact(style: .light)
                             onTOC()
                         }
                     }
                     if let onAnnotations = onAnnotationsToggle {
-                        barButton(icon: "pencil.and.outline", tint: .white) {
+                        barButton(icon: "pencil.and.outline", tint: .primary) {
                             Haptics.shared.playImpact(style: .light)
                             onAnnotations()
                         }
                     }
                     if let onCharacterMap = onCharacterMapToggle {
-                        barButton(icon: "square.stack.3d.up.badge.a", tint: .white) {
+                        barButton(icon: "square.stack.3d.up.badge.a", tint: .primary) {
                             Haptics.shared.playImpact(style: .light)
                             onCharacterMap()
                         }
@@ -508,7 +508,7 @@ struct ReaderChrome: View {
 
     private var chromeDivider: some View {
         Rectangle()
-            .fill(Color.white.opacity(0.12))
+            .fill(Color.primary.opacity(0.12))
             .frame(width: 0.5, height: 22)
     }
 
@@ -528,7 +528,7 @@ struct ReaderChrome: View {
             VStack(spacing: 1) {
                 Image(systemName: icon)
                     .font(.system(size: 15, weight: .medium))
-                    .foregroundColor(active ? activeColor : .white.opacity(0.85))
+                    .foregroundColor(active ? activeColor : .primary.opacity(0.85))
                 if let badge = badgeText {
                     Text(badge)
                         .font(.system(size: 7, weight: .bold))

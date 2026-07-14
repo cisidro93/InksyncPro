@@ -118,14 +118,17 @@ class SandboxCleanupManager: ObservableObject {
 
         guard let contents = try? FileManager.default.contentsOfDirectory(
             at: cacheDir,
-            includingPropertiesForKeys: [.fileSizeKey],
+            includingPropertiesForKeys: [.fileSizeKey, .creationDateKey],
             options: .skipsHiddenFiles
         ) else { return [] }
 
+        let oneHourAgo = Date().addingTimeInterval(-3600)
         let comicExtensions: Set<String> = ["pdf", "epub", "cbz", "cbr", "cb7", "cbt", "zip"]
         return contents.compactMap { url -> CleanupItem? in
             guard comicExtensions.contains(url.pathExtension.lowercased()),
-                  let attrs = try? url.resourceValues(forKeys: [.fileSizeKey]),
+                  let attrs = try? url.resourceValues(forKeys: [.fileSizeKey, .creationDateKey]),
+                  let created = attrs.creationDate,
+                  created < oneHourAgo,
                   let size = attrs.fileSize
             else { return nil }
             return CleanupItem(

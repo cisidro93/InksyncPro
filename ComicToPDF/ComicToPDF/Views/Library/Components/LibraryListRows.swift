@@ -112,8 +112,8 @@ struct ModernFileRow: View {
                             .font(.system(size: 10, weight: .bold))
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
-                            .background(Color.gray.opacity(0.3))
-                            .foregroundColor(.white)
+                            .background(Color.gray.opacity(0.2))
+                            .foregroundColor(Theme.textSecondary)
                             .cornerRadius(4)
                     }
                     

@@ -3,6 +3,7 @@ import UIKit
 import Combine
 import ZIPFoundation
 import SwiftUI
+import PDFKit
 
 /// Resolves the 'God Object' bottleneck by handling intensive O(N) file system
 /// enumeration strictly off the Main Thread.
@@ -132,6 +133,12 @@ actor LibraryScanner {
                 
                 // Skip files currently being uploaded via WiFi
                 guard !ActiveUploadRegistry.shared.isUploading(fileURL) else { continue }
+
+                // File integrity check to prevent premature ingestion of incomplete files
+                guard isFileCompleteAndValid(at: fileURL) else {
+                    Logger.shared.log("LibraryScanner: Skipping scan of incomplete or unreadable file: \(filename)", category: "Library", type: .warning)
+                    continue
+                }
 
                 let fileSize = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
 
@@ -384,7 +391,7 @@ actor LibraryScanner {
                     if item.pageCount > 0 {
                         modified[idx].pageCount = item.pageCount
                     } else {
-                        modified[idx].pageCount = -1
+                        Logger.shared.log("LibraryScanner: Backfill page count failed for \(modified[idx].name) — leaving at 0 for retry", category: "Library", type: .warning)
                     }
                     if let coverData = item.coverData {
                         // Clear ThumbnailDaemon cache
@@ -415,6 +422,35 @@ actor LibraryScanner {
                 manager.convertedPDFs = modified
             }
             manager.saveLibrary()
+        }
+    }
+
+    // MARK: - File Integrity Verification
+
+    private func isFileCompleteAndValid(at url: URL) -> Bool {
+        let ext = url.pathExtension.lowercased()
+        guard FileManager.default.fileExists(atPath: url.path) else { return false }
+        
+        switch ext {
+        case "pdf":
+            guard let doc = PDFDocument(url: url) else { return false }
+            return doc.pageCount > 0 && !doc.isLocked
+        case "cbz", "zip", "epub":
+            do {
+                _ = try Archive(url: url, accessMode: .read)
+                return true
+            } catch {
+                return false
+            }
+        case "cbr", "rar":
+            do {
+                _ = try Unrar.Archive(fileURL: url)
+                return true
+            } catch {
+                return false
+            }
+        default:
+            return true
         }
     }
 }

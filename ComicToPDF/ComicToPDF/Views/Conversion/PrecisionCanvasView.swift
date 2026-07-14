@@ -47,21 +47,26 @@ struct PrecisionCanvasView: View {
     }
     
     var body: some View {
+        editorContent
+            .navigationTitle("Page \(pageIndex + 1)")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    navigationBarTrailingItems
+                }
+                ToolbarItemGroup(placement: .bottomBar) {
+                    bottomBarItems
+                }
+            }
+    }
+
+    @ViewBuilder
+    private var editorContent: some View {
         ZStack {
             Color.black.edgesIgnoringSafeArea(.all)
             mainCanvasLayout
             securityOverlay
             processingOverlay
-        }
-        .navigationTitle("Page \(pageIndex + 1)")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                navigationBarTrailingItems
-            }
-            ToolbarItemGroup(placement: .bottomBar) {
-                bottomBarItems
-            }
         }
         .background(hiddenKeyboardShortcuts)
         .task {

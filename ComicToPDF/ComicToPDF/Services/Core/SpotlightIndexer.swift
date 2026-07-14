@@ -260,20 +260,25 @@ final class SpotlightIndexer {
         let bounds = page.bounds(for: .mediaBox)
         guard bounds.width > 0 && bounds.height > 0 else { return "" }
         
-        let size = CGSize(width: bounds.width, height: bounds.height)
-        let format = UIGraphicsImageRendererFormat.default()
-        format.scale = 1.0
-        let renderer = UIGraphicsImageRenderer(size: size, format: format)
-        let image = renderer.image { ctx in
-            let cgCtx = ctx.cgContext
-            cgCtx.setFillColor(UIColor.white.cgColor)
-            cgCtx.fill(CGRect(origin: .zero, size: size))
-            cgCtx.translateBy(x: 0, y: size.height)
-            cgCtx.scaleBy(x: 1.0, y: -1.0)
-            page.draw(with: .mediaBox, to: cgCtx)
-        }
+        let width = Int(bounds.width)
+        let height = Int(bounds.height)
+        guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
+              let context = CGContext(
+                  data: nil,
+                  width: width,
+                  height: height,
+                  bitsPerComponent: 8,
+                  bytesPerRow: 0,
+                  space: colorSpace,
+                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+              ) else { return "" }
+              
+        context.setFillColor(CGColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0))
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
         
-        guard let cgImage = image.cgImage else { return "" }
+        page.draw(with: .mediaBox, to: context)
+        
+        guard let cgImage = context.makeImage() else { return "" }
         
         return await withCheckedContinuation { continuation in
             let request = VNRecognizeTextRequest { request, error in

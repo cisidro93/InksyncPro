@@ -227,20 +227,20 @@ struct CloudFileBrowserView: View {
             VStack(spacing: 20) {
                 ProgressView()
                     .controlSize(.large)
-                    .tint(.white)
+                    .tint(.primary)
                 if let folderName = scanningFolderName {
                     Text("Scanning \"\(folderName)\"…")
                         .font(.subheadline.bold())
-                        .foregroundColor(.white)
+                        .foregroundColor(.primary)
                     if addedCount > 0 {
                         Text("\(addedCount) files found")
                             .font(.caption)
-                            .foregroundColor(.white.opacity(0.8))
+                            .foregroundColor(.secondary)
                     }
                 } else {
                     Text("Adding \(addedCount) file(s) to Library…")
                         .font(.subheadline.bold())
-                        .foregroundColor(.white)
+                        .foregroundColor(.primary)
                 }
             }
             .padding(32)

@@ -147,7 +147,7 @@ struct GuidedViewPreview: View {
         let height = image.size.height
         let cropRect = CGRect(
             x: normalizedRect.minX * width,
-            y: (1.0 - normalizedRect.maxY) * height,
+            y: normalizedRect.minY * height,
             width: normalizedRect.width * width,
             height: normalizedRect.height * height
         )
