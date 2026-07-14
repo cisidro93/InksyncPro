@@ -1158,6 +1158,16 @@ final class ComicImageCache: ObservableObject {
         }
     }
     
+    private func getSiblingIndex(for index: Int) -> Int? {
+        guard index > 0 && index < pageCount else { return nil }
+        if index % 2 == 1 {
+            let sibling = index + 1
+            return sibling < pageCount ? sibling : nil
+        } else {
+            return index - 1
+        }
+    }
+    
     private func prefetchSurrounding(index: Int) {
         let direction = readingDirection
         let cacheCap = maxCacheSize
@@ -1204,9 +1214,10 @@ final class ComicImageCache: ObservableObject {
         }
         
         // Cancel tasks that are no longer in the active prefetch window
+        let siblingIndex = getSiblingIndex(for: index)
         var cancelledKeys: [Int] = []
         for (idx, task) in inFlightPrefetchTasks {
-            if !prefetchIndices.contains(idx) && idx != index {
+            if !prefetchIndices.contains(idx) && idx != index && idx != siblingIndex {
                 task.cancel()
                 stopFetching(idx)
                 cancelledKeys.append(idx)
