@@ -42,7 +42,7 @@ struct GlobalNotebookView: View {
     // Redesigned Notebooks Hub State
     enum Tab: String, CaseIterable, Identifiable {
         case notebooks = "Notebooks"
-        case highlights = "Insights"
+        case highlights = "Highlights"
         
         var id: String { rawValue }
         
@@ -133,8 +133,12 @@ struct GlobalNotebookView: View {
     // Group keys sorted alphabetically by Book name
     private var sortedGroupedKeys: [UUID] {
         groupedAnnotations.keys.sorted { key1, key2 in
-            let b1 = conversionManager.convertedPDFs.first(where: { $0.id == key1 })?.name ?? ""
-            let b2 = conversionManager.convertedPDFs.first(where: { $0.id == key2 })?.name ?? ""
+            let b1 = conversionManager.convertedPDFs.first(where: { $0.id == key1 })?.name
+                ?? groupedAnnotations[key1]?.first?.readwiseBookTitle
+                ?? ""
+            let b2 = conversionManager.convertedPDFs.first(where: { $0.id == key2 })?.name
+                ?? groupedAnnotations[key2]?.first?.readwiseBookTitle
+                ?? ""
             return b1.localizedCompare(b2) == .orderedAscending
         }
     }
@@ -231,9 +235,13 @@ struct GlobalNotebookView: View {
                                 ScrollView {
                                     LazyVStack(spacing: 16, pinnedViews: [.sectionHeaders]) {
                                         ForEach(sortedGroupedKeys, id: \.self) { pdfID in
-                                            if let book = conversionManager.convertedPDFs.first(where: { $0.id == pdfID }),
-                                               let annotations = groupedAnnotations[pdfID] {
-                                                Section(header: sectionHeader(for: book, count: annotations.count)) {
+                                            if let annotations = groupedAnnotations[pdfID] {
+                                                let book = conversionManager.convertedPDFs.first(where: { $0.id == pdfID })
+                                                let bookTitle = book?.name ?? annotations.first?.readwiseBookTitle ?? "Readwise Import"
+                                                let author = book?.metadata.writer ?? book?.metadata.author ?? annotations.first?.readwiseAuthor
+                                                let coverData = book?.coverImageData
+                                                
+                                                Section(header: sectionHeader(title: bookTitle, author: author, coverData: coverData, count: annotations.count)) {
                                                     ForEach(annotations) { annotation in
                                                         highlightCard(for: annotation, book: book)
                                                             .padding(.horizontal, 16)
@@ -293,7 +301,7 @@ struct GlobalNotebookView: View {
                             endPoint: .bottomTrailing
                         )
                     )
-                Text(activeTab == .notebooks ? "Your unified creative sketchbooks & study guides" : "Your consolidated reading insights & notes")
+                Text(activeTab == .notebooks ? "Your unified creative sketchbooks & study guides" : "Your consolidated reading highlights & notes")
                     .font(.system(size: 13, weight: .medium))
                     .foregroundColor(.inkTextSecondary)
             }
@@ -533,10 +541,10 @@ struct GlobalNotebookView: View {
     }
     
     // MARK: - Section Header for Book
-    private func sectionHeader(for book: ConvertedPDF, count: Int) -> some View {
+    private func sectionHeader(title: String, author: String?, coverData: Data?, count: Int) -> some View {
         HStack(spacing: 12) {
             // Mini Cover Thumbnail
-            if let coverData = book.coverImageData, let uiImage = UIImage(data: coverData) {
+            if let coverData = coverData, let uiImage = UIImage(data: coverData) {
                 Image(uiImage: uiImage)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
@@ -555,12 +563,12 @@ struct GlobalNotebookView: View {
             }
             
             VStack(alignment: .leading, spacing: 1) {
-                Text(book.name)
+                Text(title)
                     .font(.system(size: 14, weight: .bold, design: .rounded))
                     .foregroundColor(.inkTextPrimary)
                     .lineLimit(1)
                 
-                if let author = book.metadata.writer ?? book.metadata.author, !author.isEmpty {
+                if let author = author, !author.isEmpty {
                     Text(author)
                         .font(.system(size: 11, weight: .regular))
                         .foregroundColor(.inkTextSecondary)
@@ -587,7 +595,7 @@ struct GlobalNotebookView: View {
     
     // MARK: - Highlight Card
     @ViewBuilder
-    private func highlightCard(for annotation: SDAnnotation, book: ConvertedPDF) -> some View {
+    private func highlightCard(for annotation: SDAnnotation, book: ConvertedPDF?) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             // Highlight text snippet
             if let selectedText = annotation.selectedText, !selectedText.isEmpty {
@@ -630,7 +638,7 @@ struct GlobalNotebookView: View {
                 HStack(spacing: 4) {
                     Image(systemName: "book.pages")
                         .font(.system(size: 10))
-                    Text(annotation.chapterTitle ?? "Page \(annotation.pageIndex + 1)")
+                    Text(annotation.chapterTitle ?? (annotation.isReadwiseImport ? "Location \(annotation.readwiseLocation ?? 0)" : "Page \(annotation.pageIndex + 1)"))
                         .font(.system(size: 11, weight: .semibold, design: .rounded))
                 }
                 .foregroundColor(.inkTextSecondary)
@@ -655,7 +663,7 @@ struct GlobalNotebookView: View {
                         var share = ""
                         if let t = annotation.selectedText { share += "\"\(t)\"\n" }
                         if let n = annotation.noteText { share += "Note: \(n)\n" }
-                        share += "— From \(book.name)"
+                        share += "— From \(book?.name ?? annotation.readwiseBookTitle ?? "Readwise Import")"
                         shareText = share
                         isShowingShareSheet = true
                     } label: {
