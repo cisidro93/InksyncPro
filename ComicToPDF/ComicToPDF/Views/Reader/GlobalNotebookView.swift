@@ -36,6 +36,35 @@ struct GlobalNotebookView: View {
     @State private var isShowingShareSheet = false
     @State private var shareText = ""
     
+    // Redesigned Notebooks Hub State
+    enum Tab: String, CaseIterable, Identifiable {
+        case notebooks = "Notebooks"
+        case highlights = "Insights"
+        
+        var id: String { rawValue }
+        
+        var icon: String {
+            switch self {
+            case .notebooks: return "notebook.toptab"
+            case .highlights: return "highlighter"
+            }
+        }
+    }
+    
+    @State private var activeTab: Tab = .notebooks
+    @State private var activeNotebookBook: ConvertedPDF? = nil
+    
+    private let coverGradients: [LinearGradient] = [
+        LinearGradient(colors: [Color(hex: "#1a2a6c"), Color(hex: "#b21f1f")], startPoint: .topLeading, endPoint: .bottomTrailing),
+        LinearGradient(colors: [Color(hex: "#0f2027"), Color(hex: "#203a43")], startPoint: .topLeading, endPoint: .bottomTrailing),
+        LinearGradient(colors: [Color(hex: "#11998e"), Color(hex: "#38ef7d")], startPoint: .topLeading, endPoint: .bottomTrailing),
+        LinearGradient(colors: [Color(hex: "#c0392b"), Color(hex: "#8e44ad")], startPoint: .topLeading, endPoint: .bottomTrailing),
+        LinearGradient(colors: [Color(hex: "#2c3e50"), Color(hex: "#3498db")], startPoint: .topLeading, endPoint: .bottomTrailing),
+        LinearGradient(colors: [Color(hex: "#f12711"), Color(hex: "#f5af19")], startPoint: .topLeading, endPoint: .bottomTrailing),
+        LinearGradient(colors: [Color(hex: "#833ab4"), Color(hex: "#fd1d1d")], startPoint: .topLeading, endPoint: .bottomTrailing),
+        LinearGradient(colors: [Color(hex: "#134e5e"), Color(hex: "#71b280")], startPoint: .topLeading, endPoint: .bottomTrailing)
+    ]
+    
     // Color Palette matching the highlight quick colors
     private let highlightColors = [
         ("#ffd700", "Yellow"),
@@ -107,33 +136,51 @@ struct GlobalNotebookView: View {
                 headerView
                 
                 // Content Switcher
-                if allAnnotations.filter({ $0.kindRaw == "highlight" || $0.kindRaw == "note" }).isEmpty {
-                    emptyLibraryState
+                if activeTab == .notebooks {
+                    if conversionManager.convertedPDFs.isEmpty {
+                        emptyNotebooksState
+                    } else {
+                        // Notebooks grid view
+                        ScrollView {
+                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 170, maximum: 220), spacing: 24)], spacing: 28) {
+                                ForEach(conversionManager.convertedPDFs) { book in
+                                    notebookCard(for: book)
+                                }
+                            }
+                            .padding(.horizontal, 24)
+                            .padding(.top, 20)
+                            .padding(.bottom, 120) // spacing for tab bar
+                        }
+                    }
                 } else {
-                    VStack(spacing: 0) {
-                        // Search and Filters Panel
-                        filterPanel
-                        
-                        if filteredAnnotations.isEmpty {
-                            emptySearchResultState
-                        } else {
-                            // Scrollable list of highlights
-                            ScrollView {
-                                LazyVStack(spacing: 16, pinnedViews: [.sectionHeaders]) {
-                                    ForEach(sortedGroupedKeys, id: \.self) { pdfID in
-                                        if let book = conversionManager.convertedPDFs.first(where: { $0.id == pdfID }),
-                                           let annotations = groupedAnnotations[pdfID] {
-                                            Section(header: sectionHeader(for: book, count: annotations.count)) {
-                                                ForEach(annotations) { annotation in
-                                                    highlightCard(for: annotation, book: book)
-                                                        .padding(.horizontal, 16)
+                    if allAnnotations.filter({ $0.kindRaw == "highlight" || $0.kindRaw == "note" }).isEmpty {
+                        emptyLibraryState
+                    } else {
+                        VStack(spacing: 0) {
+                            // Search and Filters Panel
+                            filterPanel
+                            
+                            if filteredAnnotations.isEmpty {
+                                emptySearchResultState
+                            } else {
+                                // Scrollable list of highlights
+                                ScrollView {
+                                    LazyVStack(spacing: 16, pinnedViews: [.sectionHeaders]) {
+                                        ForEach(sortedGroupedKeys, id: \.self) { pdfID in
+                                            if let book = conversionManager.convertedPDFs.first(where: { $0.id == pdfID }),
+                                               let annotations = groupedAnnotations[pdfID] {
+                                                Section(header: sectionHeader(for: book, count: annotations.count)) {
+                                                    ForEach(annotations) { annotation in
+                                                        highlightCard(for: annotation, book: book)
+                                                            .padding(.horizontal, 16)
+                                                    }
                                                 }
                                             }
                                         }
                                     }
+                                    .padding(.top, 12)
+                                    .padding(.bottom, 120) // spacing for tab bar
                                 }
-                                .padding(.top, 12)
-                                .padding(.bottom, 120) // spacing for tab bar
                             }
                         }
                     }
@@ -144,13 +191,28 @@ struct GlobalNotebookView: View {
         .sheet(isPresented: $isShowingShareSheet) {
             ShareSheet(activityItems: [shareText])
         }
+        .sheet(item: $activeNotebookBook) { book in
+            NavigationStack {
+                StudyNotebookView(bookID: book.id.uuidString, bookTitle: book.name, fileURL: book.url)
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .navigationBarTrailing) {
+                            Button("Done") {
+                                activeNotebookBook = nil
+                            }
+                            .font(.system(size: 15, weight: .bold, design: .rounded))
+                            .foregroundColor(.orange)
+                        }
+                    }
+            }
+        }
     }
     
     // MARK: - Header
     private var headerView: some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Highlights Hub")
+                Text(activeTab == .notebooks ? "Notebooks Hub" : "Highlights Hub")
                     .font(.system(size: 24, weight: .bold, design: .rounded))
                     .foregroundStyle(
                         LinearGradient(
@@ -159,12 +221,44 @@ struct GlobalNotebookView: View {
                             endPoint: .bottomTrailing
                         )
                     )
-                Text("Your consolidated reading insights & notes")
+                Text(activeTab == .notebooks ? "Your unified creative sketchbooks & study guides" : "Your consolidated reading insights & notes")
                     .font(.system(size: 13, weight: .medium))
                     .foregroundColor(.inkTextSecondary)
             }
             
             Spacer()
+            
+            // Custom premium segmented tab switcher
+            HStack(spacing: 4) {
+                ForEach(Tab.allCases) { tab in
+                    Button {
+                        HapticEngine.light()
+                        withAnimation(.spring(response: 0.28, dampingFraction: 0.76)) {
+                            activeTab = tab
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: tab.icon)
+                                .font(.system(size: 12, weight: .bold))
+                            Text(tab.rawValue)
+                                .font(.system(size: 12, weight: .bold, design: .rounded))
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(
+                            activeTab == tab
+                                ? AnyShapeStyle(Color.orange.opacity(0.18))
+                                : AnyShapeStyle(Color.clear)
+                        )
+                        .foregroundColor(activeTab == tab ? Color.orange : .inkTextSecondary)
+                        .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(4)
+            .background(Color.inkSurfaceRaised.opacity(0.5), in: Capsule())
+            .padding(.trailing, 10)
             
             // Export Zettelkasten Zip
             Button {
@@ -642,6 +736,166 @@ struct GlobalNotebookView: View {
             } catch {
                 Logger.shared.log("Highlights Hub: Zettelkasten zip export FAILED: \(error.localizedDescription)", category: "Notebook", type: .error)
             }
+        }
+    }
+    
+    // MARK: - Notebooks Views
+    @ViewBuilder
+    private func notebookCard(for book: ConvertedPDF) -> some View {
+        let bookAnnotations = allAnnotations.filter { $0.pdfID == book.id }
+        let highlightsCount = bookAnnotations.filter { $0.kindRaw == "highlight" }.count
+        let noteAnn = bookAnnotations.first { $0.kindRaw == "note" }
+        let hasTextNote = noteAnn != nil && !(noteAnn?.noteText?.isEmpty ?? true)
+        let hasDrawing = noteAnn != nil && !(noteAnn?.drawingData?.isEmpty ?? true)
+        
+        let hash = abs(book.id.hashValue)
+        let gradient = coverGradients[hash % coverGradients.count]
+        
+        VStack(spacing: 0) {
+            ZStack(alignment: .topTrailing) {
+                // Front cover
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(gradient)
+                    .frame(height: 240)
+                    .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.4 : 0.15), radius: 8, x: 0, y: 4)
+                    .overlay(
+                        HStack(spacing: 0) {
+                            // spine / book binding
+                            Rectangle()
+                                .fill(Color.black.opacity(0.25))
+                                .frame(width: 16)
+                            
+                            Spacer()
+                        }
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    )
+                
+                // Content on cover
+                VStack(alignment: .leading, spacing: 10) {
+                    Spacer()
+                    
+                    // Book Title Label
+                    Text(book.name)
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .foregroundColor(.white)
+                        .lineLimit(3)
+                        .multilineTextAlignment(.leading)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.black.opacity(0.25), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    
+                    Spacer()
+                    
+                    // Stats section
+                    VStack(alignment: .leading, spacing: 6) {
+                        if highlightsCount > 0 {
+                            HStack(spacing: 6) {
+                                Image(systemName: "highlighter")
+                                    .font(.system(size: 10, weight: .bold))
+                                Text("\(highlightsCount) Highlights")
+                                    .font(.system(size: 10, weight: .medium, design: .rounded))
+                            }
+                            .foregroundColor(.white.opacity(0.9))
+                        }
+                        
+                        if hasTextNote {
+                            HStack(spacing: 6) {
+                                Image(systemName: "text.alignleft")
+                                    .font(.system(size: 10, weight: .bold))
+                                Text("Text Notes")
+                                    .font(.system(size: 10, weight: .medium, design: .rounded))
+                            }
+                            .foregroundColor(.white.opacity(0.9))
+                        }
+                        
+                        if hasDrawing {
+                            HStack(spacing: 6) {
+                                Image(systemName: "applepencil")
+                                    .font(.system(size: 10, weight: .bold))
+                                Text("Sketches")
+                                    .font(.system(size: 10, weight: .medium, design: .rounded))
+                            }
+                            .foregroundColor(.white.opacity(0.9))
+                        }
+                    }
+                    .padding(.leading, 8)
+                }
+                .padding(.leading, 24) // offset from binding
+                .padding(.trailing, 12)
+                .padding(.bottom, 16)
+                .padding(.top, 16)
+                
+                // Open Book floating action icon
+                Button {
+                    openBookInReader(book)
+                } label: {
+                    Image(systemName: "book.circle.fill")
+                        .font(.system(size: 26))
+                        .foregroundStyle(.white)
+                        .shadow(color: Color.black.opacity(0.3), radius: 4, x: 0, y: 2)
+                        .padding(10)
+                }
+                .buttonStyle(.plain)
+            }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                HapticEngine.light()
+                self.activeNotebookBook = book
+            }
+        }
+    }
+    
+    private func openBookInReader(_ book: ConvertedPDF) {
+        HapticEngine.medium()
+        
+        // 1. Update progress tracker so the reader loads precisely on its saved page
+        let currentProgress = ReaderProgressTracker.shared.progress(for: book.id)
+        ReaderProgressTracker.shared.update(ReadingProgress(
+            pdfID: book.id,
+            lastOpenedAt: Date(),
+            currentPageIndex: currentProgress?.currentPageIndex ?? 0,
+            currentChapterIndex: currentProgress?.currentChapterIndex ?? 0,
+            currentChapterOffset: 0.0,
+            totalPagesRead: currentProgress?.totalPagesRead ?? 1,
+            completionFraction: currentProgress?.completionFraction ?? 0.0,
+            readingSessionDates: currentProgress?.readingSessionDates ?? [Date()],
+            estimatedMinutesRemaining: nil
+        ))
+        
+        // 2. Instruct AppRouter to present the book reader
+        selectedPDF = book
+        AppRouter.shared.presentFullScreen(.read(book))
+    }
+    
+    // MARK: - Empty State (Overall Notebooks)
+    private var emptyNotebooksState: some View {
+        VStack(spacing: 18) {
+            Spacer()
+            
+            Image(systemName: "notebook.toptab")
+                .font(.system(size: 64))
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [Color.orange, Color.purple],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .padding(24)
+                .background(Color.orange.opacity(0.1), in: Circle())
+            
+            Text("No Notebooks Yet")
+                .font(.system(size: 18, weight: .bold, design: .rounded))
+                .foregroundColor(.inkTextPrimary)
+            
+            Text("Import EPUBs, CBZ, or PDF books in the Library. Each book automatically gets its own creative study notebook here.")
+                .font(.system(size: 13))
+                .foregroundColor(.inkTextSecondary)
+                .multilineTextAlignment(.center)
+                .lineSpacing(4)
+                .padding(.horizontal, 36)
+            
+            Spacer()
         }
     }
 }
