@@ -238,7 +238,7 @@ struct GlobalNotebookView: View {
         .sheet(isPresented: $isShowingShareSheet) {
             ShareSheet(activityItems: [shareText])
         }
-        .sheet(item: $activeNotebookSelection) { selection in
+        .fullScreenCover(item: $activeNotebookSelection) { selection in
             NavigationStack {
                 StudyNotebookView(bookID: selection.id.uuidString, bookTitle: selection.title, fileURL: selection.fileURL)
                     .navigationBarTitleDisplayMode(.inline)

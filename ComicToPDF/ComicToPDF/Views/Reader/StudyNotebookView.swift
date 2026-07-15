@@ -1692,6 +1692,18 @@ struct NotebookPaperBackground: View {
     var body: some View {
         GeometryReader { geo in
             ZStack {
+                // Paper Base Color Fill
+                Group {
+                    if colorScheme == .dark {
+                        Color(hex: "#1E1E1E")
+                    } else if style == .legal {
+                        Color(hex: "#FFFDF0") // Ivory legal pad yellow
+                    } else {
+                        Color.white
+                    }
+                }
+                .ignoresSafeArea()
+                
                 // Rule lines/dots
                 Path { path in
                     switch style {
@@ -1749,7 +1761,9 @@ struct NotebookPaperBackground: View {
                     }
                 }
                 .stroke(
-                    colorScheme == .dark ? Color.white.opacity(0.08) : Color(hex: style == .legal ? "#D2E3FC" : "#E2E8F0"),
+                    colorScheme == .dark
+                        ? Color.white.opacity(0.14)
+                        : Color(hex: style == .legal ? "#B5D3FD" : "#CFE0F5"),
                     lineWidth: style == .dots ? 2 : 0.8
                 )
 
@@ -1761,8 +1775,8 @@ struct NotebookPaperBackground: View {
                         path.addLine(to: CGPoint(x: marginX, y: geo.size.height))
                     }
                     .stroke(
-                        colorScheme == .dark ? Color.red.opacity(0.3) : Color.red.opacity(0.4),
-                        lineWidth: 1.0
+                        colorScheme == .dark ? Color.red.opacity(0.4) : Color.red.opacity(0.45),
+                        lineWidth: 1.2
                     )
                 }
             }
