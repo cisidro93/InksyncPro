@@ -50,7 +50,7 @@ struct InkTabBar: View {
         InkTabItem(tag: 0, label: "Library",    icon: "books.vertical",             activeIcon: "books.vertical.fill"),
         InkTabItem(tag: 1, label: "Workspace",  icon: "briefcase",                  activeIcon: "briefcase.fill"),
         InkTabItem(tag: 2, label: "Devices",    icon: "ipad.and.iphone",            activeIcon: "ipad.and.iphone.fill"),
-        InkTabItem(tag: 3, label: "Notebook",   icon: "notebook.toptab",            activeIcon: "notebook.toptab.fill"),
+        InkTabItem(tag: 3, label: "Notebooks",  icon: "notebook.toptab",            activeIcon: "notebook.toptab.fill"),
     ]
 
 
@@ -72,6 +72,38 @@ struct InkTabBar: View {
     private var iconSize: CGFloat         { isLandscapePhone ? 15 : 17 }
     private var activeIconSize: CGFloat   { isLandscapePhone ? 17 : 19 }
     private var iconFrameHeight: CGFloat  { isLandscapePhone ? 22 : 34 }
+
+    private var pillBackground: some View {
+        ZStack {
+            Capsule().fill(.ultraThinMaterial)
+            Capsule()
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(colorScheme == .dark ? 0.06 : 0.5),
+                            Color.white.opacity(0.0)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+        }
+    }
+
+    private var pillBorder: some View {
+        Capsule()
+            .strokeBorder(
+                LinearGradient(
+                    colors: [
+                        Color.white.opacity(colorScheme == .dark ? 0.18 : 0.7),
+                        Color.white.opacity(colorScheme == .dark ? 0.04 : 0.2)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                ),
+                lineWidth: 0.8
+            )
+    }
 
     var body: some View {
         VStack(spacing: 6) {
@@ -128,36 +160,8 @@ struct InkTabBar: View {
             }
             .padding(.horizontal, 18)
             .padding(.vertical, pillVerticalPadding)
-            .background(
-                ZStack {
-                    Capsule().fill(.ultraThinMaterial)
-                    Capsule()
-                        .fill(
-                            LinearGradient(
-                                colors: [
-                                    Color.white.opacity(colorScheme == .dark ? 0.06 : 0.5),
-                                    Color.white.opacity(0.0)
-                                ],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
-                }
-            )
-            .overlay(
-                Capsule()
-                    .strokeBorder(
-                        LinearGradient(
-                            colors: [
-                                Color.white.opacity(colorScheme == .dark ? 0.18 : 0.7),
-                                Color.white.opacity(colorScheme == .dark ? 0.04 : 0.2)
-                            ],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        ),
-                        lineWidth: 0.8
-                    )
-            )
+            .background(pillBackground)
+            .overlay(pillBorder)
             .shadow(
                 color: .black.opacity(colorScheme == .dark ? 0.55 : 0.18),
                 radius: 28, y: 8

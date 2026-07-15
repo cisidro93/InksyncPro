@@ -1095,8 +1095,8 @@ struct EBookWebReader: UIViewRepresentable {
             column-rule: 1px solid rgba(128, 128, 128, 0.15) !important;
         """ : ""
 
-        let paddingLeft = isPaged ? 0 : margin
-        let paddingRight = isPaged ? 0 : margin
+        let paddingLeft = margin
+        let paddingRight = margin
 
         return """
         @font-face {
@@ -1268,6 +1268,12 @@ struct EBookWebReader: UIViewRepresentable {
         p, div, span, li, td, th, h1, h2, h3, h4, h5, h6 { color: \(textColor) !important; line-height: \(lineHeight); }
         img, svg, .page, .chunk-container { display: block !important; margin-left: auto !important; margin-right: auto !important; }
         img { max-width: 100%; height: auto; border-radius: 4px; object-fit: contain; max-height: calc(100vh - 120px); }
+        pre, table, code {
+            max-width: 100% !important;
+            overflow-x: auto !important;
+            word-wrap: break-word !important;
+            white-space: pre-wrap !important;
+        }
         a { color: \(linkColor) !important; }
         blockquote { border-left: 3px solid \(linkColor); margin-left: 0; padding-left: 16px; opacity: 0.85; }
         mark.inksync-highlight { background-color: #ffd700; color: inherit; border-radius: 2px; mix-blend-mode: multiply; -webkit-mix-blend-mode: multiply; padding: 0 1px; }

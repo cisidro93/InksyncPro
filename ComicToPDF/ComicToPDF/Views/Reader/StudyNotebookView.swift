@@ -29,6 +29,51 @@ struct StudyNotebookView: View {
     @AppStorage("studyNotebookPlacement") private var notebookPlacement: SidebarPlacement = .right
     @State private var canvasView = PKCanvasView()
     
+    // Custom drawing tools states
+    @State private var activeDrawingTool: DrawingTool = .pen
+    @State private var strokeColor: Color = .primary
+    @State private var strokeWidth: CGFloat = 4.0
+    @State private var isRulerActive = false
+    @State private var isSmartShapesEnabled = true
+
+    enum DrawingTool: String, CaseIterable, Identifiable {
+        case pen = "Pen"
+        case pencil = "Pencil"
+        case highlighter = "Highlighter"
+        case eraser = "Eraser"
+        case lasso = "Lasso"
+        
+        var id: String { rawValue }
+        
+        var icon: String {
+            switch self {
+            case .pen: return "pencil.tip"
+            case .pencil: return "pencil"
+            case .highlighter: return "highlighter"
+            case .eraser: return "eraser.line.dashed"
+            case .lasso: return "lasso"
+            }
+        }
+    }
+    
+    private let drawingColors: [Color] = [.primary, .red, .blue, .green, .orange]
+    
+    private func updateCanvasTool() {
+        switch activeDrawingTool {
+        case .pen:
+            canvasView.tool = PKInkingTool(.pen, color: UIColor(strokeColor), width: strokeWidth)
+        case .pencil:
+            canvasView.tool = PKInkingTool(.pencil, color: UIColor(strokeColor), width: strokeWidth)
+        case .highlighter:
+            canvasView.tool = PKInkingTool(.marker, color: UIColor(strokeColor).withAlphaComponent(0.35), width: strokeWidth * 2.5)
+        case .eraser:
+            canvasView.tool = PKEraserTool(.vector)
+        case .lasso:
+            canvasView.tool = PKLassoTool()
+        }
+        canvasView.isRulerActive = isRulerActive
+    }
+    
     // ✅ Phase 3: Highlights Drawer
     @State private var showHighlightsDrawer = false
     @State private var bookHighlights: [SDAnnotation] = []
@@ -241,6 +286,10 @@ struct StudyNotebookView: View {
                 )
                 .overlay(Rectangle().frame(height: 1).foregroundColor(Color.primary.opacity(0.05)), alignment: .bottom)
                 
+                if inputMode == .handwriting {
+                    canvasToolbar
+                }
+                
                 // MARK: Notebook Canvas
                 ZStack(alignment: .trailing) {
                     if inputMode == .markdown {
@@ -250,9 +299,12 @@ struct StudyNotebookView: View {
                     } else {
                         ZStack {
                             NotebookPaperBackground(style: paperStyle, colorScheme: colorScheme)
-                            StudyCanvasView(canvasView: $canvasView, onSaved: debounceSave)
+                            StudyCanvasView(canvasView: $canvasView, isSmartShapesEnabled: $isSmartShapesEnabled, onSaved: debounceSave)
                         }
                         .padding(.top, 8)
+                        .onAppear {
+                            updateCanvasTool()
+                        }
                     }
                     
                     // MARK: Highlights Drawer Overlay
@@ -1411,6 +1463,140 @@ struct MarkdownHighlighter {
         }
         
         return attrString
+    }
+
+    // MARK: - PencilKit Custom Drawing Toolbar
+    @ViewBuilder
+    private var canvasToolbar: some View {
+        HStack(spacing: 12) {
+            // Undo / Redo
+            Button {
+                HapticEngine.light()
+                canvasView.undoManager?.undo()
+            } label: {
+                Image(systemName: "arrow.uturn.backward")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(canvasView.undoManager?.canUndo == true ? .primary : .secondary.opacity(0.4))
+                    .padding(8)
+                    .background(Color.primary.opacity(0.06), in: Circle())
+            }
+            .disabled(canvasView.undoManager?.canUndo == false)
+            
+            Button {
+                HapticEngine.light()
+                canvasView.undoManager?.redo()
+            } label: {
+                Image(systemName: "arrow.uturn.forward")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(canvasView.undoManager?.canRedo == true ? .primary : .secondary.opacity(0.4))
+                    .padding(8)
+                    .background(Color.primary.opacity(0.06), in: Circle())
+            }
+            .disabled(canvasView.undoManager?.canRedo == false)
+            
+            Divider()
+                .frame(height: 20)
+                .background(Color.primary.opacity(0.1))
+            
+            // Tools Segment
+            ForEach(DrawingTool.allCases) { tool in
+                Button {
+                    HapticEngine.light()
+                    activeDrawingTool = tool
+                    updateCanvasTool()
+                } label: {
+                    Image(systemName: tool.icon)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(activeDrawingTool == tool ? .white : .primary)
+                        .padding(8)
+                        .background(activeDrawingTool == tool ? Color.orange : Color.primary.opacity(0.06), in: Circle())
+                }
+                .buttonStyle(.plain)
+            }
+            
+            Divider()
+                .frame(height: 20)
+                .background(Color.primary.opacity(0.1))
+            
+            // Colors (only relevant for writing tools)
+            if activeDrawingTool == .pen || activeDrawingTool == .pencil || activeDrawingTool == .highlighter {
+                HStack(spacing: 8) {
+                    ForEach(drawingColors, id: \.self) { color in
+                        Button {
+                            HapticEngine.light()
+                            strokeColor = color
+                            updateCanvasTool()
+                        } label: {
+                            Circle()
+                                .fill(color)
+                                .frame(width: 18, height: 18)
+                                .overlay(
+                                    Circle()
+                                        .stroke(Color.primary.opacity(strokeColor == color ? 0.8 : 0.15), lineWidth: strokeColor == color ? 2 : 1)
+                                )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            
+            // Thickness Picker
+            if activeDrawingTool == .pen || activeDrawingTool == .pencil || activeDrawingTool == .highlighter {
+                Menu {
+                    Picker("Width", selection: $strokeWidth) {
+                        Text("Fine (2pt)").tag(CGFloat(2.0))
+                        Text("Medium (4pt)").tag(CGFloat(4.0))
+                        Text("Thick (8pt)").tag(CGFloat(8.0))
+                        Text("Extra (16pt)").tag(CGFloat(16.0))
+                    }
+                } label: {
+                    Image(systemName: "line.horizontal.3.decrease.circle")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.primary)
+                        .padding(8)
+                        .background(Color.primary.opacity(0.06), in: Circle())
+                }
+                .onChange(of: strokeWidth) { _, _ in updateCanvasTool() }
+            }
+            
+            Spacer()
+            
+            // Ruler Button
+            Button {
+                HapticEngine.light()
+                isRulerActive.toggle()
+                updateCanvasTool()
+            } label: {
+                Image(systemName: "ruler")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(isRulerActive ? .white : .primary)
+                    .padding(8)
+                    .background(isRulerActive ? Color.orange : Color.primary.opacity(0.06), in: Circle())
+            }
+            .buttonStyle(.plain)
+            
+            // Smart Shapes Toggle
+            Button {
+                HapticEngine.light()
+                isSmartShapesEnabled.toggle()
+            } label: {
+                Image(systemName: isSmartShapesEnabled ? "skew" : "pencil.and.outline")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(isSmartShapesEnabled ? .white : .primary)
+                    .padding(8)
+                    .background(isSmartShapesEnabled ? Color.purple : Color.primary.opacity(0.06), in: Circle())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(Color.inkSurfaceRaised.opacity(0.4).background(.thinMaterial))
+        .overlay(
+            VStack {
+                Spacer()
+                Divider().background(Color.primary.opacity(0.05))
+            }
+        )
     }
 }
 
