@@ -677,7 +677,9 @@ struct GlobalNotebookView: View {
         )
         // Tap to read & navigate directly to that page
         .onTapGesture {
-            openAnnotationInReader(annotation, book: book)
+            if let book = book {
+                openAnnotationInReader(annotation, book: book)
+            }
         }
     }
     
