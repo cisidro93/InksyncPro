@@ -43,6 +43,21 @@ struct GraphEdge: Identifiable {
     let targetID: String
 }
 
+// MARK: - Weak DisplayLink Proxy
+@MainActor
+final class ZettelkastenDisplayLinkProxy: NSObject {
+    private weak var target: ZettelkastenGraphEngine?
+    
+    init(target: ZettelkastenGraphEngine) {
+        self.target = target
+        super.init()
+    }
+    
+    @objc func tick() {
+        target?.physicsTick()
+    }
+}
+
 // MARK: - Physics Engine
 
 @MainActor
@@ -307,7 +322,8 @@ final class ZettelkastenGraphEngine: NSObject, ObservableObject {
     func startSimulation() {
         stopSimulation()
         tickCount = 0
-        displayLink = CADisplayLink(target: self, selector: #selector(physicsTick))
+        let proxy = ZettelkastenDisplayLinkProxy(target: self)
+        displayLink = CADisplayLink(target: proxy, selector: #selector(ZettelkastenDisplayLinkProxy.tick))
         displayLink?.add(to: .main, forMode: .common)
     }
 
@@ -316,7 +332,7 @@ final class ZettelkastenGraphEngine: NSObject, ObservableObject {
         displayLink = nil
     }
 
-    @objc private func physicsTick() {
+    @objc func physicsTick() {
         tickCount += 1
         var forces: [String: CGVector] = [:]
         for node in nodes { forces[node.id] = .zero }
