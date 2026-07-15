@@ -144,22 +144,20 @@ struct StudyNotebookView: View {
                         .keyboardShortcut("d", modifiers: [.command])
                     }
                     
-                    if inputMode == .handwriting {
-                        // Paper Style Menu
-                        Menu {
-                            Picker("Paper Style", selection: $paperStyle) {
-                                ForEach(PaperStyle.allCases) { style in
-                                    Label(style.rawValue, systemImage: style.icon).tag(style)
-                                }
+                    // Paper Style Menu (Available in both modes)
+                    Menu {
+                        Picker("Paper Style", selection: $paperStyle) {
+                            ForEach(PaperStyle.allCases) { style in
+                                Label(style.rawValue, systemImage: style.icon).tag(style)
                             }
-                        } label: {
-                            Image(systemName: "doc.plaintext")
-                                .font(.system(size: 15, weight: .semibold))
-                                .foregroundColor(.primary)
-                                .padding(8)
-                                .background(Color.primary.opacity(0.08))
-                                .clipShape(Circle())
                         }
+                    } label: {
+                        Image(systemName: "doc.plaintext")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(.primary)
+                            .padding(8)
+                            .background(Color.primary.opacity(0.08))
+                            .clipShape(Circle())
                     }
                     
                     // Smart Summary Helper
@@ -327,9 +325,12 @@ struct StudyNotebookView: View {
                 // MARK: Notebook Canvas
                 ZStack(alignment: .trailing) {
                     if inputMode == .markdown {
-                        MarkdownTextEditor(text: $localNotes, isFocused: $isFocused, onLinkTapped: handleLinkTapped)
-                            .padding(16)
-                            .onChange(of: localNotes) { _, _ in debounceSave() }
+                        ZStack {
+                            NotebookPaperBackground(style: paperStyle, colorScheme: colorScheme)
+                            MarkdownTextEditor(text: $localNotes, isFocused: $isFocused, onLinkTapped: handleLinkTapped)
+                                .padding(16)
+                        }
+                        .onChange(of: localNotes) { _, _ in debounceSave() }
                     } else {
                         ZStack {
                             NotebookPaperBackground(style: paperStyle, colorScheme: colorScheme)
