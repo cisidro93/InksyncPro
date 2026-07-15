@@ -45,7 +45,7 @@ struct GlobalNotebookView: View {
         
         var icon: String {
             switch self {
-            case .notebooks: return "notebook.toptab"
+            case .notebooks: return "notebook"
             case .highlights: return "highlighter"
             }
         }
