@@ -1464,7 +1464,9 @@ struct MarkdownHighlighter {
         
         return attrString
     }
+}
 
+extension StudyNotebookView {
     // MARK: - PencilKit Custom Drawing Toolbar
     @ViewBuilder
     private var canvasToolbar: some View {
