@@ -193,7 +193,9 @@ struct GlobalNotebookView: View {
             
             VStack(spacing: 0) {
                 // Glassmorphic Header
-                headerView
+                if activeTab == .notebooks {
+                    headerView
+                }
                 
                 // Content Switcher
                 if activeTab == .notebooks {
@@ -221,41 +223,7 @@ struct GlobalNotebookView: View {
                         }
                     }
                 } else {
-                    if allAnnotations.filter({ $0.kindRaw == "highlight" || $0.kindRaw == "note" }).isEmpty {
-                        emptyLibraryState
-                    } else {
-                        VStack(spacing: 0) {
-                            // Search and Filters Panel
-                            filterPanel
-                            
-                            if filteredAnnotations.isEmpty {
-                                emptySearchResultState
-                            } else {
-                                // Scrollable list of highlights
-                                ScrollView {
-                                    LazyVStack(spacing: 16, pinnedViews: [.sectionHeaders]) {
-                                        ForEach(sortedGroupedKeys, id: \.self) { pdfID in
-                                            if let annotations = groupedAnnotations[pdfID] {
-                                                let book = conversionManager.convertedPDFs.first(where: { $0.id == pdfID })
-                                                let bookTitle = book?.name ?? annotations.first?.readwiseBookTitle ?? "Readwise Import"
-                                                let author = book?.metadata.writer ?? book?.metadata.author ?? annotations.first?.readwiseAuthor
-                                                let coverData = book?.coverImageData
-                                                
-                                                Section(header: sectionHeader(title: bookTitle, author: author, coverData: coverData, count: annotations.count)) {
-                                                    ForEach(annotations) { annotation in
-                                                        highlightCard(for: annotation, book: book)
-                                                            .padding(.horizontal, 16)
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                    .padding(.top, 12)
-                                    .padding(.bottom, 120) // spacing for tab bar
-                                }
-                            }
-                        }
-                    }
+                    GlobalZettelkastenHubView()
                 }
             }
         }
