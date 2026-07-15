@@ -150,7 +150,24 @@ struct GlobalNotebookView: View {
             if notebookSearchQuery.isEmpty {
                 return true
             }
-            return notebook.title.localizedCaseInsensitiveContains(notebookSearchQuery)
+            
+            // 1. Title match
+            if notebook.title.localizedCaseInsensitiveContains(notebookSearchQuery) {
+                return true
+            }
+            
+            // 2. Note text & Handwriting OCR match
+            let notebookAnnotations = allAnnotations.filter { $0.pdfID == notebook.id }
+            for ann in notebookAnnotations {
+                if let note = ann.noteText, note.localizedCaseInsensitiveContains(notebookSearchQuery) {
+                    return true
+                }
+                if let ocr = ann.drawingOCRText, ocr.localizedCaseInsensitiveContains(notebookSearchQuery) {
+                    return true
+                }
+            }
+            
+            return false
         }
         
         return filtered.sorted { a, b in
