@@ -2060,8 +2060,8 @@ struct SeriesDetailView: View {
     private func handleDragUpdate(to location: CGPoint, viewportHeight: CGFloat, scrollProxy: ScrollViewProxy) {
         lastDragLocation = location
         
-        // Convert touch from viewport coordinates to content coordinates
-        let contentLocation = CGPoint(x: location.x, y: location.y - scrollOffset)
+        // Coordinates in cellFrames are in viewport space, so compare directly
+        let contentLocation = location
         
         if let pdf = findPDFUnderTouch(at: contentLocation) {
             let currentIssues = visualIssues

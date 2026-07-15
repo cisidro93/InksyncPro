@@ -181,45 +181,19 @@ struct ShareExtensionView: View {
     
     // MARK: - Load Shared Files
     
-    private func loadFileRepresentation(provider: NSItemProvider, type: UTType) async throws -> URL {
-        try await withCheckedThrowingContinuation { continuation in
-            provider.loadFileRepresentation(forTypeIdentifier: type.identifier) { url, error in
-                if let error = error {
-                    continuation.resume(throwing: error)
-                } else if let url = url {
-                    if let sharedURL = self.copyToSharedContainer(url) {
-                        continuation.resume(returning: sharedURL)
-                    } else {
-                        continuation.resume(throwing: NSError(domain: "ShareExtension", code: -2, userInfo: [NSLocalizedDescriptionKey: "Failed to copy file to shared container"]))
-                    }
-                } else {
-                    continuation.resume(throwing: NSError(domain: "ShareExtension", code: -1, userInfo: nil))
-                }
-            }
+    private func targetExtension(for type: UTType) -> String? {
+        if type.conforms(to: .pdf) { return "pdf" }
+        if type.conforms(to: UTType(filenameExtension: "epub") ?? .data) || type.identifier.contains("epub") { return "epub" }
+        if type.conforms(to: UTType(filenameExtension: "cbz") ?? .data) || type.identifier.contains("cbz") { return "cbz" }
+        if type.conforms(to: UTType(filenameExtension: "cbr") ?? .data) || type.identifier.contains("cbr") { return "cbr" }
+        if type.conforms(to: .zip) || type.identifier.contains("zip") { return "cbz" }
+        if type.conforms(to: .archive) {
+            if type.identifier.contains("rar") || type.identifier.contains("cbr") { return "cbr" }
+            return "cbz"
         }
+        return nil
     }
-    
-    private func loadURLItem(provider: NSItemProvider, typeIdentifier: String) async throws -> URL {
-        try await withCheckedThrowingContinuation { continuation in
-            provider.loadItem(forTypeIdentifier: typeIdentifier, options: nil) { item, error in
-                if let error = error {
-                    continuation.resume(throwing: error)
-                } else if let nsURL = item as? NSURL {
-                    continuation.resume(returning: nsURL as URL)
-                } else if let nsData = item as? NSData,
-                          let urlString = String(data: nsData as Data, encoding: .utf8),
-                          let url = URL(string: urlString) {
-                    continuation.resume(returning: url)
-                } else if let nsString = item as? NSString,
-                          let url = URL(string: nsString as String) {
-                    continuation.resume(returning: url)
-                } else {
-                    continuation.resume(throwing: NSError(domain: "ShareExtension", code: -3, userInfo: [NSLocalizedDescriptionKey: "Item is not a URL"]))
-                }
-            }
-        }
-    }
-    
+
     private func loadSharedFiles() {
         guard let extensionContext = extensionContext,
               let inputItems = extensionContext.inputItems as? [NSExtensionItem] else {
@@ -234,97 +208,128 @@ struct ShareExtensionView: View {
                 guard let attachments = item.attachments else { continue }
                 
                 for provider in attachments {
-                    var loadedURL: URL? = nil
+                    // Find the best type identifier from registered identifiers
+                    var bestTypeIdentifier: String? = nil
+                    var targetExt: String? = nil
                     
-                    // 1. Try public.file-url first (most direct way to get file from Files app)
-                    if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
-                        do {
-                            let url = try await self.loadURLItem(provider: provider, typeIdentifier: UTType.fileURL.identifier)
-                            loadedURL = url
-                        } catch {
-                            print("Failed to load file-url: \(error)")
+                    // Prioritize specific types
+                    for typeId in provider.registeredTypeIdentifiers {
+                        guard let utType = UTType(typeId) else { continue }
+                        if utType.conforms(to: .pdf) {
+                            bestTypeIdentifier = typeId
+                            targetExt = "pdf"
+                            break
+                        } else if typeId.contains("epub") || utType.conforms(to: UTType(filenameExtension: "epub") ?? .data) {
+                            bestTypeIdentifier = typeId
+                            targetExt = "epub"
+                            break
+                        } else if typeId.contains("cbz") || utType.conforms(to: UTType(filenameExtension: "cbz") ?? .data) {
+                            bestTypeIdentifier = typeId
+                            targetExt = "cbz"
+                            break
+                        } else if typeId.contains("cbr") || utType.conforms(to: UTType(filenameExtension: "cbr") ?? .data) {
+                            bestTypeIdentifier = typeId
+                            targetExt = "cbr"
+                            break
                         }
                     }
                     
-                    // 2. Fallback to public.url
-                    if loadedURL == nil && provider.hasItemConformingToTypeIdentifier(UTType.url.identifier) {
-                        do {
-                            let url = try await self.loadURLItem(provider: provider, typeIdentifier: UTType.url.identifier)
-                            if url.isFileURL {
-                                loadedURL = url
-                            }
-                        } catch {
-                            print("Failed to load url: \(error)")
-                        }
-                    }
-                    
-                    // 3. Fallback to loadFileRepresentation (for files that need on-demand extraction like iCloud/Google Drive)
-                    if loadedURL == nil {
-                        var bestTypeIdentifier: String? = nil
-                        
-                        // Check for specific matching types first (PDF and EPUB)
+                    // Fallback to zip/rar/archive
+                    if bestTypeIdentifier == nil {
                         for typeId in provider.registeredTypeIdentifiers {
                             guard let utType = UTType(typeId) else { continue }
-                            if utType.conforms(to: .pdf) {
+                            if let ext = targetExtension(for: utType) {
                                 bestTypeIdentifier = typeId
+                                targetExt = ext
                                 break
-                            } else if typeId.contains("epub") || utType.conforms(to: UTType(filenameExtension: "epub") ?? .data) {
-                                if typeId.contains("epub") {
-                                    bestTypeIdentifier = typeId
-                                    break
-                                }
-                            }
-                        }
-                        
-                        // Check for comic archive types (CBZ, CBR) and ZIP/RAR
-                        if bestTypeIdentifier == nil {
-                            for typeId in provider.registeredTypeIdentifiers {
-                                guard let utType = UTType(typeId) else { continue }
-                                if typeId.contains("cbz") || typeId.contains("cbr") || typeId.contains("comic") || utType.conforms(to: .zip) {
-                                    bestTypeIdentifier = typeId
-                                    break
-                                }
-                            }
-                        }
-                        
-                        // Fallback to generic archive or data
-                        if bestTypeIdentifier == nil {
-                            for typeId in provider.registeredTypeIdentifiers {
-                                guard let utType = UTType(typeId) else { continue }
-                                if utType.conforms(to: .archive) || utType.conforms(to: .data) {
-                                    bestTypeIdentifier = typeId
-                                    break
-                                }
-                            }
-                        }
-                        
-                        if let typeId = bestTypeIdentifier, let type = UTType(typeId) {
-                            do {
-                                let url = try await self.loadFileRepresentation(provider: provider, type: type)
-                                loadedURL = url
-                            } catch {
-                                print("Failed to load file representation for type \(typeId): \(error)")
                             }
                         }
                     }
                     
-                    if var url = loadedURL {
-                        let filename = url.lastPathComponent
-                        let ext = url.pathExtension.lowercased()
-                        
-                        guard ext == "cbz" || ext == "cbr" || ext == "pdf" || ext == "epub" else { continue }
-                        
-                        if !url.path.contains("group.com.antigravity.ComicToPDF") {
-                            if let sharedURL = self.copyToSharedContainer(url) {
-                                url = sharedURL
-                            } else {
-                                continue
+                    // General fallback to public.data or public.file-url if we can extract extension from suggestedName
+                    if bestTypeIdentifier == nil {
+                        for typeId in provider.registeredTypeIdentifiers {
+                            if typeId == UTType.fileURL.identifier || typeId == UTType.data.identifier || typeId == UTType.item.identifier {
+                                if let suggested = provider.suggestedName {
+                                    let ext = (suggested as NSString).pathExtension.lowercased()
+                                    if ext == "pdf" || ext == "epub" || ext == "cbz" || ext == "cbr" || ext == "zip" || ext == "rar" {
+                                        bestTypeIdentifier = typeId
+                                        targetExt = ext == "zip" ? "cbz" : (ext == "rar" ? "cbr" : ext)
+                                        break
+                                    }
+                                }
                             }
                         }
+                    }
+                    
+                    guard let typeId = bestTypeIdentifier, let ext = targetExt else {
+                        print("No compatible type found in registered identifiers: \(provider.registeredTypeIdentifiers)")
+                        continue
+                    }
+                    
+                    // Determine desired filename
+                    var filename = provider.suggestedName ?? "shared_file"
+                    let extSuffix = "." + ext
+                    if !filename.lowercased().hasSuffix(extSuffix.lowercased()) {
+                        let baseName = (filename as NSString).deletingPathExtension
+                        filename = baseName + extSuffix
+                    }
+                    
+                    var loadedURL: URL? = nil
+                    
+                    // Method A: Try loadFileRepresentation (safest and supports iCloud / cloud providers)
+                    do {
+                        loadedURL = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<URL, Error>) in
+                            provider.loadFileRepresentation(forTypeIdentifier: typeId) { tempURL, error in
+                                if let error = error {
+                                    continuation.resume(throwing: error)
+                                } else if let tempURL = tempURL {
+                                    if let sharedURL = self.copyToSharedContainer(tempURL, destFilename: filename) {
+                                        continuation.resume(returning: sharedURL)
+                                    } else {
+                                        continuation.resume(throwing: NSError(domain: "ShareExtension", code: -2, userInfo: [NSLocalizedDescriptionKey: "Failed to copy file"]))
+                                    }
+                                } else {
+                                    continuation.resume(throwing: NSError(domain: "ShareExtension", code: -1, userInfo: nil))
+                                }
+                            }
+                        }
+                    } catch {
+                        print("loadFileRepresentation failed for \(filename): \(error.localizedDescription)")
                         
+                        // Method B: Fallback to loadItem if loadFileRepresentation failed
+                        do {
+                            let itemURL = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<URL, Error>) in
+                                provider.loadItem(forTypeIdentifier: typeId, options: nil) { item, error in
+                                    if let error = error {
+                                        continuation.resume(throwing: error)
+                                    } else if let nsURL = item as? NSURL {
+                                        continuation.resume(returning: nsURL as URL)
+                                    } else if let nsData = item as? NSData,
+                                              let urlString = String(data: nsData as Data, encoding: .utf8),
+                                              let url = URL(string: urlString) {
+                                        continuation.resume(returning: url)
+                                    } else if let nsString = item as? NSString,
+                                              let url = URL(string: nsString as String) {
+                                        continuation.resume(returning: url)
+                                    } else {
+                                        continuation.resume(throwing: NSError(domain: "ShareExtension", code: -3, userInfo: [NSLocalizedDescriptionKey: "Item is not a URL"]))
+                                    }
+                                }
+                            }
+                            
+                            if let sharedURL = self.copyToSharedContainer(itemURL, destFilename: filename) {
+                                loadedURL = sharedURL
+                            }
+                        } catch {
+                            print("loadItem fallback failed for \(filename): \(error.localizedDescription)")
+                        }
+                    }
+                    
+                    if let finalURL = loadedURL {
                         filesToProcess.append(SharedFile(
                             name: filename,
-                            url: url,
+                            url: finalURL,
                             fileExtension: ext
                         ))
                     }
@@ -338,7 +343,7 @@ struct ShareExtensionView: View {
     
     // MARK: - Copy to Shared Container
     
-    private func copyToSharedContainer(_ sourceURL: URL) -> URL? {
+    private func copyToSharedContainer(_ sourceURL: URL, destFilename: String) -> URL? {
         guard let containerURL = FileManager.default.containerURL(
             forSecurityApplicationGroupIdentifier: "group.com.antigravity.ComicToPDF"
         ) else { return nil }
@@ -346,7 +351,7 @@ struct ShareExtensionView: View {
         let inboxURL = containerURL.appendingPathComponent("Inbox", isDirectory: true)
         try? FileManager.default.createDirectory(at: inboxURL, withIntermediateDirectories: true)
         
-        let destURL = inboxURL.appendingPathComponent(sourceURL.lastPathComponent)
+        let destURL = inboxURL.appendingPathComponent(destFilename)
         
         // Remove existing file if any
         try? FileManager.default.removeItem(at: destURL)

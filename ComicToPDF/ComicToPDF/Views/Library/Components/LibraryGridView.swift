@@ -1032,7 +1032,8 @@ extension LibraryGridView {
     
     private func handleDragUpdate(to location: CGPoint, viewportHeight: CGFloat, scrollProxy: ScrollViewProxy) {
         lastDragLocation = location
-        let contentLocation = CGPoint(x: location.x, y: location.y + scrollOffset)
+        // Coordinates in cellFrames are in viewport space, so compare directly
+        let contentLocation = location
         
         if let item = findItemUnderTouch(at: contentLocation) {
             if let index = items.firstIndex(where: { $0.id == item.id }) {

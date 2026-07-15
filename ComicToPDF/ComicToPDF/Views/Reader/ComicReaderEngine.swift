@@ -808,7 +808,10 @@ final class ComicImageCache: ObservableObject {
         guard index >= 0 && index < pageCount else { return nil }
         
         if index != lastRequestedIndex {
-            readingDirection = index > lastRequestedIndex ? 1 : -1
+            let isSibling = getSiblingIndex(for: index) == lastRequestedIndex
+            if !isSibling {
+                readingDirection = index > lastRequestedIndex ? 1 : -1
+            }
             lastRequestedIndex = index
         }
         
@@ -1159,13 +1162,45 @@ final class ComicImageCache: ObservableObject {
     }
     
     private func getSiblingIndex(for index: Int) -> Int? {
-        guard index > 0 && index < pageCount else { return nil }
-        if index % 2 == 1 {
-            let sibling = index + 1
-            return sibling < pageCount ? sibling : nil
-        } else {
-            return index - 1
+        guard index >= 0 && index < pageCount else { return nil }
+        
+        let landscapeArray = isLandscapeArray
+        guard landscapeArray.count == pageCount else {
+            // Fallback to simple modulo matching if orientations are not yet scanned
+            if index <= 0 { return nil }
+            if index % 2 == 1 {
+                let sibling = index + 1
+                return sibling < pageCount ? sibling : nil
+            } else {
+                return index - 1
+            }
         }
+        
+        // Find sibling from compiled spreads
+        var i = 1
+        while i < pageCount {
+            let isL = landscapeArray[i]
+            if isL {
+                if i == index { return nil }
+                i += 1
+            } else {
+                if i + 1 < pageCount {
+                    let nextIsL = landscapeArray[i + 1]
+                    if nextIsL {
+                        if i == index { return nil }
+                        i += 1
+                    } else {
+                        if i == index { return i + 1 }
+                        if i + 1 == index { return i }
+                        i += 2
+                    }
+                } else {
+                    if i == index { return nil }
+                    i += 1
+                }
+            }
+        }
+        return nil
     }
     
     private func prefetchSurrounding(index: Int) {
