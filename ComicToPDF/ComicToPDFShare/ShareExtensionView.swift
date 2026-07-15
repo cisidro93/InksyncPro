@@ -238,7 +238,7 @@ struct ShareExtensionView: View {
                     // General fallback to public.data or public.file-url if we can extract extension from suggestedName
                     if bestTypeIdentifier == nil {
                         for typeId in provider.registeredTypeIdentifiers {
-                            if typeId == UTType.fileURL.identifier || typeId == UTType.data.identifier || typeId == UTType.item.identifier {
+                            if typeId == UTType.fileURL.identifier || typeId == UTType.data.identifier || typeId == UTType.item.identifier || typeId == "public.file-url" || typeId == "com.apple.cocoa.path" {
                                 if let suggested = provider.suggestedName {
                                     let ext = (suggested as NSString).pathExtension.lowercased()
                                     if ext == "pdf" || ext == "epub" || ext == "cbz" || ext == "cbr" || ext == "zip" || ext == "rar" {
@@ -247,6 +247,17 @@ struct ShareExtensionView: View {
                                         break
                                     }
                                 }
+                            }
+                        }
+                    }
+                    
+                    // Direct fallback for generic file types where extension is resolved post-load
+                    if bestTypeIdentifier == nil {
+                        for typeId in provider.registeredTypeIdentifiers {
+                            if typeId == UTType.fileURL.identifier || typeId == "public.file-url" || typeId == "com.apple.cocoa.path" || typeId == UTType.item.identifier || typeId == UTType.data.identifier {
+                                bestTypeIdentifier = typeId
+                                targetExt = "unknown"
+                                break
                             }
                         }
                     }
@@ -315,7 +326,32 @@ struct ShareExtensionView: View {
                         }
                     }
                     
-                    if let finalURL = loadedURL {
+                    if ext == "unknown", var finalURL = loadedURL {
+                        let pathExt = finalURL.pathExtension.lowercased()
+                        if pathExt == "pdf" || pathExt == "epub" || pathExt == "cbz" || pathExt == "cbr" || pathExt == "zip" || pathExt == "rar" {
+                            let resolvedExt = pathExt == "zip" ? "cbz" : (pathExt == "rar" ? "cbr" : pathExt)
+                            let finalFileName = (filename as NSString).deletingPathExtension + "." + resolvedExt
+                            
+                            let destURL = finalURL.deletingLastPathComponent().appendingPathComponent(finalFileName)
+                            do {
+                                try? FileManager.default.removeItem(at: destURL)
+                                try FileManager.default.moveItem(at: finalURL, to: destURL)
+                                finalURL = destURL
+                                filename = finalFileName
+                                loadedURL = finalURL
+                                
+                                filesToProcess.append(SharedFile(
+                                    name: filename,
+                                    url: finalURL,
+                                    fileExtension: resolvedExt
+                                ))
+                            } catch {
+                                print("Failed to rename generic share file: \(error.localizedDescription)")
+                            }
+                        } else {
+                            try? FileManager.default.removeItem(at: finalURL)
+                        }
+                    } else if let finalURL = loadedURL {
                         filesToProcess.append(SharedFile(
                             name: filename,
                             url: finalURL,
