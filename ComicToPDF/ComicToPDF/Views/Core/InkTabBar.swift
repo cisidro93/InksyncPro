@@ -195,19 +195,19 @@ struct InkTabBar: View {
                 }
             }
         } label: {
-            VStack(spacing: isLandscapePhone ? 1 : 3) {
+            VStack(spacing: isLandscapePhone ? 1 : 2) {
                 ZStack {
                     // Active glow — skip in landscape to save height
                     if isActive && !isLandscapePhone {
                         Circle()
-                            .fill(Color.orange.opacity(0.18))
-                            .frame(width: 38, height: 38)
-                            .blur(radius: 10)
+                            .fill(Color.orange.opacity(0.15))
+                            .frame(width: 32, height: 32)
+                            .blur(radius: 8)
                     }
 
                     Image(systemName: isActive ? tab.activeIcon : tab.icon)
                         .font(.system(
-                            size: isActive ? activeIconSize : iconSize,
+                            size: isActive ? (isLandscapePhone ? 13 : 16) : (isLandscapePhone ? 12 : 15),
                             weight: isActive ? .semibold : .regular
                         ))
                         .foregroundStyle(
@@ -221,17 +221,21 @@ struct InkTabBar: View {
                                   )
                                 : AnyShapeStyle(Color.primary.opacity(0.50))
                         )
-                        .scaleEffect(isActive ? 1.08 : 1.0)
-                        .animation(.spring(response: 0.25, dampingFraction: 0.60), value: isActive)
-                    
-                    // Active dot/icon rendering (no badge needed for Devices)
+                        .scaleEffect(isActive ? 1.05 : 1.0)
                 }
-                .frame(width: 44, height: iconFrameHeight)
+                .frame(width: 40, height: isLandscapePhone ? 18 : 24)
+
+                // Tab text label
+                Text(tab.label)
+                    .font(.system(size: isLandscapePhone ? 8 : 10, weight: isActive ? .semibold : .medium, design: .rounded))
+                    .foregroundColor(isActive ? Color.orange : Color.primary.opacity(0.55))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
 
                 // Active dot — smaller in landscape
                 Circle()
                     .fill(Color.orange)
-                    .frame(width: isLandscapePhone ? 3 : 4, height: isLandscapePhone ? 3 : 4)
+                    .frame(width: isLandscapePhone ? 2.5 : 3, height: isLandscapePhone ? 2.5 : 3)
                     .opacity(isActive ? 1 : 0)
                     .scaleEffect(isActive ? 1 : 0.1)
                     .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isActive)
