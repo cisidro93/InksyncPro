@@ -1,7 +1,7 @@
 import PDFKit
 import UIKit
 
-final class PDFHighlightExtractor {
+final class PDFHighlightExtractor: Sendable {
     static let shared = PDFHighlightExtractor()
     private init() {}
     
@@ -15,8 +15,8 @@ final class PDFHighlightExtractor {
             let pageAnnotations = page.annotations
             
             for ann in pageAnnotations {
-                // Standard PDF highlight subtype is "/Highlight" or "Highlight"
-                guard ann.subtype == "/Highlight" || ann.subtype == "Highlight" else { continue }
+                // Standard PDF highlight type is "Highlight"
+                guard ann.type == "Highlight" else { continue }
                 
                 let pageBounds = page.bounds(for: .mediaBox)
                 let annBounds = ann.bounds
@@ -33,7 +33,7 @@ final class PDFHighlightExtractor {
                     selectedText = selection.string
                 }
                 
-                let color = ann.color ?? UIColor.yellow
+                let color = ann.color
                 let hexColor = color.toHexString()
                 let noteText = ann.contents
                 

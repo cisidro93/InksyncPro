@@ -5,6 +5,7 @@ struct CorkboardView: View {
     @Bindable var project: SDManuscriptProject
     @Binding var selectedDocumentID: UUID?
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.colorScheme) private var colorScheme
 
     @State private var draggedDocument: SDManuscriptDocument?
     @State private var editingDocument: SDManuscriptDocument?
@@ -121,7 +122,10 @@ struct CorkboardView: View {
     }
 
     private var canvasBackground: some View {
-        Canvas { context, size in
+        let isDark = colorScheme == .dark
+        let gridOpacity = isDark ? 0.03 : 0.015
+        
+        return Canvas { context, size in
             let step: CGFloat = 30
             var x: CGFloat = 0
             while x < size.width {
@@ -130,7 +134,7 @@ struct CorkboardView: View {
                         p.move(to: CGPoint(x: x, y: 0))
                         p.addLine(to: CGPoint(x: x, y: size.height))
                     },
-                    with: .color(Color.primary.opacity(colorScheme == .dark ? 0.03 : 0.015)),
+                    with: .color(Color.primary.opacity(gridOpacity)),
                     lineWidth: 0.5
                 )
                 x += step
@@ -142,7 +146,7 @@ struct CorkboardView: View {
                         p.move(to: CGPoint(x: 0, y: y))
                         p.addLine(to: CGPoint(x: size.width, y: y))
                     },
-                    with: .color(Color.primary.opacity(colorScheme == .dark ? 0.03 : 0.015)),
+                    with: .color(Color.primary.opacity(gridOpacity)),
                     lineWidth: 0.5
                 )
                 y += step
@@ -178,7 +182,7 @@ struct CorkboardView: View {
             docItem.orderIndex = index
         }
         try? modelContext.save()
-        UIImpactFeedbackGenerator(style: .warning).impactOccurred()
+        UINotificationFeedbackGenerator().notificationOccurred(.warning)
     }
     
     @ViewBuilder
@@ -348,7 +352,7 @@ extension SDManuscriptDocument {
         }
         set {
             let cleanVal = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
-            var content = contentMarkdown
+            let content = contentMarkdown
             if content.hasPrefix("<!-- synopsis:") {
                 if let endRange = content.range(of: "-->") {
                     let afterEnd = content[endRange.upperBound...]

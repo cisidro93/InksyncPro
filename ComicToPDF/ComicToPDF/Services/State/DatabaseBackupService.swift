@@ -1,7 +1,7 @@
 import Foundation
 import SwiftData
 
-final class DatabaseBackupService {
+final class DatabaseBackupService: Sendable {
     static let shared = DatabaseBackupService()
     private init() {}
     
