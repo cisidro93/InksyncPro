@@ -102,20 +102,9 @@ struct DailyReviewView: View {
     // MARK: - Header Components
 
     private var streakBadge: some View {
-        let streak = ReviewStreakTracker.shared.currentStreak
-        return HStack(spacing: 4) {
-            if streak > 0 {
-                Text("🔥")
-                    .font(.system(size: 14))
-                Text("\(streak)-day streak")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color.inkAccentNavigation)
-            } else {
-                Text("Daily Review")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(Color.inkTextPrimary)
-            }
-        }
+        Text("Daily Review")
+            .font(.system(size: 16, weight: .bold, design: .rounded))
+            .foregroundStyle(Color.inkTextPrimary)
     }
 
     private var progressBar: some View {
@@ -514,18 +503,19 @@ struct DailyReviewView: View {
         VStack(spacing: 20) {
             Spacer()
 
-            // Flame emoji and streak header
+            // Checkmark seal completion graphic
             ZStack {
                 Circle()
                     .fill(RadialGradient(
-                        gradient: Gradient(colors: [Color.inkAccentNavigation.opacity(0.2), .clear]),
+                        gradient: Gradient(colors: [Color.green.opacity(0.18), .clear]),
                         center: .center, startRadius: 10, endRadius: 60
                     ))
                     .frame(width: 120, height: 120)
                     .blur(radius: 15)
 
-                Text("🔥")
+                Image(systemName: "checkmark.seal.fill")
                     .font(.system(size: 64))
+                    .foregroundStyle(Color.green)
             }
 
             VStack(spacing: 6) {
@@ -536,13 +526,6 @@ struct DailyReviewView: View {
                 Text("Reviewed \(sessionReviewedCount) highlights today")
                     .font(.subheadline)
                     .foregroundStyle(Color.inkTextSecondary)
-
-                if earnedStreak > 0 {
-                    Text("\(earnedStreak)-day streak active")
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
-                        .foregroundStyle(Color.inkAccentNavigation)
-                        .padding(.top, 2)
-                }
             }
 
             // Custom Ink-Droplet Heatmap
