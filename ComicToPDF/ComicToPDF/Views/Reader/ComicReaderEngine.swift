@@ -386,6 +386,7 @@ final class ComicImageCache: ObservableObject {
         let isPDF = self.isPDF
         let isPreExtracted = self.isPreExtracted
         let imageURLs = self.extractedImageURLs
+        let pdfSourceMode = self.pdf.sourceMode
         
         let entryPaths = self.entries.map { $0.path }
         
@@ -493,7 +494,7 @@ final class ComicImageCache: ObservableObject {
                 }
             } else if let resolved = resolvedURL {
                 let isLinked: Bool
-                if case .linked = self.pdf.sourceMode {
+                if case .linked = pdfSourceMode {
                     isLinked = true
                 } else {
                     isLinked = false
