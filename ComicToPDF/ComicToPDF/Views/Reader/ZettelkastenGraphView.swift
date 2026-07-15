@@ -449,6 +449,7 @@ struct ZettelkastenGraphView: View {
     @State private var ghostNodePosition: CGPoint? = nil
     @State private var showingNodeCreationAlert = false
     @State private var pendingNodeTitle = ""
+    @State private var ghostPulse = false
     @State private var lastDragTranslation: CGSize = .zero
     
     // MARK: Theme styles
@@ -696,8 +697,11 @@ struct ZettelkastenGraphView: View {
                         lastDragTranslation = .zero
                         if isLinkMode {
                             if let startID = linkStartNodeID, let currentPt = linkCurrentPoint {
-                                if let targetNode = engine.nodes.first(where: {
-                                    $0.nodeType == .note && $0.id != startID && distance(from: $0.position, to: currentPt) < $0.hitRadius
+                                if let targetNode = engine.nodes.first(where: { node in
+                                    guard node.nodeType == .note else { return false }
+                                    guard node.id != startID else { return false }
+                                    let dist = distance(from: node.position, to: currentPt)
+                                    return dist < node.hitRadius
                                 }) {
                                     connectNodes(source: startID, target: targetNode.id)
                                 }

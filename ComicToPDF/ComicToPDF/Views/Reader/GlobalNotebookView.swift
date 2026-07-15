@@ -118,7 +118,9 @@ struct GlobalNotebookView: View {
                 let matchesText = ann.selectedText?.localizedCaseInsensitiveContains(searchQuery) ?? false
                 let matchesNote = ann.noteText?.localizedCaseInsensitiveContains(searchQuery) ?? false
                 let matchesChapter = ann.chapterTitle?.localizedCaseInsensitiveContains(searchQuery) ?? false
-                if !matchesText && !matchesNote && !matchesChapter { return false }
+                let allTags = (ann.tags ?? []) + (ann.readwiseTags ?? []) + (ann.readwiseDocumentTags ?? [])
+                let matchesTag = allTags.contains { $0.localizedCaseInsensitiveContains(searchQuery) || $0.localizedCaseInsensitiveContains(searchQuery.replacingOccurrences(of: "#", with: "")) }
+                if !matchesText && !matchesNote && !matchesChapter && !matchesTag { return false }
             }
             
             return true

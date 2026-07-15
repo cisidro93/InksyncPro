@@ -75,7 +75,11 @@ struct GlobalZettelkastenHubView: View {
                 let note = ann.noteText?.localizedCaseInsensitiveContains(searchText) ?? false
                 let ocr  = ann.drawingOCRText?.localizedCaseInsensitiveContains(searchText) ?? false
                 let book = resolveTitle(ann, nameDict).localizedCaseInsensitiveContains(searchText)
-                return txt || note || ocr || book
+                
+                let allTags = (ann.tags ?? []) + (ann.readwiseTags ?? []) + (ann.readwiseDocumentTags ?? [])
+                let tagMatch = allTags.contains { $0.localizedCaseInsensitiveContains(searchText) || $0.localizedCaseInsensitiveContains(searchText.replacingOccurrences(of: "#", with: "")) }
+                
+                return txt || note || ocr || book || tagMatch
             }
         }
         switch sortMode {
@@ -335,9 +339,6 @@ struct GlobalZettelkastenHubView: View {
                                                     }
                                                 } label: {
                                                     HStack(spacing: 8) {
-                                                        Rectangle()
-                                                            .fill(Color.primary.opacity(0.08))
-                                                            .frame(height: 1)
                                                         HStack(spacing: 5) {
                                                             Image(systemName: sortMode == .byTopic ? "tag.fill" : (group.value.first?.isReadwiseImport == true ? "bird.fill" : "book.closed.fill"))
                                                                 .font(.system(size: 9, weight: .bold))
@@ -346,6 +347,7 @@ struct GlobalZettelkastenHubView: View {
                                                                 .font(.system(size: 11, weight: .semibold))
                                                                 .foregroundColor(Theme.textSecondary)
                                                                 .lineLimit(1)
+                                                                .truncationMode(.tail)
                                                             Text("\(group.value.count)")
                                                                 .font(.system(size: 10, weight: .bold, design: .rounded))
                                                                 .foregroundColor(.white)
@@ -356,7 +358,9 @@ struct GlobalZettelkastenHubView: View {
                                                                 .font(.system(size: 9, weight: .bold))
                                                                 .foregroundColor(Theme.textSecondary)
                                                         }
-                                                        .fixedSize()
+                                                        Rectangle()
+                                                            .fill(Color.primary.opacity(0.08))
+                                                            .frame(height: 1)
                                                     }
                                                     .padding(.horizontal)
                                                     .padding(.top, 8)
