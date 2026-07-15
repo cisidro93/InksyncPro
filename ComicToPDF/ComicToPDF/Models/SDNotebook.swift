@@ -10,6 +10,7 @@ import SwiftData
     // Cover customization
     var coverGradientIndex: Int
     var coverTitleColorHex: String
+    var coverStyle: String?
     
     // Page template
     var templateStyle: String // plain, ruled, grid, dots, legal, collegeRuled
@@ -23,7 +24,8 @@ import SwiftData
         coverGradientIndex: Int = 0,
         coverTitleColorHex: String = "#FFFFFF",
         templateStyle: String = "plain",
-        linkedBookID: UUID? = nil
+        linkedBookID: UUID? = nil,
+        coverStyle: String = "gradient"
     ) {
         self.id = id
         self.title = title
@@ -31,6 +33,7 @@ import SwiftData
         self.coverTitleColorHex = coverTitleColorHex
         self.templateStyle = templateStyle
         self.linkedBookID = linkedBookID
+        self.coverStyle = coverStyle
         self.createdAt = Date()
         self.modifiedAt = Date()
     }

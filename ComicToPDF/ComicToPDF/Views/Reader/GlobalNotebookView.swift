@@ -785,51 +785,61 @@ struct GlobalNotebookView: View {
         let hasTextNote = noteAnn != nil && !(noteAnn?.noteText?.isEmpty ?? true)
         let hasDrawing = noteAnn != nil && !(noteAnn?.drawingData?.isEmpty ?? true)
         
-        let gradient = coverGradients[notebook.coverGradientIndex % coverGradients.count]
+        let isSkin = notebook.coverStyle != nil && notebook.coverStyle != "gradient"
         
         VStack(spacing: 0) {
             ZStack(alignment: .topTrailing) {
                 // Front cover
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(gradient)
-                    .frame(height: 240)
-                    .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.4 : 0.15), radius: 8, x: 0, y: 4)
-                    .overlay(
-                        ZStack(alignment: .leading) {
-                            // spine / book binding
-                            Rectangle()
-                                .fill(Color.black.opacity(0.25))
-                                .frame(width: 16)
-                            
-                            // Cover overlay ribbon for linked books
-                            if let lBook = linkedBook, let cData = lBook.coverImageData, let uiImg = UIImage(data: cData) {
-                                Image(uiImage: uiImg)
-                                    .resizable()
-                                    .aspectRatio(contentMode: .fill)
-                                    .frame(width: 80, height: 110)
-                                    .cornerRadius(6)
-                                    .shadow(radius: 4)
-                                    .padding(.leading, 32)
-                                    .padding(.top, 16)
-                                    .frame(maxHeight: .infinity, alignment: .top)
-                            }
+                Group {
+                    if isSkin, let skin = notebook.coverStyle {
+                        NotebookCoverSkinView(skinType: skin, title: notebook.title, colorScheme: colorScheme)
+                    } else {
+                        let gradient = coverGradients[notebook.coverGradientIndex % coverGradients.count]
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(gradient)
+                    }
+                }
+                .frame(height: 240)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.4 : 0.15), radius: 8, x: 0, y: 4)
+                .overlay(
+                    ZStack(alignment: .leading) {
+                        // spine / book binding
+                        Rectangle()
+                            .fill(Color.black.opacity(0.25))
+                            .frame(width: 16)
+                        
+                        // Cover overlay ribbon for linked books
+                        if let lBook = linkedBook, let cData = lBook.coverImageData, let uiImg = UIImage(data: cData) {
+                            Image(uiImage: uiImg)
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: 80, height: 110)
+                                .cornerRadius(6)
+                                .shadow(radius: 4)
+                                .padding(.leading, 32)
+                                .padding(.top, 16)
+                                .frame(maxHeight: .infinity, alignment: .top)
                         }
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    )
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                )
                 
                 // Content on cover
                 VStack(alignment: .leading, spacing: 10) {
                     Spacer()
                     
-                    // Book Title Label
-                    Text(notebook.title)
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
-                        .foregroundColor(.white)
-                        .lineLimit(3)
-                        .multilineTextAlignment(.leading)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.black.opacity(0.35), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    if notebook.coverStyle != "composition" {
+                        // Book Title Label
+                        Text(notebook.title)
+                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                            .foregroundColor(.white)
+                            .lineLimit(3)
+                            .multilineTextAlignment(.leading)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.black.opacity(0.35), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    }
                     
                     Spacer()
                     
@@ -989,7 +999,9 @@ struct CreateNotebookSheet: View {
     @Environment(\.colorScheme) private var colorScheme
     
     @State private var title = ""
+    @State private var coverStyle = "gradient" // "gradient" or "skin"
     @State private var selectedGradientIndex = 0
+    @State private var selectedSkin = "composition" // "composition", "leather", "kraft", "linen"
     @State private var selectedTemplate: PaperStyle = .plain
     @State private var selectedLinkedBook: ConvertedPDF? = nil
     @State private var searchQuery = ""
@@ -1003,6 +1015,13 @@ struct CreateNotebookSheet: View {
         LinearGradient(colors: [Color(hex: "#f12711"), Color(hex: "#f5af19")], startPoint: .topLeading, endPoint: .bottomTrailing),
         LinearGradient(colors: [Color(hex: "#833ab4"), Color(hex: "#fd1d1d")], startPoint: .topLeading, endPoint: .bottomTrailing),
         LinearGradient(colors: [Color(hex: "#134e5e"), Color(hex: "#71b280")], startPoint: .topLeading, endPoint: .bottomTrailing)
+    ]
+    
+    private let skinNames = [
+        ("composition", "Composition"),
+        ("leather", "Leather"),
+        ("kraft", "Kraft Card"),
+        ("linen", "Slate Linen")
     ]
     
     var filteredBooks: [ConvertedPDF] {
@@ -1023,68 +1042,139 @@ struct CreateNotebookSheet: View {
                 }
                 
                 Section(header: Text("Cover Design").font(.system(size: 11, weight: .semibold, design: .rounded))) {
-                    VStack {
+                    VStack(spacing: 12) {
+                        // Live Cover Preview
                         ZStack(alignment: .leading) {
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .fill(coverGradients[selectedGradientIndex])
-                                .frame(width: 140, height: 190)
-                                .shadow(radius: 6, y: 3)
-                                .overlay(
-                                    HStack {
-                                        Rectangle()
-                                            .fill(Color.black.opacity(0.2))
-                                            .frame(width: 12)
-                                        Spacer()
-                                    }
-                                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                                )
-                            
-                            VStack(alignment: .leading) {
-                                Spacer()
-                                Text(title.isEmpty ? "My Notebook" : title)
-                                    .font(.system(size: 11, weight: .bold, design: .rounded))
-                                    .foregroundColor(.white)
-                                    .lineLimit(2)
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 3)
-                                    .background(Color.black.opacity(0.25), in: RoundedRectangle(cornerRadius: 4))
-                                    .padding(.leading, 18)
-                                    .padding(.bottom, 12)
+                            if coverStyle == "skin" {
+                                NotebookCoverSkinView(skinType: selectedSkin, title: title.isEmpty ? "My Notebook" : title, colorScheme: colorScheme)
+                            } else {
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .fill(coverGradients[selectedGradientIndex])
                             }
                         }
+                        .frame(width: 140, height: 190)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .shadow(radius: 6, y: 3)
+                        .overlay(
+                            HStack {
+                                Rectangle()
+                                    .fill(Color.black.opacity(0.2))
+                                    .frame(width: 12)
+                                Spacer()
+                            }
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        )
+                        .overlay(
+                            Group {
+                                if coverStyle != "skin" || selectedSkin != "composition" {
+                                    VStack(alignment: .leading) {
+                                        Spacer()
+                                        Text(title.isEmpty ? "My Notebook" : title)
+                                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                                            .foregroundColor(.white)
+                                            .lineLimit(2)
+                                            .padding(.horizontal, 6)
+                                            .padding(.vertical, 3)
+                                            .background(Color.black.opacity(0.25), in: RoundedRectangle(cornerRadius: 4))
+                                            .padding(.leading, 18)
+                                            .padding(.bottom, 12)
+                                    }
+                                }
+                            }
+                        )
                         .frame(maxWidth: .infinity, alignment: .center)
                         .padding(.vertical, 12)
                         
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 12) {
-                                ForEach(0..<coverGradients.count, id: \.self) { idx in
-                                    Circle()
-                                        .fill(coverGradients[idx])
-                                        .frame(width: 36, height: 36)
-                                        .overlay(
-                                            Circle()
-                                                .stroke(Color.orange, lineWidth: selectedGradientIndex == idx ? 3.0 : 0.0)
-                                        )
+                        // Selector between Gradients and Skins
+                        Picker("Style", selection: $coverStyle) {
+                            Text("Gradients").tag("gradient")
+                            Text("Cover Skins").tag("skin")
+                        }
+                        .pickerStyle(.segmented)
+                        .padding(.bottom, 4)
+                        
+                        if coverStyle == "gradient" {
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 12) {
+                                    ForEach(0..<coverGradients.count, id: \.self) { idx in
+                                        Circle()
+                                            .fill(coverGradients[idx])
+                                            .frame(width: 36, height: 36)
+                                            .overlay(
+                                                Circle()
+                                                    .stroke(Color.orange, lineWidth: selectedGradientIndex == idx ? 3.0 : 0.0)
+                                            )
+                                            .onTapGesture {
+                                                HapticEngine.light()
+                                                selectedGradientIndex = idx
+                                            }
+                                    }
+                                }
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 6)
+                            }
+                        } else {
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 12) {
+                                    ForEach(skinNames, id: \.0) { skin in
+                                        VStack(spacing: 6) {
+                                            ZStack {
+                                                NotebookCoverSkinView(skinType: skin.0, title: "Preview", colorScheme: colorScheme)
+                                                    .frame(width: 48, height: 64)
+                                                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                                                    .shadow(radius: 2)
+                                                
+                                                if selectedSkin == skin.0 {
+                                                    RoundedRectangle(cornerRadius: 6)
+                                                        .stroke(Color.orange, lineWidth: 3)
+                                                        .frame(width: 48, height: 64)
+                                                }
+                                            }
+                                            
+                                            Text(skin.1)
+                                                .font(.system(size: 9, weight: .bold, design: .rounded))
+                                                .foregroundColor(selectedSkin == skin.0 ? .orange : .inkTextSecondary)
+                                        }
                                         .onTapGesture {
                                             HapticEngine.light()
-                                            selectedGradientIndex = idx
+                                            selectedSkin = skin.0
                                         }
+                                    }
                                 }
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 6)
                             }
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 6)
                         }
                     }
                 }
                 
                 Section(header: Text("Page Template").font(.system(size: 11, weight: .semibold, design: .rounded))) {
-                    Picker("Template", selection: $selectedTemplate) {
-                        ForEach(PaperStyle.allCases) { style in
-                            Label(style.rawValue, systemImage: style.icon)
-                                .tag(style)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Picker("Template", selection: $selectedTemplate) {
+                            ForEach(PaperStyle.allCases) { style in
+                                Label(style.rawValue, systemImage: style.icon)
+                                    .tag(style)
+                            }
                         }
+                        .pickerStyle(.menu)
+                        
+                        // Live Paper Visual Preview
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(colorScheme == .dark ? Color(hex: "#1A1A1A") : Color.white)
+                                .frame(height: 100)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .stroke(Color.black.opacity(0.1), lineWidth: 1)
+                                )
+                            
+                            NotebookPaperBackground(style: selectedTemplate, colorScheme: colorScheme)
+                                .padding(8)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 4)
                     }
-                    .pickerStyle(.menu)
                 }
                 
                 Section(header: Text("Link to Library File (Optional)").font(.system(size: 11, weight: .semibold, design: .rounded))) {
@@ -1197,7 +1287,8 @@ struct CreateNotebookSheet: View {
                             coverGradientIndex: selectedGradientIndex,
                             coverTitleColorHex: "#FFFFFF",
                             templateStyle: selectedTemplate.rawValue,
-                            linkedBookID: selectedLinkedBook?.id
+                            linkedBookID: selectedLinkedBook?.id,
+                            coverStyle: coverStyle == "skin" ? selectedSkin : "gradient"
                         )
                         modelContext.insert(newNotebook)
                         try? modelContext.save()
@@ -1207,6 +1298,160 @@ struct CreateNotebookSheet: View {
                     .foregroundColor(.orange)
                     .disabled(title.isEmpty && selectedLinkedBook == nil)
                 }
+            }
+        }
+    }
+}
+
+// MARK: - Procedural Cover Textures & Skins
+struct SeededRandom {
+    private var state: UInt64
+    init(seed: UInt64) {
+        self.state = seed
+    }
+    mutating func next() -> Double {
+        state = state &* 6364136223846793005 &+ 1442695040888963407
+        return Double(state) / Double(UInt64.max)
+    }
+}
+
+struct LinenTexture: View {
+    var body: some View {
+        GeometryReader { geo in
+            Path { path in
+                var y: CGFloat = 0
+                while y < geo.size.height {
+                    path.move(to: CGPoint(x: 0, y: y))
+                    path.addLine(to: CGPoint(x: geo.size.width, y: y))
+                    y += 3
+                }
+                var x: CGFloat = 0
+                while x < geo.size.width {
+                    path.move(to: CGPoint(x: x, y: 0))
+                    path.addLine(to: CGPoint(x: x, y: geo.size.height))
+                    x += 3
+                }
+            }
+            .stroke(Color.white.opacity(0.06), lineWidth: 0.8)
+        }
+    }
+}
+
+struct KraftTexture: View {
+    var body: some View {
+        GeometryReader { geo in
+            Path { path in
+                var rng = SeededRandom(seed: 42)
+                for _ in 0..<300 {
+                    let rx = CGFloat(rng.next()) * geo.size.width
+                    let ry = CGFloat(rng.next()) * geo.size.height
+                    let len = CGFloat(rng.next()) * 3 + 1
+                    let angle = CGFloat(rng.next()) * .pi * 2
+                    path.move(to: CGPoint(x: rx, y: ry))
+                    path.addLine(to: CGPoint(
+                        x: rx + cos(angle) * len,
+                        y: ry + sin(angle) * len
+                    ))
+                }
+            }
+            .stroke(Color.black.opacity(0.06), lineWidth: 0.8)
+        }
+    }
+}
+
+struct CompositionTexture: View {
+    var body: some View {
+        GeometryReader { geo in
+            ZStack {
+                Color(hex: "#161616")
+                
+                Path { path in
+                    var rng = SeededRandom(seed: 99)
+                    for _ in 0..<180 {
+                        let rx = CGFloat(rng.next()) * geo.size.width
+                        let ry = CGFloat(rng.next()) * geo.size.height
+                        let rw = CGFloat(rng.next()) * 14 + 5
+                        let rh = CGFloat(rng.next()) * 7 + 2
+                        path.addEllipse(in: CGRect(x: rx - rw/2, y: ry - rh/2, width: rw, height: rh))
+                    }
+                }
+                .fill(Color.white.opacity(0.12))
+            }
+        }
+    }
+}
+
+struct NotebookCoverSkinView: View {
+    let skinType: String // "composition", "leather", "kraft", "linen"
+    let title: String
+    let colorScheme: ColorScheme
+    
+    var body: some View {
+        ZStack {
+            switch skinType {
+            case "composition":
+                ZStack {
+                    CompositionTexture()
+                    
+                    VStack(spacing: 3) {
+                        Text("COMPOSITION")
+                            .font(.system(size: 8, weight: .black, design: .monospaced))
+                            .foregroundColor(.black)
+                            .padding(.top, 4)
+                        
+                        Text(title)
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                            .foregroundColor(.black)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                        
+                        VStack(spacing: 5) {
+                            Divider().background(Color.black.opacity(0.2))
+                            Divider().background(Color.black.opacity(0.2))
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.bottom, 6)
+                    }
+                    .frame(width: 105)
+                    .background(Color.white)
+                    .cornerRadius(6)
+                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.black, lineWidth: 1.5))
+                    .shadow(radius: 2)
+                }
+                
+            case "leather":
+                ZStack {
+                    RadialGradient(
+                        colors: [Color(hex: "#4E2F1D"), Color(hex: "#26150B")],
+                        center: .center,
+                        startRadius: 10,
+                        endRadius: 200
+                    )
+                    
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(Color(hex: "#CFB53B").opacity(0.55), lineWidth: 1.2)
+                        .padding(8)
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(Color(hex: "#CFB53B").opacity(0.35), lineWidth: 0.6)
+                        .padding(11)
+                }
+                
+            case "kraft":
+                ZStack {
+                    Color(hex: "#C69C6D")
+                    KraftTexture()
+                }
+                
+            case "linen":
+                ZStack {
+                    Color(hex: "#2c3e50")
+                    LinenTexture()
+                }
+                
+            default:
+                Color.gray
             }
         }
     }
