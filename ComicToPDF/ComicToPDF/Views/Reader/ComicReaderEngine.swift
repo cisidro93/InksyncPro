@@ -144,10 +144,12 @@ final class ComicImageCache: ObservableObject {
     var pageCount: Int = 0
     let isPDF: Bool
     let isStream: Bool
+    let sourceMode: SourceMode
     var activelyAccessedURL: URL?
     
     init(pdf: ConvertedPDF, prefetchLimit: Int = 2) {
         self.prefetchLimit = prefetchLimit
+        self.sourceMode = pdf.sourceMode
         self.cache.totalCostLimit = 150 * 1024 * 1024 // 150 MB absolute RAM cap
         let scheme = pdf.url.scheme?.lowercased() ?? ""
         
@@ -386,7 +388,7 @@ final class ComicImageCache: ObservableObject {
         let isPDF = self.isPDF
         let isPreExtracted = self.isPreExtracted
         let imageURLs = self.extractedImageURLs
-        let pdfSourceMode = self.pdf.sourceMode
+        let pdfSourceMode = self.sourceMode
         
         let entryPaths = self.entries.map { $0.path }
         
