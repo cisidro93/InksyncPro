@@ -297,8 +297,10 @@ class PageBufferManager: ObservableObject {
                 let data = try await ArchiveManager.shared.extractEntry(from: archiveURL, path: entryPath)
                 guard let imageSource = CGImageSourceCreateWithData(data as CFData, nil) else { return false }
                 guard let properties = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil) as? [CFString: Any] else { return false }
-                let width = properties[kCGImagePropertyPixelWidth] as? CGFloat ?? 0
-                let height = properties[kCGImagePropertyPixelHeight] as? CGFloat ?? 0
+                let wVal = properties[kCGImagePropertyPixelWidth] as? NSNumber
+                let hVal = properties[kCGImagePropertyPixelHeight] as? NSNumber
+                let width = CGFloat(wVal?.doubleValue ?? 0)
+                let height = CGFloat(hVal?.doubleValue ?? 0)
                 return width > height * 1.2
             } catch {
                 return false
@@ -306,8 +308,10 @@ class PageBufferManager: ObservableObject {
         } else {
             guard let imageSource = CGImageSourceCreateWithURL(url as CFURL, nil) else { return false }
             guard let properties = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil) as? [CFString: Any] else { return false }
-            let width = properties[kCGImagePropertyPixelWidth] as? CGFloat ?? 0
-            let height = properties[kCGImagePropertyPixelHeight] as? CGFloat ?? 0
+            let wVal = properties[kCGImagePropertyPixelWidth] as? NSNumber
+            let hVal = properties[kCGImagePropertyPixelHeight] as? NSNumber
+            let width = CGFloat(wVal?.doubleValue ?? 0)
+            let height = CGFloat(hVal?.doubleValue ?? 0)
             return width > height * 1.2
         }
     }

@@ -420,8 +420,10 @@ final class ComicImageCache: ObservableObject {
                         group.addTask {
                             if let source = CGImageSourceCreateWithURL(url as CFURL, nil),
                                let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] {
-                                let w = properties[kCGImagePropertyPixelWidth] as? CGFloat ?? 0
-                                let h = properties[kCGImagePropertyPixelHeight] as? CGFloat ?? 0
+                                let wVal = properties[kCGImagePropertyPixelWidth] as? NSNumber
+                                let hVal = properties[kCGImagePropertyPixelHeight] as? NSNumber
+                                let w = CGFloat(wVal?.doubleValue ?? 0)
+                                let h = CGFloat(hVal?.doubleValue ?? 0)
                                 return (i, w > h * 1.15)
                             }
                             return (i, false)
@@ -473,8 +475,10 @@ final class ComicImageCache: ObservableObject {
                                         if let data = try? await ArchiveManager.shared.extractEntry(from: fileURL, path: entryPath),
                                            let source = CGImageSourceCreateWithData(data as CFData, nil),
                                            let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] {
-                                            let w = properties[kCGImagePropertyPixelWidth] as? CGFloat ?? 0
-                                            let h = properties[kCGImagePropertyPixelHeight] as? CGFloat ?? 0
+                                            let wVal = properties[kCGImagePropertyPixelWidth] as? NSNumber
+                                            let hVal = properties[kCGImagePropertyPixelHeight] as? NSNumber
+                                            let w = CGFloat(wVal?.doubleValue ?? 0)
+                                            let h = CGFloat(hVal?.doubleValue ?? 0)
                                             return (i, w > h * 1.15)
                                         }
                                     }
@@ -488,6 +492,16 @@ final class ComicImageCache: ObservableObject {
                     }
                 }
             } else if let resolved = resolvedURL {
+                let isLinked: Bool
+                if case .linked = self.pdf.sourceMode {
+                    isLinked = true
+                } else {
+                    isLinked = false
+                }
+                
+                let accessing = isLinked ? resolved.startAccessingSecurityScopedResource() : false
+                defer { if accessing { resolved.stopAccessingSecurityScopedResource() } }
+                
                 await withTaskGroup(of: (Int, Bool).self) { group in
                     for i in 0..<min(total, entryPaths.count) {
                         let entryPath = entryPaths[i]
@@ -496,8 +510,10 @@ final class ComicImageCache: ObservableObject {
                                 let data = try await ArchiveManager.shared.extractEntry(from: resolved, path: entryPath)
                                 if let source = CGImageSourceCreateWithData(data as CFData, nil),
                                    let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] {
-                                    let w = properties[kCGImagePropertyPixelWidth] as? CGFloat ?? 0
-                                    let h = properties[kCGImagePropertyPixelHeight] as? CGFloat ?? 0
+                                    let wVal = properties[kCGImagePropertyPixelWidth] as? NSNumber
+                                    let hVal = properties[kCGImagePropertyPixelHeight] as? NSNumber
+                                    let w = CGFloat(wVal?.doubleValue ?? 0)
+                                    let h = CGFloat(hVal?.doubleValue ?? 0)
                                     return (i, w > h * 1.15)
                                 }
                             } catch {}
@@ -1161,43 +1177,66 @@ final class ComicImageCache: ObservableObject {
         }
     }
     
-    private func getSiblingIndex(for index: Int) -> Int? {
-        guard index >= 0 && index < pageCount else { return nil }
-        
-        let landscapeArray = isLandscapeArray
-        guard landscapeArray.count == pageCount else {
-            // Fallback to simple modulo matching if orientations are not yet scanned
-            if index <= 0 { return nil }
-            if index % 2 == 1 {
-                let sibling = index + 1
-                return sibling < pageCount ? sibling : nil
+    func computeSpreads() -> [[Int]] {
+        var allSpreads: [[Int]] = []
+        let landscapeArray = self.isLandscapeArray
+        let totalPages = self.pageCount
+
+        guard landscapeArray.count == totalPages else {
+            if totalPages > 1 {
+                allSpreads.append([0])
+                var i = 1
+                while i < totalPages {
+                    if i + 1 < totalPages {
+                        allSpreads.append([i, i + 1])
+                        i += 2
+                    } else {
+                        allSpreads.append([i])
+                        i += 1
+                    }
+                }
             } else {
-                return index - 1
+                allSpreads.append([0])
             }
+            return allSpreads
         }
-        
-        // Find sibling from compiled spreads
+
+        allSpreads.append([0])
         var i = 1
-        while i < pageCount {
+        while i < totalPages {
             let isL = landscapeArray[i]
             if isL {
-                if i == index { return nil }
+                allSpreads.append([i])
                 i += 1
             } else {
-                if i + 1 < pageCount {
+                if i + 1 < totalPages {
                     let nextIsL = landscapeArray[i + 1]
                     if nextIsL {
-                        if i == index { return nil }
+                        allSpreads.append([i])
                         i += 1
                     } else {
-                        if i == index { return i + 1 }
-                        if i + 1 == index { return i }
+                        allSpreads.append([i, i + 1])
                         i += 2
                     }
                 } else {
-                    if i == index { return nil }
+                    allSpreads.append([i])
                     i += 1
                 }
+            }
+        }
+        return allSpreads
+    }
+    
+    private func getSiblingIndex(for index: Int) -> Int? {
+        guard index >= 0 && index < pageCount else { return nil }
+        
+        let spreads = computeSpreads()
+        for spread in spreads {
+            if spread.contains(index) {
+                if spread.count == 2 {
+                    return spread[0] == index ? spread[1] : spread[0]
+                }
+                break
             }
         }
         return nil

@@ -162,9 +162,11 @@ struct WebtoonScrollView: UIViewRepresentable {
                         guard !Task.isCancelled else { break }
                         if let source = CGImageSourceCreateWithURL(url as CFURL, nil),
                            let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any],
-                           let width = properties[kCGImagePropertyPixelWidth as String] as? CGFloat,
-                           let height = properties[kCGImagePropertyPixelHeight as String] as? CGFloat,
-                           width > 0 {
+                           let wVal = properties[kCGImagePropertyPixelWidth as String] as? NSNumber,
+                           let hVal = properties[kCGImagePropertyPixelHeight as String] as? NSNumber,
+                           wVal.doubleValue > 0 {
+                            let width = CGFloat(wVal.doubleValue)
+                            let height = CGFloat(hVal.doubleValue)
                             results[index] = height / width
                         }
                     }

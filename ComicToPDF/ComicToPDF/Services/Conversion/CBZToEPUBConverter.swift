@@ -127,8 +127,10 @@ struct CBZToEPUBConverter: Sendable {
                 var height: CGFloat = 0
                 if let source = CGImageSourceCreateWithURL(srcURL as CFURL, nil),
                    let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] {
-                    width = properties[kCGImagePropertyPixelWidth] as? CGFloat ?? 0
-                    height = properties[kCGImagePropertyPixelHeight] as? CGFloat ?? 0
+                    let wVal = properties[kCGImagePropertyPixelWidth] as? NSNumber
+                    let hVal = properties[kCGImagePropertyPixelHeight] as? NSNumber
+                    width = CGFloat(wVal?.doubleValue ?? 0)
+                    height = CGFloat(hVal?.doubleValue ?? 0)
                 }
                 
                 if settings.splitWebtoon && height > width * 1.5 {
