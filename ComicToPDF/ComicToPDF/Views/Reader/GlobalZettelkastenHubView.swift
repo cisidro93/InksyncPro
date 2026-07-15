@@ -199,6 +199,7 @@ struct GlobalZettelkastenHubView: View {
                             .foregroundStyle(Color(hex: "#BF5AF2"))
                     }
                 }
+            }
             
             // ── Exit to Notebooks shortcut ─────────────────────────────────────
             Section {

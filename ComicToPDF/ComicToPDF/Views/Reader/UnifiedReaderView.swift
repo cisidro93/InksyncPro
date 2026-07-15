@@ -72,7 +72,8 @@ struct UnifiedReaderView: View {
             StudyNotebookView(
                 bookID: pdf.id.uuidString,
                 bookTitle: pdf.name,
-                fileURL: pdf.url
+                fileURL: pdf.url,
+                showBackButton: true
             )
         }
         .onReceive(NotificationCenter.default.publisher(for: .toggleStudyNotebook)) { _ in

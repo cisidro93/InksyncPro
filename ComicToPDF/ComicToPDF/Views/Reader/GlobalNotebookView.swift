@@ -232,19 +232,7 @@ struct GlobalNotebookView: View {
             ShareSheet(activityItems: [shareText])
         }
         .fullScreenCover(item: $activeNotebookSelection) { selection in
-            NavigationStack {
-                StudyNotebookView(bookID: selection.id.uuidString, bookTitle: selection.title, fileURL: selection.fileURL)
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .navigationBarTrailing) {
-                            Button("Done") {
-                                activeNotebookSelection = nil
-                            }
-                            .font(.system(size: 15, weight: .bold, design: .rounded))
-                            .foregroundColor(.orange)
-                        }
-                    }
-            }
+            StudyNotebookView(bookID: selection.id.uuidString, bookTitle: selection.title, fileURL: selection.fileURL, showBackButton: true)
         }
         .sheet(isPresented: $isShowingCreateNotebookSheet) {
             CreateNotebookSheet()

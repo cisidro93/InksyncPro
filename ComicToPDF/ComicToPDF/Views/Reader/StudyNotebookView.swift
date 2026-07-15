@@ -7,6 +7,9 @@ struct StudyNotebookView: View {
     let bookID: String       // the ConvertedPDF's UUID string
     let bookTitle: String    // human-readable title shown in the Zettelkasten Hub
     var fileURL: URL? = nil  // Optional source file URL for page preview generation
+    var showBackButton: Bool = false
+    
+    @Environment(\.dismiss) private var dismiss
 
     // Phase 1: Native Zettelkasten Integration
     @Environment(\.modelContext) private var modelContext
@@ -112,6 +115,21 @@ struct StudyNotebookView: View {
             VStack(spacing: 0) {
                 // MARK: Glassmorphic Header
                 HStack(spacing: 12) {
+                    if showBackButton {
+                        Button {
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            dismiss()
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "chevron.left")
+                                Text("Back")
+                                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                            }
+                            .foregroundColor(.orange)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    
                     Image(systemName: "notebook.toptab.fill")
                         .foregroundStyle(LinearGradient(colors: [Theme.blue, Color.purple], startPoint: .topLeading, endPoint: .bottomTrailing))
                         .font(.system(size: 18, weight: .bold))
