@@ -46,6 +46,20 @@ struct StudyCanvasView: UIViewRepresentable {
         func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
             guard !isSnapping else { return }
             
+            // GoodNotes-style Scribble-to-Erase
+            if let lastStroke = canvasView.drawing.strokes.last {
+                if let erasedDrawing = detectScribbleAndErase(in: canvasView.drawing, lastStroke: lastStroke) {
+                    isSnapping = true
+                    canvasView.drawing = erasedDrawing
+                    isSnapping = false
+                    
+                    // Trigger a tactile scribble erase haptic feedback
+                    UINotificationFeedbackGenerator().notificationOccurred(.success)
+                    parent.onSaved()
+                    return
+                }
+            }
+            
             if parent.isSmartShapesEnabled {
                 if let updatedDrawing = snapLastStroke(in: canvasView.drawing) {
                     isSnapping = true
@@ -177,6 +191,53 @@ struct StudyCanvasView: UIViewRepresentable {
             newStrokes.append(snappedStroke)
             
             return PKDrawing(strokes: newStrokes)
+        }
+        
+        private func detectScribbleAndErase(in drawing: PKDrawing, lastStroke: PKStroke) -> PKDrawing? {
+            let points = lastStroke.path.map { $0 }
+            guard points.count >= 8 else { return nil }
+            
+            // 1. Analyze direction changes (horizontal flips)
+            var directionChangesCount = 0
+            var lastDX: CGFloat = 0
+            
+            for i in 1..<points.count {
+                let dx = points[i].location.x - points[i-1].location.x
+                if i > 1 {
+                    if (dx > 0.5 && lastDX < -0.5) || (dx < -0.5 && lastDX > 0.5) {
+                        directionChangesCount += 1
+                    }
+                }
+                if abs(dx) > 0.5 {
+                    lastDX = dx
+                }
+            }
+            
+            // Require at least 4 horizontal shifts to recognize as a scribble
+            guard directionChangesCount >= 4 else { return nil }
+            
+            let scribbleBounds = lastStroke.renderBounds
+            // Keep the scribble localized
+            guard scribbleBounds.width < 180 && scribbleBounds.height < 180 else { return nil }
+            
+            var remainingStrokes = drawing.strokes
+            if !remainingStrokes.isEmpty {
+                remainingStrokes.removeLast()
+            }
+            
+            let originalCount = remainingStrokes.count
+            
+            // Erase any stroke whose bounds intersect with the scribble bounds
+            remainingStrokes = remainingStrokes.filter { stroke in
+                let strokeBounds = stroke.renderBounds
+                return !strokeBounds.intersects(scribbleBounds)
+            }
+            
+            if remainingStrokes.count < originalCount {
+                return PKDrawing(strokes: remainingStrokes)
+            }
+            
+            return nil
         }
         
         private func distance(_ a: CGPoint, _ b: CGPoint) -> CGFloat {

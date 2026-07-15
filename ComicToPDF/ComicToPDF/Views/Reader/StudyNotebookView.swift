@@ -1392,6 +1392,7 @@ struct MarkdownHighlighter {
         let h2Font = UIFont.boldSystemFont(ofSize: 20)
         let h3Font = UIFont.boldSystemFont(ofSize: 18)
         let defaultColor = UIColor.label
+        let markerColor = UIColor.secondaryLabel.withAlphaComponent(0.35)
         
         let paragraphStyle = NSMutableParagraphStyle()
         paragraphStyle.lineSpacing = 6
@@ -1406,23 +1407,53 @@ struct MarkdownHighlighter {
         let fullRange = NSRange(text.startIndex..., in: text)
         
         // Blockquotes (> text)
-        let quotePattern = "(?m)^>.*"
+        let quotePattern = "(?m)^(\\s*>\\s*)(.*)"
         if let regex = try? NSRegularExpression(pattern: quotePattern, options: []) {
             let matches = regex.matches(in: text, range: fullRange)
             for match in matches {
-                attrString.addAttributes([
-                    .foregroundColor: UIColor.systemGray,
-                    .font: italicFont
-                ], range: match.range)
+                if match.numberOfRanges > 2 {
+                    let markerRange = match.range(at: 1)
+                    let textRange = match.range(at: 2)
+                    attrString.addAttribute(.foregroundColor, value: UIColor.systemOrange.withAlphaComponent(0.6), range: markerRange)
+                    attrString.addAttributes([
+                        .foregroundColor: UIColor.systemGray,
+                        .font: italicFont
+                    ], range: textRange)
+                }
             }
         }
         
         // Bold (**text**)
-        let boldPattern = "\\*\\*(.*?)\\*\\*"
+        let boldPattern = "(\\*\\*)(.*?)(\\*\\*)"
         if let regex = try? NSRegularExpression(pattern: boldPattern, options: []) {
             let matches = regex.matches(in: text, range: fullRange)
             for match in matches {
-                attrString.addAttribute(.font, value: boldFont, range: match.range)
+                if match.numberOfRanges > 3 {
+                    let startMarker = match.range(at: 1)
+                    let innerText = match.range(at: 2)
+                    let endMarker = match.range(at: 3)
+                    
+                    attrString.addAttribute(.foregroundColor, value: markerColor, range: startMarker)
+                    attrString.addAttribute(.font, value: boldFont, range: innerText)
+                    attrString.addAttribute(.foregroundColor, value: markerColor, range: endMarker)
+                }
+            }
+        }
+        
+        // Italic (_text_)
+        let italicPattern = "(\\_)(.*?)(\\_)"
+        if let regex = try? NSRegularExpression(pattern: italicPattern, options: []) {
+            let matches = regex.matches(in: text, range: fullRange)
+            for match in matches {
+                if match.numberOfRanges > 3 {
+                    let startMarker = match.range(at: 1)
+                    let innerText = match.range(at: 2)
+                    let endMarker = match.range(at: 3)
+                    
+                    attrString.addAttribute(.foregroundColor, value: markerColor, range: startMarker)
+                    attrString.addAttribute(.font, value: italicFont, range: innerText)
+                    attrString.addAttribute(.foregroundColor, value: markerColor, range: endMarker)
+                }
             }
         }
         
@@ -1473,23 +1504,38 @@ struct MarkdownHighlighter {
         }
         
         // Headers (# H1, ## H2, ### H3)
-        let h1Pattern = "(?m)^#\\s.*"
-        let h2Pattern = "(?m)^##\\s.*"
-        let h3Pattern = "(?m)^###\\s.*"
+        let h1Pattern = "(?m)^(#\\s+)(.*)"
+        let h2Pattern = "(?m)^(##\\s+)(.*)"
+        let h3Pattern = "(?m)^(###\\s+)(.*)"
         
         if let r1 = try? NSRegularExpression(pattern: h1Pattern) {
             for match in r1.matches(in: text, range: fullRange) {
-                attrString.addAttribute(.font, value: h1Font, range: match.range)
+                if match.numberOfRanges > 2 {
+                    let markerRange = match.range(at: 1)
+                    let textRange = match.range(at: 2)
+                    attrString.addAttribute(.foregroundColor, value: markerColor, range: markerRange)
+                    attrString.addAttribute(.font, value: h1Font, range: textRange)
+                }
             }
         }
         if let r2 = try? NSRegularExpression(pattern: h2Pattern) {
             for match in r2.matches(in: text, range: fullRange) {
-                attrString.addAttribute(.font, value: h2Font, range: match.range)
+                if match.numberOfRanges > 2 {
+                    let markerRange = match.range(at: 1)
+                    let textRange = match.range(at: 2)
+                    attrString.addAttribute(.foregroundColor, value: markerColor, range: markerRange)
+                    attrString.addAttribute(.font, value: h2Font, range: textRange)
+                }
             }
         }
         if let r3 = try? NSRegularExpression(pattern: h3Pattern) {
             for match in r3.matches(in: text, range: fullRange) {
-                attrString.addAttribute(.font, value: h3Font, range: match.range)
+                if match.numberOfRanges > 2 {
+                    let markerRange = match.range(at: 1)
+                    let textRange = match.range(at: 2)
+                    attrString.addAttribute(.foregroundColor, value: markerColor, range: markerRange)
+                    attrString.addAttribute(.font, value: h3Font, range: textRange)
+                }
             }
         }
         
