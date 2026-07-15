@@ -11,6 +11,13 @@ struct StudyNotebookView: View {
     
     @Environment(\.dismiss) private var dismiss
 
+    init(bookID: String, bookTitle: String, fileURL: URL? = nil, showBackButton: Bool = false) {
+        self.bookID = bookID
+        self.bookTitle = bookTitle
+        self.fileURL = fileURL
+        self.showBackButton = showBackButton
+    }
+
     // Phase 1: Native Zettelkasten Integration
     @Environment(\.modelContext) private var modelContext
     @State private var activeNoteAnnotation: SDAnnotation?
