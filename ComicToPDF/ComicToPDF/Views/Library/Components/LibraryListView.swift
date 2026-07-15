@@ -91,17 +91,19 @@ struct LibraryListView: View {
 
 
                             ForEach(items) { item in
-                                listRow(for: item)
-                                    .id(item.id)
-                                    .background(
-                                        GeometryReader { geo in
-                                            Color.clear
-                                                .preference(
-                                                    key: LibraryCellFramePreferenceKey.self,
-                                                    value: [item.id: geo.frame(in: .named("libraryListScroll"))]
-                                                )
-                                        }
-                                    )
+                                VStack(spacing: 0) {
+                                    listRow(for: item)
+                                }
+                                .id(item.id)
+                                .background(
+                                    GeometryReader { geo in
+                                        Color.clear
+                                            .preference(
+                                                key: LibraryCellFramePreferenceKey.self,
+                                                value: [item.id: geo.frame(in: .named("libraryListScroll"))]
+                                            )
+                                    }
+                                )
                             }
                         } // end List
                         .listStyle(.plain)

@@ -195,6 +195,7 @@ struct LibraryGridView: View {
                                             ShelfLineView(accentColor: contentShelf.accentColor)
                                                 .padding(.horizontal, hPad / 2)
                                         }
+                                        .id(row.id)
                                     }
                                 }
                                 .padding(.top, 12)
@@ -264,8 +265,9 @@ struct LibraryGridView: View {
                                 isPresented: $showingQuickJump,
                                 availableLetters: availableLetters,
                                 onJump: { letter in
-                                    if let targetID = firstItemId(for: letter) {
-                                        withAnimation { proxy.scrollTo(targetID, anchor: .top) }
+                                    if let targetID = firstItemId(for: letter),
+                                       let targetRow = rows.first(where: { $0.items.contains(where: { $0.id == targetID }) }) {
+                                        withAnimation { proxy.scrollTo(targetRow.id, anchor: .top) }
                                     }
                                 }
                             )
