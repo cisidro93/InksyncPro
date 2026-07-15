@@ -15,6 +15,7 @@ enum ZettelSortMode: String, CaseIterable {
 struct GlobalZettelkastenHubView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    @Binding var activeTab: GlobalNotebookView.Tab
     
     // Sort all annotations latest over all PDF IDs
     @Query(sort: \SDAnnotation.modifiedAt, order: .reverse) private var allAnnotations: [SDAnnotation]
@@ -198,6 +199,19 @@ struct GlobalZettelkastenHubView: View {
                             .foregroundStyle(Color(hex: "#BF5AF2"))
                     }
                 }
+            
+            // ── Exit to Notebooks shortcut ─────────────────────────────────────
+            Section {
+                Button {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    withAnimation(.spring(response: 0.28, dampingFraction: 0.76)) {
+                        activeTab = .notebooks
+                    }
+                } label: {
+                    Label("Exit to Notebooks", systemImage: "arrow.left.circle.fill")
+                        .foregroundStyle(Color.orange)
+                        .fontWeight(.semibold)
+                }
             }
         }
         .listStyle(.sidebar)
@@ -253,14 +267,16 @@ struct GlobalZettelkastenHubView: View {
                 emptyStateView
             } else {
                 VStack(spacing: 0) {
-                    // ── View Mode Toggle: frosted capsule pills (matches app design language)
-                    HStack(spacing: 0) {
-                        viewModePill(.list,      label: "List",      icon: "list.bullet")
-                        viewModePill(.board,     label: "Zettel Board", icon: "square.grid.2x2")
-                        viewModePill(.map,       label: "Mind Map",  icon: "point.3.connected.trianglepath.dotted")
+                    if hSizeClass == .compact {
+                        // ── View Mode Toggle: frosted capsule pills (matches app design language)
+                        HStack(spacing: 0) {
+                            viewModePill(.list,      label: "List",      icon: "list.bullet")
+                            viewModePill(.board,     label: "Zettel Board", icon: "square.grid.2x2")
+                            viewModePill(.map,       label: "Mind Map",  icon: "point.3.connected.trianglepath.dotted")
+                        }
+                        .padding(.horizontal)
+                        .padding(.top, 8)
                     }
-                    .padding(.horizontal)
-                    .padding(.top, 8)
 
                     if viewMode == .list {
                         if cachedDueCount > 0 {
@@ -396,6 +412,22 @@ struct GlobalZettelkastenHubView: View {
         .navigationBarTitleDisplayMode(.large)
         .searchable(text: $searchText, prompt: "Search all highlights & notes...")
         .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    withAnimation(.spring(response: 0.28, dampingFraction: 0.76)) {
+                        activeTab = .notebooks
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left")
+                        Text("Notebooks")
+                    }
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .foregroundColor(.orange)
+                }
+            }
+            
             // Stat indicators — mirrors Library's "N FILES • N SERIES" pattern
             ToolbarItem(placement: .principal) {
                 VStack(spacing: 2) {

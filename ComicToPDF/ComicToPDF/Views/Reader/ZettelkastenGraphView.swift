@@ -449,8 +449,8 @@ struct ZettelkastenGraphView: View {
     @State private var ghostNodePosition: CGPoint? = nil
     @State private var showingNodeCreationAlert = false
     @State private var pendingNodeTitle = ""
-    @State private var ghostPulse = false
-
+    @State private var lastDragTranslation: CGSize = .zero
+    
     // MARK: Theme styles
 
     private var bgColor: Color {
@@ -677,8 +677,11 @@ struct ZettelkastenGraphView: View {
                                         isPanning = true
                                         hoverNodeID = nil
                                     }
-                                    engine.offset.width += val.translation.width / engine.scale
-                                    engine.offset.height += val.translation.height / engine.scale
+                                    let deltaW = val.translation.width - lastDragTranslation.width
+                                    let deltaH = val.translation.height - lastDragTranslation.height
+                                    engine.offset.width += deltaW / engine.scale
+                                    engine.offset.height += deltaH / engine.scale
+                                    lastDragTranslation = val.translation
                                 }
                             }
                             
@@ -690,6 +693,7 @@ struct ZettelkastenGraphView: View {
                         }
                     }
                     .onEnded { val in
+                        lastDragTranslation = .zero
                         if isLinkMode {
                             if let startID = linkStartNodeID, let currentPt = linkCurrentPoint {
                                 if let targetNode = engine.nodes.first(where: {
@@ -704,7 +708,7 @@ struct ZettelkastenGraphView: View {
                             // Clear tap on empty canvas clears inspector
                             if !isPanning && engine.draggedNodeID == nil {
                                 let touchPos = applyInverseCamera(val.location)
-                                let hitNode = engine.nodes.first(where: {
+                                  let hitNode = engine.nodes.first(where: {
                                     distance(from: $0.position, to: touchPos) < $0.hitRadius
                                 })
                                 if hitNode == nil {

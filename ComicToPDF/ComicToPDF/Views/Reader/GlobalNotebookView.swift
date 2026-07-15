@@ -223,7 +223,7 @@ struct GlobalNotebookView: View {
                         }
                     }
                 } else {
-                    GlobalZettelkastenHubView()
+                    GlobalZettelkastenHubView(activeTab: $activeTab)
                 }
             }
         }
