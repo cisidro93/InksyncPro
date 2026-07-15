@@ -46,7 +46,8 @@ struct InksyncProApp: App {
             SDOPDSServer.self,
             SDCharacterNode.self,
             SDRelationship.self,
-            SDCharacterAppearance.self
+            SDCharacterAppearance.self,
+            SDNotebook.self
         ])
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false, cloudKitDatabase: .none)
         

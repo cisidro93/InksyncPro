@@ -25,7 +25,7 @@ struct StudyNotebookView: View {
         case handwriting = "Pencil"
     }
     @AppStorage("studyNotebookInputMode") private var inputMode: InputMode = .markdown
-    @AppStorage("studyNotebookPaperStyle") private var paperStyle: PaperStyle = .plain
+    @State private var paperStyle: PaperStyle = .plain
     @AppStorage("studyNotebookPlacement") private var notebookPlacement: SidebarPlacement = .right
     @State private var canvasView = PKCanvasView()
     
@@ -346,6 +346,16 @@ struct StudyNotebookView: View {
             Logger.shared.log("StudyNotebook appeared for book: '\(bookTitle)'", category: "Notebook", type: .info)
             initializeSDAnnotation()
         }
+        .onChange(of: paperStyle) { _, newStyle in
+            if let actualUUID = UUID(uuidString: bookID) {
+                let nbFetch = FetchDescriptor<SDNotebook>(predicate: #Predicate { $0.id == actualUUID })
+                if let nb = try? modelContext.fetch(nbFetch).first {
+                    nb.templateStyle = newStyle.rawValue
+                    try? modelContext.save()
+                    Logger.shared.log("Persisted paper style '\(newStyle.rawValue)' to notebook '\(bookTitle)'", category: "Notebook", type: .success)
+                }
+            }
+        }
         .supportPencilDoubleTap {
             if inputMode == .markdown {
                 toggleSpeechDictation()
@@ -444,6 +454,15 @@ struct StudyNotebookView: View {
              self.localNotes = ""
              Logger.shared.log("New note created, inserted and saved for '\(bookTitle)'", category: "Notebook", type: .success)
          }
+        
+        // Fetch paper style from SDNotebook if it exists
+        if let actualUUID = UUID(uuidString: bookID) {
+            let nbFetch = FetchDescriptor<SDNotebook>(predicate: #Predicate { $0.id == actualUUID })
+            if let nb = try? modelContext.fetch(nbFetch).first {
+                self.paperStyle = PaperStyle(rawValue: nb.templateStyle) ?? .plain
+                Logger.shared.log("Loaded template style '\(nb.templateStyle)' for notebook '\(bookTitle)'", category: "Notebook", type: .success)
+            }
+        }
         
         // Fetch existing highlights for this book
         let hDescriptor = FetchDescriptor<SDAnnotation>(predicate: #Predicate { $0.kindRaw == "highlight" && $0.pdfID == targetPDFID })
@@ -1650,6 +1669,8 @@ enum PaperStyle: String, CaseIterable, Identifiable {
     case ruled = "Ruled"
     case grid = "Grid"
     case dots = "Dots"
+    case legal = "Legal"
+    case collegeRuled = "College Ruled"
     
     var id: String { self.rawValue }
     var icon: String {
@@ -1658,6 +1679,8 @@ enum PaperStyle: String, CaseIterable, Identifiable {
         case .ruled: return "line.horizontal.3"
         case .grid: return "grid"
         case .dots: return "circle.hexagongrid.fill"
+        case .legal: return "signature"
+        case .collegeRuled: return "doc.text.fill"
         }
     }
 }
@@ -1668,46 +1691,81 @@ struct NotebookPaperBackground: View {
 
     var body: some View {
         GeometryReader { geo in
-            Path { path in
-                switch style {
-                case .plain:
-                    break
-                case .ruled:
-                    let lineSpacing: CGFloat = 24
-                    var y: CGFloat = lineSpacing
-                    while y < geo.size.height {
-                        path.move(to: CGPoint(x: 0, y: y))
-                        path.addLine(to: CGPoint(x: geo.size.width, y: y))
-                        y += lineSpacing
-                    }
-                case .grid:
-                    let gridSpacing: CGFloat = 24
-                    var x: CGFloat = gridSpacing
-                    while x < geo.size.width {
-                        path.move(to: CGPoint(x: x, y: 0))
-                        path.addLine(to: CGPoint(x: x, y: geo.size.height))
-                        x += gridSpacing
-                    }
-                    var y: CGFloat = gridSpacing
-                    while y < geo.size.height {
-                        path.move(to: CGPoint(x: 0, y: y))
-                        path.addLine(to: CGPoint(x: geo.size.width, y: y))
-                        y += gridSpacing
-                    }
-                case .dots:
-                    let spacing: CGFloat = 24
-                    var y: CGFloat = spacing
-                    while y < geo.size.height {
-                        var x: CGFloat = spacing
-                        while x < geo.size.width {
-                            path.addEllipse(in: CGRect(x: x - 1, y: y - 1, width: 2, height: 2))
-                            x += spacing
+            ZStack {
+                // Rule lines/dots
+                Path { path in
+                    switch style {
+                    case .plain:
+                        break
+                    case .ruled:
+                        let lineSpacing: CGFloat = 24
+                        var y: CGFloat = lineSpacing
+                        while y < geo.size.height {
+                            path.move(to: CGPoint(x: 0, y: y))
+                            path.addLine(to: CGPoint(x: geo.size.width, y: y))
+                            y += lineSpacing
                         }
-                        y += spacing
+                    case .grid:
+                        let gridSpacing: CGFloat = 24
+                        var x: CGFloat = gridSpacing
+                        while x < geo.size.width {
+                            path.move(to: CGPoint(x: x, y: 0))
+                            path.addLine(to: CGPoint(x: x, y: geo.size.height))
+                            x += gridSpacing
+                        }
+                        var y: CGFloat = gridSpacing
+                        while y < geo.size.height {
+                            path.move(to: CGPoint(x: 0, y: y))
+                            path.addLine(to: CGPoint(x: geo.size.width, y: y))
+                            y += gridSpacing
+                        }
+                    case .dots:
+                        let spacing: CGFloat = 24
+                        var y: CGFloat = spacing
+                        while y < geo.size.height {
+                            var x: CGFloat = spacing
+                            while x < geo.size.width {
+                                path.addEllipse(in: CGRect(x: x - 1, y: y - 1, width: 2, height: 2))
+                                x += spacing
+                            }
+                            y += spacing
+                        }
+                    case .legal:
+                        let lineSpacing: CGFloat = 28
+                        var y: CGFloat = lineSpacing * 2
+                        while y < geo.size.height {
+                            path.move(to: CGPoint(x: 0, y: y))
+                            path.addLine(to: CGPoint(x: geo.size.width, y: y))
+                            y += lineSpacing
+                        }
+                    case .collegeRuled:
+                        let lineSpacing: CGFloat = 21
+                        var y: CGFloat = lineSpacing * 3
+                        while y < geo.size.height {
+                            path.move(to: CGPoint(x: 0, y: y))
+                            path.addLine(to: CGPoint(x: geo.size.width, y: y))
+                            y += lineSpacing
+                        }
                     }
                 }
+                .stroke(
+                    colorScheme == .dark ? Color.white.opacity(0.08) : Color(hex: style == .legal ? "#D2E3FC" : "#E2E8F0"),
+                    lineWidth: style == .dots ? 2 : 0.8
+                )
+
+                // Pink/Red Vertical Margin Line for Academic/Legal
+                if style == .legal || style == .collegeRuled {
+                    Path { path in
+                        let marginX: CGFloat = style == .legal ? 88 : 72
+                        path.move(to: CGPoint(x: marginX, y: 0))
+                        path.addLine(to: CGPoint(x: marginX, y: geo.size.height))
+                    }
+                    .stroke(
+                        colorScheme == .dark ? Color.red.opacity(0.3) : Color.red.opacity(0.4),
+                        lineWidth: 1.0
+                    )
+                }
             }
-            .stroke(colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.08), lineWidth: style == .dots ? 2 : 0.8)
         }
     }
 }

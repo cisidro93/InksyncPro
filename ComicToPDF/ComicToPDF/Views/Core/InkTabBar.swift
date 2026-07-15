@@ -50,7 +50,7 @@ struct InkTabBar: View {
         InkTabItem(tag: 0, label: "Library",    icon: "books.vertical",             activeIcon: "books.vertical.fill"),
         InkTabItem(tag: 1, label: "Workspace",  icon: "briefcase",                  activeIcon: "briefcase.fill"),
         InkTabItem(tag: 2, label: "Devices",    icon: "ipad.and.iphone",            activeIcon: "ipad.and.iphone.fill"),
-        InkTabItem(tag: 3, label: "Notebooks",  icon: "notebook",                   activeIcon: "notebook.fill"),
+        InkTabItem(tag: 3, label: "Notebooks",  icon: "note.text",                  activeIcon: "note.text"),
     ]
 
 

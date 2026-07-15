@@ -1095,8 +1095,8 @@ struct EBookWebReader: UIViewRepresentable {
             column-rule: 1px solid rgba(128, 128, 128, 0.15) !important;
         """ : ""
 
-        let paddingLeft = margin
-        let paddingRight = margin
+        let paddingLeft = isPaged ? 0 : margin
+        let paddingRight = isPaged ? 0 : margin
 
         return """
         @font-face {
@@ -1340,6 +1340,7 @@ struct EBookWebReader: UIViewRepresentable {
             }
             postFraction();
         }
+        window.goToInksyncPage = goToPage;
 
         window.onload = function() { setTimeout(updateMetrics, 100); };
         window.addEventListener('resize', function() { updateMetrics(); goToPage(_currentPage, false); });
@@ -1628,7 +1629,13 @@ struct EBookWebReader: UIViewRepresentable {
                     var sv = document.scrollingElement || document.documentElement;
                     var isHoriz = document.body.style.columnCount || window.getComputedStyle(document.body).columnCount !== 'auto';
                     if (isHoriz) {
-                        window.scrollTo({ left: sv.scrollWidth * \(fraction), behavior: 'instant' });
+                        var totalPages = Math.max(1, Math.ceil(sv.scrollWidth / window.innerWidth));
+                        var targetPage = Math.round(\(fraction) * (totalPages - 1));
+                        if (window.goToInksyncPage) {
+                            window.goToInksyncPage(targetPage, false);
+                        } else {
+                            window.scrollTo({ left: targetPage * window.innerWidth, behavior: 'instant' });
+                        }
                     } else {
                         window.scrollTo({ top: sv.scrollHeight * \(fraction), behavior: 'instant' });
                     }

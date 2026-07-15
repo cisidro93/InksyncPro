@@ -26,6 +26,9 @@ struct GlobalNotebookView: View {
     // Query all annotations
     @Query private var allAnnotations: [SDAnnotation]
     
+    // Query all custom notebooks
+    @Query(sort: \SDNotebook.createdAt, order: .reverse) private var notebooks: [SDNotebook]
+    
     @Binding var selectedPDF: ConvertedPDF?
     
     // Filter State
@@ -45,14 +48,21 @@ struct GlobalNotebookView: View {
         
         var icon: String {
             switch self {
-            case .notebooks: return "notebook"
+            case .notebooks: return "note.text"
             case .highlights: return "highlighter"
             }
         }
     }
     
+    struct ActiveNotebookSelection: Identifiable {
+        let id: UUID
+        let title: String
+        let fileURL: URL?
+    }
+    
     @State private var activeTab: Tab = .notebooks
-    @State private var activeNotebookBook: ConvertedPDF? = nil
+    @State private var activeNotebookSelection: ActiveNotebookSelection? = nil
+    @State private var isShowingCreateNotebookSheet = false
     
     private let coverGradients: [LinearGradient] = [
         LinearGradient(colors: [Color(hex: "#1a2a6c"), Color(hex: "#b21f1f")], startPoint: .topLeading, endPoint: .bottomTrailing),
@@ -137,14 +147,14 @@ struct GlobalNotebookView: View {
                 
                 // Content Switcher
                 if activeTab == .notebooks {
-                    if conversionManager.convertedPDFs.isEmpty {
+                    if notebooks.isEmpty {
                         emptyNotebooksState
                     } else {
                         // Notebooks grid view
                         ScrollView {
                             LazyVGrid(columns: [GridItem(.adaptive(minimum: 170, maximum: 220), spacing: 24)], spacing: 28) {
-                                ForEach(conversionManager.convertedPDFs) { book in
-                                    notebookCard(for: book)
+                                ForEach(notebooks) { notebook in
+                                    notebookCard(for: notebook)
                                 }
                             }
                             .padding(.horizontal, 24)
@@ -191,20 +201,24 @@ struct GlobalNotebookView: View {
         .sheet(isPresented: $isShowingShareSheet) {
             ShareSheet(activityItems: [shareText])
         }
-        .sheet(item: $activeNotebookBook) { book in
+        .sheet(item: $activeNotebookSelection) { selection in
             NavigationStack {
-                StudyNotebookView(bookID: book.id.uuidString, bookTitle: book.name, fileURL: book.url)
+                StudyNotebookView(bookID: selection.id.uuidString, bookTitle: selection.title, fileURL: selection.fileURL)
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar {
                         ToolbarItem(placement: .navigationBarTrailing) {
                             Button("Done") {
-                                activeNotebookBook = nil
+                                activeNotebookSelection = nil
                             }
                             .font(.system(size: 15, weight: .bold, design: .rounded))
                             .foregroundColor(.orange)
                         }
                     }
             }
+        }
+        .sheet(isPresented: $isShowingCreateNotebookSheet) {
+            CreateNotebookSheet()
+                .environmentObject(conversionManager)
         }
     }
     
@@ -227,6 +241,25 @@ struct GlobalNotebookView: View {
             }
             
             Spacer()
+            
+            if activeTab == .notebooks {
+                Button {
+                    HapticEngine.medium()
+                    isShowingCreateNotebookSheet = true
+                } label: {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.system(size: 24))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [Color.orange, Color.purple],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                }
+                .buttonStyle(.plain)
+                .padding(.trailing, 8)
+            }
             
             // Custom premium segmented tab switcher
             HStack(spacing: 4) {
@@ -741,15 +774,18 @@ struct GlobalNotebookView: View {
     
     // MARK: - Notebooks Views
     @ViewBuilder
-    private func notebookCard(for book: ConvertedPDF) -> some View {
-        let bookAnnotations = allAnnotations.filter { $0.pdfID == book.id }
+    private func notebookCard(for notebook: SDNotebook) -> some View {
+        let isLinked = notebook.linkedBookID != nil
+        let linkedBook = isLinked ? conversionManager.convertedPDFs.first(where: { $0.id == notebook.linkedBookID }) : nil
+        
+        let bookIDForAnnotations = linkedBook?.id ?? notebook.id
+        let bookAnnotations = allAnnotations.filter { $0.pdfID == bookIDForAnnotations }
         let highlightsCount = bookAnnotations.filter { $0.kindRaw == "highlight" }.count
         let noteAnn = bookAnnotations.first { $0.kindRaw == "note" }
         let hasTextNote = noteAnn != nil && !(noteAnn?.noteText?.isEmpty ?? true)
         let hasDrawing = noteAnn != nil && !(noteAnn?.drawingData?.isEmpty ?? true)
         
-        let hash = abs(book.id.hashValue)
-        let gradient = coverGradients[hash % coverGradients.count]
+        let gradient = coverGradients[notebook.coverGradientIndex % coverGradients.count]
         
         VStack(spacing: 0) {
             ZStack(alignment: .topTrailing) {
@@ -759,13 +795,24 @@ struct GlobalNotebookView: View {
                     .frame(height: 240)
                     .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.4 : 0.15), radius: 8, x: 0, y: 4)
                     .overlay(
-                        HStack(spacing: 0) {
+                        ZStack(alignment: .leading) {
                             // spine / book binding
                             Rectangle()
                                 .fill(Color.black.opacity(0.25))
                                 .frame(width: 16)
                             
-                            Spacer()
+                            // Cover overlay ribbon for linked books
+                            if let lBook = linkedBook, let cData = lBook.coverImageData, let uiImg = UIImage(data: cData) {
+                                Image(uiImage: uiImg)
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fill)
+                                    .frame(width: 80, height: 110)
+                                    .cornerRadius(6)
+                                    .shadow(radius: 4)
+                                    .padding(.leading, 32)
+                                    .padding(.top, 16)
+                                    .frame(maxHeight: .infinity, alignment: .top)
+                            }
                         }
                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     )
@@ -775,19 +822,31 @@ struct GlobalNotebookView: View {
                     Spacer()
                     
                     // Book Title Label
-                    Text(book.name)
-                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                    Text(notebook.title)
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
                         .foregroundColor(.white)
                         .lineLimit(3)
                         .multilineTextAlignment(.leading)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(Color.black.opacity(0.25), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        .background(Color.black.opacity(0.35), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                     
                     Spacer()
                     
                     // Stats section
                     VStack(alignment: .leading, spacing: 6) {
+                        // Linked Badge or Template style
+                        HStack(spacing: 4) {
+                            Image(systemName: isLinked ? "link.circle.fill" : "doc.text.fill")
+                                .font(.system(size: 9, weight: .bold))
+                            Text(isLinked ? "Linked Note" : notebook.templateStyle)
+                                .font(.system(size: 8, weight: .bold, design: .rounded))
+                        }
+                        .foregroundColor(.orange)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.black.opacity(0.3), in: Capsule())
+                        
                         if highlightsCount > 0 {
                             HStack(spacing: 6) {
                                 Image(systemName: "highlighter")
@@ -826,21 +885,27 @@ struct GlobalNotebookView: View {
                 .padding(.top, 16)
                 
                 // Open Book floating action icon
-                Button {
-                    openBookInReader(book)
-                } label: {
-                    Image(systemName: "book.circle.fill")
-                        .font(.system(size: 26))
-                        .foregroundStyle(.white)
-                        .shadow(color: Color.black.opacity(0.3), radius: 4, x: 0, y: 2)
-                        .padding(10)
+                if let lBook = linkedBook {
+                    Button {
+                        openBookInReader(lBook)
+                    } label: {
+                        Image(systemName: "book.circle.fill")
+                            .font(.system(size: 26))
+                            .foregroundStyle(.white)
+                            .shadow(color: Color.black.opacity(0.3), radius: 4, x: 0, y: 2)
+                            .padding(10)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
             .contentShape(Rectangle())
             .onTapGesture {
                 HapticEngine.light()
-                self.activeNotebookBook = book
+                self.activeNotebookSelection = ActiveNotebookSelection(
+                    id: notebook.id,
+                    title: notebook.title,
+                    fileURL: linkedBook?.url
+                )
             }
         }
     }
@@ -872,7 +937,7 @@ struct GlobalNotebookView: View {
         VStack(spacing: 18) {
             Spacer()
             
-            Image(systemName: "notebook.toptab")
+            Image(systemName: "note.text")
                 .font(.system(size: 64))
                 .foregroundStyle(
                     LinearGradient(
@@ -888,14 +953,261 @@ struct GlobalNotebookView: View {
                 .font(.system(size: 18, weight: .bold, design: .rounded))
                 .foregroundColor(.inkTextPrimary)
             
-            Text("Import EPUBs, CBZ, or PDF books in the Library. Each book automatically gets its own creative study notebook here.")
+            Text("Tap the '+' button in the top right to create your first customizable notebook. You can link notebooks directly to files in your library or keep them independent.")
                 .font(.system(size: 13))
                 .foregroundColor(.inkTextSecondary)
                 .multilineTextAlignment(.center)
                 .lineSpacing(4)
                 .padding(.horizontal, 36)
             
+            Button {
+                HapticEngine.medium()
+                isShowingCreateNotebookSheet = true
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "plus.circle.fill")
+                    Text("Create Notebook")
+                }
+                .font(.system(size: 14, weight: .bold, design: .rounded))
+                .foregroundColor(.white)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 10)
+                .background(Color.orange, in: Capsule())
+            }
+            .buttonStyle(.plain)
+            
             Spacer()
+        }
+    }
+}
+
+// MARK: - Create Notebook Sheet
+struct CreateNotebookSheet: View {
+    @Environment(\.modelContext) private var modelContext
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject var conversionManager: ConversionManager
+    @Environment(\.colorScheme) private var colorScheme
+    
+    @State private var title = ""
+    @State private var selectedGradientIndex = 0
+    @State private var selectedTemplate: PaperStyle = .plain
+    @State private var selectedLinkedBook: ConvertedPDF? = nil
+    @State private var searchQuery = ""
+    
+    private let coverGradients: [LinearGradient] = [
+        LinearGradient(colors: [Color(hex: "#1a2a6c"), Color(hex: "#b21f1f")], startPoint: .topLeading, endPoint: .bottomTrailing),
+        LinearGradient(colors: [Color(hex: "#0f2027"), Color(hex: "#203a43")], startPoint: .topLeading, endPoint: .bottomTrailing),
+        LinearGradient(colors: [Color(hex: "#11998e"), Color(hex: "#38ef7d")], startPoint: .topLeading, endPoint: .bottomTrailing),
+        LinearGradient(colors: [Color(hex: "#c0392b"), Color(hex: "#8e44ad")], startPoint: .topLeading, endPoint: .bottomTrailing),
+        LinearGradient(colors: [Color(hex: "#2c3e50"), Color(hex: "#3498db")], startPoint: .topLeading, endPoint: .bottomTrailing),
+        LinearGradient(colors: [Color(hex: "#f12711"), Color(hex: "#f5af19")], startPoint: .topLeading, endPoint: .bottomTrailing),
+        LinearGradient(colors: [Color(hex: "#833ab4"), Color(hex: "#fd1d1d")], startPoint: .topLeading, endPoint: .bottomTrailing),
+        LinearGradient(colors: [Color(hex: "#134e5e"), Color(hex: "#71b280")], startPoint: .topLeading, endPoint: .bottomTrailing)
+    ]
+    
+    var filteredBooks: [ConvertedPDF] {
+        if searchQuery.isEmpty {
+            return conversionManager.convertedPDFs
+        } else {
+            return conversionManager.convertedPDFs.filter { $0.name.localizedCaseInsensitiveContains(searchQuery) }
+        }
+    }
+    
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section(header: Text("Notebook Details").font(.system(size: 11, weight: .semibold, design: .rounded))) {
+                    TextField("Title", text: $title)
+                        .font(.system(size: 15, design: .rounded))
+                        .padding(.vertical, 4)
+                }
+                
+                Section(header: Text("Cover Design").font(.system(size: 11, weight: .semibold, design: .rounded))) {
+                    VStack {
+                        ZStack(alignment: .leading) {
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(coverGradients[selectedGradientIndex])
+                                .frame(width: 140, height: 190)
+                                .shadow(radius: 6, y: 3)
+                                .overlay(
+                                    HStack {
+                                        Rectangle()
+                                            .fill(Color.black.opacity(0.2))
+                                            .frame(width: 12)
+                                        Spacer()
+                                    }
+                                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                )
+                            
+                            VStack(alignment: .leading) {
+                                Spacer()
+                                Text(title.isEmpty ? "My Notebook" : title)
+                                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                                    .foregroundColor(.white)
+                                    .lineLimit(2)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 3)
+                                    .background(Color.black.opacity(0.25), in: RoundedRectangle(cornerRadius: 4))
+                                    .padding(.leading, 18)
+                                    .padding(.bottom, 12)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.vertical, 12)
+                        
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 12) {
+                                ForEach(0..<coverGradients.count, id: \.self) { idx in
+                                    Circle()
+                                        .fill(coverGradients[idx])
+                                        .frame(width: 36, height: 36)
+                                        .overlay(
+                                            Circle()
+                                                .stroke(Color.orange, lineWidth: selectedGradientIndex == idx ? 3.0 : 0.0)
+                                        )
+                                        .onTapGesture {
+                                            HapticEngine.light()
+                                            selectedGradientIndex = idx
+                                        }
+                                }
+                            }
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 6)
+                        }
+                    }
+                }
+                
+                Section(header: Text("Page Template").font(.system(size: 11, weight: .semibold, design: .rounded))) {
+                    Picker("Template", selection: $selectedTemplate) {
+                        ForEach(PaperStyle.allCases) { style in
+                            Label(style.rawValue, systemImage: style.icon)
+                                .tag(style)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                }
+                
+                Section(header: Text("Link to Library File (Optional)").font(.system(size: 11, weight: .semibold, design: .rounded))) {
+                    if let selected = selectedLinkedBook {
+                        HStack {
+                            if let coverData = selected.coverImageData, let uiImg = UIImage(data: coverData) {
+                                Image(uiImage: uiImg)
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fill)
+                                    .frame(width: 30, height: 40)
+                                    .cornerRadius(4)
+                            } else {
+                                RoundedRectangle(cornerRadius: 4)
+                                    .fill(Color.orange.opacity(0.2))
+                                    .frame(width: 30, height: 40)
+                                    .overlay(Image(systemName: "book").font(.system(size: 10)))
+                            }
+                            
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(selected.name)
+                                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                                    .lineLimit(1)
+                                Text("Linked Book")
+                                    .font(.system(size: 10, design: .rounded))
+                                    .foregroundColor(.orange)
+                            }
+                            
+                            Spacer()
+                            
+                            Button("Unlink") {
+                                selectedLinkedBook = nil
+                            }
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(.red)
+                        }
+                        .padding(.vertical, 4)
+                    } else {
+                        VStack(spacing: 8) {
+                            HStack {
+                                Image(systemName: "magnifyingglass")
+                                    .foregroundColor(.secondary)
+                                TextField("Search books...", text: $searchQuery)
+                            }
+                            .padding(6)
+                            .background(Color.inkSurfaceRaised.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
+                            
+                            if filteredBooks.isEmpty {
+                                Text("No matching books found")
+                                    .font(.system(size: 11, design: .rounded))
+                                    .foregroundColor(.secondary)
+                                    .padding(.vertical, 8)
+                            } else {
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 12) {
+                                        ForEach(filteredBooks) { book in
+                                            VStack(spacing: 4) {
+                                                if let coverData = book.coverImageData, let uiImg = UIImage(data: coverData) {
+                                                    Image(uiImage: uiImg)
+                                                        .resizable()
+                                                        .aspectRatio(contentMode: .fill)
+                                                        .frame(width: 45, height: 60)
+                                                        .cornerRadius(6)
+                                                        .shadow(radius: 1.5)
+                                                } else {
+                                                    RoundedRectangle(cornerRadius: 6)
+                                                        .fill(Color.orange.opacity(0.15))
+                                                        .frame(width: 45, height: 60)
+                                                        .overlay(Image(systemName: "book").font(.system(size: 14)).foregroundColor(.orange))
+                                                        .shadow(radius: 1.5)
+                                                }
+                                                
+                                                Text(book.name)
+                                                    .font(.system(size: 8, weight: .medium, design: .rounded))
+                                                    .foregroundColor(.inkTextPrimary)
+                                                    .lineLimit(1)
+                                                    .frame(width: 50)
+                                            }
+                                            .onTapGesture {
+                                                HapticEngine.light()
+                                                selectedLinkedBook = book
+                                                if title.isEmpty {
+                                                    title = book.name + " Notebook"
+                                                }
+                                            }
+                                        }
+                                    }
+                                    .padding(.vertical, 4)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Create Notebook")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                    .font(.system(size: 15, design: .rounded))
+                }
+                
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Create") {
+                        HapticEngine.success()
+                        let newNotebook = SDNotebook(
+                            id: UUID(),
+                            title: title.isEmpty ? "My Notebook" : title,
+                            coverGradientIndex: selectedGradientIndex,
+                            coverTitleColorHex: "#FFFFFF",
+                            templateStyle: selectedTemplate.rawValue,
+                            linkedBookID: selectedLinkedBook?.id
+                        )
+                        modelContext.insert(newNotebook)
+                        try? modelContext.save()
+                        dismiss()
+                    }
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .foregroundColor(.orange)
+                    .disabled(title.isEmpty && selectedLinkedBook == nil)
+                }
+            }
         }
     }
 }
