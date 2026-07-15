@@ -33,6 +33,7 @@ struct CognitiveReflectionView: View {
                     counts[clean, default: 0] += 1
                 }
             }
+        }
         return counts.sorted { $0.value > $1.value }.map { (tag: $0.key, count: $0.value) }
     }
     
