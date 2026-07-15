@@ -44,6 +44,7 @@ struct StudyNotebookView: View {
         case highlighter = "Highlighter"
         case eraser = "Eraser"
         case lasso = "Lasso"
+        case laser = "Pointer"
         
         var id: String { rawValue }
         
@@ -54,6 +55,7 @@ struct StudyNotebookView: View {
             case .highlighter: return "highlighter"
             case .eraser: return "eraser.line.dashed"
             case .lasso: return "lasso"
+            case .laser: return "wand.and.stars"
             }
         }
     }
@@ -72,6 +74,8 @@ struct StudyNotebookView: View {
             canvasView.tool = PKEraserTool(eraserType)
         case .lasso:
             canvasView.tool = PKLassoTool()
+        case .laser:
+            canvasView.tool = PKInkingTool(.marker, color: .red, width: 8.0)
         }
         canvasView.isRulerActive = isRulerActive
     }
@@ -301,7 +305,7 @@ struct StudyNotebookView: View {
                     } else {
                         ZStack {
                             NotebookPaperBackground(style: paperStyle, colorScheme: colorScheme)
-                            StudyCanvasView(canvasView: $canvasView, isSmartShapesEnabled: $isSmartShapesEnabled, onSaved: debounceSave)
+                            StudyCanvasView(canvasView: $canvasView, isSmartShapesEnabled: $isSmartShapesEnabled, activeDrawingTool: $activeDrawingTool, onSaved: debounceSave)
                         }
                         .padding(.top, 8)
                         .onAppear {
@@ -1746,6 +1750,7 @@ enum PaperStyle: String, CaseIterable, Identifiable {
     case dots = "Dots"
     case legal = "Legal"
     case collegeRuled = "College Ruled"
+    case flashcard = "Flashcard"
     
     var id: String { self.rawValue }
     var icon: String {
@@ -1756,6 +1761,7 @@ enum PaperStyle: String, CaseIterable, Identifiable {
         case .dots: return "circle.hexagongrid.fill"
         case .legal: return "signature"
         case .collegeRuled: return "doc.text.fill"
+        case .flashcard: return "rectangle.split.2x1"
         }
     }
 }
@@ -1833,6 +1839,8 @@ struct NotebookPaperBackground: View {
                             path.addLine(to: CGPoint(x: geo.size.width, y: y))
                             y += lineSpacing
                         }
+                    case .flashcard:
+                        break
                     }
                 }
                 .stroke(
@@ -1853,6 +1861,34 @@ struct NotebookPaperBackground: View {
                         colorScheme == .dark ? Color.red.opacity(0.4) : Color.red.opacity(0.45),
                         lineWidth: 1.2
                     )
+                }
+
+                // Flashcard Horizontal Dashed Divider and Prompts
+                if style == .flashcard {
+                    Path { path in
+                        let midY = geo.size.height / 2
+                        path.move(to: CGPoint(x: 0, y: midY))
+                        path.addLine(to: CGPoint(x: geo.size.width, y: midY))
+                    }
+                    .stroke(
+                        colorScheme == .dark ? Color.white.opacity(0.2) : Color.gray.opacity(0.35),
+                        style: StrokeStyle(lineWidth: 1.2, dash: [6, 4])
+                    )
+                    
+                    VStack {
+                        Text("FRONT / QUESTION")
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                            .foregroundColor(colorScheme == .dark ? Color.white.opacity(0.15) : Color.black.opacity(0.12))
+                            .padding(.top, 16)
+                        
+                        Spacer()
+                        
+                        Text("BACK / ANSWER")
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                            .foregroundColor(colorScheme == .dark ? Color.white.opacity(0.15) : Color.black.opacity(0.12))
+                            .padding(.bottom, 16)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
         }

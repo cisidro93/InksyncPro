@@ -5,6 +5,7 @@ import UIKit
 struct StudyCanvasView: UIViewRepresentable {
     @Binding var canvasView: PKCanvasView
     @Binding var isSmartShapesEnabled: Bool
+    @Binding var activeDrawingTool: StudyNotebookView.DrawingTool
     @State var toolPicker = PKToolPicker()
     
     // An action triggered when drawing changes, useful for debounce saving
@@ -45,6 +46,24 @@ struct StudyCanvasView: UIViewRepresentable {
         
         func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
             guard !isSnapping else { return }
+            
+            // GoodNotes/Notability-style Laser Pointer (fading ink)
+            if parent.activeDrawingTool == .laser {
+                if let lastStroke = canvasView.drawing.strokes.last {
+                    let creationDate = lastStroke.path.creationDate
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
+                        guard let self = self else { return }
+                        var currentDrawing = canvasView.drawing
+                        if let index = currentDrawing.strokes.firstIndex(where: { $0.path.creationDate == creationDate }) {
+                            currentDrawing.strokes.remove(at: index)
+                            self.isSnapping = true
+                            canvasView.drawing = currentDrawing
+                            self.isSnapping = false
+                        }
+                    }
+                }
+                return // Do not save laser pointer marks
+            }
             
             // GoodNotes-style Scribble-to-Erase
             if let lastStroke = canvasView.drawing.strokes.last {
