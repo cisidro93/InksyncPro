@@ -183,14 +183,27 @@ struct ShareExtensionView: View {
     
     private func targetExtension(for type: UTType) -> String? {
         if type.conforms(to: .pdf) { return "pdf" }
-        if type.conforms(to: UTType(filenameExtension: "epub") ?? .data) || type.identifier.contains("epub") { return "epub" }
-        if type.conforms(to: UTType(filenameExtension: "cbz") ?? .data) || type.identifier.contains("cbz") { return "cbz" }
-        if type.conforms(to: UTType(filenameExtension: "cbr") ?? .data) || type.identifier.contains("cbr") { return "cbr" }
-        if type.conforms(to: .zip) || type.identifier.contains("zip") { return "cbz" }
-        if type.conforms(to: .archive) {
-            if type.identifier.contains("rar") || type.identifier.contains("cbr") { return "cbr" }
-            return "cbz"
+        
+        let ext = type.preferredFilenameExtension?.lowercased() ?? ""
+        if ext == "pdf" { return "pdf" }
+        if ext == "epub" { return "epub" }
+        if ext == "cbz" { return "cbz" }
+        if ext == "cbr" { return "cbr" }
+        if ext == "zip" { return "cbz" }
+        if ext == "rar" { return "cbr" }
+        
+        if type.identifier.contains("epub") { return "epub" }
+        if type.identifier.contains("cbz") { return "cbz" }
+        if type.identifier.contains("cbr") { return "cbr" }
+        if type.identifier.contains("zip") { return "cbz" }
+        if type.identifier.contains("rar") { return "cbr" }
+        
+        if type != .data && type != .item {
+            if let epubUT = UTType("org.idpf.epub-container"), type.conforms(to: epubUT) { return "epub" }
+            if type.conforms(to: .zip) { return "cbz" }
+            if type.conforms(to: .archive) { return "cbz" }
         }
+        
         return nil
     }
 
@@ -212,37 +225,13 @@ struct ShareExtensionView: View {
                     var bestTypeIdentifier: String? = nil
                     var targetExt: String? = nil
                     
-                    // Prioritize specific types
+                    // Prioritize specific types from registered identifiers
                     for typeId in provider.registeredTypeIdentifiers {
                         guard let utType = UTType(typeId) else { continue }
-                        if utType.conforms(to: .pdf) {
+                        if let ext = self.targetExtension(for: utType) {
                             bestTypeIdentifier = typeId
-                            targetExt = "pdf"
+                            targetExt = ext
                             break
-                        } else if typeId.contains("epub") || utType.conforms(to: UTType(filenameExtension: "epub") ?? .data) {
-                            bestTypeIdentifier = typeId
-                            targetExt = "epub"
-                            break
-                        } else if typeId.contains("cbz") || utType.conforms(to: UTType(filenameExtension: "cbz") ?? .data) {
-                            bestTypeIdentifier = typeId
-                            targetExt = "cbz"
-                            break
-                        } else if typeId.contains("cbr") || utType.conforms(to: UTType(filenameExtension: "cbr") ?? .data) {
-                            bestTypeIdentifier = typeId
-                            targetExt = "cbr"
-                            break
-                        }
-                    }
-                    
-                    // Fallback to zip/rar/archive
-                    if bestTypeIdentifier == nil {
-                        for typeId in provider.registeredTypeIdentifiers {
-                            guard let utType = UTType(typeId) else { continue }
-                            if let ext = targetExtension(for: utType) {
-                                bestTypeIdentifier = typeId
-                                targetExt = ext
-                                break
-                            }
                         }
                     }
                     
