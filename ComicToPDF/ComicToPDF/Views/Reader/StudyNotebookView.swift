@@ -35,6 +35,8 @@ struct StudyNotebookView: View {
     @State private var strokeWidth: CGFloat = 4.0
     @State private var isRulerActive = false
     @State private var isSmartShapesEnabled = true
+    @State private var eraserType: PKEraserTool.EraserType = .vector
+    @State private var lastActiveWritingTool: DrawingTool = .pen
 
     enum DrawingTool: String, CaseIterable, Identifiable {
         case pen = "Pen"
@@ -67,7 +69,7 @@ struct StudyNotebookView: View {
         case .highlighter:
             canvasView.tool = PKInkingTool(.marker, color: UIColor(strokeColor).withAlphaComponent(0.35), width: strokeWidth * 2.5)
         case .eraser:
-            canvasView.tool = PKEraserTool(.vector)
+            canvasView.tool = PKEraserTool(eraserType)
         case .lasso:
             canvasView.tool = PKLassoTool()
         }
@@ -359,6 +361,15 @@ struct StudyNotebookView: View {
         .supportPencilDoubleTap {
             if inputMode == .markdown {
                 toggleSpeechDictation()
+            } else if inputMode == .handwriting {
+                HapticEngine.light()
+                if activeDrawingTool == .eraser {
+                    activeDrawingTool = lastActiveWritingTool
+                } else {
+                    lastActiveWritingTool = activeDrawingTool
+                    activeDrawingTool = .eraser
+                }
+                updateCanvasTool()
             }
         }
         .onDisappear {
@@ -1117,6 +1128,7 @@ struct MarkdownTextEditor: UIViewRepresentable {
             ("H1",      "# ",     nil),
             ("H2",      "## ",    nil),
             ("≡ List",  "- ",     nil),
+            ("☑ Todo",  "- [ ] ", nil),
             ("`Code`",  "`",      "`"),
             ("—— Rule", "---\n",  nil),
             ("[[",      "[[",     "]]"),
@@ -1578,6 +1590,23 @@ extension StudyNotebookView {
                         .background(Color.primary.opacity(0.06), in: Circle())
                 }
                 .onChange(of: strokeWidth) { _, _ in updateCanvasTool() }
+            }
+            
+            // Eraser Mode Picker
+            if activeDrawingTool == .eraser {
+                Menu {
+                    Picker("Eraser Type", selection: $eraserType) {
+                        Label("Object Eraser", systemImage: "eraser.line.dashed").tag(PKEraserTool.EraserType.vector)
+                        Label("Pixel Eraser", systemImage: "eraser").tag(PKEraserTool.EraserType.bitmap)
+                    }
+                } label: {
+                    Image(systemName: eraserType == .vector ? "eraser.line.dashed.fill" : "eraser.fill")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.primary)
+                        .padding(8)
+                        .background(Color.primary.opacity(0.06), in: Circle())
+                }
+                .onChange(of: eraserType) { _, _ in updateCanvasTool() }
             }
             
             Spacer()
