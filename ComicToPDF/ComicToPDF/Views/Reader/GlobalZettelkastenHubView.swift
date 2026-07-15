@@ -484,10 +484,10 @@ struct GlobalZettelkastenHubView: View {
         } message: {
             Text(importMessage ?? "")
         }
-        .sheet(isPresented: $showingDailyReview) {
+        .fullScreenCover(isPresented: $showingDailyReview) {
             DailyReviewView()
         }
-        .sheet(isPresented: $showingCognitiveReflection) {
+        .fullScreenCover(isPresented: $showingCognitiveReflection) {
             CognitiveReflectionView()
         }
     }
