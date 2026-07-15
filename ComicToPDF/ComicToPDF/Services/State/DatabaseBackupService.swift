@@ -6,8 +6,19 @@ final class DatabaseBackupService: Sendable {
     private init() {}
     
     private let maxBackupCount = 5
+    private let minBackupInterval: TimeInterval = 300 // 5 minutes cooldown
+    private static let lastBackupKey = "lastDatabaseBackupTimestamp"
     
     func performBackup() {
+        let now = Date()
+        if let lastTime = UserDefaults.standard.object(forKey: Self.lastBackupKey) as? Date,
+           now.timeIntervalSince(lastTime) < minBackupInterval {
+            // Throttled
+            return
+        }
+        
+        UserDefaults.standard.set(now, forKey: Self.lastBackupKey)
+        
         // Run on background thread to prevent UI freezing
         DispatchQueue.global(qos: .background).async {
             self.executeBackupSync()

@@ -11,47 +11,49 @@ final class PDFHighlightExtractor: Sendable {
         
         let pageCount = document.pageCount
         for pageIndex in 0..<pageCount {
-            guard let page = document.page(at: pageIndex) else { continue }
-            let pageAnnotations = page.annotations
-            
-            for ann in pageAnnotations {
-                // Standard PDF highlight type is "Highlight"
-                guard ann.type == "Highlight" else { continue }
+            autoreleasepool {
+                guard let page = document.page(at: pageIndex) else { return }
+                let pageAnnotations = page.annotations
                 
-                let pageBounds = page.bounds(for: .mediaBox)
-                let annBounds = ann.bounds
-                
-                // Normalize bounds relative to page (0.0 to 1.0)
-                let normX = pageBounds.width > 0 ? Double(annBounds.origin.x / pageBounds.width) : 0.0
-                let normY = pageBounds.height > 0 ? Double(annBounds.origin.y / pageBounds.height) : 0.0
-                let normW = pageBounds.width > 0 ? Double(annBounds.width / pageBounds.width) : 1.0
-                let normH = pageBounds.height > 0 ? Double(annBounds.height / pageBounds.height) : 1.0
-                let bounds = CodableCGRect(x: normX, y: normY, width: normW, height: normH)
-                
-                var selectedText: String? = nil
-                if let selection = page.selection(for: annBounds) {
-                    selectedText = selection.string
+                for ann in pageAnnotations {
+                    // Standard PDF highlight type is "Highlight"
+                    guard ann.type == "Highlight" else { continue }
+                    
+                    let pageBounds = page.bounds(for: .mediaBox)
+                    let annBounds = ann.bounds
+                    
+                    // Normalize bounds relative to page (0.0 to 1.0)
+                    let normX = pageBounds.width > 0 ? Double(annBounds.origin.x / pageBounds.width) : 0.0
+                    let normY = pageBounds.height > 0 ? Double(annBounds.origin.y / pageBounds.height) : 0.0
+                    let normW = pageBounds.width > 0 ? Double(annBounds.width / pageBounds.width) : 1.0
+                    let normH = pageBounds.height > 0 ? Double(annBounds.height / pageBounds.height) : 1.0
+                    let bounds = CodableCGRect(x: normX, y: normY, width: normW, height: normH)
+                    
+                    var selectedText: String? = nil
+                    if let selection = page.selection(for: annBounds) {
+                        selectedText = selection.string
+                    }
+                    
+                    let color = ann.color
+                    let hexColor = color.toHexString()
+                    let noteText = ann.contents
+                    
+                    let dto = Annotation(
+                        id: UUID(),
+                        pdfID: pdfID,
+                        pageIndex: pageIndex,
+                        chapterTitle: nil,
+                        kind: .highlight,
+                        createdAt: Date(),
+                        modifiedAt: Date(),
+                        colorHex: hexColor,
+                        selectedText: selectedText,
+                        noteText: noteText,
+                        tags: [],
+                        bounds: bounds
+                    )
+                    extracted.append(dto)
                 }
-                
-                let color = ann.color
-                let hexColor = color.toHexString()
-                let noteText = ann.contents
-                
-                let dto = Annotation(
-                    id: UUID(),
-                    pdfID: pdfID,
-                    pageIndex: pageIndex,
-                    chapterTitle: nil,
-                    kind: .highlight,
-                    createdAt: Date(),
-                    modifiedAt: Date(),
-                    colorHex: hexColor,
-                    selectedText: selectedText,
-                    noteText: noteText,
-                    tags: [],
-                    bounds: bounds
-                )
-                extracted.append(dto)
             }
         }
         return extracted
