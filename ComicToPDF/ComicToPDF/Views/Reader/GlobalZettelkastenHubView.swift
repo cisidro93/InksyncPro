@@ -48,6 +48,7 @@ struct GlobalZettelkastenHubView: View {
     @State private var showingDailyReview = false
     @State private var showingMarkdownExporter = false
     @State private var markdownExportURL: URL? = nil
+    @State private var showingCognitiveReflection = false
 
     // Phase 4B: iPad NavigationSplitView sidebar
     @Environment(\.horizontalSizeClass) private var hSizeClass
@@ -440,6 +441,12 @@ struct GlobalZettelkastenHubView: View {
                             Label("Export Highlights as Markdown", systemImage: "doc.plaintext")
                         }
                     }
+                    
+                    Section("Reflection") {
+                        Button(action: { showingCognitiveReflection = true }) {
+                            Label("Cognitive Reflection", systemImage: "brain.head.profile")
+                        }
+                    }
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }
@@ -479,6 +486,9 @@ struct GlobalZettelkastenHubView: View {
         }
         .sheet(isPresented: $showingDailyReview) {
             DailyReviewView()
+        }
+        .sheet(isPresented: $showingCognitiveReflection) {
+            CognitiveReflectionView()
         }
     }
     

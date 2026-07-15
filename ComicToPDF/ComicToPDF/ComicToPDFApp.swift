@@ -98,6 +98,7 @@ struct InksyncProApp: App {
                     switch newPhase {
                     case .background, .inactive:
                          SecurityManager.shared.handleAppBackgrounding()
+                         DatabaseBackupService.shared.performBackup()
                          // Whenever the app goes to the background, we schedule the next sync
                          InksyncProApp.scheduleAppRefresh()
                     case .active:

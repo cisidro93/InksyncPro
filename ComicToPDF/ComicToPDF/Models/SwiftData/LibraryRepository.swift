@@ -293,6 +293,15 @@ actor LibraryModelActor {
                     sourceMode: pdf.sourceMode
                 )
                 modelContext.insert(doc)
+                
+                // Extract pre-existing highlights
+                if pdf.url.pathExtension.lowercased() == "pdf" {
+                    let extracted = PDFHighlightExtractor.shared.extractHighlights(from: pdf.url, pdfID: pdf.id)
+                    for ann in extracted {
+                        let sdAnn = SDAnnotation(from: ann)
+                        modelContext.insert(sdAnn)
+                    }
+                }
             }
         }
         
