@@ -766,109 +766,160 @@ struct GlobalHighlightRow: View {
         return (annotation.tags ?? []).filter { !rwSet.contains($0) }
     }
 
+    private var sourceTitle: String {
+        if let rwTitle = annotation.readwiseBookTitle, !rwTitle.isEmpty {
+            return rwTitle
+        }
+        if let matchedPDF = conversionManager.convertedPDFs.first(where: { $0.id == annotation.pdfID }) {
+            return matchedPDF.name
+        }
+        return "Unknown Source"
+    }
+
     var body: some View {
         Button { showingEdit = true } label: {
-            VStack(alignment: .leading, spacing: 8) {
-
-                // Highlight text with left color bar
-                HStack(alignment: .top, spacing: 0) {
-                    if let hex = annotation.colorHex {
-                        RoundedRectangle(cornerRadius: 3)
-                            .fill(Color(hex: hex))
-                            .frame(width: 4)
-                            .padding(.vertical, 2)
+            VStack(alignment: .leading, spacing: 10) {
+                // Header with Document details & Source Badge
+                HStack(alignment: .center) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(sourceTitle)
+                            .font(.system(size: 11, weight: .semibold, design: .default))
+                            .foregroundStyle(Theme.textSecondary)
+                            .lineLimit(1)
+                        
+                        Text("Page \(annotation.pageIndex + 1)")
+                            .font(.system(size: 9, weight: .medium, design: .monospaced))
+                            .foregroundStyle(Theme.textSecondary.opacity(0.8))
                     }
-                    if let text = annotation.selectedText, !text.isEmpty {
-                        Text(text)
-                            .font(.system(size: 16, weight: .regular, design: .serif))
+                    
+                    Spacer()
+                    
+                    if annotation.isReadwiseImport {
+                        Image(systemName: "bird.fill")
+                            .font(.system(size: 9))
+                            .foregroundStyle(.blue)
+                            .padding(4)
+                            .background(Color.blue.opacity(0.1), in: Circle())
+                    } else {
+                        Image(systemName: "doc.text.fill")
+                            .font(.system(size: 9))
+                            .foregroundStyle(.orange)
+                            .padding(4)
+                            .background(Color.orange.opacity(0.1), in: Circle())
+                    }
+                }
+                .padding(.bottom, 2)
+
+                // Highlight text with warm amber/pastel highlighter background layer
+                if let text = annotation.selectedText, !text.isEmpty {
+                    Text(text)
+                        .font(.system(size: 15, weight: .regular, design: .serif))
+                        .foregroundStyle(.primary)
+                        .lineSpacing(4)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(Color(hex: annotation.colorHex ?? "#F5A623").opacity(0.10))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(Color(hex: annotation.colorHex ?? "#F5A623").opacity(0.20), lineWidth: 0.8)
+                        )
+                } else if let ocrText = annotation.drawingOCRText, !ocrText.isEmpty {
+                    HStack(alignment: .top, spacing: 6) {
+                        Image(systemName: "scribble.variable")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Theme.textSecondary)
+                            .padding(.top, 2)
+                        Text(ocrText)
+                            .font(.system(size: 15, weight: .regular, design: .serif))
+                            .italic()
                             .foregroundStyle(.primary)
                             .lineSpacing(4)
-                            .padding(.leading, 12)
-                    } else if let ocrText = annotation.drawingOCRText, !ocrText.isEmpty {
-                        HStack(alignment: .top, spacing: 6) {
-                            Image(systemName: "scribble.variable")
-                                .font(.system(size: 12))
-                                .foregroundStyle(Theme.textSecondary)
-                                .padding(.top, 4)
-                            Text(ocrText)
-                                .font(.system(size: 16, weight: .regular, design: .serif))
-                                .italic()
-                                .foregroundStyle(.primary)
-                                .lineSpacing(4)
-                        }
-                        .padding(.leading, 12)
                     }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(Color(hex: annotation.colorHex ?? "#F5A623").opacity(0.10))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(Color(hex: annotation.colorHex ?? "#F5A623").opacity(0.20), lineWidth: 0.8)
+                    )
                 }
 
-                // User's thought (noteText)
+                // User's thought (noteText) - Styled like a premium marginalia note block
                 if let note = annotation.noteText, !note.isEmpty {
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack(alignment: .top, spacing: 8) {
-                            Image(systemName: "text.bubble.fill")
-                                .font(.system(size: 14))
-                                .foregroundStyle(Color.accentColor)
-                                .padding(.top, 2)
-                            Text(note)
-                                .font(.system(size: 15, weight: .medium, design: .rounded))
-                                .foregroundStyle(Color.accentColor)
-                                .lineSpacing(2)
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 5) {
+                            Image(systemName: "square.and.pencil")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundColor(Theme.textSecondary)
+                            Text("ANNOTATION")
+                                .font(.system(size: 8, weight: .bold, design: .monospaced))
+                                .foregroundColor(Theme.textSecondary)
                         }
+                        Text(note)
+                            .font(.system(size: 13, weight: .regular))
+                            .foregroundStyle(.primary)
+                            .lineSpacing(2)
                     }
-                    .padding(12)
-                    .background(Color.accentColor.opacity(0.08))
-                    .cornerRadius(10)
-                    .padding(.top, 4)
-                }
-
-                // Tags row — cap at 3 visible + overflow pill
-                let rwTags = annotation.readwiseTags ?? []
-                let allTags = userTags.map { ($0, Color.orange) } + rwTags.map { ($0, Color.blue) }
-                if !allTags.isEmpty {
-                    HStack(spacing: 6) {
-                        ForEach(Array(allTags.prefix(3)), id: \.0) { (tag, color) in
-                            TagPill(tag: tag, color: color)
-                        }
-                        if allTags.count > 3 {
-                            Text("+\(allTags.count - 3)")
-                                .font(.caption2.weight(.semibold))
-                                .foregroundStyle(Theme.textSecondary)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(Color.primary.opacity(0.07), in: Capsule())
-                        }
-                    }
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.primary.opacity(0.03))
+                    .cornerRadius(8)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Color.primary.opacity(0.06), lineWidth: 0.5)
+                    )
                     .padding(.top, 2)
                 }
 
-                // Footer
-                HStack(spacing: 5) {
-                    if annotation.isReadwiseImport {
-                        Image(systemName: "bird.fill")
-                            .font(.caption2)
-                            .foregroundStyle(.blue)
+                // Tags row & Relative Timestamp Footer
+                HStack(alignment: .center) {
+                    let rwTags = annotation.readwiseTags ?? []
+                    let allTags = userTags.map { ($0, Color.orange) } + rwTags.map { ($0, Color.blue) }
+                    
+                    if !allTags.isEmpty {
+                        HStack(spacing: 5) {
+                            ForEach(Array(allTags.prefix(3)), id: \.0) { (tag, color) in
+                                TagPill(tag: tag, color: color)
+                            }
+                            if allTags.count > 3 {
+                                Text("+\(allTags.count - 3)")
+                                    .font(.system(size: 8, weight: .semibold))
+                                    .foregroundStyle(Theme.textSecondary)
+                                    .padding(.horizontal, 5)
+                                    .padding(.vertical, 1.5)
+                                    .background(Color.primary.opacity(0.06), in: Capsule())
+                            }
+                        }
                     }
-                    Text(annotation.modifiedAt, style: .relative)
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                    Text("ago")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                    
                     Spacer()
-                    Image(systemName: "pencil")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                    
+                    HStack(spacing: 3) {
+                        Text(annotation.modifiedAt, style: .relative)
+                        Text("ago")
+                    }
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(.tertiary)
                 }
-                .padding(.top, 6)
+                .padding(.top, 4)
             }
-            .padding(16)
+            .padding(14)
             .background(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: 12)
                     .fill(Theme.surface)
-                    .shadow(color: Color.black.opacity(0.06), radius: 10, x: 0, y: 4)
+                    .shadow(color: Color.black.opacity(0.03), radius: 6, x: 0, y: 3)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 16)
-                    .stroke(Color.white.opacity(0.08), lineWidth: 0.5)
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.primary.opacity(0.06), lineWidth: 0.6)
             )
         }
         .buttonStyle(.plain)
