@@ -166,4 +166,39 @@ class MigrationService {
         
         return generatedCount + assignedCount
     }
+    
+    func migrateLegacyAnnotations(context: ModelContext) {
+        let descriptor = FetchDescriptor<SDAnnotation>()
+        guard let annotations = try? context.fetch(descriptor) else { return }
+        
+        var modified = false
+        let colorMap: [String: String] = [
+            "yellow": "#FFD60A",
+            "blue":   "#007AFF",
+            "pink":   "#FF2D55",
+            "aqua":   "#32ADE6",
+            "orange": "#FF9F0A",
+            "purple": "#BF5AF2"
+        ]
+        
+        for ann in annotations {
+            // 1. Backfill default highlight colors retroactively
+            if ann.colorHex == nil || ann.colorHex == "check_required" || ann.colorHex?.isEmpty == true {
+                let baseColor = ann.readwiseColor?.lowercased() ?? ""
+                ann.colorHex = colorMap[baseColor] ?? "#FFD60A"
+                modified = true
+            }
+            
+            // 2. Clear out empty note placeholders that are empty strings
+            if let note = ann.noteText, note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                ann.noteText = nil
+                modified = true
+            }
+        }
+        
+        if modified {
+            try? context.save()
+            Logger.shared.log("Retroactive migration: Cleaned and updated legacy annotations in SwiftData context.", category: "Migration", type: .success)
+        }
+    }
 }

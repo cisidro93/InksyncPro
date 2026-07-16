@@ -284,7 +284,7 @@ struct ZettelkastenBoardView: View {
             ScrollView {
                 LazyVStack(spacing: 12) {
                     ForEach(inboxAnnotations) { ann in
-                        HighlightCard(annotation: ann, showActions: true, onSelect: {
+                        HighlightCard(annotation: ann, pdfs: pdfs, showActions: true, onSelect: {
                             selectedAnnotation = ann
                         })
                         .draggable(ann.id.uuidString)
@@ -419,7 +419,7 @@ struct ZettelkastenBoardView: View {
             ScrollView {
                 LazyVStack(spacing: 10) {
                     ForEach(cards) { ann in
-                        HighlightCard(annotation: ann, showActions: false, onSelect: {
+                        HighlightCard(annotation: ann, pdfs: pdfs, showActions: false, onSelect: {
                             selectedAnnotation = ann
                         })
                         .draggable(ann.id.uuidString)
@@ -712,6 +712,7 @@ struct ZettelkastenBoardView: View {
 // MARK: - Highlight Card Component
 private struct HighlightCard: View {
     let annotation: SDAnnotation
+    let pdfs: [SDConvertedPDF]
     var showActions: Bool
     var onSelect: () -> Void
     
@@ -719,52 +720,78 @@ private struct HighlightCard: View {
         Color(hex: annotation.colorHex ?? "#FFD60A")
     }
 
+    private var sourceBookTitle: String {
+        if let rwTitle = annotation.readwiseBookTitle, !rwTitle.isEmpty {
+            return rwTitle
+        }
+        if let matchedPDF = pdfs.first(where: { $0.id == annotation.pdfID }) {
+            return matchedPDF.name
+        }
+        return "Unknown Source"
+    }
+
     var body: some View {
         Button(action: onSelect) {
-            HStack(spacing: 0) {
-                // Accent Strip
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(accentColor)
-                    .frame(width: 3)
-                    .padding(.vertical, 8)
-                    .padding(.leading, 8)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    if let source = annotation.readwiseBookTitle {
-                        Text(source)
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(Color.inkTextTertiary)
-                            .lineLimit(1)
-                    }
-                    
-                    if let text = annotation.selectedText, !text.isEmpty {
-                        Text(text)
-                            .font(.system(size: 13, design: .serif))
-                            .foregroundStyle(Color.inkTextPrimary)
-                            .lineLimit(3)
-                            .lineSpacing(2)
-                    }
-                    
-                    if let note = annotation.noteText, !note.isEmpty {
-                        HStack(spacing: 4) {
-                            Image(systemName: "pencil")
-                                .font(.system(size: 9))
-                                .foregroundStyle(Color.inkAccentKnowledge)
-                            Text(note)
-                                .font(.system(size: 11))
-                                .italic()
-                                .foregroundStyle(Color.inkTextSecondary)
-                                .lineLimit(1)
-                        }
-                        .padding(.top, 2)
-                    }
+            VStack(alignment: .leading, spacing: 6) {
+                // Header source & Page number
+                HStack(alignment: .center) {
+                    Text(sourceBookTitle)
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(Color.inkTextTertiary)
+                        .lineLimit(1)
+                    Spacer()
+                    Text("Page \(annotation.pageIndex + 1)")
+                        .font(.system(size: 8, weight: .medium, design: .monospaced))
+                        .foregroundStyle(Color.inkTextTertiary.opacity(0.8))
                 }
-                .padding(8)
-                Spacer()
+
+                // Highlight text block with soft translucent marker highlight
+                if let text = annotation.selectedText, !text.isEmpty {
+                    Text(text)
+                        .font(.system(size: 12, weight: .regular, design: .serif))
+                        .foregroundStyle(Color.inkTextPrimary)
+                        .lineLimit(3)
+                        .lineSpacing(2.5)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 5)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(accentColor.opacity(0.12))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 4)
+                                .stroke(accentColor.opacity(0.24), lineWidth: 0.6)
+                        )
+                }
+
+                // Annotated marginalia note
+                if let note = annotation.noteText, !note.isEmpty {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(note)
+                            .font(.system(size: 11, weight: .regular))
+                            .foregroundStyle(Color.inkTextSecondary)
+                            .lineLimit(2)
+                            .lineSpacing(1.5)
+                    }
+                    .padding(6)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.primary.opacity(0.03))
+                    .cornerRadius(4)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 4)
+                            .stroke(Color.primary.opacity(0.06), lineWidth: 0.5)
+                    )
+                }
             }
+            .padding(10)
             .background(Color.inkSurface)
             .cornerRadius(8)
-            .shadow(color: Color.black.opacity(0.04), radius: 4, y: 2)
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color.primary.opacity(0.06), lineWidth: 0.6)
+            )
+            .shadow(color: Color.black.opacity(0.02), radius: 3, y: 1.5)
         }
         .buttonStyle(.plain)
     }

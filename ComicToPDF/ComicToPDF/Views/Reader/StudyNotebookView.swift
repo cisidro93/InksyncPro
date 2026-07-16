@@ -1074,24 +1074,62 @@ struct StudyNotebookView: View {
                                 .padding()
                         } else {
                             ForEach(matches) { highlight in
-                                VStack(alignment: .leading, spacing: 6) {
-                                    Text(highlight.selectedText ?? "Empty Highlight")
-                                        .font(.system(size: 14))
-                                        .foregroundColor(Theme.text)
-                                        .lineSpacing(4)
+                                VStack(alignment: .leading, spacing: 8) {
+                                    HStack {
+                                        Text("Page \(highlight.pageIndex + 1)")
+                                            .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                                            .foregroundColor(.secondary)
+                                        Spacer()
+                                        
+                                        let accentColor = Color(hex: highlight.colorHex ?? "#FFD60A")
+                                        Circle()
+                                            .fill(accentColor)
+                                            .frame(width: 6, height: 6)
+                                    }
+                                    
+                                    // Quote with highlighter background
+                                    if let text = highlight.selectedText, !text.isEmpty {
+                                        let accentColor = Color(hex: highlight.colorHex ?? "#FFD60A")
+                                        Text(text)
+                                            .font(.system(size: 13, design: .serif))
+                                            .foregroundColor(Theme.text)
+                                            .lineSpacing(3)
+                                            .padding(.horizontal, 8)
+                                            .padding(.vertical, 6)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .background(
+                                                RoundedRectangle(cornerRadius: 4)
+                                                    .fill(accentColor.opacity(0.10))
+                                            )
+                                            .overlay(
+                                                RoundedRectangle(cornerRadius: 4)
+                                                    .stroke(accentColor.opacity(0.18), lineWidth: 0.6)
+                                            )
+                                    }
+                                    
+                                    // Marginalia Note
+                                    if let note = highlight.noteText, !note.isEmpty {
+                                        Text(note)
+                                            .font(.system(size: 11))
+                                            .foregroundColor(Theme.textSecondary)
+                                            .lineLimit(2)
+                                            .padding(6)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .background(Color.primary.opacity(0.02))
+                                            .cornerRadius(4)
+                                    }
                                     
                                     if let tags = highlight.tags, !tags.isEmpty {
                                         HStack(spacing: 4) {
                                             ForEach(tags, id: \.self) { tag in
                                                 Text("#\(tag)")
-                                                    .font(.system(size: 9, weight: .bold))
+                                                    .font(.system(size: 8, weight: .bold))
                                                     .foregroundColor(Theme.blue)
-                                                    .padding(.horizontal, 6)
-                                                    .padding(.vertical, 2)
+                                                    .padding(.horizontal, 5)
+                                                    .padding(.vertical, 1.5)
                                                     .background(Theme.blue.opacity(0.1), in: Capsule())
                                             }
                                         }
-                                        .padding(.vertical, 2)
                                     }
                                     
                                     HStack {
@@ -1107,6 +1145,8 @@ struct StudyNotebookView: View {
                                         }
                                         .buttonStyle(.borderless)
                                         
+                                        Spacer()
+                                        
                                         Button {
                                             activeHighlightToEdit = highlight
                                         } label: {
@@ -1118,6 +1158,16 @@ struct StudyNotebookView: View {
                                             .foregroundColor(.secondary)
                                         }
                                         .buttonStyle(.borderless)
+                                    }
+                                    .padding(.top, 2)
+                                }
+                                .padding(10)
+                                .background(Theme.surface)
+                                .cornerRadius(8)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .stroke(Color.primary.opacity(0.05), lineWidth: 0.6)
+                                )
                                         .padding(.leading, 8)
                                         
                                         Spacer()

@@ -152,6 +152,7 @@ struct ContentView: View {
                 await LibraryDatabaseService.shared.bootstrap()
                 
                 MigrationService.shared.migrateLegacyDataIfNeeded(context: modelContext)
+                MigrationService.shared.migrateLegacyAnnotations(context: modelContext)
                 
                 // Always fetch the latest SwiftData on startup to ensure conversionManager matches the DB.
                 await LibraryService.shared.loadLibrary()
