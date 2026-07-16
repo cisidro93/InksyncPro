@@ -103,9 +103,7 @@ struct UnifiedReaderView: View {
                 // If we detected it's a comic, update the database so future opens skip this check
                 if result {
                     Logger.shared.log("UnifiedReaderView: Upgrading contentType from .book to .hybrid for '\(pdf.name)'", category: "Reader", type: .success)
-                    Task.detached {
-                        await ConversionManager.shared.updateContentType(for: pdf.id, to: .hybrid)
-                    }
+                    ConversionManager.shared?.updateContentType(for: pdf.id, to: .hybrid)
                 }
             }
         }
