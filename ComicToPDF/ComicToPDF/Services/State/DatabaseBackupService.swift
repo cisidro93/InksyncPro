@@ -1,9 +1,54 @@
 import Foundation
 import SwiftData
+import SQLite3
 
 final class DatabaseBackupService: Sendable {
     static let shared = DatabaseBackupService()
     private init() {}
+    
+    private let compactionQueue = DispatchQueue(label: "com.inksyncpro.compaction")
+    private let compactionState = CompactionState()
+    
+    private final class CompactionState: @unchecked Sendable {
+        var workItem: DispatchWorkItem?
+    }
+    
+    func scheduleCompaction() {
+        compactionQueue.async {
+            self.compactionState.workItem?.cancel()
+            
+            let workItem = DispatchWorkItem {
+                self.executeCompaction()
+            }
+            self.compactionState.workItem = workItem
+            self.compactionQueue.asyncAfter(deadline: .now() + 3.0, execute: workItem)
+        }
+    }
+    
+    private func executeCompaction() {
+        let container = InksyncProApp.sharedModelContainer
+        guard let storeURL = container.configurations.first?.url else {
+            Logger.shared.log("Compaction: Store URL configuration not found.", category: "Database", type: .warning)
+            return
+        }
+        
+        var db: OpaquePointer?
+        if sqlite3_open_v2(storeURL.path, &db, SQLITE_OPEN_READWRITE, nil) == SQLITE_OK {
+            var errorMsg: UnsafeMutablePointer<Int8>?
+            if sqlite3_exec(db, "VACUUM;", nil, nil, &errorMsg) == SQLITE_OK {
+                Logger.shared.log("Compaction: Database compacted and pages defragmented (VACUUM completed).", category: "Database", type: .success)
+            } else {
+                let errMsg = errorMsg.flatMap { String(cString: $0) } ?? "unknown error"
+                Logger.shared.log("Compaction: Failed to execute VACUUM: \(errMsg)", category: "Database", type: .error)
+                if let errorMsg = errorMsg {
+                    sqlite3_free(errorMsg)
+                }
+            }
+            sqlite3_close(db)
+        } else {
+            Logger.shared.log("Compaction: Failed to open SQLite store at \(storeURL.lastPathComponent)", category: "Database", type: .error)
+        }
+    }
     
     private let maxBackupCount = 5
     private let minBackupInterval: TimeInterval = 300 // 5 minutes cooldown

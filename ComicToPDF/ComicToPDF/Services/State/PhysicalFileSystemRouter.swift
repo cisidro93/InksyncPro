@@ -244,6 +244,7 @@ class PhysicalFileSystemRouter {
             }
             try? context.save()
             Logger.shared.log("Preserved source metadata for \(annotations.count) highlights on book deletion: \(pdfName)", category: "Annotations", type: .info)
+            DatabaseBackupService.shared.scheduleCompaction()
         }
         
         // 2. Offload the heavy file destruction to a background task
