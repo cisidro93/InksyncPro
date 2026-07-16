@@ -175,6 +175,7 @@ import SwiftUI
         .onReceive(tracker.objectWillChange) { recomputeFilter() }
         .onReceive(NotificationCenter.default.publisher(for: .inkTabGoToLibraryRoot)) { _ in
             selectedPDF = nil
+            dismiss()
         }
     }
 

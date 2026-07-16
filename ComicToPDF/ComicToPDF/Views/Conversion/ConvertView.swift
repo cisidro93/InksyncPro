@@ -303,6 +303,9 @@ struct ConvertView: View {
                 }
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .inkTabGoToLibraryRoot)) { _ in
+            dismiss()
+        }
     }
 }
 

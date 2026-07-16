@@ -1232,6 +1232,7 @@ struct SeriesDetailView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: .inkTabGoToLibraryRoot)) { _ in
                 pdfToRead = nil
+                dismiss()
             }
         
         let viewWithSheets = applySheets(view)

@@ -503,10 +503,17 @@ struct LibraryListView: View {
                 .buttonStyle(TactileButtonStyle())
             } else {
                 if let folderUUID = UUID(uuidString: group.id) {
-                    NavigationLink(destination: LazyView { SeriesDetailView(series: group, selectedPDF: $selectedPDF, useNavigationStack: useNavigationStack) }) {
-                        ModernSeriesRow(group: group, isSelected: false, isBatch: false)
+                    if useNavigationStack {
+                        NavigationLink(value: group) {
+                            ModernSeriesRow(group: group, isSelected: false, isBatch: false)
+                        }
+                        .buttonStyle(TactileButtonStyle())
+                    } else {
+                        NavigationLink(destination: LazyView { SeriesDetailView(series: group, selectedPDF: $selectedPDF, useNavigationStack: useNavigationStack) }) {
+                            ModernSeriesRow(group: group, isSelected: false, isBatch: false)
+                        }
+                        .buttonStyle(TactileButtonStyle())
                     }
-                    .buttonStyle(TactileButtonStyle())
                     .contextMenu {
                         Button {
                             selectedDetailSeries = group
@@ -557,10 +564,17 @@ struct LibraryListView: View {
                         } label: { Label("Delete Folder", systemImage: "trash") }
                     }
                 } else {
-                    NavigationLink(destination: LazyView { SeriesDetailView(series: group, selectedPDF: $selectedPDF, useNavigationStack: useNavigationStack) }) {
-                        ModernSeriesRow(group: group, isSelected: false, isBatch: false)
+                    if useNavigationStack {
+                        NavigationLink(value: group) {
+                            ModernSeriesRow(group: group, isSelected: false, isBatch: false)
+                        }
+                        .buttonStyle(TactileButtonStyle())
+                    } else {
+                        NavigationLink(destination: LazyView { SeriesDetailView(series: group, selectedPDF: $selectedPDF, useNavigationStack: useNavigationStack) }) {
+                            ModernSeriesRow(group: group, isSelected: false, isBatch: false)
+                        }
+                        .buttonStyle(TactileButtonStyle())
                     }
-                    .buttonStyle(TactileButtonStyle())
                     .contextMenu {
                         Button {
                             selectedDetailSeries = group

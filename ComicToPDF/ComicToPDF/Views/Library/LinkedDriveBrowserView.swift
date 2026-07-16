@@ -21,6 +21,7 @@ struct LinkedDriveBrowserView: View {
 
     @EnvironmentObject var conversionManager: ConversionManager
     @ObservedObject private var driveMonitor = DriveMonitor.shared
+    @Environment(\.dismiss) private var dismiss
 
     @State private var items: [BrowseItem] = []
     @State private var isLoading = true
@@ -69,6 +70,7 @@ struct LinkedDriveBrowserView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .inkTabGoToLibraryRoot)) { _ in
             selectedPDF = nil
+            dismiss()
         }
     }
 
