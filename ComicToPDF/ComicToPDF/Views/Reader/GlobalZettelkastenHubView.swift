@@ -2,7 +2,7 @@ import SwiftUI
 import SwiftData
 import UniformTypeIdentifiers
 
-enum ZettelViewMode { case list, map, board }
+enum ZettelViewMode { case list, map, board, tags }
 enum ZettelFilterMode { case all, annotated, highlightsOnly }
 enum ZettelSortMode: String, CaseIterable {
     case dateModified = "Date Modified"
@@ -16,6 +16,7 @@ struct GlobalZettelkastenHubView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @Binding var activeTab: GlobalNotebookView.Tab
+    @EnvironmentObject var conversionManager: ConversionManager
     
     // Sort all annotations latest over all PDF IDs
     @Query(sort: \SDAnnotation.modifiedAt, order: .reverse) private var allAnnotations: [SDAnnotation]
@@ -50,6 +51,7 @@ struct GlobalZettelkastenHubView: View {
     @State private var showingMarkdownExporter = false
     @State private var markdownExportURL: URL? = nil
     @State private var showingCognitiveReflection = false
+    @State private var selectedTagItem: TagExplorerItem? = nil
 
     // Phase 4B: iPad NavigationSplitView sidebar
     @Environment(\.horizontalSizeClass) private var hSizeClass
@@ -267,8 +269,9 @@ struct GlobalZettelkastenHubView: View {
                             viewModePill(.list,      label: "List",      icon: "list.bullet")
                             viewModePill(.board,     label: "Zettel Board", icon: "square.grid.2x2")
                             viewModePill(.map,       label: "Mind Map",  icon: "point.3.connected.trianglepath.dotted")
+                            viewModePill(.tags,      label: "Tags",      icon: "tag.fill")
                         }
-                        .frame(maxWidth: hSizeClass == .regular ? 480 : .infinity)
+                        .frame(maxWidth: hSizeClass == .regular ? 600 : .infinity)
                         if hSizeClass == .regular { Spacer() }
                     }
                     .padding(.horizontal)
@@ -412,6 +415,8 @@ struct GlobalZettelkastenHubView: View {
                         ZettelkastenGraphView(annotations: cachedActiveAnnotations, pdfs: allPDFs)
                     } else if viewMode == .board {
                         ZettelkastenBoardView(annotations: cachedActiveAnnotations, pdfs: allPDFs)
+                    } else if viewMode == .tags {
+                        tagExplorerGrid
                     }
                 }
             }
@@ -530,6 +535,11 @@ struct GlobalZettelkastenHubView: View {
         .fullScreenCover(isPresented: $showingCognitiveReflection) {
             CognitiveReflectionView()
         }
+        .sheet(item: $selectedTagItem) { item in
+            TagDetailSheet(tag: item.tag, annotations: item.annotations)
+                .environment(\.modelContext, modelContext)
+                .environmentObject(conversionManager)
+        }
     }
     
     // MARK: - View Mode Pill (frosted capsule — matches app design language)
@@ -557,6 +567,94 @@ struct GlobalZettelkastenHubView: View {
         .buttonStyle(.plain)
         .clipShape(Capsule())
         .overlay(Capsule().stroke(Color.primary.opacity(0.08), lineWidth: 0.5))
+    }
+
+    private var explorerTags: [TagExplorerItem] {
+        var dict = [String: [SDAnnotation]]()
+        for ann in cachedActiveAnnotations {
+            let tags = (ann.tags ?? []) + (ann.readwiseTags ?? []) + (ann.readwiseDocumentTags ?? [])
+            if tags.isEmpty {
+                dict["Untagged", default: []].append(ann)
+            } else {
+                for tag in tags {
+                    let clean = tag.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !clean.isEmpty {
+                        dict[clean, default: []].append(ann)
+                    }
+                }
+            }
+        }
+        return dict.map { TagExplorerItem(tag: $0.key, annotations: $0.value) }
+            .sorted {
+                if $0.tag == "Untagged" { return false }
+                if $1.tag == "Untagged" { return true }
+                return $0.tag.localizedStandardCompare($1.tag) == .orderedAscending
+            }
+    }
+
+    private var tagExplorerGrid: some View {
+        let tags = explorerTags
+        return ScrollView {
+            if tags.isEmpty {
+                VStack(spacing: 12) {
+                    Image(systemName: "tag.slash")
+                        .font(.system(size: 40))
+                        .foregroundColor(Theme.textSecondary)
+                    Text("No Tags Found")
+                        .font(.headline)
+                        .foregroundColor(Theme.text)
+                }
+                .frame(maxWidth: .infinity, minHeight: 200)
+            } else {
+                LazyVGrid(columns: [
+                    GridItem(.adaptive(minimum: hSizeClass == .regular ? 200 : 150), spacing: 14)
+                ], spacing: 14) {
+                    ForEach(tags) { item in
+                        Button {
+                            HapticEngine.light()
+                            selectedTagItem = item
+                        } label: {
+                            VStack(alignment: .leading, spacing: 10) {
+                                HStack {
+                                    Image(systemName: "tag.circle.fill")
+                                        .font(.system(size: 20))
+                                        .foregroundColor(Theme.purple)
+                                    Spacer()
+                                    Text("\(item.annotations.count)")
+                                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                                        .foregroundColor(.white)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 3)
+                                        .background(Theme.purple.opacity(0.85), in: Capsule())
+                                }
+                                
+                                Text("#" + item.tag)
+                                    .font(.system(size: 14, weight: .bold))
+                                    .foregroundColor(Theme.text)
+                                    .lineLimit(1)
+                                    .truncationMode(.tail)
+                                
+                                Text("\(item.annotations.count) " + (item.annotations.count == 1 ? "highlight" : "highlights"))
+                                    .font(.system(size: 11))
+                                    .foregroundColor(Theme.textSecondary)
+                            }
+                            .padding()
+                            .background(
+                                RoundedRectangle(cornerRadius: 16)
+                                    .fill(Theme.surface)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 16)
+                                    .stroke(Color.primary.opacity(0.06), lineWidth: 0.8)
+                            )
+                            .shadow(color: Color.black.opacity(0.04), radius: 6, y: 3)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding()
+            }
+        }
     }
 
     // MARK: - Filter Pill
@@ -986,6 +1084,50 @@ private struct TagPill: View {
             .padding(.vertical, 2)
             .background(color.opacity(0.12))
             .clipShape(Capsule())
+    }
+}
+
+// MARK: - Tag Explorer Helper Views & Types
+
+struct TagExplorerItem: Identifiable {
+    var id: String { tag }
+    let tag: String
+    let annotations: [SDAnnotation]
+}
+
+struct TagDetailSheet: View {
+    let tag: String
+    let annotations: [SDAnnotation]
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject var conversionManager: ConversionManager
+    
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Theme.bg.ignoresSafeArea()
+                
+                ScrollView {
+                    LazyVStack(spacing: 12) {
+                        ForEach(annotations) { ann in
+                            GlobalHighlightRow(annotation: ann)
+                                .environmentObject(conversionManager)
+                        }
+                    }
+                    .padding()
+                }
+            }
+            .navigationTitle("#" + tag)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundColor(Color(hex: "#7B5EA7"))
+                }
+            }
+        }
     }
 }
 
