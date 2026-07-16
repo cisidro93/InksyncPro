@@ -464,17 +464,9 @@ final class ComicImageCache: ObservableObject {
                                     return (i, bounds.width > bounds.height * 1.15)
                                 }
                             } else {
-                                if let archive = try? Archive(url: fileURL, accessMode: .read, pathEncoding: .utf8) {
-                                    let imageExtensions: Set<String> = ["jpg", "jpeg", "png", "webp", "gif", "heic"]
-                                    let sorted = archive.filter { entry in
-                                        let name = (entry.path as NSString).lastPathComponent
-                                        guard !entry.path.contains("__MACOSX"), !name.hasPrefix("._"), name != ".DS_Store", !entry.path.hasSuffix("/") else { return false }
-                                        let ext = (name as NSString).pathExtension.lowercased()
-                                        return imageExtensions.contains(ext)
-                                    }.sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
-                                    
-                                    if pageInfo.localIndex < sorted.count {
-                                        let entryPath = sorted[pageInfo.localIndex].path
+                                if let sortedPaths = try? await ArchiveManager.shared.getSortedImagePaths(for: fileURL) {
+                                    if pageInfo.localIndex < sortedPaths.count {
+                                        let entryPath = sortedPaths[pageInfo.localIndex]
                                         if let data = try? await ArchiveManager.shared.extractEntry(from: fileURL, path: entryPath),
                                            let source = CGImageSourceCreateWithData(data as CFData, nil),
                                            let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] {
