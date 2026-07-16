@@ -55,7 +55,7 @@ struct MetadataHeuristics {
         let pattern = "full-path\\s*=\\s*[\"']([^\"']+)[\"']"
         if let regex = try? NSRegularExpression(pattern: pattern, options: []),
            let match = regex.firstMatch(in: containerStr, options: [], range: NSRange(containerStr.startIndex..., in: containerStr)) {
-            if let range = Range(match.range(1), in: containerStr) {
+            if let range = Range(match.range(at: 1), in: containerStr) {
                 return String(containerStr[range])
             }
         }
