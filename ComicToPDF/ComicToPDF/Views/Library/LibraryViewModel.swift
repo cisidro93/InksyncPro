@@ -281,19 +281,20 @@ class LibraryViewModel: ObservableObject {
         // If a user imports a Folder "Batman", and the Metadata parsed is also "Batman",
         // the UI will double-render the series item if both exist. We prefer the collection group.
         var keysToRemove: [String] = []
-        for (key, var group) in groups {
+        for (key, group) in groups {
             guard !Task.isCancelled else { return [] }
+            var mutableGroup = group
             if key.starts(with: "col_") {
-                let overlappingSeriesKey = "series_\(group.title)"
+                let overlappingSeriesKey = "series_\(mutableGroup.title)"
                 if let orphanSeries = groups[overlappingSeriesKey] {
                     // Merge the items into the collection group!
                     for issue in orphanSeries.issues {
-                        if !group.issues.contains(where: { $0.id == issue.id }) {
-                            group.issues.append(issue)
-                            group.count += 1
+                        if !mutableGroup.issues.contains(where: { $0.id == issue.id }) {
+                            mutableGroup.issues.append(issue)
+                            mutableGroup.count += 1
                         }
                     }
-                    groups[key] = group
+                    groups[key] = mutableGroup
                     keysToRemove.append(overlappingSeriesKey)
                 }
             }
@@ -304,14 +305,15 @@ class LibraryViewModel: ObservableObject {
         
         var items: [LibraryListItem] = []
 
-        for (key, var group) in groups {
+        for (_, group) in groups {
             guard !Task.isCancelled else { return [] }
+            var mutableGroup = group
             // ── SHELF FILTER: Drop series that have zero visible issues ─────
-            if shelf != .all && group.issues.isEmpty { continue }
+            if shelf != .all && mutableGroup.issues.isEmpty { continue }
 
             // ✅ PHASE 4: Internal Sorting & Cover Assigner
-            let hasVols = group.issues.contains { Double($0.metadata.volume ?? "") != nil }
-            group.issues = group.issues
+            let hasVols = mutableGroup.issues.contains { Double($0.metadata.volume ?? "") != nil }
+            mutableGroup.issues = mutableGroup.issues
                 .map { pdf -> (ConvertedPDF, Double, Double) in
                     (pdf,
                      Double(pdf.metadata.volume ?? "")      ?? Double.infinity,
@@ -326,19 +328,19 @@ class LibraryViewModel: ObservableObject {
                 }
                 .map(\.0)
 
-            if let cover = group.issues.first {
-                group.coverIssueID = cover.id
+            if let cover = mutableGroup.issues.first {
+                mutableGroup.coverIssueID = cover.id
             }
 
             // Precompute read and new issue counts on the background thread using our snapshot
-            group.readCount = group.issues.filter {
+            mutableGroup.readCount = mutableGroup.issues.filter {
                 (progressSnapshot[$0.id]?.completionFraction ?? 0.0) >= 0.95
             }.count
-            group.newCount = group.issues.filter {
+            mutableGroup.newCount = mutableGroup.issues.filter {
                 progressSnapshot[$0.id] == nil
             }.count
 
-            items.append(.series(group))
+            items.append(.series(mutableGroup))
         }
 
         for single in singles {
