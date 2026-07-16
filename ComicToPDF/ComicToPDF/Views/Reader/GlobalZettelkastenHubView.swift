@@ -135,19 +135,7 @@ struct GlobalZettelkastenHubView: View {
     }
     
     var body: some View {
-        if hSizeClass == .regular {
-            // ── iPad: NavigationSplitView with sidebar inspector ──────────────
-            NavigationSplitView(columnVisibility: $sidebarVisibility) {
-                iPadSidebar
-                    .navigationTitle("Zettelkasten")
-                    .navigationBarTitleDisplayMode(.inline)
-            } detail: {
-                hubContent
-            }
-        } else {
-            // ── iPhone: original ZStack layout ───────────────────────────────
-            hubContent
-        }
+        hubContent
     }
 
     // MARK: - iPad Sidebar
@@ -272,16 +260,19 @@ struct GlobalZettelkastenHubView: View {
                 emptyStateView
             } else {
                 VStack(spacing: 0) {
-                    if hSizeClass == .compact {
-                        // ── View Mode Toggle: frosted capsule pills (matches app design language)
+                    // ── View Mode Toggle: frosted capsule pills (matches app design language)
+                    HStack {
+                        if hSizeClass == .regular { Spacer() }
                         HStack(spacing: 0) {
                             viewModePill(.list,      label: "List",      icon: "list.bullet")
                             viewModePill(.board,     label: "Zettel Board", icon: "square.grid.2x2")
                             viewModePill(.map,       label: "Mind Map",  icon: "point.3.connected.trianglepath.dotted")
                         }
-                        .padding(.horizontal)
-                        .padding(.top, 8)
+                        .frame(maxWidth: hSizeClass == .regular ? 480 : .infinity)
+                        if hSizeClass == .regular { Spacer() }
                     }
+                    .padding(.horizontal)
+                    .padding(.top, 8)
 
                     if viewMode == .list {
                         if cachedDueCount > 0 {
@@ -311,13 +302,25 @@ struct GlobalZettelkastenHubView: View {
                         }
 
                         // ── Filter pill strip (user-friendly labels)
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 8) {
-                                filterPill(.all,            label: "All",             icon: "note.text")
-                                filterPill(.annotated,      label: "Annotated",       icon: "text.bubble.fill")
-                                filterPill(.highlightsOnly, label: "Highlights Only", icon: "highlighter")
+                        Group {
+                            if hSizeClass == .regular {
+                                HStack(spacing: 8) {
+                                    Spacer()
+                                    filterPill(.all,            label: "All",             icon: "note.text")
+                                    filterPill(.annotated,      label: "Annotated",       icon: "text.bubble.fill")
+                                    filterPill(.highlightsOnly, label: "Highlights Only", icon: "highlighter")
+                                    Spacer()
+                                }
+                            } else {
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 8) {
+                                        filterPill(.all,            label: "All",             icon: "note.text")
+                                        filterPill(.annotated,      label: "Annotated",       icon: "text.bubble.fill")
+                                        filterPill(.highlightsOnly, label: "Highlights Only", icon: "highlighter")
+                                    }
+                                    .padding(.horizontal)
+                                }
                             }
-                            .padding(.horizontal)
                         }
                         .padding(.top, 10)
                         .padding(.bottom, 4)
