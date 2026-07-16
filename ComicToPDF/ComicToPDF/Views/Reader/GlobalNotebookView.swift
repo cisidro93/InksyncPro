@@ -877,8 +877,8 @@ struct GlobalNotebookView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Spacer()
                     
-                    if notebook.coverStyle != "composition" {
-                        // Book Title Label
+                    if !isSkin {
+                        // Book Title Label (Only for gradient covers, skins have embedded labels)
                         Text(notebook.title)
                             .font(.system(size: 13, weight: .bold, design: .rounded))
                             .foregroundColor(.white)
@@ -1499,18 +1499,66 @@ struct NotebookCoverSkinView: View {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .stroke(Color(hex: "#CFB53B").opacity(0.35), lineWidth: 0.6)
                         .padding(11)
+                    
+                    // Embedded Gold-leaf style leather label badge
+                    VStack(spacing: 2) {
+                        Text(title.uppercased())
+                            .font(.system(size: 8, weight: .bold, design: .serif))
+                            .foregroundColor(Color(hex: "#CFB53B"))
+                            .multilineTextAlignment(.center)
+                            .lineLimit(2)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 6)
+                    }
+                    .frame(width: 95)
+                    .background(Color(hex: "#1A0F07").opacity(0.85))
+                    .cornerRadius(4)
+                    .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color(hex: "#CFB53B").opacity(0.6), lineWidth: 1.0))
+                    .shadow(radius: 3)
                 }
                 
             case "kraft":
                 ZStack {
                     Color(hex: "#C69C6D")
                     KraftTexture()
+                    
+                    // Classic paper sticker label
+                    VStack(spacing: 2) {
+                        Text(title)
+                            .font(.system(size: 9, weight: .bold, design: .rounded))
+                            .foregroundColor(Color(hex: "#2C1D11"))
+                            .multilineTextAlignment(.center)
+                            .lineLimit(2)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 6)
+                    }
+                    .frame(width: 95)
+                    .background(Color(hex: "#F9F6F0"))
+                    .cornerRadius(4)
+                    .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color(hex: "#C69C6D").opacity(0.8), lineWidth: 1.0))
+                    .shadow(radius: 2)
                 }
                 
             case "linen":
                 ZStack {
                     Color(hex: "#2c3e50")
                     LinenTexture()
+                    
+                    // Woven textile label overlay
+                    VStack(spacing: 2) {
+                        Text(title)
+                            .font(.system(size: 9, weight: .semibold, design: .default))
+                            .foregroundColor(.white)
+                            .multilineTextAlignment(.center)
+                            .lineLimit(2)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 6)
+                    }
+                    .frame(width: 95)
+                    .background(Color(hex: "#34495e").opacity(0.9))
+                    .cornerRadius(4)
+                    .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.white.opacity(0.25), lineWidth: 1.0))
+                    .shadow(radius: 2)
                 }
                 
             default:
