@@ -1,4 +1,4 @@
-﻿# InksyncPro Product Bible
+# InksyncPro Product Bible
 
 **Last Updated:** July 12, 2026
 
@@ -64,6 +64,7 @@ The user experience philosophy: **the app should feel like a beautifully crafted
 - **Premium PDF Paging & Transitions:** The PDF reader dynamically configures its display layout according to the user's `EBookPaginationMode` preference. When `paged` is active, it utilizes a horizontal single-page view controller layout (`pdfView.usePageViewController(true)`) with native horizontal slide/page curl transitions and animated edge taps (`goToNextPage` / `goToPreviousPage`), syncing cleanly with `.PDFViewPageChanged` notifications.
 - **EPUB Chapter Paging & Transition Safety:** The EPUB reader corrects page backward offsets by checking `currentOffset <= 4` (rather than projected offsets) before loading a preceding chapter. On chapter change, it sets `scrollToLastPageOnLoad = true` to cleanly land on the final page of that chapter.
 - **Strict Table of Contents Integrity:** The EPUB metadata parser assigns an empty label (`""`) to any spine section that does not carry an explicit mapping in the book's Table of Contents. Drawer outlines automatically filter out empty labels (or fall back to sequential `"Chapter X"` counters if no TOC exists), while annotation highlights store `nil` titles to trigger safe `"Page X"` fallbacks in the global notebook.
+- **EPUB Fixed-Layout Comic Dynamic Routing**: Dynamic routing check inside `UnifiedReaderView.swift` (`isEPUBComic(url:)`). If an EPUB contains fixed-layout, pre-paginated, or image-based digital comic metadata properties inside its OPF manifest, the reader bypasses the flow-text `BookReaderEngine`/`DocumentReaderEngine` and maps the document directly to `ComicReaderEngine`. This ensures that dual-page view (spread layouts), fit modes, reading speed, and landscape layouts work identically to standard `.cbz`/`.cbr` files.
 
 ---
 
@@ -129,6 +130,7 @@ img { display: block; width: 100%; height: 100%; }
 - **Color Space Safety:** `UIGraphicsImageRenderer` output **must** be forced to `.standard` (sRGB) color space. Exporting badged covers or merged graphics in wide-gamut (P3) color spaces will silently crash E-Ink devices upon loading.
 
 - **Hardware Grayscale & Dithering:** Strips color saturation and applies a 15% contrast boost via `CIColorControls` to enhance text legibility, combined with a **high-quality sequential Floyd-Steinberg error diffusion algorithm** to produce smooth 16-level grayscale transitions on E-Ink panels and prevent harsh gray banding.
+- **Disabled Character Glossary**: The "Embed Character Glossary" option is disabled by default for both new setups and legacy migrations, and its toggle controls are removed from the export conversion view and settings screens to minimize clutter.
 
 ---
 
@@ -144,6 +146,7 @@ All import operations follow a strict sequence:
 4. **Automatic Disk Capacity Safeguards:** Monitors system free space dynamically during launches, low memory warnings, and conversion operations. If available storage falls below 1.0 GB, `SandboxCleanupManager` automatically purges orphaned temp files and import cache folders to reclaim disk space.
 5. **Atomic Writes:** Final output files are written atomically. On EPUB rebuild, the new archive is built in a temp path and swapped with `FileManager.moveItem` — never written directly over the live file.
 6. **Library Scan:** `scanLibrary()` is called on `@MainActor` after all copy/import tasks complete.
+7. **Fixed-Layout Comic Categorization**: During the library scanning phase (or immediately following comic-to-EPUB conversion), the system dynamically scans the EPUB's internal archive catalog for fixed-layout signatures. Pre-paginated EPUB comics are registered directly as `.comic` or `.manga` in SwiftData to bypass reflowable flow-text processing.
 
 #### 4.2 Supported Formats
 
@@ -193,6 +196,8 @@ All import operations follow a strict sequence:
 - **Integrated Split-Screen Study Notebook:** Frosted-glass note-taking canvas supporting dual markdown typing and Apple Pencil handwriting side-by-side with reading. Includes dynamic keyboard toggle controls and database synchronization.
 - **Relational Obsidian Vault Exporter:** Packages all annotations, quotes, and thoughts into a nested Obsidian vault structure matching series hierarchies. Automatically pre-renders PencilKit handwriting strokes to transparent PNGs, saving them to `attachments/` and wiki-linking them directly inside markdown files.
 - **Bidirectional Navigation Linkage:** Connects quotes, tags, and highlights back to the reader view, allowing users to jump directly to page locations in the active book.
+- **Precision Traditional Rule Spacing & Baselines**: Notebook page paper styles calculate margins and rule spacing dynamically for Ruled (`24pt`), College Ruled (`21pt`), and Legal (`28pt`) templates. Typewritten markdown text and highlighted lines align dynamically to the rules (with matching left margin indent bounds like `84pt` and `100pt` to stay to the right of the vertical pink margin line), backed by ivory yellow solid paper colors (`#FFFDF0`) for Legal in light mode, and dark charcoal in dark mode.
+- **Header Book Viewer Shortcut**: A toolbar `book` icon shortcut in the standalone notebook queries the database for the parent library volume and opens it directly in a full-screen `UnifiedReaderView` cover.
 
 ---
 
