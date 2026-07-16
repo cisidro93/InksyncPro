@@ -94,16 +94,17 @@ struct UnifiedReaderView: View {
         .task {
             // Run the EPUB comic check off the main thread when the view appears
             if needsEPUBComicCheck && epubComicCheckResult == nil {
+                let pdfCopy = self.pdf
                 let result = await Task.detached(priority: .userInitiated) {
-                    Self.checkIsEPUBComic(pdf: self.pdf)
+                    Self.checkIsEPUBComic(pdf: pdfCopy)
                 }.value
                 await MainActor.run {
                     epubComicCheckResult = result
                 }
                 // If we detected it's a comic, update the database so future opens skip this check
                 if result {
-                    Logger.shared.log("UnifiedReaderView: Upgrading contentType from .book to .hybrid for '\(pdf.name)'", category: "Reader", type: .success)
-                    ConversionManager.shared?.updateContentType(for: pdf.id, to: .hybrid)
+                    Logger.shared.log("UnifiedReaderView: Upgrading contentType from .book to .hybrid for '\(pdfCopy.name)'", category: "Reader", type: .success)
+                    ConversionManager.shared?.updateContentType(for: pdfCopy.id, to: .hybrid)
                 }
             }
         }

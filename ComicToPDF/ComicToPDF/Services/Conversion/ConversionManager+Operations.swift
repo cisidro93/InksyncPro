@@ -91,10 +91,10 @@ extension ConversionManager {
                             // .comic/.manga are archive-native types; merged EPUB output uses .hybrid to signal
                             // "fixed-layout EPUB that should display in the comic reader."
                             contentType: {
-                                switch firstPDF?.contentType {
+                                guard let first = firstPDF else { return .hybrid }
+                                switch first.contentType {
                                 case .comic, .manga, .hybrid: return .hybrid
                                 case .book: return .book
-                                case .none: return .hybrid
                                 }
                             }()
                         )
