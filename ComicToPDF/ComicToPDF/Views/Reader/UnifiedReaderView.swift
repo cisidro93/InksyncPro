@@ -135,7 +135,7 @@ struct UnifiedReaderView: View {
     
     /// Determines whether a .book-classified EPUB is actually a fixed-layout comic.
     /// This is a static method so it can be called from a detached Task without capturing self.
-    private static func checkIsEPUBComic(pdf: ConvertedPDF) -> Bool {
+    nonisolated private static func checkIsEPUBComic(pdf: ConvertedPDF) -> Bool {
         let ext = pdf.url.pathExtension.lowercased()
         guard ext == "epub" else {
             Logger.shared.log("isEPUBComic: Not an epub (ext=\(ext)), skipping", category: "Reader", type: .info)
