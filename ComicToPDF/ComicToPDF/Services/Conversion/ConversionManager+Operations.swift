@@ -87,7 +87,16 @@ extension ConversionManager {
                             pageCount: 0,
                             fileSize: size,
                             metadata: baseMetadata,
-                            contentType: firstPDF?.contentType ?? .book
+                            // Merged EPUBs from comic/manga sources should route to ComicReader via .hybrid.
+                            // .comic/.manga are archive-native types; merged EPUB output uses .hybrid to signal
+                            // "fixed-layout EPUB that should display in the comic reader."
+                            contentType: {
+                                switch firstPDF?.contentType {
+                                case .comic, .manga, .hybrid: return .hybrid
+                                case .book: return .book
+                                case .none: return .hybrid
+                                }
+                            }()
                         )
                         newPDF.collectionId = firstPDF?.collectionId
                         newPDF.lastOutputFormat = settings.outputFormat

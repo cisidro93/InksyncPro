@@ -244,6 +244,16 @@ class ConversionManager: ObservableObject {
     
     func savePDFs() { saveLibrary() }
     
+    /// Update the contentType for a specific book and persist to database.
+    /// Used when a .book-classified EPUB is discovered at open time to actually be a fixed-layout comic.
+    func updateContentType(for pdfID: UUID, to newType: ContentType) {
+        if let idx = convertedPDFs.firstIndex(where: { $0.id == pdfID }) {
+            convertedPDFs[idx].contentType = newType
+            Logger.shared.log("ConversionManager: Updated contentType for '\(convertedPDFs[idx].name)' to \(newType)", category: "Library", type: .success)
+            saveLibrary()
+        }
+    }
+    
     func loadLibrary() {
         LibraryPersistenceManager.shared.load(manager: self)
     }

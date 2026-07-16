@@ -11,6 +11,14 @@ struct UnifiedReaderView: View {
     @State private var showNotebookPanel = false
     @AppStorage("studyNotebookPlacement") private var notebookPlacement: SidebarPlacement = .right
     
+    /// Tri-state: nil = still checking, true = comic EPUB, false = text EPUB
+    @State private var epubComicCheckResult: Bool? = nil
+    
+    /// Computed once at init — determines whether we need an async check
+    private var needsEPUBComicCheck: Bool {
+        pdf.contentType == .book && pdf.url.pathExtension.lowercased() == "epub"
+    }
+    
     var body: some View {
         GeometryReader { geo in
             HStack(spacing: 0) {
@@ -37,8 +45,19 @@ struct UnifiedReaderView: View {
                     case .book:
                         if pdf.url.pathExtension.lowercased() == "pdf" {
                             DocumentReaderEngine(pdf: pdf, onDismiss: { dismiss() })
-                        } else if isEPUBComic(pdf: pdf) {
-                            ComicReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
+                        } else if needsEPUBComicCheck {
+                            // Async-resolved EPUB comic check
+                            if let isComic = epubComicCheckResult {
+                                if isComic {
+                                    ComicReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
+                                } else {
+                                    BookReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
+                                }
+                            } else {
+                                // Still checking — show loading indicator
+                                ProgressView("Loading…")
+                                    .foregroundColor(.white)
+                            }
                         } else {
                             BookReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
                         }
@@ -72,6 +91,24 @@ struct UnifiedReaderView: View {
         .navigationBarHidden(true)
         .statusBar(hidden: true)
         .forceProMotion()
+        .task {
+            // Run the EPUB comic check off the main thread when the view appears
+            if needsEPUBComicCheck && epubComicCheckResult == nil {
+                let result = await Task.detached(priority: .userInitiated) {
+                    Self.checkIsEPUBComic(pdf: self.pdf)
+                }.value
+                await MainActor.run {
+                    epubComicCheckResult = result
+                }
+                // If we detected it's a comic, update the database so future opens skip this check
+                if result {
+                    Logger.shared.log("UnifiedReaderView: Upgrading contentType from .book to .hybrid for '\(pdf.name)'", category: "Reader", type: .success)
+                    Task.detached {
+                        await ConversionManager.shared.updateContentType(for: pdf.id, to: .hybrid)
+                    }
+                }
+            }
+        }
         .sheet(isPresented: Binding(
             get: { showNotebookPanel && sizeClass == .compact },
             set: { if !$0 { showNotebookPanel = false } }
@@ -95,7 +132,11 @@ struct UnifiedReaderView: View {
         }
     }
     
-    private func isEPUBComic(pdf: ConvertedPDF) -> Bool {
+    // MARK: - Static EPUB Comic Detection (runs off main thread)
+    
+    /// Determines whether a .book-classified EPUB is actually a fixed-layout comic.
+    /// This is a static method so it can be called from a detached Task without capturing self.
+    private static func checkIsEPUBComic(pdf: ConvertedPDF) -> Bool {
         let ext = pdf.url.pathExtension.lowercased()
         guard ext == "epub" else {
             Logger.shared.log("isEPUBComic: Not an epub (ext=\(ext)), skipping", category: "Reader", type: .info)
@@ -113,7 +154,6 @@ struct UnifiedReaderView: View {
             if didAccess { accessedURL = url }
             Logger.shared.log("isEPUBComic: Using linked bookmark URL: \(url.path)", category: "Reader", type: .info)
         } else {
-            // pdf.url is already resolved by toDomainModel() → resolveSandboxURL
             resolvedURL = pdf.url
             let didAccess = resolvedURL.startAccessingSecurityScopedResource()
             if didAccess { accessedURL = resolvedURL }
