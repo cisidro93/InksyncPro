@@ -1,13 +1,10 @@
 import Foundation
+import ZIPFoundation
 
 /// A utility struct to encapsulate string matching and metadata inference rules
 /// for comic book filenames to ensure consistency between Single Edit and Batch workflows.
 struct MetadataHeuristics {
     
-    /// Cleans the raw filename to yield a searchable Series/Volume name.
-    ///
-    /// - Parameter name: The original file name (e.g., "Batman_(2023)_#12.cbz")
-    /// - Returns: A cleaned query string (e.g., "Batman")
     /// Cleans the raw filename to yield a searchable Series/Volume name.
     ///
     /// - Parameter name: The original file name (e.g., "Batman_(2023)_#12.cbz")
@@ -18,7 +15,7 @@ struct MetadataHeuristics {
         
         // Remove parenthesis content roughly (like year, if we want a clean series search)
         while let range = clean.range(of: "\\(.*?\\)", options: .regularExpression) {
-             clean.removeSubrange(range)
+            clean.removeSubrange(range)
         }
         
         // Remove curly brace content roughly
@@ -47,7 +44,44 @@ struct MetadataHeuristics {
     /// Intelligently routes manga vs western comics based on heuristic file names and path structures
     static func detectAsymmetricContentType(url: URL) -> ContentType {
         let ext = url.pathExtension.lowercased()
-        if ext == "pdf" || ext == "epub" { return .book }
+        if ext == "pdf" { return .book }
+        if ext == "epub" {
+            // Check if it's fixed layout/comic
+            do {
+                guard let archive = try? Archive(url: url, accessMode: .read, pathEncoding: .utf8) else { return .book }
+                if let containerEntry = archive["META-INF/container.xml"] {
+                    var containerData = Data()
+                    _ = try archive.extract(containerEntry) { data in containerData.append(data) }
+                    
+                    if let containerStr = String(data: containerData, encoding: .utf8),
+                       let opfPath = containerStr.components(separatedBy: "full-path=\"").last?.components(separatedBy: "\"").first,
+                       let opfEntry = archive[opfPath] {
+                        
+                        var opfData = Data()
+                        _ = try archive.extract(opfEntry) { data in opfData.append(data) }
+                        
+                        if let opfStr = String(data: opfData, encoding: .utf8) {
+                            let lowerOPF = opfStr.lowercased()
+                            if lowerOPF.contains("pre-paginated") || lowerOPF.contains("comic-book") || lowerOPF.contains("fixed-layout") || lowerOPF.contains("image-based") {
+                                // Determine manga vs western comic based on path keywords
+                                let pathLower = url.path.lowercased()
+                                let nameLower = url.lastPathComponent.lowercased()
+                                let parentLower = url.deletingLastPathComponent().lastPathComponent.lowercased()
+                                let mangaKeywords = ["[raw]", "[ch.", "ch.", "manhwa", "manhua", "manga", "scanlation", "oneshot", "doujin", "tankobon", "volume", "chapter", "shonen", "shoujo", "seinen", "josei"]
+                                if mangaKeywords.contains(where: { nameLower.contains($0) || parentLower.contains($0) }) ||
+                                   pathLower.contains("/manga/") ||
+                                   pathLower.contains("/manga") ||
+                                   url.pathComponents.map({ $0.lowercased() }).contains("manga") {
+                                    return .manga
+                                }
+                                return .comic
+                            }
+                        }
+                    }
+                }
+            } catch {}
+            return .book
+        }
         
         let pathLower = url.path.lowercased()
         let nameLower = url.lastPathComponent.lowercased()

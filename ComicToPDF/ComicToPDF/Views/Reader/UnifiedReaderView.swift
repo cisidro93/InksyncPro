@@ -1,4 +1,5 @@
 import SwiftUI
+import ZIPFoundation
 
 struct UnifiedReaderView: View {
     let pdf: ConvertedPDF
@@ -36,11 +37,17 @@ struct UnifiedReaderView: View {
                     case .book:
                         if pdf.url.pathExtension.lowercased() == "pdf" {
                             DocumentReaderEngine(pdf: pdf, onDismiss: { dismiss() })
+                        } else if isEPUBComic(url: pdf.url) {
+                            ComicReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
                         } else {
                             BookReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
                         }
                     case .hybrid:
-                        DocumentReaderEngine(pdf: pdf, onDismiss: { dismiss() })
+                        if pdf.url.pathExtension.lowercased() == "epub" {
+                            ComicReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
+                        } else {
+                            DocumentReaderEngine(pdf: pdf, onDismiss: { dismiss() })
+                        }
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -86,5 +93,36 @@ struct UnifiedReaderView: View {
                 showNotebookPanel = false
             }
         }
+    }
+    
+    private func isEPUBComic(url: URL) -> Bool {
+        guard url.pathExtension.lowercased() == "epub" else { return false }
+        
+        let accessing = url.startAccessingSecurityScopedResource()
+        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+        
+        do {
+            guard let archive = try? Archive(url: url, accessMode: .read, pathEncoding: .utf8) else { return false }
+            if let containerEntry = archive["META-INF/container.xml"] {
+                var containerData = Data()
+                _ = try archive.extract(containerEntry) { data in containerData.append(data) }
+                
+                if let containerStr = String(data: containerData, encoding: .utf8),
+                   let opfPath = containerStr.components(separatedBy: "full-path=\"").last?.components(separatedBy: "\"").first,
+                   let opfEntry = archive[opfPath] {
+                    
+                    var opfData = Data()
+                    _ = try archive.extract(opfEntry) { data in opfData.append(data) }
+                    
+                    if let opfStr = String(data: opfData, encoding: .utf8) {
+                        let lowerOPF = opfStr.lowercased()
+                        if lowerOPF.contains("pre-paginated") || lowerOPF.contains("comic-book") || lowerOPF.contains("fixed-layout") || lowerOPF.contains("image-based") {
+                            return true
+                        }
+                    }
+                }
+            }
+        } catch { return false }
+        return false
     }
 }
