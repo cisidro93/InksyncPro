@@ -36,6 +36,7 @@ struct StudyNotebookView: View {
     }
     @AppStorage("studyNotebookInputMode") private var inputMode: InputMode = .markdown
     @State private var paperStyle: PaperStyle = .plain
+    @State private var selectedBookForReader: ConvertedPDF? = nil
     @AppStorage("studyNotebookPlacement") private var notebookPlacement: SidebarPlacement = .right
     @State private var canvasView = PKCanvasView()
     
@@ -249,6 +250,22 @@ struct StudyNotebookView: View {
                             .clipShape(Circle())
                     }
 
+                    if showBackButton {
+                        if let matchedPDF = fetchBackingBook() {
+                            Button {
+                                HapticEngine.light()
+                                selectedBookForReader = matchedPDF
+                            } label: {
+                                Image(systemName: "book")
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundColor(.primary)
+                                    .padding(8)
+                                    .background(Color.primary.opacity(0.08))
+                                    .clipShape(Circle())
+                            }
+                        }
+                    }
+
                     // Highlights Drawer Toggle
                     Button {
                         withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
@@ -352,8 +369,7 @@ struct StudyNotebookView: View {
                     if inputMode == .markdown {
                         ZStack {
                             NotebookPaperBackground(style: paperStyle, colorScheme: colorScheme)
-                            MarkdownTextEditor(text: $localNotes, isFocused: $isFocused, onLinkTapped: handleLinkTapped)
-                                .padding(16)
+                            MarkdownTextEditor(text: $localNotes, isFocused: $isFocused, paperStyle: paperStyle, onLinkTapped: handleLinkTapped)
                         }
                         .onChange(of: localNotes) { _, _ in debounceSave() }
                     } else {
@@ -405,6 +421,9 @@ struct StudyNotebookView: View {
             WritingAssistantSheet(text: $localNotes)
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
+        }
+        .fullScreenCover(item: $selectedBookForReader) { pdf in
+            UnifiedReaderView(pdf: pdf)
         }
         .onAppear {
             Logger.shared.log("StudyNotebook appeared for book: '\(bookTitle)'", category: "Notebook", type: .info)
@@ -1188,12 +1207,31 @@ struct StudyNotebookView: View {
         }
         .transition(.move(edge: .trailing))
     }
+    
+    private func fetchBackingBook() -> ConvertedPDF? {
+        if let uuid = UUID(uuidString: bookID) {
+            let descriptor = FetchDescriptor<SDConvertedPDF>(predicate: #Predicate { $0.id == uuid })
+            if let sdBook = try? modelContext.fetch(descriptor).first {
+                return sdBook.toDTO()
+            }
+        }
+        // Fallback by title:
+        let titleLower = bookTitle.lowercased()
+        let allDescriptor = FetchDescriptor<SDConvertedPDF>()
+        if let all = try? modelContext.fetch(allDescriptor) {
+            if let matched = all.first(where: { $0.name.lowercased() == titleLower }) {
+                return matched.toDTO()
+            }
+        }
+        return nil
+    }
 }
 
 // MARK: - Phase 2: Modern Markdown Engine WYSIWYG
 struct MarkdownTextEditor: UIViewRepresentable {
     @Binding var text: String
     @Binding var isFocused: Bool
+    let paperStyle: PaperStyle
     var onLinkTapped: ((URL) -> Void)? = nil
     
     func makeUIView(context: Context) -> UITextView {
@@ -1206,6 +1244,9 @@ struct MarkdownTextEditor: UIViewRepresentable {
         textView.isScrollEnabled = true
         textView.keyboardDismissMode = .interactive
         textView.linkTextAttributes = [:] // Style links completely via MarkdownHighlighter attributes
+        
+        // Dynamically set container inset based on active paper style
+        updateTextViewPadding(textView, style: paperStyle)
 
         // Add Tap Gesture Recognizer to intercept page link clicks without disrupting text insertion cursor focus
         let tapGesture = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
@@ -1298,9 +1339,11 @@ struct MarkdownTextEditor: UIViewRepresentable {
     }
     
     func updateUIView(_ uiView: UITextView, context: Context) {
+        updateTextViewPadding(uiView, style: paperStyle)
+        
         if uiView.text != text {
             let selectedRange = uiView.selectedRange
-            uiView.attributedText = MarkdownHighlighter.highlight(text)
+            uiView.attributedText = MarkdownHighlighter.highlight(text, style: paperStyle)
             uiView.selectedRange = selectedRange
         }
         
@@ -1325,6 +1368,30 @@ struct MarkdownTextEditor: UIViewRepresentable {
     
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
+    }
+    
+    private func updateTextViewPadding(_ textView: UITextView, style: PaperStyle) {
+        let topInset: CGFloat
+        let leftInset: CGFloat
+        let rightInset: CGFloat = 20
+        let bottomInset: CGFloat = 20
+        
+        switch style {
+        case .legal:
+            topInset = 56
+            leftInset = 100
+        case .collegeRuled:
+            topInset = 63
+            leftInset = 84
+        case .ruled:
+            topInset = 48
+            leftInset = 84
+        default:
+            topInset = 16
+            leftInset = 20
+        }
+        
+        textView.textContainerInset = UIEdgeInsets(top: topInset, left: leftInset, bottom: bottomInset, right: rightInset)
     }
     
     @MainActor
@@ -1399,7 +1466,7 @@ struct MarkdownTextEditor: UIViewRepresentable {
             parent.text = tv.text
             
             let newSelectedRange = tv.selectedRange
-            tv.attributedText = MarkdownHighlighter.highlight(tv.text)
+            tv.attributedText = MarkdownHighlighter.highlight(tv.text, style: parent.paperStyle)
             tv.selectedRange = newSelectedRange
         }
         
@@ -1455,7 +1522,7 @@ struct MarkdownTextEditor: UIViewRepresentable {
         func textViewDidChange(_ textView: UITextView) {
             parent.text = textView.text
             let selectedRange = textView.selectedRange
-            textView.attributedText = MarkdownHighlighter.highlight(textView.text)
+            textView.attributedText = MarkdownHighlighter.highlight(textView.text, style: parent.paperStyle)
             textView.selectedRange = selectedRange
             updatePageBreaks(for: textView)
         }
@@ -1536,19 +1603,42 @@ struct MarkdownTextEditor: UIViewRepresentable {
 }
 
 struct MarkdownHighlighter {
-    static func highlight(_ text: String) -> NSAttributedString {
-        let defaultFont = UIFont.systemFont(ofSize: 16)
-        let boldFont = UIFont.boldSystemFont(ofSize: 16)
-        let italicFont = UIFont.italicSystemFont(ofSize: 16)
-        let h1Font = UIFont.boldSystemFont(ofSize: 24)
-        let h2Font = UIFont.boldSystemFont(ofSize: 20)
-        let h3Font = UIFont.boldSystemFont(ofSize: 18)
+    static func highlight(_ text: String, style: PaperStyle) -> NSAttributedString {
+        let baseSize: CGFloat
+        let lineSpacingVal: CGFloat
+        let lineSpacingTarget: CGFloat
+        
+        switch style {
+        case .legal:
+            baseSize = 18
+            lineSpacingTarget = 28
+        case .collegeRuled:
+            baseSize = 14
+            lineSpacingTarget = 21
+        case .ruled:
+            baseSize = 16
+            lineSpacingTarget = 24
+        default:
+            baseSize = 16
+            lineSpacingTarget = 22
+        }
+        
+        let defaultFont = UIFont.systemFont(ofSize: baseSize)
+        let boldFont = UIFont.boldSystemFont(ofSize: baseSize)
+        let italicFont = UIFont.italicSystemFont(ofSize: baseSize)
+        let h1Font = UIFont.boldSystemFont(ofSize: baseSize + 8)
+        let h2Font = UIFont.boldSystemFont(ofSize: baseSize + 4)
+        let h3Font = UIFont.boldSystemFont(ofSize: baseSize + 2)
         let defaultColor = UIColor.label
         let markerColor = UIColor.secondaryLabel.withAlphaComponent(0.35)
         
+        // Calculate dynamic lineSpacing to make lines align perfectly with the paper rule grid
+        let fontLineHeight = defaultFont.lineHeight
+        lineSpacingVal = max(0, lineSpacingTarget - fontLineHeight)
+        
         let paragraphStyle = NSMutableParagraphStyle()
-        paragraphStyle.lineSpacing = 6
-        paragraphStyle.paragraphSpacing = 12
+        paragraphStyle.lineSpacing = lineSpacingVal
+        paragraphStyle.paragraphSpacing = style == .plain ? 12 : 0
 
         let attrString = NSMutableAttributedString(string: text, attributes: [
             .font: defaultFont,
@@ -1998,8 +2088,8 @@ struct NotebookPaperBackground: View {
                     lineWidth: style == .dots ? 2 : 0.8
                 )
 
-                // Pink/Red Vertical Margin Line for Academic/Legal
-                if style == .legal || style == .collegeRuled {
+                // Pink/Red Vertical Margin Line for Academic/Legal/Ruled
+                if style == .legal || style == .collegeRuled || style == .ruled {
                     Path { path in
                         let marginX: CGFloat = style == .legal ? 88 : 72
                         path.move(to: CGPoint(x: marginX, y: 0))
