@@ -16,7 +16,10 @@ struct UnifiedReaderView: View {
     
     /// Computed once at init — determines whether we need an async check
     private var needsEPUBComicCheck: Bool {
-        pdf.contentType == .book && pdf.url.pathExtension.lowercased() == "epub"
+        let ext = pdf.url.pathExtension.lowercased()
+        let result = pdf.contentType == .book && ext == "epub"
+        Logger.shared.log("UnifiedReaderView: needsEPUBComicCheck evaluation. contentType=\(pdf.contentType), ext=\(ext) -> \(result)", category: "Reader", type: .info)
+        return result
     }
     
     var body: some View {
@@ -92,13 +95,16 @@ struct UnifiedReaderView: View {
         .statusBar(hidden: true)
         .forceProMotion()
         .task {
+            Logger.shared.log("UnifiedReaderView: .task modifier fired. needsEPUBComicCheck=\(needsEPUBComicCheck)", category: "Reader", type: .info)
             // Run the EPUB comic check off the main thread when the view appears
             if needsEPUBComicCheck && epubComicCheckResult == nil {
                 let pdfCopy = self.pdf
+                Logger.shared.log("UnifiedReaderView: Starting background EPUB check for '\(pdfCopy.name)'", category: "Reader", type: .info)
                 let result = await Task.detached(priority: .userInitiated) {
                     Self.checkIsEPUBComic(pdf: pdfCopy)
                 }.value
                 await MainActor.run {
+                    Logger.shared.log("UnifiedReaderView: Background EPUB check completed with result=\(result)", category: "Reader", type: .info)
                     epubComicCheckResult = result
                 }
                 // If we detected it's a comic, update the database so future opens skip this check
