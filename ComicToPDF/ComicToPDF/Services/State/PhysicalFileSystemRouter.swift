@@ -1,6 +1,7 @@
 import Foundation
 import UIKit
 import SwiftUI
+import SwiftData
 import PDFKit
 import ZIPFoundation
 import Unrar
@@ -221,6 +222,28 @@ class PhysicalFileSystemRouter {
             manager.convertedPDFs.remove(at: idx)
             manager.pruneEmptyCollections()
             manager.saveLibrary()
+        }
+        
+        // 1.5. Preserve source metadata on SQLite annotations so highlights don't become 'Unknown Source'
+        let context = InksyncProApp.sharedModelContainer.mainContext
+        let pdfID = pdf.id
+        let pdfName = pdf.name
+        let author = pdf.metadata.author
+        
+        let descriptor = FetchDescriptor<SDAnnotation>(
+            predicate: #Predicate<SDAnnotation> { $0.pdfID == pdfID }
+        )
+        if let annotations = try? context.fetch(descriptor) {
+            for ann in annotations {
+                if ann.readwiseBookTitle == nil || ann.readwiseBookTitle?.isEmpty == true {
+                    ann.readwiseBookTitle = pdfName
+                }
+                if ann.readwiseAuthor == nil || ann.readwiseAuthor?.isEmpty == true {
+                    ann.readwiseAuthor = author
+                }
+            }
+            try? context.save()
+            Logger.shared.log("Preserved source metadata for \(annotations.count) highlights on book deletion: \(pdfName)", category: "Annotations", type: .info)
         }
         
         // 2. Offload the heavy file destruction to a background task

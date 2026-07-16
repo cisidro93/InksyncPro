@@ -378,7 +378,7 @@ struct GlobalZettelkastenHubView: View {
                                                 if !collapsedSections.contains(group.key) {
                                                     LazyVStack(spacing: 10) {
                                                         ForEach(group.value) { item in
-                                                            GlobalHighlightRow(annotation: item)
+                                                            GlobalHighlightRow(annotation: item, searchText: searchText)
                                                         }
                                                     }
                                                     .padding(.horizontal)
@@ -855,10 +855,12 @@ struct GlobalZettelkastenHubView: View {
 
 struct GlobalHighlightRow: View {
     let annotation: SDAnnotation
+    var searchText: String = ""
     
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject var conversionManager: ConversionManager   // Item 7: jump-to-source
     @State private var showingEdit = false
+    @State private var showingArchiveAlert = false
     @Query private var manuscriptProjects: [SDManuscriptProject]
 
     // User-applied tags (excludes Readwise source tags already shown via readwiseTags)
@@ -877,8 +879,52 @@ struct GlobalHighlightRow: View {
         return "Unknown Source"
     }
 
+    // Helper to highlight searched query words inside text views
+    private func highlightedText(_ fullText: String) -> Text {
+        guard !searchText.isEmpty else { return Text(fullText) }
+        
+        var result = Text("")
+        var currentRange = fullText.startIndex..<fullText.endIndex
+        
+        while let range = fullText.range(of: searchText, options: .caseInsensitive, range: currentRange) {
+            // Text before match
+            let prefix = String(fullText[currentRange.lowerBound..<range.lowerBound])
+            result = result + Text(prefix)
+            
+            // Match highlighted
+            let match = String(fullText[range])
+            result = result + Text(match)
+                .bold()
+                .background(Color(hex: "#7B5EA7").opacity(0.24)) // Subtle violet highlighter highlight
+                .foregroundColor(.primary)
+            
+            currentRange = range.upperBound..<fullText.endIndex
+        }
+        
+        let suffix = String(fullText[currentRange])
+        result = result + Text(suffix)
+        
+        return result
+    }
+
     var body: some View {
-        Button { showingEdit = true } label: {
+        Button {
+            if let matchedPDF = conversionManager.convertedPDFs.first(where: { $0.id == annotation.pdfID }) {
+                HapticEngine.medium()
+                AppRouter.shared.presentFullScreen(.read(matchedPDF))
+                // Post notification to jump to page index after presentation completes
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                    NotificationCenter.default.post(
+                        name: NSNotification.Name("Reader_JumpToPage"),
+                        object: nil,
+                        userInfo: ["pageIndex": annotation.pageIndex]
+                    )
+                }
+            } else {
+                HapticEngine.light()
+                showingArchiveAlert = true
+            }
+        } label: {
             VStack(alignment: .leading, spacing: 10) {
                 // Header with Document details & Source Badge
                 HStack(alignment: .center) {
@@ -913,7 +959,7 @@ struct GlobalHighlightRow: View {
 
                 // Highlight text with warm amber/pastel highlighter background layer
                 if let text = annotation.selectedText, !text.isEmpty {
-                    Text(text)
+                    highlightedText(text)
                         .font(.system(size: 15, weight: .regular, design: .serif))
                         .foregroundStyle(.primary)
                         .lineSpacing(4)
@@ -934,7 +980,7 @@ struct GlobalHighlightRow: View {
                             .font(.system(size: 12))
                             .foregroundStyle(Theme.textSecondary)
                             .padding(.top, 2)
-                        Text(ocrText)
+                        highlightedText(ocrText)
                             .font(.system(size: 15, weight: .regular, design: .serif))
                             .italic()
                             .foregroundStyle(.primary)
@@ -964,7 +1010,7 @@ struct GlobalHighlightRow: View {
                                 .font(.system(size: 8, weight: .bold, design: .monospaced))
                                 .foregroundColor(Theme.textSecondary)
                         }
-                        Text(note)
+                        highlightedText(note)
                             .font(.system(size: 13, weight: .regular))
                             .foregroundStyle(.primary)
                             .lineSpacing(2)
@@ -1003,12 +1049,27 @@ struct GlobalHighlightRow: View {
                     
                     Spacer()
                     
-                    HStack(spacing: 3) {
-                        Text(annotation.modifiedAt, style: .relative)
-                        Text("ago")
+                    HStack(spacing: 8) {
+                        // Quick-edit shortcut button
+                        Button {
+                            HapticEngine.light()
+                            showingEdit = true
+                        } label: {
+                            Image(systemName: "pencil")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundColor(Theme.purple)
+                                .padding(5)
+                                .background(Theme.purple.opacity(0.12), in: Circle())
+                        }
+                        .buttonStyle(.plain)
+                        
+                        HStack(spacing: 3) {
+                            Text(annotation.modifiedAt, style: .relative)
+                            Text("ago")
+                        }
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(.tertiary)
                     }
-                    .font(.system(size: 9, weight: .medium))
-                    .foregroundStyle(.tertiary)
                 }
                 .padding(.top, 4)
             }
@@ -1024,7 +1085,21 @@ struct GlobalHighlightRow: View {
             )
         }
         .buttonStyle(.plain)
+        .alert("Archived Source Context", isPresented: $showingArchiveAlert) {
+            Button("Edit Note & Tags") {
+                showingEdit = true
+            }
+            Button("Dismiss", role: .cancel) { }
+        } message: {
+            Text("This highlight is preserved in your Zettelkasten, but the source book ('\(sourceTitle)') has been removed from this device to save storage space.")
+        }
         .contextMenu {
+            Button {
+                showingEdit = true
+            } label: {
+                Label("Edit Note & Tags", systemImage: "pencil")
+            }
+            
             // ─── Item 7: Jump-to-source ───────────────────────────────
             if let matchedPDF = conversionManager.convertedPDFs.first(where: { $0.id == annotation.pdfID }) {
                 Button {
