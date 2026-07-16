@@ -37,7 +37,7 @@ struct UnifiedReaderView: View {
                     case .book:
                         if pdf.url.pathExtension.lowercased() == "pdf" {
                             DocumentReaderEngine(pdf: pdf, onDismiss: { dismiss() })
-                        } else if isEPUBComic(url: pdf.url) {
+                        } else if isEPUBComic(pdf: pdf) {
                             ComicReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
                         } else {
                             BookReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
@@ -95,14 +95,30 @@ struct UnifiedReaderView: View {
         }
     }
     
-    private func isEPUBComic(url: URL) -> Bool {
-        guard url.pathExtension.lowercased() == "epub" else { return false }
+    private func isEPUBComic(pdf: ConvertedPDF) -> Bool {
+        guard pdf.url.pathExtension.lowercased() == "epub" else { return false }
         
-        let accessing = url.startAccessingSecurityScopedResource()
-        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+        let resolvedURL: URL
+        var accessedURL: URL? = nil
+        
+        if case .linked(let bm) = pdf.sourceMode,
+           let url = try? BookmarkResolver.shared.resolve(bm) {
+            let didAccess = url.startAccessingSecurityScopedResource()
+            resolvedURL = url
+            if didAccess { accessedURL = url }
+        } else {
+            resolvedURL = pdf.url
+            let didAccess = resolvedURL.startAccessingSecurityScopedResource()
+            if didAccess { accessedURL = resolvedURL }
+        }
+        
+        defer { accessedURL?.stopAccessingSecurityScopedResource() }
         
         do {
-            guard let archive = try? Archive(url: url, accessMode: .read, pathEncoding: .utf8) else { return false }
+            guard let archive = try? Archive(url: resolvedURL, accessMode: .read, pathEncoding: .utf8) else {
+                Logger.shared.log("isEPUBComic: Failed to init Archive for \(resolvedURL.path)", category: "Reader", type: .warning)
+                return false
+            }
             if let containerEntry = archive["META-INF/container.xml"] {
                 var containerData = Data()
                 _ = try archive.extract(containerEntry) { data in containerData.append(data) }
@@ -122,7 +138,10 @@ struct UnifiedReaderView: View {
                     }
                 }
             }
-        } catch { return false }
+        } catch {
+            Logger.shared.log("isEPUBComic: Error checking ZIP structure: \(error.localizedDescription)", category: "Reader", type: .warning)
+            return false
+        }
         return false
     }
 }
