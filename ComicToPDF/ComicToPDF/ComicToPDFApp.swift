@@ -72,6 +72,9 @@ struct InksyncProApp: App {
         // 💥 ANNIHILATE GHOST DATA ON FRESH INSTALLS 💥
         InstallGuardService.shared.executeGuard()
         
+        // Purge orphaned extraction temp directories from previous sessions / crashes
+        InksyncProApp.purgeOrphanedTempDirs()
+        
         // Register Background Task for Auto-Sync
         BGTaskScheduler.shared.register(forTaskWithIdentifier: "com.antigravity.InksyncPro.autosync", using: nil) { task in
             if let refreshTask = task as? BGAppRefreshTask {
@@ -209,6 +212,22 @@ struct InksyncProApp: App {
             Logger.shared.log("BGTaskScheduler: AutoSync scheduled successfully.", category: "Cloud")
         } catch {
             Logger.shared.log("BGTaskScheduler: Could not schedule app refresh — \(error.localizedDescription)", category: "Cloud", type: .warning)
+        }
+    }
+    
+    static func purgeOrphanedTempDirs() {
+        Task.detached(priority: .background) {
+            let fm = FileManager.default
+            let tempDir = fm.temporaryDirectory
+            guard let urls = try? fm.contentsOfDirectory(at: tempDir, includingPropertiesForKeys: nil, options: [.skipsSubdirectoryDescendants]) else {
+                return
+            }
+            for url in urls {
+                let name = url.lastPathComponent
+                if name.hasPrefix("cbr_") || name.hasPrefix("cbt_") {
+                    try? fm.removeItem(at: url)
+                }
+            }
         }
     }
 }

@@ -170,17 +170,24 @@ actor ImportOrchestrator {
                             } else {
                                 smartMetadata.volume = parsedTokens.volume
                             }
-                            smartMetadata.writer = parsedInfo.writer
-                            smartMetadata.publisher = parsedInfo.publisher
-                            smartMetadata.summary = parsedInfo.summary
-                            if let year = parsedInfo.year {
-                                var comps = DateComponents()
-                                comps.year = year; comps.month = 1; comps.day = 1
-                                smartMetadata.publicationDate = Calendar.current.date(from: comps)
-                            }
-                            for tag in parsedInfo.tags {
-                                if !smartMetadata.tags.contains(tag) { smartMetadata.tags.append(tag) }
-                            }
+                        }
+                        // Always populate rich fields not covered by xmlData
+                        if let writer = parsedInfo.writer, !writer.isEmpty {
+                            smartMetadata.writer = writer
+                        }
+                        if let publisher = parsedInfo.publisher, !publisher.isEmpty {
+                            smartMetadata.publisher = publisher
+                        }
+                        if let summary = parsedInfo.summary, !summary.isEmpty {
+                            smartMetadata.summary = summary
+                        }
+                        if let year = parsedInfo.year {
+                            var comps = DateComponents()
+                            comps.year = year; comps.month = 1; comps.day = 1
+                            smartMetadata.publicationDate = Calendar.current.date(from: comps)
+                        }
+                        for tag in parsedInfo.tags {
+                            if !smartMetadata.tags.contains(tag) { smartMetadata.tags.append(tag) }
                         }
                     } else if xmlData == nil {
                         smartMetadata.title = smartDisplayName
@@ -405,11 +412,7 @@ actor ImportOrchestrator {
                     // Apply manga flag and any fields not covered by the XML display layer
                     if let parsedInfo = parsedInfo {
                         smartMetadata.isManga = parsedInfo.manga
-                        // Only backfill fields that xmlData didn't already populate
                         if xmlData == nil {
-                            smartMetadata.writer    = parsedInfo.writer
-                            smartMetadata.publisher = parsedInfo.publisher
-                            smartMetadata.summary   = parsedInfo.summary
                             if let vol = parsedInfo.volume {
                                 smartMetadata.volume = String(vol)
                             } else if smartMetadata.volume == nil {
@@ -418,14 +421,24 @@ actor ImportOrchestrator {
                             if smartMetadata.issueNumber == nil {
                                 smartMetadata.issueNumber = parsedInfo.number ?? parsedTokens.issueNumber
                             }
-                            if let year = parsedInfo.year {
-                                var comps = DateComponents()
-                                comps.year = year; comps.month = 1; comps.day = 1
-                                smartMetadata.publicationDate = Calendar.current.date(from: comps)
-                            }
-                            for tag in parsedInfo.tags {
-                                if !smartMetadata.tags.contains(tag) { smartMetadata.tags.append(tag) }
-                            }
+                        }
+                        // Always populate rich fields not covered by xmlData
+                        if let writer = parsedInfo.writer, !writer.isEmpty {
+                            smartMetadata.writer = writer
+                        }
+                        if let publisher = parsedInfo.publisher, !publisher.isEmpty {
+                            smartMetadata.publisher = publisher
+                        }
+                        if let summary = parsedInfo.summary, !summary.isEmpty {
+                            smartMetadata.summary = summary
+                        }
+                        if let year = parsedInfo.year {
+                            var comps = DateComponents()
+                            comps.year = year; comps.month = 1; comps.day = 1
+                            smartMetadata.publicationDate = Calendar.current.date(from: comps)
+                        }
+                        for tag in parsedInfo.tags {
+                            if !smartMetadata.tags.contains(tag) { smartMetadata.tags.append(tag) }
                         }
                     }
 
@@ -727,17 +740,24 @@ actor ImportOrchestrator {
                                     metadata.title = parsedInfo.title ?? smartDisplayName
                                     metadata.series = parsedInfo.series ?? seriesName
                                     metadata.issueNumber = parsedInfo.number
-                                    metadata.writer = parsedInfo.writer
-                                    metadata.publisher = parsedInfo.publisher
-                                    metadata.summary = parsedInfo.summary
-                                    if let year = parsedInfo.year {
-                                        var comps = DateComponents()
-                                        comps.year = year; comps.month = 1; comps.day = 1
-                                        metadata.publicationDate = Calendar.current.date(from: comps)
-                                    }
-                                    for tag in parsedInfo.tags {
-                                        if !metadata.tags.contains(tag) { metadata.tags.append(tag) }
-                                    }
+                                }
+                                // Always populate rich fields not covered by xmlData
+                                if let writer = parsedInfo.writer, !writer.isEmpty {
+                                    metadata.writer = writer
+                                }
+                                if let publisher = parsedInfo.publisher, !publisher.isEmpty {
+                                    metadata.publisher = publisher
+                                }
+                                if let summary = parsedInfo.summary, !summary.isEmpty {
+                                    metadata.summary = summary
+                                }
+                                if let year = parsedInfo.year {
+                                    var comps = DateComponents()
+                                    comps.year = year; comps.month = 1; comps.day = 1
+                                    metadata.publicationDate = Calendar.current.date(from: comps)
+                                }
+                                for tag in parsedInfo.tags {
+                                    if !metadata.tags.contains(tag) { metadata.tags.append(tag) }
                                 }
                             }
                             

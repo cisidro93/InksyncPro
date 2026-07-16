@@ -622,7 +622,7 @@ struct ZettelkastenGraphView: View {
                         let truncated = node.title.count > 25
                             ? String(node.title.prefix(23)) + "…"
                             : node.title
-                        let labelPt = CGPoint(x: node.position.x, y: node.position.y + r + 8)
+                        let labelPt = CGPoint(x: node.position.x, y: node.position.y + r + 8 + CGFloat(node.connectionCount) * 0.4)
                         let weight: Font.Weight = isSelected || isSearchMatch ? .bold : (node.connectionCount >= 8 ? .semibold : .regular)
                         context.draw(
                             Text(truncated)
