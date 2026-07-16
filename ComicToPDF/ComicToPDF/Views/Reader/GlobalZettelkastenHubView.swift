@@ -883,28 +883,18 @@ struct GlobalHighlightRow: View {
     private func highlightedText(_ fullText: String) -> Text {
         guard !searchText.isEmpty else { return Text(fullText) }
         
-        var result = Text("")
-        var currentRange = fullText.startIndex..<fullText.endIndex
+        var attrString = AttributedString(fullText)
+        let query = searchText
         
-        while let range = fullText.range(of: searchText, options: .caseInsensitive, range: currentRange) {
-            // Text before match
-            let prefix = String(fullText[currentRange.lowerBound..<range.lowerBound])
-            result = result + Text(prefix)
+        var searchRange = attrString.startIndex..<attrString.endIndex
+        while let range = attrString[searchRange].range(of: query, options: .caseInsensitive) {
+            attrString[range].backgroundColor = Color(hex: "#7B5EA7").opacity(0.24)
+            attrString[range].inlinePresentationIntent = .stronglyEmphasized // Bold
             
-            // Match highlighted
-            let match = String(fullText[range])
-            result = result + Text(match)
-                .bold()
-                .background(Color(hex: "#7B5EA7").opacity(0.24)) // Subtle violet highlighter highlight
-                .foregroundColor(.primary)
-            
-            currentRange = range.upperBound..<fullText.endIndex
+            searchRange = range.upperBound..<attrString.endIndex
         }
         
-        let suffix = String(fullText[currentRange])
-        result = result + Text(suffix)
-        
-        return result
+        return Text(attrString)
     }
 
     var body: some View {

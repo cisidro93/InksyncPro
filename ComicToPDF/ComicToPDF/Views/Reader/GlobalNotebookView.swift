@@ -1062,6 +1062,9 @@ struct CreateNotebookSheet: View {
     @Environment(\.colorScheme) private var colorScheme
     
     @State private var title = ""
+    private var notebookTitle: String {
+        title.isEmpty ? "My Notebook" : title
+    }
     @State private var coverStyle = "gradient" // "gradient" or "skin"
     @State private var selectedGradientIndex = 0
     @State private var selectedSkin = "composition" // "composition", "leather", "kraft", "linen"
@@ -1109,7 +1112,7 @@ struct CreateNotebookSheet: View {
                         // Live Cover Preview
                         ZStack(alignment: .leading) {
                             if coverStyle == "skin" {
-                                NotebookCoverSkinView(skinType: selectedSkin, title: title.isEmpty ? "My Notebook" : title, colorScheme: colorScheme)
+                                NotebookCoverSkinView(skinType: selectedSkin, title: notebookTitle, colorScheme: colorScheme)
                             } else {
                                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                                     .fill(coverGradients[selectedGradientIndex])
@@ -1132,7 +1135,7 @@ struct CreateNotebookSheet: View {
                                 if coverStyle != "skin" || selectedSkin != "composition" {
                                     VStack(alignment: .leading) {
                                         Spacer()
-                                        Text(title.isEmpty ? "My Notebook" : title)
+                                        Text(notebookTitle)
                                             .font(.system(size: 11, weight: .bold, design: .rounded))
                                             .foregroundColor(.white)
                                             .lineLimit(2)
@@ -1680,6 +1683,9 @@ struct EditNotebookSheet: View {
     @Environment(\.colorScheme) private var colorScheme
     
     @State private var title = ""
+    private var notebookTitle: String {
+        title.isEmpty ? "My Notebook" : title
+    }
     @State private var coverStyle = "gradient"
     @State private var selectedGradientIndex = 0
     @State private var selectedSkin = "composition"
@@ -1726,7 +1732,7 @@ struct EditNotebookSheet: View {
                     VStack(spacing: 12) {
                         ZStack(alignment: .leading) {
                             if coverStyle == "skin" {
-                                NotebookCoverSkinView(skinType: selectedSkin, title: title.isEmpty ? "My Notebook" : title, colorScheme: colorScheme)
+                                NotebookCoverSkinView(skinType: selectedSkin, title: notebookTitle, colorScheme: colorScheme)
                             } else {
                                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                                     .fill(coverGradients[selectedGradientIndex])
@@ -1749,7 +1755,7 @@ struct EditNotebookSheet: View {
                                 if coverStyle != "skin" || selectedSkin != "composition" {
                                     VStack(alignment: .leading) {
                                         Spacer()
-                                        Text(title.isEmpty ? "My Notebook" : title)
+                                        Text(notebookTitle)
                                             .font(.system(size: 11, weight: .bold, design: .rounded))
                                             .foregroundColor(.white)
                                             .lineLimit(2)
