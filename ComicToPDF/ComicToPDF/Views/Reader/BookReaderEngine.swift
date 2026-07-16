@@ -57,7 +57,6 @@ class BookReaderViewModel: NSObject, ObservableObject, WKNavigationDelegate {
             let fm = FileManager.default
             let tempDir = self.tempDirURL
             let sourcePDF = self.pdf
-            Logger.shared.log("BookReaderEngine: unpacking EPUB for '\(sourcePDF.name)'. contentType=\(sourcePDF.contentType)", category: "Reader", type: .info)
 
             // Linked Library: resolve security-scoped URL for linked files.
             // We only need the scope open during the unpack step — chapters are read

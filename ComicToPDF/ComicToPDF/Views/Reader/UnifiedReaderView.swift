@@ -19,9 +19,7 @@ struct UnifiedReaderView: View {
     /// Computed once at init — determines whether we need an async check
     private var needsEPUBComicCheck: Bool {
         let ext = pdf.url.pathExtension.lowercased()
-        let result = pdf.contentType == .book && ext == "epub"
-        Logger.shared.log("UnifiedReaderView: needsEPUBComicCheck evaluation. contentType=\(pdf.contentType), ext=\(ext) -> \(result)", category: "Reader", type: .info)
-        return result
+        return pdf.contentType == .book && ext == "epub"
     }
     
     var body: some View {
@@ -97,7 +95,6 @@ struct UnifiedReaderView: View {
         .statusBar(hidden: true)
         .forceProMotion()
         .task {
-            Logger.shared.log("UnifiedReaderView: .task modifier fired. needsEPUBComicCheck=\(needsEPUBComicCheck)", category: "Reader", type: .info)
             // Run the EPUB comic check off the main thread when the view appears
             if needsEPUBComicCheck && epubComicCheckResult == nil {
                 let pdfCopy = self.pdf
@@ -138,7 +135,7 @@ struct UnifiedReaderView: View {
             }
         }
         .onAppear {
-            Logger.shared.log("UnifiedReaderView: onAppear called for '\(pdf.name)'. URL='\(pdf.url.absoluteString)', contentType=\(pdf.contentType)", category: "Reader", type: .info)
+            Logger.shared.log("UnifiedReaderView presented for '\(pdf.name)'. contentType=\(pdf.contentType)", category: "Reader", type: .info)
         }
     }
     
