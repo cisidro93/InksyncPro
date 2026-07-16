@@ -355,17 +355,7 @@ struct LibraryGridView: View {
                 .buttonStyle(TactileButtonStyle())
             } else {
                 if UUID(uuidString: group.id) != nil {
-                    if useNavigationStack {
-                        NavigationLink(value: group) {
-                            ModernGridSeriesCell(group: group, isSelected: false, isBatch: false)
-                        }
-                        .buttonStyle(TactileButtonStyle())
-                    } else {
-                        NavigationLink(destination: LazyView { SeriesDetailView(series: group, selectedPDF: $selectedPDF, useNavigationStack: useNavigationStack) }) {
-                            ModernGridSeriesCell(group: group, isSelected: false, isBatch: false)
-                        }
-                        .buttonStyle(TactileButtonStyle())
-                    }
+                    LibrarySeriesGridContainer(group: group, useNavigationStack: useNavigationStack, selectedPDF: $selectedPDF)
                     .contextMenu {
                         Button {
                             selectedDetailSeries = group
@@ -414,17 +404,7 @@ struct LibraryGridView: View {
                     }
                 } else {
                     // It's a generated Publisher Series — show the details sheet/stack
-                    if useNavigationStack {
-                        NavigationLink(value: group) {
-                            ModernGridSeriesCell(group: group, isSelected: false, isBatch: false)
-                        }
-                        .buttonStyle(TactileButtonStyle())
-                    } else {
-                        NavigationLink(destination: LazyView { SeriesDetailView(series: group, selectedPDF: $selectedPDF, useNavigationStack: useNavigationStack) }) {
-                            ModernGridSeriesCell(group: group, isSelected: false, isBatch: false)
-                        }
-                        .buttonStyle(TactileButtonStyle())
-                    }
+                    LibrarySeriesGridContainer(group: group, useNavigationStack: useNavigationStack, selectedPDF: $selectedPDF)
                     .contextMenu {
                         Button {
                             selectedDetailSeries = group
@@ -1160,6 +1140,27 @@ extension LibraryGridView {
         dragStartIndex = nil
         currentDragIndex = nil
         initialSelectionBeforeDrag.removeAll()
+    }
+}
+
+// Helper container to resolve compiler complexity in grid cells navigation
+struct LibrarySeriesGridContainer: View {
+    let group: SeriesGroup
+    let useNavigationStack: Bool
+    @Binding var selectedPDF: ConvertedPDF?
+    
+    var body: some View {
+        if useNavigationStack {
+            NavigationLink(value: group) {
+                ModernGridSeriesCell(group: group, isSelected: false, isBatch: false)
+            }
+            .buttonStyle(TactileButtonStyle())
+        } else {
+            NavigationLink(destination: LazyView { SeriesDetailView(series: group, selectedPDF: $selectedPDF, useNavigationStack: useNavigationStack) }) {
+                ModernGridSeriesCell(group: group, isSelected: false, isBatch: false)
+            }
+            .buttonStyle(TactileButtonStyle())
+        }
     }
 }
 

@@ -503,17 +503,7 @@ struct LibraryListView: View {
                 .buttonStyle(TactileButtonStyle())
             } else {
                 if let folderUUID = UUID(uuidString: group.id) {
-                    if useNavigationStack {
-                        NavigationLink(value: group) {
-                            ModernSeriesRow(group: group, isSelected: false, isBatch: false)
-                        }
-                        .buttonStyle(TactileButtonStyle())
-                    } else {
-                        NavigationLink(destination: LazyView { SeriesDetailView(series: group, selectedPDF: $selectedPDF, useNavigationStack: useNavigationStack) }) {
-                            ModernSeriesRow(group: group, isSelected: false, isBatch: false)
-                        }
-                        .buttonStyle(TactileButtonStyle())
-                    }
+                    LibrarySeriesRowContainer(group: group, useNavigationStack: useNavigationStack, selectedPDF: $selectedPDF)
                     .contextMenu {
                         Button {
                             selectedDetailSeries = group
@@ -564,17 +554,7 @@ struct LibraryListView: View {
                         } label: { Label("Delete Folder", systemImage: "trash") }
                     }
                 } else {
-                    if useNavigationStack {
-                        NavigationLink(value: group) {
-                            ModernSeriesRow(group: group, isSelected: false, isBatch: false)
-                        }
-                        .buttonStyle(TactileButtonStyle())
-                    } else {
-                        NavigationLink(destination: LazyView { SeriesDetailView(series: group, selectedPDF: $selectedPDF, useNavigationStack: useNavigationStack) }) {
-                            ModernSeriesRow(group: group, isSelected: false, isBatch: false)
-                        }
-                        .buttonStyle(TactileButtonStyle())
-                    }
+                    LibrarySeriesRowContainer(group: group, useNavigationStack: useNavigationStack, selectedPDF: $selectedPDF)
                     .contextMenu {
                         Button {
                             selectedDetailSeries = group
@@ -992,5 +972,26 @@ private struct ListFileDragPreviewRow: View {
         .padding(10)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
         .frame(width: 250)
+    }
+}
+
+// Helper container to resolve compiler complexity in list rows navigation
+struct LibrarySeriesRowContainer: View {
+    let group: SeriesGroup
+    let useNavigationStack: Bool
+    @Binding var selectedPDF: ConvertedPDF?
+    
+    var body: some View {
+        if useNavigationStack {
+            NavigationLink(value: group) {
+                ModernSeriesRow(group: group, isSelected: false, isBatch: false)
+            }
+            .buttonStyle(TactileButtonStyle())
+        } else {
+            NavigationLink(destination: LazyView { SeriesDetailView(series: group, selectedPDF: $selectedPDF, useNavigationStack: useNavigationStack) }) {
+                ModernSeriesRow(group: group, isSelected: false, isBatch: false)
+            }
+            .buttonStyle(TactileButtonStyle())
+        }
     }
 }
