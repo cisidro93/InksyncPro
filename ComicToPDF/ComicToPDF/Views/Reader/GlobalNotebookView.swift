@@ -72,6 +72,7 @@ struct GlobalNotebookView: View {
     @State private var notebookSearchQuery = ""
     @State private var sortOrder: NotebookSortOrder = .modified
     @State private var editingNotebook: SDNotebook? = nil
+    @State private var notebookToDelete: SDNotebook? = nil
     
     private let coverGradients: [LinearGradient] = [
         LinearGradient(colors: [Color(hex: "#1a2a6c"), Color(hex: "#b21f1f")], startPoint: .topLeading, endPoint: .bottomTrailing),
@@ -243,6 +244,27 @@ struct GlobalNotebookView: View {
         .sheet(item: $editingNotebook) { notebook in
             EditNotebookSheet(notebook: notebook)
                 .environmentObject(conversionManager)
+        }
+        .alert("Delete Notebook", isPresented: Binding(
+            get: { notebookToDelete != nil },
+            set: { if !$0 { notebookToDelete = nil } }
+        )) {
+            Button("Delete", role: .destructive) {
+                if let notebook = notebookToDelete {
+                    HapticEngine.warning()
+                    modelContext.delete(notebook)
+                    try? modelContext.save()
+                    Logger.shared.log("Deleted notebook '\(notebook.title)'", category: "Notebook", type: .success)
+                }
+                notebookToDelete = nil
+            }
+            Button("Cancel", role: .cancel) {
+                notebookToDelete = nil
+            }
+        } message: {
+            if let notebook = notebookToDelete {
+                Text("Are you sure you want to permanently delete '\(notebook.title)'? This will lose all typed notes and pencil sketches in this notebook.")
+            }
         }
     }
     
@@ -953,9 +975,7 @@ struct GlobalNotebookView: View {
                 
                 Button(role: .destructive) {
                     HapticEngine.warning()
-                    modelContext.delete(notebook)
-                    try? modelContext.save()
-                    Logger.shared.log("Deleted notebook '\(notebook.title)'", category: "Notebook", type: .success)
+                    notebookToDelete = notebook
                 } label: {
                     Label("Delete Notebook", systemImage: "trash")
                 }

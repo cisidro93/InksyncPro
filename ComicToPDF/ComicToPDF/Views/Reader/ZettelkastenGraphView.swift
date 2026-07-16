@@ -123,7 +123,9 @@ final class ZettelkastenGraphEngine: NSObject, ObservableObject {
                 let text = $0.selectedText?.localizedCaseInsensitiveContains(searchText) ?? false
                 let note = $0.noteText?.localizedCaseInsensitiveContains(searchText) ?? false
                 let book = ($0.readwiseBookTitle ?? pdfNames[$0.pdfID] ?? "").localizedCaseInsensitiveContains(searchText)
-                return text || note || book
+                let allTags = ($0.tags ?? []) + ($0.readwiseTags ?? []) + ($0.readwiseDocumentTags ?? [])
+                let tagMatch = allTags.contains { $0.localizedCaseInsensitiveContains(searchText) || $0.localizedCaseInsensitiveContains(searchText.replacingOccurrences(of: "#", with: "")) }
+                return text || note || book || tagMatch
             }
         }
         
@@ -566,6 +568,11 @@ struct ZettelkastenGraphView: View {
                     let isSelected = selectedNodeID == node.id
                     let isHovered  = hoverNodeID == node.id
                     let isDimmed   = (hoverNodeID != nil && !isHovered) || (selectedNodeID != nil && !isSelected)
+                    
+                    let isSearchMatch = !searchText.isEmpty && (
+                        node.title.localizedCaseInsensitiveContains(searchText) ||
+                        node.title.localizedCaseInsensitiveContains(searchText.replacingOccurrences(of: "#", with: ""))
+                    )
 
                     if isSelected {
                         // Core glowing halo
@@ -578,6 +585,12 @@ struct ZettelkastenGraphView: View {
                                      with: .color(nodeFill(for: node, alpha: 0.2)))
                         context.fill(Path(ellipseIn: rect), with: .color(nodeFill(for: node, alpha: 1.0)))
                         context.stroke(Path(ellipseIn: rect), with: .color(.white.opacity(0.4)), lineWidth: 1.0)
+                    } else if isSearchMatch {
+                        // Glowing orange halo for search match nodes
+                        context.fill(Path(ellipseIn: rect.insetBy(dx: -r * 0.6, dy: -r * 0.6)),
+                                     with: .color(Color.orange.opacity(0.24)))
+                        context.fill(Path(ellipseIn: rect), with: .color(nodeFill(for: node, alpha: 1.0)))
+                        context.stroke(Path(ellipseIn: rect), with: .color(Color.orange), lineWidth: 1.5)
                     } else {
                         let fill = isDimmed ? nodeFill(for: node, alpha: 0.2) : nodeFill(for: node, alpha: 0.85)
                         context.fill(Path(ellipseIn: rect), with: .color(fill))
@@ -603,18 +616,18 @@ struct ZettelkastenGraphView: View {
                         )
                     }
 
-                    // Render labels
-                    let showLabel = engine.scale > 0.45 && (isHovered || isSelected || (hoverNodeID == nil && selectedNodeID == nil && node.connectionCount >= 4))
+                    // Render labels (always show if search match)
+                    let showLabel = isSearchMatch || engine.scale > 0.45 && (isHovered || isSelected || (hoverNodeID == nil && selectedNodeID == nil && node.connectionCount >= 4))
                     if showLabel {
                         let truncated = node.title.count > 25
                             ? String(node.title.prefix(23)) + "…"
                             : node.title
                         let labelPt = CGPoint(x: node.position.x, y: node.position.y + r + 8)
-                        let weight: Font.Weight = isSelected ? .bold : (node.connectionCount >= 8 ? .semibold : .regular)
+                        let weight: Font.Weight = isSelected || isSearchMatch ? .bold : (node.connectionCount >= 8 ? .semibold : .regular)
                         context.draw(
                             Text(truncated)
                                 .font(.system(size: 9.5, weight: weight))
-                                .foregroundColor(isSelected ? Color.pink : labelColor),
+                                .foregroundColor(isSelected ? Color.pink : (isSearchMatch ? Color.orange : labelColor)),
                             at: labelPt
                         )
                     }
@@ -860,6 +873,20 @@ struct ZettelkastenGraphView: View {
                 } label: {
                     Image(systemName: "minus")
                         .font(.subheadline.bold())
+                        .foregroundColor(Color.inkTextPrimary)
+                        .frame(width: 38, height: 38)
+                        .background(Color.inkSurfaceRaised)
+                }
+                
+                Button {
+                    withAnimation(.spring(response: 0.45, dampingFraction: 0.8)) {
+                        engine.scale = 1.0
+                        engine.offset = .zero
+                    }
+                    HapticEngine.light()
+                } label: {
+                    Image(systemName: "scope")
+                        .font(.system(size: 15, weight: .semibold))
                         .foregroundColor(Color.inkTextPrimary)
                         .frame(width: 38, height: 38)
                         .background(Color.inkSurfaceRaised)

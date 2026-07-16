@@ -1281,6 +1281,8 @@ struct MarkdownTextEditor: UIViewRepresentable {
                 micBtn.tintColor = isRecording ? .systemRed : .label
             }
         }
+        
+        context.coordinator.updatePageBreaks(for: uiView)
     }
     
     func makeCoordinator() -> Coordinator {
@@ -1363,11 +1365,61 @@ struct MarkdownTextEditor: UIViewRepresentable {
             tv.selectedRange = newSelectedRange
         }
         
+        func updatePageBreaks(for textView: UITextView) {
+            // Remove existing page breaks
+            textView.subviews.filter { $0.tag == 999 }.forEach { $0.removeFromSuperview() }
+            
+            let pageHeight: CGFloat = 1100
+            let padding: CGFloat = 16
+            let width = textView.bounds.width > 0 ? textView.bounds.width : UIScreen.main.bounds.width
+            let contentHeight = textView.contentSize.height
+            
+            var y: CGFloat = pageHeight
+            var pageIndex = 1
+            while y < contentHeight - 100 {
+                let container = UIView(frame: CGRect(x: 0, y: y, width: width, height: 20))
+                container.tag = 999
+                container.isUserInteractionEnabled = false
+                container.backgroundColor = .clear
+                
+                // Horizontal dashed line
+                let lineWidth = max(50, width - 96 - (padding * 2))
+                let line = UIView(frame: CGRect(x: padding, y: 10, width: lineWidth, height: 1))
+                line.backgroundColor = .clear
+                
+                // Add a CAShapeLayer for a clean dashed stroke style matching theme
+                let shapeLayer = CAShapeLayer()
+                shapeLayer.strokeColor = UIColor.separator.withAlphaComponent(0.2).cgColor
+                shapeLayer.lineWidth = 1.0
+                shapeLayer.lineDashPattern = [6, 4]
+                
+                let path = CGMutablePath()
+                path.addLines(between: [CGPoint(x: 0, y: 0), CGPoint(x: lineWidth, y: 0)])
+                shapeLayer.path = path
+                line.layer.addSublayer(shapeLayer)
+                container.addSubview(line)
+                
+                // Page Label
+                let label = UILabel(frame: CGRect(x: width - 80 - padding, y: 0, width: 80, height: 20))
+                label.text = "Page \(pageIndex)"
+                label.font = UIFont.systemFont(ofSize: 10, weight: .semibold)
+                label.textColor = UIColor.secondaryLabel.withAlphaComponent(0.4)
+                label.textAlignment = .right
+                container.addSubview(label)
+                
+                textView.addSubview(container)
+                
+                y += pageHeight
+                pageIndex += 1
+            }
+        }
+        
         func textViewDidChange(_ textView: UITextView) {
             parent.text = textView.text
             let selectedRange = textView.selectedRange
             textView.attributedText = MarkdownHighlighter.highlight(textView.text)
             textView.selectedRange = selectedRange
+            updatePageBreaks(for: textView)
         }
         
         func textViewDidBeginEditing(_ textView: UITextView) {
