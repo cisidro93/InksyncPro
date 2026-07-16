@@ -1147,7 +1147,7 @@ struct CreateNotebookSheet: View {
                                         .stroke(Color.black.opacity(0.1), lineWidth: 1)
                                 )
                             
-                            NotebookPaperBackground(style: selectedTemplate, colorScheme: colorScheme)
+                            NotebookPaperBackground(style: selectedTemplate, spacing: 24.0, colorScheme: colorScheme)
                                 .padding(8)
                                 .clipShape(RoundedRectangle(cornerRadius: 8))
                         }
@@ -1780,7 +1780,7 @@ struct EditNotebookSheet: View {
                                         .stroke(Color.black.opacity(0.1), lineWidth: 1)
                                 )
                             
-                            NotebookPaperBackground(style: selectedTemplate, colorScheme: colorScheme)
+                            NotebookPaperBackground(style: selectedTemplate, spacing: 24.0, colorScheme: colorScheme)
                                 .padding(8)
                                 .clipShape(RoundedRectangle(cornerRadius: 8))
                         }
