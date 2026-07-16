@@ -1075,9 +1075,10 @@ struct StudyNotebookView: View {
                         } else {
                             ForEach(matches) { highlight in
                                 VStack(alignment: .leading, spacing: 8) {
+                                    // Header: Page Index
                                     HStack {
                                         Text("Page \(highlight.pageIndex + 1)")
-                                            .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                                            .font(.system(size: 9, weight: .bold, design: .monospaced))
                                             .foregroundColor(.secondary)
                                         Spacer()
                                         
@@ -1087,7 +1088,7 @@ struct StudyNotebookView: View {
                                             .frame(width: 6, height: 6)
                                     }
                                     
-                                    // Quote with highlighter background
+                                    // Quote highlighted text
                                     if let text = highlight.selectedText, !text.isEmpty {
                                         let accentColor = Color(hex: highlight.colorHex ?? "#FFD60A")
                                         Text(text)
@@ -1107,7 +1108,7 @@ struct StudyNotebookView: View {
                                             )
                                     }
                                     
-                                    // Marginalia Note
+                                    // User note/thought
                                     if let note = highlight.noteText, !note.isEmpty {
                                         Text(note)
                                             .font(.system(size: 11))
@@ -1119,6 +1120,7 @@ struct StudyNotebookView: View {
                                             .cornerRadius(4)
                                     }
                                     
+                                    // Tags list
                                     if let tags = highlight.tags, !tags.isEmpty {
                                         HStack(spacing: 4) {
                                             ForEach(tags, id: \.self) { tag in
@@ -1132,6 +1134,7 @@ struct StudyNotebookView: View {
                                         }
                                     }
                                     
+                                    // Action buttons
                                     HStack {
                                         Button {
                                             insertHighlightIntoNote(highlight)
@@ -1161,28 +1164,13 @@ struct StudyNotebookView: View {
                                     }
                                     .padding(.top, 2)
                                 }
-                                .padding(10)
+                                .padding(12)
                                 .background(Theme.surface)
                                 .cornerRadius(8)
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 8)
-                                        .stroke(Color.primary.opacity(0.05), lineWidth: 0.6)
+                                        .stroke(Color.primary.opacity(0.06), lineWidth: 0.6)
                                 )
-                                        .padding(.leading, 8)
-                                        
-                                        Spacer()
-                                        Text("p. \(highlight.pageIndex + 1)")
-                                            .font(.caption2)
-                                            .foregroundColor(.secondary)
-                                    }
-                                }
-                                .padding(12)
-                                .background(Color(hex: highlight.colorHex ?? "#FFD60A").opacity(0.1))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .strokeBorder(Color(hex: highlight.colorHex ?? "#FFD60A").opacity(0.3), lineWidth: 1)
-                                )
-                                .cornerRadius(8)
                                 .onDrag {
                                     let formattedText = formatHighlightForInsertion(highlight)
                                     return NSItemProvider(object: formattedText as NSString)
