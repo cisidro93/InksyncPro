@@ -36,6 +36,7 @@ struct StudyNotebookView: View {
     }
     @AppStorage("studyNotebookInputMode") private var inputMode: InputMode = .markdown
     @State private var paperStyle: PaperStyle = .plain
+    @State private var paperSpacing: CGFloat = 24.0
     @State private var selectedBookForReader: ConvertedPDF? = nil
     @AppStorage("studyNotebookPlacement") private var notebookPlacement: SidebarPlacement = .right
     @State private var canvasView = PKCanvasView()
@@ -172,9 +173,21 @@ struct StudyNotebookView: View {
                     
                     // Paper Style Menu (Available in both modes)
                     Menu {
-                        Picker("Paper Style", selection: $paperStyle) {
-                            ForEach(PaperStyle.allCases) { style in
-                                Label(style.rawValue, systemImage: style.icon).tag(style)
+                        Section("Paper Style") {
+                            Picker("Style", selection: $paperStyle) {
+                                ForEach(PaperStyle.allCases) { style in
+                                    Label(style.rawValue, systemImage: style.icon).tag(style)
+                                }
+                            }
+                        }
+                        
+                        if paperStyle != .plain {
+                            Section("Line & Grid Size") {
+                                Picker("Size", selection: $paperSpacing) {
+                                    Text("Small (Narrow)").tag(CGFloat(18.0))
+                                    Text("Medium (Normal)").tag(CGFloat(24.0))
+                                    Text("Large (Wide)").tag(CGFloat(32.0))
+                                }
                             }
                         }
                     } label: {
@@ -368,13 +381,13 @@ struct StudyNotebookView: View {
                 ZStack(alignment: .trailing) {
                     if inputMode == .markdown {
                         ZStack {
-                            NotebookPaperBackground(style: paperStyle, colorScheme: colorScheme)
+                            NotebookPaperBackground(style: paperStyle, spacing: paperSpacing, colorScheme: colorScheme)
                             MarkdownTextEditor(text: $localNotes, isFocused: $isFocused, paperStyle: paperStyle, onLinkTapped: handleLinkTapped)
                         }
                         .onChange(of: localNotes) { _, _ in debounceSave() }
                     } else {
                         ZStack {
-                            NotebookPaperBackground(style: paperStyle, colorScheme: colorScheme)
+                            NotebookPaperBackground(style: paperStyle, spacing: paperSpacing, colorScheme: colorScheme)
                             StudyCanvasView(canvasView: $canvasView, isSmartShapesEnabled: $isSmartShapesEnabled, onSaved: debounceSave)
                         }
                         .padding(.top, 8)
@@ -439,6 +452,16 @@ struct StudyNotebookView: View {
                     nb.templateStyle = newStyle.rawValue
                     try? modelContext.save()
                     Logger.shared.log("Persisted paper style '\(newStyle.rawValue)' to notebook '\(bookTitle)'", category: "Notebook", type: .success)
+                }
+            }
+        }
+        .onChange(of: paperSpacing) { _, newSpacing in
+            if let actualUUID = UUID(uuidString: bookID) {
+                let nbFetch = FetchDescriptor<SDNotebook>(predicate: #Predicate { $0.id == actualUUID })
+                if let nb = try? modelContext.fetch(nbFetch).first {
+                    nb.templateSize = Double(newSpacing)
+                    try? modelContext.save()
+                    Logger.shared.log("Persisted paper size '\(newSpacing)' to notebook '\(bookTitle)'", category: "Notebook", type: .success)
                 }
             }
         }
@@ -555,7 +578,8 @@ struct StudyNotebookView: View {
             let nbFetch = FetchDescriptor<SDNotebook>(predicate: #Predicate { $0.id == actualUUID })
             if let nb = try? modelContext.fetch(nbFetch).first {
                 self.paperStyle = PaperStyle(rawValue: nb.templateStyle) ?? .plain
-                Logger.shared.log("Loaded template style '\(nb.templateStyle)' for notebook '\(bookTitle)'", category: "Notebook", type: .success)
+                self.paperSpacing = CGFloat(nb.templateSize ?? 24.0)
+                Logger.shared.log("Loaded template style '\(nb.templateStyle)' and spacing \(self.paperSpacing) for notebook '\(bookTitle)'", category: "Notebook", type: .success)
             }
         }
         
@@ -2009,6 +2033,7 @@ enum PaperStyle: String, CaseIterable, Identifiable {
 
 struct NotebookPaperBackground: View {
     let style: PaperStyle
+    let spacing: CGFloat
     let colorScheme: ColorScheme
 
     var body: some View {
@@ -2032,7 +2057,7 @@ struct NotebookPaperBackground: View {
                     case .plain:
                         break
                     case .ruled:
-                        let lineSpacing: CGFloat = 24
+                        let lineSpacing: CGFloat = spacing
                         var y: CGFloat = lineSpacing
                         while y < geo.size.height {
                             path.move(to: CGPoint(x: 0, y: y))
@@ -2040,7 +2065,7 @@ struct NotebookPaperBackground: View {
                             y += lineSpacing
                         }
                     case .grid:
-                        let gridSpacing: CGFloat = 24
+                        let gridSpacing: CGFloat = spacing
                         var x: CGFloat = gridSpacing
                         while x < geo.size.width {
                             path.move(to: CGPoint(x: x, y: 0))
@@ -2054,18 +2079,18 @@ struct NotebookPaperBackground: View {
                             y += gridSpacing
                         }
                     case .dots:
-                        let spacing: CGFloat = 24
-                        var y: CGFloat = spacing
+                        let dotSpacing: CGFloat = spacing
+                        var y: CGFloat = dotSpacing
                         while y < geo.size.height {
-                            var x: CGFloat = spacing
+                            var x: CGFloat = dotSpacing
                             while x < geo.size.width {
                                 path.addEllipse(in: CGRect(x: x - 1, y: y - 1, width: 2, height: 2))
-                                x += spacing
+                                x += dotSpacing
                             }
-                            y += spacing
+                            y += dotSpacing
                         }
                     case .legal:
-                        let lineSpacing: CGFloat = 28
+                        let lineSpacing: CGFloat = spacing * (28.0 / 24.0)
                         var y: CGFloat = lineSpacing * 2
                         while y < geo.size.height {
                             path.move(to: CGPoint(x: 0, y: y))
@@ -2073,7 +2098,7 @@ struct NotebookPaperBackground: View {
                             y += lineSpacing
                         }
                     case .collegeRuled:
-                        let lineSpacing: CGFloat = 21
+                        let lineSpacing: CGFloat = spacing * (21.0 / 24.0)
                         var y: CGFloat = lineSpacing * 3
                         while y < geo.size.height {
                             path.move(to: CGPoint(x: 0, y: y))

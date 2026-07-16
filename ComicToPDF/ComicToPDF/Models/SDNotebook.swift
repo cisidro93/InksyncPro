@@ -14,6 +14,7 @@ import SwiftData
     
     // Page template
     var templateStyle: String // plain, ruled, grid, dots, legal, collegeRuled
+    var templateSize: Double? // Optional custom spacing (18.0, 24.0, 32.0)
     
     // Optional link to a specific book / file in the library
     var linkedBookID: UUID?
@@ -25,7 +26,8 @@ import SwiftData
         coverTitleColorHex: String = "#FFFFFF",
         templateStyle: String = "plain",
         linkedBookID: UUID? = nil,
-        coverStyle: String = "gradient"
+        coverStyle: String = "gradient",
+        templateSize: Double? = 24.0
     ) {
         self.id = id
         self.title = title
@@ -34,6 +36,7 @@ import SwiftData
         self.templateStyle = templateStyle
         self.linkedBookID = linkedBookID
         self.coverStyle = coverStyle
+        self.templateSize = templateSize
         self.createdAt = Date()
         self.modifiedAt = Date()
     }
