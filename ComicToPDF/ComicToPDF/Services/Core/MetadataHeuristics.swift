@@ -41,22 +41,28 @@ struct MetadataHeuristics {
         return detected.issueNumberString
     }
     
-    /// Extract the OPF full-path from container.xml content using multiple layout strategies
+    /// Extract the OPF full-path from container.xml content using regex parsing
     public static func extractOPFPath(from containerStr: String) -> String? {
-        // Double quotes strategy: full-path="..."
-        if let opfPath = containerStr.components(separatedBy: "full-path=\"").last?.components(separatedBy: "\"").first {
-            return opfPath
-        }
-        // Single quotes strategy: full-path='...'
-        if let opfPath = containerStr.components(separatedBy: "full-path='").last?.components(separatedBy: "'").first {
-            return opfPath
-        }
-        // Regex strategy (fallback)
+        // Primary strategy: regex handles both single and double quotes, whitespace variations
         let pattern = "full-path\\s*=\\s*[\"']([^\"']+)[\"']"
-        if let regex = try? NSRegularExpression(pattern: pattern, options: []),
+        if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
            let match = regex.firstMatch(in: containerStr, options: [], range: NSRange(containerStr.startIndex..., in: containerStr)) {
             if let range = Range(match.range(at: 1), in: containerStr) {
                 return String(containerStr[range])
+            }
+        }
+        
+        // Fallback: manual split, but ONLY if separator is actually present
+        if containerStr.contains("full-path=\"") {
+            let parts = containerStr.components(separatedBy: "full-path=\"")
+            if parts.count > 1, let opfPath = parts[1].components(separatedBy: "\"").first, !opfPath.isEmpty {
+                return opfPath
+            }
+        }
+        if containerStr.contains("full-path='") {
+            let parts = containerStr.components(separatedBy: "full-path='")
+            if parts.count > 1, let opfPath = parts[1].components(separatedBy: "'").first, !opfPath.isEmpty {
+                return opfPath
             }
         }
         return nil

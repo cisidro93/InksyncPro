@@ -96,25 +96,36 @@ struct UnifiedReaderView: View {
     }
     
     private func isEPUBComic(pdf: ConvertedPDF) -> Bool {
-        guard pdf.url.pathExtension.lowercased() == "epub" else { return false }
+        let ext = pdf.url.pathExtension.lowercased()
+        guard ext == "epub" else {
+            Logger.shared.log("isEPUBComic: Not an epub (ext=\(ext)), skipping", category: "Reader", type: .info)
+            return false
+        }
         
+        // pdf.url is already sandbox-resolved by toDomainModel(), use it directly.
         let resolvedURL: URL
         var accessedURL: URL? = nil
-        
-        let targetURL = LibraryFileRecord.resolveSandboxURL(pdf.url.absoluteString)
         
         if case .linked(let bm) = pdf.sourceMode,
            let url = try? BookmarkResolver.shared.resolve(bm) {
             let didAccess = url.startAccessingSecurityScopedResource()
             resolvedURL = url
             if didAccess { accessedURL = url }
+            Logger.shared.log("isEPUBComic: Using linked bookmark URL: \(url.path)", category: "Reader", type: .info)
         } else {
-            resolvedURL = targetURL
+            // pdf.url is already resolved by toDomainModel() → resolveSandboxURL
+            resolvedURL = pdf.url
             let didAccess = resolvedURL.startAccessingSecurityScopedResource()
             if didAccess { accessedURL = resolvedURL }
+            Logger.shared.log("isEPUBComic: Using local URL: \(resolvedURL.path)", category: "Reader", type: .info)
         }
         
         defer { accessedURL?.stopAccessingSecurityScopedResource() }
+        
+        // Verify the file actually exists
+        let fileExists = FileManager.default.fileExists(atPath: resolvedURL.path)
+        Logger.shared.log("isEPUBComic: File exists at path: \(fileExists) — \(resolvedURL.path)", category: "Reader", type: fileExists ? .info : .warning)
+        guard fileExists else { return false }
         
         do {
             guard let archive = try? Archive(url: resolvedURL, accessMode: .read, pathEncoding: .utf8) else {
@@ -124,6 +135,7 @@ struct UnifiedReaderView: View {
             
             var isComic = false
             
+            // Strategy 1: OPF metadata check
             if let containerEntry = archive["META-INF/container.xml"] {
                 var containerData = Data()
                 _ = try archive.extract(containerEntry) { data in containerData.append(data) }
@@ -143,12 +155,17 @@ struct UnifiedReaderView: View {
                            lowerOPF.contains("image-based") ||
                            lowerOPF.contains("manga") {
                             isComic = true
+                            Logger.shared.log("isEPUBComic: ✅ OPF metadata matched — routing to ComicReader", category: "Reader", type: .success)
                         }
                     }
+                } else {
+                    Logger.shared.log("isEPUBComic: Could not extract OPF path from container.xml", category: "Reader", type: .warning)
                 }
+            } else {
+                Logger.shared.log("isEPUBComic: No META-INF/container.xml found in archive", category: "Reader", type: .warning)
             }
             
-            // Fallback strategy: check image-to-html ratio
+            // Strategy 2: Image-to-HTML ratio fallback
             if !isComic {
                 let imageExtensions: Set<String> = ["jpg", "jpeg", "png", "webp", "gif", "heic"]
                 var imageCount = 0
@@ -164,18 +181,46 @@ struct UnifiedReaderView: View {
                         htmlCount += 1
                     }
                 }
+                Logger.shared.log("isEPUBComic: Image count=\(imageCount), HTML count=\(htmlCount)", category: "Reader", type: .info)
                 if imageCount > 5 && imageCount >= htmlCount - 5 {
                     isComic = true
+                    Logger.shared.log("isEPUBComic: ✅ Image ratio matched — routing to ComicReader", category: "Reader", type: .success)
+                }
+                
+                // Strategy 3: Sample XHTML pages to see if they are thin image wrappers
+                if !isComic && htmlCount > 5 {
+                    let htmlEntries = archive.filter { entry in
+                        let ext = (entry.path.lowercased() as NSString).pathExtension
+                        return ["xhtml", "html", "htm"].contains(ext)
+                    }
+                    let sampled = htmlEntries.prefix(min(5, htmlEntries.count))
+                    var imageWrapperCount = 0
+                    for entry in sampled {
+                        var htmlData = Data()
+                        _ = try archive.extract(entry) { data in htmlData.append(data) }
+                        if let html = String(data: htmlData, encoding: .utf8) {
+                            let lower = html.lowercased()
+                            // If the page has an <img> tag and very little text content, it's an image wrapper
+                            if lower.contains("<img") && lower.count < 2000 {
+                                imageWrapperCount += 1
+                            }
+                        }
+                    }
+                    Logger.shared.log("isEPUBComic: XHTML sample: \(imageWrapperCount)/\(sampled.count) are image wrappers", category: "Reader", type: .info)
+                    if imageWrapperCount >= sampled.count - 1 && sampled.count >= 3 {
+                        isComic = true
+                        Logger.shared.log("isEPUBComic: ✅ XHTML sampling matched — routing to ComicReader", category: "Reader", type: .success)
+                    }
                 }
             }
             
-            if isComic {
-                return true
+            if !isComic {
+                Logger.shared.log("isEPUBComic: ❌ No comic indicators found — routing to BookReader", category: "Reader", type: .info)
             }
+            return isComic
         } catch {
             Logger.shared.log("isEPUBComic: Error checking ZIP structure: \(error.localizedDescription)", category: "Reader", type: .warning)
             return false
         }
-        return false
     }
 }
