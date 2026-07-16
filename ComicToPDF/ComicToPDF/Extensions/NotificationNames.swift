@@ -35,6 +35,8 @@ extension Notification.Name {
     // MARK: UI Interactions
     /// Fired when the Library tab icon is double-tapped — triggers scroll-to-top.
     static let inkTabDoubleTapLibrary = Notification.Name("InkTab_DoubleTap_0")
+    /// Fired when the Library tab is tapped to reset to the library root screen.
+    static let inkTabGoToLibraryRoot  = Notification.Name("InkTab_GoToLibraryRoot")
     /// Fired when a series row's context menu "Rename" is tapped.
     static let requestSeriesRename    = Notification.Name("RequestSeriesRename")
 

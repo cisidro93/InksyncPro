@@ -181,7 +181,17 @@ struct InkTabBar: View {
         let isActive = selectedTab == tab.tag
 
         Button {
-            if selectedTab == tab.tag {
+            if tab.tag == 0 {
+                HapticEngine.light()
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.72)) {
+                    selectedTab = 0
+                }
+                // Centralized AppRouter reset to library root
+                AppRouter.shared.popToRoot()
+                AppRouter.shared.dismissFullScreen()
+                AppRouter.shared.dismissSheet()
+                NotificationCenter.default.post(name: .inkTabGoToLibraryRoot, object: nil)
+            } else if selectedTab == tab.tag {
                 // Tap active tab again → scroll-to-top signal + subtle haptic
                 HapticEngine.medium()
                 NotificationCenter.default.post(

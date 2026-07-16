@@ -1230,6 +1230,9 @@ struct SeriesDetailView: View {
                 mergeConfigSuggestedName = "\(series.title) Omnibus"
                 showingMergeConfig = true
             }
+            .onReceive(NotificationCenter.default.publisher(for: .inkTabGoToLibraryRoot)) { _ in
+                pdfToRead = nil
+            }
         
         let viewWithSheets = applySheets(view)
         let viewWithAlerts = applyAlerts(viewWithSheets)

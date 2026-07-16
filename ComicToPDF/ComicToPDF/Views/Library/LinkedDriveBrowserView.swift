@@ -67,6 +67,9 @@ struct LinkedDriveBrowserView: View {
         .fullScreenCover(item: $selectedPDF) { pdf in
             UnifiedReaderView(pdf: pdf)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .inkTabGoToLibraryRoot)) { _ in
+            selectedPDF = nil
+        }
     }
 
     // MARK: - Content List

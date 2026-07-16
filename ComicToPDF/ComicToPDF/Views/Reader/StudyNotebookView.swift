@@ -425,6 +425,9 @@ struct StudyNotebookView: View {
         .fullScreenCover(item: $selectedBookForReader) { pdf in
             UnifiedReaderView(pdf: pdf)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .inkTabGoToLibraryRoot)) { _ in
+            selectedBookForReader = nil
+        }
         .onAppear {
             Logger.shared.log("StudyNotebook appeared for book: '\(bookTitle)'", category: "Notebook", type: .info)
             initializeSDAnnotation()

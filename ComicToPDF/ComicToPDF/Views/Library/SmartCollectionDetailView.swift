@@ -173,6 +173,9 @@ import SwiftUI
         .onChange(of: conversionManager.convertedPDFs.count) { recomputeFilter() }
         .onChange(of: settingsManager.isVaultUnlocked) { recomputeFilter() }
         .onReceive(tracker.objectWillChange) { recomputeFilter() }
+        .onReceive(NotificationCenter.default.publisher(for: .inkTabGoToLibraryRoot)) { _ in
+            selectedPDF = nil
+        }
     }
 
     // MARK: - Header

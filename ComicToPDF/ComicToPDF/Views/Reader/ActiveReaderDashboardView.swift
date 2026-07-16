@@ -79,6 +79,9 @@ struct ActiveReaderDashboardView: View {
         .fullScreenCover(item: $pdfToRead) { pdf in
              UnifiedReaderView(pdf: pdf)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .inkTabGoToLibraryRoot)) { _ in
+            pdfToRead = nil
+        }
     }
     
     // MARK: - Components
