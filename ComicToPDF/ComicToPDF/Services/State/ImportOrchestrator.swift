@@ -855,6 +855,9 @@ actor ImportOrchestrator {
             
             do {
                 guard let archive = try? Archive(url: url, accessMode: .read, pathEncoding: .utf8) else { return .book }
+                
+                var isComic = false
+                
                 if let containerEntry = archive["META-INF/container.xml"] {
                     var containerData = Data()
                     _ = try archive.extract(containerEntry) { data in containerData.append(data) }
@@ -873,10 +876,35 @@ actor ImportOrchestrator {
                                lowerOPF.contains("fixed-layout") || 
                                lowerOPF.contains("image-based") || 
                                lowerOPF.contains("manga") {
-                                return .hybrid
+                                isComic = true
                             }
                         }
                     }
+                }
+                
+                // Fallback strategy: check image-to-html ratio
+                if !isComic {
+                    let imageExtensions: Set<String> = ["jpg", "jpeg", "png", "webp", "gif", "heic"]
+                    var imageCount = 0
+                    var htmlCount = 0
+                    for entry in archive {
+                        let entryPathLower = entry.path.lowercased()
+                        let name = (entryPathLower as NSString).lastPathComponent
+                        guard !entryPathLower.contains("__macosx"), !name.hasPrefix("._"), name != ".ds_store", !entryPathLower.hasSuffix("/") else { continue }
+                        let ext = (name as NSString).pathExtension
+                        if imageExtensions.contains(ext) {
+                            imageCount += 1
+                        } else if ["xhtml", "html", "htm"].contains(ext) {
+                            htmlCount += 1
+                        }
+                    }
+                    if imageCount > 5 && imageCount >= htmlCount - 5 {
+                        isComic = true
+                    }
+                }
+                
+                if isComic {
+                    return .hybrid
                 }
             } catch { return .book }
             return .book

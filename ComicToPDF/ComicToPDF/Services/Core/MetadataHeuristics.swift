@@ -73,6 +73,9 @@ struct MetadataHeuristics {
             
             do {
                 guard let archive = try? Archive(url: url, accessMode: .read, pathEncoding: .utf8) else { return .book }
+                
+                var isComic = false
+                
                 if let containerEntry = archive["META-INF/container.xml"] {
                     var containerData = Data()
                     _ = try archive.extract(containerEntry) { data in containerData.append(data) }
@@ -91,21 +94,46 @@ struct MetadataHeuristics {
                                lowerOPF.contains("fixed-layout") || 
                                lowerOPF.contains("image-based") ||
                                lowerOPF.contains("manga") {
-                                // Determine manga vs western comic based on path keywords
-                                let pathLower = url.path.lowercased()
-                                let nameLower = url.lastPathComponent.lowercased()
-                                let parentLower = url.deletingLastPathComponent().lastPathComponent.lowercased()
-                                let mangaKeywords = ["[raw]", "[ch.", "ch.", "manhwa", "manhua", "manga", "scanlation", "oneshot", "doujin", "tankobon", "volume", "chapter", "shonen", "shoujo", "seinen", "josei"]
-                                if mangaKeywords.contains(where: { nameLower.contains($0) || parentLower.contains($0) }) ||
-                                   pathLower.contains("/manga/") ||
-                                   pathLower.contains("/manga") ||
-                                   url.pathComponents.map({ $0.lowercased() }).contains("manga") {
-                                    return .manga
-                                }
-                                return .comic
+                                isComic = true
                             }
                         }
                     }
+                }
+                
+                // Fallback strategy: check image-to-html ratio
+                if !isComic {
+                    let imageExtensions: Set<String> = ["jpg", "jpeg", "png", "webp", "gif", "heic"]
+                    var imageCount = 0
+                    var htmlCount = 0
+                    for entry in archive {
+                        let entryPathLower = entry.path.lowercased()
+                        let name = (entryPathLower as NSString).lastPathComponent
+                        guard !entryPathLower.contains("__macosx"), !name.hasPrefix("._"), name != ".ds_store", !entryPathLower.hasSuffix("/") else { continue }
+                        let ext = (name as NSString).pathExtension
+                        if imageExtensions.contains(ext) {
+                            imageCount += 1
+                        } else if ["xhtml", "html", "htm"].contains(ext) {
+                            htmlCount += 1
+                        }
+                    }
+                    if imageCount > 5 && imageCount >= htmlCount - 5 {
+                        isComic = true
+                    }
+                }
+                
+                if isComic {
+                    // Determine manga vs western comic based on path keywords
+                    let pathLower = url.path.lowercased()
+                    let nameLower = url.lastPathComponent.lowercased()
+                    let parentLower = url.deletingLastPathComponent().lastPathComponent.lowercased()
+                    let mangaKeywords = ["[raw]", "[ch.", "ch.", "manhwa", "manhua", "manga", "scanlation", "oneshot", "doujin", "tankobon", "volume", "chapter", "shonen", "shoujo", "seinen", "josei"]
+                    if mangaKeywords.contains(where: { nameLower.contains($0) || parentLower.contains($0) }) ||
+                       pathLower.contains("/manga/") ||
+                       pathLower.contains("/manga") ||
+                       url.pathComponents.map({ $0.lowercased() }).contains("manga") {
+                        return .manga
+                    }
+                    return .comic
                 }
             } catch {}
             return .book
