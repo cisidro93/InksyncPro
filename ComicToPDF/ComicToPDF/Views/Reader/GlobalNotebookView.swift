@@ -1109,47 +1109,7 @@ struct CreateNotebookSheet: View {
                 
                 Section(header: Text("Cover Design").font(.system(size: 11, weight: .semibold, design: .rounded))) {
                     VStack(spacing: 12) {
-                        // Live Cover Preview
-                        ZStack(alignment: .leading) {
-                            if coverStyle == "skin" {
-                                NotebookCoverSkinView(skinType: selectedSkin, title: notebookTitle, colorScheme: colorScheme)
-                            } else {
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .fill(coverGradients[selectedGradientIndex])
-                            }
-                        }
-                        .frame(width: 140, height: 190)
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .shadow(radius: 6, y: 3)
-                        .overlay(
-                            HStack {
-                                Rectangle()
-                                    .fill(Color.black.opacity(0.2))
-                                    .frame(width: 12)
-                                Spacer()
-                            }
-                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        )
-                        .overlay(
-                            Group {
-                                if coverStyle != "skin" || selectedSkin != "composition" {
-                                    VStack(alignment: .leading) {
-                                        Spacer()
-                                        Text(notebookTitle)
-                                            .font(.system(size: 11, weight: .bold, design: .rounded))
-                                            .foregroundColor(.white)
-                                            .lineLimit(2)
-                                            .padding(.horizontal, 6)
-                                            .padding(.vertical, 3)
-                                            .background(Color.black.opacity(0.25), in: RoundedRectangle(cornerRadius: 4))
-                                            .padding(.leading, 18)
-                                            .padding(.bottom, 12)
-                                    }
-                                }
-                            }
-                        )
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .padding(.vertical, 12)
+                        coverPreviewView()
                         
                         // Selector between Gradients and Skins
                         Picker("Style", selection: $coverStyle) {
@@ -1160,56 +1120,9 @@ struct CreateNotebookSheet: View {
                         .padding(.bottom, 4)
                         
                         if coverStyle == "gradient" {
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 12) {
-                                    ForEach(0..<coverGradients.count, id: \.self) { idx in
-                                        Circle()
-                                            .fill(coverGradients[idx])
-                                            .frame(width: 36, height: 36)
-                                            .overlay(
-                                                Circle()
-                                                    .stroke(Color.orange, lineWidth: selectedGradientIndex == idx ? 3.0 : 0.0)
-                                            )
-                                            .onTapGesture {
-                                                HapticEngine.light()
-                                                selectedGradientIndex = idx
-                                            }
-                                    }
-                                }
-                                .padding(.horizontal, 4)
-                                .padding(.vertical, 6)
-                            }
+                            gradientSelectorView()
                         } else {
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 12) {
-                                    ForEach(skinNames, id: \.0) { skin in
-                                        VStack(spacing: 6) {
-                                            ZStack {
-                                                NotebookCoverSkinView(skinType: skin.0, title: "Preview", colorScheme: colorScheme)
-                                                    .frame(width: 48, height: 64)
-                                                    .clipShape(RoundedRectangle(cornerRadius: 6))
-                                                    .shadow(radius: 2)
-                                                
-                                                if selectedSkin == skin.0 {
-                                                    RoundedRectangle(cornerRadius: 6)
-                                                        .stroke(Color.orange, lineWidth: 3)
-                                                        .frame(width: 48, height: 64)
-                                                }
-                                            }
-                                            
-                                            Text(skin.1)
-                                                .font(.system(size: 9, weight: .bold, design: .rounded))
-                                                .foregroundColor(selectedSkin == skin.0 ? .orange : .inkTextSecondary)
-                                        }
-                                        .onTapGesture {
-                                            HapticEngine.light()
-                                            selectedSkin = skin.0
-                                        }
-                                    }
-                                }
-                                .padding(.horizontal, 4)
-                                .padding(.vertical, 6)
-                            }
+                            skinSelectorView()
                         }
                     }
                 }
@@ -1365,6 +1278,107 @@ struct CreateNotebookSheet: View {
                     .disabled(title.isEmpty && selectedLinkedBook == nil)
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private func coverPreviewView() -> some View {
+        ZStack(alignment: .leading) {
+            if coverStyle == "skin" {
+                NotebookCoverSkinView(skinType: selectedSkin, title: notebookTitle, colorScheme: colorScheme)
+            } else {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(coverGradients[selectedGradientIndex])
+            }
+        }
+        .frame(width: 140, height: 190)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .shadow(radius: 6, y: 3)
+        .overlay(
+            HStack {
+                Rectangle()
+                    .fill(Color.black.opacity(0.2))
+                    .frame(width: 12)
+                Spacer()
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        )
+        .overlay(
+            Group {
+                if coverStyle != "skin" || selectedSkin != "composition" {
+                    VStack(alignment: .leading) {
+                        Spacer()
+                        Text(notebookTitle)
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                            .foregroundColor(.white)
+                            .lineLimit(2)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(Color.black.opacity(0.25), in: RoundedRectangle(cornerRadius: 4))
+                            .padding(.leading, 18)
+                            .padding(.bottom, 12)
+                    }
+                }
+            }
+        )
+        .frame(maxWidth: .infinity, alignment: .center)
+        .padding(.vertical, 12)
+    }
+
+    @ViewBuilder
+    private func gradientSelectorView() -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 12) {
+                ForEach(0..<coverGradients.count, id: \.self) { idx in
+                    Circle()
+                        .fill(coverGradients[idx])
+                        .frame(width: 36, height: 36)
+                        .overlay(
+                            Circle()
+                                .stroke(Color.orange, lineWidth: selectedGradientIndex == idx ? 3.0 : 0.0)
+                        )
+                        .onTapGesture {
+                            HapticEngine.light()
+                            selectedGradientIndex = idx
+                        }
+                }
+            }
+            .padding(.horizontal, 4)
+            .padding(.vertical, 6)
+        }
+    }
+
+    @ViewBuilder
+    private func skinSelectorView() -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 12) {
+                ForEach(skinNames, id: \.0) { skin in
+                    VStack(spacing: 6) {
+                        ZStack {
+                            NotebookCoverSkinView(skinType: skin.0, title: "Preview", colorScheme: colorScheme)
+                                .frame(width: 48, height: 64)
+                                .clipShape(RoundedRectangle(cornerRadius: 6))
+                                .shadow(radius: 2)
+                            
+                            if selectedSkin == skin.0 {
+                                RoundedRectangle(cornerRadius: 6)
+                                    .stroke(Color.orange, lineWidth: 3)
+                                    .frame(width: 48, height: 64)
+                            }
+                        }
+                        
+                        Text(skin.1)
+                            .font(.system(size: 9, weight: .bold, design: .rounded))
+                            .foregroundColor(selectedSkin == skin.0 ? .orange : .inkTextSecondary)
+                    }
+                    .onTapGesture {
+                        HapticEngine.light()
+                        selectedSkin = skin.0
+                    }
+                }
+            }
+            .padding(.horizontal, 4)
+            .padding(.vertical, 6)
         }
     }
 }
@@ -1730,46 +1744,7 @@ struct EditNotebookSheet: View {
                 
                 Section(header: Text("Cover Design").font(.system(size: 11, weight: .semibold, design: .rounded))) {
                     VStack(spacing: 12) {
-                        ZStack(alignment: .leading) {
-                            if coverStyle == "skin" {
-                                NotebookCoverSkinView(skinType: selectedSkin, title: notebookTitle, colorScheme: colorScheme)
-                            } else {
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .fill(coverGradients[selectedGradientIndex])
-                            }
-                        }
-                        .frame(width: 140, height: 190)
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .shadow(radius: 6, y: 3)
-                        .overlay(
-                            HStack {
-                                Rectangle()
-                                    .fill(Color.black.opacity(0.2))
-                                    .frame(width: 12)
-                                Spacer()
-                            }
-                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        )
-                        .overlay(
-                            Group {
-                                if coverStyle != "skin" || selectedSkin != "composition" {
-                                    VStack(alignment: .leading) {
-                                        Spacer()
-                                        Text(notebookTitle)
-                                            .font(.system(size: 11, weight: .bold, design: .rounded))
-                                            .foregroundColor(.white)
-                                            .lineLimit(2)
-                                            .padding(.horizontal, 6)
-                                            .padding(.vertical, 3)
-                                            .background(Color.black.opacity(0.25), in: RoundedRectangle(cornerRadius: 4))
-                                            .padding(.leading, 18)
-                                            .padding(.bottom, 12)
-                                    }
-                                }
-                            }
-                        )
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .padding(.vertical, 12)
+                        coverPreviewView()
                         
                         Picker("Style", selection: $coverStyle) {
                             Text("Gradients").tag("gradient")
@@ -1779,56 +1754,9 @@ struct EditNotebookSheet: View {
                         .padding(.bottom, 4)
                         
                         if coverStyle == "gradient" {
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 12) {
-                                    ForEach(0..<coverGradients.count, id: \.self) { idx in
-                                        Circle()
-                                            .fill(coverGradients[idx])
-                                            .frame(width: 36, height: 36)
-                                            .overlay(
-                                                Circle()
-                                                    .stroke(Color.orange, lineWidth: selectedGradientIndex == idx ? 3.0 : 0.0)
-                                            )
-                                            .onTapGesture {
-                                                HapticEngine.light()
-                                                selectedGradientIndex = idx
-                                            }
-                                    }
-                                }
-                                .padding(.horizontal, 4)
-                                .padding(.vertical, 6)
-                            }
+                            gradientSelectorView()
                         } else {
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 12) {
-                                    ForEach(skinNames, id: \.0) { skin in
-                                        VStack(spacing: 6) {
-                                            ZStack {
-                                                NotebookCoverSkinView(skinType: skin.0, title: "Preview", colorScheme: colorScheme)
-                                                    .frame(width: 48, height: 64)
-                                                    .clipShape(RoundedRectangle(cornerRadius: 6))
-                                                    .shadow(radius: 2)
-                                                
-                                                if selectedSkin == skin.0 {
-                                                    RoundedRectangle(cornerRadius: 6)
-                                                        .stroke(Color.orange, lineWidth: 3)
-                                                        .frame(width: 48, height: 64)
-                                                }
-                                            }
-                                            
-                                            Text(skin.1)
-                                                .font(.system(size: 9, weight: .bold, design: .rounded))
-                                                .foregroundColor(selectedSkin == skin.0 ? .orange : .inkTextSecondary)
-                                        }
-                                        .onTapGesture {
-                                            HapticEngine.light()
-                                            selectedSkin = skin.0
-                                        }
-                                    }
-                                }
-                                .padding(.horizontal, 4)
-                                .padding(.vertical, 6)
-                            }
+                            skinSelectorView()
                         }
                     }
                 }
@@ -1993,6 +1921,107 @@ struct EditNotebookSheet: View {
                     selectedLinkedBook = conversionManager.convertedPDFs.first(where: { $0.id == linkedID })
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private func coverPreviewView() -> some View {
+        ZStack(alignment: .leading) {
+            if coverStyle == "skin" {
+                NotebookCoverSkinView(skinType: selectedSkin, title: notebookTitle, colorScheme: colorScheme)
+            } else {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(coverGradients[selectedGradientIndex])
+            }
+        }
+        .frame(width: 140, height: 190)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .shadow(radius: 6, y: 3)
+        .overlay(
+            HStack {
+                Rectangle()
+                    .fill(Color.black.opacity(0.2))
+                    .frame(width: 12)
+                Spacer()
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        )
+        .overlay(
+            Group {
+                if coverStyle != "skin" || selectedSkin != "composition" {
+                    VStack(alignment: .leading) {
+                        Spacer()
+                        Text(notebookTitle)
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                            .foregroundColor(.white)
+                            .lineLimit(2)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(Color.black.opacity(0.25), in: RoundedRectangle(cornerRadius: 4))
+                            .padding(.leading, 18)
+                            .padding(.bottom, 12)
+                    }
+                }
+            }
+        )
+        .frame(maxWidth: .infinity, alignment: .center)
+        .padding(.vertical, 12)
+    }
+
+    @ViewBuilder
+    private func gradientSelectorView() -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 12) {
+                ForEach(0..<coverGradients.count, id: \.self) { idx in
+                    Circle()
+                        .fill(coverGradients[idx])
+                        .frame(width: 36, height: 36)
+                        .overlay(
+                            Circle()
+                                .stroke(Color.orange, lineWidth: selectedGradientIndex == idx ? 3.0 : 0.0)
+                        )
+                        .onTapGesture {
+                            HapticEngine.light()
+                            selectedGradientIndex = idx
+                        }
+                }
+            }
+            .padding(.horizontal, 4)
+            .padding(.vertical, 6)
+        }
+    }
+
+    @ViewBuilder
+    private func skinSelectorView() -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 12) {
+                ForEach(skinNames, id: \.0) { skin in
+                    VStack(spacing: 6) {
+                        ZStack {
+                            NotebookCoverSkinView(skinType: skin.0, title: "Preview", colorScheme: colorScheme)
+                                .frame(width: 48, height: 64)
+                                .clipShape(RoundedRectangle(cornerRadius: 6))
+                                .shadow(radius: 2)
+                            
+                            if selectedSkin == skin.0 {
+                                RoundedRectangle(cornerRadius: 6)
+                                    .stroke(Color.orange, lineWidth: 3)
+                                    .frame(width: 48, height: 64)
+                            }
+                        }
+                        
+                        Text(skin.1)
+                            .font(.system(size: 9, weight: .bold, design: .rounded))
+                            .foregroundColor(selectedSkin == skin.0 ? .orange : .inkTextSecondary)
+                    }
+                    .onTapGesture {
+                        HapticEngine.light()
+                        selectedSkin = skin.0
+                    }
+                }
+            }
+            .padding(.horizontal, 4)
+            .padding(.vertical, 6)
         }
     }
 }
