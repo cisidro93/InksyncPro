@@ -1,0 +1,34 @@
+--- Inksync Pro Smart Forensic Log ---
+Generated: 7/16/26, 12:39:41 PM
+Domains: All
+Levels: All
+--------------------------------------
+
+[12:36:47 PM] [SUCCESS] [Database] Backup: Database backup successfully created at backup_2026_07_16_12_16_10
+[12:36:47 PM] [INFO] [Database] Backup: Pruned oldest backup snapshot: backup_2026_07_16_10_42_43
+[12:36:47 PM] [SUCCESS] [Database] Backup: Database backup successfully created at backup_2026_07_16_12_27_55
+[12:36:47 PM] [INFO] [Database] Backup: Pruned oldest backup snapshot: backup_2026_07_16_10_58_06
+[12:36:47 PM] [INFO] [Debug] 🔍 [Flight Recorder] 👁️ [Virtual Volume] Caching visibility. total omnibuses: 1, series title: 'My Little Pony: Friends Forever', series ID: '6D0F3A68-635D-42B4-9482-D3D86FBAC511'
+[12:36:47 PM] [INFO] [Debug] 🔍 [Flight Recorder] 👁️ [Virtual Volume] Caching visibility. total omnibuses: 1, series title: 'My Little Pony: Friends Forever', series ID: '6D0F3A68-635D-42B4-9482-D3D86FBAC511'
+[12:36:47 PM] [INFO] [Migration] InstallGuard: Sentinel written successfully.
+[12:36:48 PM] [INFO] [Annotations] AnnotationStore initialized with ModelContext
+[12:36:48 PM] [SUCCESS] [Annotations] AnnotationStore loaded: 1305 annotation(s) across 91 book(s)
+[12:36:48 PM] [INFO] [Migration] InstallGuard: Sentinel written successfully.
+[12:36:50 PM] [INFO] [Debug] 🔍 [Flight Recorder] 💾 [Virtual Volume] Loaded 1 virtual volumes from SQLite
+[12:36:50 PM] [INFO] [Library] LibraryService: loaded 2393 items, 37 collections, 1 virtual omnibuses.
+[12:36:50 PM] [INFO] [Library] Library Cache Rebuilt: 53 total UI groups rendered (Filter: All, Shelf: All, Depth: Root)
+[12:36:53 PM] [INFO] [Debug] 🔍 [Flight Recorder] 💾 [Virtual Volume] Loaded 1 virtual volumes from SQLite
+[12:36:53 PM] [INFO] [Library] LibraryService: loaded 2393 items, 37 collections, 1 virtual omnibuses.
+[12:36:55 PM] [INFO] [Debug] 🔍 [Flight Recorder] 👁️ [Virtual Volume] Caching visibility. total omnibuses: 1, series title: 'Dark Knights Of Steel', series ID: 'FD63C0D9-79BA-4078-B442-9FE1979CE838'
+[12:36:55 PM] [INFO] [Debug] 🔍 [Flight Recorder] 👁️ [Virtual Volume] Caching visibility. total omnibuses: 1, series title: 'Dark Knights Of Steel', series ID: 'FD63C0D9-79BA-4078-B442-9FE1979CE838'
+[12:36:56 PM] [INFO] [EBook] EBookParser: parsed "Dark Knights of Steel Vol. 1" — 176 spine items
+[12:37:04 PM] [SUCCESS] [Database] Backup: Database backup successfully created at backup_2026_07_16_12_37_04
+[12:37:04 PM] [INFO] [Database] Backup: Pruned oldest backup snapshot: backup_2026_07_16_11_53_44
+[12:37:05 PM] [INFO] [Navigation] AppRouter: presentSheet(controlCenter)
+[12:38:32 PM] [INFO] [Debug] 🔍 [Flight Recorder] 👁️ [Virtual Volume] Caching visibility. total omnibuses: 1, series title: 'Dark Knights Of Steel', series ID: 'FD63C0D9-79BA-4078-B442-9FE1979CE838'
+[12:38:32 PM] [INFO] [Debug] 🔍 [Flight Recorder] 👁️ [Virtual Volume] Caching visibility. total omnibuses: 1, series title: 'Dark Knights Of Steel', series ID: 'FD63C0D9-79BA-4078-B442-9FE1979CE838'
+[12:38:40 PM] [INFO] [Room] ReadingRoom: stopped
+[12:38:42 PM] [INFO] [Debug] 🔍 [Flight Recorder] 👁️ [Virtual Volume] Caching visibility. total omnibuses: 1, series title: 'Dark Knights Of Steel', series ID: 'FD63C0D9-79BA-4078-B442-9FE1979CE838'
+[12:38:42 PM] [INFO] [Debug] 🔍 [Flight Recorder] 👁️ [Virtual Volume] Caching visibility. total omnibuses: 1, series title: 'Dark Knights Of Steel', series ID: 'FD63C0D9-79BA-4078-B442-9FE1979CE838'
+[12:38:43 PM] [INFO] [EBook] EBookParser: parsed "Dark Knights of Steel Vol. 1" — 176 spine items
+[12:38:55 PM] [INFO] [Navigation] AppRouter: presentSheet(controlCenter)

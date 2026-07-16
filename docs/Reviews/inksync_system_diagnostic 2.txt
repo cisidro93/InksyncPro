@@ -1,0 +1,506 @@
+--- Inksync Pro Smart Forensic Log ---
+Generated: 7/16/26, 12:14:41 PM
+Domains: All
+Levels: All
+--------------------------------------
+
+[12:13:33 PM] [INFO] [Debug] [179] OEBPS/text/page_0035.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [180] OEBPS/text/page_0070.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [181] OEBPS/text/page_0008.xhtml Size: 930
+[12:13:33 PM] [INFO] [Debug] [182] OEBPS/text/page_0094.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [183] OEBPS/text/page_0069.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [184] OEBPS/text/page_0011.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [185] OEBPS/text/page_0054.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [186] OEBPS/text/page_0013.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [187] OEBPS/text/page_0056.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [188] OEBPS/text/page_0096.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [189] OEBPS/text/page_0037.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [190] OEBPS/text/page_0072.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [191] OEBPS/text/page_0033.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [192] OEBPS/text/page_0076.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [193] OEBPS/text/page_0017.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [194] OEBPS/text/page_0052.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [195] OEBPS/text/page_0092.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [196] OEBPS/text/page_0028.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [197] OEBPS/text/page_0090.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [198] OEBPS/text/page_0015.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [199] OEBPS/text/page_0050.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [200] OEBPS/text/page_0031.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [201] OEBPS/text/page_0074.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [202] OEBPS/text/page_0089.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [203] OEBPS/text/page_0049.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [204] OEBPS/toc.ncx Size: 511
+[12:13:33 PM] [INFO] [Debug] [205] OEBPS/content.opf Size: 25837
+[12:13:33 PM] [SUCCESS] [Debug] Analysis Complete. Total Files: 206
+[12:13:33 PM] [INFO] [PageModel] PageModelStore: loaded 0 page model(s) for pdfID=3E79F7A0-78B1-4B4E-B6D2-0FE750A94969
+[12:13:33 PM] [INFO] [Manifest] Building Manifest for ComicSonic-the-Hedgehog-2018The-IDW-Collection-1-Part-3?id=207496.cbz (ID: 3E79F7A0-78B1-4B4E-B6D2-0FE750A94969)
+[12:13:33 PM] [INFO] [SmartPanels] Inspection Started: ComicSonic-the-Hedgehog-2018The-IDW-Collection-1-Part-3?id=207496.cbz
+[12:13:33 PM] [INFO] [Converter] Starting Enterprise Conversion (No TOC). Manual Manifest: 0 pages
+[12:13:33 PM] [INFO] [Converter] Stage 1 Start: Extracting ComicSonic-the-Hedgehog-2018The-IDW-Collection-1-Part-3?id=207496.cbz
+[12:13:33 PM] [SUCCESS] [System] Successfully unpacked 67 files
+[12:13:33 PM] [INFO] [Converter] Stage 1 End: Extracted 67 images
+[12:13:33 PM] [INFO] [Converter] Stage 2 Start: Processing and Batching
+[12:13:33 PM] [INFO] [Converter] Stage 2 End: Built 1 batches
+[12:13:33 PM] [INFO] [Converter] Stage 3 Start: Building EPUB Directory for Part 1
+[12:13:33 PM] [INFO] [Converter] Stage 3 End: Built directory at EPUB_Part_9D8B931B-13ED-4DAD-ADC4-D6752E912A7F
+[12:13:33 PM] [INFO] [Converter] Stage 4 Start: Packaging EPUB ComicSonic-the-Hedgehog-2018The-IDW-Collection-1-Part-3?id=207496
+[12:13:33 PM] [INFO] [Debug] About to analyze EPUB structure for: ComicSonic-the-Hedgehog-2018The-IDW-Collection-1-Part-3id207496.epub
+[12:13:33 PM] [INFO] [Debug] 🔍 [Flight Recorder] Analyzing EPUB Structure: ComicSonic-the-Hedgehog-2018The-IDW-Collection-1-Part-3id207496.epub
+[12:13:33 PM] [INFO] [Debug] [0] mimetype Size: 20
+[12:13:33 PM] [INFO] [Debug] [1] META-INF/container.xml Size: 221
+[12:13:33 PM] [INFO] [Debug] [2] OEBPS/nav.xhtml Size: 571
+[12:13:33 PM] [INFO] [Debug] [3] OEBPS/css/comic.css Size: 314
+[12:13:33 PM] [INFO] [Debug] [4] OEBPS/images/image_0032.jpg Size: 318572
+[12:13:33 PM] [INFO] [Debug] [5] OEBPS/images/image_0026.jpg Size: 240904
+[12:13:33 PM] [INFO] [Debug] [6] OEBPS/images/image_0027.jpg Size: 303495
+[12:13:33 PM] [INFO] [Debug] [7] OEBPS/images/image_0033.jpg Size: 249056
+[12:13:33 PM] [INFO] [Debug] [8] OEBPS/images/image_0019.jpg Size: 322681
+[12:13:33 PM] [INFO] [Debug] [9] OEBPS/images/image_0025.jpg Size: 262566
+[12:13:33 PM] [INFO] [Debug] [10] OEBPS/images/image_0031.jpg Size: 313469
+[12:13:33 PM] [INFO] [Debug] [11] OEBPS/images/image_0030.jpg Size: 294223
+[12:13:33 PM] [INFO] [Debug] [12] OEBPS/images/image_0024.jpg Size: 328594
+[12:13:33 PM] [INFO] [Debug] [13] OEBPS/images/image_0018.jpg Size: 302899
+[12:13:33 PM] [INFO] [Debug] [14] OEBPS/images/image_0020.jpg Size: 311767
+[12:13:33 PM] [INFO] [Debug] [15] OEBPS/images/image_0034.jpg Size: 297178
+[12:13:33 PM] [INFO] [Debug] [16] OEBPS/images/image_0008.jpg Size: 314448
+[12:13:33 PM] [INFO] [Debug] [17] OEBPS/images/image_0009.jpg Size: 285171
+[12:13:33 PM] [INFO] [Debug] [18] OEBPS/images/image_0035.jpg Size: 332848
+[12:13:33 PM] [INFO] [Debug] [19] OEBPS/images/image_0021.jpg Size: 350799
+[12:13:33 PM] [INFO] [Debug] [20] OEBPS/images/image_0037.jpg Size: 355504
+[12:13:33 PM] [INFO] [Debug] [21] OEBPS/images/image_0023.jpg Size: 305936
+[12:13:33 PM] [INFO] [Debug] [22] OEBPS/images/image_0022.jpg Size: 256199
+[12:13:33 PM] [INFO] [Debug] [23] OEBPS/images/image_0036.jpg Size: 329052
+[12:13:33 PM] [INFO] [Debug] [24] OEBPS/images/image_0051.jpg Size: 288063
+[12:13:33 PM] [INFO] [Debug] [25] OEBPS/images/image_0045.jpg Size: 328062
+[12:13:33 PM] [INFO] [Debug] [26] OEBPS/images/image_0044.jpg Size: 309279
+[12:13:33 PM] [INFO] [Debug] [27] OEBPS/images/image_0050.jpg Size: 314947
+[12:13:33 PM] [INFO] [Debug] [28] OEBPS/images/image_0046.jpg Size: 258952
+[12:13:33 PM] [INFO] [Debug] [29] OEBPS/images/image_0052.jpg Size: 324713
+[12:13:33 PM] [INFO] [Debug] [30] OEBPS/images/image_0053.jpg Size: 281887
+[12:13:33 PM] [INFO] [Debug] [31] OEBPS/images/image_0047.jpg Size: 310994
+[12:13:33 PM] [INFO] [Debug] [32] OEBPS/images/image_0043.jpg Size: 332203
+[12:13:33 PM] [INFO] [Debug] [33] OEBPS/images/image_0057.jpg Size: 291598
+[12:13:33 PM] [INFO] [Debug] [34] OEBPS/images/image_0056.jpg Size: 436316
+[12:13:33 PM] [INFO] [Debug] [35] OEBPS/images/image_0042.jpg Size: 347361
+[12:13:33 PM] [INFO] [Debug] [36] OEBPS/images/image_0054.jpg Size: 313730
+[12:13:33 PM] [INFO] [Debug] [37] OEBPS/images/image_0040.jpg Size: 252233
+[12:13:33 PM] [INFO] [Debug] [38] OEBPS/images/image_0041.jpg Size: 341830
+[12:13:33 PM] [INFO] [Debug] [39] OEBPS/images/image_0055.jpg Size: 195479
+[12:13:33 PM] [INFO] [Debug] [40] OEBPS/images/image_0058.jpg Size: 390177
+[12:13:33 PM] [INFO] [Debug] [41] OEBPS/images/image_0064.jpg Size: 364061
+[12:13:33 PM] [INFO] [Debug] [42] OEBPS/images/image_0065.jpg Size: 294814
+[12:13:33 PM] [INFO] [Debug] [43] OEBPS/images/image_0059.jpg Size: 467477
+[12:13:33 PM] [INFO] [Debug] [44] OEBPS/images/image_0067.jpg Size: 238309
+[12:13:33 PM] [INFO] [Debug] [45] OEBPS/images/image_0066.jpg Size: 252266
+[12:13:33 PM] [INFO] [Debug] [46] OEBPS/images/image_0062.jpg Size: 339790
+[12:13:33 PM] [INFO] [Debug] [47] OEBPS/images/image_0063.jpg Size: 378682
+[12:13:33 PM] [INFO] [Debug] [48] OEBPS/images/image_0061.jpg Size: 335185
+[12:13:33 PM] [INFO] [Debug] [49] OEBPS/images/image_0049.jpg Size: 338218
+[12:13:33 PM] [INFO] [Debug] [50] OEBPS/images/image_0048.jpg Size: 317388
+[12:13:33 PM] [INFO] [Debug] [51] OEBPS/images/image_0060.jpg Size: 388836
+[12:13:33 PM] [INFO] [Debug] [52] OEBPS/images/image_0013.jpg Size: 428835
+[12:13:33 PM] [INFO] [Debug] [53] OEBPS/images/image_0007.jpg Size: 333433
+[12:13:33 PM] [INFO] [Debug] [54] OEBPS/images/image_0006.jpg Size: 311244
+[12:13:33 PM] [INFO] [Debug] [55] OEBPS/images/image_0012.jpg Size: 268312
+[12:13:33 PM] [INFO] [Debug] [56] OEBPS/images/image_0038.jpg Size: 321601
+[12:13:33 PM] [INFO] [Debug] [57] OEBPS/images/image_0004.jpg Size: 287826
+[12:13:33 PM] [INFO] [Debug] [58] OEBPS/images/image_0010.jpg Size: 225374
+[12:13:33 PM] [INFO] [Debug] [59] OEBPS/images/image_0011.jpg Size: 362091
+[12:13:33 PM] [INFO] [Debug] [60] OEBPS/images/image_0005.jpg Size: 304012
+[12:13:33 PM] [INFO] [Debug] [61] OEBPS/images/image_0039.jpg Size: 376655
+[12:13:33 PM] [INFO] [Debug] [62] OEBPS/images/image_0001.jpg Size: 106147
+[12:13:33 PM] [INFO] [Debug] [63] OEBPS/images/image_0015.jpg Size: 291138
+[12:13:33 PM] [INFO] [Debug] [64] OEBPS/images/image_0029.jpg Size: 264818
+[12:13:33 PM] [INFO] [Debug] [65] OEBPS/images/image_0028.jpg Size: 308483
+[12:13:33 PM] [INFO] [Debug] [66] OEBPS/images/image_0014.jpg Size: 275582
+[12:13:33 PM] [INFO] [Debug] [67] OEBPS/images/image_0016.jpg Size: 287414
+[12:13:33 PM] [INFO] [Debug] [68] OEBPS/images/image_0002.jpg Size: 279477
+[12:13:33 PM] [INFO] [Debug] [69] OEBPS/images/image_0003.jpg Size: 298706
+[12:13:33 PM] [INFO] [Debug] [70] OEBPS/images/image_0017.jpg Size: 245825
+[12:13:33 PM] [INFO] [Debug] [71] OEBPS/content.opf Size: 17964
+[12:13:33 PM] [INFO] [Debug] [72] OEBPS/text/page_0045.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [73] OEBPS/text/page_0019.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [74] OEBPS/text/page_0061.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [75] OEBPS/text/page_0024.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [76] OEBPS/text/page_0063.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [77] OEBPS/text/page_0026.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [78] OEBPS/text/page_0047.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [79] OEBPS/text/page_0002.xhtml Size: 930
+[12:13:33 PM] [INFO] [Debug] [80] OEBPS/text/page_0043.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [81] OEBPS/text/page_0006.xhtml Size: 930
+[12:13:33 PM] [INFO] [Debug] [82] OEBPS/text/page_0067.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [83] OEBPS/text/page_0022.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [84] OEBPS/text/page_0058.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [85] OEBPS/text/page_0065.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [86] OEBPS/text/page_0020.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [87] OEBPS/text/page_0041.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [88] OEBPS/text/page_0004.xhtml Size: 930
+[12:13:33 PM] [INFO] [Debug] [89] OEBPS/text/page_0039.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [90] OEBPS/text/page_0027.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [91] OEBPS/text/page_0062.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [92] OEBPS/text/page_0003.xhtml Size: 930
+[12:13:33 PM] [INFO] [Debug] [93] OEBPS/text/page_0046.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [94] OEBPS/text/page_0001.xhtml Size: 930
+[12:13:33 PM] [INFO] [Debug] [95] OEBPS/text/page_0044.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [96] OEBPS/text/page_0025.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [97] OEBPS/text/page_0060.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [98] OEBPS/text/page_0018.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [99] OEBPS/text/page_0021.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [100] OEBPS/text/page_0064.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [101] OEBPS/text/page_0059.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [102] OEBPS/text/page_0038.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [103] OEBPS/text/page_0005.xhtml Size: 930
+[12:13:33 PM] [INFO] [Debug] [104] OEBPS/text/page_0040.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [105] OEBPS/text/page_0007.xhtml Size: 930
+[12:13:33 PM] [INFO] [Debug] [106] OEBPS/text/page_0042.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [107] OEBPS/text/page_0023.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [108] OEBPS/text/page_0066.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [109] OEBPS/text/page_0057.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [110] OEBPS/text/page_0012.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [111] OEBPS/text/page_0036.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [112] OEBPS/text/page_0009.xhtml Size: 930
+[12:13:33 PM] [INFO] [Debug] [113] OEBPS/text/page_0034.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [114] OEBPS/text/page_0055.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [115] OEBPS/text/page_0010.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [116] OEBPS/text/page_0051.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [117] OEBPS/text/page_0014.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [118] OEBPS/text/page_0029.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [119] OEBPS/text/page_0048.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [120] OEBPS/text/page_0030.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [121] OEBPS/text/page_0032.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [122] OEBPS/text/page_0053.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [123] OEBPS/text/page_0016.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [124] OEBPS/text/page_0035.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [125] OEBPS/text/page_0008.xhtml Size: 930
+[12:13:33 PM] [INFO] [Debug] [126] OEBPS/text/page_0011.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [127] OEBPS/text/page_0054.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [128] OEBPS/text/page_0013.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [129] OEBPS/text/page_0056.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [130] OEBPS/text/page_0037.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [131] OEBPS/text/page_0033.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [132] OEBPS/text/page_0017.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [133] OEBPS/text/page_0052.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [134] OEBPS/text/page_0028.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [135] OEBPS/text/page_0015.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [136] OEBPS/text/page_0050.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [137] OEBPS/text/page_0031.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [138] OEBPS/text/page_0049.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [139] OEBPS/toc.ncx Size: 511
+[12:13:33 PM] [SUCCESS] [Debug] Analysis Complete. Total Files: 140
+[12:13:33 PM] [INFO] [Converter] Stage 4 End: EPUB Packaged at ComicSonic-the-Hedgehog-2018The-IDW-Collection-1-Part-3id207496.epub
+[12:13:33 PM] [INFO] [Injection] Starting Injection: ComicSonic-the-Hedgehog-2018The-IDW-Collection-1-Part-3id207496.epub with 0 pages
+[12:13:33 PM] [INFO] [Injection] Skipping metadata injection (Standard Mode)
+[12:13:33 PM] [INFO] [Injection] Successfully rebuilt EPUB structure
+[12:13:33 PM] [INFO] [Debug] 🔍 [Flight Recorder] Analyzing EPUB Structure: ComicSonic-the-Hedgehog-2018The-IDW-Collection-1-Part-3id207496.epub
+[12:13:33 PM] [INFO] [Debug] [0] mimetype Size: 20
+[12:13:33 PM] [INFO] [Debug] [1] META-INF/container.xml Size: 221
+[12:13:33 PM] [INFO] [Debug] [2] OEBPS/nav.xhtml Size: 571
+[12:13:33 PM] [INFO] [Debug] [3] OEBPS/css/comic.css Size: 314
+[12:13:33 PM] [INFO] [Debug] [4] OEBPS/images/image_0032.jpg Size: 318572
+[12:13:33 PM] [INFO] [Debug] [5] OEBPS/images/image_0026.jpg Size: 240904
+[12:13:33 PM] [INFO] [Debug] [6] OEBPS/images/image_0027.jpg Size: 303495
+[12:13:33 PM] [INFO] [Debug] [7] OEBPS/images/image_0033.jpg Size: 249056
+[12:13:33 PM] [INFO] [Debug] [8] OEBPS/images/image_0019.jpg Size: 322681
+[12:13:33 PM] [INFO] [Debug] [9] OEBPS/images/image_0025.jpg Size: 262566
+[12:13:33 PM] [INFO] [Debug] [10] OEBPS/images/image_0031.jpg Size: 313469
+[12:13:33 PM] [INFO] [Debug] [11] OEBPS/images/image_0030.jpg Size: 294223
+[12:13:33 PM] [INFO] [Debug] [12] OEBPS/images/image_0024.jpg Size: 328594
+[12:13:33 PM] [INFO] [Debug] [13] OEBPS/images/image_0018.jpg Size: 302899
+[12:13:33 PM] [INFO] [Debug] [14] OEBPS/images/image_0020.jpg Size: 311767
+[12:13:33 PM] [INFO] [Debug] [15] OEBPS/images/image_0034.jpg Size: 297178
+[12:13:33 PM] [INFO] [Debug] [16] OEBPS/images/image_0008.jpg Size: 314448
+[12:13:33 PM] [INFO] [Debug] [17] OEBPS/images/image_0009.jpg Size: 285171
+[12:13:33 PM] [INFO] [Debug] [18] OEBPS/images/image_0035.jpg Size: 332848
+[12:13:33 PM] [INFO] [Debug] [19] OEBPS/images/image_0021.jpg Size: 350799
+[12:13:33 PM] [INFO] [Debug] [20] OEBPS/images/image_0037.jpg Size: 355504
+[12:13:33 PM] [INFO] [Debug] [21] OEBPS/images/image_0023.jpg Size: 305936
+[12:13:33 PM] [INFO] [Debug] [22] OEBPS/images/image_0022.jpg Size: 256199
+[12:13:33 PM] [INFO] [Debug] [23] OEBPS/images/image_0036.jpg Size: 329052
+[12:13:33 PM] [INFO] [Debug] [24] OEBPS/images/image_0051.jpg Size: 288063
+[12:13:33 PM] [INFO] [Debug] [25] OEBPS/images/image_0045.jpg Size: 328062
+[12:13:33 PM] [INFO] [Debug] [26] OEBPS/images/image_0044.jpg Size: 309279
+[12:13:33 PM] [INFO] [Debug] [27] OEBPS/images/image_0050.jpg Size: 314947
+[12:13:33 PM] [INFO] [Debug] [28] OEBPS/images/image_0046.jpg Size: 258952
+[12:13:33 PM] [INFO] [Debug] [29] OEBPS/images/image_0052.jpg Size: 324713
+[12:13:33 PM] [INFO] [Debug] [30] OEBPS/images/image_0053.jpg Size: 281887
+[12:13:33 PM] [INFO] [Debug] [31] OEBPS/images/image_0047.jpg Size: 310994
+[12:13:33 PM] [INFO] [Debug] [32] OEBPS/images/image_0043.jpg Size: 332203
+[12:13:33 PM] [INFO] [Debug] [33] OEBPS/images/image_0057.jpg Size: 291598
+[12:13:33 PM] [INFO] [Debug] [34] OEBPS/images/image_0056.jpg Size: 436316
+[12:13:33 PM] [INFO] [Debug] [35] OEBPS/images/image_0042.jpg Size: 347361
+[12:13:33 PM] [INFO] [Debug] [36] OEBPS/images/image_0054.jpg Size: 313730
+[12:13:33 PM] [INFO] [Debug] [37] OEBPS/images/image_0040.jpg Size: 252233
+[12:13:33 PM] [INFO] [Debug] [38] OEBPS/images/image_0041.jpg Size: 341830
+[12:13:33 PM] [INFO] [Debug] [39] OEBPS/images/image_0055.jpg Size: 195479
+[12:13:33 PM] [INFO] [Debug] [40] OEBPS/images/image_0058.jpg Size: 390177
+[12:13:33 PM] [INFO] [Debug] [41] OEBPS/images/image_0064.jpg Size: 364061
+[12:13:33 PM] [INFO] [Debug] [42] OEBPS/images/image_0065.jpg Size: 294814
+[12:13:33 PM] [INFO] [Debug] [43] OEBPS/images/image_0059.jpg Size: 467477
+[12:13:33 PM] [INFO] [Debug] [44] OEBPS/images/image_0067.jpg Size: 238309
+[12:13:33 PM] [INFO] [Debug] [45] OEBPS/images/image_0066.jpg Size: 252266
+[12:13:33 PM] [INFO] [Debug] [46] OEBPS/images/image_0062.jpg Size: 339790
+[12:13:33 PM] [INFO] [Debug] [47] OEBPS/images/image_0063.jpg Size: 378682
+[12:13:33 PM] [INFO] [Debug] [48] OEBPS/images/image_0061.jpg Size: 335185
+[12:13:33 PM] [INFO] [Debug] [49] OEBPS/images/image_0049.jpg Size: 338218
+[12:13:33 PM] [INFO] [Debug] [50] OEBPS/images/image_0048.jpg Size: 317388
+[12:13:33 PM] [INFO] [Debug] [51] OEBPS/images/image_0060.jpg Size: 388836
+[12:13:33 PM] [INFO] [Debug] [52] OEBPS/images/image_0013.jpg Size: 428835
+[12:13:33 PM] [INFO] [Debug] [53] OEBPS/images/image_0007.jpg Size: 333433
+[12:13:33 PM] [INFO] [Debug] [54] OEBPS/images/image_0006.jpg Size: 311244
+[12:13:33 PM] [INFO] [Debug] [55] OEBPS/images/image_0012.jpg Size: 268312
+[12:13:33 PM] [INFO] [Debug] [56] OEBPS/images/image_0038.jpg Size: 321601
+[12:13:33 PM] [INFO] [Debug] [57] OEBPS/images/image_0004.jpg Size: 287826
+[12:13:33 PM] [INFO] [Debug] [58] OEBPS/images/image_0010.jpg Size: 225374
+[12:13:33 PM] [INFO] [Debug] [59] OEBPS/images/image_0011.jpg Size: 362091
+[12:13:33 PM] [INFO] [Debug] [60] OEBPS/images/image_0005.jpg Size: 304012
+[12:13:33 PM] [INFO] [Debug] [61] OEBPS/images/image_0039.jpg Size: 376655
+[12:13:33 PM] [INFO] [Debug] [62] OEBPS/images/image_0001.jpg Size: 106147
+[12:13:33 PM] [INFO] [Debug] [63] OEBPS/images/image_0015.jpg Size: 291138
+[12:13:33 PM] [INFO] [Debug] [64] OEBPS/images/image_0029.jpg Size: 264818
+[12:13:33 PM] [INFO] [Debug] [65] OEBPS/images/image_0028.jpg Size: 308483
+[12:13:33 PM] [INFO] [Debug] [66] OEBPS/images/image_0014.jpg Size: 275582
+[12:13:33 PM] [INFO] [Debug] [67] OEBPS/images/image_0016.jpg Size: 287414
+[12:13:33 PM] [INFO] [Debug] [68] OEBPS/images/image_0002.jpg Size: 279477
+[12:13:33 PM] [INFO] [Debug] [69] OEBPS/images/image_0003.jpg Size: 298706
+[12:13:33 PM] [INFO] [Debug] [70] OEBPS/images/image_0017.jpg Size: 245825
+[12:13:33 PM] [INFO] [Debug] [71] OEBPS/text/page_0045.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [72] OEBPS/text/page_0019.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [73] OEBPS/text/page_0061.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [74] OEBPS/text/page_0024.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [75] OEBPS/text/page_0063.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [76] OEBPS/text/page_0026.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [77] OEBPS/text/page_0047.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [78] OEBPS/text/page_0002.xhtml Size: 930
+[12:13:33 PM] [INFO] [Debug] [79] OEBPS/text/page_0043.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [80] OEBPS/text/page_0006.xhtml Size: 930
+[12:13:33 PM] [INFO] [Debug] [81] OEBPS/text/page_0067.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [82] OEBPS/text/page_0022.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [83] OEBPS/text/page_0058.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [84] OEBPS/text/page_0065.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [85] OEBPS/text/page_0020.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [86] OEBPS/text/page_0041.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [87] OEBPS/text/page_0004.xhtml Size: 930
+[12:13:33 PM] [INFO] [Debug] [88] OEBPS/text/page_0039.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [89] OEBPS/text/page_0027.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [90] OEBPS/text/page_0062.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [91] OEBPS/text/page_0003.xhtml Size: 930
+[12:13:33 PM] [INFO] [Debug] [92] OEBPS/text/page_0046.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [93] OEBPS/text/page_0001.xhtml Size: 930
+[12:13:33 PM] [INFO] [Debug] [94] OEBPS/text/page_0044.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [95] OEBPS/text/page_0025.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [96] OEBPS/text/page_0060.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [97] OEBPS/text/page_0018.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [98] OEBPS/text/page_0021.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [99] OEBPS/text/page_0064.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [100] OEBPS/text/page_0059.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [101] OEBPS/text/page_0038.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [102] OEBPS/text/page_0005.xhtml Size: 930
+[12:13:33 PM] [INFO] [Debug] [103] OEBPS/text/page_0040.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [104] OEBPS/text/page_0007.xhtml Size: 930
+[12:13:33 PM] [INFO] [Debug] [105] OEBPS/text/page_0042.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [106] OEBPS/text/page_0023.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [107] OEBPS/text/page_0066.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [108] OEBPS/text/page_0057.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [109] OEBPS/text/page_0012.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [110] OEBPS/text/page_0036.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [111] OEBPS/text/page_0009.xhtml Size: 930
+[12:13:33 PM] [INFO] [Debug] [112] OEBPS/text/page_0034.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [113] OEBPS/text/page_0055.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [114] OEBPS/text/page_0010.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [115] OEBPS/text/page_0051.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [116] OEBPS/text/page_0014.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [117] OEBPS/text/page_0029.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [118] OEBPS/text/page_0048.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [119] OEBPS/text/page_0030.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [120] OEBPS/text/page_0032.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [121] OEBPS/text/page_0053.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [122] OEBPS/text/page_0016.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [123] OEBPS/text/page_0035.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [124] OEBPS/text/page_0008.xhtml Size: 930
+[12:13:33 PM] [INFO] [Debug] [125] OEBPS/text/page_0011.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [126] OEBPS/text/page_0054.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [127] OEBPS/text/page_0013.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [128] OEBPS/text/page_0056.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [129] OEBPS/text/page_0037.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [130] OEBPS/text/page_0033.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [131] OEBPS/text/page_0017.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [132] OEBPS/text/page_0052.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [133] OEBPS/text/page_0028.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [134] OEBPS/text/page_0015.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [135] OEBPS/text/page_0050.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [136] OEBPS/text/page_0031.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [137] OEBPS/text/page_0049.xhtml Size: 931
+[12:13:33 PM] [INFO] [Debug] [138] OEBPS/toc.ncx Size: 511
+[12:13:33 PM] [INFO] [Debug] [139] OEBPS/content.opf Size: 17964
+[12:13:33 PM] [SUCCESS] [Debug] Analysis Complete. Total Files: 140
+[12:13:33 PM] [INFO] [Debug] 🔍 [Flight Recorder] 👁️ [Virtual Volume] Caching visibility. total omnibuses: 1, series title: 'Sonic The Hedgehog (2018)', series ID: '4FB9CE4C-3A8D-4640-B7EB-2CA998EE0A4D'
+[12:13:33 PM] [WARNING] [Kindle] KindleSizeGuard: Sonic The Hedgehog  IDW collection 1.epub → withinWebLimit (76.2 MB)
+[12:13:33 PM] [INFO] [Navigation] AppRouter: presentFullScreen(read(InksyncPro.ConvertedPDF(id: 3D7A4136-C353-485E-B774-680D8A622D55, name: "Sonic The Hedgehog  IDW collection 1.epub", url: file:///var/mobile/Containers/Data/Application/971DB677-9502-4FAD-B6ED-ED39858867DE/Documents/Sonic%20The%20Hedgehog%20(2018)/Sonic%20The%20Hedgehog%20%20IDW%20collection%201.epub, parentFolderID: nil, dataSyncHash: nil, lastModified: 2026-07-16 04:45:10 +0000, pageCount: 267, fileSize: 79945262, metadata: InksyncPro.PDFMetadata(title: "Sonic The Hedgehog  IDW collection 1.epub", author: nil, series: Optional("Sonic The Hedgehog (2018)"), issueNumber: nil, volume: nil, publisher: nil, publicationDate: nil, summary: nil, sourceFileIDs: Optional([9AF81002-1B5C-4ECC-AC4E-05F5B69AFA03, 646896E5-C575-4B5F-BC91-3556CD6E3796, 3E79F7A0-78B1-4B4E-B6D2-0FE750A94969]), writer: nil, penciller: nil, comicVineID: nil, seriesID: nil, externalSeriesID: nil, externalIssueID: nil, tags: [], lastReadPage: nil, selectedCoverID: nil, coverVariants: [:], isManga: Optional(false), isWebtoon: nil, bookmarkedPages: [], autoMatchFailed: Optional(false), readingOrder: nil, sortOrder: nil, readingEventLabel: nil, isOptional: nil), collectionId: Optional(4FB9CE4C-3A8D-4640-B7EB-2CA998EE0A4D), isFavorite: false, isPrivate: false, isExplicitSeriesCover: false, coverImageData: nil, contentType: InksyncPro.ContentType.book, chapters: [], addedByMode: InksyncPro.AppUIMode.pro, documentSubtype: InksyncPro.DocumentSubtype.unknown, isOnDevice: false, lastTransferFailed: false, lastOutputFormat: nil, lastConversionDate: nil, panelConfidenceScore: nil, contentHash: nil, sourceMode: InksyncPro.SourceMode.local), initialReadingMode: nil))
+[12:13:33 PM] [INFO] [EBook] EBookParser: parsed "Sonic The Hedgehog (2018)" — 267 spine items
+[12:13:33 PM] [INFO] [EBook] EBookParser: parsed "Sonic The Hedgehog (2018)" — 267 spine items
+[12:13:33 PM] [INFO] [Room] ReadingRoom: stopped
+[12:13:33 PM] [INFO] [Room] ReadingRoom: stopped
+[12:13:33 PM] [INFO] [EBook] EBookParser: parsed "Sonic The Hedgehog (2018)" — 267 spine items
+[12:13:33 PM] [INFO] [Export] Book Export: Safe pass-through for Sonic The Hedgehog  IDW collection 1.epub
+[12:13:33 PM] [SUCCESS] [Export] Exported for Cloud Sync: Sonic The Hedgehog  IDW collection 1.epub
+[12:13:33 PM] [SUCCESS] [Database] Backup: Database backup successfully created at backup_2026_07_15_23_54_47
+[12:13:33 PM] [INFO] [Database] Backup: Pruned oldest backup snapshot: backup_2026_07_15_22_32_32
+[12:13:33 PM] [INFO] [Migration] InstallGuard: Sentinel written successfully.
+[12:13:33 PM] [INFO] [Migration] InstallGuard: Sentinel written successfully.
+[12:13:33 PM] [INFO] [Annotations] AnnotationStore initialized with ModelContext
+[12:13:33 PM] [SUCCESS] [Annotations] AnnotationStore loaded: 1305 annotation(s) across 91 book(s)
+[12:13:33 PM] [INFO] [Migration] InstallGuard: Sentinel written successfully.
+[12:13:33 PM] [INFO] [Debug] 🔍 [Flight Recorder] 💾 [Virtual Volume] Loaded 1 virtual volumes from SQLite
+[12:13:33 PM] [INFO] [Library] LibraryService: loaded 2393 items, 37 collections, 1 virtual omnibuses.
+[12:13:33 PM] [INFO] [Library] Library Cache Rebuilt: 53 total UI groups rendered (Filter: All, Shelf: All, Depth: Root)
+[12:13:33 PM] [INFO] [Debug] 🔍 [Flight Recorder] 💾 [Virtual Volume] Loaded 1 virtual volumes from SQLite
+[12:13:33 PM] [INFO] [Library] LibraryService: loaded 2393 items, 37 collections, 1 virtual omnibuses.
+[12:13:33 PM] [INFO] [Debug] 🔍 [Flight Recorder] 👁️ [Virtual Volume] Caching visibility. total omnibuses: 1, series title: 'Dark Knights Of Steel', series ID: 'FD63C0D9-79BA-4078-B442-9FE1979CE838'
+[12:13:33 PM] [INFO] [Debug] 🔍 [Flight Recorder] 👁️ [Virtual Volume] Caching visibility. total omnibuses: 1, series title: 'Dark Knights Of Steel', series ID: 'FD63C0D9-79BA-4078-B442-9FE1979CE838'
+[12:13:33 PM] [INFO] [EBook] EBookParser: parsed "Dark Knights of Steel Vol. 1" — 176 spine items
+[12:13:33 PM] [INFO] [Room] ReadingRoom: stopped
+[12:13:33 PM] [SUCCESS] [Database] Backup: Database backup successfully created at backup_2026_07_16_00_42_36
+[12:13:33 PM] [INFO] [Database] Backup: Pruned oldest backup snapshot: backup_2026_07_15_23_16_20
+[12:13:33 PM] [SUCCESS] [Database] Backup: Database backup successfully created at backup_2026_07_16_00_51_15
+[12:13:33 PM] [INFO] [Database] Backup: Pruned oldest backup snapshot: backup_2026_07_15_23_24_13
+[12:13:33 PM] [INFO] [Migration] InstallGuard: Sentinel written successfully.
+[12:13:33 PM] [INFO] [Migration] InstallGuard: Sentinel written successfully.
+[12:13:33 PM] [INFO] [Annotations] AnnotationStore initialized with ModelContext
+[12:13:33 PM] [SUCCESS] [Annotations] AnnotationStore loaded: 1305 annotation(s) across 91 book(s)
+[12:13:33 PM] [INFO] [Migration] InstallGuard: Sentinel written successfully.
+[12:13:33 PM] [INFO] [Debug] 🔍 [Flight Recorder] 💾 [Virtual Volume] Loaded 1 virtual volumes from SQLite
+[12:13:33 PM] [INFO] [Library] LibraryService: loaded 2393 items, 37 collections, 1 virtual omnibuses.
+[12:13:33 PM] [INFO] [Library] Library Cache Rebuilt: 53 total UI groups rendered (Filter: All, Shelf: All, Depth: Root)
+[12:13:33 PM] [INFO] [Debug] 🔍 [Flight Recorder] 💾 [Virtual Volume] Loaded 1 virtual volumes from SQLite
+[12:13:33 PM] [INFO] [Library] LibraryService: loaded 2393 items, 37 collections, 1 virtual omnibuses.
+[12:13:33 PM] [INFO] [Debug] 🔍 [Flight Recorder] 👁️ [Virtual Volume] Caching visibility. total omnibuses: 1, series title: 'Dark Knights Of Steel', series ID: 'FD63C0D9-79BA-4078-B442-9FE1979CE838'
+[12:13:33 PM] [INFO] [Debug] 🔍 [Flight Recorder] 👁️ [Virtual Volume] Caching visibility. total omnibuses: 1, series title: 'Dark Knights Of Steel', series ID: 'FD63C0D9-79BA-4078-B442-9FE1979CE838'
+[12:13:33 PM] [INFO] [EBook] EBookParser: parsed "Dark Knights of Steel Vol. 1" — 176 spine items
+[12:13:33 PM] [SUCCESS] [Database] Backup: Database backup successfully created at backup_2026_07_16_01_09_32
+[12:13:33 PM] [INFO] [Database] Backup: Pruned oldest backup snapshot: backup_2026_07_15_23_31_51
+[12:13:33 PM] [SUCCESS] [Database] Backup: Database backup successfully created at backup_2026_07_16_01_17_21
+[12:13:33 PM] [INFO] [Database] Backup: Pruned oldest backup snapshot: backup_2026_07_15_23_42_16
+[12:13:33 PM] [INFO] [Migration] InstallGuard: Sentinel written successfully.
+[12:13:33 PM] [INFO] [Migration] InstallGuard: Sentinel written successfully.
+[12:13:33 PM] [INFO] [Annotations] AnnotationStore initialized with ModelContext
+[12:13:33 PM] [SUCCESS] [Annotations] AnnotationStore loaded: 1305 annotation(s) across 91 book(s)
+[12:13:33 PM] [INFO] [Migration] InstallGuard: Sentinel written successfully.
+[12:13:33 PM] [INFO] [Debug] 🔍 [Flight Recorder] 💾 [Virtual Volume] Loaded 1 virtual volumes from SQLite
+[12:13:33 PM] [INFO] [Library] LibraryService: loaded 2393 items, 37 collections, 1 virtual omnibuses.
+[12:13:33 PM] [INFO] [Library] Library Cache Rebuilt: 53 total UI groups rendered (Filter: All, Shelf: All, Depth: Root)
+[12:13:33 PM] [INFO] [Debug] 🔍 [Flight Recorder] 💾 [Virtual Volume] Loaded 1 virtual volumes from SQLite
+[12:13:33 PM] [INFO] [Library] LibraryService: loaded 2393 items, 37 collections, 1 virtual omnibuses.
+[12:13:33 PM] [INFO] [Debug] 🔍 [Flight Recorder] 👁️ [Virtual Volume] Caching visibility. total omnibuses: 1, series title: 'Alice In Borderland', series ID: '5C2B8A2B-0E99-4EE9-9F21-A5D911B6156F'
+[12:13:33 PM] [INFO] [Debug] 🔍 [Flight Recorder] 👁️ [Virtual Volume] Caching visibility. total omnibuses: 1, series title: 'Alice In Borderland', series ID: '5C2B8A2B-0E99-4EE9-9F21-A5D911B6156F'
+[12:13:33 PM] [INFO] [Room] ReadingRoom: stopped
+[12:13:33 PM] [INFO] [Debug] 🔍 [Flight Recorder] 👁️ [Virtual Volume] Caching visibility. total omnibuses: 1, series title: 'Dark Knights Of Steel', series ID: 'FD63C0D9-79BA-4078-B442-9FE1979CE838'
+[12:13:33 PM] [INFO] [Debug] 🔍 [Flight Recorder] 👁️ [Virtual Volume] Caching visibility. total omnibuses: 1, series title: 'Dark Knights Of Steel', series ID: 'FD63C0D9-79BA-4078-B442-9FE1979CE838'
+[12:13:33 PM] [INFO] [EBook] EBookParser: parsed "Dark Knights of Steel Vol. 1" — 176 spine items
+[12:13:33 PM] [SUCCESS] [Database] Backup: Database backup successfully created at backup_2026_07_16_01_29_53
+[12:13:33 PM] [INFO] [Database] Backup: Pruned oldest backup snapshot: backup_2026_07_15_23_54_47
+[12:13:33 PM] [INFO] [Migration] InstallGuard: Sentinel written successfully.
+[12:13:33 PM] [INFO] [Migration] InstallGuard: Sentinel written successfully.
+[12:13:33 PM] [INFO] [Annotations] AnnotationStore initialized with ModelContext
+[12:13:33 PM] [SUCCESS] [Annotations] AnnotationStore loaded: 1305 annotation(s) across 91 book(s)
+[12:13:33 PM] [INFO] [Migration] InstallGuard: Sentinel written successfully.
+[12:13:33 PM] [INFO] [Debug] 🔍 [Flight Recorder] 💾 [Virtual Volume] Loaded 1 virtual volumes from SQLite
+[12:13:33 PM] [INFO] [Library] LibraryService: loaded 2393 items, 37 collections, 1 virtual omnibuses.
+[12:13:33 PM] [INFO] [Library] Library Cache Rebuilt: 53 total UI groups rendered (Filter: All, Shelf: All, Depth: Root)
+[12:13:33 PM] [INFO] [Debug] 🔍 [Flight Recorder] 💾 [Virtual Volume] Loaded 1 virtual volumes from SQLite
+[12:13:33 PM] [INFO] [Library] LibraryService: loaded 2393 items, 37 collections, 1 virtual omnibuses.
+[12:13:33 PM] [INFO] [Debug] 🔍 [Flight Recorder] 👁️ [Virtual Volume] Caching visibility. total omnibuses: 1, series title: 'Dark Knights Of Steel', series ID: 'FD63C0D9-79BA-4078-B442-9FE1979CE838'
+[12:13:33 PM] [INFO] [Debug] 🔍 [Flight Recorder] 👁️ [Virtual Volume] Caching visibility. total omnibuses: 1, series title: 'Dark Knights Of Steel', series ID: 'FD63C0D9-79BA-4078-B442-9FE1979CE838'
+[12:13:33 PM] [INFO] [Room] ReadingRoom: stopped
+[12:13:33 PM] [INFO] [EBook] EBookParser: parsed "Dark Knights of Steel Vol. 1" — 176 spine items
+[12:13:33 PM] [SUCCESS] [Database] Backup: Database backup successfully created at backup_2026_07_16_09_30_56
+[12:13:33 PM] [INFO] [Database] Backup: Pruned oldest backup snapshot: backup_2026_07_16_00_42_36
+[12:13:33 PM] [INFO] [Migration] InstallGuard: Sentinel written successfully.
+[12:13:33 PM] [INFO] [Migration] InstallGuard: Sentinel written successfully.
+[12:13:33 PM] [INFO] [Annotations] AnnotationStore initialized with ModelContext
+[12:13:33 PM] [SUCCESS] [Annotations] AnnotationStore loaded: 1305 annotation(s) across 91 book(s)
+[12:13:33 PM] [INFO] [Migration] InstallGuard: Sentinel written successfully.
+[12:13:33 PM] [INFO] [Debug] 🔍 [Flight Recorder] 💾 [Virtual Volume] Loaded 1 virtual volumes from SQLite
+[12:13:33 PM] [INFO] [Library] LibraryService: loaded 2393 items, 37 collections, 1 virtual omnibuses.
+[12:13:33 PM] [INFO] [Library] Library Cache Rebuilt: 53 total UI groups rendered (Filter: All, Shelf: All, Depth: Root)
+[12:13:33 PM] [INFO] [Debug] 🔍 [Flight Recorder] 💾 [Virtual Volume] Loaded 1 virtual volumes from SQLite
+[12:13:33 PM] [INFO] [Library] LibraryService: loaded 2393 items, 37 collections, 1 virtual omnibuses.
+[12:13:33 PM] [INFO] [Debug] 🔍 [Flight Recorder] 👁️ [Virtual Volume] Caching visibility. total omnibuses: 1, series title: 'Dark Knights Of Steel', series ID: 'FD63C0D9-79BA-4078-B442-9FE1979CE838'
+[12:13:33 PM] [INFO] [Debug] 🔍 [Flight Recorder] 👁️ [Virtual Volume] Caching visibility. total omnibuses: 1, series title: 'Dark Knights Of Steel', series ID: 'FD63C0D9-79BA-4078-B442-9FE1979CE838'
+[12:13:33 PM] [INFO] [Room] ReadingRoom: stopped
+[12:13:33 PM] [INFO] [EBook] EBookParser: parsed "Dark Knights of Steel Vol. 1" — 176 spine items
+[12:13:33 PM] [INFO] [Navigation] AppRouter: presentSheet(controlCenter)
+[12:13:33 PM] [SUCCESS] [Database] Backup: Database backup successfully created at backup_2026_07_16_10_36_21
+[12:13:33 PM] [INFO] [Database] Backup: Pruned oldest backup snapshot: backup_2026_07_16_00_51_15
+[12:13:33 PM] [INFO] [Navigation] AppRouter: presentSheet(controlCenter)
+[12:13:33 PM] [INFO] [Debug] 🔍 [Flight Recorder] 👁️ [Virtual Volume] Caching visibility. total omnibuses: 1, series title: 'Dark Knights Of Steel', series ID: 'FD63C0D9-79BA-4078-B442-9FE1979CE838'
+[12:13:33 PM] [INFO] [Debug] 🔍 [Flight Recorder] 👁️ [Virtual Volume] Caching visibility. total omnibuses: 1, series title: 'Dark Knights Of Steel', series ID: 'FD63C0D9-79BA-4078-B442-9FE1979CE838'
+[12:13:33 PM] [INFO] [EBook] EBookParser: parsed "Dark Knights of Steel Vol. 1" — 176 spine items
+[12:13:33 PM] [INFO] [EBook] EBookParser: parsed "Dark Knights of Steel Vol. 1" — 176 spine items
+[12:13:33 PM] [INFO] [Navigation] AppRouter: presentSheet(controlCenter)
+[12:13:33 PM] [SUCCESS] [Database] Backup: Database backup successfully created at backup_2026_07_16_10_42_43
+[12:13:33 PM] [INFO] [Database] Backup: Pruned oldest backup snapshot: backup_2026_07_16_01_09_32
+[12:13:33 PM] [SUCCESS] [Database] Backup: Database backup successfully created at backup_2026_07_16_10_58_06
+[12:13:33 PM] [INFO] [Database] Backup: Pruned oldest backup snapshot: backup_2026_07_16_01_17_21
+[12:13:33 PM] [INFO] [Migration] InstallGuard: Sentinel written successfully.
+[12:13:33 PM] [INFO] [Migration] InstallGuard: Sentinel written successfully.
+[12:13:33 PM] [INFO] [Annotations] AnnotationStore initialized with ModelContext
+[12:13:33 PM] [SUCCESS] [Annotations] AnnotationStore loaded: 1305 annotation(s) across 91 book(s)
+[12:13:33 PM] [INFO] [Migration] InstallGuard: Sentinel written successfully.
+[12:13:33 PM] [INFO] [Debug] 🔍 [Flight Recorder] 💾 [Virtual Volume] Loaded 1 virtual volumes from SQLite
+[12:13:33 PM] [INFO] [Library] LibraryService: loaded 2393 items, 37 collections, 1 virtual omnibuses.
+[12:13:33 PM] [INFO] [Library] Library Cache Rebuilt: 53 total UI groups rendered (Filter: All, Shelf: All, Depth: Root)
+[12:13:33 PM] [INFO] [Debug] 🔍 [Flight Recorder] 💾 [Virtual Volume] Loaded 1 virtual volumes from SQLite
+[12:13:33 PM] [INFO] [Library] LibraryService: loaded 2393 items, 37 collections, 1 virtual omnibuses.
+[12:13:33 PM] [INFO] [Debug] 🔍 [Flight Recorder] 👁️ [Virtual Volume] Caching visibility. total omnibuses: 1, series title: 'Dark Knights Of Steel', series ID: 'FD63C0D9-79BA-4078-B442-9FE1979CE838'
+[12:13:33 PM] [INFO] [Debug] 🔍 [Flight Recorder] 👁️ [Virtual Volume] Caching visibility. total omnibuses: 1, series title: 'Dark Knights Of Steel', series ID: 'FD63C0D9-79BA-4078-B442-9FE1979CE838'
+[12:13:33 PM] [INFO] [EBook] EBookParser: parsed "Dark Knights of Steel Vol. 1" — 176 spine items
+[12:13:33 PM] [INFO] [Navigation] AppRouter: presentSheet(controlCenter)
+[12:13:33 PM] [SUCCESS] [Database] Backup: Database backup successfully created at backup_2026_07_16_11_53_44
+[12:13:33 PM] [INFO] [Database] Backup: Pruned oldest backup snapshot: backup_2026_07_16_01_29_53
+[12:13:33 PM] [INFO] [Migration] InstallGuard: Sentinel written successfully.
+[12:13:33 PM] [INFO] [Migration] InstallGuard: Sentinel written successfully.
+[12:13:33 PM] [INFO] [Annotations] AnnotationStore initialized with ModelContext
+[12:13:33 PM] [SUCCESS] [Annotations] AnnotationStore loaded: 1305 annotation(s) across 91 book(s)
+[12:13:33 PM] [INFO] [Migration] InstallGuard: Sentinel written successfully.
+[12:13:33 PM] [INFO] [Debug] 🔍 [Flight Recorder] 💾 [Virtual Volume] Loaded 1 virtual volumes from SQLite
+[12:13:33 PM] [INFO] [Library] LibraryService: loaded 2393 items, 37 collections, 1 virtual omnibuses.
+[12:13:33 PM] [INFO] [Library] Library Cache Rebuilt: 53 total UI groups rendered (Filter: All, Shelf: All, Depth: Root)
+[12:13:33 PM] [INFO] [Debug] 🔍 [Flight Recorder] 💾 [Virtual Volume] Loaded 1 virtual volumes from SQLite
+[12:13:33 PM] [INFO] [Library] LibraryService: loaded 2393 items, 37 collections, 1 virtual omnibuses.
+[12:13:33 PM] [INFO] [Debug] 🔍 [Flight Recorder] 👁️ [Virtual Volume] Caching visibility. total omnibuses: 1, series title: 'Dark Knights Of Steel', series ID: 'FD63C0D9-79BA-4078-B442-9FE1979CE838'
+[12:13:33 PM] [INFO] [Debug] 🔍 [Flight Recorder] 👁️ [Virtual Volume] Caching visibility. total omnibuses: 1, series title: 'Dark Knights Of Steel', series ID: 'FD63C0D9-79BA-4078-B442-9FE1979CE838'
+[12:13:33 PM] [INFO] [EBook] EBookParser: parsed "Dark Knights of Steel Vol. 1" — 176 spine items
+[12:13:33 PM] [INFO] [EBook] EBookParser: parsed "Dark Knights of Steel Vol. 1" — 176 spine items
+[12:13:33 PM] [INFO] [Navigation] AppRouter: presentSheet(controlCenter)
+[12:13:33 PM] [SUCCESS] [Database] Backup: Database backup successfully created at backup_2026_07_16_11_59_08
+[12:13:33 PM] [INFO] [Database] Backup: Pruned oldest backup snapshot: backup_2026_07_16_09_30_56
+[12:13:33 PM] [SUCCESS] [Database] Backup: Database backup successfully created at backup_2026_07_16_12_10_10
+[12:13:33 PM] [INFO] [Database] Backup: Pruned oldest backup snapshot: backup_2026_07_16_10_36_21
+[12:13:33 PM] [INFO] [Migration] InstallGuard: Sentinel written successfully.
+[12:13:33 PM] [INFO] [Migration] InstallGuard: Sentinel written successfully.
+[12:13:33 PM] [INFO] [Annotations] AnnotationStore initialized with ModelContext
+[12:13:33 PM] [SUCCESS] [Annotations] AnnotationStore loaded: 1305 annotation(s) across 91 book(s)
+[12:13:33 PM] [INFO] [Migration] InstallGuard: Sentinel written successfully.
+[12:13:33 PM] [INFO] [Debug] 🔍 [Flight Recorder] 💾 [Virtual Volume] Loaded 1 virtual volumes from SQLite
+[12:13:33 PM] [INFO] [Library] LibraryService: loaded 2393 items, 37 collections, 1 virtual omnibuses.
+[12:13:33 PM] [INFO] [Library] Library Cache Rebuilt: 53 total UI groups rendered (Filter: All, Shelf: All, Depth: Root)
+[12:13:33 PM] [INFO] [Debug] 🔍 [Flight Recorder] 💾 [Virtual Volume] Loaded 1 virtual volumes from SQLite
+[12:13:33 PM] [INFO] [Library] LibraryService: loaded 2393 items, 37 collections, 1 virtual omnibuses.
+[12:13:33 PM] [INFO] [Debug] 🔍 [Flight Recorder] 👁️ [Virtual Volume] Caching visibility. total omnibuses: 1, series title: 'Dark Knights Of Steel', series ID: 'FD63C0D9-79BA-4078-B442-9FE1979CE838'
+[12:13:33 PM] [INFO] [Debug] 🔍 [Flight Recorder] 👁️ [Virtual Volume] Caching visibility. total omnibuses: 1, series title: 'Dark Knights Of Steel', series ID: 'FD63C0D9-79BA-4078-B442-9FE1979CE838'
+[12:13:33 PM] [INFO] [EBook] EBookParser: parsed "Dark Knights of Steel Vol. 1" — 176 spine items
+[12:13:33 PM] [INFO] [Navigation] AppRouter: presentSheet(controlCenter)
+[12:13:33 PM] [INFO] [Annotations] AnnotationStore initialized with ModelContext
+[12:13:33 PM] [SUCCESS] [Annotations] AnnotationStore loaded: 1305 annotation(s) across 91 book(s)
+[12:13:33 PM] [INFO] [Migration] InstallGuard: Sentinel written successfully.
+[12:13:35 PM] [INFO] [Debug] 🔍 [Flight Recorder] 💾 [Virtual Volume] Loaded 1 virtual volumes from SQLite
+[12:13:35 PM] [INFO] [Library] LibraryService: loaded 2393 items, 37 collections, 1 virtual omnibuses.
+[12:13:36 PM] [INFO] [Library] Library Cache Rebuilt: 53 total UI groups rendered (Filter: All, Shelf: All, Depth: Root)
+[12:13:37 PM] [INFO] [Navigation] AppRouter: presentSheet(controlCenter)
+[12:13:37 PM] [INFO] [Debug] 🔍 [Flight Recorder] 💾 [Virtual Volume] Loaded 1 virtual volumes from SQLite
+[12:13:37 PM] [INFO] [Library] LibraryService: loaded 2393 items, 37 collections, 1 virtual omnibuses.
+[12:13:44 PM] [INFO] [Debug] 🔍 [Flight Recorder] 👁️ [Virtual Volume] Caching visibility. total omnibuses: 1, series title: 'Dark Knights Of Steel', series ID: 'FD63C0D9-79BA-4078-B442-9FE1979CE838'
+[12:13:45 PM] [INFO] [Debug] 🔍 [Flight Recorder] 👁️ [Virtual Volume] Caching visibility. total omnibuses: 1, series title: 'Dark Knights Of Steel', series ID: 'FD63C0D9-79BA-4078-B442-9FE1979CE838'
+[12:13:51 PM] [INFO] [Room] ReadingRoom: stopped
+[12:13:51 PM] [INFO] [EBook] EBookParser: parsed "Dark Knights of Steel Vol. 1" — 176 spine items
+[12:13:59 PM] [INFO] [Navigation] AppRouter: presentSheet(controlCenter)

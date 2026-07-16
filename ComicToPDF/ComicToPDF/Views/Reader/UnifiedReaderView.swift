@@ -14,11 +14,7 @@ struct UnifiedReaderView: View {
     /// Tri-state: nil = still checking, true = comic EPUB, false = text EPUB
     @State private var epubComicCheckResult: Bool? = nil
     
-    init(pdf: ConvertedPDF, allBooks: [ConvertedPDF] = []) {
-        self.pdf = pdf
-        self.allBooks = allBooks
-        Logger.shared.log("UnifiedReaderView: init called for '\(pdf.name)'. URL='\(pdf.url.absoluteString)', contentType=\(pdf.contentType)", category: "Reader", type: .info)
-    }
+
     
     /// Computed once at init — determines whether we need an async check
     private var needsEPUBComicCheck: Bool {
@@ -140,6 +136,9 @@ struct UnifiedReaderView: View {
             withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
                 showNotebookPanel = false
             }
+        }
+        .onAppear {
+            Logger.shared.log("UnifiedReaderView: onAppear called for '\(pdf.name)'. URL='\(pdf.url.absoluteString)', contentType=\(pdf.contentType)", category: "Reader", type: .info)
         }
     }
     
