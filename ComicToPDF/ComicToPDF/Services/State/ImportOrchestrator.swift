@@ -850,6 +850,9 @@ actor ImportOrchestrator {
             let importer = PDFImporter()
             return importer.hasTextContent(url: url) ? .book : .hybrid
         case "epub":
+            let didAccess = url.startAccessingSecurityScopedResource()
+            defer { if didAccess { url.stopAccessingSecurityScopedResource() } }
+            
             do {
                 guard let archive = try? Archive(url: url, accessMode: .read, pathEncoding: .utf8) else { return .book }
                 if let containerEntry = archive["META-INF/container.xml"] {
@@ -857,7 +860,7 @@ actor ImportOrchestrator {
                     _ = try archive.extract(containerEntry) { data in containerData.append(data) }
                     
                     if let containerStr = String(data: containerData, encoding: .utf8),
-                       let opfPath = containerStr.components(separatedBy: "full-path=\"").last?.components(separatedBy: "\"").first,
+                       let opfPath = MetadataHeuristics.extractOPFPath(from: containerStr),
                        let opfEntry = archive[opfPath] {
                         
                         var opfData = Data()
@@ -865,7 +868,11 @@ actor ImportOrchestrator {
                         
                         if let opfStr = String(data: opfData, encoding: .utf8) {
                             let lowerOPF = opfStr.lowercased()
-                            if lowerOPF.contains("pre-paginated") || lowerOPF.contains("comic-book") || lowerOPF.contains("manga") {
+                            if lowerOPF.contains("pre-paginated") || 
+                               lowerOPF.contains("comic-book") || 
+                               lowerOPF.contains("fixed-layout") || 
+                               lowerOPF.contains("image-based") || 
+                               lowerOPF.contains("manga") {
                                 return .hybrid
                             }
                         }

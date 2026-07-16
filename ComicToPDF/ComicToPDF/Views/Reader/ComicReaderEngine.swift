@@ -240,6 +240,7 @@ final class ComicImageCache: ObservableObject {
             self.pageCount = 0
             self.isLoading = true
         } else if isPDF {
+            let targetURL = LibraryFileRecord.resolveSandboxURL(pdf.url.absoluteString)
             Task.detached(priority: .userInitiated) { [weak self] in
                 let resolvedURL: URL
                 var accessedURL: URL? = nil
@@ -249,7 +250,7 @@ final class ComicImageCache: ObservableObject {
                     resolvedURL = url
                     if didAccess { accessedURL = url }
                 } else {
-                    resolvedURL = pdf.url
+                    resolvedURL = targetURL
                 }
                 
                 let count = await PDFRenderActor.shared.loadDocument(at: resolvedURL)
@@ -269,6 +270,7 @@ final class ComicImageCache: ObservableObject {
                 }
             }
         } else if isPreExtracted {
+            let targetURL = LibraryFileRecord.resolveSandboxURL(pdf.url.absoluteString)
             Task.detached(priority: .userInitiated) { [weak self] in
                 guard let self else { return }
                 let resolvedURL: URL
@@ -279,7 +281,7 @@ final class ComicImageCache: ObservableObject {
                     resolvedURL = url
                     if didAccess { accessedURL = url }
                 } else {
-                    resolvedURL = pdf.url
+                    resolvedURL = targetURL
                 }
                 do {
                     let ext = resolvedURL.pathExtension.lowercased()
@@ -315,6 +317,7 @@ final class ComicImageCache: ObservableObject {
                 }
             }
         } else {
+            let targetURL = LibraryFileRecord.resolveSandboxURL(pdf.url.absoluteString)
             Task.detached(priority: .userInitiated) { [weak self] in
                 let resolvedURL: URL
                 var accessedURL: URL? = nil
@@ -324,7 +327,7 @@ final class ComicImageCache: ObservableObject {
                     resolvedURL = url
                     if didAccess { accessedURL = url }
                 } else {
-                    resolvedURL = pdf.url
+                    resolvedURL = targetURL
                 }
                 guard let archive = try? Archive(url: resolvedURL, accessMode: .read, pathEncoding: .utf8) else {
                     if let accessed = accessedURL { accessed.stopAccessingSecurityScopedResource() }

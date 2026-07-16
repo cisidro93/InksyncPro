@@ -101,13 +101,15 @@ struct UnifiedReaderView: View {
         let resolvedURL: URL
         var accessedURL: URL? = nil
         
+        let targetURL = LibraryFileRecord.resolveSandboxURL(pdf.url.absoluteString)
+        
         if case .linked(let bm) = pdf.sourceMode,
            let url = try? BookmarkResolver.shared.resolve(bm) {
             let didAccess = url.startAccessingSecurityScopedResource()
             resolvedURL = url
             if didAccess { accessedURL = url }
         } else {
-            resolvedURL = pdf.url
+            resolvedURL = targetURL
             let didAccess = resolvedURL.startAccessingSecurityScopedResource()
             if didAccess { accessedURL = resolvedURL }
         }
@@ -124,7 +126,7 @@ struct UnifiedReaderView: View {
                 _ = try archive.extract(containerEntry) { data in containerData.append(data) }
                 
                 if let containerStr = String(data: containerData, encoding: .utf8),
-                   let opfPath = containerStr.components(separatedBy: "full-path=\"").last?.components(separatedBy: "\"").first,
+                   let opfPath = MetadataHeuristics.extractOPFPath(from: containerStr),
                    let opfEntry = archive[opfPath] {
                     
                     var opfData = Data()
@@ -132,7 +134,11 @@ struct UnifiedReaderView: View {
                     
                     if let opfStr = String(data: opfData, encoding: .utf8) {
                         let lowerOPF = opfStr.lowercased()
-                        if lowerOPF.contains("pre-paginated") || lowerOPF.contains("comic-book") || lowerOPF.contains("fixed-layout") || lowerOPF.contains("image-based") {
+                        if lowerOPF.contains("pre-paginated") || 
+                           lowerOPF.contains("comic-book") || 
+                           lowerOPF.contains("fixed-layout") || 
+                           lowerOPF.contains("image-based") ||
+                           lowerOPF.contains("manga") {
                             return true
                         }
                     }

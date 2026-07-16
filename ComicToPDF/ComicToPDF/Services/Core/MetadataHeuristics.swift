@@ -41,12 +41,36 @@ struct MetadataHeuristics {
         return detected.issueNumberString
     }
     
+    /// Extract the OPF full-path from container.xml content using multiple layout strategies
+    public static func extractOPFPath(from containerStr: String) -> String? {
+        // Double quotes strategy: full-path="..."
+        if let opfPath = containerStr.components(separatedBy: "full-path=\"").last?.components(separatedBy: "\"").first {
+            return opfPath
+        }
+        // Single quotes strategy: full-path='...'
+        if let opfPath = containerStr.components(separatedBy: "full-path='").last?.components(separatedBy: "'").first {
+            return opfPath
+        }
+        // Regex strategy (fallback)
+        let pattern = "full-path\\s*=\\s*[\"']([^\"']+)[\"']"
+        if let regex = try? NSRegularExpression(pattern: pattern, options: []),
+           let match = regex.firstMatch(in: containerStr, options: [], range: NSRange(containerStr.startIndex..., in: containerStr)) {
+            if let range = Range(match.range(1), in: containerStr) {
+                return String(containerStr[range])
+            }
+        }
+        return nil
+    }
+
     /// Intelligently routes manga vs western comics based on heuristic file names and path structures
     static func detectAsymmetricContentType(url: URL) -> ContentType {
         let ext = url.pathExtension.lowercased()
         if ext == "pdf" { return .book }
         if ext == "epub" {
             // Check if it's fixed layout/comic
+            let didAccess = url.startAccessingSecurityScopedResource()
+            defer { if didAccess { url.stopAccessingSecurityScopedResource() } }
+            
             do {
                 guard let archive = try? Archive(url: url, accessMode: .read, pathEncoding: .utf8) else { return .book }
                 if let containerEntry = archive["META-INF/container.xml"] {
@@ -54,7 +78,7 @@ struct MetadataHeuristics {
                     _ = try archive.extract(containerEntry) { data in containerData.append(data) }
                     
                     if let containerStr = String(data: containerData, encoding: .utf8),
-                       let opfPath = containerStr.components(separatedBy: "full-path=\"").last?.components(separatedBy: "\"").first,
+                       let opfPath = MetadataHeuristics.extractOPFPath(from: containerStr),
                        let opfEntry = archive[opfPath] {
                         
                         var opfData = Data()
@@ -62,7 +86,11 @@ struct MetadataHeuristics {
                         
                         if let opfStr = String(data: opfData, encoding: .utf8) {
                             let lowerOPF = opfStr.lowercased()
-                            if lowerOPF.contains("pre-paginated") || lowerOPF.contains("comic-book") || lowerOPF.contains("fixed-layout") || lowerOPF.contains("image-based") {
+                            if lowerOPF.contains("pre-paginated") || 
+                               lowerOPF.contains("comic-book") || 
+                               lowerOPF.contains("fixed-layout") || 
+                               lowerOPF.contains("image-based") ||
+                               lowerOPF.contains("manga") {
                                 // Determine manga vs western comic based on path keywords
                                 let pathLower = url.path.lowercased()
                                 let nameLower = url.lastPathComponent.lowercased()
