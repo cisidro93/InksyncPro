@@ -47,82 +47,109 @@ struct ContentView: View {
     
     // QoL Notification Toast State
     @State private var activeToast: ToastMessage? = nil
+    
+    @State private var isAppLoading = true
+    @State private var isLogoBreathing = false
 
     var body: some View {
-        ZStack {
-            NeuralExpressiveBackground(isAnimating: selectedPDF == nil)
-            
+        GeometryReader { geo in
             ZStack {
-                // Tab 0: Library
-                NavigationStack(path: $router.path) {
-                    ModernLibraryView(
-                        selectedPDF: $selectedPDF,
-                        isBatchMode: $isBatchMode,
-                        multiSelection: $multiSelection,
-                        showingBatchMergeReorder: $showingBatchMergeReorder,
-                        batchMergeItems: $batchMergeItems,
-                        useNavigationStack: true,
-                        onFolderImport: {
-                            AppRouter.shared.presentSheet(.importQueue)
+                NeuralExpressiveBackground(isAnimating: selectedPDF == nil)
+                
+                ZStack {
+                    // Tab 0: Library
+                    NavigationStack(path: $router.path) {
+                        ModernLibraryView(
+                            selectedPDF: $selectedPDF,
+                            isBatchMode: $isBatchMode,
+                            multiSelection: $multiSelection,
+                            showingBatchMergeReorder: $showingBatchMergeReorder,
+                            batchMergeItems: $batchMergeItems,
+                            useNavigationStack: true,
+                            onFolderImport: {
+                                AppRouter.shared.presentSheet(.importQueue)
+                            }
+                        )
+                        .navigationDestination(for: ConvertedPDF.self) { pdf in
+                            ConvertView(pdf: pdf).id(pdf.id)
                         }
-                    )
-                    .navigationDestination(for: ConvertedPDF.self) { pdf in
-                        ConvertView(pdf: pdf).id(pdf.id)
+                        .navigationDestination(for: SeriesGroup.self) { group in
+                            SeriesDetailView(series: group, selectedPDF: $selectedPDF, useNavigationStack: true)
+                                .environmentObject(conversionManager)
+                        }
                     }
-                    .navigationDestination(for: SeriesGroup.self) { group in
-                        SeriesDetailView(series: group, selectedPDF: $selectedPDF, useNavigationStack: true)
+                    .tabVisible(router.selectedTab == 0)
+                    
+                    // Tab 1: Workspace
+                    WorkspaceView(isSheet: false)
+                        .environmentObject(conversionManager)
+                        .tabVisible(router.selectedTab == 1)
+                    
+                    // Tab 2: Devices
+                    DevicesView()
+                        .environmentObject(conversionManager)
+                        .environmentObject(PeerManager.shared)
+                        .tabVisible(router.selectedTab == 2)
+
+                    // Tab 3: Notebook / Highlights
+                    NavigationStack {
+                        GlobalNotebookView(selectedPDF: $selectedPDF)
                             .environmentObject(conversionManager)
                     }
+                    .tabVisible(router.selectedTab == 3)
                 }
-                .tabVisible(router.selectedTab == 0)
                 
-                // Tab 1: Workspace
-                WorkspaceView(isSheet: false)
-                    .environmentObject(conversionManager)
-                    .tabVisible(router.selectedTab == 1)
-                
-                // Tab 2: Devices
-                DevicesView()
-                    .environmentObject(conversionManager)
-                    .environmentObject(PeerManager.shared)
-                    .tabVisible(router.selectedTab == 2)
-
-                // Tab 3: Notebook / Highlights
-                NavigationStack {
-                    GlobalNotebookView(selectedPDF: $selectedPDF)
-                        .environmentObject(conversionManager)
-                }
-                .tabVisible(router.selectedTab == 3)
-            }
-            
-            // iPad Progress Panel Overlay
-            if sizeClass == .regular {
-                VStack {
-                    Spacer()
-                    HStack {
+                // iPad Progress Panel Overlay
+                if sizeClass == .regular {
+                    VStack {
                         Spacer()
-                        iPadProgressPanel
-                            .frame(width: 320)
-                            .padding(.trailing, 24)
-                            .padding(.bottom, 100) // Above OmniDock
+                        HStack {
+                            Spacer()
+                            iPadProgressPanel
+                                .frame(width: 320)
+                                .padding(.trailing, 24)
+                                .padding(.bottom, 100) // Above OmniDock
+                        }
                     }
                 }
+                
+                // Premium Skeleton Shimmer Overlay View
+                AppLoadingScreenView(isAppLoading: $isAppLoading)
+                    .zIndex(998)
+                
+                // Floating brand logo that morphs/slides to top-left navbar
+                let safeAreaTop = geo.safeAreaInsets.top
+                let startPos = CGPoint(x: geo.size.width / 2, y: geo.size.height / 2 - 30)
+                let endPos = CGPoint(x: 24 + 18, y: safeAreaTop + 24) // Top-left alignment in library header space
+                
+                let currentPos = isAppLoading ? startPos : endPos
+                let currentSize = isAppLoading ? CGFloat(130) : CGFloat(32)
+                
+                Image("AppLogo")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: currentSize, height: currentSize)
+                    .clipShape(RoundedRectangle(cornerRadius: currentSize * 0.28))
+                    .shadow(color: .black.opacity(isAppLoading ? 0.45 : 0.15), radius: isAppLoading ? 15 : 4, y: isAppLoading ? 8 : 2)
+                    .scaleEffect(isAppLoading ? (isLogoBreathing ? 1.04 : 0.98) : 1.0)
+                    .position(currentPos)
+                    .zIndex(999) // Always on top of all sheets
             }
-        }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            if !tabBarHidden {
-                InkTabBar(
-                    selectedTab: $router.selectedTab,
-                    isHidden: $tabBarHidden,
-                    mode: isBatchMode ? .librarySelection(count: multiSelection.count) : (router.isSeriesSelectionMode ? .seriesSelection(count: router.seriesSelectionCount) : .normal),
-                    convertingProgress: conversionManager.conversionProgress,
-                    isConverting: conversionManager.isConverting,
-                    convertingMessage: conversionManager.processingStatus,
-                    isImporting: ImportMonitorManager.shared.isImporting,
-                    importProgress: ImportMonitorManager.shared.progress,
-                    importMessage: "Importing..."
-                )
-                .padding(.bottom, 8)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if !tabBarHidden && !isAppLoading {
+                    InkTabBar(
+                        selectedTab: $router.selectedTab,
+                        isHidden: $tabBarHidden,
+                        mode: isBatchMode ? .librarySelection(count: multiSelection.count) : (router.isSeriesSelectionMode ? .seriesSelection(count: router.seriesSelectionCount) : .normal),
+                        convertingProgress: conversionManager.conversionProgress,
+                        isConverting: conversionManager.isConverting,
+                        convertingMessage: conversionManager.processingStatus,
+                        isImporting: ImportMonitorManager.shared.isImporting,
+                        importProgress: ImportMonitorManager.shared.progress,
+                        importMessage: "Importing..."
+                    )
+                    .padding(.bottom, 8)
+                }
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InkTabBar_Hide"))) { _ in
@@ -148,7 +175,16 @@ struct ContentView: View {
             AnnotationStore.shared.initialize(with: modelContext)
             PageModelStore.shared.initialize(with: modelContext)
             
+            // Trigger loop for logo breathing animation during load
+            if isAppLoading {
+                withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) {
+                    isLogoBreathing = true
+                }
+            }
+            
             Task { @MainActor in
+                let startTime = Date()
+                
                 await LibraryDatabaseService.shared.bootstrap()
                 
                 MigrationService.shared.migrateLegacyDataIfNeeded(context: modelContext)
@@ -164,6 +200,16 @@ struct ContentView: View {
                 
                 await SandboxCleanupManager.shared.passiveScan()
                 await SandboxCleanupManager.shared.autoCleanupIfStorageLow()
+                
+                // Enforce a minimum display duration of 2.8s for smooth animation
+                let elapsed = Date().timeIntervalSince(startTime)
+                if elapsed < 2.8 {
+                    try? await Task.sleep(for: .seconds(2.8 - elapsed))
+                }
+                
+                withAnimation(.spring(response: 0.7, dampingFraction: 0.8)) {
+                    isAppLoading = false
+                }
             }
         }
         .sheet(item: $conversionManager.pendingSeriesGroup) { group in
