@@ -50,6 +50,7 @@ struct ContentView: View {
     
     @State private var isAppLoading = true
     @State private var isLogoBreathing = false
+    @State private var isLogoMorphComplete = false
 
     var body: some View {
         GeometryReader { geo in
@@ -68,7 +69,8 @@ struct ContentView: View {
                             useNavigationStack: true,
                             onFolderImport: {
                                 AppRouter.shared.presentSheet(.importQueue)
-                            }
+                            },
+                            isAppLoading: isAppLoading
                         )
                         .navigationDestination(for: ConvertedPDF.self) { pdf in
                             ConvertView(pdf: pdf).id(pdf.id)
@@ -114,26 +116,32 @@ struct ContentView: View {
                 }
                 
                 // Premium Skeleton Shimmer Overlay View
-                AppLoadingScreenView(isAppLoading: $isAppLoading)
-                    .zIndex(998)
+                if isAppLoading {
+                    AppLoadingScreenView(isAppLoading: $isAppLoading)
+                        .zIndex(998)
+                        .transition(.opacity)
+                }
                 
                 // Floating brand logo that morphs/slides to top-left navbar
-                let safeAreaTop = geo.safeAreaInsets.top
-                let startPos = CGPoint(x: geo.size.width / 2, y: geo.size.height / 2 - 30)
-                let endPos = CGPoint(x: 32, y: safeAreaTop + 26) // Aligns with custom unified header space
-                
-                let currentPos = isAppLoading ? startPos : endPos
-                let currentSize = isAppLoading ? CGFloat(130) : CGFloat(32)
-                
-                Image("AppLogo")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: currentSize, height: currentSize)
-                    .clipShape(RoundedRectangle(cornerRadius: currentSize * 0.28))
-                    .shadow(color: .black.opacity(isAppLoading ? 0.45 : 0.15), radius: isAppLoading ? 15 : 4, y: isAppLoading ? 8 : 2)
-                    .scaleEffect(isAppLoading ? (isLogoBreathing ? 1.04 : 0.98) : 1.0)
-                    .position(currentPos)
-                    .zIndex(999) // Always on top of all sheets
+                if !isLogoMorphComplete {
+                    let safeAreaTop = geo.safeAreaInsets.top
+                    let startPos = CGPoint(x: geo.size.width / 2, y: geo.size.height / 2 - 30)
+                    let endPos = CGPoint(x: 32, y: safeAreaTop + 26) // Aligns with custom unified header space
+                    
+                    let currentPos = isAppLoading ? startPos : endPos
+                    let currentSize = isAppLoading ? CGFloat(130) : CGFloat(32)
+                    
+                    Image("AppLogo")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: currentSize, height: currentSize)
+                        .clipShape(RoundedRectangle(cornerRadius: currentSize * 0.28))
+                        .shadow(color: .black.opacity(isAppLoading ? 0.45 : 0.15), radius: isAppLoading ? 15 : 4, y: isAppLoading ? 8 : 2)
+                        .scaleEffect(isAppLoading ? (isLogoBreathing ? 1.04 : 0.98) : 1.0)
+                        .position(currentPos)
+                        .zIndex(999) // Always on top of all sheets
+                        .transition(.opacity)
+                }
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 if !tabBarHidden && !isAppLoading {
@@ -209,6 +217,13 @@ struct ContentView: View {
                 
                 withAnimation(.spring(response: 0.7, dampingFraction: 0.8)) {
                     isAppLoading = false
+                }
+                
+                Task {
+                    try? await Task.sleep(for: .seconds(0.85))
+                    withAnimation(.easeOut(duration: 0.25)) {
+                        isLogoMorphComplete = true
+                    }
                 }
             }
         }

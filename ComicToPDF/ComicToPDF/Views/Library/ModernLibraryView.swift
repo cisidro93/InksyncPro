@@ -21,6 +21,7 @@ struct ModernLibraryView: View {
     // Navigation Mode
     var useNavigationStack: Bool = false
     var onFolderImport: (() -> Void)? = nil
+    var isAppLoading: Bool = false
 
     @State private var listRenameGroup: SeriesGroup? = nil
     @State private var listRenamePendingName: String = ""
@@ -949,8 +950,19 @@ struct ModernLibraryView: View {
             HStack(alignment: .center) {
                 // 1. Stylized Brand Title & Logo morph spacing
                 HStack(spacing: 8) {
-                    // Reserved spacer for logo morph (size 32)
-                    Spacer().frame(width: 36)
+                    // Reserved space for logo morph (size 32)
+                    ZStack {
+                        if !isAppLoading {
+                            Image("AppLogo")
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 32, height: 32)
+                                .clipShape(RoundedRectangle(cornerRadius: 32 * 0.28))
+                                .shadow(color: .black.opacity(0.15), radius: 4, y: 2)
+                                .transition(.opacity)
+                        }
+                    }
+                    .frame(width: 36, height: 32)
                     
                     Text("InkSync Pro")
                         .font(.system(size: 22, weight: .black, design: .rounded))
