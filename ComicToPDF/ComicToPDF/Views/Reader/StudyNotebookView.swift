@@ -20,6 +20,8 @@ struct StudyNotebookView: View {
 
     // Phase 1: Native Zettelkasten Integration
     @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject var conversionManager: ConversionManager
+    @EnvironmentObject var settingsManager: AppSettingsManager
     @State private var activeNoteAnnotation: SDAnnotation?
     
     @Environment(\.colorScheme) var colorScheme
@@ -450,6 +452,8 @@ struct StudyNotebookView: View {
         }
         .fullScreenCover(item: $selectedBookForReader) { pdf in
             UnifiedReaderView(pdf: pdf)
+                .environmentObject(conversionManager)
+                .environmentObject(settingsManager)
         }
         .sheet(isPresented: $isShowingBookPicker) {
             BookPickerSheet { selectedBook in

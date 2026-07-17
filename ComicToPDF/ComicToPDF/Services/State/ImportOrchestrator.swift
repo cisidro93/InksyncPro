@@ -367,10 +367,18 @@ actor ImportOrchestrator {
                     // each re-opened the archive; now we do one pass and use both results.
                     let ext = destURL.pathExtension.lowercased()
                     let isArchive = ["cbz", "zip"].contains(ext)
+                    let isEpub = ext == "epub"
                     
                     var xmlData: (displayName: String, parsedSeries: String?, parsedNumber: String?, parsedVolume: String?, parsedTitle: String?)?
                     var parsedInfo: ComicInfoParser.ComicInfo?
                     let pdfID = UUID()
+                    
+                    var epubMeta: EBookMetadata? = nil
+                    if isEpub {
+                        let accessingEpub = destURL.startAccessingSecurityScopedResource()
+                        epubMeta = await EBookParser.shared.parse(epub: destURL)
+                        if accessingEpub { destURL.stopAccessingSecurityScopedResource() }
+                    }
                     
                     autoreleasepool {
                         xmlData = isArchive ? (try? LocalComicInfoService.shared.fetchNonDestructiveMetadata(from: destURL)) : nil
@@ -381,7 +389,19 @@ actor ImportOrchestrator {
                         // a rate-limited batch of 5 + Task.yield() to prevent bus saturation.
                     }
 
-                    if let xmlData = xmlData {
+                    if let epub = epubMeta {
+                        smartDisplayName = epub.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? fileName : epub.title
+                        smartMetadata.title = smartDisplayName
+                        smartMetadata.writer = epub.author
+                        smartMetadata.publisher = epub.publisher
+                        smartMetadata.summary = epub.description
+                        if cType == .book {
+                            smartMetadata.series = nil
+                        } else {
+                            smartMetadata.series = fallbackSeries
+                        }
+                        smartMetadata.tags.append("EPUB Book")
+                    } else if let xmlData = xmlData {
                         smartDisplayName = xmlData.displayName
                         smartMetadata.title = xmlData.parsedTitle ?? overrideMeta?.title ?? smartDisplayName
                         smartMetadata.series = xmlData.parsedSeries ?? overrideMeta?.series ?? fallbackSeries

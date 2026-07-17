@@ -300,9 +300,15 @@ class PhysicalFileSystemRouter {
             url = pdf.url
         }
         
-        let image = await Task.detached(priority: .background) { () -> UIImage? in
-            return PhysicalFileSystemRouter.extractCoverImageStatic(from: url)
-        }.value
+        let isEPUB = url.pathExtension.lowercased() == "epub"
+        let image: UIImage?
+        if isEPUB {
+            image = await extractEPUBReadCover(from: url)
+        } else {
+            image = await Task.detached(priority: .background) { () -> UIImage? in
+                return PhysicalFileSystemRouter.extractCoverImageStatic(from: url)
+            }.value
+        }
         
         // Release scope after background work completes.
         if needsStopAccess { url.stopAccessingSecurityScopedResource() }
@@ -320,9 +326,15 @@ class PhysicalFileSystemRouter {
         // Skip if cover already exists on disk
         if let coverURL = getCoverURL(for: pdf), FileManager.default.fileExists(atPath: coverURL.path) { return }
         
-        let image = await Task.detached(priority: .userInitiated) { () -> UIImage? in
-            PhysicalFileSystemRouter.extractCoverImageStatic(from: localURL)
-        }.value
+        let isEPUB = pdf.url.pathExtension.lowercased() == "epub" || localURL.pathExtension.lowercased() == "epub"
+        let image: UIImage?
+        if isEPUB {
+            image = await extractEPUBReadCover(from: localURL)
+        } else {
+            image = await Task.detached(priority: .userInitiated) { () -> UIImage? in
+                PhysicalFileSystemRouter.extractCoverImageStatic(from: localURL)
+            }.value
+        }
         
         let jpegData = autoreleasepool {
             image?.jpegData(compressionQuality: 0.85)
@@ -330,6 +342,17 @@ class PhysicalFileSystemRouter {
         guard let data = jpegData else { return }
         saveCoverImage(data, for: pdf, manager: manager)
         Logger.shared.log("PhysicalFileSystemRouter: Cloud cover generated for '\(pdf.name)'", category: "Cloud", type: .success)
+    }
+
+    private func extractEPUBReadCover(from url: URL) async -> UIImage? {
+        guard let metadata = await EBookParser.shared.parse(epub: url) else { return nil }
+        guard !metadata.coverItem.isEmpty else { return nil }
+        guard let tempCoverURL = await EBookParser.extractCover(from: url, href: metadata.coverItem) else { return nil }
+        defer { try? FileManager.default.removeItem(at: tempCoverURL) }
+        if let data = try? Data(contentsOf: tempCoverURL) {
+            return UIImage(data: data)
+        }
+        return nil
     }
 
     /// Generates and persists a cover thumbnail from a live CloudPageSource.

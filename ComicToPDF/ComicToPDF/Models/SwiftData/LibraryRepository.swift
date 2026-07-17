@@ -16,7 +16,7 @@ actor LibraryModelActor {
 
     /// Runs all slow file-check, re-anchoring, self-healing, cascade-delete, and other cleaning logic.
     /// Returns true if any database modifications were saved.
-    func performSelfHealingAndCleanup() throws -> Bool {
+    func performSelfHealingAndCleanup() async throws -> Bool {
         let descriptor = FetchDescriptor<SDConvertedPDF>()
         let documents = try modelContext.fetch(descriptor)
         
@@ -146,25 +146,46 @@ actor LibraryModelActor {
                 }
             }
             
-            // 2. Heal content type: if it's a comic but matches manga signatures, re-classify
+            // 2. Heal content type dynamically based on the updated heuristics:
             let currentType = doc.contentType
-            var inferredType = currentType
-            
-            let urlPath = doc.url.path.lowercased()
-            let filename = doc.url.lastPathComponent.lowercased()
-            let mangaKeywords = ["[raw]", "[ch.", "ch.", "manhwa", "manhua", "manga", "scanlation", "oneshot", "doujin", "tankobon", "volume", "chapter", "shonen", "shoujo", "seinen", "josei"]
-            
-            let isMangaMetadata = doc.metadata.isManga ?? false
-            let hasMangaInPath = urlPath.contains("/manga/") || urlPath.contains("/manga") || doc.url.pathComponents.map({ $0.lowercased() }).contains("manga")
-            let hasMangaInFilename = mangaKeywords.contains(where: { filename.contains($0) })
-            
-            if isMangaMetadata || hasMangaInPath || hasMangaInFilename {
-                inferredType = .manga
-            }
-            
+            let inferredType = MetadataHeuristics.detectAsymmetricContentType(url: doc.url)
             if inferredType != currentType {
                 doc.contentType = inferredType
                 didUpdate = true
+                Logger.shared.log("LibraryRepository: healed content type for '\(doc.name)' from \(currentType) to \(inferredType)", category: "Library", type: .success)
+            }
+
+            // 3. EPUB metadata backfilling:
+            if doc.url.pathExtension.lowercased() == "epub" {
+                if doc.metadata.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || doc.metadata.title == doc.name || !doc.metadata.tags.contains("EPUB Book") {
+                    let accessing = doc.url.startAccessingSecurityScopedResource()
+                    if let epubMeta = await EBookParser.shared.parse(epub: doc.url) {
+                        if !epubMeta.title.isEmpty {
+                            doc.metadata.title = epubMeta.title
+                        }
+                        if !epubMeta.author.isEmpty {
+                            doc.metadata.writer = epubMeta.author
+                        }
+                        if !epubMeta.publisher.isEmpty {
+                            doc.metadata.publisher = epubMeta.publisher
+                        }
+                        if !epubMeta.description.isEmpty {
+                            doc.metadata.summary = epubMeta.description
+                        }
+                        if !doc.metadata.tags.contains("EPUB Book") {
+                            doc.metadata.tags.append("EPUB Book")
+                        }
+                        didUpdate = true
+                        Logger.shared.log("LibraryRepository: backfilled EPUB metadata for '\(doc.name)'", category: "Library", type: .success)
+                    }
+                    if accessing { doc.url.stopAccessingSecurityScopedResource() }
+                }
+
+                // If it's a book (novel) and grouped into a series, clear it to treat it as a single book
+                if doc.contentType == .book && doc.metadata.series != nil {
+                    doc.metadata.series = nil
+                    didUpdate = true
+                }
             }
         }
         
