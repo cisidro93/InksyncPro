@@ -1,6 +1,5 @@
 import SwiftUI
 import UniformTypeIdentifiers
-import ZIPFoundation
 
 struct ShareExtensionView: View {
     let extensionContext: NSExtensionContext?
@@ -212,7 +211,7 @@ struct ShareExtensionView: View {
         guard let fileHandle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? fileHandle.close() }
         
-        guard let data = try? fileHandle.read(upToCount: 4) else { return nil }
+        guard let data = try? fileHandle.read(upToCount: 200) else { return nil }
         if data.count < 4 { return nil }
         
         // ZIP / CBZ / EPUB (header: 50 4B 03 04)
@@ -221,11 +220,10 @@ struct ShareExtensionView: View {
             if pathExt == "epub" { return "epub" }
             if pathExt == "cbz" { return "cbz" }
             
-            // Check contents of ZIP archive to see if mimetype is present
-            if let archive = try? Archive(url: url, accessMode: .read) {
-                if archive["mimetype"] != nil {
-                    return "epub"
-                }
+            // Scan first 150 bytes for "mimetype" and "epub" (zero-dependency check)
+            let asciiStr = String(decoding: data.prefix(150), as: UTF8.self)
+            if asciiStr.contains("mimetype") && (asciiStr.contains("epub+zip") || asciiStr.contains("epub")) {
+                return "epub"
             }
             return "cbz"
         }
@@ -239,7 +237,6 @@ struct ShareExtensionView: View {
         if data[0] == 0x52 && data[1] == 0x61 && data[2] == 0x72 && data[3] == 0x21 {
             return "cbr"
         }
-        
         return nil
     }
 

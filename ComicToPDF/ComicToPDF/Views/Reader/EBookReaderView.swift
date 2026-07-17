@@ -1331,7 +1331,11 @@ struct EBookWebReader: UIViewRepresentable {
         }
 
         function updateMetrics() {
-            _totalPages = Math.max(1, Math.ceil(document.documentElement.scrollWidth / window.innerWidth));
+            var sv = document.scrollingElement || document.documentElement;
+            var style = window.getComputedStyle(document.body);
+            var gap = parseFloat(style.columnGap) || 0;
+            var pageStep = window.innerWidth + gap;
+            _totalPages = Math.max(1, Math.ceil((sv.scrollWidth + gap) / pageStep));
             if (_firstRun) {
                 _firstRun = false;
                 if (_currentPage === 99999) {
@@ -1347,7 +1351,18 @@ struct EBookWebReader: UIViewRepresentable {
         function goToPage(page, smooth) {
             _currentPage = Math.max(0, Math.min(page, _totalPages - 1));
             var behavior = smooth ? 'smooth' : 'instant';
-            window.scrollTo({ left: _currentPage * window.innerWidth, behavior: behavior });
+            
+            var sv = document.scrollingElement || document.documentElement;
+            var isHoriz = document.body.style.columnCount || window.getComputedStyle(document.body).columnCount !== 'auto';
+            if (isHoriz) {
+                var style = window.getComputedStyle(document.body);
+                var gap = parseFloat(style.columnGap) || 0;
+                var pageStep = window.innerWidth + gap;
+                window.scrollTo({ left: _currentPage * pageStep, behavior: behavior });
+            } else {
+                window.scrollTo({ top: _currentPage * window.innerHeight, behavior: behavior });
+            }
+            
             if (!_firstRun) {
                 window.webkit.messageHandlers.metrics.postMessage({ current: _currentPage, total: _totalPages });
             }
@@ -1602,7 +1617,10 @@ struct EBookWebReader: UIViewRepresentable {
                         let js = """
                         var el = document.getElementById('\(fragment)') || document.getElementsByName('\(fragment)')[0];
                         if (el) {
-                            var targetPage = Math.floor(el.getBoundingClientRect().left / window.innerWidth) + _currentPage;
+                            var style = window.getComputedStyle(document.body);
+                            var gap = parseFloat(style.columnGap) || 0;
+                            var pageStep = window.innerWidth + gap;
+                            var targetPage = Math.floor(el.getBoundingClientRect().left / pageStep) + _currentPage;
                             goToPage(Math.max(0, targetPage));
                         }
                         """
@@ -1642,12 +1660,15 @@ struct EBookWebReader: UIViewRepresentable {
                     var sv = document.scrollingElement || document.documentElement;
                     var isHoriz = document.body.style.columnCount || window.getComputedStyle(document.body).columnCount !== 'auto';
                     if (isHoriz) {
-                        var totalPages = Math.max(1, Math.ceil(sv.scrollWidth / window.innerWidth));
+                        var style = window.getComputedStyle(document.body);
+                        var gap = parseFloat(style.columnGap) || 0;
+                        var pageStep = window.innerWidth + gap;
+                        var totalPages = Math.max(1, Math.ceil((sv.scrollWidth + gap) / pageStep));
                         var targetPage = Math.round(\(fraction) * (totalPages - 1));
                         if (window.goToInksyncPage) {
                             window.goToInksyncPage(targetPage, false);
                         } else {
-                            window.scrollTo({ left: targetPage * window.innerWidth, behavior: 'instant' });
+                            window.scrollTo({ left: targetPage * pageStep, behavior: 'instant' });
                         }
                     } else {
                         window.scrollTo({ top: sv.scrollHeight * \(fraction), behavior: 'instant' });
