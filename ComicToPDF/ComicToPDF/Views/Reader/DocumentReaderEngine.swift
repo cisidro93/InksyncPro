@@ -25,6 +25,8 @@ struct DocumentReaderEngine: View {
     @State private var jumpToPageText = ""
     @State private var pdfViewReference: PDFView? = nil
     @State private var resolvedURL: URL? = nil
+    @State private var sessionSeconds: Int = 0
+    @State private var sessionTimer: Timer? = nil
     @ObservedObject private var prefs = EBookPreferences.shared
     @FocusState private var isReaderFocused: Bool
     @State private var lastBrightnessDragValue: CGFloat = 0
@@ -137,7 +139,8 @@ struct DocumentReaderEngine: View {
                     isReflowMode.toggle()
                     if isReflowMode { updateReflowText() }
                 },
-                isSettingsActive: showingSettings
+                isSettingsActive: showingSettings,
+                sessionTimeText: formattedSessionTime
             )
             
             if isPencilMode && !isReflowMode {
@@ -209,6 +212,14 @@ struct DocumentReaderEngine: View {
         .onDisappear {
             savePosition(pageIndex: currentPageIndex)
             accessedURL?.stopAccessingSecurityScopedResource()
+            sessionTimer?.invalidate()
+            sessionTimer = nil
+        }
+        .onAppear {
+            sessionSeconds = 0
+            sessionTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
+                sessionSeconds += 1
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
             Logger.shared.log("DocumentReaderEngine: Memory warning received. Purging PDF cache.", category: "Memory", type: .warning)
@@ -274,6 +285,16 @@ struct DocumentReaderEngine: View {
             }
         }
         .preferredColorScheme(prefs.activeTheme.isDark ? .dark : .light)
+    }
+    private var formattedSessionTime: String {
+        let hours = sessionSeconds / 3600
+        let minutes = (sessionSeconds % 3600) / 60
+        let seconds = sessionSeconds % 60
+        if hours > 0 {
+            return String(format: "%dh %dm", hours, minutes)
+        } else {
+            return String(format: "%02d:%02d", minutes, seconds)
+        }
     }
     
     private func pageForward() {
@@ -642,8 +663,15 @@ struct PDFKitRepresentedView: UIViewRepresentable {
             let width = gesture.view?.bounds.width ?? 0
             
             let zones = EBookPreferences.shared.tapZoneStyle.zones
+            let isRTL = EBookPreferences.shared.pdfRTL
             
-            if location.x < width * zones.leftEdge {
+            let tappedLeft = location.x < width * zones.leftEdge
+            let tappedRight = location.x > width * zones.rightEdge
+            
+            let goBackward = isRTL ? tappedRight : tappedLeft
+            let goForward = isRTL ? tappedLeft : tappedRight
+            
+            if goBackward {
                 // Page backward
                 if parent.currentPageIndex > 0 {
                     if let pv = pdfView, pv.canGoToPreviousPage {
@@ -653,7 +681,7 @@ struct PDFKitRepresentedView: UIViewRepresentable {
                     }
                     HapticEngine.light()
                 }
-            } else if location.x > width * zones.rightEdge {
+            } else if goForward {
                 // Page forward
                 if let doc = pdfView?.document, parent.currentPageIndex < doc.pageCount - 1 {
                     if let pv = pdfView, pv.canGoToNextPage {

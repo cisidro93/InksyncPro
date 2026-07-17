@@ -690,6 +690,15 @@ struct EBookSettingsPanel: View {
                             set: { prefs.pdfFitToWidth = $0 }
                         )
                     )
+                    Divider().padding(.leading, 44)
+                    ReaderSettingsToggleRow(
+                        label: "Right-to-Left (Manga) Mode",
+                        icon: "arrow.left.to.line",
+                        isOn: Binding(
+                            get: { prefs.pdfRTL },
+                            set: { prefs.pdfRTL = $0 }
+                        )
+                    )
                 }
             }
         }
