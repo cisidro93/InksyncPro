@@ -1,0 +1,169 @@
+{
+  "total_count": 1,
+  "jobs": [
+    {
+      "id": 87983086221,
+      "run_id": 29610283521,
+      "workflow_name": "Build Native iOS App",
+      "head_branch": "ios-port",
+      "run_url": "https://api.github.com/repos/cisidro93/InksyncPro/actions/runs/29610283521",
+      "run_attempt": 1,
+      "node_id": "CR_kwDOQu7BSs8AAAAUfDNajQ",
+      "head_sha": "ac9462990acbb7565efdf2f20431f5303c1289f0",
+      "url": "https://api.github.com/repos/cisidro93/InksyncPro/actions/jobs/87983086221",
+      "html_url": "https://github.com/cisidro93/InksyncPro/actions/runs/29610283521/job/87983086221",
+      "status": "completed",
+      "conclusion": "failure",
+      "created_at": "2026-07-17T20:11:18Z",
+      "started_at": "2026-07-17T20:11:20Z",
+      "completed_at": "2026-07-17T20:14:38Z",
+      "name": "build",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-07-17T20:11:21Z",
+          "completed_at": "2026-07-17T20:11:22Z"
+        },
+        {
+          "name": "Run actions/checkout@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-07-17T20:11:22Z",
+          "completed_at": "2026-07-17T20:11:40Z"
+        },
+        {
+          "name": "Set build metadata",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-07-17T20:11:40Z",
+          "completed_at": "2026-07-17T20:11:40Z"
+        },
+        {
+          "name": "Select Xcode",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-07-17T20:11:40Z",
+          "completed_at": "2026-07-17T20:11:40Z"
+        },
+        {
+          "name": "Install Tools",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-07-17T20:11:40Z",
+          "completed_at": "2026-07-17T20:11:46Z"
+        },
+        {
+          "name": "Run SwiftLint",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-07-17T20:11:46Z",
+          "completed_at": "2026-07-17T20:11:50Z"
+        },
+        {
+          "name": "Debug Files",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-07-17T20:11:50Z",
+          "completed_at": "2026-07-17T20:11:50Z"
+        },
+        {
+          "name": "Cache SPM Packages",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8,
+          "started_at": "2026-07-17T20:11:50Z",
+          "completed_at": "2026-07-17T20:11:53Z"
+        },
+        {
+          "name": "Generate Project",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "started_at": "2026-07-17T20:11:53Z",
+          "completed_at": "2026-07-17T20:11:53Z"
+        },
+        {
+          "name": "Build App",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 10,
+          "started_at": "2026-07-17T20:11:53Z",
+          "completed_at": "2026-07-17T20:14:32Z"
+        },
+        {
+          "name": "Post build errors to commit",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11,
+          "started_at": "2026-07-17T20:14:32Z",
+          "completed_at": "2026-07-17T20:14:33Z"
+        },
+        {
+          "name": "Package IPA",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 12,
+          "started_at": "2026-07-17T20:14:33Z",
+          "completed_at": "2026-07-17T20:14:33Z"
+        },
+        {
+          "name": "Upload Unsigned IPA to File Host and Post Commit Comment",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 13,
+          "started_at": "2026-07-17T20:14:33Z",
+          "completed_at": "2026-07-17T20:14:33Z"
+        },
+        {
+          "name": "Upload Artifact",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 14,
+          "started_at": "2026-07-17T20:14:33Z",
+          "completed_at": "2026-07-17T20:14:33Z"
+        },
+        {
+          "name": "Post Cache SPM Packages",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 27,
+          "started_at": "2026-07-17T20:14:33Z",
+          "completed_at": "2026-07-17T20:14:33Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 28,
+          "started_at": "2026-07-17T20:14:33Z",
+          "completed_at": "2026-07-17T20:14:34Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 29,
+          "started_at": "2026-07-17T20:14:34Z",
+          "completed_at": "2026-07-17T20:14:35Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/cisidro93/InksyncPro/check-runs/87983086221",
+      "labels": [
+        "macos-latest"
+      ],
+      "runner_id": 1000005874,
+      "runner_name": "GitHub Actions 1000005874",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    }
+  ]
+}
