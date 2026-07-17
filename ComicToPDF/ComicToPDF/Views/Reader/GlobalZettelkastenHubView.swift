@@ -572,14 +572,17 @@ struct GlobalZettelkastenHubView: View {
     private var explorerTags: [TagExplorerItem] {
         var dict = [String: [SDAnnotation]]()
         for ann in cachedActiveAnnotations {
-            let tags = (ann.tags ?? []) + (ann.readwiseTags ?? []) + (ann.readwiseDocumentTags ?? [])
-            if tags.isEmpty {
+            let allTags = (ann.tags ?? []) + (ann.readwiseTags ?? []) + (ann.readwiseDocumentTags ?? [])
+            let uniqueTags = Set(allTags.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty })
+            
+            if uniqueTags.isEmpty {
                 dict["Untagged", default: []].append(ann)
             } else {
-                for tag in tags {
-                    let clean = tag.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !clean.isEmpty {
-                        dict[clean, default: []].append(ann)
+                for tag in uniqueTags {
+                    if let existingKey = dict.keys.first(where: { $0.caseInsensitiveCompare(tag) == .orderedSame }) {
+                        dict[existingKey]?.append(ann)
+                    } else {
+                        dict[tag] = [ann]
                     }
                 }
             }

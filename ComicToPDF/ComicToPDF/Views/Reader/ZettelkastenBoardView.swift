@@ -315,9 +315,10 @@ struct ZettelkastenBoardView: View {
                     ForEach(tags, id: \.self) { tag in
                         let isUntagged = tag == "untagged"
                         let tagCards = annotations.filter { ann in
-                            let annTags = (ann.tags ?? []) + (ann.readwiseTags ?? [])
+                            let annTags = ((ann.tags ?? []) + (ann.readwiseTags ?? []) + (ann.readwiseDocumentTags ?? []))
+                                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
                             if isUntagged { return annTags.isEmpty }
-                            return annTags.contains(tag)
+                            return annTags.contains(tag.lowercased())
                         }
                         boardColumn(
                             title: isUntagged ? "Untagged" : "#\(tag)",

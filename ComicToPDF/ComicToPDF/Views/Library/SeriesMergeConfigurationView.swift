@@ -420,22 +420,41 @@ struct SeriesMergeConfigurationView: View {
         viewModel.itemsToMerge.reduce(0) { $0 + $1.fileSize }
     }
     
-    private var estimatedOutputSize: Int64 {
-        let total = Double(totalInputSize)
-        let multiplier: Double
-        if settingsManager.conversionSettings.optimizeForDevice {
-            switch settingsManager.conversionSettings.compressionQuality {
-            case .high: multiplier = 0.70
-            case .balanced: multiplier = 0.50
-            case .compact: multiplier = 0.30
+    private func estimatedMultiplier(for preset: CompressionPreset) -> Double {
+        let format = settingsManager.conversionSettings.outputFormat
+        let optimize = settingsManager.conversionSettings.optimizeForDevice
+        
+        switch format {
+        case .pdf:
+            if optimize {
+                switch preset {
+                case .high: return 0.85
+                case .balanced: return 0.65
+                case .compact: return 0.45
+                }
+            } else {
+                return 1.0
             }
-        } else {
-            switch settingsManager.conversionSettings.compressionQuality {
-            case .high: multiplier = 0.95
-            case .balanced: multiplier = 0.80
-            case .compact: multiplier = 0.55
+        case .cbz, .epub:
+            if optimize {
+                switch preset {
+                case .high: return 0.60
+                case .balanced: return 0.40
+                case .compact: return 0.20
+                }
+            } else {
+                switch preset {
+                case .high: return 0.90
+                case .balanced: return 0.75
+                case .compact: return 0.50
+                }
             }
         }
+    }
+
+    private var estimatedOutputSize: Int64 {
+        let total = Double(totalInputSize)
+        let multiplier = estimatedMultiplier(for: settingsManager.conversionSettings.compressionQuality)
         return Int64(total * multiplier)
     }
     
@@ -458,20 +477,7 @@ struct SeriesMergeConfigurationView: View {
     
     private func estimatedSize(for preset: CompressionPreset) -> String {
         let total = Double(totalInputSize)
-        let multiplier: Double
-        if settingsManager.conversionSettings.optimizeForDevice {
-            switch preset {
-            case .high: multiplier = 0.70
-            case .balanced: multiplier = 0.50
-            case .compact: multiplier = 0.30
-            }
-        } else {
-            switch preset {
-            case .high: multiplier = 0.95
-            case .balanced: multiplier = 0.80
-            case .compact: multiplier = 0.55
-            }
-        }
+        let multiplier = estimatedMultiplier(for: preset)
         return formatBytes(Int64(total * multiplier))
     }
     
