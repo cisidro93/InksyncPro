@@ -192,6 +192,37 @@ struct UnifiedReaderView: View {
     
     // MARK: - Static EPUB Comic Detection (runs off main thread)
     
+    /// Strips HTML tags and script/style contents, returning only readable plain text characters.
+    nonisolated private static func extractPlainTextLength(from html: String) -> Int {
+        var result = ""
+        var inTag = false
+        var skipContent = false
+        
+        let chars = Array(html)
+        var i = 0
+        while i < chars.count {
+            let c = chars[i]
+            if c == "<" {
+                inTag = true
+                if i + 6 < chars.count {
+                    let sub = String(chars[i..<(i+7)]).lowercased()
+                    if sub.hasPrefix("<style") || sub.hasPrefix("<script") {
+                        skipContent = true
+                    }
+                }
+            } else if c == ">" {
+                inTag = false
+                skipContent = false
+            } else if !inTag && !skipContent {
+                if !c.isWhitespace {
+                    result.append(c)
+                }
+            }
+            i += 1
+        }
+        return result.count
+    }
+    
     /// Determines whether a .book-classified EPUB is actually a fixed-layout comic.
     /// This is a static method so it can be called from a detached Task without capturing self.
     nonisolated private static func checkIsEPUBComic(pdf: ConvertedPDF) -> Bool {
@@ -233,7 +264,7 @@ struct UnifiedReaderView: View {
             
             var isComic = false
             
-            // Strategy 1: OPF metadata check
+            // Strategy 1: OPF metadata check (standard EPUB 3 fixed-layout properties)
             if let containerEntry = archive["META-INF/container.xml"] {
                 var containerData = Data()
                 _ = try archive.extract(containerEntry) { data in containerData.append(data) }
@@ -263,31 +294,60 @@ struct UnifiedReaderView: View {
                 Logger.shared.log("isEPUBComic: No META-INF/container.xml found in archive", category: "Reader", type: .warning)
             }
             
-            // Strategy 2: Sample XHTML pages to see if they are thin image wrappers
+            // Strategy 2: Content Analysis (Plain-Text-to-Image Ratio & DOM Heuristics)
             if !isComic {
                 let htmlEntries = archive.filter { entry in
                     let ext = (entry.path.lowercased() as NSString).pathExtension
                     return ["xhtml", "html", "htm"].contains(ext)
                 }
-                let htmlCount = htmlEntries.count
-                if htmlCount > 5 {
-                    let sampled = htmlEntries.prefix(min(5, htmlEntries.count))
-                    var imageWrapperCount = 0
-                    for entry in sampled {
+                
+                if !htmlEntries.isEmpty {
+                    // Sample up to 8 XHTML pages representing different parts of the book
+                    let sampleSize = min(8, htmlEntries.count)
+                    var sampledEntries: [Archive.Entry] = []
+                    let strideStep = max(1, htmlEntries.count / sampleSize)
+                    for idx in 0..<sampleSize {
+                        let targetIdx = min(idx * strideStep, htmlEntries.count - 1)
+                        if !sampledEntries.contains(where: { $0.path == htmlEntries[targetIdx].path }) {
+                            sampledEntries.append(htmlEntries[targetIdx])
+                        }
+                    }
+                    
+                    var totalTextCharacters = 0
+                    var pagesWithImages = 0
+                    var sampledCount = 0
+                    
+                    for entry in sampledEntries {
                         var htmlData = Data()
-                        _ = try archive.extract(entry) { data in htmlData.append(data) }
-                        if let html = String(data: htmlData, encoding: .utf8) {
-                            let lower = html.lowercased()
-                            // If the page has an <img> tag and very little text content, it's an image wrapper
-                            if lower.contains("<img") && lower.count < 2000 {
-                                imageWrapperCount += 1
+                        if let _ = try? archive.extract(entry, consumer: { htmlData.append($0) }) {
+                            sampledCount += 1
+                            if let htmlString = String(data: htmlData, encoding: .utf8) {
+                                let plainTextLength = Self.extractPlainTextLength(from: htmlString)
+                                totalTextCharacters += plainTextLength
+                                
+                                let lower = htmlString.lowercased()
+                                if lower.contains("<img") || lower.contains("<image") || lower.contains("<svg") {
+                                    pagesWithImages += 1
+                                }
                             }
                         }
                     }
-                    Logger.shared.log("isEPUBComic: XHTML sample: \(imageWrapperCount)/\(sampled.count) are image wrappers", category: "Reader", type: .info)
-                    if imageWrapperCount >= sampled.count - 1 && sampled.count >= 3 {
-                        isComic = true
-                        Logger.shared.log("isEPUBComic: ✅ XHTML sampling matched — routing to ComicReader", category: "Reader", type: .success)
+                    
+                    if sampledCount > 0 {
+                        let avgTextCharacters = Double(totalTextCharacters) / Double(sampledCount)
+                        let imageRatio = Double(pagesWithImages) / Double(sampledCount)
+                        
+                        Logger.shared.log("isEPUBComic: sampled \(sampledCount) pages. Avg text char count: \(avgTextCharacters), Image ratio: \(imageRatio)", category: "Reader", type: .info)
+                        
+                        // If average readable text count per page is high, it is a reflowable chapter-based text book.
+                        if avgTextCharacters > 300 {
+                            isComic = false
+                            Logger.shared.log("isEPUBComic: ❌ High average text character count (\(avgTextCharacters)) -> Book", category: "Reader", type: .success)
+                        } else if avgTextCharacters < 150 && imageRatio >= 0.75 {
+                            // Low text count and high frequency of full-page image wrappers -> Comic
+                            isComic = true
+                            Logger.shared.log("isEPUBComic: ✅ Low text (\(avgTextCharacters)) and high image ratio (\(imageRatio)) -> Comic", category: "Reader", type: .success)
+                        }
                     }
                 }
             }
