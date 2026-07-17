@@ -10,6 +10,7 @@ struct UnifiedReaderView: View {
     
     @State private var showNotebookPanel: Bool
     @AppStorage("studyNotebookPlacement") private var notebookPlacement: SidebarPlacement = .right
+    @State private var notebookWidth: CGFloat = 380
 
     init(pdf: ConvertedPDF, allBooks: [ConvertedPDF] = [], startWithNotebookOpen: Bool = false) {
         self.pdf = pdf
@@ -37,12 +38,34 @@ struct UnifiedReaderView: View {
                         bookTitle: pdf.name,
                         fileURL: pdf.url
                     )
-                    .frame(width: min(geo.size.width * 0.38, 420))
+                    .frame(width: notebookWidth)
                     .transition(.move(edge: .leading).combined(with: .opacity))
                     .id("sidebar_notebook_\(pdf.id)")
                     
-                    Divider()
-                        .background(Color.white.opacity(0.12))
+                    // Custom Draggable Divider
+                    ZStack {
+                        Color.clear
+                            .frame(width: 16)
+                            .contentShape(Rectangle())
+                        
+                        Rectangle()
+                            .fill(Color.white.opacity(0.12))
+                            .frame(width: 1)
+                        
+                        Capsule()
+                            .fill(Color.orange)
+                            .frame(width: 4, height: 40)
+                            .shadow(color: .orange.opacity(0.4), radius: 3)
+                    }
+                    .frame(width: 16)
+                    .gesture(
+                        DragGesture(minimumDistance: 1)
+                            .onChanged { value in
+                                let totalWidth = geo.size.width
+                                let newWidth = value.location.x
+                                notebookWidth = max(260, min(newWidth, totalWidth * 0.65))
+                            }
+                    )
                 }
                 
                 ZStack {
@@ -81,15 +104,37 @@ struct UnifiedReaderView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 
                 if notebookPlacement == .right && showNotebookPanel && sizeClass == .regular {
-                    Divider()
-                        .background(Color.white.opacity(0.12))
+                    // Custom Draggable Divider
+                    ZStack {
+                        Color.clear
+                            .frame(width: 16)
+                            .contentShape(Rectangle())
+                        
+                        Rectangle()
+                            .fill(Color.white.opacity(0.12))
+                            .frame(width: 1)
+                        
+                        Capsule()
+                            .fill(Color.orange)
+                            .frame(width: 4, height: 40)
+                            .shadow(color: .orange.opacity(0.4), radius: 3)
+                    }
+                    .frame(width: 16)
+                    .gesture(
+                        DragGesture(minimumDistance: 1)
+                            .onChanged { value in
+                                let totalWidth = geo.size.width
+                                let newWidth = totalWidth - value.location.x
+                                notebookWidth = max(260, min(newWidth, totalWidth * 0.65))
+                            }
+                    )
                     
                     StudyNotebookView(
                         bookID: pdf.id.uuidString,
                         bookTitle: pdf.name,
                         fileURL: pdf.url
                     )
-                    .frame(width: min(geo.size.width * 0.38, 420))
+                    .frame(width: notebookWidth)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
                     .id("sidebar_notebook_\(pdf.id)")
                 }

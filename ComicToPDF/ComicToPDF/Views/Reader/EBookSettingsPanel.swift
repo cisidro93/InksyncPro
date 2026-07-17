@@ -11,6 +11,7 @@ struct EBookSettingsPanel: View {
 
     // Optional book ID for per-book locking
     var bookID: String? = nil
+    var isPDF: Bool = false
 
     @State private var activeTab: PanelTab = .themes
     @State private var showCustomBgPicker = false
@@ -668,6 +669,28 @@ struct EBookSettingsPanel: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
+            }
+
+            if isPDF {
+                ReaderSettingsSection(title: "PDF Layout Options", icon: "doc.richtext") {
+                    ReaderSettingsToggleRow(
+                        label: "Two-Up (Dual Page)",
+                        icon: "rectangle.split.2x1",
+                        isOn: Binding(
+                            get: { prefs.pdfDualPage },
+                            set: { prefs.pdfDualPage = $0 }
+                        )
+                    )
+                    Divider().padding(.leading, 44)
+                    ReaderSettingsToggleRow(
+                        label: "Fit Page to Width",
+                        icon: "arrow.left.and.right.square",
+                        isOn: Binding(
+                            get: { prefs.pdfFitToWidth },
+                            set: { prefs.pdfFitToWidth = $0 }
+                        )
+                    )
+                }
             }
         }
     }

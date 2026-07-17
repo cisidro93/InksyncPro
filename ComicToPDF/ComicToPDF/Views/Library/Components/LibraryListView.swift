@@ -311,6 +311,22 @@ struct LibraryListView: View {
         
         Button { onAction(.favorite, pdf) } label: { Label(pdf.isFavorite ? "Unfavorite" : "Favorite", systemImage: pdf.isFavorite ? "star.slash" : "star") }
         
+        if pdf.contentType == .comic || pdf.contentType == .manga {
+            Button {
+                conversionManager.updateContentType(for: pdf.id, to: .book)
+                onDropApplied()
+            } label: {
+                Label("Mark as Book", systemImage: "book")
+            }
+        } else {
+            Button {
+                conversionManager.updateContentType(for: pdf.id, to: .comic)
+                onDropApplied()
+            } label: {
+                Label("Mark as Comic", systemImage: "book.closed")
+            }
+        }
+        
         Divider()
         
         // ── 2. E-READER DIRECT CONVERT & SEND ──

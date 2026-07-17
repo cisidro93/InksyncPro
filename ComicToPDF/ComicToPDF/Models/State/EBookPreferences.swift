@@ -87,6 +87,10 @@ class EBookPreferences: ObservableObject {
         set { readingFilterRaw = newValue.rawValue }
     }
 
+    // MARK: - PDF Specific Layouts
+    @AppStorage("pdf_dualPage") var pdfDualPage: Bool = false
+    @AppStorage("pdf_fitToWidth") var pdfFitToWidth: Bool = false
+
     // MARK: - Image Filters (legacy, kept for compatibility)
     @AppStorage("ebook_isSmartCropEnabled") var isSmartCropEnabled: Bool = false
     @AppStorage("ebook_autoContrastLevel")  var autoContrastLevel: Double = 1.0

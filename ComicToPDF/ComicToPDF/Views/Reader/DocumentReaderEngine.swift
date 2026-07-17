@@ -217,7 +217,7 @@ struct DocumentReaderEngine: View {
             }
         }
         .sheet(isPresented: $showingSettings) {
-            EBookSettingsPanel(bookID: pdf.id.uuidString)
+            EBookSettingsPanel(bookID: pdf.id.uuidString, isPDF: true)
                 .presentationDetents([.medium, .large])
         }
 
@@ -548,9 +548,45 @@ struct PDFKitRepresentedView: UIViewRepresentable {
         
         if let pdfView = context.coordinator.pdfView {
             let currentMode = prefs.paginationMode
-            if context.coordinator.lastConfiguredPaginationMode != currentMode {
-                configureDisplayMode(pdfView, context: context)
+            let dualPageMode = prefs.pdfDualPage
+            let fitToWidth = prefs.pdfFitToWidth
+            
+            let isPaged = currentMode == EBookPaginationMode.paged.rawValue
+            let expectedDisplayMode: PDFDisplayMode
+            if isPaged {
+                expectedDisplayMode = dualPageMode ? .twoUp : .singlePage
+            } else {
+                expectedDisplayMode = dualPageMode ? .twoUpContinuous : .singlePageContinuous
             }
+            
+            if pdfView.displayMode != expectedDisplayMode || context.coordinator.lastConfiguredPaginationMode != currentMode {
+                pdfView.displayMode = expectedDisplayMode
+                context.coordinator.lastConfiguredPaginationMode = currentMode
+                if isPaged {
+                    pdfView.displayDirection = .horizontal
+                    pdfView.usePageViewController(true, withViewOptions: nil)
+                } else {
+                    pdfView.usePageViewController(false)
+                    pdfView.displayDirection = .vertical
+                }
+                pdfView.layoutDocumentView()
+            }
+            
+            if fitToWidth {
+                pdfView.autoScales = false
+                if let currentPage = pdfView.currentPage {
+                    let pageBounds = currentPage.bounds(for: pdfView.displayBox)
+                    let scale = pdfView.bounds.width / pageBounds.width
+                    if pdfView.scaleFactor != scale && scale > 0 {
+                        pdfView.scaleFactor = scale
+                    }
+                }
+            } else {
+                if !pdfView.autoScales {
+                    pdfView.autoScales = true
+                }
+            }
+            
             makePdfViewTransparent(pdfView)
             
             // Sync outer page change to the PDFView
@@ -640,6 +676,14 @@ struct PDFKitRepresentedView: UIViewRepresentable {
                 let index = document.index(for: page)
                 Task { @MainActor in
                     self.parent.currentPageIndex = index
+                    
+                    if EBookPreferences.shared.pdfFitToWidth {
+                        let pageBounds = page.bounds(for: view.displayBox)
+                        let scale = view.bounds.width / pageBounds.width
+                        if view.scaleFactor != scale && scale > 0 {
+                            view.scaleFactor = scale
+                        }
+                    }
                 }
             }
         }

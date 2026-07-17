@@ -118,161 +118,284 @@ struct StudyNotebookView: View {
     @State private var previewImage: UIImage? = nil
     @State private var showPreviewModal = false
     @State private var isExtractingPreviewImage = false
-    
+
     var body: some View {
-        ZStack(alignment: .bottom) {
-            // MARK: Premium Background Base
-            Color.inkBackground.ignoresSafeArea()
+        GeometryReader { notebookGeo in
+            let availableWidth = notebookGeo.size.width
             
-            VStack(spacing: 0) {
-                // MARK: Glassmorphic Header
-                HStack(spacing: 12) {
-                    if showBackButton {
-                        Button {
-                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                            dismiss()
-                        } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: "chevron.left")
-                                Text("Back")
-                                    .font(.system(size: 15, weight: .bold, design: .rounded))
-                            }
-                            .foregroundColor(.orange)
+            let inputPicker = Picker("Input", selection: $inputMode) {
+                Image(systemName: "keyboard").tag(InputMode.markdown)
+                Image(systemName: "applepencil").tag(InputMode.handwriting)
+            }
+            .pickerStyle(.segmented)
+            .frame(width: 110)
+            
+            let micButton = Button {
+                toggleSpeechDictation()
+            } label: {
+                Image(systemName: speechManager.isRecording ? "mic.fill" : "mic")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(speechManager.isRecording ? .red : .primary)
+                    .padding(8)
+                    .background(speechManager.isRecording ? Color.red.opacity(0.15) : Color.primary.opacity(0.08))
+                    .clipShape(Circle())
+            }
+            .keyboardShortcut("d", modifiers: [.command])
+            
+            let paperStyleMenu = Menu {
+                Section("Paper Style") {
+                    Picker("Style", selection: $paperStyle) {
+                        ForEach(PaperStyle.allCases) { style in
+                            Label(style.rawValue, systemImage: style.icon).tag(style)
                         }
-                        .buttonStyle(.plain)
                     }
-                    
-                    Image(systemName: "notebook.toptab.fill")
-                        .foregroundStyle(LinearGradient(colors: [Theme.blue, Color.purple], startPoint: .topLeading, endPoint: .bottomTrailing))
-                        .font(.system(size: 18, weight: .bold))
-                    
-                    Text("Study Notebook")
-                        .font(.system(size: 16, weight: .bold, design: .rounded))
-                        .foregroundColor(.primary)
-                    
-                    Spacer()
-                    
-                    // Input Mode Toggle
-                    Picker("Input", selection: $inputMode) {
-                        Image(systemName: "keyboard").tag(InputMode.markdown)
-                        Image(systemName: "applepencil").tag(InputMode.handwriting)
-                    }
-                    .pickerStyle(.segmented)
-                    .frame(width: 110)
-                    
-                    if inputMode == .markdown {
-                        Button {
-                            toggleSpeechDictation()
-                        } label: {
-                            Image(systemName: speechManager.isRecording ? "mic.fill" : "mic")
-                                .font(.system(size: 15, weight: .semibold))
-                                .foregroundColor(speechManager.isRecording ? .red : .primary)
-                                .padding(8)
-                                .background(speechManager.isRecording ? Color.red.opacity(0.15) : Color.primary.opacity(0.08))
-                                .clipShape(Circle())
+                }
+                if paperStyle != .plain {
+                    Section("Line & Grid Size") {
+                        Picker("Size", selection: $paperSpacing) {
+                            Text("Small (Narrow)").tag(CGFloat(18.0))
+                            Text("Medium (Normal)").tag(CGFloat(24.0))
+                            Text("Large (Wide)").tag(CGFloat(32.0))
                         }
-                        .keyboardShortcut("d", modifiers: [.command])
                     }
-                    
-                    // Paper Style Menu (Available in both modes)
-                    Menu {
-                        Section("Paper Style") {
-                            Picker("Style", selection: $paperStyle) {
-                                ForEach(PaperStyle.allCases) { style in
-                                    Label(style.rawValue, systemImage: style.icon).tag(style)
+                }
+            } label: {
+                Image(systemName: "doc.plaintext")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(.primary)
+                    .padding(8)
+                    .background(Color.primary.opacity(0.08))
+                    .clipShape(Circle())
+            }
+            
+            let summaryButton = Button {
+                generateAISummary()
+            } label: {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(.purple)
+                    .padding(8)
+                    .background(Color.purple.opacity(0.1))
+                    .clipShape(Circle())
+            }
+            
+            let writingAssistantButton = Button {
+                showWritingAssistant = true
+            } label: {
+                Image(systemName: "checkmark.bubble.fill")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(.blue)
+                    .padding(8)
+                    .background(Color.blue.opacity(0.1))
+                    .clipShape(Circle())
+            }
+            
+            let studyButton = Button {
+                HapticEngine.light()
+                studyCards = bookHighlights
+                currentCardIndex = 0
+                isAnswerRevealed = false
+                withAnimation(.spring()) {
+                    isStudyModeActive = true
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "play.rectangle.on.rectangle.fill")
+                    if availableWidth > 480 {
+                        Text("Study")
+                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                    }
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(
+                    LinearGradient(colors: [Theme.blue, Color.purple], startPoint: .topLeading, endPoint: .bottomTrailing),
+                    in: Capsule()
+                )
+            }
+            
+            let exportMenu = Menu {
+                Button { exportNotes(as: .markdown) } label: { Label("Export Markdown (.md)", systemImage: "arrow.down.doc") }
+                Button { exportNotes(as: .plainText) } label: { Label("Export Plain Text (.txt)", systemImage: "doc.text") }
+                Button { exportZettelkastenZip() } label: { Label("Export Zettelkasten Zip (Obsidian)", systemImage: "archivebox") }
+                Button { shareNotes() } label: { Label("Share Note...", systemImage: "square.and.arrow.up") }
+            } label: {
+                Image(systemName: "square.and.arrow.up")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(.primary)
+                    .padding(8)
+                    .background(Color.primary.opacity(0.08))
+                    .clipShape(Circle())
+            }
+            
+            let linkBookButton = Group {
+                if let matchedPDF = fetchBackingBook() {
+                    Button {
+                        HapticEngine.light()
+                        selectedBookForReader = matchedPDF
+                    } label: {
+                        Image(systemName: "book")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(.primary)
+                            .padding(8)
+                            .background(Color.primary.opacity(0.08))
+                            .clipShape(Circle())
+                    }
+                } else {
+                    Button {
+                        HapticEngine.light()
+                        isShowingBookPicker = true
+                    } label: {
+                        Image(systemName: "book.badge.plus")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(.primary)
+                            .padding(8)
+                            .background(Color.primary.opacity(0.08))
+                            .clipShape(Circle())
+                    }
+                }
+            }
+            
+            let highlighterButton = Button {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                    showHighlightsDrawer.toggle()
+                }
+            } label: {
+                Image(systemName: "highlighter")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(showHighlightsDrawer ? Theme.blue : .primary)
+                    .padding(8)
+                    .background(showHighlightsDrawer ? Theme.blue.opacity(0.1) : Color.primary.opacity(0.08))
+                    .clipShape(Circle())
+            }
+            
+            let statsMenu = Menu {
+                Section("Note Stats") {
+                    Button(action: {}) { Label("\(localNotes.count) Characters", systemImage: "text.alignleft") }.disabled(true)
+                    Button(action: {}) { Label("\(localNotes.split { $0.isWhitespace || $0.isNewline }.count) Words", systemImage: "character.textbox") }.disabled(true)
+                    Button(action: {}) {
+                        let lines = localNotes.components(separatedBy: .newlines).filter { !$0.isEmpty }.count
+                        Label("\(lines) Paragraphs", systemImage: "text.justify.left")
+                    }.disabled(true)
+                    Button(action: {}) {
+                        let wCount = localNotes.split { $0.isWhitespace || $0.isNewline }.count
+                        let readingTime = max(1, Int(ceil(Double(wCount) / 200.0)))
+                        Label("\(readingTime) min read", systemImage: "clock")
+                    }.disabled(true)
+                }
+            } label: {
+                HStack(spacing: 3) {
+                    let words = localNotes.split { $0.isWhitespace || $0.isNewline }.count
+                    Text("\(words)w")
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                    Image(systemName: "info.circle")
+                        .font(.system(size: 9))
+                }
+                .foregroundColor(Theme.textSecondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
+            }
+
+            ZStack(alignment: .bottom) {
+                // MARK: Premium Background Base
+                Color.inkBackground.ignoresSafeArea()
+                
+                VStack(spacing: 0) {
+                    // MARK: Glassmorphic Header
+                    HStack(spacing: availableWidth > 400 ? 12 : 8) {
+                        if showBackButton {
+                            Button {
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                dismiss()
+                            } label: {
+                                HStack(spacing: 2) {
+                                    Image(systemName: "chevron.left")
+                                    if availableWidth > 450 {
+                                        Text("Back")
+                                            .font(.system(size: 15, weight: .bold, design: .rounded))
+                                    }
                                 }
+                                .foregroundColor(.orange)
                             }
+                            .buttonStyle(.plain)
                         }
                         
-                        if paperStyle != .plain {
-                            Section("Line & Grid Size") {
-                                Picker("Size", selection: $paperSpacing) {
-                                    Text("Small (Narrow)").tag(CGFloat(18.0))
-                                    Text("Medium (Normal)").tag(CGFloat(24.0))
-                                    Text("Large (Wide)").tag(CGFloat(32.0))
+                        Image(systemName: "notebook.toptab.fill")
+                            .foregroundStyle(LinearGradient(colors: [Theme.blue, Color.purple], startPoint: .topLeading, endPoint: .bottomTrailing))
+                            .font(.system(size: 18, weight: .bold))
+                        
+                        Text(availableWidth > 450 ? "Study Notebook" : "Notes")
+                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                            .foregroundColor(.primary)
+                        
+                        Spacer()
+                        
+                        if availableWidth > 550 {
+                            // WIDE TOOLBAR
+                            inputPicker
+                            
+                            if inputMode == .markdown {
+                                micButton
+                            }
+                            
+                            paperStyleMenu
+                            summaryButton
+                            writingAssistantButton
+                            
+                            if !bookHighlights.isEmpty {
+                                studyButton
+                            }
+                            
+                            exportMenu
+                            
+                            if showBackButton {
+                                linkBookButton
+                            }
+                            
+                            highlighterButton
+                            statsMenu
+                        } else if availableWidth > 380 {
+                            // MEDIUM TOOLBAR
+                            inputPicker
+                            highlighterButton
+                            
+                            Menu {
+                                Section("Tools") {
+                                    if !bookHighlights.isEmpty {
+                                        Button {
+                                            studyCards = bookHighlights
+                                            currentCardIndex = 0
+                                            isAnswerRevealed = false
+                                            isStudyModeActive = true
+                                        } label: { Label("Study Flashcards", systemImage: "play.rectangle.on.rectangle") }
+                                    }
+                                    Button { generateAISummary() } label: { Label("Generate AI Summary", systemImage: "sparkles") }
+                                    Button { showWritingAssistant = true } label: { Label("Writing Assistant", systemImage: "checkmark.bubble") }
+                                    if inputMode == .markdown {
+                                        Button { toggleSpeechDictation() } label: { Label(speechManager.isRecording ? "Stop Dictation" : "Start Dictation", systemImage: "mic") }
+                                    }
                                 }
-                            }
-                        }
-                    } label: {
-                        Image(systemName: "doc.plaintext")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundColor(.primary)
-                            .padding(8)
-                            .background(Color.primary.opacity(0.08))
-                            .clipShape(Circle())
-                    }
-                    
-                    // Smart Summary Helper
-                    Button {
-                        generateAISummary()
-                    } label: {
-                        Image(systemName: "sparkles")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundColor(.purple)
-                            .padding(8)
-                            .background(Color.purple.opacity(0.1))
-                            .clipShape(Circle())
-                    }
-                    
-                    // Spelling & Grammar Assistant
-                    Button {
-                        showWritingAssistant = true
-                    } label: {
-                        Image(systemName: "checkmark.bubble.fill")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundColor(.blue)
-                            .padding(8)
-                            .background(Color.blue.opacity(0.1))
-                            .clipShape(Circle())
-                    }
-                    
-                    if !bookHighlights.isEmpty {
-                        Button {
-                            HapticEngine.light()
-                            studyCards = bookHighlights
-                            currentCardIndex = 0
-                            isAnswerRevealed = false
-                            withAnimation(.spring()) {
-                                isStudyModeActive = true
-                            }
-                        } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: "play.rectangle.on.rectangle.fill")
-                                Text("Study")
-                                    .font(.system(size: 13, weight: .bold, design: .rounded))
-                            }
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(
-                                LinearGradient(colors: [Theme.blue, Color.purple], startPoint: .topLeading, endPoint: .bottomTrailing),
-                                in: Capsule()
-                            )
-                        }
-                    }
-                    
-                    // Export Suite Menu
-                    Menu {
-                        Button { exportNotes(as: .markdown) } label: { Label("Export Markdown (.md)", systemImage: "arrow.down.doc") }
-                        Button { exportNotes(as: .plainText) } label: { Label("Export Plain Text (.txt)", systemImage: "doc.text") }
-                        Button { exportZettelkastenZip() } label: { Label("Export Zettelkasten Zip (Obsidian)", systemImage: "archivebox") }
-                        Button { shareNotes() } label: { Label("Share Note...", systemImage: "square.and.arrow.up") }
-                    } label: {
-                        Image(systemName: "square.and.arrow.up")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundColor(.primary)
-                            .padding(8)
-                            .background(Color.primary.opacity(0.08))
-                            .clipShape(Circle())
-                    }
-
-                    if showBackButton {
-                        if let matchedPDF = fetchBackingBook() {
-                            Button {
-                                HapticEngine.light()
-                                selectedBookForReader = matchedPDF
+                                
+                                Section("Settings & Export") {
+                                    Menu("Paper Style...") {
+                                        Picker("Style", selection: $paperStyle) {
+                                            ForEach(PaperStyle.allCases) { style in
+                                                Label(style.rawValue, systemImage: style.icon).tag(style)
+                                            }
+                                        }
+                                    }
+                                    Menu("Export...") {
+                                        Button { exportNotes(as: .markdown) } label: { Label("Export Markdown (.md)", systemImage: "arrow.down.doc") }
+                                        Button { exportNotes(as: .plainText) } label: { Label("Export Plain Text (.txt)", systemImage: "doc.text") }
+                                        Button { exportZettelkastenZip() } label: { Label("Export Zettelkasten Zip", systemImage: "archivebox") }
+                                        Button { shareNotes() } label: { Label("Share Note...", systemImage: "square.and.arrow.up") }
+                                    }
+                                    Button { isShowingBookPicker = true } label: { Label("Link Backing Book", systemImage: "book.badge.plus") }
+                                }
                             } label: {
-                                Image(systemName: "book")
+                                Image(systemName: "ellipsis.circle")
                                     .font(.system(size: 15, weight: .semibold))
                                     .foregroundColor(.primary)
                                     .padding(8)
@@ -280,11 +403,45 @@ struct StudyNotebookView: View {
                                     .clipShape(Circle())
                             }
                         } else {
+                            // COMPACT TOOLBAR
                             Button {
-                                HapticEngine.light()
-                                isShowingBookPicker = true
+                                inputMode = (inputMode == .markdown) ? .handwriting : .markdown
                             } label: {
-                                Image(systemName: "book.badge.plus")
+                                Image(systemName: inputMode == .markdown ? "keyboard" : "applepencil")
+                                    .font(.system(size: 14, weight: .bold))
+                                    .foregroundColor(.orange)
+                                    .padding(6)
+                                    .background(Color.orange.opacity(0.12))
+                                    .clipShape(Circle())
+                            }
+                            
+                            highlighterButton
+                            
+                            Menu {
+                                Section("Tools") {
+                                    Button { generateAISummary() } label: { Label("Generate AI Summary", systemImage: "sparkles") }
+                                    Button { showWritingAssistant = true } label: { Label("Writing Assistant", systemImage: "checkmark.bubble") }
+                                    if inputMode == .markdown {
+                                        Button { toggleSpeechDictation() } label: { Label(speechManager.isRecording ? "Stop Dictation" : "Start Dictation", systemImage: "mic") }
+                                    }
+                                }
+                                Section("Settings & Export") {
+                                    Menu("Paper Style...") {
+                                        Picker("Style", selection: $paperStyle) {
+                                            ForEach(PaperStyle.allCases) { style in
+                                                Label(style.rawValue, systemImage: style.icon).tag(style)
+                                            }
+                                        }
+                                    }
+                                    Menu("Export...") {
+                                        Button { exportNotes(as: .markdown) } label: { Label("Export Markdown (.md)", systemImage: "arrow.down.doc") }
+                                        Button { exportNotes(as: .plainText) } label: { Label("Export Plain Text (.txt)", systemImage: "doc.text") }
+                                        Button { exportZettelkastenZip() } label: { Label("Export Zettelkasten Zip", systemImage: "archivebox") }
+                                        Button { shareNotes() } label: { Label("Share Note...", systemImage: "square.and.arrow.up") }
+                                    }
+                                }
+                            } label: {
+                                Image(systemName: "ellipsis.circle")
                                     .font(.system(size: 15, weight: .semibold))
                                     .foregroundColor(.primary)
                                     .padding(8)
@@ -292,242 +449,200 @@ struct StudyNotebookView: View {
                                     .clipShape(Circle())
                             }
                         }
-                    }
 
-                    // Highlights Drawer Toggle
-                    Button {
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                            showHighlightsDrawer.toggle()
+                        if isFocused {
+                            Image(systemName: "circle.fill")
+                                .font(.system(size: 8))
+                                .foregroundColor(Theme.blue)
+                                .symbolEffect(.pulse)
+                        } else {
+                            Button {
+                                isFocused = false
+                            } label: {
+                                Image(systemName: "keyboard.chevron.compact.down")
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundColor(.primary)
+                                    .padding(8)
+                                    .background(Color.primary.opacity(0.08))
+                                    .clipShape(Circle())
+                            }
                         }
-                    } label: {
-                        Image(systemName: "highlighter")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundColor(showHighlightsDrawer ? Theme.blue : .primary)
-                            .padding(8)
-                            .background(showHighlightsDrawer ? Theme.blue.opacity(0.1) : Color.primary.opacity(0.08))
-                            .clipShape(Circle())
-                    }
-
-                    // Stats Menu HUD
-                    Menu {
-                        Section("Note Stats") {
-                            Button(action: {}) { Label("\(localNotes.count) Characters", systemImage: "text.alignleft") }.disabled(true)
-                            Button(action: {}) { Label("\(localNotes.split { $0.isWhitespace || $0.isNewline }.count) Words", systemImage: "character.textbox") }.disabled(true)
-                            Button(action: {}) {
-                                let lines = localNotes.components(separatedBy: .newlines).filter { !$0.isEmpty }.count
-                                Label("\(lines) Paragraphs", systemImage: "text.justify.left")
-                            }.disabled(true)
-                            Button(action: {}) {
-                                let wCount = localNotes.split { $0.isWhitespace || $0.isNewline }.count
-                                let readingTime = max(1, Int(ceil(Double(wCount) / 200.0)))
-                                Label("\(readingTime) min read", systemImage: "clock")
-                            }.disabled(true)
-                        }
-                    } label: {
-                        HStack(spacing: 3) {
-                            let words = localNotes.split { $0.isWhitespace || $0.isNewline }.count
-                            Text("\(words)w")
-                                .font(.system(size: 11, weight: .bold, design: .rounded))
-                            Image(systemName: "info.circle")
-                                .font(.system(size: 9))
-                        }
-                        .foregroundColor(Theme.textSecondary)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 6)
-                        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
-                    }
-
-                    if isFocused {
-                        Image(systemName: "circle.fill")
-                            .font(.system(size: 8))
-                            .foregroundColor(Theme.blue)
-                            .symbolEffect(.pulse)
-                    } else {
+                        
+                        // Quick Flip side button
                         Button {
-                            isFocused = false
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                                notebookPlacement = (notebookPlacement == .right) ? .left : .right
+                            }
                         } label: {
-                            Image(systemName: "keyboard.chevron.compact.down")
+                            Image(systemName: notebookPlacement == .right ? "sidebar.left" : "sidebar.right")
                                 .font(.system(size: 15, weight: .semibold))
                                 .foregroundColor(.primary)
                                 .padding(8)
                                 .background(Color.primary.opacity(0.08))
                                 .clipShape(Circle())
                         }
+                        
+                        Button {
+                            NotificationCenter.default.post(name: .hideStudyNotebook, object: nil)
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundColor(.primary)
+                                .padding(8)
+                                .background(Color.primary.opacity(0.08))
+                                .clipShape(Circle())
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .background(
+                        Color.inkBackground.opacity(0.85)
+                            .background(.ultraThinMaterial)
+                    )
+                    .overlay(Rectangle().frame(height: 1).foregroundColor(Color.primary.opacity(0.05)), alignment: .bottom)
+                    
+                    if inputMode == .handwriting {
+                        canvasToolbar
                     }
                     
-                    // Quick Flip side button (Left/Right handed mode)
-                    Button {
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                            notebookPlacement = (notebookPlacement == .right) ? .left : .right
+                    // MARK: Notebook Canvas
+                    ZStack(alignment: .trailing) {
+                        if inputMode == .markdown {
+                            ZStack {
+                                NotebookPaperBackground(style: paperStyle, spacing: paperSpacing, colorScheme: colorScheme)
+                                MarkdownTextEditor(text: $localNotes, isFocused: $isFocused, paperStyle: paperStyle, onLinkTapped: handleLinkTapped)
+                            }
+                            .onChange(of: localNotes) { _, _ in debounceSave() }
+                        } else {
+                            ZStack {
+                                NotebookPaperBackground(style: paperStyle, spacing: paperSpacing, colorScheme: colorScheme)
+                                StudyCanvasView(canvasView: $canvasView, isSmartShapesEnabled: $isSmartShapesEnabled, onSaved: debounceSave)
+                            }
+                            .padding(.top, 8)
+                            .onAppear {
+                                updateCanvasTool()
+                            }
                         }
-                    } label: {
-                        Image(systemName: notebookPlacement == .right ? "sidebar.left" : "sidebar.right")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundColor(.primary)
-                            .padding(8)
-                            .background(Color.primary.opacity(0.08))
-                            .clipShape(Circle())
-                    }
-                    
-                    Button {
-                        NotificationCenter.default.post(name: .hideStudyNotebook, object: nil)
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundColor(.primary)
-                            .padding(8)
-                            .background(Color.primary.opacity(0.08))
-                            .clipShape(Circle())
+                        
+                        // MARK: Highlights Drawer Overlay
+                        if showHighlightsDrawer {
+                            highlightsDrawer
+                        }
                     }
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-                .background(
-                    Color.inkBackground.opacity(0.85)
-                        .background(.ultraThinMaterial)
-                )
-                .overlay(Rectangle().frame(height: 1).foregroundColor(Color.primary.opacity(0.05)), alignment: .bottom)
                 
-                if inputMode == .handwriting {
-                    canvasToolbar
+                if speechManager.isRecording {
+                    SpeechDictationBar { text in
+                        NotificationCenter.default.post(name: .insertDictatedText, object: nil, userInfo: ["text": text])
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 20)
                 }
                 
-                // MARK: Notebook Canvas
-                ZStack(alignment: .trailing) {
-                    if inputMode == .markdown {
-                        ZStack {
-                            NotebookPaperBackground(style: paperStyle, spacing: paperSpacing, colorScheme: colorScheme)
-                            MarkdownTextEditor(text: $localNotes, isFocused: $isFocused, paperStyle: paperStyle, onLinkTapped: handleLinkTapped)
-                        }
-                        .onChange(of: localNotes) { _, _ in debounceSave() }
+                // MARK: Interactive Page Preview Modal Overlay
+                if showPreviewModal {
+                    pagePreviewModalOverlay
+                }
+                
+                if isStudyModeActive {
+                    studyFlashcardOverlay
+                }
+            }
+            .frame(width: notebookGeo.size.width, height: notebookGeo.size.height)
+            .sheet(item: $activeHighlightToEdit) { annotation in
+                AnnotationEditSheet(annotation: annotation)
+                    .presentationDetents([.height(180), .medium])
+                    .presentationDragIndicator(.visible)
+            }
+            .onChange(of: activeHighlightToEdit) { _, newVal in
+                if newVal == nil {
+                    refreshHighlights()
+                }
+            }
+            .sheet(isPresented: $showWritingAssistant) {
+                WritingAssistantSheet(text: $localNotes)
+                    .presentationDetents([.medium, .large])
+                    .presentationDragIndicator(.visible)
+            }
+            .fullScreenCover(item: $selectedBookForReader) { pdf in
+                UnifiedReaderView(pdf: pdf, startWithNotebookOpen: true)
+                    .environmentObject(conversionManager)
+                    .environmentObject(settingsManager)
+            }
+            .sheet(isPresented: $isShowingBookPicker) {
+                BookPickerSheet { selectedBook in
+                    linkBookToNotebook(selectedBook)
+                    selectedBookForReader = selectedBook
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .inkTabGoToLibraryRoot)) { _ in
+                selectedBookForReader = nil
+            }
+            .onAppear {
+                Logger.shared.log("StudyNotebook appeared for book: '\(bookTitle)'", category: "Notebook", type: .info)
+                initializeSDAnnotation()
+            }
+            .onChange(of: paperStyle) { _, newStyle in
+                if let nb = getOrCreateNotebook() {
+                    nb.templateStyle = newStyle.rawValue
+                    try? modelContext.save()
+                    Logger.shared.log("Persisted paper style '\(newStyle.rawValue)' to notebook '\(bookTitle)'", category: "Notebook", type: .success)
+                }
+            }
+            .onChange(of: paperSpacing) { _, newSpacing in
+                if let nb = getOrCreateNotebook() {
+                    nb.templateSize = Double(newSpacing)
+                    try? modelContext.save()
+                    Logger.shared.log("Persisted paper size '\(newSpacing)' to notebook '\(bookTitle)'", category: "Notebook", type: .success)
+                }
+            }
+            .supportPencilDoubleTap {
+                if inputMode == .markdown {
+                    toggleSpeechDictation()
+                } else if inputMode == .handwriting {
+                    HapticEngine.light()
+                    if activeDrawingTool == .eraser {
+                        activeDrawingTool = lastActiveWritingTool
                     } else {
-                        ZStack {
-                            NotebookPaperBackground(style: paperStyle, spacing: paperSpacing, colorScheme: colorScheme)
-                            StudyCanvasView(canvasView: $canvasView, isSmartShapesEnabled: $isSmartShapesEnabled, onSaved: debounceSave)
-                        }
-                        .padding(.top, 8)
-                        .onAppear {
-                            updateCanvasTool()
-                        }
+                        lastActiveWritingTool = activeDrawingTool
+                        activeDrawingTool = .eraser
                     }
-                    
-                    // MARK: Highlights Drawer Overlay
-                    if showHighlightsDrawer {
-                        highlightsDrawer
+                    updateCanvasTool()
+                }
+            }
+            .onDisappear {
+                // Final explicit sync flush layer
+                Logger.shared.log("StudyNotebook disappearing — flushing note to SwiftData for '\(bookTitle)'", category: "Notebook", type: .info)
+                saveTask?.cancel()
+                ocrTask?.cancel()
+                let note = localNotes
+                let drawing = canvasView.drawing
+                let drawingData = drawing.dataRepresentation()
+                
+                activeNoteAnnotation?.noteText = note
+                activeNoteAnnotation?.drawingData = drawingData
+                activeNoteAnnotation?.modifiedAt = Date()
+                do {
+                    try modelContext.save()
+                    Logger.shared.log("Flush save succeeded for '\(bookTitle)'", category: "Notebook", type: .success)
+                    if let annotation = activeNoteAnnotation {
+                        SpotlightIndexer.shared.indexAnnotation(annotation)
                     }
+                } catch {
+                    Logger.shared.log("Flush save FAILED for '\(bookTitle)': \(error.localizedDescription)", category: "Notebook", type: .error)
                 }
-            }
-            
-            if speechManager.isRecording {
-                SpeechDictationBar { text in
-                    NotificationCenter.default.post(name: .insertDictatedText, object: nil, userInfo: ["text": text])
-                }
-                .padding(.horizontal, 16)
-                .padding(.bottom, 20)
-            }
-            
-            // MARK: Interactive Page Preview Modal Overlay
-            if showPreviewModal {
-                pagePreviewModalOverlay
-            }
-            
-            if isStudyModeActive {
-                studyFlashcardOverlay
-            }
-        }
-        .sheet(item: $activeHighlightToEdit) { annotation in
-            AnnotationEditSheet(annotation: annotation)
-                .presentationDetents([.height(180), .medium])
-                .presentationDragIndicator(.visible)
-        }
-        .onChange(of: activeHighlightToEdit) { _, newVal in
-            if newVal == nil {
-                refreshHighlights()
-            }
-        }
-        .sheet(isPresented: $showWritingAssistant) {
-            WritingAssistantSheet(text: $localNotes)
-                .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
-        }
-        .fullScreenCover(item: $selectedBookForReader) { pdf in
-            UnifiedReaderView(pdf: pdf, startWithNotebookOpen: true)
-                .environmentObject(conversionManager)
-                .environmentObject(settingsManager)
-        }
-        .sheet(isPresented: $isShowingBookPicker) {
-            BookPickerSheet { selectedBook in
-                linkBookToNotebook(selectedBook)
-                selectedBookForReader = selectedBook
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .inkTabGoToLibraryRoot)) { _ in
-            selectedBookForReader = nil
-        }
-        .onAppear {
-            Logger.shared.log("StudyNotebook appeared for book: '\(bookTitle)'", category: "Notebook", type: .info)
-            initializeSDAnnotation()
-        }
-        .onChange(of: paperStyle) { _, newStyle in
-            if let nb = getOrCreateNotebook() {
-                nb.templateStyle = newStyle.rawValue
-                try? modelContext.save()
-                Logger.shared.log("Persisted paper style '\(newStyle.rawValue)' to notebook '\(bookTitle)'", category: "Notebook", type: .success)
-            }
-        }
-        .onChange(of: paperSpacing) { _, newSpacing in
-            if let nb = getOrCreateNotebook() {
-                nb.templateSize = Double(newSpacing)
-                try? modelContext.save()
-                Logger.shared.log("Persisted paper size '\(newSpacing)' to notebook '\(bookTitle)'", category: "Notebook", type: .success)
-            }
-        }
-        .supportPencilDoubleTap {
-            if inputMode == .markdown {
-                toggleSpeechDictation()
-            } else if inputMode == .handwriting {
-                HapticEngine.light()
-                if activeDrawingTool == .eraser {
-                    activeDrawingTool = lastActiveWritingTool
-                } else {
-                    lastActiveWritingTool = activeDrawingTool
-                    activeDrawingTool = .eraser
-                }
-                updateCanvasTool()
-            }
-        }
-        .onDisappear {
-            // Final explicit sync flush layer
-            Logger.shared.log("StudyNotebook disappearing — flushing note to SwiftData for '\(bookTitle)'", category: "Notebook", type: .info)
-            saveTask?.cancel()
-            ocrTask?.cancel()
-            let note = localNotes
-            let drawing = canvasView.drawing
-            let drawingData = drawing.dataRepresentation()
-            
-            activeNoteAnnotation?.noteText = note
-            activeNoteAnnotation?.drawingData = drawingData
-            activeNoteAnnotation?.modifiedAt = Date()
-            do {
-                try modelContext.save()
-                Logger.shared.log("Flush save succeeded for '\(bookTitle)'", category: "Notebook", type: .success)
-                if let annotation = activeNoteAnnotation {
-                    SpotlightIndexer.shared.indexAnnotation(annotation)
-                }
-            } catch {
-                Logger.shared.log("Flush save FAILED for '\(bookTitle)': \(error.localizedDescription)", category: "Notebook", type: .error)
-            }
-            
-            if !drawing.bounds.isEmpty {
-                Task.detached(priority: .background) {
-                    if let ocrText = await HandwritingOCRManager.shared.recognizeHandwriting(in: drawing) {
-                        await MainActor.run {
-                            if let active = self.activeNoteAnnotation, active.drawingOCRText != ocrText {
-                                active.drawingOCRText = ocrText
-                                active.modifiedAt = Date()
-                                try? self.modelContext.save()
-                                Logger.shared.log("Flush Handwriting OCR updated for '\(self.bookTitle)': \(ocrText.prefix(40))...", category: "OCR", type: .success)
-                                SpotlightIndexer.shared.indexAnnotation(active)
+                
+                if !drawing.bounds.isEmpty {
+                    Task.detached(priority: .background) {
+                        if let ocrText = await HandwritingOCRManager.shared.recognizeHandwriting(in: drawing) {
+                            await MainActor.run {
+                                if let active = self.activeNoteAnnotation, active.drawingOCRText != ocrText {
+                                    active.drawingOCRText = ocrText
+                                    active.modifiedAt = Date()
+                                    try? self.modelContext.save()
+                                    Logger.shared.log("Flush Handwriting OCR updated for '\(self.bookTitle)': \(ocrText.prefix(40))...", category: "OCR", type: .success)
+                                    SpotlightIndexer.shared.indexAnnotation(active)
+                                }
                             }
                         }
                     }
