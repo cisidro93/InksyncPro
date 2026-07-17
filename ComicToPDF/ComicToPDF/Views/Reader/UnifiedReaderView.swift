@@ -26,7 +26,8 @@ struct UnifiedReaderView: View {
     /// Computed once at init — determines whether we need an async check
     private var needsEPUBComicCheck: Bool {
         let ext = pdf.url.pathExtension.lowercased()
-        return pdf.contentType == .book && ext == "epub" && pdf.metadata.hasFormatOverride != true
+        let isEligibleType = pdf.contentType == .book || pdf.contentType == .hybrid
+        return isEligibleType && ext == "epub" && pdf.metadata.hasFormatOverride != true
     }
     
     var body: some View {
@@ -74,7 +75,7 @@ struct UnifiedReaderView: View {
                     switch pdf.contentType {
                     case .comic, .manga:
                         ComicReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
-                    case .book:
+                    case .book, .hybrid:
                         if pdf.url.pathExtension.lowercased() == "pdf" {
                             DocumentReaderEngine(pdf: pdf, onDismiss: { dismiss() })
                         } else if needsEPUBComicCheck {
@@ -91,13 +92,11 @@ struct UnifiedReaderView: View {
                                     .foregroundColor(.white)
                             }
                         } else {
-                            BookReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
-                        }
-                    case .hybrid:
-                        if pdf.url.pathExtension.lowercased() == "epub" {
-                            ComicReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
-                        } else {
-                            DocumentReaderEngine(pdf: pdf, onDismiss: { dismiss() })
+                            if pdf.contentType == .hybrid {
+                                ComicReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
+                            } else {
+                                BookReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
+                            }
                         }
                     }
                 }
@@ -157,10 +156,11 @@ struct UnifiedReaderView: View {
                     Logger.shared.log("UnifiedReaderView: Background EPUB check completed with result=\(result)", category: "Reader", type: .info)
                     epubComicCheckResult = result
                 }
-                // If we detected it's a comic, update the database so future opens skip this check
-                if result {
-                    Logger.shared.log("UnifiedReaderView: Upgrading contentType from .book to .hybrid for '\(pdfCopy.name)'", category: "Reader", type: .success)
-                    ConversionManager.shared?.updateContentType(for: pdfCopy.id, to: .hybrid)
+                // Sync the scanned type to the database if it differs
+                let newType: ContentType = result ? .hybrid : .book
+                if pdfCopy.contentType != newType {
+                    Logger.shared.log("UnifiedReaderView: Updating contentType from \(pdfCopy.contentType) to \(newType) for '\(pdfCopy.name)'", category: "Reader", type: .success)
+                    ConversionManager.shared?.updateContentType(for: pdfCopy.id, to: newType)
                 }
             }
         }

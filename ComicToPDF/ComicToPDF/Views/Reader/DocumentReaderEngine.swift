@@ -400,6 +400,31 @@ struct DocumentReaderEngine: View {
 class HighlightablePDFView: PDFView {
     var onHighlightCreated: ((String, CGRect) -> Void)?
     
+    private var lastScaledPage: PDFPage? = nil
+    private var lastScaleWidth: CGFloat = 0
+    
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        if EBookPreferences.shared.pdfFitToWidth {
+            let currentWidth = self.bounds.width
+            let currentPage = self.currentPage
+            if currentWidth > 0 && (currentWidth != lastScaleWidth || currentPage != lastScaledPage) {
+                lastScaleWidth = currentWidth
+                lastScaledPage = currentPage
+                if let page = currentPage {
+                    let pageBounds = page.bounds(for: self.displayBox)
+                    if pageBounds.width > 0 {
+                        let scale = currentWidth / pageBounds.width
+                        if self.scaleFactor != scale && scale > 0 {
+                            self.scaleFactor = scale
+                            Logger.shared.log("HighlightablePDFView: Auto-scaled page \(page.label ?? "") to fit width (\(scale))", category: "Reader", type: .info)
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
     override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
         if action == #selector(customHighlightAction(_:)) { return true }
         let allowed = ["copy:", "share:", "_lookup:", "_define:"]
@@ -476,6 +501,13 @@ struct PDFKitRepresentedView: UIViewRepresentable {
         }
         pdfView.document = document
         pdfView.autoScales = true
+        pdfView.displaysPageBreaks = false
+        pdfView.pageBreakMargins = .zero
+        
+        if let scrollView = pdfView.subviews.first(where: { $0 is UIScrollView }) as? UIScrollView {
+            scrollView.contentInset = .zero
+            scrollView.contentInsetAdjustmentBehavior = .never
+        }
         
         configureDisplayMode(pdfView, context: context)
         pdfView.delegate = context.coordinator

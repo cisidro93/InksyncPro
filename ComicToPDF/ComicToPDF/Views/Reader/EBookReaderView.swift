@@ -1260,6 +1260,19 @@ struct EBookWebReader: UIViewRepresentable {
         h3 { font-size: \(Double(fontSize) * 1.15)px !important; font-family: \(fontFamily) !important; }
         h4 { font-size: \(Double(fontSize) * 1.05)px !important; font-family: \(fontFamily) !important; }
         h5, h6 { font-size: \(Double(fontSize) * 1.0)px !important; font-family: \(fontFamily) !important; }
+        /* Prevent nested overflow and positioning containers from breaking horizontal column flow */
+        body * {
+            max-width: 100% !important;
+        }
+        \(isPaged ? """
+        html, body, div, section, article, main, p, span, blockquote {
+            max-height: 100% !important;
+            overflow: visible !important;
+        }
+        div, section, article, main {
+            height: auto !important;
+        }
+        """ : "")
         div, section, article {
             column-count: auto !important;
             column-width: auto !important;
@@ -1267,7 +1280,7 @@ struct EBookWebReader: UIViewRepresentable {
         p { margin-bottom: \(paraSpace)em !important; text-indent: \(paraIndent)em !important; }
         p, div, span, li, td, th, h1, h2, h3, h4, h5, h6 { color: \(textColor) !important; line-height: \(lineHeight); }
         img, svg, .page, .chunk-container { display: block !important; margin-left: auto !important; margin-right: auto !important; }
-        img { max-width: 100%; height: auto; border-radius: 4px; object-fit: contain; max-height: calc(100vh - 120px); }
+        img { max-width: 100% !important; max-height: 100% !important; height: auto !important; border-radius: 4px; object-fit: contain !important; }
         pre, table, code {
             max-width: 100% !important;
             overflow-x: auto !important;

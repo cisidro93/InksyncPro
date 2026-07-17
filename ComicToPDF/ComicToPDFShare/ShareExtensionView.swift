@@ -1,5 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import ZIPFoundation
 
 struct ShareExtensionView: View {
     let extensionContext: NSExtensionContext?
@@ -218,6 +219,14 @@ struct ShareExtensionView: View {
         if data[0] == 0x50 && data[1] == 0x4B && data[2] == 0x03 && data[3] == 0x04 {
             let pathExt = url.pathExtension.lowercased()
             if pathExt == "epub" { return "epub" }
+            if pathExt == "cbz" { return "cbz" }
+            
+            // Check contents of ZIP archive to see if mimetype is present
+            if let archive = try? Archive(url: url, accessMode: .read) {
+                if archive["mimetype"] != nil {
+                    return "epub"
+                }
+            }
             return "cbz"
         }
         
@@ -280,8 +289,14 @@ struct ShareExtensionView: View {
                     
                     // Direct fallback for generic file types where extension is resolved post-load
                     if bestTypeIdentifier == nil {
+                        let genericTypes = [
+                            UTType.data.identifier, "public.data",
+                            UTType.item.identifier, "public.item",
+                            UTType.fileURL.identifier, "public.file-url",
+                            "com.apple.cocoa.path"
+                        ]
                         for typeId in provider.registeredTypeIdentifiers {
-                            if typeId == UTType.fileURL.identifier || typeId == "public.file-url" || typeId == "com.apple.cocoa.path" || typeId == UTType.item.identifier || typeId == UTType.data.identifier {
+                            if genericTypes.contains(typeId) {
                                 bestTypeIdentifier = typeId
                                 targetExt = "unknown"
                                 break
