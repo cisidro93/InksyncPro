@@ -160,10 +160,6 @@ struct MetadataHeuristics {
                 
                 if isComic {
                     // Determine manga vs western comic based on path keywords
-                    let pathLower = url.path.lowercased()
-                    let nameLower = url.lastPathComponent.lowercased()
-                    let parentLower = url.deletingLastPathComponent().lastPathComponent.lowercased()
-                    let mangaKeywords = ["[raw]", "[ch.", "ch.", "manhwa", "manhua", "manga", "scanlation", "oneshot", "doujin", "tankobon", "volume", "chapter", "shonen", "shoujo", "seinen", "josei"]
                     if mangaKeywords.contains(where: { nameLower.contains($0) || parentLower.contains($0) }) ||
                        pathLower.contains("/manga/") ||
                        pathLower.contains("/manga") ||
@@ -175,13 +171,6 @@ struct MetadataHeuristics {
             } catch {}
             return .book
         }
-        
-        let pathLower = url.path.lowercased()
-        let nameLower = url.lastPathComponent.lowercased()
-        let parentLower = url.deletingLastPathComponent().lastPathComponent.lowercased()
-        
-        // Scanlation/Manga signatures
-        let mangaKeywords = ["[raw]", "[ch.", "ch.", "manhwa", "manhua", "manga", "scanlation", "oneshot", "doujin", "tankobon", "volume", "chapter", "shonen", "shoujo", "seinen", "josei"]
         
         if mangaKeywords.contains(where: { nameLower.contains($0) || parentLower.contains($0) }) ||
            pathLower.contains("/manga/") ||
