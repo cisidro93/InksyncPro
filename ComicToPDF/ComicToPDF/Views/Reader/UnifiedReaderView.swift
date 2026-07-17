@@ -304,7 +304,7 @@ struct UnifiedReaderView: View {
                 if !htmlEntries.isEmpty {
                     // Sample up to 8 XHTML pages representing different parts of the book
                     let sampleSize = min(8, htmlEntries.count)
-                    var sampledEntries: [Archive.Entry] = []
+                    var sampledEntries: [Entry] = []
                     let strideStep = max(1, htmlEntries.count / sampleSize)
                     for idx in 0..<sampleSize {
                         let targetIdx = min(idx * strideStep, htmlEntries.count - 1)
@@ -319,7 +319,10 @@ struct UnifiedReaderView: View {
                     
                     for entry in sampledEntries {
                         var htmlData = Data()
-                        if let _ = try? archive.extract(entry, consumer: { htmlData.append($0) }) {
+                        do {
+                            _ = try archive.extract(entry) { data in
+                                htmlData.append(data)
+                            }
                             sampledCount += 1
                             if let htmlString = String(data: htmlData, encoding: .utf8) {
                                 let plainTextLength = Self.extractPlainTextLength(from: htmlString)
@@ -330,6 +333,8 @@ struct UnifiedReaderView: View {
                                     pagesWithImages += 1
                                 }
                             }
+                        } catch {
+                            // ignore errors
                         }
                     }
                     
