@@ -206,6 +206,33 @@ struct ShareExtensionView: View {
         
         return nil
     }
+    
+    private func detectFileExtension(from url: URL) -> String? {
+        guard let fileHandle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? fileHandle.close() }
+        
+        guard let data = try? fileHandle.read(upToCount: 4) else { return nil }
+        if data.count < 4 { return nil }
+        
+        // ZIP / CBZ / EPUB (header: 50 4B 03 04)
+        if data[0] == 0x50 && data[1] == 0x4B && data[2] == 0x03 && data[3] == 0x04 {
+            let pathExt = url.pathExtension.lowercased()
+            if pathExt == "epub" { return "epub" }
+            return "cbz"
+        }
+        
+        // PDF (header: 25 50 44 46)
+        if data[0] == 0x25 && data[1] == 0x50 && data[2] == 0x44 && data[3] == 0x46 {
+            return "pdf"
+        }
+        
+        // RAR / CBR (header: 52 61 72 21)
+        if data[0] == 0x52 && data[1] == 0x61 && data[2] == 0x72 && data[3] == 0x21 {
+            return "cbr"
+        }
+        
+        return nil
+    }
 
     private func loadSharedFiles() {
         guard let extensionContext = extensionContext,
@@ -262,6 +289,14 @@ struct ShareExtensionView: View {
                         }
                     }
                     
+                    // Final fallback for any other registered identifier (e.g. public.image, public.url)
+                    if bestTypeIdentifier == nil {
+                        if let firstTypeId = provider.registeredTypeIdentifiers.first {
+                            bestTypeIdentifier = firstTypeId
+                            targetExt = "unknown"
+                        }
+                    }
+                    
                     guard let typeId = bestTypeIdentifier, let ext = targetExt else {
                         print("No compatible type found in registered identifiers: \(provider.registeredTypeIdentifiers)")
                         continue
@@ -270,7 +305,7 @@ struct ShareExtensionView: View {
                     // Determine desired filename
                     var filename = provider.suggestedName ?? "shared_file"
                     let extSuffix = "." + ext
-                    if !filename.lowercased().hasSuffix(extSuffix.lowercased()) {
+                    if ext != "unknown" && !filename.lowercased().hasSuffix(extSuffix.lowercased()) {
                         let baseName = (filename as NSString).deletingPathExtension
                         filename = baseName + extSuffix
                     }
@@ -326,12 +361,19 @@ struct ShareExtensionView: View {
                         }
                     }
                     
-                    if ext == "unknown", var finalURL = loadedURL {
+                    if var finalURL = loadedURL {
+                        var resolvedExt: String? = nil
                         let pathExt = finalURL.pathExtension.lowercased()
                         if pathExt == "pdf" || pathExt == "epub" || pathExt == "cbz" || pathExt == "cbr" || pathExt == "zip" || pathExt == "rar" {
-                            let resolvedExt = pathExt == "zip" ? "cbz" : (pathExt == "rar" ? "cbr" : pathExt)
-                            let finalFileName = (filename as NSString).deletingPathExtension + "." + resolvedExt
-                            
+                            resolvedExt = pathExt == "zip" ? "cbz" : (pathExt == "rar" ? "cbr" : pathExt)
+                        } else {
+                            // Try detecting the actual format via magic headers (e.g. for misclassified files from Drive)
+                            resolvedExt = self.detectFileExtension(from: finalURL)
+                        }
+                        
+                        if let resolved = resolvedExt {
+                            let cleanBase = (filename as NSString).deletingPathExtension
+                            let finalFileName = cleanBase + "." + resolved
                             let destURL = finalURL.deletingLastPathComponent().appendingPathComponent(finalFileName)
                             do {
                                 try? FileManager.default.removeItem(at: destURL)
@@ -343,20 +385,14 @@ struct ShareExtensionView: View {
                                 filesToProcess.append(SharedFile(
                                     name: filename,
                                     url: finalURL,
-                                    fileExtension: resolvedExt
+                                    fileExtension: resolved
                                 ))
                             } catch {
-                                print("Failed to rename generic share file: \(error.localizedDescription)")
+                                print("Failed to rename resolved share file: \(error.localizedDescription)")
                             }
                         } else {
                             try? FileManager.default.removeItem(at: finalURL)
                         }
-                    } else if let finalURL = loadedURL {
-                        filesToProcess.append(SharedFile(
-                            name: filename,
-                            url: finalURL,
-                            fileExtension: ext
-                        ))
                     }
                 }
             }
