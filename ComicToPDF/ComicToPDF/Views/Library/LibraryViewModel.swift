@@ -171,7 +171,7 @@ class LibraryViewModel: ObservableObject {
             switch shelf {
             case .all: break
             case .comics:
-                guard pdf.contentType == .comic && !(pdf.metadata.isManga ?? false) else { continue }
+                guard (pdf.contentType == .comic || pdf.contentType == .hybrid) && !(pdf.metadata.isManga ?? false) else { continue }
             case .manga:
                 guard pdf.contentType == .manga || (pdf.metadata.isManga ?? false) else { continue }
             case .books:

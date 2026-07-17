@@ -848,7 +848,11 @@ actor ImportOrchestrator {
         case "cbz", "zip": return mangaMode ? .manga : .comic
         case "pdf":
             let importer = PDFImporter()
-            return importer.hasTextContent(url: url) ? .book : .hybrid
+            if importer.hasTextContent(url: url) {
+                return .book
+            } else {
+                return mangaMode ? .manga : .comic
+            }
         case "epub":
             let didAccess = url.startAccessingSecurityScopedResource()
             defer { if didAccess { url.stopAccessingSecurityScopedResource() } }

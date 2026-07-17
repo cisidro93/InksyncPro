@@ -38,6 +38,7 @@ struct StudyNotebookView: View {
     @State private var paperStyle: PaperStyle = .plain
     @State private var paperSpacing: CGFloat = 24.0
     @State private var selectedBookForReader: ConvertedPDF? = nil
+    @State private var isShowingBookPicker = false
     @AppStorage("studyNotebookPlacement") private var notebookPlacement: SidebarPlacement = .right
     @State private var canvasView = PKCanvasView()
     
@@ -276,6 +277,18 @@ struct StudyNotebookView: View {
                                     .background(Color.primary.opacity(0.08))
                                     .clipShape(Circle())
                             }
+                        } else {
+                            Button {
+                                HapticEngine.light()
+                                isShowingBookPicker = true
+                            } label: {
+                                Image(systemName: "book.badge.plus")
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundColor(.primary)
+                                    .padding(8)
+                                    .background(Color.primary.opacity(0.08))
+                                    .clipShape(Circle())
+                            }
                         }
                     }
 
@@ -437,6 +450,12 @@ struct StudyNotebookView: View {
         }
         .fullScreenCover(item: $selectedBookForReader) { pdf in
             UnifiedReaderView(pdf: pdf)
+        }
+        .sheet(isPresented: $isShowingBookPicker) {
+            BookPickerSheet { selectedBook in
+                linkBookToNotebook(selectedBook)
+                selectedBookForReader = selectedBook
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .inkTabGoToLibraryRoot)) { _ in
             selectedBookForReader = nil
@@ -1237,9 +1256,20 @@ struct StudyNotebookView: View {
     
     private func fetchBackingBook() -> ConvertedPDF? {
         if let uuid = UUID(uuidString: bookID) {
+            // 1. Direct match with a book
             let descriptor = FetchDescriptor<SDConvertedPDF>(predicate: #Predicate { $0.id == uuid })
             if let sdBook = try? modelContext.fetch(descriptor).first {
                 return sdBook.toDTO()
+            }
+            
+            // 2. If it's a notebook ID, check if it's linked to a book
+            let nbDescriptor = FetchDescriptor<SDNotebook>(predicate: #Predicate { $0.id == uuid })
+            if let nb = try? modelContext.fetch(nbDescriptor).first,
+               let linkedID = nb.linkedBookID {
+                let linkedDescriptor = FetchDescriptor<SDConvertedPDF>(predicate: #Predicate { $0.id == linkedID })
+                if let sdBook = try? modelContext.fetch(linkedDescriptor).first {
+                    return sdBook.toDTO()
+                }
             }
         }
         // Fallback by title:
@@ -2450,5 +2480,104 @@ extension StudyNotebookView {
             }
             .frame(maxWidth: 420)
         }
+    }
+
+    private func linkBookToNotebook(_ book: ConvertedPDF) {
+        if let actualUUID = UUID(uuidString: bookID) {
+            let nbFetch = FetchDescriptor<SDNotebook>(predicate: #Predicate { $0.id == actualUUID })
+            if let nb = try? modelContext.fetch(nbFetch).first {
+                nb.linkedBookID = book.id
+                try? modelContext.save()
+                Logger.shared.log("Successfully linked book '\(book.name)' to notebook '\(bookTitle)'", category: "Notebook", type: .success)
+            }
+        }
+    }
+}
+
+struct BookPickerSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
+    @Environment(\.colorScheme) private var colorScheme
+    
+    let onSelect: (ConvertedPDF) -> Void
+    
+    @State private var searchQuery = ""
+    @State private var books: [SDConvertedPDF] = []
+    
+    var filteredBooks: [SDConvertedPDF] {
+        if searchQuery.isEmpty {
+            return books
+        } else {
+            return books.filter { $0.name.localizedCaseInsensitiveContains(searchQuery) }
+        }
+    }
+    
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Color(hex: "#0a0a0f").edgesIgnoringSafeArea(.all)
+                
+                if filteredBooks.isEmpty {
+                    VStack(spacing: 12) {
+                        Image(systemName: "book.closed")
+                            .font(.system(size: 40))
+                            .foregroundColor(.gray)
+                        Text(searchQuery.isEmpty ? "No books in library" : "No matches found")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.gray)
+                    }
+                } else {
+                    List(filteredBooks) { book in
+                        Button {
+                            onSelect(book.toDTO())
+                            dismiss()
+                        } label: {
+                            HStack(spacing: 12) {
+                                if let data = book.coverImageData, let uiImage = UIImage(data: data) {
+                                    Image(uiImage: uiImage)
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fill)
+                                        .frame(width: 40, height: 60)
+                                        .cornerRadius(4)
+                                        .clipped()
+                                } else {
+                                    RoundedRectangle(cornerRadius: 4)
+                                        .fill(Color.gray.opacity(0.3))
+                                        .frame(width: 40, height: 60)
+                                        .overlay(Image(systemName: "book").foregroundColor(.gray))
+                                }
+                                
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(book.name)
+                                        .font(.system(size: 15, weight: .bold))
+                                        .foregroundColor(.white)
+                                        .lineLimit(1)
+                                    
+                                    Text(book.formattedSize)
+                                        .font(.system(size: 12))
+                                        .foregroundColor(.gray)
+                                }
+                            }
+                        }
+                        .listRowBackground(Color(hex: "#12121e"))
+                    }
+                    .scrollContentBackground(.hidden)
+                }
+            }
+            .navigationTitle("Link Book")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                        .foregroundColor(.white)
+                }
+            }
+            .searchable(text: $searchQuery, prompt: "Search books...")
+            .onAppear {
+                let descriptor = FetchDescriptor<SDConvertedPDF>(sortBy: [SortDescriptor(\SDConvertedPDF.name)])
+                books = (try? modelContext.fetch(descriptor)) ?? []
+            }
+        }
+        .presentationDragIndicator(.visible)
     }
 }

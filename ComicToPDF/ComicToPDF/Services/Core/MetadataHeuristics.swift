@@ -71,7 +71,38 @@ struct MetadataHeuristics {
     /// Intelligently routes manga vs western comics based on heuristic file names and path structures
     static func detectAsymmetricContentType(url: URL) -> ContentType {
         let ext = url.pathExtension.lowercased()
-        if ext == "pdf" { return .book }
+        
+        let pathLower = url.path.lowercased()
+        let nameLower = url.lastPathComponent.lowercased()
+        let parentLower = url.deletingLastPathComponent().lastPathComponent.lowercased()
+        
+        let mangaKeywords = ["manga", "tankobon", "volume", "chapter", "inuyasha", "shonen", "shoujo", "seinen", "josei", "[raw]", "[ch.", "ch.", "manhwa", "manhua", "scanlation", "oneshot", "doujin"]
+        let comicKeywords = ["comic", "graphic novel", "omnibus", "trade paperback", "tpb", "issue", "annual", "deluxe"]
+        
+        let isManga = mangaKeywords.contains(where: { nameLower.contains($0) || parentLower.contains($0) }) ||
+                      pathLower.contains("/manga/") ||
+                      pathLower.contains("/manga") ||
+                      url.pathComponents.map({ $0.lowercased() }).contains("manga")
+                      
+        let isComic = comicKeywords.contains(where: { nameLower.contains($0) || parentLower.contains($0) }) ||
+                      pathLower.contains("/comic/") ||
+                      pathLower.contains("/comic") ||
+                      pathLower.contains("/merged/") ||
+                      nameLower.contains("_converted") ||
+                      nameLower.contains("go merge") ||
+                      url.pathComponents.map({ $0.lowercased() }).contains("comic")
+        
+        if ext == "pdf" {
+            if isManga { return .manga }
+            if isComic { return .comic }
+            
+            // Check if the PDF has text content (image-only scans are comics/manga)
+            let importer = PDFImporter()
+            if !importer.hasTextContent(url: url) {
+                return .comic
+            }
+            return .book
+        }
         if ext == "epub" {
             // Check if it's fixed layout/comic
             let didAccess = url.startAccessingSecurityScopedResource()
