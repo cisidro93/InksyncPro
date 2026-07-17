@@ -1015,6 +1015,8 @@ struct BookReaderEngine: View {
     @State private var showTOC = false
     @State private var showJumpToPage = false
     @State private var jumpToPageText = ""
+    @State private var sessionSeconds: Int = 0
+    @State private var sessionTimer: Timer? = nil
     @State private var activeHighlightToEdit: SDAnnotation? = nil
     @ObservedObject private var prefs = EBookPreferences.shared
     @ObservedObject private var sleepTimer = SleepTimerManager.shared
@@ -1026,6 +1028,17 @@ struct BookReaderEngine: View {
     @Environment(\.modelContext) private var modelContext
     @State private var extractedTextParams: String = "Chapter reading is not extracted to string yet."
     @State private var lastBrightnessDragValue: CGFloat = 0
+    
+    private var formattedSessionTime: String {
+        let hours = sessionSeconds / 3600
+        let minutes = (sessionSeconds % 3600) / 60
+        let seconds = sessionSeconds % 60
+        if hours > 0 {
+            return String(format: "%dh %dm", hours, minutes)
+        } else {
+            return String(format: "%02d:%02d", minutes, seconds)
+        }
+    }
     
     // Custom Toast messages
     @State private var showToast = false
@@ -1187,7 +1200,8 @@ struct BookReaderEngine: View {
                             Haptics.shared.playImpact(style: .light)
                         }
                     }
-                }
+                },
+                sessionTimeText: formattedSessionTime
             )
             
             if showToast {
@@ -1213,9 +1227,15 @@ struct BookReaderEngine: View {
             prefs.applyBookTheme(bookID: pdf.id.uuidString)
             prefs.applyBookTypography(bookID: pdf.id.uuidString)
             isReaderFocused = true
+            sessionSeconds = 0
+            sessionTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
+                sessionSeconds += 1
+            }
         }
         .onDisappear {
             saveProgress()
+            sessionTimer?.invalidate()
+            sessionTimer = nil
         }
         .overlay { if prefs.showReadingRuler { ReadingRulerOverlay() } }
         .onChange(of: sleepTimer.didFire) { _, fired in

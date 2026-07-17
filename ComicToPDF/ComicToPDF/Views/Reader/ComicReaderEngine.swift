@@ -1412,6 +1412,8 @@ struct ComicReaderEngine: View {
     @State private var currentIndex: Int = 0
     @State private var showJumpToPage = false
     @State private var jumpToPageText = ""
+    @State private var sessionSeconds: Int = 0
+    @State private var sessionTimer: Timer? = nil
     @State private var readingMode: ComicReadingMode = .pageHorizontal
     @AppStorage("prefersTwoUpSpreads") private var prefersTwoUpSpreads = true
     @State private var activeFilterPreset: ReadingFilterPreset = .original
@@ -1432,6 +1434,17 @@ struct ComicReaderEngine: View {
     
     /// SwiftData context
     @Environment(\.modelContext) private var modelContext
+    
+    private var formattedSessionTime: String {
+        let hours = sessionSeconds / 3600
+        let minutes = (sessionSeconds % 3600) / 60
+        let seconds = sessionSeconds % 60
+        if hours > 0 {
+            return String(format: "%dh %dm", hours, minutes)
+        } else {
+            return String(format: "%02d:%02d", minutes, seconds)
+        }
+    }
     
     /// Custom Toast messages
     @State private var showToast = false
@@ -1696,6 +1709,10 @@ struct ComicReaderEngine: View {
         }
         .onAppear {
             pageEntryTime = Date()
+            sessionSeconds = 0
+            sessionTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
+                sessionSeconds += 1
+            }
             if let saved = ReaderProgressTracker.shared.progress(for: pdf.id) {
                 currentIndex = saved.currentPageIndex
                 if let filterString = saved.colorFilter,
@@ -1813,6 +1830,8 @@ struct ComicReaderEngine: View {
         }
         .onDisappear {
             BackTapManager.shared.isEnabled = false
+            sessionTimer?.invalidate()
+            sessionTimer = nil
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("Reader_JumpToPage"))) { notification in
             if let pageIndex = notification.userInfo?["pageIndex"] as? Int, pageIndex >= 0, pageIndex < cache.pageCount {
@@ -2220,6 +2239,7 @@ struct ComicReaderEngine: View {
                     readingRoom.startHosting(bookID: pdf.id.uuidString)
                 }
             },
+            sessionTimeText: formattedSessionTime,
             onSwipeDown: saveProgressAndDismiss
         )
     }
