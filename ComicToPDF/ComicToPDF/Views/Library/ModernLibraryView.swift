@@ -449,31 +449,8 @@ struct ModernLibraryView: View {
                     )
                 }
             }
-            .navigationTitle("InkSync Pro")
-            .toolbar {
-                ToolbarItemGroup(placement: .primaryAction) {
-                    // Search Toggle
-                    Button {
-                        withAnimation(.spring) { isSearchActive.toggle() }
-                    } label: {
-                        Image(systemName: "magnifyingglass")
-                    }
-                    
-                    // Import / Add File
-                    Button {
-                        (onFolderImport ?? handleDefaultImport)()
-                    } label: {
-                        Image(systemName: "plus")
-                    }
-                    
-                    // Control Center Dashboard Trigger
-                    Button(action: {
-                        AppRouter.shared.presentSheet(.controlCenter)
-                    }) {
-                        Image(systemName: "slider.horizontal.3")
-                    }
-                }
-            }
+            .navigationTitle("")
+            .toolbar(.hidden, for: .navigationBar)
         }
 
     // MARK: - Change Handler Shell (onAppear + onChange)
@@ -968,9 +945,61 @@ struct ModernLibraryView: View {
     @ViewBuilder
     private var libraryContent: some View {
         VStack(spacing: 0) {
-            // MARK: - Legacy Header Removed
-            // The Omni-Dock now handles all navigation and filtering.
-            Spacer().frame(height: 16) // Top padding to prevent overlap with the status bar and branding
+            // Custom Unified Brand Header (collapses vertical height and cleans up dead space)
+            HStack(alignment: .center) {
+                // 1. Stylized Brand Title & Logo morph spacing
+                HStack(spacing: 8) {
+                    // Reserved spacer for logo morph (size 32)
+                    Spacer().frame(width: 36)
+                    
+                    Text("InkSync Pro")
+                        .font(.system(size: 22, weight: .black, design: .rounded))
+                        .foregroundColor(.white)
+                    
+                    // Dynamic item count badge
+                    Text("\(cachedVisiblePDFs.count) Items")
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.3))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.white.opacity(0.06), in: Capsule())
+                }
+                
+                Spacer()
+                
+                // 2. Action buttons grouped in a sleek glassmorphic pill toolbar
+                HStack(spacing: 16) {
+                    Button {
+                        withAnimation(.spring) { isSearchActive.toggle() }
+                    } label: {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.white.opacity(0.8))
+                    }
+                    
+                    Button {
+                        (onFolderImport ?? handleDefaultImport)()
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.white.opacity(0.8))
+                    }
+                    
+                    Button {
+                        AppRouter.shared.presentSheet(.controlCenter)
+                    } label: {
+                        Image(systemName: "slider.horizontal.3")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.white.opacity(0.8))
+                    }
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(.ultraThinMaterial, in: Capsule())
+                .overlay(Capsule().strokeBorder(Color.white.opacity(0.08)))
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
 
             // Apple Books-style persisted Content Shelf tab strip
             ContentShelfSelector(

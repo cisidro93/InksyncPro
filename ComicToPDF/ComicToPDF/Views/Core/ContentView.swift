@@ -120,7 +120,7 @@ struct ContentView: View {
                 // Floating brand logo that morphs/slides to top-left navbar
                 let safeAreaTop = geo.safeAreaInsets.top
                 let startPos = CGPoint(x: geo.size.width / 2, y: geo.size.height / 2 - 30)
-                let endPos = CGPoint(x: 24 + 18, y: safeAreaTop + 24) // Top-left alignment in library header space
+                let endPos = CGPoint(x: 32, y: safeAreaTop + 26) // Aligns with custom unified header space
                 
                 let currentPos = isAppLoading ? startPos : endPos
                 let currentSize = isAppLoading ? CGFloat(130) : CGFloat(32)
