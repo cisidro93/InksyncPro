@@ -336,8 +336,7 @@ final class ZettelkastenGraphEngine: NSObject, ObservableObject {
 
     @objc func physicsTick() {
         tickCount += 1
-        var forces: [String: CGVector] = [:]
-        for node in nodes { forces[node.id] = .zero }
+        var forces = Array(repeating: CGVector.zero, count: nodes.count)
 
         let center = CGPoint(
             x: UIScreen.main.bounds.width / 2,
@@ -356,8 +355,8 @@ final class ZettelkastenGraphEngine: NSObject, ObservableObject {
                 let force = repulsionStrength / distSq
                 let fx = (dx / dist) * force
                 let fy = (dy / dist) * force
-                forces[n1.id]?.dx += fx; forces[n1.id]?.dy += fy
-                forces[n2.id]?.dx -= fx; forces[n2.id]?.dy -= fy
+                forces[i].dx += fx; forces[i].dy += fy
+                forces[j].dx -= fx; forces[j].dy -= fy
             }
         }
 
@@ -375,8 +374,8 @@ final class ZettelkastenGraphEngine: NSObject, ObservableObject {
             let force = springStiffness * displacement
             let fx = (dx / dist) * force
             let fy = (dy / dist) * force
-            forces[n1.id]?.dx += fx; forces[n1.id]?.dy += fy
-            forces[n2.id]?.dx -= fx; forces[n2.id]?.dy -= fy
+            forces[i1].dx += fx; forces[i1].dy += fy
+            forces[i2].dx -= fx; forces[i2].dy -= fy
         }
 
         // 3. Center gravity & velocity integration
@@ -384,10 +383,10 @@ final class ZettelkastenGraphEngine: NSObject, ObservableObject {
             guard nodes[i].id != draggedNodeID else { continue }
             let dx = center.x - nodes[i].position.x
             let dy = center.y - nodes[i].position.y
-            forces[nodes[i].id]?.dx += dx * centerGravity
-            forces[nodes[i].id]?.dy += dy * centerGravity
+            forces[i].dx += dx * centerGravity
+            forces[i].dy += dy * centerGravity
 
-            guard let f = forces[nodes[i].id] else { continue }
+            let f = forces[i]
             let mass = Double(nodes[i].connectionCount) * 0.6 + 1.0
             nodes[i].velocity.dx = (nodes[i].velocity.dx + f.dx / mass) * damping
             nodes[i].velocity.dy = (nodes[i].velocity.dy + f.dy / mass) * damping
