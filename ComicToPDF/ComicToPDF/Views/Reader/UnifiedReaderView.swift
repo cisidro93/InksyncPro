@@ -8,8 +8,14 @@ struct UnifiedReaderView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.horizontalSizeClass) private var sizeClass
     
-    @State private var showNotebookPanel = false
+    @State private var showNotebookPanel: Bool
     @AppStorage("studyNotebookPlacement") private var notebookPlacement: SidebarPlacement = .right
+
+    init(pdf: ConvertedPDF, allBooks: [ConvertedPDF] = [], startWithNotebookOpen: Bool = false) {
+        self.pdf = pdf
+        self.allBooks = allBooks
+        self._showNotebookPanel = State(initialValue: startWithNotebookOpen)
+    }
     
     /// Tri-state: nil = still checking, true = comic EPUB, false = text EPUB
     @State private var epubComicCheckResult: Bool? = nil

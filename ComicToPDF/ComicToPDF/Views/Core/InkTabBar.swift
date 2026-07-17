@@ -149,12 +149,15 @@ struct InkTabBar: View {
                         
                         Spacer()
                         
-                        HStack(spacing: 12) {
-                            actionsView(for: mode)
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                actionsView(for: mode)
+                            }
+                            .padding(.vertical, 2)
                         }
                     }
                     .padding(.horizontal, 12)
-                    .frame(height: isLandscapePhone ? 26 : 41)
+                    .frame(height: isLandscapePhone ? 32 : 46)
                     .transition(.asymmetric(insertion: .opacity.combined(with: .scale(scale: 0.95)), removal: .opacity))
                 }
             }
@@ -326,62 +329,62 @@ struct InkTabBar: View {
             EmptyView()
         case .librarySelection(let count):
             // Delete
-            actionButton(systemImage: "trash", color: count == 0 ? .gray : .red) {
+            actionButton(title: "Delete", systemImage: "trash", color: count == 0 ? .gray : .red) {
                 NotificationCenter.default.post(name: NSNotification.Name("InkTabBar_DeleteAction"), object: nil)
             }
             .disabled(count == 0)
             
             // Convert & Merge
-            actionButton(systemImage: "arrow.triangle.2.circlepath.doc", color: count < 2 ? .gray : .blue) {
+            actionButton(title: "Merge", systemImage: "arrow.triangle.merge", color: count < 2 ? .gray : .blue) {
                 NotificationCenter.default.post(name: NSNotification.Name("InkTabBar_MergeAction"), object: nil)
             }
             .disabled(count < 2)
             
             // Group
-            actionButton(systemImage: "rectangle.stack.badge.plus", color: count == 0 ? .gray : .orange) {
+            actionButton(title: "Group", systemImage: "rectangle.stack.badge.plus", color: count == 0 ? .gray : .orange) {
                 NotificationCenter.default.post(name: NSNotification.Name("InkTabBar_GroupAction"), object: nil)
             }
             .disabled(count == 0)
             
             // Transfer
-            actionButton(systemImage: "wifi", color: count == 0 ? .gray : .green) {
+            actionButton(title: "Transfer", systemImage: "wifi", color: count == 0 ? .gray : .green) {
                 NotificationCenter.default.post(name: NSNotification.Name("InkTabBar_TransferAction"), object: nil)
             }
             .disabled(count == 0)
             
             // More
-            actionButton(systemImage: "ellipsis.circle.fill", color: count == 0 ? .gray : .orange) {
+            actionButton(title: "More", systemImage: "ellipsis.circle.fill", color: count == 0 ? .gray : .orange) {
                 NotificationCenter.default.post(name: NSNotification.Name("InkTabBar_MoreAction"), object: nil)
             }
             .disabled(count == 0)
             
         case .seriesSelection(let count):
             // Intelligent Metadata
-            actionButton(systemImage: "sparkles", color: count == 0 ? .gray : .blue) {
+            actionButton(title: "Metadata", systemImage: "sparkles", color: count == 0 ? .gray : .blue) {
                 NotificationCenter.default.post(name: NSNotification.Name("InkTabBar_MetadataAction"), object: nil)
             }
             .disabled(count == 0)
             
             // Assign Volume
-            actionButton(systemImage: "folder.badge.plus", color: count == 0 ? .gray : .orange) {
+            actionButton(title: "Assign Vol", systemImage: "folder.badge.plus", color: count == 0 ? .gray : .orange) {
                 NotificationCenter.default.post(name: NSNotification.Name("InkTabBar_AssignVolumeAction"), object: nil)
             }
             .disabled(count == 0)
             
             // Move to Series
-            actionButton(systemImage: "rectangle.stack.badge.plus", color: count == 0 ? .gray : .orange) {
+            actionButton(title: "Move to Series", systemImage: "rectangle.stack.badge.plus", color: count == 0 ? .gray : .orange) {
                 NotificationCenter.default.post(name: NSNotification.Name("InkTabBar_MoveToSeriesAction"), object: nil)
             }
             .disabled(count == 0)
             
             // Create Virtual Volume
-            actionButton(systemImage: "books.vertical.fill", color: count == 0 ? .gray : .purple) {
+            actionButton(title: "Virtual Vol", systemImage: "books.vertical.fill", color: count == 0 ? .gray : .purple) {
                 NotificationCenter.default.post(name: NSNotification.Name("InkTabBar_CreateVirtualVolumeAction"), object: nil)
             }
             .disabled(count == 0)
             
             // Convert & Merge
-            actionButton(systemImage: "arrow.triangle.2.circlepath.doc", color: count < 2 ? .gray : .purple) {
+            actionButton(title: "Merge", systemImage: "arrow.triangle.merge", color: count < 2 ? .gray : .purple) {
                 NotificationCenter.default.post(name: NSNotification.Name("InkTabBar_MergeAction"), object: nil)
             }
             .disabled(count < 2)
@@ -389,16 +392,21 @@ struct InkTabBar: View {
     }
     
     @ViewBuilder
-    private func actionButton(systemImage: String, color: Color, action: @escaping () -> Void) -> some View {
+    private func actionButton(title: String, systemImage: String, color: Color, action: @escaping () -> Void) -> some View {
         Button(action: {
             HapticEngine.light()
             action()
         }) {
-            Image(systemName: systemImage)
-                .font(.system(size: 18))
-                .foregroundColor(color)
-                .frame(width: 32, height: 32)
-                .background(color.opacity(0.12), in: Circle())
+            HStack(spacing: 5) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 13, weight: .semibold))
+                Text(title)
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+            }
+            .foregroundColor(color)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(color.opacity(0.12), in: Capsule())
         }
         .buttonStyle(.plain)
     }

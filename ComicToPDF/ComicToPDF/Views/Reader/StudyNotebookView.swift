@@ -451,7 +451,7 @@ struct StudyNotebookView: View {
                 .presentationDragIndicator(.visible)
         }
         .fullScreenCover(item: $selectedBookForReader) { pdf in
-            UnifiedReaderView(pdf: pdf)
+            UnifiedReaderView(pdf: pdf, startWithNotebookOpen: true)
                 .environmentObject(conversionManager)
                 .environmentObject(settingsManager)
         }
@@ -469,23 +469,17 @@ struct StudyNotebookView: View {
             initializeSDAnnotation()
         }
         .onChange(of: paperStyle) { _, newStyle in
-            if let actualUUID = UUID(uuidString: bookID) {
-                let nbFetch = FetchDescriptor<SDNotebook>(predicate: #Predicate { $0.id == actualUUID })
-                if let nb = try? modelContext.fetch(nbFetch).first {
-                    nb.templateStyle = newStyle.rawValue
-                    try? modelContext.save()
-                    Logger.shared.log("Persisted paper style '\(newStyle.rawValue)' to notebook '\(bookTitle)'", category: "Notebook", type: .success)
-                }
+            if let nb = getOrCreateNotebook() {
+                nb.templateStyle = newStyle.rawValue
+                try? modelContext.save()
+                Logger.shared.log("Persisted paper style '\(newStyle.rawValue)' to notebook '\(bookTitle)'", category: "Notebook", type: .success)
             }
         }
         .onChange(of: paperSpacing) { _, newSpacing in
-            if let actualUUID = UUID(uuidString: bookID) {
-                let nbFetch = FetchDescriptor<SDNotebook>(predicate: #Predicate { $0.id == actualUUID })
-                if let nb = try? modelContext.fetch(nbFetch).first {
-                    nb.templateSize = Double(newSpacing)
-                    try? modelContext.save()
-                    Logger.shared.log("Persisted paper size '\(newSpacing)' to notebook '\(bookTitle)'", category: "Notebook", type: .success)
-                }
+            if let nb = getOrCreateNotebook() {
+                nb.templateSize = Double(newSpacing)
+                try? modelContext.save()
+                Logger.shared.log("Persisted paper size '\(newSpacing)' to notebook '\(bookTitle)'", category: "Notebook", type: .success)
             }
         }
         .supportPencilDoubleTap {
@@ -597,13 +591,10 @@ struct StudyNotebookView: View {
          }
         
         // Fetch paper style from SDNotebook if it exists
-        if let actualUUID = UUID(uuidString: bookID) {
-            let nbFetch = FetchDescriptor<SDNotebook>(predicate: #Predicate { $0.id == actualUUID })
-            if let nb = try? modelContext.fetch(nbFetch).first {
-                self.paperStyle = PaperStyle(rawValue: nb.templateStyle) ?? .plain
-                self.paperSpacing = CGFloat(nb.templateSize ?? 24.0)
-                Logger.shared.log("Loaded template style '\(nb.templateStyle)' and spacing \(self.paperSpacing) for notebook '\(bookTitle)'", category: "Notebook", type: .success)
-            }
+        if let nb = getOrCreateNotebook() {
+            self.paperStyle = PaperStyle(rawValue: nb.templateStyle) ?? .plain
+            self.paperSpacing = CGFloat(nb.templateSize ?? 24.0)
+            Logger.shared.log("Loaded template style '\(nb.templateStyle)' and spacing \(self.paperSpacing) for notebook '\(bookTitle)'", category: "Notebook", type: .success)
         }
         
         // Fetch existing highlights for this book
@@ -2484,6 +2475,28 @@ extension StudyNotebookView {
             }
             .frame(maxWidth: 420)
         }
+    }
+
+    private func getOrCreateNotebook() -> SDNotebook? {
+        guard let actualUUID = UUID(uuidString: bookID) else { return nil }
+        
+        let nbFetch = FetchDescriptor<SDNotebook>(predicate: #Predicate { $0.id == actualUUID || $0.linkedBookID == actualUUID })
+        if let existing = try? modelContext.fetch(nbFetch).first {
+            return existing
+        }
+        
+        // Auto-create notebook record for this book so we can persist its properties (like templateStyle and templateSize)
+        let newNb = SDNotebook(
+            id: UUID(),
+            title: bookTitle.isEmpty ? "Notebook" : bookTitle,
+            templateStyle: "plain",
+            linkedBookID: actualUUID,
+            templateSize: 24.0
+        )
+        modelContext.insert(newNb)
+        try? modelContext.save()
+        Logger.shared.log("Auto-created SDNotebook for book: '\(bookTitle)' to persist template properties", category: "Notebook", type: .success)
+        return newNb
     }
 
     private func linkBookToNotebook(_ book: ConvertedPDF) {
