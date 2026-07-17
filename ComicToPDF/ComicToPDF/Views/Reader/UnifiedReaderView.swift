@@ -26,7 +26,7 @@ struct UnifiedReaderView: View {
     /// Computed once at init — determines whether we need an async check
     private var needsEPUBComicCheck: Bool {
         let ext = pdf.url.pathExtension.lowercased()
-        return pdf.contentType == .book && ext == "epub"
+        return pdf.contentType == .book && ext == "epub" && pdf.metadata.hasFormatOverride != true
     }
     
     var body: some View {
@@ -263,34 +263,14 @@ struct UnifiedReaderView: View {
                 Logger.shared.log("isEPUBComic: No META-INF/container.xml found in archive", category: "Reader", type: .warning)
             }
             
-            // Strategy 2: Image-to-HTML ratio fallback
+            // Strategy 2: Sample XHTML pages to see if they are thin image wrappers
             if !isComic {
-                let imageExtensions: Set<String> = ["jpg", "jpeg", "png", "webp", "gif", "heic"]
-                var imageCount = 0
-                var htmlCount = 0
-                for entry in archive {
-                    let entryPathLower = entry.path.lowercased()
-                    let name = (entryPathLower as NSString).lastPathComponent
-                    guard !entryPathLower.contains("__macosx"), !name.hasPrefix("._"), name != ".ds_store", !entryPathLower.hasSuffix("/") else { continue }
-                    let ext = (name as NSString).pathExtension
-                    if imageExtensions.contains(ext) {
-                        imageCount += 1
-                    } else if ["xhtml", "html", "htm"].contains(ext) {
-                        htmlCount += 1
-                    }
+                let htmlEntries = archive.filter { entry in
+                    let ext = (entry.path.lowercased() as NSString).pathExtension
+                    return ["xhtml", "html", "htm"].contains(ext)
                 }
-                Logger.shared.log("isEPUBComic: Image count=\(imageCount), HTML count=\(htmlCount)", category: "Reader", type: .info)
-                if imageCount > 5 && imageCount >= htmlCount - 5 {
-                    isComic = true
-                    Logger.shared.log("isEPUBComic: ✅ Image ratio matched — routing to ComicReader", category: "Reader", type: .success)
-                }
-                
-                // Strategy 3: Sample XHTML pages to see if they are thin image wrappers
-                if !isComic && htmlCount > 5 {
-                    let htmlEntries = archive.filter { entry in
-                        let ext = (entry.path.lowercased() as NSString).pathExtension
-                        return ["xhtml", "html", "htm"].contains(ext)
-                    }
+                let htmlCount = htmlEntries.count
+                if htmlCount > 5 {
                     let sampled = htmlEntries.prefix(min(5, htmlEntries.count))
                     var imageWrapperCount = 0
                     for entry in sampled {

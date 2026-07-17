@@ -333,6 +333,7 @@ struct PDFMetadata: Codable, Equatable, Hashable, Sendable {
     var sortOrder: Int?
     var readingEventLabel: String?
     var isOptional: Bool?
+    var hasFormatOverride: Bool? = false
 }
 
 // âœ… NEW: Chapter Structure

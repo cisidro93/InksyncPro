@@ -249,7 +249,8 @@ class ConversionManager: ObservableObject {
     func updateContentType(for pdfID: UUID, to newType: ContentType) {
         if let idx = convertedPDFs.firstIndex(where: { $0.id == pdfID }) {
             convertedPDFs[idx].contentType = newType
-            Logger.shared.log("ConversionManager: Updated contentType for '\(convertedPDFs[idx].name)' to \(newType)", category: "Library", type: .success)
+            convertedPDFs[idx].metadata.hasFormatOverride = true
+            Logger.shared.log("ConversionManager: Updated contentType for '\(convertedPDFs[idx].name)' to \(newType), hasFormatOverride=true", category: "Library", type: .success)
             saveLibrary()
         }
     }
