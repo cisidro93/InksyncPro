@@ -805,13 +805,13 @@ final class ComicImageCache: ObservableObject {
     }
     
     func prewarmThumbnails() {
+        let total = pageCount
         Task {
-            let total = self.pageCount
             guard total > 0 else { return }
             for i in 0..<total {
                 if Task.isCancelled { break }
                 if self.thumbnailCache.object(forKey: NSNumber(value: i)) == nil {
-                    _ = getThumbnailImage(at: i)
+                    _ = self.getThumbnailImage(at: i)
                     try? await Task.sleep(nanoseconds: 5_000_000)
                 }
             }
