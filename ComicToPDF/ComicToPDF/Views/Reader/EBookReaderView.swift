@@ -1266,7 +1266,7 @@ struct EBookWebReader: UIViewRepresentable {
         }
         \(isPaged ? """
         div, section, article, main, p, span, blockquote {
-            max-height: 100% !important;
+            max-height: none !important;
             overflow: visible !important;
         }
         div, section, article, main {
