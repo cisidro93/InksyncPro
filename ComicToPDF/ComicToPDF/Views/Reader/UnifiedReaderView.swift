@@ -93,23 +93,11 @@ struct UnifiedReaderView: View {
                             if isComic {
                                 ComicReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
                             } else {
-                                EBookReaderView(
-                                    fileURL: pdf.url,
-                                    title: pdf.name,
-                                    pdf: pdf,
-                                    onExit: { dismiss() },
-                                    allBooks: allBooks
-                                )
+                                BookReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
                             }
                         } else {
                             if pdf.contentType == .book {
-                                EBookReaderView(
-                                    fileURL: pdf.url,
-                                    title: pdf.name,
-                                    pdf: pdf,
-                                    onExit: { dismiss() },
-                                    allBooks: allBooks
-                                )
+                                BookReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
                             } else {
                                 ComicReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
                             }
