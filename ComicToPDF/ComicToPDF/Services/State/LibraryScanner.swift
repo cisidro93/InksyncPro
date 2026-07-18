@@ -202,8 +202,14 @@ actor LibraryScanner {
                     }
                 }
 
+                var displayName = filename
+                if fileURL.pathExtension.lowercased() == "pdf" {
+                    if let recoveredTitle = await MainActor.run(body: { PDFTitleRecoverer.recoverPDFTitle(from: fileURL) }) {
+                        displayName = recoveredTitle
+                    }
+                }
                 var newPDF = ConvertedPDF(
-                    name: filename, url: fileURL,
+                    name: displayName, url: fileURL,
                     pageCount: 0, fileSize: fileSize,
                     metadata: metadata,
                     contentType: finalContentType

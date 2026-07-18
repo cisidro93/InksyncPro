@@ -68,6 +68,7 @@ struct EBookReaderView: View {
     /// Saved on every page turn and restored on chapter load, so position
     /// survives font-size changes and app restarts unlike a column-integer.
     @State private var chapterScrollFraction: Double = 0.0
+    @State private var activeFootnoteText: String? = nil
     // Key for persisting the scroll fraction alongside the chapter index
     private var fractionKey: String { "ebook_fraction_\(fileURL.lastPathComponent.hashValue)" }
 
@@ -162,7 +163,10 @@ struct EBookReaderView: View {
                                     saveProgress()
                                 },
                                 // Gap B: Expose the live WKWebView so window.find() can be injected
-                                webViewRef: $webViewReference
+                                webViewRef: $webViewReference,
+                                onFootnoteTapped: { text in
+                                    activeFootnoteText = text
+                                }
                             )
                             .padding(.horizontal, prefs.paginationMode == EBookPaginationMode.paged.rawValue ? prefs.textMargin : 0)
                             // Directional page-turn: slide left for forward, right for back.
@@ -240,6 +244,24 @@ struct EBookReaderView: View {
         }
         .sheet(isPresented: $showShareSheet) {
             ShareSheet(activityItems: [fileURL])
+        }
+        .popover(item: Binding<FootnoteItem?>(
+            get: { activeFootnoteText.map { FootnoteItem(text: $0) } },
+            set: { activeFootnoteText = $0?.text }
+        )) { item in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Footnote")
+                        .font(.headline)
+                        .foregroundColor(.gray)
+                    Text(item.text)
+                        .font(.body)
+                        .foregroundColor(.primary)
+                }
+                .padding()
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color(hex: prefs.activeTheme.cssBackground))
         }
 
         .task { await loadBook() }
@@ -878,22 +900,8 @@ struct EBookReaderView: View {
     }
 }
 
-// MARK: - Weak Script Message Proxy
-/// WKUserContentController.add(_:name:) takes a STRONG reference to the handler.
-/// This breaks the retain cycle:
-///   WKWebView → UCC → WeakProxy (weak) → Coordinator
-/// Without this, WKWebView is never deallocated and JS runs indefinitely → OOM crash.
-/// Internal (not private) so BookReaderEngine.swift can also use it.
-final class WeakScriptMessageProxy: NSObject, WKScriptMessageHandler {
-    weak var target: WKScriptMessageHandler?
-    init(_ target: WKScriptMessageHandler) { self.target = target }
-    func userContentController(_ ucc: WKUserContentController, didReceive message: WKScriptMessage) {
-        target?.userContentController(ucc, didReceive: message)
-    }
-}
-
-// MARK: - EBookWebReader (single reused WKWebView)
-struct EBookWebReader: UIViewRepresentable {
+// MARK: - EBookWebReader (Declarative wrapper using WebKitUI.WebView)
+struct EBookWebReader: View {
     let spineItem:  EBookMetadata.SpineItem
     let unzipDir:   URL?
     @ObservedObject var prefs: EBookPreferences
@@ -904,86 +912,173 @@ struct EBookWebReader: UIViewRepresentable {
     var onNext: () -> Void
     var onPrev: () -> Void
     var onCenterTap: () -> Void
-    /// Called when the user highlights text — receives the selected string.
     var onHighlightCreated: ((String) -> Void)? = nil
-    /// The PDF/book identity — used to restore previously saved highlights on chapter load.
     var pdfID: UUID? = nil
-    /// FIX 4: Scroll fraction to restore within the chapter (0.0–1.0).
-    /// Set from UserDefaults on open; updated via JS bridge on every page turn.
     var initialScrollFraction: Double = 0.0
-    /// Called back from JS with the current scroll fraction whenever it changes.
     var onScrollFractionChanged: ((Double) -> Void)? = nil
-    /// Gap B: Binding to share the web view reference for programmatic scripting (e.g. search).
     @Binding var webViewRef: WKWebView?
+    var onFootnoteTapped: ((String) -> Void)? = nil
 
-    func makeUIView(context: Context) -> WKWebView {
-        let config = WKWebViewConfiguration()
-        // Use WeakProxy so UCC doesn't strongly retain the coordinator
-        let proxy = WeakScriptMessageProxy(context.coordinator)
-        config.userContentController.add(proxy, name: "nav")
-        config.userContentController.add(proxy, name: "metrics")
-        // `highlight` handler: receives selected text when user taps Highlight
-        config.userContentController.add(proxy, name: "highlight")
-        // FIX 4: `scrollFraction` handler: receives the fractional scroll offset (0–1)
-        // on every page navigation so we can save and restore within-chapter position.
-        config.userContentController.add(proxy, name: "scrollFraction")
+    @State private var isLoading: Bool = false
+    @State private var progress: Double = 0.0
+    @State private var styledHTML: String = ""
+    @State private var baseUrl: URL? = nil
+    @State private var initialPinchFontSize: Double = 16.0
 
-        let wv = HighlightableWebView(frame: .zero, configuration: config)
-        wv.isOpaque = false
-        wv.backgroundColor = .clear
-        wv.scrollView.backgroundColor = .clear
-        wv.scrollView.contentInsetAdjustmentBehavior = .never
-        wv.navigationDelegate = context.coordinator
-        wv.scrollView.delegate = context.coordinator
-        wv.onHighlightRequested = {
-            wv.evaluateJavaScript("window.applyInksyncHighlight('#ffd700');")
+    var body: some View {
+        WebView(
+            html: styledHTML,
+            baseURL: baseUrl,
+            isLoading: $isLoading,
+            progress: $progress,
+            webViewRef: $webViewRef,
+            onNavigate: { url, webView in
+                if url.scheme == "http" || url.scheme == "https" {
+                    UIApplication.shared.open(url)
+                    return false
+                } else if let fragment = url.fragment {
+                    // Try to extract footnote first via custom script
+                    let js = """
+                    (function() {
+                        var el = document.getElementById('\(fragment)') || document.getElementsByName('\(fragment)')[0];
+                        if (el) {
+                            var text = el.innerText || el.textContent;
+                            if (text && text.trim().length > 0 && text.trim().length < 1000) {
+                                window.webkit.messageHandlers.footnote.postMessage({ "id": '\(fragment)', "text": text.trim() });
+                            }
+                        }
+                    })();
+                    """
+                    webView.evaluateJavaScript(js, completionHandler: nil)
+                    
+                    // Fallback scroll positioning
+                    let navJS = """
+                    var el = document.getElementById('\(fragment)') || document.getElementsByName('\(fragment)')[0];
+                    if (el) {
+                        var pageStep = window.innerWidth;
+                        var targetPage = Math.floor(el.getBoundingClientRect().left / pageStep) + _currentPage;
+                        goToPage(Math.max(0, targetPage));
+                    }
+                    """
+                    webView.evaluateJavaScript(navJS, completionHandler: nil)
+                    return false
+                }
+                return true
+            },
+            messageHandler: { message in
+                if message.name == "nav", let body = message.body as? String {
+                    if body == "next" { self.onNext() }
+                    else if body == "prev" { self.onPrev() }
+                    else if body == "center" { self.onCenterTap() }
+                } else if message.name == "metrics", let body = message.body as? [String: Int] {
+                    self.currentPage = body["current"] ?? 0
+                    self.totalPages = body["total"] ?? 1
+                } else if message.name == "highlight", let text = message.body as? String, !text.isEmpty {
+                    self.onHighlightCreated?(text)
+                } else if message.name == "scrollFraction", let fraction = message.body as? Double {
+                    self.onScrollFractionChanged?(fraction)
+                } else if message.name == "footnote", let body = message.body as? [String: String], let text = body["text"] {
+                    self.onFootnoteTapped?(text)
+                }
+            },
+            onHighlight: {
+                if let wv = webViewRef {
+                    wv.evaluateJavaScript("window.getSelection().toString()") { (result, error) in
+                        if let text = result as? String, !text.isEmpty {
+                            self.onHighlightCreated?(text)
+                        }
+                    }
+                }
+            },
+            didFinishNavigation: { webView in
+                // Restore saved highlights
+                if let pdfID = self.pdfID {
+                    let annotations = AnnotationStore.shared.annotations(for: pdfID)
+                        .filter { $0.kind == .highlight && $0.chapterTitle == self.spineItem.label }
+                    for ann in annotations {
+                        guard let text = ann.selectedText, let color = ann.colorHex else { continue }
+                        let safeText = text
+                            .replacingOccurrences(of: "`", with: "\\`")
+                            .replacingOccurrences(of: "\"", with: "\\\"")
+                            .replacingOccurrences(of: "\n", with: " ")
+                        let js = "window.restoreInksyncHighlight(`\(safeText)`, '\(color)');"
+                        webView.evaluateJavaScript(js)
+                    }
+                }
+                
+                // Restore the within-chapter fractional scroll position.
+                let fraction = self.initialScrollFraction
+                if fraction > 0.01 {
+                    let restoreJS = """
+                    setTimeout(function() {
+                        var sv = document.scrollingElement || document.documentElement;
+                        var isHoriz = document.body.style.columnWidth || window.getComputedStyle(document.body).columnWidth !== 'auto';
+                        if (isHoriz) {
+                            var pageStep = window.innerWidth;
+                            var totalPages = Math.max(1, Math.round(document.body.scrollWidth / pageStep));
+                            var targetPage = Math.round(\(fraction) * (totalPages - 1));
+                            if (window.goToInksyncPage) {
+                                window.goToInksyncPage(targetPage, false);
+                            } else {
+                                window.scrollTo({ left: targetPage * pageStep, behavior: 'instant' });
+                            }
+                        } else {
+                            window.scrollTo({ top: sv.scrollHeight * \(fraction), behavior: 'instant' });
+                        }
+                        window.webkit.messageHandlers.scrollFraction.postMessage(\(fraction));
+                    }, 150);
+                    """
+                    webView.evaluateJavaScript(restoreJS)
+                }
+            },
+            scrollViewDidEndDragging: { scrollView, decelerate in
+                let isPaged = self.prefs.paginationMode == EBookPaginationMode.paged.rawValue
+                guard isPaged else { return }
+                
+                let offset = scrollView.contentOffset.x
+                let maxOffset = scrollView.contentSize.width - scrollView.bounds.width
+                let threshold: CGFloat = 50.0
+                
+                if offset > maxOffset + threshold {
+                    self.onNext()
+                } else if offset < -threshold {
+                    self.onPrev()
+                }
+            },
+            processDidTerminate: { webView in
+                Logger.shared.log("WebKit process terminated (OOM Jetsam crash). Reloading EPUB chapter.", category: "EBookWebReader", type: .error)
+                webView.reload()
+            }
+        )
+        .gesture(
+            MagnificationGesture()
+                .onChanged { value in
+                    if initialPinchFontSize == 0 {
+                        initialPinchFontSize = prefs.fontSize
+                    }
+                    let newSize = initialPinchFontSize * Double(value)
+                    let roundedSize = round(max(12.0, min(80.0, newSize)))
+                    if prefs.fontSize != roundedSize {
+                        prefs.fontSize = roundedSize
+                    }
+                }
+                .onEnded { _ in
+                    initialPinchFontSize = 0
+                    if let bookID = pdfID?.uuidString, prefs.isTypographyLockedForBook(bookID) {
+                        prefs.lockTypographyForBook(bookID)
+                    }
+                }
+        )
+        .task(id: spineItem.href) {
+            await loadChapter()
         }
-
-        let pinch = UIPinchGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handlePinch(_:)))
-        pinch.delegate = context.coordinator
-        wv.addGestureRecognizer(pinch)
-
-        DispatchQueue.main.async {
-            self.webViewRef = wv
-        }
-
-        return wv
+        .onChange(of: prefs.fontSize) { _, _ in updateLiveCSS() }
+        .onChange(of: prefs.themeMode) { _, _ in updateLiveCSS() }
+        .onChange(of: prefs.paginationMode) { _, _ in updateLiveCSS() }
     }
 
-    /// Called by SwiftUI when the view is removed from the hierarchy.
-    /// Remove message handlers so WKUserContentController releases the proxy
-    /// and the WKWebView can be fully deallocated.
-    static func dismantleUIView(_ uiView: WKWebView, coordinator: Coordinator) {
-        coordinator.loadTask?.cancel()
-        coordinator.loadTask = nil
-        uiView.configuration.userContentController.removeScriptMessageHandler(forName: "nav")
-        uiView.configuration.userContentController.removeScriptMessageHandler(forName: "metrics")
-        uiView.configuration.userContentController.removeScriptMessageHandler(forName: "highlight")
-        uiView.configuration.userContentController.removeScriptMessageHandler(forName: "scrollFraction")
-        uiView.navigationDelegate = nil
-        uiView.scrollView.delegate = nil
-    }
-    
-    func updateUIView(_ wv: WKWebView, context: Context) {
+    private func loadChapter() async {
         guard let dir = unzipDir else { return }
-        
-        // Configure paging and scrolling constraints
-        if prefs.paginationMode == EBookPaginationMode.paged.rawValue {
-            wv.scrollView.isScrollEnabled = true
-            wv.scrollView.isPagingEnabled = true
-            wv.scrollView.alwaysBounceVertical = false
-            wv.scrollView.alwaysBounceHorizontal = true
-            wv.scrollView.showsHorizontalScrollIndicator = false
-            wv.scrollView.showsVerticalScrollIndicator = false
-        } else {
-            wv.scrollView.isScrollEnabled = true
-            wv.scrollView.isPagingEnabled = false
-            wv.scrollView.alwaysBounceVertical = true
-            wv.scrollView.alwaysBounceHorizontal = false
-            wv.scrollView.showsHorizontalScrollIndicator = false
-            wv.scrollView.showsVerticalScrollIndicator = true
-        }
-
         var contentURL = dir.appendingPathComponent(spineItem.href)
         if !FileManager.default.fileExists(atPath: contentURL.path) {
             if let decoded = spineItem.href.removingPercentEncoding {
@@ -991,100 +1086,77 @@ struct EBookWebReader: UIViewRepresentable {
             }
         }
         guard FileManager.default.fileExists(atPath: contentURL.path) else { return }
-
-        let currentStateHash = "\(prefs.themeRaw)_\(prefs.customThemeBg)_\(prefs.customThemeText)_\(prefs.fontSize)_\(prefs.fontFamily)_\(prefs.lineHeight)_\(prefs.letterSpacing)_\(prefs.wordSpacing)_\(prefs.hyphenation)_\(prefs.textMargin)_\(prefs.paragraphSpacing)_\(prefs.paragraphIndent)_\(prefs.paginationMode)_\(prefs.textAlign)_\(prefs.autoScroll)_\(prefs.autoScrollSpeed)_\(prefs.tapZoneStyleRaw)_\(wv.bounds.width)_\(wv.bounds.height)"
         
-        let contentChanged = context.coordinator.lastLoadedHref != spineItem.href
-        let themeChanged = context.coordinator.lastTheme != currentStateHash
-
-        guard contentChanged || themeChanged else { return }
-        context.coordinator.lastLoadedHref = spineItem.href
-        context.coordinator.lastTheme = currentStateHash
-
-        if contentChanged {
-            // Capture value-type snapshots so the detached task never touches ObservableObject
-            let capturedURL  = contentURL
-            let capturedDir  = dir
-            let capturedPage = initialPage
-
-            // CSS is pure string computation — compute on main before the task
-            let cssToInject  = buildReaderCSS(prefs: prefs, colorScheme: colorScheme, initialPage: capturedPage, size: wv.bounds.size)
-
-            // Cancel any in-flight load from a previous chapter swipe
-            context.coordinator.loadTask?.cancel()
-            context.coordinator.loadTask = Task {
-                guard !Task.isCancelled else { return }
-
-                // Heavy I/O + string ops on a background thread
-                let styledHTML: String? = await Task.detached(priority: .userInitiated) {
-                    var rawHTML: String?
-                    var enc: String.Encoding = .utf8
-                    let optString = try? String(contentsOf: capturedURL, usedEncoding: &enc)
-                    if let html = optString {
-                        rawHTML = html
-                    } else {
-                        let optData = try? Data(contentsOf: capturedURL)
-                        if let data = optData {
-                            rawHTML = String(data: data, encoding: .isoLatin1)
-                                   ?? String(data: data, encoding: .ascii)
-                        }
-                    }
-                    guard var html = rawHTML else { return nil }
-
-                    // Strip legacy charset tags
-                    let pattern = "<meta[^>]*charset[^>]*>"
-                    let optRegex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive)
-                    if let regex = optRegex {
-                        html = regex.stringByReplacingMatches(
-                            in: html, range: NSRange(html.startIndex..., in: html), withTemplate: ""
-                        )
-                    }
-
-                    // Wrap body content with #inksync-viewport
-                    html = EBookWebReader.wrapHTMLBodyWithViewport(html)
-
-                    // Inject pre-computed CSS
-                    if let range = html.range(of: "</head>", options: .caseInsensitive) {
-                        return html.replacingCharacters(in: range, with: cssToInject + "</head>")
-                    }
-                    return cssToInject + html
-                }.value
-
-                guard !Task.isCancelled, let html = styledHTML else { return }
-
-                // Back on main: write injected file + load
-                await MainActor.run {
-                    let hrefHash = abs(capturedURL.lastPathComponent.hashValue)
-                    let injectedURL = capturedURL.deletingLastPathComponent()
-                        .appendingPathComponent("__inksync_\(hrefHash).injected.html")
-                    try? html.write(to: injectedURL, atomically: true, encoding: .utf8)
-                    wv.loadFileURL(injectedURL, allowingReadAccessTo: capturedDir)
-                }
+        self.baseUrl = contentURL.deletingLastPathComponent()
+        
+        let cssToInject = buildReaderCSS(prefs: prefs, colorScheme: colorScheme, initialPage: initialPage, size: UIScreen.main.bounds.size)
+        
+        var rawHTML: String = ""
+        var enc: String.Encoding = .utf8
+        if let html = try? String(contentsOf: contentURL, usedEncoding: &enc) {
+            rawHTML = html
+        } else if let data = try? Data(contentsOf: contentURL) {
+            rawHTML = String(data: data, encoding: .isoLatin1)
+                   ?? String(data: data, encoding: .ascii)
+                   ?? ""
+        }
+        
+        // Generalize cleanup via SwiftReadability
+        let cleanArticle = SwiftReadability.parse(html: rawHTML)
+        var html = cleanArticle.content
+        
+        // Wrap with viewport
+        html = EBookWebReader.wrapHTMLBodyWithViewport(html)
+        
+        // Inject CSS
+        if let range = html.range(of: "</head>", options: .caseInsensitive) {
+            styledHTML = html.replacingCharacters(in: range, with: cssToInject + "</head>")
+        } else {
+            styledHTML = cssToInject + html
+        }
+    }
+    
+    private func updateLiveCSS() {
+        guard let wv = webViewRef else { return }
+        let css = buildReaderCSS(prefs: prefs, colorScheme: colorScheme, initialPage: currentPage, size: wv.bounds.size)
+        let js = """
+        (function() {
+            var el = document.getElementById('__inksync_live__');
+            if (!el) { el = document.createElement('style'); el.id = '__inksync_live__'; document.head.appendChild(el); }
+            el.textContent = `\(css.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "`", with: "\\`"))`;
+            if (window.postMetrics) {
+                window.postMetrics();
             }
-        } else {
-            // Preferences/Theme changed inside the same chapter — update stylesheet directly in DOM without reloading!
-            injectLiveCSS(into: wv)
-        }
+        })();
+        """
+        wv.evaluateJavaScript(js)
+    }
 
-        // Dynamically update tap zone boundaries in the WebView DOM
-        let leftEdge = prefs.tapZoneStyle.zones.leftEdge
-        let rightEdge = prefs.tapZoneStyle.zones.rightEdge
-        wv.evaluateJavaScript("window.__inksync_left_edge = \(leftEdge); window.__inksync_right_edge = \(rightEdge);", completionHandler: nil)
-
-        // Apply auto-scroll logic
-        if prefs.autoScroll && prefs.paginationMode == EBookPaginationMode.continuous.rawValue {
-            let speed = prefs.autoScrollSpeed * 1.5
-            wv.evaluateJavaScript("window.startInksyncAutoScroll(\(speed));", completionHandler: nil)
+    private static func wrapHTMLBodyWithViewport(_ html: String) -> String {
+        var result = html
+        let bodyPattern = "<body([^>]*)>"
+        if let regex = try? NSRegularExpression(pattern: bodyPattern, options: .caseInsensitive),
+           let match = regex.firstMatch(in: result, options: [], range: NSRange(result.startIndex..., in: result)) {
+            let bodyTagRange = Range(match.range, in: result)!
+            let insertionIndex = bodyTagRange.upperBound
+            result.insert(contentsOf: "<div id=\"inksync-viewport\">", at: insertionIndex)
         } else {
-            wv.evaluateJavaScript("window.stopInksyncAutoScroll();", completionHandler: nil)
+            if let bodyIndex = result.range(of: "<body>", options: .caseInsensitive)?.upperBound {
+                result.insert(contentsOf: "<div id=\"inksync-viewport\">", at: bodyIndex)
+            }
         }
+        
+        if let closeBodyRange = result.range(of: "</body>", options: .caseInsensitive) {
+            result.insert(contentsOf: "</div>", at: closeBodyRange.lowerBound)
+        }
+        return result
     }
 
     private func computeCSS(prefs: EBookPreferences, size: CGSize) -> String {
         let isPaged = prefs.paginationMode == EBookPaginationMode.paged.rawValue
 
         let bgColor      = prefs.activeTheme.cssBackground
-        let textColor    = prefs.activeTheme.cssText
+        let textColor    = ColorContrastCalculator.getLegibleTextColor(textHex: prefs.activeTheme.cssText, bgHex: bgColor)
         let linkColor    = prefs.activeTheme.cssLink
         let fontFamily   = prefs.fontFamily
         let fontSize     = Int(prefs.fontSize)
@@ -1096,7 +1168,6 @@ struct EBookWebReader: UIViewRepresentable {
         let paraSpace     = prefs.paragraphSpacing
         let paraIndent    = prefs.paragraphIndent
         let hyphenCSS     = prefs.hyphenation ? "auto" : "manual"
-
 
         let renderWidth = size.width > 0 ? size.width : UIScreen.main.bounds.width
         let renderHeight = size.height > 0 ? size.height : UIScreen.main.bounds.height
@@ -1274,6 +1345,11 @@ struct EBookWebReader: UIViewRepresentable {
             word-spacing: \(wordSpacing) !important;
             -webkit-hyphens: \(hyphenCSS) !important;
             hyphens: \(hyphenCSS) !important;
+            text-rendering: optimizeLegibility !important;
+            -webkit-font-variant-ligatures: common-ligatures !important;
+            font-variant-ligatures: common-ligatures !important;
+            -webkit-font-feature-settings: "kern", "liga" 1 !important;
+            font-feature-settings: "kern", "liga" 1 !important;
             \(isPaged ? """
             height: 100% !important;
             """ : """
@@ -1339,6 +1415,280 @@ struct EBookWebReader: UIViewRepresentable {
         p { margin-bottom: \(paraSpace)em !important; text-indent: \(paraIndent)em !important; }
         p, div, span, li, td, th, h1, h2, h3, h4, h5, h6 { color: \(textColor) !important; line-height: \(lineHeight); }
         img, svg, .page, .chunk-container { display: block !important; margin-left: auto !important; margin-right: auto !important; }
+        img { max-width: 100% !important; max-height: 100% !important; height: auto !important; border-radius: 4px; object-fit: contain !important; }
+        img.gaiji, img[gaiji], img.inline-image { display: inline-block !important; vertical-align: middle !important; max-height: 1.2em !important; width: auto !important; margin: 0 0.1em !important; }
+        pre, table, code {
+            max-width: 100% !important;
+            overflow-x: auto !important;
+            word-wrap: break-word !important;
+            white-space: pre-wrap !important;
+        }
+        a { color: \(linkColor) !important; }
+        blockquote { border-left: 3px solid \(linkColor); margin-left: 0; padding-left: 16px; opacity: 0.85; }
+        mark.inksync-highlight { background-color: #ffd700; color: inherit; border-radius: 2px; mix-blend-mode: multiply; -webkit-mix-blend-mode: multiply; padding: 0 1px; }
+        \(fontSize > 28 ? """
+        .dropcap, .drop-cap, span.first-letter {
+            float: none !important;
+            font-size: 1em !important;
+            line-height: inherit !important;
+            margin: 0 !important;
+            font-weight: inherit !important;
+        }
+        """ : """
+        .dropcap, .drop-cap, span.first-letter {
+            float: left !important;
+            font-size: 3.2em !important;
+            line-height: 0.85em !important;
+            margin-top: 0.1em !important;
+            margin-right: 0.1em !important;
+            margin-bottom: -0.1em !important;
+            font-weight: bold !important;
+        }
+        """)
+        """
+    }
+
+    private func buildReaderCSS(prefs: EBookPreferences, colorScheme: ColorScheme, initialPage: Int, size: CGSize) -> String {
+        let cssContent = computeCSS(prefs: prefs, size: size)
+        
+        return """
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+        <style id="__inksync_live__">
+        \(cssContent)
+        </style>
+        <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            document.querySelectorAll('[style]').forEach(function(el) {
+                el.style.removeProperty('background-color');
+                el.style.removeProperty('color');
+            });
+            var liveStyle = document.getElementById('__inksync_live__');
+            if (liveStyle) {
+                document.head.appendChild(liveStyle);
+            }
+        });
+
+        var _currentPage = \(initialPage);
+        var _totalPages = 1;
+        var _firstRun = true;
+
+        function postFraction() {
+            var sv = document.scrollingElement || document.documentElement;
+            var isHoriz = document.body.style.columnWidth || window.getComputedStyle(document.body).columnWidth !== 'auto';
+            var fraction = 0;
+            if (isHoriz) {
+                var maxScroll = sv.scrollWidth - window.innerWidth;
+                if (maxScroll > 0) fraction = sv.scrollLeft / maxScroll;
+            } else {
+                var maxScroll = sv.scrollHeight - window.innerHeight;
+                if (maxScroll > 0) fraction = sv.scrollTop / maxScroll;
+            }
+            window.webkit.messageHandlers.scrollFraction.postMessage(fraction);
+        }
+
+        function updateMetrics() {
+            var sv = document.scrollingElement || document.documentElement;
+            var pageStep = window.innerWidth;
+            var isHoriz = document.body.style.columnWidth || window.getComputedStyle(document.body).columnWidth !== 'auto';
+            
+            if (isHoriz) {
+                _totalPages = Math.max(1, Math.round(sv.scrollWidth / pageStep));
+                if (_firstRun) {
+                    _firstRun = false;
+                    if (_currentPage === 99999) {
+                        _currentPage = _totalPages - 1;
+                    }
+                    goToPage(_currentPage, false);
+                } else {
+                    _currentPage = Math.max(0, Math.min(Math.round(sv.scrollLeft / pageStep), _totalPages - 1));
+                }
+            } else {
+                var pageHeight = window.innerHeight;
+                _totalPages = Math.max(1, Math.round(sv.scrollHeight / pageHeight));
+                if (_firstRun) {
+                    _firstRun = false;
+                    goToPage(_currentPage, false);
+                } else {
+                    _currentPage = Math.max(0, Math.min(Math.round(sv.scrollTop / pageHeight), _totalPages - 1));
+                }
+            }
+            
+            window.webkit.messageHandlers.metrics.postMessage({ current: _currentPage, total: _totalPages });
+            postFraction();
+        }
+
+        function goToPage(page, smooth) {
+            _currentPage = Math.max(0, Math.min(page, _totalPages - 1));
+            var behavior = smooth ? 'smooth' : 'instant';
+            
+            var sv = document.scrollingElement || document.documentElement;
+            var isHoriz = document.body.style.columnWidth || window.getComputedStyle(document.body).columnWidth !== 'auto';
+            if (isHoriz) {
+                var pageStep = window.innerWidth;
+                window.scrollTo({ left: _currentPage * pageStep, behavior: behavior });
+            } else {
+                window.scrollTo({ top: _currentPage * window.innerHeight, behavior: behavior });
+            }
+            
+            if (!_firstRun) {
+                window.webkit.messageHandlers.metrics.postMessage({ current: _currentPage, total: _totalPages });
+            }
+            postFraction();
+        }
+        window.goToInksyncPage = goToPage;
+
+        window.onload = function() {
+            setTimeout(updateMetrics, 100);
+            setTimeout(updateMetrics, 500);
+            setTimeout(updateMetrics, 1500);
+        };
+        window.addEventListener('resize', function() { updateMetrics(); goToPage(_currentPage, false); });
+
+        document.addEventListener('click', function(e) {
+            if (e.target.tagName.toLowerCase() === 'a') return;
+            if (window.getSelection() && !window.getSelection().isCollapsed) return;
+            var x = e.clientX; var w = window.innerWidth;
+            var leftEdge = window.__inksync_left_edge || 0.30;
+            var rightEdge = window.__inksync_right_edge || 0.70;
+            if (x < w * leftEdge) {
+                if (_currentPage > 0) goToPage(_currentPage - 1, true);
+                else window.webkit.messageHandlers.nav.postMessage('prev');
+            } else if (x > w * rightEdge) {
+                if (_currentPage < _totalPages - 1) goToPage(_currentPage + 1, true);
+                else window.webkit.messageHandlers.nav.postMessage('next');
+            } else {
+                window.webkit.messageHandlers.nav.postMessage('center');
+            }
+        });
+
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'ArrowRight' || e.key === 'Space') {
+                if (_currentPage < _totalPages - 1) goToPage(_currentPage + 1, true);
+                else window.webkit.messageHandlers.nav.postMessage('next');
+                e.preventDefault();
+            } else if (e.key === 'ArrowLeft') {
+                if (_currentPage > 0) goToPage(_currentPage - 1, true);
+                else window.webkit.messageHandlers.nav.postMessage('prev');
+                e.preventDefault();
+            }
+        });
+
+        var _scrollTimeout;
+        window.addEventListener('scroll', function() {
+            clearTimeout(_scrollTimeout);
+            _scrollTimeout = setTimeout(function() {
+                updateMetrics();
+            }, 50);
+        });
+
+        // ── Highlight Engine ─────────────────────────────────────────────────
+        window.applyInksyncHighlight = function(colorHex) {
+            var sel = window.getSelection();
+            if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
+            var text = sel.toString().trim();
+            if (!text) return;
+            var range = sel.getRangeAt(0);
+            var mark = document.createElement('mark');
+            mark.className = 'inksync-highlight';
+            mark.style.backgroundColor = colorHex || '#ffd700';
+            mark.style.color = 'inherit';
+            mark.style.borderRadius = '2px';
+            mark.style.mixBlendMode = 'multiply';
+            try {
+                range.surroundContents(mark);
+            } catch(e) {
+                var frag = range.extractContents();
+                mark.appendChild(frag);
+                range.insertNode(mark);
+            }
+            sel.removeAllRanges();
+            window.webkit.messageHandlers.highlight.postMessage(text);
+        };
+
+        window.restoreInksyncHighlight = function(textToFind, colorHex) {
+            if (!textToFind) return;
+            var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
+            var node;
+            while ((node = walker.nextNode())) {
+                var idx = node.nodeValue.indexOf(textToFind);
+                if (idx !== -1) {
+                    try {
+                        var range = document.createRange();
+                        range.setStart(node, idx);
+                        range.setEnd(node, idx + textToFind.length);
+                        var mark = document.createElement('mark');
+                        mark.className = 'inksync-highlight';
+                        mark.style.backgroundColor = colorHex || '#ffd700';
+                        mark.style.color = 'inherit';
+                        mark.style.borderRadius = '2px';
+                        range.surroundContents(mark);
+                    } catch(e) {}
+                    break;
+                }
+            }
+        };
+
+        window.updateInksyncHighlightColor = function(textToFind, colorHex) {
+            var marks = document.querySelectorAll('mark.inksync-highlight');
+            for (var i = 0; i < marks.length; i++) {
+                if (marks[i].textContent.trim() === textToFind.trim()) {
+                    marks[i].style.backgroundColor = colorHex;
+                    break;
+                }
+            }
+        };
+
+        window.removeInksyncHighlight = function(textToFind) {
+            var marks = document.querySelectorAll('mark.inksync-highlight');
+            for (var i = 0; i < marks.length; i++) {
+                if (marks[i].textContent.trim() === textToFind.trim()) {
+                    var parent = marks[i].parentNode;
+                    while (marks[i].firstChild) {
+                        parent.insertBefore(marks[i].firstChild, marks[i]);
+                    }
+                    parent.removeChild(marks[i]);
+                    parent.normalize();
+                    break;
+                }
+            }
+        };
+
+        // ── Auto Scroll ──────────────────────────────────────────────────
+        var scrollActive = false;
+        var scrollSpeed = 1.0;
+        var lastTime = 0;
+
+        window.startInksyncAutoScroll = function(speed) {
+            scrollSpeed = speed;
+            if (scrollActive) return;
+            scrollActive = true;
+            lastTime = performance.now();
+            
+            function scrollStep(timestamp) {
+                if (!scrollActive) return;
+                var delta = timestamp - lastTime;
+                lastTime = timestamp;
+                
+                var step = (scrollSpeed * (delta / 16.67));
+                window.scrollBy(0, step);
+                
+                requestAnimationFrame(scrollStep);
+            }
+            requestAnimationFrame(scrollStep);
+        };
+        window.stopInksyncAutoScroll = function() {
+            scrollActive = false;
+        };
+
+        document.addEventListener('DOMContentLoaded', function() {
+            document.body.style.webkitUserSelect = 'text';
+            document.body.style.userSelect = 'text';
+        });
+        </script>
+        """
+    }
+}important; margin-left: auto !important; margin-right: auto !important; }
         img { max-width: 100% !important; max-height: 100% !important; height: auto !important; border-radius: 4px; object-fit: contain !important; }
         pre, table, code {
             max-width: 100% !important;
@@ -1671,152 +2021,8 @@ struct EBookWebReader: UIViewRepresentable {
         return result
     }
 
-    func makeCoordinator() -> Coordinator { Coordinator(self) }
 
-    @MainActor
-    final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate, UIGestureRecognizerDelegate, UIScrollViewDelegate {
-        var parent: EBookWebReader
-        var lastLoadedHref: String = ""
-        var lastTheme: String = ""
-        var lastFontSize: Double = 0
-        /// Cancellable reference — cancelled on every new chapter load to prevent stale renders
-        var loadTask: Task<Void, Never>?
-        var initialPinchFontSize: Double = 16.0
 
-        init(_ parent: EBookWebReader) { self.parent = parent }
-
-        func userContentController(_ ucc: WKUserContentController, didReceive message: WKScriptMessage) {
-            if message.name == "nav", let body = message.body as? String {
-                if body == "next" { self.parent.onNext() }
-                else if body == "prev" { self.parent.onPrev() }
-                else if body == "center" { self.parent.onCenterTap() }
-            } else if message.name == "metrics", let body = message.body as? [String: Int] {
-                self.parent.currentPage = body["current"] ?? 0
-                self.parent.totalPages = body["total"] ?? 1
-            } else if message.name == "highlight", let text = message.body as? String, !text.isEmpty {
-                self.parent.onHighlightCreated?(text)
-            } else if message.name == "scrollFraction", let fraction = message.body as? Double {
-                // FIX 4: Report the within-chapter scroll fraction back to Swift for persistence.
-                self.parent.onScrollFractionChanged?(fraction)
-            }
-        }
-        
-        // Intercept navigation for Footnotes, External links, and Chapters
-        func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) {
-            if navigationAction.navigationType == .linkActivated {
-                if let url = navigationAction.request.url {
-                    if url.scheme == "http" || url.scheme == "https" {
-                        UIApplication.shared.open(url)
-                    } else if let fragment = url.fragment {
-                        // Internal anchor (e.g., footnote)
-                        let js = """
-                        var el = document.getElementById('\(fragment)') || document.getElementsByName('\(fragment)')[0];
-                        if (el) {
-                            var pageStep = window.innerWidth;
-                            var targetPage = Math.floor(el.getBoundingClientRect().left / pageStep) + _currentPage;
-                            goToPage(Math.max(0, targetPage));
-                        }
-                        """
-                        webView.evaluateJavaScript(js, completionHandler: nil)
-                    }
-                }
-                decisionHandler(.cancel)
-            } else {
-                decisionHandler(.allow)
-            }
-        }
-
-        /// Restore saved highlights and scroll position after every chapter load.
-        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            guard let pdfID = parent.pdfID else { return }
-            let chapter = parent.spineItem.href
-            let annotations = AnnotationStore.shared.annotations(for: pdfID)
-                .filter { $0.kind == .highlight && $0.chapterTitle == parent.spineItem.label }
-            for ann in annotations {
-                guard let text = ann.selectedText, let color = ann.colorHex else { continue }
-                let safeText = text
-                    .replacingOccurrences(of: "`", with: "\\`")
-                    .replacingOccurrences(of: "\"", with: "\\\"")
-                    .replacingOccurrences(of: "\n", with: " ")
-                let _ = chapter // suppress unused warning
-                let js = "window.restoreInksyncHighlight(`\(safeText)`, '\(color)');"
-                webView.evaluateJavaScript(js)
-            }
-
-            // FIX 4: Restore the within-chapter fractional scroll position.
-            // We use a 150ms delay to allow the layout engine to complete column
-            // calculation before we scroll; without this, scrollWidth is still 0.
-            let fraction = parent.initialScrollFraction
-            if fraction > 0.01 {
-                let restoreJS = """
-                setTimeout(function() {
-                    var sv = document.scrollingElement || document.documentElement;
-                    var isHoriz = document.body.style.columnWidth || window.getComputedStyle(document.body).columnWidth !== 'auto';
-                    if (isHoriz) {
-                        var pageStep = window.innerWidth;
-                        var totalPages = Math.max(1, Math.round(document.body.scrollWidth / pageStep));
-                        var targetPage = Math.round(\(fraction) * (totalPages - 1));
-                        if (window.goToInksyncPage) {
-                            window.goToInksyncPage(targetPage, false);
-                        } else {
-                            window.scrollTo({ left: targetPage * pageStep, behavior: 'instant' });
-                        }
-                    } else {
-                        window.scrollTo({ top: sv.scrollHeight * \(fraction), behavior: 'instant' });
-                    }
-                    // Report the fraction back to initialise the Swift state correctly
-                    window.webkit.messageHandlers.scrollFraction.postMessage(\(fraction));
-                }, 150);
-                """
-                webView.evaluateJavaScript(restoreJS)
-            }
-        }
-
-        @objc func handlePinch(_ gesture: UIPinchGestureRecognizer) {
-            if gesture.state == .began {
-                initialPinchFontSize = parent.prefs.fontSize
-            } else if gesture.state == .changed {
-                let newSize = initialPinchFontSize * Double(gesture.scale)
-                let roundedSize = round(max(12.0, min(80.0, newSize)))
-                if parent.prefs.fontSize != roundedSize {
-                    parent.prefs.fontSize = roundedSize
-                    if let bookID = parent.pdfID?.uuidString, parent.prefs.isTypographyLockedForBook(bookID) {
-                        parent.prefs.lockTypographyForBook(bookID)
-                    }
-                }
-            }
-        }
-
-        func scrollViewDidEndDragging(_ scrollView: UIScrollView, decelerate: Bool) {
-            let isPaged = parent.prefs.paginationMode == EBookPaginationMode.paged.rawValue
-            guard isPaged else { return }
-            
-            let offset = scrollView.contentOffset.x
-            let maxOffset = scrollView.contentSize.width - scrollView.bounds.width
-            let threshold: CGFloat = 50.0
-            
-            if offset > maxOffset + threshold {
-                parent.onNext()
-            } else if offset < -threshold {
-                parent.onPrev()
-            }
-        }
-
-        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
-            return true
-        }
-
-        func viewForZooming(in scrollView: UIScrollView) -> UIView? {
-            return nil
-        }
-
-        /// Recover from Jetsam Out-Of-Memory (OOM) WebKit process crashes.
-        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
-            Logger.shared.log("WebKit process terminated (OOM Jetsam crash). Reloading EPUB chapter.", category: "EBookWebReader", type: .error)
-            webView.reload()
-        }
-    }
-} // end EBookWebReader
 
 // MARK: - Safe array subscript
 extension Array {

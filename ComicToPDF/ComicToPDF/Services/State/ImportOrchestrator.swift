@@ -126,6 +126,11 @@ actor ImportOrchestrator {
                     let parsedTokens = DeterministicFilenameParser.parse(filename: fileName)
                     let seriesName = parsedTokens.seriesName.isEmpty ? fileURL.deletingLastPathComponent().lastPathComponent : parsedTokens.seriesName
                     var smartDisplayName = parsedTokens.title ?? fileName
+                    if ext == "pdf" {
+                        if let recoveredTitle = await MainActor.run(body: { PDFTitleRecoverer.recoverPDFTitle(from: destURL) }) {
+                            smartDisplayName = recoveredTitle
+                        }
+                    }
                     var smartMetadata = PDFMetadata(title: smartDisplayName)
                     smartMetadata.series = seriesName
                     smartMetadata.volume = parsedTokens.volume

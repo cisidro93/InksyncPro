@@ -1,6 +1,7 @@
 import Foundation
 import UIKit
 import ZIPFoundation
+import PDFKit
 
 // MARK: - EBook Metadata Model
 struct EBookMetadata {
@@ -349,5 +350,43 @@ class MiniXMLParser: NSObject, XMLParserDelegate {
         if lower == "spine" { inSpine = false }
         tagStack.removeLast()
         currentText = ""
+    }
+}
+
+// MARK: - PDF Title Recovery Heuristic
+public struct PDFTitleRecoverer {
+    @MainActor
+    public static func recoverPDFTitle(from url: URL) -> String? {
+        guard let doc = PDFDocument(url: url), doc.pageCount > 0 else { return nil }
+        guard let page = doc.page(at: 0) else { return nil }
+        guard let attrString = page.attributedString else { return nil }
+        
+        var largestFontSize: CGFloat = 0.0
+        var bestText: String = ""
+        
+        attrString.enumerateAttribute(.font, in: NSRange(location: 0, length: attrString.length), options: []) { (value, range, stop) in
+            #if canImport(UIKit)
+            guard let font = value as? UIFont else { return }
+            #else
+            guard let font = value as? NSFont else { return }
+            #endif
+            
+            let substring = attrString.attributedSubstring(from: range).string
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            
+            guard !substring.isEmpty && substring.count > 3 && substring.count < 100 else { return }
+            
+            if font.pointSize > largestFontSize {
+                largestFontSize = font.pointSize
+                bestText = substring
+            }
+        }
+        
+        let cleaned = bestText.components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        
+        return cleaned.isEmpty ? nil : cleaned
     }
 }
