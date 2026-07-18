@@ -934,7 +934,7 @@ struct EPUBWebView: UIViewRepresentable {
             max-width: 100% !important;
         }
         \(isPaged ? """
-        html, body, div, section, article, main, p, span, blockquote {
+        div, section, article, main, p, span, blockquote {
             max-height: 100% !important;
             overflow: visible !important;
         }
