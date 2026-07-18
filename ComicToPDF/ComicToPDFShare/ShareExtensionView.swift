@@ -284,13 +284,26 @@ struct ShareExtensionView: View {
                         }
                     }
                     
-                    // Direct fallback for generic file types where extension is resolved post-load
+                    // Direct fallback: prioritize generic file URLs first (direct path resolution)
+                    if bestTypeIdentifier == nil {
+                        let fileURLTypes = [
+                            UTType.fileURL.identifier, "public.file-url",
+                            "com.apple.cocoa.path"
+                        ]
+                        for typeId in provider.registeredTypeIdentifiers {
+                            if fileURLTypes.contains(typeId) {
+                                bestTypeIdentifier = typeId
+                                targetExt = "unknown"
+                                break
+                            }
+                        }
+                    }
+                    
+                    // Secondary fallback: generic data/item types
                     if bestTypeIdentifier == nil {
                         let genericTypes = [
                             UTType.data.identifier, "public.data",
-                            UTType.item.identifier, "public.item",
-                            UTType.fileURL.identifier, "public.file-url",
-                            "com.apple.cocoa.path"
+                            UTType.item.identifier, "public.item"
                         ]
                         for typeId in provider.registeredTypeIdentifiers {
                             if genericTypes.contains(typeId) {

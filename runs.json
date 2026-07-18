@@ -11,8 +11,8 @@
       "display_title": "fix: implement zero-dependency zip mimetype scanner to fix Share Exte…",
       "run_number": 2774,
       "event": "push",
-      "status": "in_progress",
-      "conclusion": null,
+      "status": "completed",
+      "conclusion": "success",
       "workflow_id": 219265706,
       "check_suite_id": 80200005874,
       "check_suite_node_id": "CS_kwDOQu7BSs8AAAASrEr48g",
@@ -22,7 +22,7 @@
 
       ],
       "created_at": "2026-07-17T21:06:41Z",
-      "updated_at": "2026-07-17T21:06:45Z",
+      "updated_at": "2026-07-17T21:17:33Z",
       "actor": {
         "login": "cisidro93",
         "id": 53463579,

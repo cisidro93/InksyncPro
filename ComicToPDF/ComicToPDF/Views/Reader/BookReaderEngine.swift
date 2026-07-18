@@ -405,7 +405,8 @@ struct EPUBWebView: UIViewRepresentable {
                         var sv = document.scrollingElement || document.documentElement;
                         var isHoriz = document.body.style.columnCount || window.getComputedStyle(document.body).columnCount !== 'auto';
                         if (isHoriz) {
-                            window.scrollTo({ left: sv.scrollWidth * \(fraction), behavior: 'instant' });
+                            var pageIndex = Math.round(\(fraction) * (sv.scrollWidth / window.innerWidth - 1));
+                            window.scrollTo({ left: pageIndex * window.innerWidth, behavior: 'instant' });
                         } else {
                             window.scrollTo({ top: sv.scrollHeight * \(fraction), behavior: 'instant' });
                         }
@@ -761,14 +762,14 @@ struct EPUBWebView: UIViewRepresentable {
         let defaultColumns = (isPad && isLandscape) ? 2 : 1
         let cols = prefs.columnCount == 0 ? defaultColumns : prefs.columnCount
         
-        let gap = Int(margin * 2)
+        let gap = isPaged ? 0 : Int(margin * 2)
         
         let pagedCSS = isPaged ? """
             column-count: \(cols) !important;
             column-width: auto !important;
-            column-gap: \(gap)px !important;
+            column-gap: 0px !important;
             column-fill: auto !important;
-            column-rule: 1px solid rgba(128, 128, 128, 0.15) !important;
+            column-rule: none !important;
         """ : ""
 
         let paddingLeft = isPaged ? 0 : margin
@@ -925,7 +926,28 @@ struct EPUBWebView: UIViewRepresentable {
             word-spacing: \(wordSpacing) !important;
             -webkit-hyphens: \(hyphenCSS) !important;
             hyphens: \(hyphenCSS) !important;
+            \(isPaged ? "overflow: hidden !important;" : "")
         }
+        
+        /* Prevent nested overflow and positioning containers from breaking horizontal column flow */
+        body * {
+            max-width: 100% !important;
+        }
+        \(isPaged ? """
+        html, body, div, section, article, main, p, span, blockquote {
+            max-height: 100% !important;
+            overflow: visible !important;
+        }
+        div, section, article, main {
+            height: auto !important;
+        }
+        /* CSS Column padding-left/right on all block elements creates margins without shifting */
+        p, h1, h2, h3, h4, h5, h6, blockquote, pre, table, ul, ol, dl, figure, .content-container {
+            padding-left: \(margin)px !important;
+            padding-right: \(margin)px !important;
+        }
+        """ : "")
+        
         body, p, span, li, td, th, div, a {
             font-family: \(fontFamily) !important;
         }
@@ -944,7 +966,13 @@ struct EPUBWebView: UIViewRepresentable {
         p { margin-bottom: \(paraSpace)em !important; text-indent: \(paraIndent)em !important; }
         p, div, span, li, td, th, h1, h2, h3, h4, h5, h6 { color: \(textColor) !important; }
         img, svg, .page, .chunk-container { display: block !important; margin-left: auto !important; margin-right: auto !important; }
-        img { max-width: 100%; height: auto; border-radius: 4px; object-fit: contain; max-height: calc(100vh - 120px); }
+        img {
+            max-width: calc(100% - \(margin * 2)px) !important;
+            max-height: calc(100vh - 120px) !important;
+            height: auto !important;
+            border-radius: 4px;
+            object-fit: contain !important;
+        }
         a { color: \(linkColor) !important; }
         blockquote { border-left: 3px solid \(linkColor); margin-left: 0; padding-left: 16px; opacity: 0.85; }
         mark.inksync-highlight { background-color: #ffd700; color: inherit; border-radius: 2px; mix-blend-mode: multiply; -webkit-mix-blend-mode: multiply; padding: 0 1px; }
@@ -1126,7 +1154,6 @@ struct BookReaderEngine: View {
                         scrollToLastPageOnLoad = true
                         vm.loadChapter(index: max(0, vm.currentChapterIndex - 1))
                     })
-                    .padding(.horizontal, prefs.paginationMode == EBookPaginationMode.paged.rawValue ? prefs.textMargin : 0)
                     .ignoresSafeArea()
                     
                     // Edge Brightness Gesture Zones
