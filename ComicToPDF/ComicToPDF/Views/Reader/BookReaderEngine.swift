@@ -312,8 +312,11 @@ struct EPUBWebView: UIViewRepresentable {
     var onScrollFractionChanged: ((Double) -> Void)? = nil
     @Binding var webViewRef: WKWebView?
     let pdf: ConvertedPDF
+    @Binding var currentPage: Int
+    @Binding var totalPages: Int
     var onHighlightCreated: ((String, String) -> Void)?
     var onPageLoaded: ((WKWebView) -> Void)?
+    var onFootnoteTapped: ((String) -> Void)? = nil
     /// Fired when user taps the center third of the page (toggles chrome)
     var onCenterTap: (() -> Void)? = nil
     /// Fired when user taps the left third of the page (turns page back)
@@ -351,6 +354,11 @@ struct EPUBWebView: UIViewRepresentable {
                 }
             } else if message.name == "scrollFraction", let fraction = message.body as? Double {
                 parent.onScrollFractionChanged?(fraction)
+            } else if message.name == "metrics", let body = message.body as? [String: Int] {
+                parent.currentPage = body["current"] ?? 0
+                parent.totalPages = body["total"] ?? 1
+            } else if message.name == "footnote", let body = message.body as? [String: String], let text = body["text"] {
+                parent.onFootnoteTapped?(text)
             }
         }
 
@@ -361,14 +369,17 @@ struct EPUBWebView: UIViewRepresentable {
                     if url.scheme == "http" || url.scheme == "https" {
                         UIApplication.shared.open(url)
                     } else if let fragment = url.fragment {
-                        // Internal anchor (e.g., footnote)
+                        // Internal anchor (e.g., footnote) popover extractor
                         let js = """
-                        var el = document.getElementById('\(fragment)') || document.getElementsByName('\(fragment)')[0];
-                        if (el) {
-                            var targetOffset = el.getBoundingClientRect().left + window.pageXOffset;
-                            var pageIndex = Math.floor(targetOffset / window.innerWidth);
-                            window.scrollTo({ left: pageIndex * window.innerWidth, behavior: 'smooth' });
-                        }
+                        (function() {
+                            var el = document.getElementById('\(fragment)') || document.getElementsByName('\(fragment)')[0];
+                            if (el) {
+                                var text = el.innerText || el.textContent;
+                                if (text && text.trim().length > 0) {
+                                    window.webkit.messageHandlers.footnote.postMessage({ "id": '\(fragment)', "text": text.trim() });
+                                }
+                            }
+                        })();
                         """
                         webView.evaluateJavaScript(js, completionHandler: nil)
                     }
@@ -463,6 +474,8 @@ struct EPUBWebView: UIViewRepresentable {
         // `nav` bridge: center/left/right tap, next/prev chapter boundary swipes
         config.userContentController.add(proxy, name: "nav")
         config.userContentController.add(proxy, name: "scrollFraction")
+        config.userContentController.add(proxy, name: "metrics")
+        config.userContentController.add(proxy, name: "footnote")
 
         // CSS + JS Injection (runs once after each page load, not on every SwiftUI update)
         let userScript = WKUserScript(
@@ -640,10 +653,38 @@ struct EPUBWebView: UIViewRepresentable {
                 window.webkit.messageHandlers.scrollFraction.postMessage(fraction);
             }
 
+            function postMetrics() {
+                var sv = document.scrollingElement || document.documentElement;
+                var isHoriz = document.body.style.columnCount || window.getComputedStyle(document.body).columnCount !== 'auto';
+                var current = 0;
+                var total = 1;
+                if (isHoriz) {
+                    var style = window.getComputedStyle(document.body);
+                    var gap = parseFloat(style.columnGap) || 0;
+                    var pageStep = window.innerWidth + gap;
+                    total = Math.max(1, Math.ceil((sv.scrollWidth + gap) / pageStep));
+                    current = Math.max(0, Math.min(Math.round(sv.scrollLeft / pageStep), total - 1));
+                } else {
+                    total = Math.max(1, Math.ceil(sv.scrollHeight / window.innerHeight));
+                    current = Math.max(0, Math.min(Math.round(sv.scrollTop / window.innerHeight), total - 1));
+                }
+                window.webkit.messageHandlers.metrics.postMessage({ "current": current, "total": total });
+            }
+
+            window.addEventListener('load', function() {
+                setTimeout(postMetrics, 150);
+            });
+            window.addEventListener('resize', function() {
+                postMetrics();
+            });
+
             var _scrollTimeout;
             window.addEventListener('scroll', function() {
                 clearTimeout(_scrollTimeout);
-                _scrollTimeout = setTimeout(postFraction, 100);
+                _scrollTimeout = setTimeout(function() {
+                    postFraction();
+                    postMetrics();
+                }, 100);
             });
             """,
             injectionTime: .atDocumentEnd,
@@ -684,6 +725,8 @@ struct EPUBWebView: UIViewRepresentable {
         uiView.configuration.userContentController.removeScriptMessageHandler(forName: "highlightHandler")
         uiView.configuration.userContentController.removeScriptMessageHandler(forName: "nav")
         uiView.configuration.userContentController.removeScriptMessageHandler(forName: "scrollFraction")
+        uiView.configuration.userContentController.removeScriptMessageHandler(forName: "metrics")
+        uiView.configuration.userContentController.removeScriptMessageHandler(forName: "footnote")
         uiView.navigationDelegate = nil
     }
 
@@ -1052,6 +1095,9 @@ struct BookReaderEngine: View {
     @State private var annotationForFullEdit: SDAnnotation? = nil
     @State private var initialScrollFraction: Double = 0.0
     @State private var chapterScrollFraction: Double = 0.0
+    @State private var chapterPage: Int = 0
+    @State private var chapterTotalPages: Int = 1
+    @State private var activeFootnoteText: String? = nil
     
     @Environment(\.modelContext) private var modelContext
     @State private var extractedTextParams: String = "Chapter reading is not extracted to string yet."
@@ -1102,6 +1148,8 @@ struct BookReaderEngine: View {
                         },
                         webViewRef: $webViewReference,
                         pdf: pdf,
+                        currentPage: $chapterPage,
+                        totalPages: $chapterTotalPages,
                         onHighlightCreated: { selectedText, _ in
 
                         let rawLabel = vm.tocItems[safe: vm.currentChapterIndex]?.label ?? ""
@@ -1153,6 +1201,9 @@ struct BookReaderEngine: View {
                     onPrevChapter: {
                         scrollToLastPageOnLoad = true
                         vm.loadChapter(index: max(0, vm.currentChapterIndex - 1))
+                    },
+                    onFootnoteTapped: { text in
+                        activeFootnoteText = text
                     })
                     .ignoresSafeArea()
                     
@@ -1183,6 +1234,23 @@ struct BookReaderEngine: View {
                                     }
                                     .onEnded { _ in lastBrightnessDragValue = 0 }
                             )
+                    }
+                    
+                    // Bottom Page Progress Footer
+                    if !chromeVisible {
+                        VStack {
+                            Spacer()
+                            Text("Page \(chapterPage + 1) of \(chapterTotalPages)  •  Ch. \(vm.currentChapterIndex + 1) of \(vm.chapterHtmlFiles.count)")
+                                .font(.system(size: 11, weight: .medium, design: .rounded))
+                                .foregroundColor(Color(UIColor(hex: prefs.activeTheme.cssText) ?? .gray).opacity(0.65))
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(Color(UIColor(hex: prefs.activeTheme.cssBackground) ?? .black).opacity(0.85))
+                                .cornerRadius(8)
+                                .padding(.bottom, 12)
+                        }
+                        .ignoresSafeArea(.keyboard)
+                        .transition(.opacity)
                     }
                 }
             }
@@ -1274,6 +1342,28 @@ struct BookReaderEngine: View {
                     vm.loadChapter(index: pageIndex)
                 }
             }
+        }
+        .popover(item: Binding<FootnoteItem?>(
+            get: { activeFootnoteText.map { FootnoteItem(text: $0) } },
+            set: { activeFootnoteText = $0?.text }
+        )) { item in
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Label("Footnote Reference", systemImage: "info.circle")
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .foregroundColor(.blue)
+                    Spacer()
+                }
+                ScrollView {
+                    Text(item.text)
+                        .font(.system(size: 13, weight: .medium, design: .serif))
+                        .foregroundColor(.primary)
+                        .lineSpacing(4)
+                }
+            }
+            .padding(16)
+            .frame(width: 320, height: 180)
+            .presentationCompactAdaptation(.popover)
         }
 
         .popover(item: $activeHighlightToEdit) { annotation in
@@ -1805,6 +1895,11 @@ struct HighlightQuickPopoverView: View {
         .padding(12)
         .frame(width: 260, height: 110)
     }
+}
+
+struct FootnoteItem: Identifiable {
+    let id = UUID()
+    let text: String
 }
 
 
