@@ -398,7 +398,7 @@ struct EPUBWebView: UIViewRepresentable {
                 let js = """
                 setTimeout(function() {
                     var sv = document.scrollingElement || document.documentElement;
-                    if (document.body.style.columnCount) {
+                    if (window.getComputedStyle(document.body).columnWidth !== 'auto') {
                         var maxScroll = sv.scrollWidth - window.innerWidth;
                         window.scrollTo({ left: maxScroll, behavior: 'instant' });
                     } else {
@@ -414,7 +414,7 @@ struct EPUBWebView: UIViewRepresentable {
                     let restoreJS = """
                     setTimeout(function() {
                         var sv = document.scrollingElement || document.documentElement;
-                        var isHoriz = document.body.style.columnCount || window.getComputedStyle(document.body).columnCount !== 'auto';
+                        var isHoriz = window.getComputedStyle(document.body).columnWidth !== 'auto';
                         if (isHoriz) {
                             var pageIndex = Math.round(\(fraction) * (sv.scrollWidth / window.innerWidth - 1));
                             window.scrollTo({ left: pageIndex * window.innerWidth, behavior: 'instant' });
@@ -641,7 +641,7 @@ struct EPUBWebView: UIViewRepresentable {
             // ── Scroll Fraction reporting listener ────────────────────────────
             function postFraction() {
                 var sv = document.scrollingElement || document.documentElement;
-                var isHoriz = document.body.style.columnCount || window.getComputedStyle(document.body).columnCount !== 'auto';
+                var isHoriz = window.getComputedStyle(document.body).columnWidth !== 'auto';
                 var fraction = 0;
                 if (isHoriz) {
                     var maxScroll = sv.scrollWidth - window.innerWidth;
@@ -655,7 +655,7 @@ struct EPUBWebView: UIViewRepresentable {
 
             function postMetrics() {
                 var sv = document.scrollingElement || document.documentElement;
-                var isHoriz = document.body.style.columnCount || window.getComputedStyle(document.body).columnCount !== 'auto';
+                var isHoriz = window.getComputedStyle(document.body).columnWidth !== 'auto';
                 var current = 0;
                 var total = 1;
                 if (isHoriz) {
@@ -1051,11 +1051,10 @@ struct EPUBWebView: UIViewRepresentable {
             var el = document.getElementById('__inksync_live__');
             if (!el) { el = document.createElement('style'); el.id = '__inksync_live__'; document.head.appendChild(el); }
             el.textContent = `\(css.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "`", with: "\\`"))`;
-            
             // Restore scroll position
             setTimeout(function() {
                 var sv = document.scrollingElement || document.documentElement;
-                var isHoriz = document.body.style.columnCount || window.getComputedStyle(document.body).columnCount !== 'auto';
+                var isHoriz = window.getComputedStyle(document.body).columnWidth !== 'auto';
                 if (isHoriz) {
                     var maxScroll = sv.scrollWidth - window.innerWidth;
                     window.scrollTo({ left: maxScroll * \(clampedFraction), behavior: 'instant' });
