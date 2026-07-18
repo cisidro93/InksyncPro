@@ -7,11 +7,17 @@ import Combine
 class ConversionManager: ObservableObject {
     var convertedPDFs: [ConvertedPDF] {
         get { LibraryService.shared.items }
-        set { LibraryService.shared.items = newValue }
+        set {
+            LibraryService.shared.items = newValue
+            hasStructuralChange = true
+        }
     }
     var collections: [PDFCollection] {
         get { LibraryService.shared.collections }
-        set { LibraryService.shared.collections = newValue }
+        set {
+            LibraryService.shared.collections = newValue
+            hasStructuralChange = true
+        }
     }
     var virtualOmnibuses: [VirtualOmnibus] {
         get { LibraryService.shared.virtualOmnibuses }

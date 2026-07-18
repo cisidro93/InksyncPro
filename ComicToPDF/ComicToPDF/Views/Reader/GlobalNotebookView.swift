@@ -197,9 +197,7 @@ struct GlobalNotebookView: View {
             
             VStack(spacing: 0) {
                 // Glassmorphic Header
-                if activeTab == .notebooks {
-                    headerView
-                }
+                headerView
                 
                 // Content Switcher
                 if activeTab == .notebooks {

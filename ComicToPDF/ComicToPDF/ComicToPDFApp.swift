@@ -106,6 +106,7 @@ struct InksyncProApp: App {
                          InksyncProApp.scheduleAppRefresh()
                     case .active:
                          SecurityManager.shared.handleAppForegrounding()
+                         NotificationCenter.default.post(name: .libraryNeedsRescan, object: nil)
                     @unknown default: break
                     }
                 }
