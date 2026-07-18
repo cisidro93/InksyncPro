@@ -16,18 +16,29 @@ struct UnifiedReaderView: View {
         self.pdf = pdf
         self.allBooks = allBooks
         self._showNotebookPanel = State(initialValue: startWithNotebookOpen)
+        
+        let initialCheck: Bool?
+        if pdf.url.pathExtension.lowercased() == "epub" {
+            if pdf.contentType == .book {
+                initialCheck = false
+            } else if pdf.contentType == .hybrid {
+                initialCheck = true
+            } else {
+                initialCheck = nil
+            }
+        } else {
+            initialCheck = nil
+        }
+        self._epubComicCheckResult = State(initialValue: initialCheck)
     }
     
     /// Tri-state: nil = still checking, true = comic EPUB, false = text EPUB
-    @State private var epubComicCheckResult: Bool? = nil
+    @State private var epubComicCheckResult: Bool?
     
-
-    
-    /// Computed once at init — determines whether we need an async check
+    /// Determines whether we need an async background check for this EPUB
     private var needsEPUBComicCheck: Bool {
         let ext = pdf.url.pathExtension.lowercased()
-        let isEligibleType = pdf.contentType == .book || pdf.contentType == .hybrid
-        return isEligibleType && ext == "epub" && pdf.metadata.hasFormatOverride != true
+        return ext == "epub" && pdf.metadata.hasFormatOverride != true && epubComicCheckResult == nil
     }
     
     var body: some View {
@@ -72,30 +83,23 @@ struct UnifiedReaderView: View {
                 ZStack {
                     Color(hex: "#0a0a0f").edgesIgnoringSafeArea(.all)
                     
-                    switch pdf.contentType {
-                    case .comic, .manga:
-                        ComicReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
-                    case .book, .hybrid:
-                        if pdf.url.pathExtension.lowercased() == "pdf" {
-                            DocumentReaderEngine(pdf: pdf, onDismiss: { dismiss() })
-                        } else if needsEPUBComicCheck {
-                            // Async-resolved EPUB comic check
-                            if let isComic = epubComicCheckResult {
-                                if isComic {
-                                    ComicReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
-                                } else {
-                                    BookReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
-                                }
-                            } else {
-                                // Still checking — show loading indicator
-                                ProgressView("Loading…")
-                                    .foregroundColor(.white)
-                            }
-                        } else {
-                            if pdf.contentType == .hybrid {
+                    if pdf.url.pathExtension.lowercased() == "pdf" {
+                        DocumentReaderEngine(pdf: pdf, onDismiss: { dismiss() })
+                    } else if needsEPUBComicCheck {
+                        ProgressView("Loading…")
+                            .foregroundColor(.white)
+                    } else {
+                        if let isComic = epubComicCheckResult {
+                            if isComic {
                                 ComicReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
                             } else {
                                 BookReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
+                            }
+                        } else {
+                            if pdf.contentType == .book {
+                                BookReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
+                            } else {
+                                ComicReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
                             }
                         }
                     }
