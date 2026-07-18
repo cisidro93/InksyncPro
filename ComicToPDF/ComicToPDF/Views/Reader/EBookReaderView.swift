@@ -1073,7 +1073,7 @@ struct EBookWebReader: View {
             await loadChapter()
         }
         .onChange(of: prefs.fontSize) { _, _ in updateLiveCSS() }
-        .onChange(of: prefs.themeMode) { _, _ in updateLiveCSS() }
+        .onChange(of: prefs.themeRaw) { _, _ in updateLiveCSS() }
         .onChange(of: prefs.paginationMode) { _, _ in updateLiveCSS() }
     }
 
