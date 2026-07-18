@@ -365,11 +365,7 @@ public struct PDFTitleRecoverer {
         var bestText: String = ""
         
         attrString.enumerateAttribute(.font, in: NSRange(location: 0, length: attrString.length), options: []) { (value, range, stop) in
-            #if canImport(UIKit)
             guard let font = value as? UIFont else { return }
-            #else
-            guard let font = value as? NSFont else { return }
-            #endif
             
             let substring = attrString.attributedSubstring(from: range).string
                 .trimmingCharacters(in: .whitespacesAndNewlines)

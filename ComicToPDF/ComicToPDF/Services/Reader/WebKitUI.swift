@@ -139,7 +139,7 @@ public struct WebView: UIViewRepresentable {
             self.parent = parent
         }
         
-        public func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) {
+        public func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
             if let url = navigationAction.request.url, let onNavigate = parent.onNavigate {
                 if !onNavigate(url, webView) {
                     decisionHandler(.cancel)
