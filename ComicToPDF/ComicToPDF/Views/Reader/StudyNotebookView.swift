@@ -1365,6 +1365,7 @@ struct StudyNotebookView: View {
                                 }
                             }
                         }
+                    }
                     .padding(12)
                 }
                 .background(Color.inkSurface.opacity(0.95))
