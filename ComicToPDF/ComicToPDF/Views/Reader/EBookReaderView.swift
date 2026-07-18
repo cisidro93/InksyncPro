@@ -1040,6 +1040,9 @@ struct EBookWebReader: UIViewRepresentable {
                         )
                     }
 
+                    // Wrap body content with #inksync-viewport
+                    html = EBookWebReader.wrapHTMLBodyWithViewport(html)
+
                     // Inject pre-computed CSS
                     if let range = html.range(of: "</head>", options: .caseInsensitive) {
                         return html.replacingCharacters(in: range, with: cssToInject + "</head>")
@@ -1253,22 +1256,40 @@ struct EBookWebReader: UIViewRepresentable {
             font-size: \(fontSize)px !important;
             line-height: \(lineHeight) !important;
             text-align: \(textAlign) !important;
-            \(pagedCSS)
             margin: 0 !important;
             height: 100% !important;
             width: 100% !important;
-            padding-top: 60px !important;
-            padding-bottom: 60px !important;
-            padding-left: \(paddingLeft)px !important;
-            padding-right: \(paddingRight)px !important;
-            box-sizing: border-box !important;
+            overflow-x: scroll !important;
+            overflow-y: hidden !important;
             word-wrap: break-word;
             -webkit-text-size-adjust: none;
             letter-spacing: \(letterSpacing) !important;
             word-spacing: \(wordSpacing) !important;
             -webkit-hyphens: \(hyphenCSS) !important;
             hyphens: \(hyphenCSS) !important;
-            \(isPaged ? "overflow-x: scroll !important; overflow-y: hidden !important;" : "")
+        }
+        #inksync-viewport {
+            margin: 0 !important;
+            box-sizing: border-box !important;
+            \(isPaged ? """
+            display: block !important;
+            position: static !important;
+            padding-top: 60px !important;
+            padding-bottom: 60px !important;
+            padding-left: \(paddingLeft)px !important;
+            padding-right: \(paddingRight)px !important;
+            width: auto !important;
+            height: 100% !important;
+            \(pagedCSS)
+            """ : """
+            display: block !important;
+            width: 100% !important;
+            height: auto !important;
+            padding-top: 60px !important;
+            padding-bottom: 60px !important;
+            padding-left: \(paddingLeft)px !important;
+            padding-right: \(paddingRight)px !important;
+            """)
         }
         body, p, span, li, td, th, div, a {
             font-family: \(fontFamily) !important;
@@ -1618,6 +1639,26 @@ struct EBookWebReader: UIViewRepresentable {
 
 
     
+    private nonisolated static func wrapHTMLBodyWithViewport(_ html: String) -> String {
+        var result = html
+        let bodyPattern = "<body([^>]*)>"
+        if let regex = try? NSRegularExpression(pattern: bodyPattern, options: .caseInsensitive),
+           let match = regex.firstMatch(in: result, options: [], range: NSRange(result.startIndex..., in: result)) {
+            let bodyTagRange = Range(match.range, in: result)!
+            let insertionIndex = bodyTagRange.upperBound
+            result.insert(contentsOf: "<div id=\"inksync-viewport\">", at: insertionIndex)
+        } else {
+            if let bodyIndex = result.range(of: "<body>", options: .caseInsensitive)?.upperBound {
+                result.insert(contentsOf: "<div id=\"inksync-viewport\">", at: bodyIndex)
+            }
+        }
+        
+        if let closeBodyRange = result.range(of: "</body>", options: .caseInsensitive) {
+            result.insert(contentsOf: "</div>", at: closeBodyRange.lowerBound)
+        }
+        return result
+    }
+
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
     @MainActor
