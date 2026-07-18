@@ -806,10 +806,10 @@ struct EPUBWebView: UIViewRepresentable {
         let cols = prefs.columnCount == 0 ? defaultColumns : prefs.columnCount
         
         let gap = isPaged ? 0 : Int(margin * 2)
+        let colWidth = size.width / CGFloat(cols)
         
         let pagedCSS = isPaged ? """
-            column-count: \(cols) !important;
-            column-width: auto !important;
+            column-width: \(colWidth)px !important;
             column-gap: 0px !important;
             column-fill: auto !important;
             column-rule: none !important;

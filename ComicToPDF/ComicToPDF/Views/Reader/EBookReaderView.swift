@@ -1086,13 +1086,13 @@ struct EBookWebReader: UIViewRepresentable {
         let cols = prefs.columnCount == 0 ? defaultColumns : prefs.columnCount
         
         let gap = Int(margin * 2)
+        let colWidth = size.width / CGFloat(cols)
         
         let pagedCSS = isPaged ? """
-            column-count: \(cols) !important;
-            column-width: auto !important;
-            column-gap: \(gap)px !important;
+            column-width: \(colWidth)px !important;
+            column-gap: 0px !important;
             column-fill: auto !important;
-            column-rule: 1px solid rgba(128, 128, 128, 0.15) !important;
+            column-rule: none !important;
         """ : ""
 
         let paddingLeft = isPaged ? 0 : margin
