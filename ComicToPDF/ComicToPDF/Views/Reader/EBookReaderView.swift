@@ -964,6 +964,21 @@ struct EBookWebReader: UIViewRepresentable {
     
     func updateUIView(_ wv: WKWebView, context: Context) {
         guard let dir = unzipDir else { return }
+        
+        // Configure paging and scrolling constraints
+        if prefs.paginationMode == EBookPaginationMode.paged.rawValue {
+            wv.scrollView.isPagingEnabled = true
+            wv.scrollView.alwaysBounceVertical = false
+            wv.scrollView.alwaysBounceHorizontal = true
+            wv.scrollView.showsHorizontalScrollIndicator = false
+            wv.scrollView.showsVerticalScrollIndicator = false
+        } else {
+            wv.scrollView.isPagingEnabled = false
+            wv.scrollView.alwaysBounceVertical = true
+            wv.scrollView.alwaysBounceHorizontal = false
+            wv.scrollView.showsHorizontalScrollIndicator = false
+            wv.scrollView.showsVerticalScrollIndicator = true
+        }
 
         var contentURL = dir.appendingPathComponent(spineItem.href)
         if !FileManager.default.fileExists(atPath: contentURL.path) {
@@ -1321,7 +1336,7 @@ struct EBookWebReader: UIViewRepresentable {
 
         function postFraction() {
             var sv = document.scrollingElement || document.documentElement;
-            var isHoriz = document.body.style.columnCount || window.getComputedStyle(document.body).columnCount !== 'auto';
+            var isHoriz = document.body.style.columnWidth || window.getComputedStyle(document.body).columnWidth !== 'auto';
             var fraction = 0;
             if (isHoriz) {
                 var maxScroll = sv.scrollWidth - window.innerWidth;
@@ -1356,7 +1371,7 @@ struct EBookWebReader: UIViewRepresentable {
             var behavior = smooth ? 'smooth' : 'instant';
             
             var sv = document.scrollingElement || document.documentElement;
-            var isHoriz = document.body.style.columnCount || window.getComputedStyle(document.body).columnCount !== 'auto';
+            var isHoriz = document.body.style.columnWidth || window.getComputedStyle(document.body).columnWidth !== 'auto';
             if (isHoriz) {
                 var style = window.getComputedStyle(document.body);
                 var gap = parseFloat(style.columnGap) || 0;
