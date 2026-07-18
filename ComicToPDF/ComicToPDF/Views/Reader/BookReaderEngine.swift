@@ -985,11 +985,19 @@ struct EPUBWebView: UIViewRepresentable {
         *, *::before, *::after { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
         html {
             margin: 0 !important; padding: 0 !important;
-            height: 100% !important; width: 100% !important;
+            width: 100% !important;
             column-width: auto !important;
             touch-action: pan-x pan-y;
-            \(isPaged ? "overflow-x: scroll !important; overflow-y: hidden !important;" : "overflow-x: hidden !important; overflow-y: auto !important;")
             background-color: \(bgColor) !important;
+            \(isPaged ? """
+            height: 100% !important;
+            overflow-x: scroll !important;
+            overflow-y: hidden !important;
+            """ : """
+            height: auto !important;
+            overflow-x: hidden !important;
+            overflow-y: auto !important;
+            """)
         }
         body {
             color: \(textColor) !important;
@@ -998,16 +1006,20 @@ struct EPUBWebView: UIViewRepresentable {
             line-height: \(lineHeight) !important;
             text-align: \(textAlign) !important;
             margin: 0 !important;
-            height: 100% !important;
             width: 100% !important;
-            overflow-x: scroll !important;
-            overflow-y: hidden !important;
+            overflow: visible !important;
+            background-color: transparent !important;
             word-wrap: break-word;
             -webkit-text-size-adjust: none;
             letter-spacing: \(letterSpacing) !important;
             word-spacing: \(wordSpacing) !important;
             -webkit-hyphens: \(hyphenCSS) !important;
             hyphens: \(hyphenCSS) !important;
+            \(isPaged ? """
+            height: 100% !important;
+            """ : """
+            height: auto !important;
+            """)
         }
         #inksync-viewport {
             margin: 0 !important;
