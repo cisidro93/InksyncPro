@@ -25,19 +25,17 @@
         <key>NSExtensionAttributes</key>
         <dict>
             <key>NSExtensionActivationRule</key>
-            <string>SUBQUERY (
-                extensionItems,
-                $extensionItem,
-                SUBQUERY (
-                    $extensionItem.attachments,
-                    $attachment,
-                    ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.archive"
-                    OR ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.data"
-                    OR ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.file-url"
-                    OR ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "com.adobe.pdf"
-                    OR ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "org.idpf.epub-container"
-                ).@count > 0
-            ).@count > 0</string>
+            <dict>
+                <!-- Show extension for any sharing context that includes at least one file.
+                     We intentionally accept any file here and filter to compatible formats
+                     (PDF, EPUB, CBZ, CBR) inside ShareExtensionView.swift using magic-byte
+                     detection. This matches how Books, Kindle, GoodReader, and PDF Expert
+                     work — they all use NSExtensionActivationSupportsFileWithMaxCount so that
+                     cloud-sourced dynamic UTIs (dyn.xxx from Drive/Dropbox) are not silently
+                     excluded by the OS's compile-time UTI conformance table.            -->
+                <key>NSExtensionActivationSupportsFileWithMaxCount</key>
+                <integer>10</integer>
+            </dict>
         </dict>
         <key>NSExtensionPrincipalClass</key>
         <string>$(PRODUCT_MODULE_NAME).ShareViewController</string>

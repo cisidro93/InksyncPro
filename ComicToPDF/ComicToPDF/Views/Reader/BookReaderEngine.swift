@@ -1374,14 +1374,23 @@ struct BookReaderEngine: View {
         guard let webView = webViewReference else { return }
         let scroll = webView.scrollView
         let isPaged = prefs.paginationMode == EBookPaginationMode.paged.rawValue
-        
+
         if isPaged {
-            let width = webView.bounds.width
+            let width = max(webView.bounds.width, 1)
+            let contentWidth = scroll.contentSize.width
             let currentOffset = scroll.contentOffset.x
+
+            // Guard against layout-not-ready (contentSize is 0 briefly after chapter load)
+            guard contentWidth > width else { return }
+
+            let maxOffset = contentWidth - width
             let targetOffset = currentOffset + width
-            let maxOffset = scroll.contentSize.width - width
-            
-            if targetOffset >= scroll.contentSize.width - 4 {
+
+            // Consider "at last page" if the current offset is already at or beyond maxOffset,
+            // OR if the next page would scroll past the end. Both cases → chapter advance.
+            let atLastPage = (currentOffset >= maxOffset - 4) || (targetOffset >= contentWidth - 4)
+
+            if atLastPage {
                 let lastIdx = vm.chapterHtmlFiles.count - 1
                 if vm.currentChapterIndex >= lastIdx {
                     attemptBookSeriesContinuation()
@@ -1392,12 +1401,18 @@ struct BookReaderEngine: View {
                 scroll.setContentOffset(CGPoint(x: min(targetOffset, maxOffset), y: 0), animated: true)
             }
         } else {
-            let height = webView.bounds.height
+            let height = max(webView.bounds.height, 1)
+            let contentHeight = scroll.contentSize.height
             let currentOffset = scroll.contentOffset.y
+
+            guard contentHeight > height else { return }
+
+            let maxOffset = contentHeight - height
             let targetOffset = currentOffset + height * 0.9
-            let maxOffset = scroll.contentSize.height - height
-            
-            if targetOffset >= scroll.contentSize.height - 4 {
+
+            let atLastPage = (currentOffset >= maxOffset - 4) || (targetOffset >= contentHeight - 4)
+
+            if atLastPage {
                 let lastIdx = vm.chapterHtmlFiles.count - 1
                 if vm.currentChapterIndex >= lastIdx {
                     attemptBookSeriesContinuation()
@@ -1414,11 +1429,11 @@ struct BookReaderEngine: View {
         guard let webView = webViewReference else { return }
         let scroll = webView.scrollView
         let isPaged = prefs.paginationMode == EBookPaginationMode.paged.rawValue
-        
+
         if isPaged {
-            let width = webView.bounds.width
+            let width = max(webView.bounds.width, 1)
             let currentOffset = scroll.contentOffset.x
-            
+
             if currentOffset <= 4 {
                 if vm.currentChapterIndex > 0 {
                     scrollToLastPageOnLoad = true
@@ -1429,9 +1444,9 @@ struct BookReaderEngine: View {
                 scroll.setContentOffset(CGPoint(x: max(0, targetOffset), y: 0), animated: true)
             }
         } else {
-            let height = webView.bounds.height
+            let height = max(webView.bounds.height, 1)
             let currentOffset = scroll.contentOffset.y
-            
+
             if currentOffset <= 4 {
                 if vm.currentChapterIndex > 0 {
                     vm.loadChapter(index: vm.currentChapterIndex - 1)
