@@ -1,5 +1,6 @@
 import SwiftUI
 import MessageUI
+import UIKit
 
 struct DualExportView: View {
     let pdf: ConvertedPDF
@@ -12,11 +13,13 @@ struct DualExportView: View {
     @State private var showingShareSheet = false
     @State private var showingMailView = false
     @State private var showingMailAlert = false
+    @State private var showingSaveToFiles = false
 
     @State private var exportURL: URL?
     @State private var navigateToSync = false
     @State private var isProcessing = false
     @State private var mailResult: Result<MFMailComposeResult, Error>? = nil
+    @State private var saveToFilesSuccessToast = false
     
     var body: some View {
         NavigationStack {
@@ -117,7 +120,33 @@ struct DualExportView: View {
                     .background(Color.inkSurface.opacity(0.8))
                     .cornerRadius(12)
                 }
-                
+
+                // Option C: Save to Files
+                Button {
+                    handleSaveToFiles()
+                } label: {
+                    HStack(spacing: 16) {
+                        Image(systemName: "folder.fill")
+                            .font(.system(size: 30))
+                            .foregroundStyle(.yellow)
+                            .frame(width: 40)
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Save to Files")
+                                .font(.headline)
+                                .foregroundStyle(.primary)
+                            Text("Copy the original file to iCloud Drive, On My iPhone, or any Files location.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding()
+                    .background(Color.inkSurface.opacity(0.8))
+                    .cornerRadius(12)
+                }
 
                 // Option D: Email to Kindle
                 if !kindleEmail.isEmpty {
@@ -162,6 +191,25 @@ struct DualExportView: View {
                 
                 }
                 .padding()
+
+                // Success toast for Save to Files
+                if saveToFilesSuccessToast {
+                    VStack {
+                        Spacer()
+                        HStack(spacing: 10) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                            Text("Saved to Files")
+                                .fontWeight(.medium)
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 12)
+                        .background(.ultraThinMaterial)
+                        .cornerRadius(20)
+                        .padding(.bottom, 32)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
+                }
             }
             .navigationDestination(isPresented: $navigateToSync) {
                 WiFiView()
@@ -192,7 +240,21 @@ struct DualExportView: View {
                     )
                 }
             }
-
+            .sheet(isPresented: $showingSaveToFiles) {
+                if let url = exportURL {
+                    DocumentExporterSheet(fileURL: url) { saved in
+                        if saved {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                saveToFilesSuccessToast = true
+                            }
+                            Task {
+                                try? await Task.sleep(nanoseconds: 2_500_000_000)
+                                withAnimation { saveToFilesSuccessToast = false }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
     
@@ -223,6 +285,36 @@ struct DualExportView: View {
             Logger.shared.log("Staged single file to queue for Local High-Quality Export", category: "Export", type: .success)
         }
     }
+
+    private func handleSaveToFiles() {
+        isProcessing = true
+        Task {
+            // Resolve the actual file URL — prefer the stored url, fall back to physical path
+            let sourceURL = pdf.url
+            guard FileManager.default.fileExists(atPath: sourceURL.path) else {
+                await MainActor.run { isProcessing = false }
+                return
+            }
+            // Copy to a temp directory with the correct name so the picker shows a clean filename
+            let tempDir = FileManager.default.temporaryDirectory
+                .appendingPathComponent("InksyncExport", isDirectory: true)
+            try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+            let destURL = tempDir.appendingPathComponent(sourceURL.lastPathComponent)
+            try? FileManager.default.removeItem(at: destURL)
+            do {
+                try FileManager.default.copyItem(at: sourceURL, to: destURL)
+                await MainActor.run {
+                    self.exportURL = destURL
+                    self.isProcessing = false
+                    self.showingSaveToFiles = true
+                }
+                Logger.shared.log("Prepared '\(destURL.lastPathComponent)' for Save to Files export", category: "Export", type: .success)
+            } catch {
+                Logger.shared.log("Save to Files preparation failed: \(error.localizedDescription)", category: "Export", type: .error)
+                await MainActor.run { isProcessing = false }
+            }
+        }
+    }
     
     private func handleEmailExport() {
         isProcessing = true
@@ -239,4 +331,38 @@ struct DualExportView: View {
         }
     }
     
+}
+
+// MARK: - UIDocumentPickerViewController wrapper for SwiftUI
+
+/// Presents a native "Save to Files" picker using UIDocumentPickerViewController(forExporting:).
+/// This is the same API used by every major iOS app (PDF Expert, GoodReader, Books, etc.).
+struct DocumentExporterSheet: UIViewControllerRepresentable {
+    let fileURL: URL
+    var onDismiss: ((_ saved: Bool) -> Void)?
+
+    func makeCoordinator() -> Coordinator { Coordinator(onDismiss: onDismiss) }
+
+    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
+        // forExporting: presents the "Save to Files" destination picker.
+        // asCopy: false means the system moves the temp file (which we own) into the chosen location.
+        let picker = UIDocumentPickerViewController(forExporting: [fileURL], asCopy: true)
+        picker.shouldShowFileExtensions = true
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ uiViewController: UIDocumentPickerViewController, context: Context) {}
+
+    class Coordinator: NSObject, UIDocumentPickerDelegate {
+        let onDismiss: ((_ saved: Bool) -> Void)?
+        init(onDismiss: ((_ saved: Bool) -> Void)?) { self.onDismiss = onDismiss }
+
+        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+            onDismiss?(true)
+        }
+        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+            onDismiss?(false)
+        }
+    }
 }
