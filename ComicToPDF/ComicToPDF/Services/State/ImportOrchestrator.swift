@@ -43,7 +43,7 @@ actor ImportOrchestrator {
             defer { if accessing { folderURL.stopAccessingSecurityScopedResource() } }
             
             do {
-                let bookmarkData = try folderURL.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)
+                let bookmarkData = try folderURL.bookmarkData(options: .securityScope, includingResourceValuesForKeys: nil, relativeTo: nil)
                 await MainActor.run {
                     if !AppSettingsManager.shared.watchedFolders.contains(where: { $0.bookmarkData == bookmarkData }) {
                         let watched = AppSettingsManager.WatchedFolder(name: folderURL.lastPathComponent, bookmarkData: bookmarkData)
@@ -680,7 +680,7 @@ actor ImportOrchestrator {
                 var isStale = false
                 do {
                     await MainActor.run { manager.processingStatus = "Resolving \(folder.name)..." }
-                    let resolvedURL = try URL(resolvingBookmarkData: folder.bookmarkData, options: .withoutUI, relativeTo: nil, bookmarkDataIsStale: &isStale)
+                    let resolvedURL = try URL(resolvingBookmarkData: folder.bookmarkData, options: [.withoutUI, .withSecurityScope], relativeTo: nil, bookmarkDataIsStale: &isStale)
                     
                     if isStale {
                         staleBookmarkIndices.append(index)

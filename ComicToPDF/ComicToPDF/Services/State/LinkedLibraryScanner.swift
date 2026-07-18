@@ -60,7 +60,7 @@ final class LinkedLibraryScanner: ObservableObject {
         var isStale = false
         let resolvedURL = try URL(
             resolvingBookmarkData: bookmarkData,
-            options: .withoutUI,
+            options: [.withoutUI, .withSecurityScope],
             relativeTo: nil,
             bookmarkDataIsStale: &isStale
         )
@@ -145,7 +145,7 @@ final class LinkedLibraryScanner: ObservableObject {
             var isStale = false
             let url = try? URL(
                 resolvingBookmarkData: volumeData,
-                options: .withoutUI,
+                options: [.withoutUI, .withSecurityScope],
                 relativeTo: nil,
                 bookmarkDataIsStale: &isStale
             )
@@ -202,7 +202,7 @@ final class LinkedLibraryScanner: ObservableObject {
                 var fileIsStale = false
                 if let resolved = try? URL(
                     resolvingBookmarkData: item.bookmark,
-                    options: .withoutUI,
+                    options: [.withoutUI, .withSecurityScope],
                     relativeTo: nil,
                     bookmarkDataIsStale: &fileIsStale
                 ) {
@@ -279,7 +279,7 @@ final class LinkedLibraryScanner: ObservableObject {
                 var rootPath: String? = nil
                 if let rootURL = try? URL(
                     resolvingBookmarkData: volumeData,
-                    options: .withoutUI,
+                    options: [.withoutUI, .withSecurityScope],
                     relativeTo: nil,
                     bookmarkDataIsStale: &isStale
                 ) {
@@ -291,7 +291,7 @@ final class LinkedLibraryScanner: ObservableObject {
                         var fileIsStale = false
                         if let resolved = try? URL(
                             resolvingBookmarkData: bm,
-                            options: .withoutUI,
+                            options: [.withoutUI, .withSecurityScope],
                             relativeTo: nil,
                             bookmarkDataIsStale: &fileIsStale
                         ) {
@@ -413,9 +413,9 @@ final class LinkedLibraryScanner: ObservableObject {
         guard let manager = conversionManager else { return }
 
         for pair in copiedPairs {
-            // ✅ iOS CORRECT: options: [] for per-file bookmark creation
+            // ✅ iOS CORRECT: options: .securityScope for per-file bookmark creation
             guard let bookmark = try? pair.driveURL.bookmarkData(
-                options: [],
+                options: .securityScope,
                 includingResourceValuesForKeys: nil,
                 relativeTo: nil
             ) else {
@@ -506,9 +506,9 @@ final class LinkedLibraryScanner: ObservableObject {
                       let fileSize = attrs[.size] as? Int64
                 else { continue }
 
-                // Per-file bookmarks use options: []
+                // Per-file bookmarks use options: .securityScope
                 guard let bookmark = try? fileURL.bookmarkData(
-                    options: [],
+                    options: .securityScope,
                     includingResourceValuesForKeys: nil,
                     relativeTo: nil
                 ) else { continue }
@@ -568,7 +568,7 @@ final class LinkedLibraryScanner: ObservableObject {
                             var isStale = false
                             if let resolvedURL = try? URL(
                                 resolvingBookmarkData: bookmark,
-                                options: .withoutUI,
+                                options: [.withoutUI, .withSecurityScope],
                                 relativeTo: nil,
                                 bookmarkDataIsStale: &isStale
                             ) {
@@ -606,11 +606,11 @@ final class LinkedLibraryScanner: ObservableObject {
                 var isStale = false
                 if let staleURL = try? URL(
                     resolvingBookmarkData: staleData,
-                    options: .withoutUI,
+                    options: [.withoutUI, .withSecurityScope],
                     relativeTo: nil,
                     bookmarkDataIsStale: &isStale
                 ), let freshBookmark = try? staleURL.bookmarkData(
-                    options: [],
+                    options: .securityScope,
                     includingResourceValuesForKeys: nil,
                     relativeTo: nil
                 ) {

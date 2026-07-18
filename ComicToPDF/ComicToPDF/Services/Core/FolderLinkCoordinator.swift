@@ -4,17 +4,18 @@ import UniformTypeIdentifiers
 /// Presents a native iOS Folder picker with `asCopy: false` to establish
 /// a live, linked connection to an external USB drive, Dropbox, iCloud Drive,
 /// Google Drive, or any other Files-app provider — without copying files to the sandbox.
+@MainActor
 final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
 
     private static var live: FolderLinkCoordinator?
     /// Called with every picked URL and bookmark. Passes an empty array on cancel.
-    private var completion: (([(url: URL, bookmark: Data)]) -> Void)?
+    private var completion: (@MainActor @Sendable ([(url: URL, bookmark: Data)]) -> Void)?
 
     private override init() {}
 
     /// Present the folder picker.
     /// - Parameter completion: Receives all selected folder URLs and bookmark data, or an empty array on cancel.
-    static func present(completion: @escaping ([(url: URL, bookmark: Data)]) -> Void) {
+    static func present(completion: @escaping @MainActor @Sendable ([(url: URL, bookmark: Data)]) -> Void) {
         let coordinator = FolderLinkCoordinator()
         coordinator.completion = completion
         FolderLinkCoordinator.live = coordinator
@@ -56,7 +57,7 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }
             do {
                 let bookmarkData = try url.bookmarkData(
-                    options: [],
+                    options: .securityScope,
                     includingResourceValuesForKeys: [.isUbiquitousItemKey],
                     relativeTo: nil
                 )
