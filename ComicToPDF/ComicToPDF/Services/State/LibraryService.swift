@@ -22,18 +22,6 @@ final class LibraryService: ObservableObject {
             self.virtualOmnibuses = await LibraryDatabaseService.shared.loadVirtualOmnibuses()
             Logger.shared.log("LibraryService: loaded \(loadedItems.count) items, \(loadedCollections.count) collections, \(self.virtualOmnibuses.count) virtual omnibuses.", category: "Library")
             self.syncAllRemoteVirtualOmnibuses()
-            
-            // Spawn background task for re-anchoring, ghost pruning, and self-healing.
-            Task {
-                do {
-                    let didChange = try await LibraryRepository.shared.performSelfHealingAndCleanup()
-                    if didChange {
-                        await loadLibrary()
-                    }
-                } catch {
-                    Logger.shared.log("LibraryService: background self-healing failed: \(error.localizedDescription)", category: "Library", type: .error)
-                }
-            }
         } catch {
             Logger.shared.log("LibraryService: failed to load library: \(error.localizedDescription)", category: "Library", type: .error)
         }

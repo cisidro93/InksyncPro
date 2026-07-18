@@ -200,9 +200,37 @@ actor LibraryModelActor {
             }
         }
         
-        // ── Keep empty/manually created collections valid ─────────────────────
-        // We preserve all existing collections in the database.
-        let validCols = sdCols
+        // ── Prune empty/ghost collections whose corresponding series folder does not exist ──
+        let activeCollectionIDs = Set(validDocs.compactMap { $0.collectionId })
+        var validCols: [SDPDFCollection] = []
+        
+        for col in sdCols {
+            if activeCollectionIDs.contains(col.id) {
+                validCols.append(col)
+                continue
+            }
+            
+            // Collection has no books. Check if there is a matching folder on disk.
+            let colFolderName = col.name.replacingOccurrences(of: "/", with: "-")
+                                        .replacingOccurrences(of: "\\", with: "-")
+                                        .replacingOccurrences(of: ":", with: "-")
+                                        .replacingOccurrences(of: "*", with: "")
+                                        .replacingOccurrences(of: "?", with: "")
+                                        .replacingOccurrences(of: "\"", with: "'")
+                                        .replacingOccurrences(of: "<", with: "(")
+                                        .replacingOccurrences(of: ">", with: ")")
+                                        .replacingOccurrences(of: "|", with: "-")
+            
+            let checkFolderURL = docsRoot?.appendingPathComponent(colFolderName, isDirectory: true)
+            let folderExists = checkFolderURL.map { fileManager.fileExists(atPath: $0.path) } ?? false
+            
+            if folderExists {
+                validCols.append(col)
+            } else {
+                modelContext.delete(col)
+                didUpdate = true
+            }
+        }
         
         // ── Prune orphaned SDSeriesMemory records ─────────────────────────
         let liveSeriesNames = Set(validCols.map { $0.name.lowercased().trimmingCharacters(in: .whitespaces) })
@@ -361,6 +389,7 @@ final class LibraryRepository: Sendable {
     
     /// Asynchronously fetches all library items and collections from SwiftData background context using fast loading.
     func loadLibrary() async throws -> ([ConvertedPDF], [PDFCollection]) {
+        _ = try await actor.performSelfHealingAndCleanup()
         let pdfs = try await actor.fetchDocumentsFast()
         let cols = try await actor.fetchAllCollections()
         return (pdfs, cols)
