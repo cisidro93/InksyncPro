@@ -1290,6 +1290,11 @@ struct EBookWebReader: UIViewRepresentable {
         div, section, article, main {
             height: 100% !important;
         }
+        div, section, article, main, p, blockquote {
+            display: block !important;
+            position: static !important;
+            float: none !important;
+        }
         """ : "")
         div, section, article {
             column-count: auto !important;
@@ -1328,6 +1333,10 @@ struct EBookWebReader: UIViewRepresentable {
                 el.style.removeProperty('background-color');
                 el.style.removeProperty('color');
             });
+            var liveStyle = document.getElementById('__inksync_live__');
+            if (liveStyle) {
+                document.head.appendChild(liveStyle);
+            }
         });
 
         var _currentPage = \(initialPage);
@@ -1586,9 +1595,9 @@ struct EBookWebReader: UIViewRepresentable {
             // Restore scroll position
             setTimeout(function() {
                 var sv = document.scrollingElement || document.documentElement;
-                var isHoriz = document.body.style.columnCount || window.getComputedStyle(document.body).columnCount !== 'auto';
+                var isHoriz = document.body.style.columnWidth || window.getComputedStyle(document.body).columnWidth !== 'auto';
                 if (isHoriz) {
-                    var maxScroll = sv.scrollWidth - window.innerWidth;
+                    var maxScroll = document.body.scrollWidth - window.innerWidth;
                     window.scrollTo({ left: maxScroll * \(clampedFraction), behavior: 'instant' });
                 } else {
                     var maxScroll = sv.scrollHeight - window.innerHeight;
