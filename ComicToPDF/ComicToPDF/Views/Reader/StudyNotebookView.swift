@@ -527,7 +527,7 @@ struct StudyNotebookView: View {
                         
                         // MARK: Highlights Drawer Overlay
                         if showHighlightsDrawer {
-                            highlightsDrawer
+                            highlightsDrawer(notebookWidth: notebookGeo.size.width)
                         }
                     }
                 }
@@ -1141,7 +1141,7 @@ struct StudyNotebookView: View {
 
     // MARK: - Highlights Drawer UI
     @ViewBuilder
-    private var highlightsDrawer: some View {
+    private func highlightsDrawer(notebookWidth: CGFloat) -> some View {
         HStack(spacing: 0) {
             Divider()
             VStack(spacing: 0) {
@@ -1370,7 +1370,7 @@ struct StudyNotebookView: View {
                 }
                 .background(Color.inkSurface.opacity(0.95))
             }
-            .frame(width: UIDevice.current.userInterfaceIdiom == .phone ? min(280, notebookGeo.size.width - 60) : 250)
+            .frame(width: UIDevice.current.userInterfaceIdiom == .phone ? min(280, notebookWidth - 60) : 250)
             .background(.ultraThinMaterial)
             .shadow(color: .black.opacity(0.1), radius: 10, x: -5, y: 0)
         }
