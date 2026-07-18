@@ -1104,17 +1104,19 @@ struct EBookWebReader: UIViewRepresentable {
         let cols = prefs.columnCount == 0 ? defaultColumns : prefs.columnCount
         
         let gap = Int(margin * 2)
-        let colWidth = renderWidth / CGFloat(cols)
+        let totalGapsWidth = CGFloat(gap * (cols - 1))
+        let totalMarginsWidth = CGFloat(margin * 2)
+        let colWidth = max(100.0, (renderWidth - totalGapsWidth - totalMarginsWidth) / CGFloat(cols))
         
         let pagedCSS = isPaged ? """
             column-width: \(colWidth)px !important;
-            column-gap: 0px !important;
+            column-gap: \(gap)px !important;
             column-fill: auto !important;
             column-rule: none !important;
         """ : ""
 
-        let paddingLeft = isPaged ? 0 : margin
-        let paddingRight = isPaged ? 0 : margin
+        let paddingLeft = margin
+        let paddingRight = margin
 
         return """
         @font-face {
@@ -1359,10 +1361,8 @@ struct EBookWebReader: UIViewRepresentable {
 
         function updateMetrics() {
             var sv = document.scrollingElement || document.documentElement;
-            var style = window.getComputedStyle(document.body);
-            var gap = parseFloat(style.columnGap) || 0;
-            var pageStep = window.innerWidth + gap;
-            _totalPages = Math.max(1, Math.ceil((document.body.scrollWidth + gap) / pageStep));
+            var pageStep = window.innerWidth;
+            _totalPages = Math.max(1, Math.round(document.body.scrollWidth / pageStep));
             if (_firstRun) {
                 _firstRun = false;
                 if (_currentPage === 99999) {
@@ -1382,9 +1382,7 @@ struct EBookWebReader: UIViewRepresentable {
             var sv = document.scrollingElement || document.documentElement;
             var isHoriz = document.body.style.columnWidth || window.getComputedStyle(document.body).columnWidth !== 'auto';
             if (isHoriz) {
-                var style = window.getComputedStyle(document.body);
-                var gap = parseFloat(style.columnGap) || 0;
-                var pageStep = window.innerWidth + gap;
+                var pageStep = window.innerWidth;
                 window.scrollTo({ left: _currentPage * pageStep, behavior: behavior });
             } else {
                 window.scrollTo({ top: _currentPage * window.innerHeight, behavior: behavior });
@@ -1651,9 +1649,7 @@ struct EBookWebReader: UIViewRepresentable {
                         let js = """
                         var el = document.getElementById('\(fragment)') || document.getElementsByName('\(fragment)')[0];
                         if (el) {
-                            var style = window.getComputedStyle(document.body);
-                            var gap = parseFloat(style.columnGap) || 0;
-                            var pageStep = window.innerWidth + gap;
+                            var pageStep = window.innerWidth;
                             var targetPage = Math.floor(el.getBoundingClientRect().left / pageStep) + _currentPage;
                             goToPage(Math.max(0, targetPage));
                         }
@@ -1692,12 +1688,10 @@ struct EBookWebReader: UIViewRepresentable {
                 let restoreJS = """
                 setTimeout(function() {
                     var sv = document.scrollingElement || document.documentElement;
-                    var isHoriz = document.body.style.columnCount || window.getComputedStyle(document.body).columnCount !== 'auto';
+                    var isHoriz = document.body.style.columnWidth || window.getComputedStyle(document.body).columnWidth !== 'auto';
                     if (isHoriz) {
-                        var style = window.getComputedStyle(document.body);
-                        var gap = parseFloat(style.columnGap) || 0;
-                        var pageStep = window.innerWidth + gap;
-                        var totalPages = Math.max(1, Math.ceil((sv.scrollWidth + gap) / pageStep));
+                        var pageStep = window.innerWidth;
+                        var totalPages = Math.max(1, Math.round(document.body.scrollWidth / pageStep));
                         var targetPage = Math.round(\(fraction) * (totalPages - 1));
                         if (window.goToInksyncPage) {
                             window.goToInksyncPage(targetPage, false);
