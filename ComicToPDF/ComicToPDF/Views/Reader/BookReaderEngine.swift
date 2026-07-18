@@ -328,6 +328,7 @@ struct EPUBWebView: UIViewRepresentable {
     var onPrevChapter: (() -> Void)? = nil
     var onFootnoteTapped: ((String) -> Void)? = nil
 
+    @MainActor
     class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate, UIGestureRecognizerDelegate, UIScrollViewDelegate {
         var parent: EPUBWebView
         /// Stable hash of the combined (content + prefs) state — prevents update loops.

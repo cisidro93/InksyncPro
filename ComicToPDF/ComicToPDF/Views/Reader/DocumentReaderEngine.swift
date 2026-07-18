@@ -697,6 +697,7 @@ struct PDFKitRepresentedView: UIViewRepresentable {
         coordinator.canvasView = nil
     }
     
+    @MainActor
     class Coordinator: NSObject, PDFViewDelegate, PKCanvasViewDelegate, PKToolPickerObserver {
         var parent: PDFKitRepresentedView
         weak var pdfView: PDFView?
@@ -833,7 +834,6 @@ struct PDFKitRepresentedView: UIViewRepresentable {
             }
         }
         
-        @MainActor
         private func updatePageIndex(_ index: Int, in view: PDFView, page: PDFPage) {
             let pageChanged = self.parent.currentPageIndex != index
             self.parent.currentPageIndex = index
