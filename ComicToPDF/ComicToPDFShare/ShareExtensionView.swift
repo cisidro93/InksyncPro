@@ -181,249 +181,258 @@ struct ShareExtensionView: View {
     
     // MARK: - Load Shared Files
     
+    // MARK: - Helpers
+
+    /// Maps a known UTType to the file extension we want to save.
     private func targetExtension(for type: UTType) -> String? {
         if type.conforms(to: .pdf) { return "pdf" }
-        
         let ext = type.preferredFilenameExtension?.lowercased() ?? ""
-        if ext == "pdf" { return "pdf" }
-        if ext == "epub" { return "epub" }
-        if ext == "cbz" { return "cbz" }
-        if ext == "cbr" { return "cbr" }
-        if ext == "zip" { return "cbz" }
-        if ext == "rar" { return "cbr" }
-        
+        switch ext {
+        case "pdf":  return "pdf"
+        case "epub": return "epub"
+        case "cbz":  return "cbz"
+        case "cbr":  return "cbr"
+        case "zip":  return "cbz"
+        case "rar":  return "cbr"
+        default: break
+        }
         if type.identifier.contains("epub") { return "epub" }
-        if type.identifier.contains("cbz") { return "cbz" }
-        if type.identifier.contains("cbr") { return "cbr" }
-        if type.identifier.contains("zip") { return "cbz" }
-        if type.identifier.contains("rar") { return "cbr" }
-        
+        if type.identifier.contains("cbz")  { return "cbz" }
+        if type.identifier.contains("cbr")  { return "cbr" }
+        if type.identifier.contains("zip")  { return "cbz" }
+        if type.identifier.contains("rar")  { return "cbr" }
         if type != .data && type != .item {
             if let epubUT = UTType("org.idpf.epub-container"), type.conforms(to: epubUT) { return "epub" }
-            if type.conforms(to: .zip) { return "cbz" }
+            if type.conforms(to: .zip)     { return "cbz" }
             if type.conforms(to: .archive) { return "cbz" }
-        }
-        
-        return nil
-    }
-    
-    private func detectFileExtension(from url: URL) -> String? {
-        guard let fileHandle = try? FileHandle(forReadingFrom: url) else { return nil }
-        defer { try? fileHandle.close() }
-        
-        guard let data = try? fileHandle.read(upToCount: 200) else { return nil }
-        if data.count < 4 { return nil }
-        
-        // ZIP / CBZ / EPUB (header: 50 4B 03 04)
-        if data[0] == 0x50 && data[1] == 0x4B && data[2] == 0x03 && data[3] == 0x04 {
-            let pathExt = url.pathExtension.lowercased()
-            if pathExt == "epub" { return "epub" }
-            if pathExt == "cbz" { return "cbz" }
-            
-            // Scan first 150 bytes for "mimetype" and "epub" (zero-dependency check)
-            let asciiStr = String(decoding: data.prefix(150), as: UTF8.self)
-            if asciiStr.contains("mimetype") && (asciiStr.contains("epub+zip") || asciiStr.contains("epub")) {
-                return "epub"
-            }
-            return "cbz"
-        }
-        
-        // PDF (header: 25 50 44 46)
-        if data[0] == 0x25 && data[1] == 0x50 && data[2] == 0x44 && data[3] == 0x46 {
-            return "pdf"
-        }
-        
-        // RAR / CBR (header: 52 61 72 21)
-        if data[0] == 0x52 && data[1] == 0x61 && data[2] == 0x72 && data[3] == 0x21 {
-            return "cbr"
         }
         return nil
     }
 
+    /// Derives a file extension from the `suggestedName` of an NSItemProvider.
+    private func extensionFromSuggestedName(_ name: String?) -> String? {
+        guard let name = name else { return nil }
+        let raw = (name as NSString).pathExtension.lowercased()
+        switch raw {
+        case "pdf":  return "pdf"
+        case "epub": return "epub"
+        case "cbz":  return "cbz"
+        case "cbr":  return "cbr"
+        case "zip":  return "cbz"
+        case "rar":  return "cbr"
+        default:     return nil
+        }
+    }
+    
+    /// Inspects the first bytes of a file to identify its format.
+    private func detectFileExtension(from url: URL) -> String? {
+        guard let fileHandle = try? FileHandle(forReadingFrom: url),
+              let data = try? fileHandle.read(upToCount: 200) else { return nil }
+        defer { try? fileHandle.close() }
+        guard data.count >= 4 else { return nil }
+
+        // ZIP / CBZ / EPUB  (PK\x03\x04)
+        if data[0] == 0x50 && data[1] == 0x4B && data[2] == 0x03 && data[3] == 0x04 {
+            // Prefer existing extension if it's already correct
+            let existing = url.pathExtension.lowercased()
+            if existing == "epub" { return "epub" }
+            if existing == "cbz"  { return "cbz" }
+            // Peek into the archive: EPUB always stores a "mimetype" entry as the first local file
+            let header = String(decoding: data.prefix(150), as: UTF8.self)
+            if header.contains("mimetype") && (header.contains("epub+zip") || header.contains("epub")) {
+                return "epub"
+            }
+            return "cbz"
+        }
+        // PDF  (%PDF)
+        if data[0] == 0x25 && data[1] == 0x50 && data[2] == 0x44 && data[3] == 0x46 { return "pdf" }
+        // RAR / CBR  (Rar!)
+        if data[0] == 0x52 && data[1] == 0x61 && data[2] == 0x72 && data[3] == 0x21 { return "cbr" }
+        return nil
+    }
+
+    // MARK: - Load Shared Files
+
     private func loadSharedFiles() {
-        guard let extensionContext = extensionContext,
-              let inputItems = extensionContext.inputItems as? [NSExtensionItem] else {
+        guard let ctx = extensionContext,
+              let inputItems = ctx.inputItems as? [NSExtensionItem] else {
             isLoading = false
             return
         }
-        
+
         Task { @MainActor in
             var filesToProcess: [SharedFile] = []
-            
+
             for item in inputItems {
                 guard let attachments = item.attachments else { continue }
-                
+
                 for provider in attachments {
-                    // Find the best type identifier from registered identifiers
-                    var bestTypeIdentifier: String? = nil
-                    var targetExt: String? = nil
-                    
-                    // Prioritize specific types from registered identifiers
-                    for typeId in provider.registeredTypeIdentifiers {
+                    let registered = provider.registeredTypeIdentifiers
+                    let baseName   = provider.suggestedName ?? "shared_file"
+
+                    // ──────────────────────────────────────────────────────────────
+                    // STEP 1: Build an ordered list of type identifiers to try.
+                    // We attempt every candidate until one successfully provides a file.
+                    // Priority: specific format types → file-URL types → data types → anything
+                    // ──────────────────────────────────────────────────────────────
+                    var candidates: [(typeId: String, hintExt: String?)] = []
+
+                    // 1a. Specific format UTTypes (epub, pdf, cbz, cbr, zip, rar)
+                    for typeId in registered {
                         guard let utType = UTType(typeId) else { continue }
-                        if let ext = self.targetExtension(for: utType) {
-                            bestTypeIdentifier = typeId
-                            targetExt = ext
+                        if let ext = targetExtension(for: utType) {
+                            candidates.append((typeId, ext))
+                        }
+                    }
+
+                    // 1b. If the suggestedName carries a recognisable extension, pair generic
+                    //     type IDs with it so we know what extension to use post-load.
+                    let nameExt = extensionFromSuggestedName(baseName)
+                    let genericFileURLTypes = [UTType.fileURL.identifier, "public.file-url", "com.apple.cocoa.path"]
+                    let genericDataTypes    = [UTType.data.identifier, "public.data", UTType.item.identifier, "public.item"]
+
+                    for typeId in registered where genericFileURLTypes.contains(typeId) {
+                        candidates.append((typeId, nameExt))   // nameExt may be nil — will rely on magic bytes
+                    }
+                    for typeId in registered where genericDataTypes.contains(typeId) {
+                        candidates.append((typeId, nameExt))
+                    }
+
+                    // 1c. Absolute last resort: try anything that's registered
+                    for typeId in registered {
+                        if !candidates.contains(where: { $0.typeId == typeId }) {
+                            candidates.append((typeId, nameExt))
+                        }
+                    }
+
+                    if candidates.isEmpty {
+                        print("[ShareExt] No candidates for provider: \(registered)")
+                        continue
+                    }
+
+                    // ──────────────────────────────────────────────────────────────
+                    // STEP 2: Attempt to load the file using each candidate in order.
+                    // ──────────────────────────────────────────────────────────────
+                    var loadedURL: URL?   = nil
+                    var resolvedExt: String? = nil
+
+                    for candidate in candidates {
+                        let typeId  = candidate.typeId
+                        let hintExt = candidate.hintExt
+
+                        // Construct a temporary filename. Use the hint if we have one;
+                        // otherwise we'll detect the extension from magic bytes after loading.
+                        let tempName: String
+                        if let h = hintExt {
+                            let cleanBase = (baseName as NSString).deletingPathExtension
+                            tempName = cleanBase + "." + h
+                        } else {
+                            tempName = baseName
+                        }
+
+                        // --- Method A: loadFileRepresentation ---
+                        if let url = await tryLoadFileRepresentation(provider: provider, typeId: typeId, filename: tempName) {
+                            loadedURL = url
+                            resolvedExt = hintExt ?? detectFileExtension(from: url) ?? url.pathExtension.lowercased().nonEmpty
+                            break
+                        }
+
+                        // --- Method B: loadItem ---
+                        if let url = await tryLoadItem(provider: provider, typeId: typeId, filename: tempName) {
+                            loadedURL = url
+                            resolvedExt = hintExt ?? detectFileExtension(from: url) ?? url.pathExtension.lowercased().nonEmpty
                             break
                         }
                     }
-                    
-                    // General fallback to public.data or public.file-url if we can extract extension from suggestedName
-                    if bestTypeIdentifier == nil {
-                        for typeId in provider.registeredTypeIdentifiers {
-                            if typeId == UTType.fileURL.identifier || typeId == UTType.data.identifier || typeId == UTType.item.identifier || typeId == "public.file-url" || typeId == "com.apple.cocoa.path" {
-                                if let suggested = provider.suggestedName {
-                                    let ext = (suggested as NSString).pathExtension.lowercased()
-                                    if ext == "pdf" || ext == "epub" || ext == "cbz" || ext == "cbr" || ext == "zip" || ext == "rar" {
-                                        bestTypeIdentifier = typeId
-                                        targetExt = ext == "zip" ? "cbz" : (ext == "rar" ? "cbr" : ext)
-                                        break
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    
-                    // Direct fallback: prioritize generic file URLs first (direct path resolution)
-                    if bestTypeIdentifier == nil {
-                        let fileURLTypes = [
-                            UTType.fileURL.identifier, "public.file-url",
-                            "com.apple.cocoa.path"
-                        ]
-                        for typeId in provider.registeredTypeIdentifiers {
-                            if fileURLTypes.contains(typeId) {
-                                bestTypeIdentifier = typeId
-                                targetExt = "unknown"
-                                break
-                            }
-                        }
-                    }
-                    
-                    // Secondary fallback: generic data/item types
-                    if bestTypeIdentifier == nil {
-                        let genericTypes = [
-                            UTType.data.identifier, "public.data",
-                            UTType.item.identifier, "public.item"
-                        ]
-                        for typeId in provider.registeredTypeIdentifiers {
-                            if genericTypes.contains(typeId) {
-                                bestTypeIdentifier = typeId
-                                targetExt = "unknown"
-                                break
-                            }
-                        }
-                    }
-                    
-                    // Final fallback for any other registered identifier (e.g. public.image, public.url)
-                    if bestTypeIdentifier == nil {
-                        if let firstTypeId = provider.registeredTypeIdentifiers.first {
-                            bestTypeIdentifier = firstTypeId
-                            targetExt = "unknown"
-                        }
-                    }
-                    
-                    guard let typeId = bestTypeIdentifier, let ext = targetExt else {
-                        print("No compatible type found in registered identifiers: \(provider.registeredTypeIdentifiers)")
+
+                    // ──────────────────────────────────────────────────────────────
+                    // STEP 3: Validate extension and add to the import list.
+                    // ──────────────────────────────────────────────────────────────
+                    guard var finalURL = loadedURL else {
+                        print("[ShareExt] All candidates failed for \(baseName), registered: \(registered)")
                         continue
                     }
-                    
-                    // Determine desired filename
-                    var filename = provider.suggestedName ?? "shared_file"
-                    let extSuffix = "." + ext
-                    if ext != "unknown" && !filename.lowercased().hasSuffix(extSuffix.lowercased()) {
-                        let baseName = (filename as NSString).deletingPathExtension
-                        filename = baseName + extSuffix
+
+                    // If we still don't know the extension, try magic bytes one more time
+                    if resolvedExt == nil || resolvedExt?.isEmpty == true {
+                        resolvedExt = detectFileExtension(from: finalURL)
                     }
-                    
-                    var loadedURL: URL? = nil
-                    
-                    // Method A: Try loadFileRepresentation (safest and supports iCloud / cloud providers)
-                    do {
-                        loadedURL = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<URL, Error>) in
-                            provider.loadFileRepresentation(forTypeIdentifier: typeId) { tempURL, error in
-                                if let error = error {
-                                    continuation.resume(throwing: error)
-                                } else if let tempURL = tempURL {
-                                    if let sharedURL = self.copyToSharedContainer(tempURL, destFilename: filename) {
-                                        continuation.resume(returning: sharedURL)
-                                    } else {
-                                        continuation.resume(throwing: NSError(domain: "ShareExtension", code: -2, userInfo: [NSLocalizedDescriptionKey: "Failed to copy file"]))
-                                    }
-                                } else {
-                                    continuation.resume(throwing: NSError(domain: "ShareExtension", code: -1, userInfo: nil))
-                                }
-                            }
-                        }
-                    } catch {
-                        print("loadFileRepresentation failed for \(filename): \(error.localizedDescription)")
-                        
-                        // Method B: Fallback to loadItem if loadFileRepresentation failed
+
+                    guard let ext = resolvedExt,
+                          ["pdf", "epub", "cbz", "cbr"].contains(ext) else {
+                        print("[ShareExt] Unrecognised format for \(finalURL.lastPathComponent) – removing.")
+                        try? FileManager.default.removeItem(at: finalURL)
+                        continue
+                    }
+
+                    // Rename to ensure the correct extension is present
+                    let cleanBase    = (baseName as NSString).deletingPathExtension
+                    let finalName    = cleanBase + "." + ext
+                    let renamedURL   = finalURL.deletingLastPathComponent().appendingPathComponent(finalName)
+
+                    // Only move if paths differ (avoids error when they're identical)
+                    if renamedURL.path != finalURL.path {
+                        try? FileManager.default.removeItem(at: renamedURL)
                         do {
-                            let itemURL = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<URL, Error>) in
-                                provider.loadItem(forTypeIdentifier: typeId, options: nil) { item, error in
-                                    if let error = error {
-                                        continuation.resume(throwing: error)
-                                    } else if let nsURL = item as? NSURL {
-                                        continuation.resume(returning: nsURL as URL)
-                                    } else if let nsData = item as? NSData,
-                                              let urlString = String(data: nsData as Data, encoding: .utf8),
-                                              let url = URL(string: urlString) {
-                                        continuation.resume(returning: url)
-                                    } else if let nsString = item as? NSString,
-                                              let url = URL(string: nsString as String) {
-                                        continuation.resume(returning: url)
-                                    } else {
-                                        continuation.resume(throwing: NSError(domain: "ShareExtension", code: -3, userInfo: [NSLocalizedDescriptionKey: "Item is not a URL"]))
-                                    }
-                                }
-                            }
-                            
-                            if let sharedURL = self.copyToSharedContainer(itemURL, destFilename: filename) {
-                                loadedURL = sharedURL
-                            }
+                            try FileManager.default.moveItem(at: finalURL, to: renamedURL)
+                            finalURL = renamedURL
                         } catch {
-                            print("loadItem fallback failed for \(filename): \(error.localizedDescription)")
+                            print("[ShareExt] Rename failed for \(finalURL.lastPathComponent): \(error)")
+                            // Keep the original path — it's still usable
                         }
+                    } else {
+                        finalURL = renamedURL
                     }
-                    
-                    if var finalURL = loadedURL {
-                        var resolvedExt: String? = nil
-                        let pathExt = finalURL.pathExtension.lowercased()
-                        if pathExt == "pdf" || pathExt == "epub" || pathExt == "cbz" || pathExt == "cbr" || pathExt == "zip" || pathExt == "rar" {
-                            resolvedExt = pathExt == "zip" ? "cbz" : (pathExt == "rar" ? "cbr" : pathExt)
-                        } else {
-                            // Try detecting the actual format via magic headers (e.g. for misclassified files from Drive)
-                            resolvedExt = self.detectFileExtension(from: finalURL)
-                        }
-                        
-                        if let resolved = resolvedExt {
-                            let cleanBase = (filename as NSString).deletingPathExtension
-                            let finalFileName = cleanBase + "." + resolved
-                            let destURL = finalURL.deletingLastPathComponent().appendingPathComponent(finalFileName)
-                            do {
-                                try? FileManager.default.removeItem(at: destURL)
-                                try FileManager.default.moveItem(at: finalURL, to: destURL)
-                                finalURL = destURL
-                                filename = finalFileName
-                                loadedURL = finalURL
-                                
-                                filesToProcess.append(SharedFile(
-                                    name: filename,
-                                    url: finalURL,
-                                    fileExtension: resolved
-                                ))
-                            } catch {
-                                print("Failed to rename resolved share file: \(error.localizedDescription)")
-                            }
-                        } else {
-                            try? FileManager.default.removeItem(at: finalURL)
-                        }
-                    }
+
+                    filesToProcess.append(SharedFile(
+                        name: finalURL.lastPathComponent,
+                        url: finalURL,
+                        fileExtension: ext
+                    ))
                 }
             }
-            
+
             self.selectedFiles = filesToProcess
             self.isLoading = false
+        }
+    }
+
+    // MARK: - Low-level load helpers
+
+    private func tryLoadFileRepresentation(provider: NSItemProvider, typeId: String, filename: String) async -> URL? {
+        await withCheckedContinuation { continuation in
+            provider.loadFileRepresentation(forTypeIdentifier: typeId) { tempURL, error in
+                guard error == nil, let tempURL = tempURL else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                let result = self.copyToSharedContainer(tempURL, destFilename: filename)
+                continuation.resume(returning: result)
+            }
+        }
+    }
+
+    private func tryLoadItem(provider: NSItemProvider, typeId: String, filename: String) async -> URL? {
+        await withCheckedContinuation { continuation in
+            provider.loadItem(forTypeIdentifier: typeId, options: nil) { item, error in
+                guard error == nil else { continuation.resume(returning: nil); return }
+                let sourceURL: URL?
+                if let nsURL = item as? NSURL {
+                    sourceURL = nsURL as URL
+                } else if let data = item as? NSData,
+                          let str  = String(data: data as Data, encoding: .utf8),
+                          let url  = URL(string: str) {
+                    sourceURL = url
+                } else if let str  = item as? NSString,
+                          let url  = URL(string: str as String) {
+                    sourceURL = url
+                } else {
+                    sourceURL = nil
+                }
+                guard let src = sourceURL else { continuation.resume(returning: nil); return }
+                let result = self.copyToSharedContainer(src, destFilename: filename)
+                continuation.resume(returning: result)
+            }
         }
     }
     
@@ -549,4 +558,10 @@ enum ShareError: Error {
     case noContainer
     case copyFailed
     case conversionFailed
+}
+
+// MARK: - String helpers
+private extension String {
+    /// Returns nil if the string is empty, otherwise self. Useful for optional-chaining path extensions.
+    var nonEmpty: String? { isEmpty ? nil : self }
 }
