@@ -727,27 +727,55 @@ struct PDFKitRepresentedView: UIViewRepresentable {
             let goForward = isRTL ? tappedLeft : tappedRight
             
             if goBackward {
-                // Page backward
-                if parent.currentPageIndex > 0 {
-                    if let pv = pdfView, pv.canGoToPreviousPage {
-                        pv.goToPreviousPage(nil)
+                if let pv = pdfView, let scrollView = pv.subviews.first(where: { $0 is UIScrollView }) as? UIScrollView {
+                    let pageHeight = scrollView.bounds.height
+                    let currentOffset = scrollView.contentOffset.y
+                    
+                    if currentOffset > 1.0 {
+                        let newOffset = max(currentOffset - (pageHeight - 40), 0.0)
+                        scrollView.setContentOffset(CGPoint(x: 0, y: newOffset), animated: true)
+                        HapticEngine.light()
                     } else {
-                        parent.currentPageIndex -= 1
+                        if parent.currentPageIndex > 0 {
+                            pv.goToPreviousPage(nil)
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                let maxOffsetY = scrollView.contentSize.height - scrollView.bounds.height
+                                if maxOffsetY > 0 {
+                                    scrollView.setContentOffset(CGPoint(x: 0, y: maxOffsetY), animated: false)
+                                }
+                            }
+                            HapticEngine.light()
+                        }
                     }
-                    HapticEngine.light()
+                } else {
+                    if parent.currentPageIndex > 0 {
+                        pdfView?.goToPreviousPage(nil)
+                        HapticEngine.light()
+                    }
                 }
             } else if goForward {
-                // Page forward
-                if let doc = pdfView?.document, parent.currentPageIndex < doc.pageCount - 1 {
-                    if let pv = pdfView, pv.canGoToNextPage {
-                        pv.goToNextPage(nil)
+                if let pv = pdfView, let scrollView = pv.subviews.first(where: { $0 is UIScrollView }) as? UIScrollView {
+                    let pageHeight = scrollView.bounds.height
+                    let currentOffset = scrollView.contentOffset.y
+                    let maxOffsetY = scrollView.contentSize.height - pageHeight
+                    
+                    if maxOffsetY > 0 && currentOffset < maxOffsetY - 5.0 {
+                        let newOffset = min(currentOffset + (pageHeight - 40), maxOffsetY)
+                        scrollView.setContentOffset(CGPoint(x: 0, y: newOffset), animated: true)
+                        HapticEngine.light()
                     } else {
-                        parent.currentPageIndex += 1
+                        if let doc = pv.document, parent.currentPageIndex < doc.pageCount - 1 {
+                            pv.goToNextPage(nil)
+                            HapticEngine.light()
+                        }
                     }
-                    HapticEngine.light()
+                } else {
+                    if let doc = pdfView?.document, parent.currentPageIndex < doc.pageCount - 1 {
+                        pdfView?.goToNextPage(nil)
+                        HapticEngine.light()
+                    }
                 }
             } else {
-                // Toggle chrome
                 parent.chromeVisible.toggle()
             }
         }
@@ -764,20 +792,22 @@ struct PDFKitRepresentedView: UIViewRepresentable {
             
             if goBackward {
                 if parent.currentPageIndex > 0 {
-                    if let pv = pdfView, pv.canGoToPreviousPage {
+                    if let pv = pdfView, let scrollView = pv.subviews.first(where: { $0 is UIScrollView }) as? UIScrollView {
                         pv.goToPreviousPage(nil)
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            let maxOffsetY = scrollView.contentSize.height - scrollView.bounds.height
+                            if maxOffsetY > 0 {
+                                scrollView.setContentOffset(CGPoint(x: 0, y: maxOffsetY), animated: false)
+                            }
+                        }
                     } else {
-                        parent.currentPageIndex -= 1
+                        pdfView?.goToPreviousPage(nil)
                     }
                     HapticEngine.light()
                 }
             } else if goForward {
                 if let doc = pdfView?.document, parent.currentPageIndex < doc.pageCount - 1 {
-                    if let pv = pdfView, pv.canGoToNextPage {
-                        pv.goToNextPage(nil)
-                    } else {
-                        parent.currentPageIndex += 1
-                    }
+                    pdfView?.goToNextPage(nil)
                     HapticEngine.light()
                 }
             }
