@@ -727,12 +727,12 @@ struct PDFKitRepresentedView: UIViewRepresentable {
             
             if goBackward {
                 if let pv = pdfView {
-                    if EBookPreferences.shared.pdfFitToWidth,
-                       let scrollView = pv.subviews.first(where: { $0 is UIScrollView }) as? UIScrollView {
+                    if let scrollView = pv.subviews.first(where: { $0 is UIScrollView }) as? UIScrollView {
                         let pageHeight = scrollView.bounds.height
                         let currentOffset = scrollView.contentOffset.y
+                        let maxOffsetY = scrollView.contentSize.height - pageHeight
                         
-                        if currentOffset > 1.0 {
+                        if maxOffsetY > 0.5 && currentOffset > 1.0 {
                             let newOffset = max(currentOffset - (pageHeight - 40), 0.0)
                             scrollView.setContentOffset(CGPoint(x: 0, y: newOffset), animated: true)
                             HapticEngine.light()
@@ -740,9 +740,9 @@ struct PDFKitRepresentedView: UIViewRepresentable {
                             if parent.currentPageIndex > 0 {
                                 pv.goToPreviousPage(nil)
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                                    let maxOffsetY = scrollView.contentSize.height - scrollView.bounds.height
-                                    if maxOffsetY > 0 {
-                                        scrollView.setContentOffset(CGPoint(x: 0, y: maxOffsetY), animated: false)
+                                    let maxOffsetY2 = scrollView.contentSize.height - scrollView.bounds.height
+                                    if maxOffsetY2 > 0 {
+                                        scrollView.setContentOffset(CGPoint(x: 0, y: maxOffsetY2), animated: false)
                                     }
                                 }
                                 HapticEngine.light()
@@ -757,13 +757,12 @@ struct PDFKitRepresentedView: UIViewRepresentable {
                 }
             } else if goForward {
                 if let pv = pdfView {
-                    if EBookPreferences.shared.pdfFitToWidth,
-                       let scrollView = pv.subviews.first(where: { $0 is UIScrollView }) as? UIScrollView {
+                    if let scrollView = pv.subviews.first(where: { $0 is UIScrollView }) as? UIScrollView {
                         let pageHeight = scrollView.bounds.height
                         let currentOffset = scrollView.contentOffset.y
                         let maxOffsetY = scrollView.contentSize.height - pageHeight
                         
-                        if maxOffsetY > 0 && currentOffset < maxOffsetY - 5.0 {
+                        if maxOffsetY > 0.5 && currentOffset < maxOffsetY - 5.0 {
                             let newOffset = min(currentOffset + (pageHeight - 40), maxOffsetY)
                             scrollView.setContentOffset(CGPoint(x: 0, y: newOffset), animated: true)
                             HapticEngine.light()
@@ -799,8 +798,7 @@ struct PDFKitRepresentedView: UIViewRepresentable {
                 if parent.currentPageIndex > 0 {
                     if let pv = pdfView {
                         pv.goToPreviousPage(nil)
-                        if EBookPreferences.shared.pdfFitToWidth,
-                           let scrollView = pv.subviews.first(where: { $0 is UIScrollView }) as? UIScrollView {
+                        if let scrollView = pv.subviews.first(where: { $0 is UIScrollView }) as? UIScrollView {
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                                 let maxOffsetY = scrollView.contentSize.height - scrollView.bounds.height
                                 if maxOffsetY > 0 {
