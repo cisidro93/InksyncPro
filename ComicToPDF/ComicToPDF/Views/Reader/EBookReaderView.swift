@@ -942,6 +942,16 @@ struct EBookWebReader: UIViewRepresentable {
         pinch.delegate = context.coordinator
         wv.addGestureRecognizer(pinch)
 
+        let swipeLeft = UISwipeGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleSwipe(_:)))
+        swipeLeft.direction = .left
+        swipeLeft.delegate = context.coordinator
+        wv.addGestureRecognizer(swipeLeft)
+
+        let swipeRight = UISwipeGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleSwipe(_:)))
+        swipeRight.direction = .right
+        swipeRight.delegate = context.coordinator
+        wv.addGestureRecognizer(swipeRight)
+
         DispatchQueue.main.async {
             self.webViewRef = wv
         }
@@ -967,12 +977,14 @@ struct EBookWebReader: UIViewRepresentable {
         
         // Configure paging and scrolling constraints
         if prefs.paginationMode == EBookPaginationMode.paged.rawValue {
-            wv.scrollView.isPagingEnabled = true
+            wv.scrollView.isScrollEnabled = false
+            wv.scrollView.isPagingEnabled = false
             wv.scrollView.alwaysBounceVertical = false
-            wv.scrollView.alwaysBounceHorizontal = true
+            wv.scrollView.alwaysBounceHorizontal = false
             wv.scrollView.showsHorizontalScrollIndicator = false
             wv.scrollView.showsVerticalScrollIndicator = false
         } else {
+            wv.scrollView.isScrollEnabled = true
             wv.scrollView.isPagingEnabled = false
             wv.scrollView.alwaysBounceVertical = true
             wv.scrollView.alwaysBounceHorizontal = false
@@ -1036,6 +1048,9 @@ struct EBookWebReader: UIViewRepresentable {
                         )
                     }
 
+                    // Wrap body content with #inksync-viewport
+                    html = self.wrapHTMLBodyWithViewport(html)
+
                     // Inject pre-computed CSS
                     if let range = html.range(of: "</head>", options: .caseInsensitive) {
                         return html.replacingCharacters(in: range, with: cssToInject + "</head>")
@@ -1090,11 +1105,7 @@ struct EBookWebReader: UIViewRepresentable {
         let paraIndent    = prefs.paragraphIndent
         let hyphenCSS     = prefs.hyphenation ? "auto" : "manual"
 
-        let overflowCSS = isPaged
-            ? "overflow: hidden !important;"
-            : "overflow-x: hidden !important; overflow-y: auto !important;"
-        let widthCSS = isPaged ? "" : "width: 100vw !important; overflow-x: hidden !important;"
-        
+
         let renderWidth = size.width > 0 ? size.width : UIScreen.main.bounds.width
         let renderHeight = size.height > 0 ? size.height : UIScreen.main.bounds.height
         
@@ -1240,11 +1251,11 @@ struct EBookWebReader: UIViewRepresentable {
             font-style: italic;
         }
         *, *::before, *::after { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-        html {
+        \(isPaged ? """
+        html, body {
             margin: 0 !important; padding: 0 !important;
-            height: 100vh !important; width: 100vw !important;
-            column-width: auto !important;
-            \(overflowCSS)
+            width: 100% !important; height: 100% !important;
+            overflow: hidden !important;
             background-color: \(bgColor) !important;
         }
         body {
@@ -1253,10 +1264,38 @@ struct EBookWebReader: UIViewRepresentable {
             font-size: \(fontSize)px !important;
             line-height: \(lineHeight) !important;
             text-align: \(textAlign) !important;
-            \(pagedCSS)
+            word-wrap: break-word;
+            -webkit-text-size-adjust: none;
+            letter-spacing: \(letterSpacing) !important;
+            word-spacing: \(wordSpacing) !important;
+            -webkit-hyphens: \(hyphenCSS) !important;
+            hyphens: \(hyphenCSS) !important;
+        }
+        #inksync-viewport {
             margin: 0 !important;
-            height: 100vh !important;
-            \(widthCSS)
+            padding-top: 60px !important;
+            padding-bottom: 60px !important;
+            padding-left: \(paddingLeft)px !important;
+            padding-right: \(paddingRight)px !important;
+            box-sizing: border-box !important;
+            width: 100% !important;
+            height: 100% !important;
+            \(pagedCSS)
+            transition: transform 0.15s ease-out;
+            transform: translate3d(0px, 0px, 0px);
+        }
+        """ : """
+        html {
+            margin: 0 !important; padding: 0 !important;
+            background-color: \(bgColor) !important;
+        }
+        body {
+            color: \(textColor) !important;
+            font-family: \(fontFamily) !important;
+            font-size: \(fontSize)px !important;
+            line-height: \(lineHeight) !important;
+            text-align: \(textAlign) !important;
+            margin: 0 !important;
             padding-top: 60px !important;
             padding-bottom: 60px !important;
             padding-left: \(paddingLeft)px !important;
@@ -1269,6 +1308,13 @@ struct EBookWebReader: UIViewRepresentable {
             -webkit-hyphens: \(hyphenCSS) !important;
             hyphens: \(hyphenCSS) !important;
         }
+        #inksync-viewport {
+            margin: 0 !important;
+            width: 100% !important;
+            height: auto !important;
+            display: block !important;
+        }
+        """)
         body, p, span, li, td, th, div, a {
             font-family: \(fontFamily) !important;
         }
@@ -1570,41 +1616,41 @@ struct EBookWebReader: UIViewRepresentable {
 
     /// Injects a live CSS update into the existing WebView DOM — no reload required.
     private func injectLiveCSS(into webView: WKWebView) {
-        let sv = webView.scrollView
-        let isHoriz = prefs.paginationMode == EBookPaginationMode.paged.rawValue
-        let currentFraction: Double
-        if isHoriz {
-            let maxScroll = sv.contentSize.width - sv.bounds.width
-            currentFraction = maxScroll > 0 ? Double(sv.contentOffset.x / maxScroll) : 0.0
-        } else {
-            let maxScroll = sv.contentSize.height - sv.bounds.height
-            currentFraction = maxScroll > 0 ? Double(sv.contentOffset.y / maxScroll) : 0.0
-        }
-        let clampedFraction = max(0.0, min(1.0, currentFraction))
-
         let css = computeCSS(prefs: prefs, size: webView.bounds.size)
-
         let js = """
         (function() {
             var el = document.getElementById('__inksync_live__');
             if (!el) { el = document.createElement('style'); el.id = '__inksync_live__'; document.head.appendChild(el); }
             el.textContent = `\(css.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "`", with: "\\`"))`;
             
-            // Restore scroll position
-            setTimeout(function() {
-                var sv = document.scrollingElement || document.documentElement;
-                var isHoriz = document.body.style.columnWidth || window.getComputedStyle(document.body).columnWidth !== 'auto';
-                if (isHoriz) {
-                    var maxScroll = document.body.scrollWidth - window.innerWidth;
-                    window.scrollTo({ left: maxScroll * \(clampedFraction), behavior: 'instant' });
-                } else {
-                    var maxScroll = sv.scrollHeight - window.innerHeight;
-                    window.scrollTo({ top: maxScroll * \(clampedFraction), behavior: 'instant' });
-                }
-            }, 100);
+            var liveStyle = document.getElementById('__inksync_live__');
+            if (liveStyle) {
+                document.head.appendChild(liveStyle);
+            }
+            updateMetrics();
         })();
         """
         webView.evaluateJavaScript(js)
+    }
+
+    private func wrapHTMLBodyWithViewport(_ html: String) -> String {
+        var result = html
+        let bodyPattern = "<body([^>]*)>"
+        if let regex = try? NSRegularExpression(pattern: bodyPattern, options: .caseInsensitive),
+           let match = regex.firstMatch(in: result, options: [], range: NSRange(result.startIndex..., in: result)) {
+            let bodyTagRange = Range(match.range, in: result)!
+            let insertionIndex = bodyTagRange.upperBound
+            result.insert(contentsOf: "<div id=\"inksync-viewport\">", at: insertionIndex)
+        } else {
+            if let bodyIndex = result.range(of: "<body>", options: .caseInsensitive)?.upperBound {
+                result.insert(contentsOf: "<div id=\"inksync-viewport\">", at: bodyIndex)
+            }
+        }
+        
+        if let closeBodyRange = result.range(of: "</body>", options: .caseInsensitive) {
+            result.insert(contentsOf: "</div>", at: closeBodyRange.lowerBound)
+        }
+        return result
     }
 
     
@@ -1721,6 +1767,17 @@ struct EBookWebReader: UIViewRepresentable {
                         parent.prefs.lockTypographyForBook(bookID)
                     }
                 }
+            }
+        }
+
+        @objc func handleSwipe(_ gesture: UISwipeGestureRecognizer) {
+            let isPaged = parent.prefs.paginationMode == EBookPaginationMode.paged.rawValue
+            guard isPaged else { return }
+            
+            if gesture.direction == .left {
+                self.parent.onNext()
+            } else if gesture.direction == .right {
+                self.parent.onPrev()
             }
         }
 
