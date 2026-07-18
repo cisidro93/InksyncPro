@@ -458,7 +458,7 @@ struct ShareExtensionView: View {
     
     // MARK: - Copy to Shared Container
     
-    private func copyToSharedContainer(_ sourceURL: URL, destFilename: String) -> URL? {
+    nonisolated private func copyToSharedContainer(_ sourceURL: URL, destFilename: String) -> URL? {
         guard let containerURL = FileManager.default.containerURL(
             forSecurityApplicationGroupIdentifier: "group.com.antigravity.ComicToPDF"
         ) else { return nil }
@@ -478,7 +478,7 @@ struct ShareExtensionView: View {
         let coordinator = NSFileCoordinator()
         var coordinatorError: NSError?
         
-        coordinator.coordinate(readingItemAt: sourceURL, options: .forResolvingConflicts, error: &coordinatorError) { coordinatedURL in
+        coordinator.coordinate(readingItemAt: sourceURL, options: [], error: &coordinatorError) { coordinatedURL in
             do {
                 try FileManager.default.copyItem(at: coordinatedURL, to: destURL)
                 copySuccess = true
@@ -501,7 +501,7 @@ struct ShareExtensionView: View {
         }
     }
     
-    private func writeRawDataToSharedContainer(_ data: Data, destFilename: String) -> URL? {
+    nonisolated private func writeRawDataToSharedContainer(_ data: Data, destFilename: String) -> URL? {
         guard let containerURL = FileManager.default.containerURL(
             forSecurityApplicationGroupIdentifier: "group.com.antigravity.ComicToPDF"
         ) else { return nil }
@@ -520,6 +520,7 @@ struct ShareExtensionView: View {
             return nil
         }
     }
+
 
     
     // MARK: - Process Files
