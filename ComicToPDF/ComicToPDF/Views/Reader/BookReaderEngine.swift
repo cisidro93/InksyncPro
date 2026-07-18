@@ -800,13 +800,16 @@ struct EPUBWebView: UIViewRepresentable {
             : "overflow-x: hidden !important; overflow-y: auto !important;"
         let widthCSS = isPaged ? "" : "width: 100vw !important; overflow-x: hidden !important;"
         
+        let renderWidth = size.width > 0 ? size.width : UIScreen.main.bounds.width
+        let renderHeight = size.height > 0 ? size.height : UIScreen.main.bounds.height
+        
         let isPad = UIDevice.current.userInterfaceIdiom == .pad
-        let isLandscape = size.width > size.height
+        let isLandscape = renderWidth > renderHeight
         let defaultColumns = (isPad && isLandscape) ? 2 : 1
         let cols = prefs.columnCount == 0 ? defaultColumns : prefs.columnCount
         
         let gap = isPaged ? 0 : Int(margin * 2)
-        let colWidth = size.width / CGFloat(cols)
+        let colWidth = renderWidth / CGFloat(cols)
         
         let pagedCSS = isPaged ? """
             column-width: \(colWidth)px !important;
