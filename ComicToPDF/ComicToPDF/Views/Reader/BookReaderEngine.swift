@@ -357,12 +357,14 @@ struct EPUBWebView: View {
             didFinishNavigation: { webView in
                 self.onPageLoaded?(webView)
                 
+                let isPaged = self.prefs.paginationMode == EBookPaginationMode.paged.rawValue
                 if self.scrollToLastPageOnLoad {
                     self.scrollToLastPageOnLoad = false
                     let js = """
                     setTimeout(function() {
                         var sv = document.scrollingElement || document.documentElement;
-                        if (window.getComputedStyle(document.body).columnWidth !== 'auto') {
+                        var isHoriz = \(isPaged);
+                        if (isHoriz) {
                             var maxScroll = sv.scrollWidth - window.innerWidth;
                             window.scrollTo({ left: maxScroll, behavior: 'instant' });
                         } else {
@@ -378,7 +380,7 @@ struct EPUBWebView: View {
                         let restoreJS = """
                         setTimeout(function() {
                             var sv = document.scrollingElement || document.documentElement;
-                            var isHoriz = window.getComputedStyle(document.body).columnWidth !== 'auto';
+                            var isHoriz = \(isPaged);
                             if (isHoriz) {
                                 var pageIndex = Math.round(\(fraction) * (sv.scrollWidth / window.innerWidth - 1));
                                 window.scrollTo({ left: pageIndex * window.innerWidth, behavior: 'instant' });
@@ -733,7 +735,13 @@ struct EPUBWebView: View {
             padding-left: \(margin)px !important;
             padding-right: \(margin)px !important;
         }
-        """ : "")
+        """ : """
+        div, section, article, main {
+            max-height: none !important;
+            height: auto !important;
+            overflow: visible !important;
+        }
+        """)
         
         body, p, span, li, td, th, div, a {
             font-family: \(fontFamily) !important;
@@ -821,7 +829,7 @@ struct EPUBWebView: View {
             // Restore scroll position
             setTimeout(function() {
                 var sv = document.scrollingElement || document.documentElement;
-                var isHoriz = document.body.style.columnWidth || window.getComputedStyle(document.body).columnWidth !== 'auto';
+                var isHoriz = \(isHoriz);
                 if (isHoriz) {
                     var maxScroll = sv.scrollWidth - window.innerWidth;
                     window.scrollTo({ left: maxScroll * \(clampedFraction), behavior: 'instant' });

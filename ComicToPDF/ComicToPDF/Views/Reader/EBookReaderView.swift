@@ -1009,10 +1009,11 @@ struct EBookWebReader: View {
                 // Restore the within-chapter fractional scroll position.
                 let fraction = self.initialScrollFraction
                 if fraction > 0.01 {
+                    let isPaged = self.prefs.paginationMode == EBookPaginationMode.paged.rawValue
                     let restoreJS = """
                     setTimeout(function() {
                         var sv = document.scrollingElement || document.documentElement;
-                        var isHoriz = document.body.style.columnWidth || window.getComputedStyle(document.body).columnWidth !== 'auto';
+                        var isHoriz = \(isPaged);
                         if (isHoriz) {
                             var pageStep = window.innerWidth;
                             var totalPages = Math.max(1, Math.round(document.body.scrollWidth / pageStep));
@@ -1407,7 +1408,13 @@ struct EBookWebReader: View {
             position: static !important;
             float: none !important;
         }
-        """ : "")
+        """ : """
+        div, section, article, main {
+            max-height: none !important;
+            height: auto !important;
+            overflow: visible !important;
+        }
+        """)
         div, section, article {
             column-count: auto !important;
             column-width: auto !important;
@@ -1450,6 +1457,7 @@ struct EBookWebReader: View {
 
     private func buildReaderCSS(prefs: EBookPreferences, colorScheme: ColorScheme, initialPage: Int, size: CGSize) -> String {
         let cssContent = computeCSS(prefs: prefs, size: size)
+        let isPaged = prefs.paginationMode == EBookPaginationMode.paged.rawValue
         
         return """
         <meta charset="utf-8">
@@ -1475,7 +1483,7 @@ struct EBookWebReader: View {
 
         function postFraction() {
             var sv = document.scrollingElement || document.documentElement;
-            var isHoriz = document.body.style.columnWidth || window.getComputedStyle(document.body).columnWidth !== 'auto';
+            var isHoriz = \(isPaged);
             var fraction = 0;
             if (isHoriz) {
                 var maxScroll = sv.scrollWidth - window.innerWidth;
@@ -1490,7 +1498,7 @@ struct EBookWebReader: View {
         function updateMetrics() {
             var sv = document.scrollingElement || document.documentElement;
             var pageStep = window.innerWidth;
-            var isHoriz = document.body.style.columnWidth || window.getComputedStyle(document.body).columnWidth !== 'auto';
+            var isHoriz = \(isPaged);
             
             if (isHoriz) {
                 _totalPages = Math.max(1, Math.round(sv.scrollWidth / pageStep));
@@ -1523,7 +1531,7 @@ struct EBookWebReader: View {
             var behavior = smooth ? 'smooth' : 'instant';
             
             var sv = document.scrollingElement || document.documentElement;
-            var isHoriz = document.body.style.columnWidth || window.getComputedStyle(document.body).columnWidth !== 'auto';
+            var isHoriz = \(isPaged);
             if (isHoriz) {
                 var pageStep = window.innerWidth;
                 window.scrollTo({ left: _currentPage * pageStep, behavior: behavior });
