@@ -174,6 +174,37 @@ struct DocumentReaderEngine: View {
                 onDismiss()
             }
         }
+        .onDisappear {
+            savePosition(pageIndex: currentPageIndex)
+            accessedURL?.stopAccessingSecurityScopedResource()
+            sessionTimer?.invalidate()
+            sessionTimer = nil
+            Task {
+                await PDFRenderActor.shared.clear()
+            }
+        }
+        .onAppear {
+            sessionSeconds = 0
+            sessionTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
+                sessionSeconds += 1
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
+            Logger.shared.log("DocumentReaderEngine: Memory warning received. Purging PDF cache.", category: "Memory", type: .warning)
+            Task {
+                await PDFRenderActor.shared.clear()
+            }
+        }
+        .sheet(isPresented: $showingSettings) {
+            EBookSettingsPanel(bookID: pdf.id.uuidString, isPDF: true)
+                .presentationDetents([.medium, .large])
+        }
+        .sheet(isPresented: $showSearch) {
+            if let doc = pdfDocument, let pdfV = pdfViewReference {
+                ReaderSearchView(document: doc, pdfView: pdfV)
+                    .presentationDetents([.medium, .large])
+            }
+        }
         .task {
             // Linked Library: Resolve security-scoped URL before opening.
             // PDFDocument reads data lazily on draw, so we hold onto the access scope until disappear.
@@ -192,51 +223,19 @@ struct DocumentReaderEngine: View {
             self.accessedURL = accessed
             self.resolvedURL = resolvedURL
             pdfDocument = doc
+            _ = await PDFRenderActor.shared.loadDocument(at: resolvedURL)
             if let saved = ReaderProgressTracker.shared.progress(for: pdf.id) {
                 currentPageIndex = saved.currentPageIndex
             }
             if isReflowMode { updateReflowText() }
             isReaderFocused = true
         }
-        // FIX 3: Save position on every page turn — not just on deliberate back-tap.
-        // This ensures phone-calls, swipe-up app kills, and background terminations
-        // never lose the user's reading position.
         .onChange(of: currentPageIndex) { _, new in
             if isReflowMode { updateReflowText() }
             savePosition(pageIndex: new)
         }
-        // FIX 3b: Also save when the app goes to the background (resign-active).
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in
             savePosition(pageIndex: currentPageIndex)
-        }
-        .onDisappear {
-            savePosition(pageIndex: currentPageIndex)
-            accessedURL?.stopAccessingSecurityScopedResource()
-            sessionTimer?.invalidate()
-            sessionTimer = nil
-        }
-        .onAppear {
-            sessionSeconds = 0
-            sessionTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
-                sessionSeconds += 1
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
-            Logger.shared.log("DocumentReaderEngine: Memory warning received. Purging PDF cache.", category: "Memory", type: .warning)
-            Task {
-                await PDFRenderActor.shared.clear()
-            }
-        }
-        .sheet(isPresented: $showingSettings) {
-            EBookSettingsPanel(bookID: pdf.id.uuidString, isPDF: true)
-                .presentationDetents([.medium, .large])
-        }
-
-        .sheet(isPresented: $showSearch) {
-            if let doc = pdfDocument, let pdfV = pdfViewReference {
-                ReaderSearchView(document: doc, pdfView: pdfV)
-                    .presentationDetents([.medium, .large])
-            }
         }
         .focusable()
         .focused($isReaderFocused)
