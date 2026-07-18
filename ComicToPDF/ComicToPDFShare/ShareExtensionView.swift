@@ -416,22 +416,42 @@ struct ShareExtensionView: View {
         await withCheckedContinuation { continuation in
             provider.loadItem(forTypeIdentifier: typeId, options: nil) { item, error in
                 guard error == nil else { continuation.resume(returning: nil); return }
-                let sourceURL: URL?
+                
+                var sourceURL: URL? = nil
+                var isRawData = false
+                var rawData: Data? = nil
+                
                 if let nsURL = item as? NSURL {
                     sourceURL = nsURL as URL
-                } else if let data = item as? NSData,
-                          let str  = String(data: data as Data, encoding: .utf8),
-                          let url  = URL(string: str) {
+                } else if let url = item as? URL {
                     sourceURL = url
-                } else if let str  = item as? NSString,
-                          let url  = URL(string: str as String) {
-                    sourceURL = url
-                } else {
-                    sourceURL = nil
+                } else if let nsData = item as? NSData {
+                    let data = nsData as Data
+                    if let str = String(data: data, encoding: .utf8),
+                       let url = URL(string: str),
+                       url.scheme != nil {
+                        sourceURL = url
+                    } else {
+                        // Raw binary payload
+                        isRawData = true
+                        rawData = data
+                    }
+                } else if let nsString = item as? NSString {
+                    let str = nsString as String
+                    if let url = URL(string: str), url.scheme != nil {
+                        sourceURL = url
+                    }
                 }
-                guard let src = sourceURL else { continuation.resume(returning: nil); return }
-                let result = self.copyToSharedContainer(src, destFilename: filename)
-                continuation.resume(returning: result)
+                
+                if let src = sourceURL {
+                    let result = self.copyToSharedContainer(src, destFilename: filename)
+                    continuation.resume(returning: result)
+                } else if isRawData, let data = rawData {
+                    let result = self.writeRawDataToSharedContainer(data, destFilename: filename)
+                    continuation.resume(returning: result)
+                } else {
+                    continuation.resume(returning: nil)
+                }
             }
         }
     }
@@ -454,14 +474,53 @@ struct ShareExtensionView: View {
         let accessing = sourceURL.startAccessingSecurityScopedResource()
         defer { if accessing { sourceURL.stopAccessingSecurityScopedResource() } }
         
+        var copySuccess = false
+        let coordinator = NSFileCoordinator()
+        var coordinatorError: NSError?
+        
+        coordinator.coordinate(readingItemAt: sourceURL, options: .forResolvingConflicts, error: &coordinatorError) { coordinatedURL in
+            do {
+                try FileManager.default.copyItem(at: coordinatedURL, to: destURL)
+                copySuccess = true
+            } catch {
+                print("[ShareExt] Coordinated copy failed: \(error.localizedDescription)")
+            }
+        }
+        
+        if copySuccess {
+            return destURL
+        } else {
+            // Fallback to uncoordinated copy
+            do {
+                try FileManager.default.copyItem(at: sourceURL, to: destURL)
+                return destURL
+            } catch {
+                print("[ShareExt] Fallback copy failed: \(error.localizedDescription)")
+                return nil
+            }
+        }
+    }
+    
+    private func writeRawDataToSharedContainer(_ data: Data, destFilename: String) -> URL? {
+        guard let containerURL = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: "group.com.antigravity.ComicToPDF"
+        ) else { return nil }
+        
+        let inboxURL = containerURL.appendingPathComponent("Inbox", isDirectory: true)
+        try? FileManager.default.createDirectory(at: inboxURL, withIntermediateDirectories: true)
+        
+        let destURL = inboxURL.appendingPathComponent(destFilename)
+        try? FileManager.default.removeItem(at: destURL)
+        
         do {
-            try FileManager.default.copyItem(at: sourceURL, to: destURL)
+            try data.write(to: destURL, options: .atomic)
             return destURL
         } catch {
-            print("Failed to copy file: \(error)")
+            print("[ShareExt] Failed to write raw binary data: \(error.localizedDescription)")
             return nil
         }
     }
+
     
     // MARK: - Process Files
     

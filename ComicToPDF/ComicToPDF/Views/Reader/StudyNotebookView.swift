@@ -101,6 +101,7 @@ struct StudyNotebookView: View {
     // ✅ Phase 3: Highlights Drawer
     @State private var showHighlightsDrawer = false
     @State private var bookHighlights: [SDAnnotation] = []
+    @State private var expandedHighlightIDs = Set<UUID>()
     
     // Pro Search & Filter State
     @State private var highlightSearchQuery = ""
@@ -1272,6 +1273,7 @@ struct StudyNotebookView: View {
                                             .lineSpacing(3)
                                             .padding(.horizontal, 8)
                                             .padding(.vertical, 6)
+                                            .lineLimit(expandedHighlightIDs.contains(highlight.id) ? nil : 3)
                                             .frame(maxWidth: .infinity, alignment: .leading)
                                             .background(
                                                 RoundedRectangle(cornerRadius: 4)
@@ -1281,7 +1283,18 @@ struct StudyNotebookView: View {
                                                 RoundedRectangle(cornerRadius: 4)
                                                     .stroke(accentColor.opacity(0.18), lineWidth: 0.6)
                                             )
+                                            .contentShape(Rectangle())
+                                            .onTapGesture {
+                                                withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                                                    if expandedHighlightIDs.contains(highlight.id) {
+                                                        expandedHighlightIDs.remove(highlight.id)
+                                                    } else {
+                                                        expandedHighlightIDs.insert(highlight.id)
+                                                    }
+                                                }
+                                            }
                                     }
+
                                     
                                     // User note/thought
                                     if let note = highlight.noteText, !note.isEmpty {
@@ -1352,12 +1365,11 @@ struct StudyNotebookView: View {
                                 }
                             }
                         }
-                    }
                     .padding(12)
                 }
                 .background(Color.inkSurface.opacity(0.95))
             }
-            .frame(width: 250)
+            .frame(width: UIDevice.current.userInterfaceIdiom == .phone ? min(280, notebookGeo.size.width - 60) : 250)
             .background(.ultraThinMaterial)
             .shadow(color: .black.opacity(0.1), radius: 10, x: -5, y: 0)
         }
@@ -1538,28 +1550,30 @@ struct MarkdownTextEditor: UIViewRepresentable {
     }
     
     private func updateTextViewPadding(_ textView: UITextView, style: PaperStyle) {
+        let isPhone = UIDevice.current.userInterfaceIdiom == .phone
         let topInset: CGFloat
         let leftInset: CGFloat
-        let rightInset: CGFloat = 20
+        let rightInset: CGFloat = isPhone ? 12 : 20
         let bottomInset: CGFloat = 20
         
         switch style {
         case .legal:
-            topInset = 56
-            leftInset = 100
+            topInset = isPhone ? 32 : 56
+            leftInset = isPhone ? 48 : 100
         case .collegeRuled:
-            topInset = 63
-            leftInset = 84
+            topInset = isPhone ? 36 : 63
+            leftInset = isPhone ? 42 : 84
         case .ruled:
-            topInset = 48
-            leftInset = 84
+            topInset = isPhone ? 28 : 48
+            leftInset = isPhone ? 42 : 84
         default:
             topInset = 16
-            leftInset = 20
+            leftInset = isPhone ? 12 : 20
         }
         
         textView.textContainerInset = UIEdgeInsets(top: topInset, left: leftInset, bottom: bottomInset, right: rightInset)
     }
+
     
     @MainActor
     class Coordinator: NSObject, UITextViewDelegate, UIGestureRecognizerDelegate {
