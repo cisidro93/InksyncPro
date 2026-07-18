@@ -479,15 +479,24 @@ struct PDFKitRepresentedView: UIViewRepresentable {
     private func configureDisplayMode(_ pdfView: PDFView, context: Context) {
         let currentMode = prefs.paginationMode
         context.coordinator.lastConfiguredPaginationMode = currentMode
+        context.coordinator.lastFitToWidth = prefs.pdfFitToWidth
         let isPaged = currentMode == EBookPaginationMode.paged.rawValue
+        let fitToWidth = prefs.pdfFitToWidth
+        let dualPageMode = prefs.pdfDualPage
         
+        let expectedDisplayMode: PDFDisplayMode
         if isPaged {
-            pdfView.displayMode = .singlePage
+            expectedDisplayMode = dualPageMode ? .twoUp : .singlePage
+        } else {
+            expectedDisplayMode = dualPageMode ? .twoUpContinuous : .singlePageContinuous
+        }
+        pdfView.displayMode = expectedDisplayMode
+        
+        if isPaged && !fitToWidth {
             pdfView.displayDirection = .horizontal
             pdfView.usePageViewController(true, withViewOptions: nil)
         } else {
             pdfView.usePageViewController(false)
-            pdfView.displayMode = .singlePageContinuous
             pdfView.displayDirection = .vertical
         }
         pdfView.layoutDocumentView()
@@ -573,6 +582,14 @@ struct PDFKitRepresentedView: UIViewRepresentable {
         let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(context.coordinator.handleTap(_:)))
         pdfView.addGestureRecognizer(tap)
         
+        let swipeLeft = UISwipeGestureRecognizer(target: context.coordinator, action: #selector(context.coordinator.handleSwipe(_:)))
+        swipeLeft.direction = .left
+        pdfView.addGestureRecognizer(swipeLeft)
+        
+        let swipeRight = UISwipeGestureRecognizer(target: context.coordinator, action: #selector(context.coordinator.handleSwipe(_:)))
+        swipeRight.direction = .right
+        pdfView.addGestureRecognizer(swipeRight)
+        
         NotificationCenter.default.addObserver(
             context.coordinator,
             selector: #selector(context.coordinator.pageChanged(_:)),
@@ -612,10 +629,15 @@ struct PDFKitRepresentedView: UIViewRepresentable {
                 expectedDisplayMode = dualPageMode ? .twoUpContinuous : .singlePageContinuous
             }
             
-            if pdfView.displayMode != expectedDisplayMode || context.coordinator.lastConfiguredPaginationMode != currentMode {
+            if pdfView.displayMode != expectedDisplayMode ||
+                context.coordinator.lastConfiguredPaginationMode != currentMode ||
+                context.coordinator.lastFitToWidth != fitToWidth {
+                
                 pdfView.displayMode = expectedDisplayMode
                 context.coordinator.lastConfiguredPaginationMode = currentMode
-                if isPaged {
+                context.coordinator.lastFitToWidth = fitToWidth
+                
+                if isPaged && !fitToWidth {
                     pdfView.displayDirection = .horizontal
                     pdfView.usePageViewController(true, withViewOptions: nil)
                 } else {
@@ -681,6 +703,7 @@ struct PDFKitRepresentedView: UIViewRepresentable {
         weak var canvasView: PKCanvasView?
         var toolPicker = PKToolPicker()
         var lastConfiguredPaginationMode: String?
+        var lastFitToWidth: Bool?
         
         init(_ parent: PDFKitRepresentedView) {
             self.parent = parent
@@ -729,12 +752,44 @@ struct PDFKitRepresentedView: UIViewRepresentable {
             }
         }
         
+        @objc func handleSwipe(_ gesture: UISwipeGestureRecognizer) {
+            guard !parent.isPencilMode else { return }
+            
+            let isRTL = EBookPreferences.shared.pdfRTL
+            let swipeLeft = gesture.direction == .left
+            let swipeRight = gesture.direction == .right
+            
+            let goBackward = isRTL ? swipeLeft : swipeRight
+            let goForward = isRTL ? swipeRight : swipeLeft
+            
+            if goBackward {
+                if parent.currentPageIndex > 0 {
+                    if let pv = pdfView, pv.canGoToPreviousPage {
+                        pv.goToPreviousPage(nil)
+                    } else {
+                        parent.currentPageIndex -= 1
+                    }
+                    HapticEngine.light()
+                }
+            } else if goForward {
+                if let doc = pdfView?.document, parent.currentPageIndex < doc.pageCount - 1 {
+                    if let pv = pdfView, pv.canGoToNextPage {
+                        pv.goToNextPage(nil)
+                    } else {
+                        parent.currentPageIndex += 1
+                    }
+                    HapticEngine.light()
+                }
+            }
+        }
+        
         @objc func pageChanged(_ notification: Notification) {
             if let view = notification.object as? PDFView,
                let page = view.currentPage,
                let document = view.document {
                 let index = document.index(for: page)
                 Task { @MainActor in
+                    let pageChanged = self.parent.currentPageIndex != index
                     self.parent.currentPageIndex = index
                     
                     if EBookPreferences.shared.pdfFitToWidth {
@@ -742,6 +797,12 @@ struct PDFKitRepresentedView: UIViewRepresentable {
                         let scale = view.bounds.width / pageBounds.width
                         if view.scaleFactor != scale && scale > 0 {
                             view.scaleFactor = scale
+                        }
+                    }
+                    
+                    if pageChanged {
+                        if let scrollView = view.subviews.first(where: { $0 is UIScrollView }) as? UIScrollView {
+                            scrollView.setContentOffset(.zero, animated: false)
                         }
                     }
                 }
