@@ -816,6 +816,7 @@ struct PDFKitRepresentedView: UIViewRepresentable {
                     pdfView?.goToNextPage(nil)
                     HapticEngine.light()
                 }
+            }
         }
         
         @objc func pageChanged(_ notification: Notification) {
