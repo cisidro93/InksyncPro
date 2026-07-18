@@ -126,7 +126,8 @@ struct ContentView: View {
                 if !isLogoMorphComplete {
                     let safeAreaTop = geo.safeAreaInsets.top
                     let startPos = CGPoint(x: geo.size.width / 2, y: geo.size.height / 2 - 30)
-                    let endPos = CGPoint(x: 32, y: safeAreaTop + 26) // Aligns with custom unified header space
+                    let endPos = CGPoint(x: 34, y: safeAreaTop + 26) // Aligns with custom unified header space
+
                     
                     let currentPos = isAppLoading ? startPos : endPos
                     let currentSize = isAppLoading ? CGFloat(130) : CGFloat(32)
