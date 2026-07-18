@@ -57,7 +57,7 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }
             do {
                 let bookmarkData = try url.bookmarkData(
-                    options: .securityScope,
+                    options: [],
                     includingResourceValuesForKeys: [.isUbiquitousItemKey],
                     relativeTo: nil
                 )

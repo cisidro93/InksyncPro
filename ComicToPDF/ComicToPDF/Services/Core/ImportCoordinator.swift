@@ -199,6 +199,8 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
                     let src = job.source
                     let dst = job.dest
                     group.addTask {
+                        let accessing = src.startAccessingSecurityScopedResource()
+                        defer { if accessing { src.stopAccessingSecurityScopedResource() } }
                         do {
                             // Use FileManager.default inline — avoids capturing the non-Sendable
                             // local `fm` reference across the task group isolation boundary.
@@ -206,7 +208,7 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
                             try FileManager.default.copyItem(at: src, to: dst)
                             return dst
                         } catch {
-                            Logger.shared.log("ImportCoordinator: Copy failed \(src.lastPathComponent)",
+                            Logger.shared.log("ImportCoordinator: Copy failed \(src.lastPathComponent): \(error.localizedDescription)",
                                               category: "System", type: .warning)
                             return nil
                         }

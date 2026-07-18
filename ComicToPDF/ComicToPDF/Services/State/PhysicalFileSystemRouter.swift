@@ -589,7 +589,7 @@ class PhysicalFileSystemRouter {
         if case .linked = pdf.sourceMode {
             let accessingNew = newURL.startAccessingSecurityScopedResource()
             do {
-                let newBookmark = try newURL.bookmarkData(options: .securityScope, includingResourceValuesForKeys: nil, relativeTo: nil)
+                let newBookmark = try newURL.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
                 manager.convertedPDFs[idx].sourceMode = .linked(bookmarkData: newBookmark)
             } catch {
                 Logger.shared.log("Failed to create new bookmark after rename: \(error.localizedDescription)", category: "FileSystem", type: .error)
@@ -718,7 +718,7 @@ class PhysicalFileSystemRouter {
                     // Re-register bookmark if linked
                     if case .linked = manager.convertedPDFs[i].sourceMode {
                         let accessing = resolvedNewURL.startAccessingSecurityScopedResource()
-                        if let newBM = try? resolvedNewURL.bookmarkData(options: .securityScope, includingResourceValuesForKeys: nil, relativeTo: nil) {
+                        if let newBM = try? resolvedNewURL.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil) {
                             manager.convertedPDFs[i].sourceMode = .linked(bookmarkData: newBM)
                         }
                         if accessing { resolvedNewURL.stopAccessingSecurityScopedResource() }
