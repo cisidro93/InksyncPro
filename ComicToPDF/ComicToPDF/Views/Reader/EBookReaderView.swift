@@ -932,8 +932,9 @@ struct EBookWebReader: UIViewRepresentable {
         wv.isOpaque = false
         wv.backgroundColor = .clear
         wv.scrollView.backgroundColor = .clear
-        wv.scrollView.contentInsetAdjustmentBehavior = .always
+        wv.scrollView.contentInsetAdjustmentBehavior = .never
         wv.navigationDelegate = context.coordinator
+        wv.scrollView.delegate = context.coordinator
         wv.onHighlightRequested = {
             wv.evaluateJavaScript("window.applyInksyncHighlight('#ffd700');")
         }
@@ -941,16 +942,6 @@ struct EBookWebReader: UIViewRepresentable {
         let pinch = UIPinchGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handlePinch(_:)))
         pinch.delegate = context.coordinator
         wv.addGestureRecognizer(pinch)
-
-        let swipeLeft = UISwipeGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleSwipe(_:)))
-        swipeLeft.direction = .left
-        swipeLeft.delegate = context.coordinator
-        wv.addGestureRecognizer(swipeLeft)
-
-        let swipeRight = UISwipeGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleSwipe(_:)))
-        swipeRight.direction = .right
-        swipeRight.delegate = context.coordinator
-        wv.addGestureRecognizer(swipeRight)
 
         DispatchQueue.main.async {
             self.webViewRef = wv
@@ -970,6 +961,7 @@ struct EBookWebReader: UIViewRepresentable {
         uiView.configuration.userContentController.removeScriptMessageHandler(forName: "highlight")
         uiView.configuration.userContentController.removeScriptMessageHandler(forName: "scrollFraction")
         uiView.navigationDelegate = nil
+        uiView.scrollView.delegate = nil
     }
     
     func updateUIView(_ wv: WKWebView, context: Context) {
@@ -977,10 +969,10 @@ struct EBookWebReader: UIViewRepresentable {
         
         // Configure paging and scrolling constraints
         if prefs.paginationMode == EBookPaginationMode.paged.rawValue {
-            wv.scrollView.isScrollEnabled = false
-            wv.scrollView.isPagingEnabled = false
+            wv.scrollView.isScrollEnabled = true
+            wv.scrollView.isPagingEnabled = true
             wv.scrollView.alwaysBounceVertical = false
-            wv.scrollView.alwaysBounceHorizontal = false
+            wv.scrollView.alwaysBounceHorizontal = true
             wv.scrollView.showsHorizontalScrollIndicator = false
             wv.scrollView.showsVerticalScrollIndicator = false
         } else {
@@ -1114,10 +1106,9 @@ struct EBookWebReader: UIViewRepresentable {
         let defaultColumns = (isPad && isLandscape) ? 2 : 1
         let cols = prefs.columnCount == 0 ? defaultColumns : prefs.columnCount
         
-        let gap = Int(margin * 2)
-        let totalGapsWidth = CGFloat(gap * (cols - 1))
-        let totalMarginsWidth = CGFloat(margin * 2)
-        let colWidth = max(100.0, (renderWidth - totalGapsWidth - totalMarginsWidth) / CGFloat(cols))
+        let m = isPaged ? max(20.0, margin) : margin
+        let gap = 2 * m
+        let colWidth = max(100.0, (renderWidth / CGFloat(cols)) - gap)
         
         let pagedCSS = isPaged ? """
             column-width: \(colWidth)px !important;
@@ -1126,8 +1117,8 @@ struct EBookWebReader: UIViewRepresentable {
             column-rule: none !important;
         """ : ""
 
-        let paddingLeft = margin
-        let paddingRight = margin
+        let paddingLeft = m
+        let paddingRight = m
 
         return """
         @font-face {
@@ -1255,7 +1246,8 @@ struct EBookWebReader: UIViewRepresentable {
         html, body {
             margin: 0 !important; padding: 0 !important;
             width: 100% !important; height: 100% !important;
-            overflow: hidden !important;
+            overflow-x: scroll !important;
+            overflow-y: hidden !important;
             background-color: \(bgColor) !important;
         }
         body {
@@ -1272,17 +1264,15 @@ struct EBookWebReader: UIViewRepresentable {
             hyphens: \(hyphenCSS) !important;
         }
         #inksync-viewport {
+            position: absolute !important;
+            top: 60px !important;
+            bottom: 60px !important;
+            left: \(m)px !important;
+            width: \(renderWidth - 2 * m)px !important;
+            height: calc(100% - 120px) !important;
             margin: 0 !important;
-            padding-top: 60px !important;
-            padding-bottom: 60px !important;
-            padding-left: \(paddingLeft)px !important;
-            padding-right: \(paddingRight)px !important;
-            box-sizing: border-box !important;
-            width: 100% !important;
-            height: 100% !important;
+            padding: 0 !important;
             \(pagedCSS)
-            transition: transform 0.15s ease-out;
-            transform: translate3d(0px, 0px, 0px);
         }
         """ : """
         html {
@@ -1336,7 +1326,7 @@ struct EBookWebReader: UIViewRepresentable {
             overflow: visible !important;
         }
         div, section, article, main {
-            height: 100% !important;
+            height: auto !important;
         }
         div, section, article, main, p, blockquote {
             display: block !important;
@@ -1396,7 +1386,7 @@ struct EBookWebReader: UIViewRepresentable {
             var isHoriz = document.body.style.columnWidth || window.getComputedStyle(document.body).columnWidth !== 'auto';
             var fraction = 0;
             if (isHoriz) {
-                var maxScroll = document.body.scrollWidth - window.innerWidth;
+                var maxScroll = sv.scrollWidth - window.innerWidth;
                 if (maxScroll > 0) fraction = sv.scrollLeft / maxScroll;
             } else {
                 var maxScroll = sv.scrollHeight - window.innerHeight;
@@ -1408,17 +1398,32 @@ struct EBookWebReader: UIViewRepresentable {
         function updateMetrics() {
             var sv = document.scrollingElement || document.documentElement;
             var pageStep = window.innerWidth;
-            _totalPages = Math.max(1, Math.round(document.body.scrollWidth / pageStep));
-            if (_firstRun) {
-                _firstRun = false;
-                if (_currentPage === 99999) {
-                    _currentPage = _totalPages - 1;
+            var isHoriz = document.body.style.columnWidth || window.getComputedStyle(document.body).columnWidth !== 'auto';
+            
+            if (isHoriz) {
+                _totalPages = Math.max(1, Math.round(sv.scrollWidth / pageStep));
+                if (_firstRun) {
+                    _firstRun = false;
+                    if (_currentPage === 99999) {
+                        _currentPage = _totalPages - 1;
+                    }
+                    goToPage(_currentPage, false);
+                } else {
+                    _currentPage = Math.max(0, Math.min(Math.round(sv.scrollLeft / pageStep), _totalPages - 1));
                 }
-                goToPage(_currentPage, false);
             } else {
-                window.webkit.messageHandlers.metrics.postMessage({ current: _currentPage, total: _totalPages });
-                postFraction();
+                var pageHeight = window.innerHeight;
+                _totalPages = Math.max(1, Math.round(sv.scrollHeight / pageHeight));
+                if (_firstRun) {
+                    _firstRun = false;
+                    goToPage(_currentPage, false);
+                } else {
+                    _currentPage = Math.max(0, Math.min(Math.round(sv.scrollTop / pageHeight), _totalPages - 1));
+                }
             }
+            
+            window.webkit.messageHandlers.metrics.postMessage({ current: _currentPage, total: _totalPages });
+            postFraction();
         }
 
         function goToPage(page, smooth) {
@@ -1448,21 +1453,9 @@ struct EBookWebReader: UIViewRepresentable {
         };
         window.addEventListener('resize', function() { updateMetrics(); goToPage(_currentPage, false); });
 
-        var _sx = 0;
-        document.addEventListener('touchstart', function(e) { _sx = e.changedTouches[0].clientX; }, {passive:true});
-        document.addEventListener('touchend', function(e) {
-            var dx = e.changedTouches[0].clientX - _sx;
-            if (dx < -40) {
-                if (_currentPage < _totalPages - 1) goToPage(_currentPage + 1, false);
-                else window.webkit.messageHandlers.nav.postMessage('next');
-            } else if (dx > 40) {
-                if (_currentPage > 0) goToPage(_currentPage - 1, false);
-                else window.webkit.messageHandlers.nav.postMessage('prev');
-            }
-        }, {passive:true});
-
         document.addEventListener('click', function(e) {
             if (e.target.tagName.toLowerCase() === 'a') return;
+            if (window.getSelection() && !window.getSelection().isCollapsed) return;
             var x = e.clientX; var w = window.innerWidth;
             var leftEdge = window.__inksync_left_edge || 0.30;
             var rightEdge = window.__inksync_right_edge || 0.70;
@@ -1494,8 +1487,7 @@ struct EBookWebReader: UIViewRepresentable {
             clearTimeout(_scrollTimeout);
             _scrollTimeout = setTimeout(function() {
                 updateMetrics();
-                postFraction();
-            }, 100);
+            }, 50);
         });
 
         // ── Highlight Engine ─────────────────────────────────────────────────
@@ -1616,6 +1608,18 @@ struct EBookWebReader: UIViewRepresentable {
 
     /// Injects a live CSS update into the existing WebView DOM — no reload required.
     private func injectLiveCSS(into webView: WKWebView) {
+        let sv = webView.scrollView
+        let isHoriz = prefs.paginationMode == EBookPaginationMode.paged.rawValue
+        let currentFraction: Double
+        if isHoriz {
+            let maxScroll = sv.contentSize.width - sv.bounds.width
+            currentFraction = maxScroll > 0 ? Double(sv.contentOffset.x / maxScroll) : 0.0
+        } else {
+            let maxScroll = sv.contentSize.height - sv.bounds.height
+            currentFraction = maxScroll > 0 ? Double(sv.contentOffset.y / maxScroll) : 0.0
+        }
+        let clampedFraction = max(0.0, min(1.0, currentFraction))
+
         let css = computeCSS(prefs: prefs, size: webView.bounds.size)
         let js = """
         (function() {
@@ -1628,6 +1632,19 @@ struct EBookWebReader: UIViewRepresentable {
                 document.head.appendChild(liveStyle);
             }
             updateMetrics();
+            
+            // Restore scroll position
+            setTimeout(function() {
+                var sv = document.scrollingElement || document.documentElement;
+                var isHoriz = document.body.style.columnWidth || window.getComputedStyle(document.body).columnWidth !== 'auto';
+                if (isHoriz) {
+                    var maxScroll = sv.scrollWidth - window.innerWidth;
+                    window.scrollTo({ left: maxScroll * \(clampedFraction), behavior: 'instant' });
+                } else {
+                    var maxScroll = sv.scrollHeight - window.innerHeight;
+                    window.scrollTo({ top: maxScroll * \(clampedFraction), behavior: 'instant' });
+                }
+            }, 100);
         })();
         """
         webView.evaluateJavaScript(js)
@@ -1657,7 +1674,7 @@ struct EBookWebReader: UIViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
     @MainActor
-    final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate, UIGestureRecognizerDelegate {
+    final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate, UIGestureRecognizerDelegate, UIScrollViewDelegate {
         var parent: EBookWebReader
         var lastLoadedHref: String = ""
         var lastTheme: String = ""
@@ -1770,14 +1787,18 @@ struct EBookWebReader: UIViewRepresentable {
             }
         }
 
-        @objc func handleSwipe(_ gesture: UISwipeGestureRecognizer) {
+        func scrollViewDidEndDragging(_ scrollView: UIScrollView, decelerate: Bool) {
             let isPaged = parent.prefs.paginationMode == EBookPaginationMode.paged.rawValue
             guard isPaged else { return }
             
-            if gesture.direction == .left {
-                self.parent.onNext()
-            } else if gesture.direction == .right {
-                self.parent.onPrev()
+            let offset = scrollView.contentOffset.x
+            let maxOffset = scrollView.contentSize.width - scrollView.bounds.width
+            let threshold: CGFloat = 50.0
+            
+            if offset > maxOffset + threshold {
+                parent.onNext()
+            } else if offset < -threshold {
+                parent.onPrev()
             }
         }
 

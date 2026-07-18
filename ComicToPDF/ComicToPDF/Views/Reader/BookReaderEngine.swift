@@ -451,6 +451,21 @@ struct EPUBWebView: UIViewRepresentable {
             return nil
         }
 
+        func scrollViewDidEndDragging(_ scrollView: UIScrollView, decelerate: Bool) {
+            let isPaged = parent.prefs.paginationMode == EBookPaginationMode.paged.rawValue
+            guard isPaged else { return }
+            
+            let offset = scrollView.contentOffset.x
+            let maxOffset = scrollView.contentSize.width - scrollView.bounds.width
+            let threshold: CGFloat = 50.0
+            
+            if offset > maxOffset + threshold {
+                parent.onNextChapter?()
+            } else if offset < -threshold {
+                parent.onPrevChapter?()
+            }
+        }
+
         /// Recover from Jetsam Out-Of-Memory (OOM) WebKit process crashes.
         func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
             Logger.shared.log("WebKit process terminated (OOM Jetsam crash). Reloading EPUB chapter.", category: "EPUBWebView", type: .error)
@@ -593,39 +608,23 @@ struct EPUBWebView: UIViewRepresentable {
                 scrollActive = false;
             };
 
-            // ── Navigation (swipe + tap) bridge ──────────────────────────────
-            var _sx = 0, _sy = 0;
-            document.addEventListener('touchstart', function(e) {
-                _sx = e.changedTouches[0].clientX;
-                _sy = e.changedTouches[0].clientY;
-            }, {passive: true});
-            document.addEventListener('touchend', function(e) {
-                var dx = e.changedTouches[0].clientX - _sx;
-                var dy = e.changedTouches[0].clientY - _sy;
-                if (Math.abs(dx) < 8 && Math.abs(dy) < 8) {
-                    var x = e.changedTouches[0].clientX;
-                    var w = window.innerWidth;
-                    var leftEdge = window.__inksync_left_edge || 0.30;
-                    var rightEdge = window.__inksync_right_edge || 0.70;
-                    if (x < w * leftEdge) {
-                        window.webkit.messageHandlers.nav.postMessage('left');
-                    } else if (x > w * rightEdge) {
-                        window.webkit.messageHandlers.nav.postMessage('right');
-                    } else {
-                        window.webkit.messageHandlers.nav.postMessage('center');
-                    }
-                } else if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) {
-                    // Horizontal swipe
-                    if (dx < 0) {
-                        var sv = document.scrollingElement || document.documentElement;
-                        var atEnd = (sv.scrollLeft + window.innerWidth) >= sv.scrollWidth - 4;
-                        if (atEnd) window.webkit.messageHandlers.nav.postMessage('next');
-                    } else {
-                        var sv2 = document.scrollingElement || document.documentElement;
-                        if (sv2.scrollLeft <= 4) window.webkit.messageHandlers.nav.postMessage('prev');
-                    }
+            // Click zone navigation
+            document.addEventListener('click', function(e) {
+                if (e.target.tagName.toLowerCase() === 'a') return;
+                if (window.getSelection() && !window.getSelection().isCollapsed) return;
+                var x = e.clientX; var w = window.innerWidth;
+                var leftEdge = window.__inksync_left_edge || 0.30;
+                var rightEdge = window.__inksync_right_edge || 0.70;
+                if (x < w * leftEdge) {
+                    if (_currentPage > 0) goToPage(_currentPage - 1, true);
+                    else window.webkit.messageHandlers.nav.postMessage('prev');
+                } else if (x > w * rightEdge) {
+                    if (_currentPage < _totalPages - 1) goToPage(_currentPage + 1, true);
+                    else window.webkit.messageHandlers.nav.postMessage('next');
+                } else {
+                    window.webkit.messageHandlers.nav.postMessage('center');
                 }
-            }, {passive: true});
+            });
 
             // ── Scroll Fraction reporting listener ────────────────────────────
             function postFraction() {
@@ -642,23 +641,45 @@ struct EPUBWebView: UIViewRepresentable {
                 window.webkit.messageHandlers.scrollFraction.postMessage(fraction);
             }
 
+            var _currentPage = 0;
+            var _totalPages = 1;
+
             function postMetrics() {
                 var sv = document.scrollingElement || document.documentElement;
                 var isHoriz = window.getComputedStyle(document.body).columnWidth !== 'auto';
-                var current = 0;
-                var total = 1;
+                var pageStep = window.innerWidth;
+                
                 if (isHoriz) {
-                    var style = window.getComputedStyle(document.body);
-                    var gap = parseFloat(style.columnGap) || 0;
-                    var pageStep = window.innerWidth + gap;
-                    total = Math.max(1, Math.ceil((sv.scrollWidth + gap) / pageStep));
-                    current = Math.max(0, Math.min(Math.round(sv.scrollLeft / pageStep), total - 1));
+                    _totalPages = Math.max(1, Math.round(sv.scrollWidth / pageStep));
+                    _currentPage = Math.max(0, Math.min(Math.round(sv.scrollLeft / pageStep), _totalPages - 1));
                 } else {
-                    total = Math.max(1, Math.ceil(sv.scrollHeight / window.innerHeight));
-                    current = Math.max(0, Math.min(Math.round(sv.scrollTop / window.innerHeight), total - 1));
+                    var pageHeight = window.innerHeight;
+                    _totalPages = Math.max(1, Math.round(sv.scrollHeight / pageHeight));
+                    _currentPage = Math.max(0, Math.min(Math.round(sv.scrollTop / pageHeight), _totalPages - 1));
                 }
-                window.webkit.messageHandlers.metrics.postMessage({ "current": current, "total": total });
+                
+                window.webkit.messageHandlers.metrics.postMessage({ current: _currentPage, total: _totalPages });
+                postFraction();
             }
+            window.postMetrics = postMetrics;
+
+            function goToPage(page, smooth) {
+                var behavior = smooth ? 'smooth' : 'instant';
+                var sv = document.scrollingElement || document.documentElement;
+                var isHoriz = window.getComputedStyle(document.body).columnWidth !== 'auto';
+                var pageStep = window.innerWidth;
+                
+                _currentPage = Math.max(0, Math.min(page, _totalPages - 1));
+                if (isHoriz) {
+                    window.scrollTo({ left: _currentPage * pageStep, behavior: behavior });
+                } else {
+                    window.scrollTo({ top: _currentPage * window.innerHeight, behavior: behavior });
+                }
+                
+                window.webkit.messageHandlers.metrics.postMessage({ current: _currentPage, total: _totalPages });
+                postFraction();
+            }
+            window.goToInksyncPage = goToPage;
 
             window.addEventListener('load', function() {
                 setTimeout(postMetrics, 150);
@@ -671,9 +692,8 @@ struct EPUBWebView: UIViewRepresentable {
             window.addEventListener('scroll', function() {
                 clearTimeout(_scrollTimeout);
                 _scrollTimeout = setTimeout(function() {
-                    postFraction();
                     postMetrics();
-                }, 100);
+                }, 50);
             });
             """,
             injectionTime: .atDocumentEnd,
@@ -717,6 +737,7 @@ struct EPUBWebView: UIViewRepresentable {
         uiView.configuration.userContentController.removeScriptMessageHandler(forName: "metrics")
         uiView.configuration.userContentController.removeScriptMessageHandler(forName: "footnote")
         uiView.navigationDelegate = nil
+        uiView.scrollView.delegate = nil
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {
@@ -754,9 +775,21 @@ struct EPUBWebView: UIViewRepresentable {
         // Always sync native appearance
         webView.backgroundColor = .clear
         webView.scrollView.backgroundColor = .clear
-        webView.scrollView.isPagingEnabled = prefs.paginationMode == EBookPaginationMode.paged.rawValue
-        webView.scrollView.showsVerticalScrollIndicator = prefs.paginationMode == EBookPaginationMode.continuous.rawValue
-        webView.scrollView.alwaysBounceVertical = prefs.paginationMode == EBookPaginationMode.continuous.rawValue
+        if prefs.paginationMode == EBookPaginationMode.paged.rawValue {
+            webView.scrollView.isScrollEnabled = true
+            webView.scrollView.isPagingEnabled = true
+            webView.scrollView.alwaysBounceVertical = false
+            webView.scrollView.alwaysBounceHorizontal = true
+            webView.scrollView.showsHorizontalScrollIndicator = false
+            webView.scrollView.showsVerticalScrollIndicator = false
+        } else {
+            webView.scrollView.isScrollEnabled = true
+            webView.scrollView.isPagingEnabled = false
+            webView.scrollView.alwaysBounceVertical = true
+            webView.scrollView.alwaysBounceHorizontal = false
+            webView.scrollView.showsHorizontalScrollIndicator = false
+            webView.scrollView.showsVerticalScrollIndicator = true
+        }
 
         // Apply auto-scroll logic
         if prefs.autoScroll && prefs.paginationMode == EBookPaginationMode.continuous.rawValue {
@@ -784,11 +817,6 @@ struct EPUBWebView: UIViewRepresentable {
         let paraIndent    = prefs.paragraphIndent
         let hyphenCSS     = prefs.hyphenation ? "auto" : "manual"
 
-        let overflowCSS = isPaged
-            ? "overflow: hidden !important;"
-            : "overflow-x: hidden !important; overflow-y: auto !important;"
-        let widthCSS = isPaged ? "" : "width: 100vw !important; overflow-x: hidden !important;"
-        
         let renderWidth = size.width > 0 ? size.width : UIScreen.main.bounds.width
         let renderHeight = size.height > 0 ? size.height : UIScreen.main.bounds.height
         
@@ -797,18 +825,19 @@ struct EPUBWebView: UIViewRepresentable {
         let defaultColumns = (isPad && isLandscape) ? 2 : 1
         let cols = prefs.columnCount == 0 ? defaultColumns : prefs.columnCount
         
-        let gap = isPaged ? 0 : Int(margin * 2)
-        let colWidth = renderWidth / CGFloat(cols)
+        let m = isPaged ? max(20.0, margin) : margin
+        let gap = 2 * m
+        let colWidth = max(100.0, (renderWidth / CGFloat(cols)) - gap)
         
         let pagedCSS = isPaged ? """
             column-width: \(colWidth)px !important;
-            column-gap: 0px !important;
+            column-gap: \(gap)px !important;
             column-fill: auto !important;
             column-rule: none !important;
         """ : ""
 
-        let paddingLeft = isPaged ? 0 : margin
-        let paddingRight = isPaged ? 0 : margin
+        let paddingLeft = m
+        let paddingRight = m
 
         return """
         @font-face {
@@ -934,10 +963,10 @@ struct EPUBWebView: UIViewRepresentable {
         *, *::before, *::after { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
         html {
             margin: 0 !important; padding: 0 !important;
-            height: 100vh !important; width: 100vw !important;
+            height: 100% !important; width: 100% !important;
             column-width: auto !important;
             touch-action: pan-x pan-y;
-            \(overflowCSS)
+            \(isPaged ? "overflow-x: scroll !important; overflow-y: hidden !important;" : "overflow-x: hidden !important; overflow-y: auto !important;")
             background-color: \(bgColor) !important;
         }
         body {
@@ -948,8 +977,8 @@ struct EPUBWebView: UIViewRepresentable {
             text-align: \(textAlign) !important;
             \(pagedCSS)
             margin: 0 !important;
-            height: 100vh !important;
-            \(widthCSS)
+            height: 100% !important;
+            width: 100% !important;
             padding-top: 60px !important;
             padding-bottom: 60px !important;
             padding-left: \(paddingLeft)px !important;
@@ -961,7 +990,7 @@ struct EPUBWebView: UIViewRepresentable {
             word-spacing: \(wordSpacing) !important;
             -webkit-hyphens: \(hyphenCSS) !important;
             hyphens: \(hyphenCSS) !important;
-            \(isPaged ? "overflow: hidden !important;" : "")
+            \(isPaged ? "overflow-x: scroll !important; overflow-y: hidden !important;" : "")
         }
         
         /* Prevent nested overflow and positioning containers from breaking horizontal column flow */
@@ -1043,10 +1072,13 @@ struct EPUBWebView: UIViewRepresentable {
             var el = document.getElementById('__inksync_live__');
             if (!el) { el = document.createElement('style'); el.id = '__inksync_live__'; document.head.appendChild(el); }
             el.textContent = `\(css.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "`", with: "\\`"))`;
+            if (window.postMetrics) {
+                window.postMetrics();
+            }
             // Restore scroll position
             setTimeout(function() {
                 var sv = document.scrollingElement || document.documentElement;
-                var isHoriz = window.getComputedStyle(document.body).columnWidth !== 'auto';
+                var isHoriz = document.body.style.columnWidth || window.getComputedStyle(document.body).columnWidth !== 'auto';
                 if (isHoriz) {
                     var maxScroll = sv.scrollWidth - window.innerWidth;
                     window.scrollTo({ left: maxScroll * \(clampedFraction), behavior: 'instant' });
