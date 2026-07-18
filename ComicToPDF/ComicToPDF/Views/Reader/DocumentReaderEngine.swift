@@ -818,27 +818,37 @@ struct PDFKitRepresentedView: UIViewRepresentable {
         }
         
         @objc func pageChanged(_ notification: Notification) {
-            if let view = notification.object as? PDFView,
-               let page = view.currentPage,
-               let document = view.document {
-                let index = document.index(for: page)
-                Task { @MainActor in
-                    let pageChanged = self.parent.currentPageIndex != index
-                    self.parent.currentPageIndex = index
-                    
-                    if EBookPreferences.shared.pdfFitToWidth {
-                        let pageBounds = page.bounds(for: view.displayBox)
-                        let scale = view.bounds.width / pageBounds.width
-                        if view.scaleFactor != scale && scale > 0 {
-                            view.scaleFactor = scale
-                        }
-                    }
-                    
-                    if pageChanged {
-                        if let scrollView = view.subviews.first(where: { $0 is UIScrollView }) as? UIScrollView {
-                            scrollView.setContentOffset(.zero, animated: false)
-                        }
-                    }
+            guard let view = notification.object as? PDFView,
+                  let page = view.currentPage,
+                  let document = view.document else { return }
+            
+            let index = document.index(for: page)
+            
+            if Thread.isMainThread {
+                self.updatePageIndex(index, in: view, page: page)
+            } else {
+                DispatchQueue.main.async {
+                    self.updatePageIndex(index, in: view, page: page)
+                }
+            }
+        }
+        
+        @MainActor
+        private func updatePageIndex(_ index: Int, in view: PDFView, page: PDFPage) {
+            let pageChanged = self.parent.currentPageIndex != index
+            self.parent.currentPageIndex = index
+            
+            if EBookPreferences.shared.pdfFitToWidth {
+                let pageBounds = page.bounds(for: view.displayBox)
+                let scale = view.bounds.width / pageBounds.width
+                if view.scaleFactor != scale && scale > 0 {
+                    view.scaleFactor = scale
+                }
+            }
+            
+            if pageChanged {
+                if let scrollView = view.subviews.first(where: { $0 is UIScrollView }) as? UIScrollView {
+                    scrollView.setContentOffset(.zero, animated: false)
                 }
             }
         }

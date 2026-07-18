@@ -1040,9 +1040,6 @@ struct EBookWebReader: UIViewRepresentable {
                         )
                     }
 
-                    // Wrap body content with #inksync-viewport
-                    html = EBookWebReader.wrapHTMLBodyWithViewport(html)
-
                     // Inject pre-computed CSS
                     if let range = html.range(of: "</head>", options: .caseInsensitive) {
                         return html.replacingCharacters(in: range, with: cssToInject + "</head>")
@@ -1242,41 +1239,12 @@ struct EBookWebReader: UIViewRepresentable {
             font-style: italic;
         }
         *, *::before, *::after { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-        \(isPaged ? """
-        html, body {
-            margin: 0 !important; padding: 0 !important;
-            width: 100% !important; height: 100% !important;
-            overflow-x: scroll !important;
-            overflow-y: hidden !important;
-            background-color: \(bgColor) !important;
-        }
-        body {
-            color: \(textColor) !important;
-            font-family: \(fontFamily) !important;
-            font-size: \(fontSize)px !important;
-            line-height: \(lineHeight) !important;
-            text-align: \(textAlign) !important;
-            word-wrap: break-word;
-            -webkit-text-size-adjust: none;
-            letter-spacing: \(letterSpacing) !important;
-            word-spacing: \(wordSpacing) !important;
-            -webkit-hyphens: \(hyphenCSS) !important;
-            hyphens: \(hyphenCSS) !important;
-        }
-        #inksync-viewport {
-            position: absolute !important;
-            top: 60px !important;
-            bottom: 60px !important;
-            left: \(m)px !important;
-            width: \(renderWidth - 2 * m)px !important;
-            height: calc(100% - 120px) !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            \(pagedCSS)
-        }
-        """ : """
         html {
             margin: 0 !important; padding: 0 !important;
+            height: 100% !important; width: 100% !important;
+            column-width: auto !important;
+            touch-action: pan-x pan-y;
+            \(isPaged ? "overflow-x: scroll !important; overflow-y: hidden !important;" : "overflow-x: hidden !important; overflow-y: auto !important;")
             background-color: \(bgColor) !important;
         }
         body {
@@ -1285,7 +1253,10 @@ struct EBookWebReader: UIViewRepresentable {
             font-size: \(fontSize)px !important;
             line-height: \(lineHeight) !important;
             text-align: \(textAlign) !important;
+            \(pagedCSS)
             margin: 0 !important;
+            height: 100% !important;
+            width: 100% !important;
             padding-top: 60px !important;
             padding-bottom: 60px !important;
             padding-left: \(paddingLeft)px !important;
@@ -1297,14 +1268,8 @@ struct EBookWebReader: UIViewRepresentable {
             word-spacing: \(wordSpacing) !important;
             -webkit-hyphens: \(hyphenCSS) !important;
             hyphens: \(hyphenCSS) !important;
+            \(isPaged ? "overflow-x: scroll !important; overflow-y: hidden !important;" : "")
         }
-        #inksync-viewport {
-            margin: 0 !important;
-            width: 100% !important;
-            height: auto !important;
-            display: block !important;
-        }
-        """)
         body, p, span, li, td, th, div, a {
             font-family: \(fontFamily) !important;
         }
@@ -1650,25 +1615,7 @@ struct EBookWebReader: UIViewRepresentable {
         webView.evaluateJavaScript(js)
     }
 
-    private nonisolated static func wrapHTMLBodyWithViewport(_ html: String) -> String {
-        var result = html
-        let bodyPattern = "<body([^>]*)>"
-        if let regex = try? NSRegularExpression(pattern: bodyPattern, options: .caseInsensitive),
-           let match = regex.firstMatch(in: result, options: [], range: NSRange(result.startIndex..., in: result)) {
-            let bodyTagRange = Range(match.range, in: result)!
-            let insertionIndex = bodyTagRange.upperBound
-            result.insert(contentsOf: "<div id=\"inksync-viewport\">", at: insertionIndex)
-        } else {
-            if let bodyIndex = result.range(of: "<body>", options: .caseInsensitive)?.upperBound {
-                result.insert(contentsOf: "<div id=\"inksync-viewport\">", at: bodyIndex)
-            }
-        }
-        
-        if let closeBodyRange = result.range(of: "</body>", options: .caseInsensitive) {
-            result.insert(contentsOf: "</div>", at: closeBodyRange.lowerBound)
-        }
-        return result
-    }
+
 
     
     func makeCoordinator() -> Coordinator { Coordinator(self) }
