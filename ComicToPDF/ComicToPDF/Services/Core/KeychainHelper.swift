@@ -11,15 +11,21 @@ final class KeychainHelper: Sendable {
     }
     
     func save(_ data: Data, service: String, account: String) {
+        let deleteQuery = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: service,
+            kSecAttrAccount: account
+        ] as [String: Any]
+        
+        // Delete existing item
+        SecItemDelete(deleteQuery as CFDictionary)
+        
         let query = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: service,
             kSecAttrAccount: account,
             kSecValueData: data
         ] as [String: Any]
-        
-        // Delete existing item
-        SecItemDelete(query as CFDictionary)
         
         // Add new item
         let status = SecItemAdd(query as CFDictionary, nil)

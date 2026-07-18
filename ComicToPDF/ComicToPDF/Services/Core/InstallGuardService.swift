@@ -30,12 +30,9 @@ final class InstallGuardService: @unchecked Sendable {
         // BUT the keychain sentinel is present (indicating it was previously run on this device).
         // This represents a clean reinstall on the same device.
         // On simulator, since the keychain is wiped on app delete, we always nuke if the sandbox sentinel is missing.
-        let shouldNuke: Bool
-        #if targetEnvironment(simulator)
-        shouldNuke = !sentinelExists
-        #else
-        shouldNuke = !sentinelExists && keychainSentinelExists
-        #endif
+        // On both simulator and device, we always nuke if the sandbox sentinel file is missing.
+        // This guarantees a clean slate on any app delete-and-reinstall, wiping any iCloud-restored database skeletons.
+        let shouldNuke = !sentinelExists
         
         if shouldNuke {
             performNuke(supportDir: supportDir)
