@@ -359,7 +359,7 @@ struct ShareExtensionView: View {
                     }
 
                     guard let ext = resolvedExt,
-                          ["pdf", "epub", "cbz", "cbr"].contains(ext) else {
+                          ["pdf", "epub", "cbz", "cbr"].contains(ext.lowercased()) else {
                         print("[ShareExt] Unrecognised format for \(finalURL.lastPathComponent) – removing.")
                         try? FileManager.default.removeItem(at: finalURL)
                         continue
@@ -466,7 +466,18 @@ struct ShareExtensionView: View {
         let inboxURL = containerURL.appendingPathComponent("Inbox", isDirectory: true)
         try? FileManager.default.createDirectory(at: inboxURL, withIntermediateDirectories: true)
         
-        let destURL = inboxURL.appendingPathComponent(destFilename)
+        // Ensure destination filename has the correct file extension from sourceURL
+        let ext = sourceURL.pathExtension.lowercased()
+        let finalDestFilename: String
+        if ext.isEmpty {
+            finalDestFilename = destFilename
+        } else if destFilename.lowercased().hasSuffix("." + ext) {
+            finalDestFilename = destFilename
+        } else {
+            finalDestFilename = destFilename + "." + ext
+        }
+        
+        let destURL = inboxURL.appendingPathComponent(finalDestFilename)
         
         // Remove existing file if any
         try? FileManager.default.removeItem(at: destURL)
@@ -479,6 +490,8 @@ struct ShareExtensionView: View {
         var coordinatorError: NSError?
         
         coordinator.coordinate(readingItemAt: sourceURL, options: [], error: &coordinatorError) { coordinatedURL in
+            let coordinatedAccess = coordinatedURL.startAccessingSecurityScopedResource()
+            defer { if coordinatedAccess { coordinatedURL.stopAccessingSecurityScopedResource() } }
             do {
                 try FileManager.default.copyItem(at: coordinatedURL, to: destURL)
                 copySuccess = true
@@ -490,13 +503,22 @@ struct ShareExtensionView: View {
         if copySuccess {
             return destURL
         } else {
-            // Fallback to uncoordinated copy
+            // Fallback 1: uncoordinated copy
             do {
                 try FileManager.default.copyItem(at: sourceURL, to: destURL)
                 return destURL
             } catch {
                 print("[ShareExt] Fallback copy failed: \(error.localizedDescription)")
-                return nil
+                
+                // Fallback 2: read data and write atomically (highly robust)
+                do {
+                    let data = try Data(contentsOf: sourceURL)
+                    try data.write(to: destURL, options: .atomic)
+                    return destURL
+                } catch {
+                    print("[ShareExt] Fallback data write failed: \(error.localizedDescription)")
+                    return nil
+                }
             }
         }
     }

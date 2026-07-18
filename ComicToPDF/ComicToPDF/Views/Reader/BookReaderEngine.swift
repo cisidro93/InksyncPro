@@ -1381,9 +1381,9 @@ struct BookReaderEngine: View {
             let currentOffset = scroll.contentOffset.x
 
             // Guard against layout-not-ready (contentSize is 0 briefly after chapter load)
-            guard contentWidth > width else { return }
+            guard contentWidth > 0 else { return }
 
-            let maxOffset = contentWidth - width
+            let maxOffset = max(contentWidth - width, 0)
             let targetOffset = currentOffset + width
 
             // Consider "at last page" if the current offset is already at or beyond maxOffset,
@@ -1405,9 +1405,9 @@ struct BookReaderEngine: View {
             let contentHeight = scroll.contentSize.height
             let currentOffset = scroll.contentOffset.y
 
-            guard contentHeight > height else { return }
+            guard contentHeight > 0 else { return }
 
-            let maxOffset = contentHeight - height
+            let maxOffset = max(contentHeight - height, 0)
             let targetOffset = currentOffset + height * 0.9
 
             let atLastPage = (currentOffset >= maxOffset - 4) || (targetOffset >= contentHeight - 4)

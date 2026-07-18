@@ -22,6 +22,7 @@ struct GlobalNotebookView: View {
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject var conversionManager: ConversionManager
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.horizontalSizeClass) private var sizeClass
     
     // Query all annotations
     @Query private var allAnnotations: [SDAnnotation]
@@ -270,86 +271,178 @@ struct GlobalNotebookView: View {
     
     // MARK: - Header
     private var headerView: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(activeTab == .notebooks ? "Notebooks Hub" : "Highlights Hub")
-                    .font(.system(size: 24, weight: .bold, design: .rounded))
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [Color.orange, Color.purple],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                Text(activeTab == .notebooks ? "Your unified creative sketchbooks & study guides" : "Your consolidated reading highlights & notes")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.inkTextSecondary)
-            }
-            
-            Spacer()
-            
-            if activeTab == .notebooks {
-                Button {
-                    HapticEngine.medium()
-                    isShowingCreateNotebookSheet = true
-                } label: {
-                    Image(systemName: "plus.circle.fill")
-                        .font(.system(size: 24))
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [Color.orange, Color.purple],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
+        VStack(spacing: 12) {
+            if sizeClass == .compact {
+                // Compact iPhone Portrait Layout: 2 rows
+                HStack(alignment: .center) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(activeTab == .notebooks ? "Notebooks Hub" : "Highlights Hub")
+                            .font(.system(size: 24, weight: .bold, design: .rounded))
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [Color.orange, Color.purple],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
                             )
-                        )
+                        Text(activeTab == .notebooks ? "Your unified creative sketchbooks" : "Your consolidated highlights & notes")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.inkTextSecondary)
+                    }
+                    
+                    Spacer()
+                    
+                    HStack(spacing: 12) {
+                        if activeTab == .notebooks {
+                            Button {
+                                HapticEngine.medium()
+                                isShowingCreateNotebookSheet = true
+                            } label: {
+                                Image(systemName: "plus.circle.fill")
+                                    .font(.system(size: 24))
+                                    .foregroundStyle(
+                                        LinearGradient(
+                                            colors: [Color.orange, Color.purple],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        )
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        
+                        Button {
+                            exportZettelkasten()
+                        } label: {
+                            Image(systemName: "square.and.arrow.up.on.square")
+                                .font(.system(size: 15, weight: .bold))
+                                .foregroundColor(Color.orange)
+                                .padding(10)
+                                .background(Color.orange.opacity(0.12), in: Circle())
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
-                .buttonStyle(.plain)
-                .padding(.trailing, 8)
-            }
-            
-            // Custom premium segmented tab switcher
-            HStack(spacing: 4) {
-                ForEach(Tab.allCases) { tab in
+                
+                HStack {
+                    HStack(spacing: 4) {
+                        ForEach(Tab.allCases) { tab in
+                            Button {
+                                HapticEngine.light()
+                                withAnimation(.spring(response: 0.28, dampingFraction: 0.76)) {
+                                    activeTab = tab
+                                }
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: tab.icon)
+                                        .font(.system(size: 12, weight: .bold))
+                                    Text(tab.rawValue)
+                                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                                        .lineLimit(1)
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+                                .background(
+                                    activeTab == tab
+                                        ? AnyShapeStyle(Color.orange.opacity(0.18))
+                                        : AnyShapeStyle(Color.clear)
+                                )
+                                .foregroundColor(activeTab == tab ? Color.orange : .inkTextSecondary)
+                                .clipShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(4)
+                    .background(Color.inkSurfaceRaised.opacity(0.5), in: Capsule())
+                    
+                    Spacer()
+                }
+            } else {
+                // Regular iPad / Landscape Layout: 1 row
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(activeTab == .notebooks ? "Notebooks Hub" : "Highlights Hub")
+                            .font(.system(size: 24, weight: .bold, design: .rounded))
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [Color.orange, Color.purple],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                        Text(activeTab == .notebooks ? "Your unified creative sketchbooks & study guides" : "Your consolidated reading highlights & notes")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.inkTextSecondary)
+                    }
+                    
+                    Spacer()
+                    
+                    if activeTab == .notebooks {
+                        Button {
+                            HapticEngine.medium()
+                            isShowingCreateNotebookSheet = true
+                        } label: {
+                            Image(systemName: "plus.circle.fill")
+                                .font(.system(size: 24))
+                                .foregroundStyle(
+                                    LinearGradient(
+                                        colors: [Color.orange, Color.purple],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.trailing, 8)
+                    }
+                    
+                    // Custom premium segmented tab switcher
+                    HStack(spacing: 4) {
+                        ForEach(Tab.allCases) { tab in
+                            Button {
+                                HapticEngine.light()
+                                withAnimation(.spring(response: 0.28, dampingFraction: 0.76)) {
+                                    activeTab = tab
+                                }
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: tab.icon)
+                                        .font(.system(size: 12, weight: .bold))
+                                    Text(tab.rawValue)
+                                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                                        .lineLimit(1)
+                                }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(
+                                    activeTab == tab
+                                        ? AnyShapeStyle(Color.orange.opacity(0.18))
+                                        : AnyShapeStyle(Color.clear)
+                                )
+                                .foregroundColor(activeTab == tab ? Color.orange : .inkTextSecondary)
+                                .clipShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(4)
+                    .background(Color.inkSurfaceRaised.opacity(0.5), in: Capsule())
+                    .padding(.trailing, 10)
+                    
+                    // Export Zettelkasten Zip
                     Button {
-                        HapticEngine.light()
-                        withAnimation(.spring(response: 0.28, dampingFraction: 0.76)) {
-                            activeTab = tab
-                        }
+                        exportZettelkasten()
                     } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: tab.icon)
-                                .font(.system(size: 12, weight: .bold))
-                            Text(tab.rawValue)
-                                .font(.system(size: 12, weight: .bold, design: .rounded))
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(
-                            activeTab == tab
-                                ? AnyShapeStyle(Color.orange.opacity(0.18))
-                                : AnyShapeStyle(Color.clear)
-                        )
-                        .foregroundColor(activeTab == tab ? Color.orange : .inkTextSecondary)
-                        .clipShape(Capsule())
+                        Image(systemName: "square.and.arrow.up.on.square")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundColor(Color.orange)
+                            .padding(10)
+                            .background(Color.orange.opacity(0.12), in: Circle())
                     }
                     .buttonStyle(.plain)
                 }
             }
-            .padding(4)
-            .background(Color.inkSurfaceRaised.opacity(0.5), in: Capsule())
-            .padding(.trailing, 10)
-            
-            // Export Zettelkasten Zip
-            Button {
-                exportZettelkasten()
-            } label: {
-                Image(systemName: "square.and.arrow.up.on.square")
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundColor(Color.orange)
-                    .padding(10)
-                    .background(Color.orange.opacity(0.12), in: Circle())
-            }
-            .buttonStyle(.plain)
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 14)
