@@ -486,17 +486,6 @@ struct EPUBWebView: UIViewRepresentable {
             var head = document.getElementsByTagName('head')[0];
             head.appendChild(meta);
 
-            // Wrap body content in a container for margins while keeping columns full-width
-            if (!document.getElementById('inksync-container')) {
-                var container = document.createElement('div');
-                container.id = 'inksync-container';
-                container.className = 'content-container';
-                while(document.body.firstChild) {
-                    container.appendChild(document.body.firstChild);
-                }
-                document.body.appendChild(container);
-            }
-
             // Highlight Engine JS
             // Uses DOM Range + <mark> element wrapping.
             window.applyInksyncHighlight = function(colorHex) {
@@ -988,7 +977,7 @@ struct EPUBWebView: UIViewRepresentable {
             height: auto !important;
         }
         /* CSS Column padding-left/right on all block elements creates margins without shifting */
-        p, h1, h2, h3, h4, h5, h6, blockquote, pre, table, ul, ol, dl, figure, .content-container {
+        p, h1, h2, h3, h4, h5, h6, blockquote, pre, table, ul, ol, dl, figure {
             padding-left: \(margin)px !important;
             padding-right: \(margin)px !important;
         }
