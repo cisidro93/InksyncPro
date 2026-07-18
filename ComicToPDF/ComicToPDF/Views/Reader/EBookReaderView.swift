@@ -1633,7 +1633,7 @@ struct EBookWebReader: UIViewRepresentable {
         webView.evaluateJavaScript(js)
     }
 
-    private static func wrapHTMLBodyWithViewport(_ html: String) -> String {
+    private nonisolated static func wrapHTMLBodyWithViewport(_ html: String) -> String {
         var result = html
         let bodyPattern = "<body([^>]*)>"
         if let regex = try? NSRegularExpression(pattern: bodyPattern, options: .caseInsensitive),
