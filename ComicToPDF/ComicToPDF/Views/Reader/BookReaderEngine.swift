@@ -1235,29 +1235,12 @@ struct BookReaderEngine: View {
                                     .onEnded { _ in lastBrightnessDragValue = 0 }
                             )
                     }
-                    
-                    // Bottom Page Progress Footer
-                    if !chromeVisible {
-                        VStack {
-                            Spacer()
-                            Text("Page \(chapterPage + 1) of \(chapterTotalPages)  •  Ch. \(vm.currentChapterIndex + 1) of \(vm.chapterHtmlFiles.count)")
-                                .font(.system(size: 11, weight: .medium, design: .rounded))
-                                .foregroundColor(Color(UIColor(hex: prefs.activeTheme.cssText) ?? .gray).opacity(0.65))
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 6)
-                                .background(Color(UIColor(hex: prefs.activeTheme.cssBackground) ?? .black).opacity(0.85))
-                                .cornerRadius(8)
-                                .padding(.bottom, 12)
-                        }
-                        .ignoresSafeArea(.keyboard)
-                        .transition(.opacity)
-                    }
                 }
             }
             
             ReaderChrome(
                 title: pdf.name,
-                pageText: vm.tocItems.indices.contains(vm.currentChapterIndex) && !vm.tocItems[vm.currentChapterIndex].label.isEmpty ? vm.tocItems[vm.currentChapterIndex].label : "Ch. \(vm.currentChapterIndex + 1) / \(max(1, vm.chapterHtmlFiles.count))",
+                pageText: "Page \(chapterPage + 1) of \(chapterTotalPages)  •  " + (vm.tocItems.indices.contains(vm.currentChapterIndex) && !vm.tocItems[vm.currentChapterIndex].label.isEmpty ? vm.tocItems[vm.currentChapterIndex].label : "Ch. \(vm.currentChapterIndex + 1) / \(max(1, vm.chapterHtmlFiles.count))"),
                 isVisible: $chromeVisible,
                 onBack: onDismiss,
                 onBookmark: {
