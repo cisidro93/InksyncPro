@@ -1288,7 +1288,7 @@ struct EBookWebReader: UIViewRepresentable {
             overflow: visible !important;
         }
         div, section, article, main {
-            height: auto !important;
+            height: 100% !important;
         }
         """ : "")
         div, section, article {
