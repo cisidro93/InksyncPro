@@ -316,7 +316,6 @@ struct EPUBWebView: UIViewRepresentable {
     @Binding var totalPages: Int
     var onHighlightCreated: ((String, String) -> Void)?
     var onPageLoaded: ((WKWebView) -> Void)?
-    var onFootnoteTapped: ((String) -> Void)? = nil
     /// Fired when user taps the center third of the page (toggles chrome)
     var onCenterTap: (() -> Void)? = nil
     /// Fired when user taps the left third of the page (turns page back)
@@ -327,6 +326,7 @@ struct EPUBWebView: UIViewRepresentable {
     var onNextChapter: (() -> Void)? = nil
     /// Fired when a backward swipe is at the first column
     var onPrevChapter: (() -> Void)? = nil
+    var onFootnoteTapped: ((String) -> Void)? = nil
 
     class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate, UIGestureRecognizerDelegate, UIScrollViewDelegate {
         var parent: EPUBWebView
