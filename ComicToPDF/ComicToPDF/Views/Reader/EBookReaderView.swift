@@ -1339,7 +1339,7 @@ struct EBookWebReader: UIViewRepresentable {
             var isHoriz = document.body.style.columnWidth || window.getComputedStyle(document.body).columnWidth !== 'auto';
             var fraction = 0;
             if (isHoriz) {
-                var maxScroll = sv.scrollWidth - window.innerWidth;
+                var maxScroll = document.body.scrollWidth - window.innerWidth;
                 if (maxScroll > 0) fraction = sv.scrollLeft / maxScroll;
             } else {
                 var maxScroll = sv.scrollHeight - window.innerHeight;
@@ -1353,7 +1353,7 @@ struct EBookWebReader: UIViewRepresentable {
             var style = window.getComputedStyle(document.body);
             var gap = parseFloat(style.columnGap) || 0;
             var pageStep = window.innerWidth + gap;
-            _totalPages = Math.max(1, Math.ceil((sv.scrollWidth + gap) / pageStep));
+            _totalPages = Math.max(1, Math.ceil((document.body.scrollWidth + gap) / pageStep));
             if (_firstRun) {
                 _firstRun = false;
                 if (_currentPage === 99999) {
@@ -1388,7 +1388,11 @@ struct EBookWebReader: UIViewRepresentable {
         }
         window.goToInksyncPage = goToPage;
 
-        window.onload = function() { setTimeout(updateMetrics, 100); };
+        window.onload = function() {
+            setTimeout(updateMetrics, 100);
+            setTimeout(updateMetrics, 500);
+            setTimeout(updateMetrics, 1500);
+        };
         window.addEventListener('resize', function() { updateMetrics(); goToPage(_currentPage, false); });
 
         var _sx = 0;
@@ -1435,7 +1439,10 @@ struct EBookWebReader: UIViewRepresentable {
         var _scrollTimeout;
         window.addEventListener('scroll', function() {
             clearTimeout(_scrollTimeout);
-            _scrollTimeout = setTimeout(postFraction, 100);
+            _scrollTimeout = setTimeout(function() {
+                updateMetrics();
+                postFraction();
+            }, 100);
         });
 
         // ── Highlight Engine ─────────────────────────────────────────────────
