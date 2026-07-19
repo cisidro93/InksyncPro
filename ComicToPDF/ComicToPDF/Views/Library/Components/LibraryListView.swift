@@ -40,8 +40,10 @@ struct LibraryListView: View {
     @State private var autoScrollTask: Task<Void, Never>? = nil
     @State private var showingQuickJump = false
     
-    private var inProgress: [ConvertedPDF] {
-        items.compactMap {
+    @State private var computedInProgress: [ConvertedPDF] = []
+
+    private func updateCachedItems(_ newItems: [LibraryListItem]) {
+        self.computedInProgress = newItems.compactMap {
             if case .single(let pdf) = $0 {
                 let prog = Double(pdf.metadata.lastReadPage ?? 0) / Double(max(pdf.pageCount, 1))
                 return (prog > 0.01 && prog < 0.98) ? pdf : nil
@@ -74,8 +76,8 @@ struct LibraryListView: View {
                             .listRowSeparator(.hidden)
                             .listRowInsets(EdgeInsets())
 
-                            if !inProgress.isEmpty {
-                                ContinueReadingShelf(inProgress: Array(inProgress.prefix(10))) { pdf in
+                            if !computedInProgress.isEmpty {
+                                ContinueReadingShelf(inProgress: Array(computedInProgress.prefix(10))) { pdf in
                                     if tapAction == .read {
                                         onAction(.read, pdf)
                                     } else {
@@ -96,12 +98,16 @@ struct LibraryListView: View {
                                 }
                                 .id(item.id)
                                 .background(
-                                    GeometryReader { geo in
-                                        Color.clear
-                                            .preference(
-                                                key: LibraryCellFramePreferenceKey.self,
-                                                value: [item.id: geo.frame(in: .named("libraryListScroll"))]
-                                            )
+                                    Group {
+                                        if isBatchMode {
+                                            GeometryReader { geo in
+                                                Color.clear
+                                                    .preference(
+                                                        key: LibraryCellFramePreferenceKey.self,
+                                                        value: [item.id: geo.frame(in: .named("libraryListScroll"))]
+                                                    )
+                                            }
+                                        }
                                     }
                                 )
                             }
@@ -182,6 +188,12 @@ struct LibraryListView: View {
                 } // end ScrollViewReader
                 } // end GeometryReader
                 .coordinateSpace(name: "libraryListViewport")
+                .onAppear {
+                    updateCachedItems(items)
+                }
+                .onChange(of: items) { _, newItems in
+                    updateCachedItems(newItems)
+                }
             }
         }
         // MARK: Details Sheet

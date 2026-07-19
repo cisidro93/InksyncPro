@@ -56,17 +56,17 @@ struct LibraryGridView: View {
     @State private var lastDragLocation: CGPoint = .zero
     @State private var autoScrollTask: Task<Void, Never>? = nil
     @State private var showingQuickJump = false
+    @State private var computedRows: [GridRowItem] = []
+    @State private var computedInProgress: [ConvertedPDF] = []
 
-    private var rows: [GridRowItem] {
-        let chunked = chunkedItems(items)
-        return chunked.map { chunk in
+    private func updateCachedItems(_ newItems: [LibraryListItem]) {
+        let chunked = chunkedItems(newItems)
+        self.computedRows = chunked.map { chunk in
             let combinedID = chunk.map(\.id).joined(separator: "_")
             return GridRowItem(id: combinedID, items: chunk)
         }
-    }
-
-    private var inProgress: [ConvertedPDF] {
-        items.compactMap {
+        
+        self.computedInProgress = newItems.compactMap {
             if case .single(let pdf) = $0 {
                 let prog = Double(pdf.metadata.lastReadPage ?? 0) / Double(max(pdf.pageCount, 1))
                 return (prog > 0.01 && prog < 0.98) ? pdf : nil
@@ -150,8 +150,8 @@ struct LibraryGridView: View {
                                 .frame(height: 0)
 
                                 // ── Continue Reading shelf ─────────────────────
-                                if !inProgress.isEmpty {
-                                    ContinueReadingShelf(inProgress: Array(inProgress.prefix(10))) { pdf in
+                                if !computedInProgress.isEmpty {
+                                    ContinueReadingShelf(inProgress: Array(computedInProgress.prefix(10))) { pdf in
                                         if tapAction == .read {
                                             onAction(.read, pdf)
                                         } else {
@@ -163,7 +163,7 @@ struct LibraryGridView: View {
 
 
 
-                                let rowItems = rows
+                                let rowItems = computedRows
                                 LazyVStack(spacing: 24) {
                                     ForEach(rowItems) { row in
                                         VStack(spacing: 8) {
@@ -173,12 +173,16 @@ struct LibraryGridView: View {
                                                         .id(item.id)
                                                         .frame(maxWidth: .infinity)
                                                         .background(
-                                                            GeometryReader { geo in
-                                                                Color.clear
-                                                                    .preference(
-                                                                        key: LibraryCellFramePreferenceKey.self,
-                                                                        value: [item.id: geo.frame(in: .named("libraryScroll"))]
-                                                                    )
+                                                            Group {
+                                                                if isBatchMode {
+                                                                    GeometryReader { geo in
+                                                                        Color.clear
+                                                                            .preference(
+                                                                                key: LibraryCellFramePreferenceKey.self,
+                                                                                value: [item.id: geo.frame(in: .named("libraryScroll"))]
+                                                                            )
+                                                                    }
+                                                                }
                                                             }
                                                         )
                                                 }
@@ -266,7 +270,7 @@ struct LibraryGridView: View {
                                 availableLetters: availableLetters,
                                 onJump: { letter in
                                     if let targetID = firstItemId(for: letter),
-                                       let targetRow = rows.first(where: { $0.items.contains(where: { $0.id == targetID }) }) {
+                                       let targetRow = computedRows.first(where: { $0.items.contains(where: { $0.id == targetID }) }) {
                                         withAnimation { proxy.scrollTo(targetRow.id, anchor: .top) }
                                     }
                                 }
@@ -278,6 +282,15 @@ struct LibraryGridView: View {
                 }
             }
             .coordinateSpace(name: "libraryViewport")
+            .onAppear {
+                updateCachedItems(items)
+            }
+            .onChange(of: items) { _, newItems in
+                updateCachedItems(newItems)
+            }
+            .onChange(of: colCount) { _, _ in
+                updateCachedItems(items)
+            }
         }
     }
         // MARK: Rename Alert
