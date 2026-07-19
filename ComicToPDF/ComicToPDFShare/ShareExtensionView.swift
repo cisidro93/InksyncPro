@@ -485,40 +485,21 @@ struct ShareExtensionView: View {
         let accessing = sourceURL.startAccessingSecurityScopedResource()
         defer { if accessing { sourceURL.stopAccessingSecurityScopedResource() } }
         
-        var copySuccess = false
-        let coordinator = NSFileCoordinator()
-        var coordinatorError: NSError?
-        
-        coordinator.coordinate(readingItemAt: sourceURL, options: [], error: &coordinatorError) { coordinatedURL in
-            let coordinatedAccess = coordinatedURL.startAccessingSecurityScopedResource()
-            defer { if coordinatedAccess { coordinatedURL.stopAccessingSecurityScopedResource() } }
-            do {
-                try FileManager.default.copyItem(at: coordinatedURL, to: destURL)
-                copySuccess = true
-            } catch {
-                print("[ShareExt] Coordinated copy failed: \(error.localizedDescription)")
-            }
-        }
-        
-        if copySuccess {
+        // Direct copy under active security scope access
+        do {
+            try FileManager.default.copyItem(at: sourceURL, to: destURL)
             return destURL
-        } else {
-            // Fallback 1: uncoordinated copy
+        } catch {
+            print("[ShareExt] Direct copy failed: \(error.localizedDescription)")
+            
+            // Fallback: read data and write atomically (highly robust for small files/data payloads)
             do {
-                try FileManager.default.copyItem(at: sourceURL, to: destURL)
+                let data = try Data(contentsOf: sourceURL)
+                try data.write(to: destURL, options: .atomic)
                 return destURL
             } catch {
-                print("[ShareExt] Fallback copy failed: \(error.localizedDescription)")
-                
-                // Fallback 2: read data and write atomically (highly robust)
-                do {
-                    let data = try Data(contentsOf: sourceURL)
-                    try data.write(to: destURL, options: .atomic)
-                    return destURL
-                } catch {
-                    print("[ShareExt] Fallback data write failed: \(error.localizedDescription)")
-                    return nil
-                }
+                print("[ShareExt] Fallback data write failed: \(error.localizedDescription)")
+                return nil
             }
         }
     }
