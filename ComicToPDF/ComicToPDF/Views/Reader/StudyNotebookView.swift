@@ -886,7 +886,14 @@ struct StudyNotebookView: View {
         
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         
-        if let bookURL = fileURL ?? resolvedPDF?.url {
+        var targetURL = fileURL ?? resolvedPDF?.url
+        if let resolvedPDF = resolvedPDF,
+           case .linked(let bm) = resolvedPDF.sourceMode,
+           let resolved = try? BookmarkResolver.shared.resolve(bm) {
+            targetURL = resolved
+        }
+        
+        if let bookURL = targetURL {
             Task {
                 let img = await Task.detached(priority: .userInitiated) { () -> UIImage? in
                     return PhysicalFileSystemRouter.extractPageImage(from: bookURL, pageIndex: pageIndex)
