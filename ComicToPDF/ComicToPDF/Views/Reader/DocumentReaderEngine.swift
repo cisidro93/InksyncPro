@@ -25,8 +25,7 @@ struct DocumentReaderEngine: View {
     @State private var jumpToPageText = ""
     @State private var pdfViewReference: PDFView? = nil
     @State private var resolvedURL: URL? = nil
-    @State private var sessionSeconds: Int = 0
-    @State private var sessionTimer: Timer? = nil
+    @State private var sessionStartTime: Date? = nil
     @ObservedObject private var prefs = EBookPreferences.shared
     @FocusState private var isReaderFocused: Bool
     @State private var lastBrightnessDragValue: CGFloat = 0
@@ -140,7 +139,7 @@ struct DocumentReaderEngine: View {
                     if isReflowMode { updateReflowText() }
                 },
                 isSettingsActive: showingSettings,
-                sessionTimeText: formattedSessionTime
+                sessionStartTime: sessionStartTime
             )
             
             if isPencilMode && !isReflowMode {
@@ -177,16 +176,13 @@ struct DocumentReaderEngine: View {
         .onDisappear {
             savePosition(pageIndex: currentPageIndex)
             accessedURL?.stopAccessingSecurityScopedResource()
-            sessionTimer?.invalidate()
-            sessionTimer = nil
             Task {
                 await PDFRenderActor.shared.clear()
             }
         }
         .onAppear {
-            sessionSeconds = 0
-            sessionTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
-                sessionSeconds += 1
+            if sessionStartTime == nil {
+                sessionStartTime = Date()
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
@@ -285,16 +281,7 @@ struct DocumentReaderEngine: View {
         }
         .preferredColorScheme(prefs.activeTheme.isDark ? .dark : .light)
     }
-    private var formattedSessionTime: String {
-        let hours = sessionSeconds / 3600
-        let minutes = (sessionSeconds % 3600) / 60
-        let seconds = sessionSeconds % 60
-        if hours > 0 {
-            return String(format: "%dh %dm", hours, minutes)
-        } else {
-            return String(format: "%02d:%02d", minutes, seconds)
-        }
-    }
+
     
     private func pageForward() {
         if let pv = pdfViewReference, pv.canGoToNextPage {
