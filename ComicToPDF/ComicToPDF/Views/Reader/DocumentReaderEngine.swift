@@ -844,12 +844,6 @@ struct PDFKitRepresentedView: UIViewRepresentable {
                     view.scaleFactor = scale
                 }
             }
-            
-            if pageChanged {
-                if let scrollView = view.subviews.first(where: { $0 is UIScrollView }) as? UIScrollView {
-                    scrollView.setContentOffset(.zero, animated: false)
-                }
-            }
         }
         
         func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {

@@ -796,10 +796,177 @@ struct EPUBWebView: View {
 
     private func buildReaderCSS(prefs: EBookPreferences, size: CGSize) -> String {
         let cssContent = computeCSS(prefs: prefs, size: size)
+        let isPaged = prefs.paginationMode == EBookPaginationMode.paged.rawValue
+        
         return """
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
         <style id="__inksync_live__">
         \(cssContent)
         </style>
+        <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            document.querySelectorAll('[style]').forEach(function(el) {
+                el.style.removeProperty('background-color');
+                el.style.removeProperty('color');
+            });
+            var liveStyle = document.getElementById('__inksync_live__');
+            if (liveStyle) {
+                document.head.appendChild(liveStyle);
+            }
+        });
+
+        var _currentPage = \(currentPage);
+        var _totalPages = 1;
+        var _firstRun = true;
+
+        function postFraction() {
+            var sv = document.scrollingElement || document.documentElement;
+            var isHoriz = \(isPaged);
+            var fraction = 0;
+            if (isHoriz) {
+                var maxScroll = sv.scrollWidth - window.innerWidth;
+                if (maxScroll > 0) fraction = sv.scrollLeft / maxScroll;
+            } else {
+                var maxScroll = sv.scrollHeight - window.innerHeight;
+                if (maxScroll > 0) fraction = sv.scrollTop / maxScroll;
+            }
+            window.webkit.messageHandlers.scrollFraction.postMessage(fraction);
+        }
+
+        function updateMetrics() {
+            var sv = document.scrollingElement || document.documentElement;
+            var pageStep = window.innerWidth;
+            var isHoriz = \(isPaged);
+            
+            if (isHoriz) {
+                _totalPages = Math.max(1, Math.round(sv.scrollWidth / pageStep));
+                if (_firstRun) {
+                    _firstRun = false;
+                    if (_currentPage === 99999) {
+                        _currentPage = _totalPages - 1;
+                    }
+                    goToPage(_currentPage, false);
+                } else {
+                    _currentPage = Math.max(0, Math.min(Math.round(sv.scrollLeft / pageStep), _totalPages - 1));
+                }
+            } else {
+                var pageHeight = window.innerHeight;
+                _totalPages = Math.max(1, Math.round(sv.scrollHeight / pageHeight));
+                if (_firstRun) {
+                    _firstRun = false;
+                    goToPage(_currentPage, false);
+                } else {
+                    _currentPage = Math.max(0, Math.min(Math.round(sv.scrollTop / pageHeight), _totalPages - 1));
+                }
+            }
+            
+            window.webkit.messageHandlers.metrics.postMessage({ current: _currentPage, total: _totalPages });
+            postFraction();
+        }
+
+        function goToPage(page, smooth) {
+            _currentPage = Math.max(0, Math.min(page, _totalPages - 1));
+            var behavior = smooth ? 'smooth' : 'instant';
+            
+            var sv = document.scrollingElement || document.documentElement;
+            var isHoriz = \(isPaged);
+            if (isHoriz) {
+                var pageStep = window.innerWidth;
+                window.scrollTo({ left: _currentPage * pageStep, behavior: behavior });
+            } else {
+                window.scrollTo({ top: _currentPage * window.innerHeight, behavior: behavior });
+            }
+            
+            if (!_firstRun) {
+                window.webkit.messageHandlers.metrics.postMessage({ current: _currentPage, total: _totalPages });
+            }
+            postFraction();
+        }
+        window.goToInksyncPage = goToPage;
+
+        window.onload = function() {
+            setTimeout(updateMetrics, 100);
+            setTimeout(updateMetrics, 500);
+            setTimeout(updateMetrics, 1500);
+        };
+        window.addEventListener('resize', function() { updateMetrics(); goToPage(_currentPage, false); });
+
+        document.addEventListener('click', function(e) {
+            if (e.target.tagName.toLowerCase() === 'a') return;
+            if (window.getSelection() && !window.getSelection().isCollapsed) return;
+            var x = e.clientX; var w = window.innerWidth;
+            var leftEdge = window.__inksync_left_edge || 0.30;
+            var rightEdge = window.__inksync_right_edge || 0.70;
+            if (x < w * leftEdge) {
+                if (_currentPage > 0) goToPage(_currentPage - 1, true);
+                else window.webkit.messageHandlers.nav.postMessage('prev');
+            } else if (x > w * rightEdge) {
+                if (_currentPage < _totalPages - 1) goToPage(_currentPage + 1, true);
+                else window.webkit.messageHandlers.nav.postMessage('next');
+            } else {
+                window.webkit.messageHandlers.nav.postMessage('center');
+            }
+        });
+
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'ArrowRight' || e.key === 'Space') {
+                if (_currentPage < _totalPages - 1) goToPage(_currentPage + 1, true);
+                else window.webkit.messageHandlers.nav.postMessage('next');
+                e.preventDefault();
+            } else if (e.key === 'ArrowLeft') {
+                if (_currentPage > 0) goToPage(_currentPage - 1, true);
+                else window.webkit.messageHandlers.nav.postMessage('prev');
+                e.preventDefault();
+            }
+        });
+
+        var _scrollTimeout;
+        window.addEventListener('scroll', function() {
+            clearTimeout(_scrollTimeout);
+            _scrollTimeout = setTimeout(function() {
+                updateMetrics();
+            }, 50);
+        });
+
+        // ── Highlight Engine ─────────────────────────────────────────────────
+        window.applyInksyncHighlight = function(colorHex) {
+            var sel = window.getSelection();
+            if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
+            var text = sel.toString().trim();
+            if (!text) return;
+            var range = sel.getRangeAt(0);
+            var mark = document.createElement('mark');
+            mark.style.backgroundColor = colorHex;
+            mark.style.color = 'inherit';
+            mark.className = 'inksynced-highlight';
+            range.surroundContents(mark);
+            sel.removeAllRanges();
+            window.webkit.messageHandlers.highlightHandler.postMessage({ text: text, html: mark.outerHTML });
+        };
+        
+        window.restoreInksyncHighlight = function(text, colorHex) {
+            var body = document.body;
+            var walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT, null, false);
+            var node;
+            while (node = walker.nextNode()) {
+                var idx = node.nodeValue.indexOf(text);
+                if (idx !== -1) {
+                    var range = document.createRange();
+                    range.setStart(node, idx);
+                    range.setEnd(node, idx + text.length);
+                    var mark = document.createElement('mark');
+                    mark.style.backgroundColor = colorHex;
+                    mark.style.color = 'inherit';
+                    mark.className = 'inksynced-highlight';
+                    try {
+                        range.surroundContents(mark);
+                    } catch(e) {}
+                    break;
+                }
+            }
+        };
+        </script>
         """
     }
 
