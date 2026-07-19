@@ -64,8 +64,8 @@ struct ReaderChrome: View {
     // Ambient tint from current page (Panels-style)
     var ambientColor: Color = .clear
     
-    // Active reading session time tracking
-    var sessionTimeText: String? = nil
+    // Active reading session start time
+    var sessionStartTime: Date? = nil
 
     // Phase 3: Live Reading Room
     var isInRoom: Bool = false
@@ -114,7 +114,7 @@ struct ReaderChrome: View {
         isInRoom: Bool = false,
         roomPeerCount: Int = 0,
         onRoomToggle: (() -> Void)? = nil,
-        sessionTimeText: String? = nil,
+        sessionStartTime: Date? = nil,
         onSwipeDown: (() -> Void)? = nil
     ) {
         self.title = title
@@ -152,7 +152,7 @@ struct ReaderChrome: View {
         self.isInRoom = isInRoom
         self.roomPeerCount = roomPeerCount
         self.onRoomToggle = onRoomToggle
-        self.sessionTimeText = sessionTimeText
+        self.sessionStartTime = sessionStartTime
         self.onSwipeDown = onSwipeDown
     }
 
@@ -199,18 +199,8 @@ struct ReaderChrome: View {
             // ── Divider ────────────────────────────────────────────────────────
             chromeDivider
 
-            if let sessionTime = sessionTimeText {
-                HStack(spacing: 4) {
-                    Image(systemName: "timer")
-                        .font(.system(size: 11, weight: .bold))
-                    Text(sessionTime)
-                        .font(.system(size: 11, weight: .bold, design: .monospaced))
-                }
-                .foregroundColor(.orange)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(Color.orange.opacity(0.12), in: Capsule())
-                .padding(.leading, 8)
+            if let startTime = sessionStartTime {
+                SessionTimerView(startTime: startTime)
                 
                 chromeDivider
             }
@@ -600,6 +590,45 @@ struct FloatingThumbnailView: View {
             if let img = await getPageThumbnail(index) {
                 image = img
             }
+        }
+    }
+}
+
+// MARK: - Isolated Timer Component to Prevent Redraw Pollution
+struct SessionTimerView: View {
+    let startTime: Date
+    @State private var elapsed: TimeInterval = 0
+    let timer = Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()
+    
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "timer")
+                .font(.system(size: 11, weight: .bold))
+            Text(formattedTime)
+                .font(.system(size: 11, weight: .bold, design: .monospaced))
+        }
+        .foregroundColor(.orange)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Color.orange.opacity(0.12), in: Capsule())
+        .padding(.leading, 8)
+        .onReceive(timer) { _ in
+            elapsed = Date().timeIntervalSince(startTime)
+        }
+        .onAppear {
+            elapsed = Date().timeIntervalSince(startTime)
+        }
+    }
+    
+    private var formattedTime: String {
+        let secondsTotal = Int(elapsed)
+        let hours = secondsTotal / 3600
+        let minutes = (secondsTotal % 3600) / 60
+        let seconds = secondsTotal % 60
+        if hours > 0 {
+            return String(format: "%dh %dm", hours, minutes)
+        } else {
+            return String(format: "%02d:%02d", minutes, seconds)
         }
     }
 }

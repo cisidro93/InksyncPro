@@ -280,7 +280,6 @@ class ReaderProgressTracker: ObservableObject {
     private func syncToiCloud(pdfID: UUID, progress: ReadingProgress) {
         guard let data = try? JSONEncoder().encode(progress) else { return }
         iCloudStore.set(data, forKey: iCloudPrefix + pdfID.uuidString)
-        iCloudStore.synchronize()
     }
 
     /// Pull all remote records and merge: keep whichever device has the newer `lastOpenedAt`.

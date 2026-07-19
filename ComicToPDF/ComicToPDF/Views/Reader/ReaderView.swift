@@ -54,8 +54,7 @@ struct ReaderView: View {
     // Jump to Page
     @State private var showJumpToPage = false
     @State private var jumpToPageText = ""
-    @State private var sessionSeconds: Int = 0
-    @State private var sessionTimer: Timer? = nil
+
     
     // Unzip State
     @State private var unzippedDir: URL?
@@ -121,16 +120,7 @@ struct ReaderView: View {
     @State private var showModeQuickPicker = false
     @State private var hasRestoredProgress = false   // prevent double-restore
     
-    private var formattedSessionTime: String {
-        let hours = sessionSeconds / 3600
-        let minutes = (sessionSeconds % 3600) / 60
-        let seconds = sessionSeconds % 60
-        if hours > 0 {
-            return String(format: "%dh %dm", hours, minutes)
-        } else {
-            return String(format: "%02d:%02d", minutes, seconds)
-        }
-    }
+
     
     var body: some View {
         GeometryReader { geo in
@@ -375,14 +365,9 @@ struct ReaderView: View {
                 UIScreen.main.brightness = newValue
             }
             .onAppear {
-                sessionSeconds = 0
-                sessionTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
-                    sessionSeconds += 1
-                }
+                sessionStartTime = Date()
             }
             .onDisappear {
-                sessionTimer?.invalidate()
-                sessionTimer = nil
             }
     }
 
@@ -446,7 +431,7 @@ struct ReaderView: View {
                 isSettingsActive: showReaderSettings,
                 currentModeLabel: isMangaMode ? "MANGA" : (isVerticalScroll ? "WEBTOON" : nil),
                 ambientColor: ambientPageColor,
-                sessionTimeText: formattedSessionTime
+                sessionStartTime: sessionStartTime
             )
         }
     }
