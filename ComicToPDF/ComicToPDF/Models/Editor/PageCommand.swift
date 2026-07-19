@@ -29,9 +29,12 @@ enum PageCommand {
             guard index >= 0 && index < model.panels.count else { return }
             model.panels[index] = newRect
 
-        case .resizePanel(let index, _, let newRect):
+        case .resizePanel(let index, let oldRect, let newRect):
             guard index >= 0 && index < model.panels.count else { return }
             model.panels[index] = newRect
+            let oldSize = CGSize(width: oldRect.width, height: oldRect.height)
+            let newSize = CGSize(width: newRect.width, height: newRect.height)
+            Task { @MainActor in AdaptiveLearningManager.shared.recordUserResizedPanel(oldSize: oldSize, newSize: newSize) }
 
         case .commitProposals(let proposals):
             model.panels.append(contentsOf: proposals)
@@ -61,9 +64,12 @@ enum PageCommand {
             guard index >= 0 && index < model.panels.count else { return }
             model.panels[index] = oldRect
 
-        case .resizePanel(let index, let oldRect, _):
+        case .resizePanel(let index, let oldRect, let newRect):
             guard index >= 0 && index < model.panels.count else { return }
             model.panels[index] = oldRect
+            let oldSize = CGSize(width: oldRect.width, height: oldRect.height)
+            let newSize = CGSize(width: newRect.width, height: newRect.height)
+            Task { @MainActor in AdaptiveLearningManager.shared.recordUserResizedPanel(oldSize: newSize, newSize: oldSize) }
 
         case .commitProposals(let proposals):
             // Undo commit = remove the added panels and put them back in proposals

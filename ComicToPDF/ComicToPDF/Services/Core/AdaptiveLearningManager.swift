@@ -43,9 +43,20 @@ class AdaptiveLearningManager: ObservableObject {
         evaluateHeuristics()
     }
     
-    func recordUserResizedPanel() {
+    func recordUserResizedPanel(oldSize: CGSize, newSize: CGSize) {
         resizedPanelsCount += 1
-        // Resizing is common; only shift heuristics if adding/deleting is out of balance.
+        let oldMinDim = min(oldSize.width, oldSize.height)
+        let newMinDim = min(newSize.width, newSize.height)
+        
+        if newMinDim < oldMinDim * 0.8 {
+            // User shrunk the panel (AI was too large/greedy). Slightly raise the minimum size to be more selective.
+            currentMinimumSize = min(0.18, currentMinimumSize + 0.005)
+            Logger.shared.log("AI: Adjusted minimum size threshold upward to \(String(format: "%.3f", currentMinimumSize)) based on shrunk panel.", category: "AI")
+        } else if newMinDim > oldMinDim * 1.2 {
+            // User expanded the panel (AI was too restrictive). Slightly lower the minimum size threshold.
+            currentMinimumSize = max(0.03, currentMinimumSize - 0.005)
+            Logger.shared.log("AI: Adjusted minimum size threshold downward to \(String(format: "%.3f", currentMinimumSize)) based on expanded panel.", category: "AI")
+        }
     }
     
     // MARK: - The AI Brain

@@ -36,30 +36,36 @@ class DeepScanPanelProvider: PanelProvider {
             try handler.perform([request])
             guard let results = request.results else { return [] }
             
-            var candidates: [PanelCandidate] = []
-            for observation in results {
-                // Contours return a hierarchy. We want the top-level contours (the panel borders),
-                // NOT the child contours (the characters/art inside the panels).
-                let topLevelContours = observation.topLevelContours
-                
-                for contour in topLevelContours {
-                    // A contour's bounding path
-                    let path = contour.normalizedPath
-                    let boundingBox = path.boundingBox
-                    
-                    // Filter out tiny noise contours
-                    let minSide = CGFloat(currentMinSize)
-                    guard boundingBox.width >= minSide && boundingBox.height >= minSide else { continue }
-                    
-                    // We also don't want the contour of the *entire page* itself, if present
-                    if boundingBox.width > 0.95 && boundingBox.height > 0.95 { continue }
-                    
-                    candidates.append(PanelCandidate(
-                        boundingBox: boundingBox,
-                        confidence: 0.85, // Contours are highly accurate structural representations
-                        method: .deepScanContour
-                    ))
+            var allContours: [VNContour] = []
+            func collectContours(_ contours: [VNContour]) {
+                for contour in contours {
+                    allContours.append(contour)
+                    collectContours(contour.childContours)
                 }
+            }
+            
+            for observation in results {
+                collectContours(observation.topLevelContours)
+            }
+            
+            var candidates: [PanelCandidate] = []
+            let minSide = CGFloat(currentMinSize)
+            
+            for contour in allContours {
+                let path = contour.normalizedPath
+                let boundingBox = path.boundingBox
+                
+                // Filter out tiny noise contours
+                guard boundingBox.width >= minSide && boundingBox.height >= minSide else { continue }
+                
+                // We also don't want the contour of the *entire page* itself, if present
+                if boundingBox.width > 0.95 && boundingBox.height > 0.95 { continue }
+                
+                candidates.append(PanelCandidate(
+                    boundingBox: boundingBox,
+                    confidence: 0.85, // Contours are highly accurate structural representations
+                    method: .deepScanContour
+                ))
             }
             return candidates
         } catch {
