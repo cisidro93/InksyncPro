@@ -289,20 +289,25 @@ struct DualExportView: View {
     private func handleSaveToFiles() {
         isProcessing = true
         Task {
-            // Resolve the actual file URL — prefer the stored url, fall back to physical path
-            let sourceURL = pdf.url
-            guard FileManager.default.fileExists(atPath: sourceURL.path) else {
-                await MainActor.run { isProcessing = false }
-                return
-            }
-            // Copy to a temp directory with the correct name so the picker shows a clean filename
-            let tempDir = FileManager.default.temporaryDirectory
-                .appendingPathComponent("InksyncExport", isDirectory: true)
-            try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-            let destURL = tempDir.appendingPathComponent(sourceURL.lastPathComponent)
-            try? FileManager.default.removeItem(at: destURL)
             do {
-                try FileManager.default.copyItem(at: sourceURL, to: destURL)
+                let resolved = try await CloudDownloadManager.shared.resolveLocalURL(for: pdf)
+                let localSourceURL = resolved.url
+                let needsSourceCleanup = resolved.needsCleanup
+                
+                let fileManager = FileManager.default
+                let tempDir = fileManager.temporaryDirectory
+                    .appendingPathComponent("InksyncExport", isDirectory: true)
+                try? fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
+                let destURL = tempDir.appendingPathComponent(pdf.name)
+                try? fileManager.removeItem(at: destURL)
+                
+                let didAccess = localSourceURL.startAccessingSecurityScopedResource()
+                defer {
+                    if didAccess { localSourceURL.stopAccessingSecurityScopedResource() }
+                    if needsSourceCleanup { try? fileManager.removeItem(at: localSourceURL) }
+                }
+                
+                try fileManager.copyItem(at: localSourceURL, to: destURL)
                 await MainActor.run {
                     self.exportURL = destURL
                     self.isProcessing = false

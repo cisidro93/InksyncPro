@@ -424,7 +424,7 @@ class LibraryViewModel: ObservableObject {
         case .export:
             AppRouter.shared.presentSheet(.export(pdf))
         case .share:
-            AppRouter.shared.presentSheet(.directShare(pdf))
+            self.presentShareSheet(for: pdf)
         case .sync:
             AppRouter.shared.presentSheet(.cloudSync(pdf))
         case .rename:
@@ -467,7 +467,7 @@ class LibraryViewModel: ObservableObject {
             }
         case .sendToKindle:
             if pdf.url.pathExtension.lowercased() == "epub" {
-                AppRouter.shared.presentSheet(.directShare(pdf))
+                self.presentShareSheet(for: pdf)
             } else {
                 AppRouter.shared.presentSheet(.export(pdf))
             }
@@ -491,6 +491,36 @@ class LibraryViewModel: ObservableObject {
                 }
             } else {
                 AppRouter.shared.presentSheet(.convert(pdf))
+            }
+        }
+    }
+    
+    private func presentShareSheet(for pdf: ConvertedPDF) {
+        Task {
+            do {
+                let resolved = try await CloudDownloadManager.shared.resolveLocalURL(for: pdf)
+                let localSourceURL = resolved.url
+                let needsSourceCleanup = resolved.needsCleanup
+                
+                let fileManager = FileManager.default
+                let tempDir = fileManager.temporaryDirectory.appendingPathComponent("InksyncShare", isDirectory: true)
+                try? fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
+                let exportURL = tempDir.appendingPathComponent(pdf.name)
+                try? fileManager.removeItem(at: exportURL)
+                
+                let didAccess = localSourceURL.startAccessingSecurityScopedResource()
+                defer {
+                    if didAccess { localSourceURL.stopAccessingSecurityScopedResource() }
+                    if needsSourceCleanup { try? fileManager.removeItem(at: localSourceURL) }
+                }
+                
+                try fileManager.copyItem(at: localSourceURL, to: exportURL)
+                
+                await MainActor.run {
+                    AppRouter.shared.presentSheet(.directShare(exportURL))
+                }
+            } catch {
+                Logger.shared.log("Share preparation failed: \(error.localizedDescription)", category: "Library", type: .error)
             }
         }
     }

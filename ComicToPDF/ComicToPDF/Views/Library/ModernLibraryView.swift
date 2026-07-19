@@ -703,7 +703,7 @@ struct ModernLibraryView: View {
             .environmentObject(conversionManager)
         case .cloudSync(let pdf): CloudSyncView(targetPDF: pdf)
         case .export(let pdf): DualExportView(pdf: pdf)
-        case .directShare(let pdf): ShareSheet(activityItems: [pdf.url])
+        case .directShare(let url): ShareSheet(activityItems: [url])
         case .details(let pdf):
             MediaDetailSheet(pdf: pdf, onAction: { action in
                 viewModel.handleDetailAction(action: action, for: pdf, conversionManager: conversionManager)

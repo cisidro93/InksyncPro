@@ -8,7 +8,7 @@ enum LibrarySheetDestination: Identifiable {
     case cloudSync(ConvertedPDF)
     case export(ConvertedPDF)
     case importQueue
-    case directShare(ConvertedPDF)
+    case directShare(URL)
     case details(ConvertedPDF)
     case searchMetadata(ConvertedPDF)
     case reviewMetadata
@@ -33,7 +33,7 @@ enum LibrarySheetDestination: Identifiable {
         case .cloudSync(let p): return "cloudSync_\(p.id)"
         case .export(let p): return "export_\(p.id)"
         case .importQueue: return "importQueue"
-        case .directShare(let p): return "directShare_\(p.id)"
+        case .directShare(let url): return "directShare_\(abs(url.hashValue))"
         case .details(let p): return "details_\(p.id)"
         case .searchMetadata(let p): return "searchMeta_\(p.id)"
         case .reviewMetadata: return "reviewMetadata"
