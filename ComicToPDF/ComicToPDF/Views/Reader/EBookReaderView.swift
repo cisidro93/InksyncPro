@@ -1061,9 +1061,11 @@ struct EBookWebReader: View {
         .task(id: spineItem.href) {
             await loadChapter()
         }
-        .onChange(of: prefs.fontSize) { _, _ in updateLiveCSS() }
-        .onChange(of: prefs.themeRaw) { _, _ in updateLiveCSS() }
-        .onChange(of: prefs.paginationMode) { _, _ in updateLiveCSS() }
+        .onReceive(prefs.objectWillChange) { _ in
+            DispatchQueue.main.async {
+                updateLiveCSS()
+            }
+        }
     }
 
     private func loadChapter() async {

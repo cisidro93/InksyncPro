@@ -64,7 +64,7 @@ struct DocumentReaderEngine: View {
                                           pdfViewRef: $pdfViewReference)
                     .colorInvertIfDark(theme: prefs.activeTheme)
                     
-                    if prefs.pdfDualPage {
+                    if prefs.pdfDualPage && currentPageIndex > 0 {
                         BookSpineCreaseOverlay()
                     }
                 }
