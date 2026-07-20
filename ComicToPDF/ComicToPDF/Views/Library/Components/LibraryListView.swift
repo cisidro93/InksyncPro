@@ -40,10 +40,8 @@ struct LibraryListView: View {
     @State private var autoScrollTask: Task<Void, Never>? = nil
     @State private var showingQuickJump = false
     
-    @State private var computedInProgress: [ConvertedPDF] = []
-
-    private func updateCachedItems(_ newItems: [LibraryListItem]) {
-        self.computedInProgress = newItems.compactMap {
+    private var computedInProgress: [ConvertedPDF] {
+        items.compactMap {
             if case .single(let pdf) = $0 {
                 let prog = Double(pdf.metadata.lastReadPage ?? 0) / Double(max(pdf.pageCount, 1))
                 return (prog > 0.01 && prog < 0.98) ? pdf : nil
@@ -188,12 +186,6 @@ struct LibraryListView: View {
                 } // end ScrollViewReader
                 } // end GeometryReader
                 .coordinateSpace(name: "libraryListViewport")
-                .onAppear {
-                    updateCachedItems(items)
-                }
-                .onChange(of: items) { _, newItems in
-                    updateCachedItems(newItems)
-                }
             }
         }
         // MARK: Details Sheet

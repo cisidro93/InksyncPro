@@ -56,17 +56,16 @@ struct LibraryGridView: View {
     @State private var lastDragLocation: CGPoint = .zero
     @State private var autoScrollTask: Task<Void, Never>? = nil
     @State private var showingQuickJump = false
-    @State private var computedRows: [GridRowItem] = []
-    @State private var computedInProgress: [ConvertedPDF] = []
-
-    private func updateCachedItems(_ newItems: [LibraryListItem]) {
-        let chunked = chunkedItems(newItems)
-        self.computedRows = chunked.map { chunk in
+    private var computedRows: [GridRowItem] {
+        let chunked = chunkedItems(items)
+        return chunked.map { chunk in
             let combinedID = chunk.map(\.id).joined(separator: "_")
             return GridRowItem(id: combinedID, items: chunk)
         }
-        
-        self.computedInProgress = newItems.compactMap {
+    }
+
+    private var computedInProgress: [ConvertedPDF] {
+        items.compactMap {
             if case .single(let pdf) = $0 {
                 let prog = Double(pdf.metadata.lastReadPage ?? 0) / Double(max(pdf.pageCount, 1))
                 return (prog > 0.01 && prog < 0.98) ? pdf : nil
@@ -282,15 +281,6 @@ struct LibraryGridView: View {
                 }
             }
             .coordinateSpace(name: "libraryViewport")
-            .onAppear {
-                updateCachedItems(items)
-            }
-            .onChange(of: items) { _, newItems in
-                updateCachedItems(newItems)
-            }
-            .onChange(of: colCount) { _, _ in
-                updateCachedItems(items)
-            }
         }
     }
         // MARK: Rename Alert
