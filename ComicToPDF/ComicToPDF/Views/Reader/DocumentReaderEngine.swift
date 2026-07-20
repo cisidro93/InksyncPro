@@ -82,23 +82,11 @@ struct DocumentReaderEngine: View {
                             .onChanged { value in
                                 let delta = value.translation.height - lastBrightnessDragValue
                                 lastBrightnessDragValue = value.translation.height
-                                UIScreen.main.brightness -= delta * 0.005
+                                UIScreen.main.brightness -= delta * 0.001
                             }
                             .onEnded { _ in lastBrightnessDragValue = 0 }
                     )
                 Spacer()
-                Color.clear
-                    .contentShape(Rectangle())
-                    .frame(width: 30)
-                    .gesture(
-                        DragGesture()
-                            .onChanged { value in
-                                let delta = value.translation.height - lastBrightnessDragValue
-                                lastBrightnessDragValue = value.translation.height
-                                UIScreen.main.brightness -= delta * 0.005
-                            }
-                            .onEnded { _ in lastBrightnessDragValue = 0 }
-                    )
             }
             
             ReaderChrome(

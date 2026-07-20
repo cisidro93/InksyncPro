@@ -2119,7 +2119,7 @@ struct ComicReaderEngine: View {
 
     // MARK: - Extracted sub-views
 
-    /// Left + right brightness drag zones.
+    /// Left brightness drag zone.
     @ViewBuilder private var brightnessZones: some View {
         HStack {
             Color.clear
@@ -2130,23 +2130,11 @@ struct ComicReaderEngine: View {
                         .onChanged { value in
                             let delta = value.translation.height - lastBrightnessDragValue
                             lastBrightnessDragValue = value.translation.height
-                            UIScreen.main.brightness -= delta * 0.005
+                            UIScreen.main.brightness -= delta * 0.001
                         }
                         .onEnded { _ in lastBrightnessDragValue = 0 }
                 )
             Spacer()
-            Color.clear
-                .contentShape(Rectangle())
-                .frame(width: brightnessZoneWidth)
-                .gesture(
-                    DragGesture()
-                        .onChanged { value in
-                            let delta = value.translation.height - lastBrightnessDragValue
-                            lastBrightnessDragValue = value.translation.height
-                            UIScreen.main.brightness -= delta * 0.005
-                        }
-                        .onEnded { _ in lastBrightnessDragValue = 0 }
-                )
         }
     }
 

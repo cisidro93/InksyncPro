@@ -31,14 +31,25 @@ actor LibraryModelActor {
         var didUpdate = false
         var validDocs: [SDConvertedPDF] = []
         var ghostIDs: Set<UUID> = []
+        var seenPaths = Set<String>()
         
         let currentSandboxPath = appSupport?.path ?? ""
         let lastSandboxPath = UserDefaults.standard.string(forKey: "lastSandboxDocumentsPath")
         let isNewSandbox = !currentSandboxPath.isEmpty && lastSandboxPath != currentSandboxPath
         
         for doc in documents {
+            let normalizedPath = doc.url.path.lowercased()
+            if seenPaths.contains(normalizedPath) {
+                // Delete duplicate db record pointing to same path
+                modelContext.delete(doc)
+                ghostIDs.insert(doc.id)
+                didUpdate = true
+                continue
+            }
+            
             // 1. If physical file exists, path is already correct
             if fileManager.fileExists(atPath: doc.url.path) {
+                seenPaths.insert(normalizedPath)
                 validDocs.append(doc)
                 continue
             }
@@ -46,6 +57,7 @@ actor LibraryModelActor {
             // 2. Ignore re-anchoring for external/linked files
             if let data = doc.sourceModeData, let mode = try? JSONDecoder().decode(SourceMode.self, from: data) {
                 if mode.isLinked || mode.isCloud {
+                    seenPaths.insert(normalizedPath)
                     validDocs.append(doc)
                     continue
                 }
@@ -103,9 +115,17 @@ actor LibraryModelActor {
             }
             
             if foundReanchor, let finalURL = checkURL {
-                doc.url = finalURL
-                didUpdate = true
-                validDocs.append(doc)
+                let reanchoredPath = finalURL.path.lowercased()
+                if seenPaths.contains(reanchoredPath) {
+                    modelContext.delete(doc)
+                    ghostIDs.insert(doc.id)
+                    didUpdate = true
+                } else {
+                    doc.url = finalURL
+                    seenPaths.insert(reanchoredPath)
+                    didUpdate = true
+                    validDocs.append(doc)
+                }
             } else {
                 // File genuinely missing — mark as ghost and delete
                 ghostIDs.insert(doc.id)
