@@ -31,53 +31,57 @@ struct DocumentReaderEngine: View {
     @State private var lastBrightnessDragValue: CGFloat = 0
     @ObservedObject private var sleepTimer = SleepTimerManager.shared
     
+    @ViewBuilder private var documentContentView: some View {
+        Group {
+            if isReflowMode {
+                ReflowTextView(
+                    text: reflowText,
+                    onCenterTap: {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            chromeVisible.toggle()
+                        }
+                    },
+                    onPrevPage: {
+                        if currentPageIndex > 0 {
+                            currentPageIndex -= 1
+                            HapticEngine.light()
+                        }
+                    },
+                    onNextPage: {
+                        if currentPageIndex < totalPages - 1 {
+                            currentPageIndex += 1
+                            HapticEngine.light()
+                        }
+                    }
+                )
+            } else if let doc = pdfDocument {
+                ZStack {
+                    PDFKitRepresentedView(document: doc,
+                                          pdf: pdf,
+                                          currentPageIndex: $currentPageIndex,
+                                          chromeVisible: $chromeVisible,
+                                          isPencilMode: $isPencilMode,
+                                          pdfViewRef: $pdfViewReference)
+                    .colorInvertIfDark(theme: prefs.activeTheme)
+                    
+                    if prefs.pdfDualPage {
+                        BookSpineCreaseOverlay()
+                    }
+                }
+            } else {
+                ProgressView("Loading Document...")
+            }
+        }
+        .readingFilter(prefs.readingFilter)
+        .ignoresSafeArea()
+    }
+    
     var body: some View {
         ZStack {
             AmbientReaderBackground(theme: EBookTheme(rawValue: prefs.themeRaw) ?? .paper)
                 .ignoresSafeArea()
             
-            Group {
-                if isReflowMode {
-                    ReflowTextView(
-                        text: reflowText,
-                        onCenterTap: {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                chromeVisible.toggle()
-                            }
-                        },
-                        onPrevPage: {
-                            if currentPageIndex > 0 {
-                                currentPageIndex -= 1
-                                HapticEngine.light()
-                            }
-                        },
-                        onNextPage: {
-                            if currentPageIndex < totalPages - 1 {
-                                currentPageIndex += 1
-                                HapticEngine.light()
-                            }
-                        }
-                    )
-                } else if let doc = pdfDocument {
-                    ZStack {
-                        PDFKitRepresentedView(document: doc,
-                                              pdf: pdf,
-                                              currentPageIndex: $currentPageIndex,
-                                              chromeVisible: $chromeVisible,
-                                              isPencilMode: $isPencilMode,
-                                              pdfViewRef: $pdfViewReference)
-                        .colorInvertIfDark(theme: prefs.activeTheme)
-                        
-                        if prefs.pdfDualPage {
-                            BookSpineCreaseOverlay()
-                        }
-                    }
-                } else {
-                    ProgressView("Loading Document...")
-                }
-            }
-            .readingFilter(prefs.readingFilter)
-            .ignoresSafeArea()
+            documentContentView
             
             // Edge Brightness Gesture Zones
             HStack {
