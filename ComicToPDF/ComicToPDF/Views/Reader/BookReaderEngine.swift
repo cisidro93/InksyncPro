@@ -1046,10 +1046,6 @@ struct BookReaderEngine: View {
     
 
     
-    @State private var pageTurnSnapshot: UIImage? = nil
-    @State private var isPageTurningForward = true
-    @State private var animatingPageTurn = false
-    
     // Custom Toast messages
     @State private var showToast = false
     @State private var toastMessage = ""
@@ -1154,14 +1150,6 @@ struct BookReaderEngine: View {
                                 activeFootnoteText = text
                             })
                             .ignoresSafeArea()
-                            
-                            if let snapshot = pageTurnSnapshot {
-                                Image(uiImage: snapshot)
-                                    .resizable()
-                                    .ignoresSafeArea()
-                                    .modifier(PageCurlModifier(progress: animatingPageTurn ? 0.0 : 1.0, forward: isPageTurningForward))
-                                    .allowsHitTesting(false)
-                            }
                             
                             if prefs.paginationMode == EBookPaginationMode.paged.rawValue && computeColumnCount(for: geo.size) == 2 {
                                 BookSpineCreaseOverlay()
@@ -1390,39 +1378,6 @@ struct BookReaderEngine: View {
 
     // MARK: - Navigation helpers
 
-    private func performPageTurnAnimation(forward: Bool, action: @escaping () -> Void) {
-        guard let webView = webViewReference, prefs.paginationMode == EBookPaginationMode.paged.rawValue else {
-            action()
-            return
-        }
-        
-        let config = WKSnapshotConfiguration()
-        config.rect = webView.bounds
-        webView.takeSnapshot(with: config) { image, error in
-            if let image = image {
-                self.pageTurnSnapshot = image
-                self.isPageTurningForward = forward
-                self.animatingPageTurn = true
-                
-                // Perform the actual scroll instantly
-                action()
-                
-                // Animate the snapshot curling/folding away
-                withAnimation(.easeInOut(duration: 0.35)) {
-                    self.animatingPageTurn = false
-                }
-                
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.36) {
-                    if !self.animatingPageTurn {
-                        self.pageTurnSnapshot = nil
-                    }
-                }
-            } else {
-                action()
-            }
-        }
-    }
-
     private func pageForward() {
         guard let webView = webViewReference else { return }
         let scroll = webView.scrollView
@@ -1451,9 +1406,7 @@ struct BookReaderEngine: View {
                     vm.loadChapter(index: min(lastIdx, vm.currentChapterIndex + 1))
                 }
             } else {
-                performPageTurnAnimation(forward: true) {
-                    scroll.setContentOffset(CGPoint(x: min(targetOffset, maxOffset), y: 0), animated: false)
-                }
+                scroll.setContentOffset(CGPoint(x: min(targetOffset, maxOffset), y: 0), animated: true)
             }
         } else {
             let height = max(webView.bounds.height, 1)
@@ -1496,9 +1449,7 @@ struct BookReaderEngine: View {
                 }
             } else {
                 let targetOffset = currentOffset - width
-                performPageTurnAnimation(forward: false) {
-                    scroll.setContentOffset(CGPoint(x: max(0, targetOffset), y: 0), animated: false)
-                }
+                scroll.setContentOffset(CGPoint(x: max(0, targetOffset), y: 0), animated: true)
             }
         } else {
             let height = max(webView.bounds.height, 1)
@@ -1967,28 +1918,7 @@ struct BookSpineCreaseOverlay: View {
     }
 }
 
-struct PageCurlModifier: ViewModifier {
-    let progress: CGFloat
-    let forward: Bool
-    
-    func body(content: Content) -> some View {
-        let angle = forward ? -90.0 * progress : 90.0 * progress
-        let anchor = forward ? UnitPoint.leading : UnitPoint.trailing
-        let offset = forward ? -UIScreen.main.bounds.width * progress : UIScreen.main.bounds.width * progress
-        
-        content
-            .rotation3DEffect(
-                .degrees(angle),
-                axis: (x: 0.0, y: 1.0, z: 0.0),
-                anchor: anchor,
-                anchorZ: 0.0,
-                perspective: 0.4
-            )
-            .offset(x: offset)
-            .opacity(Double(1.0 - progress * 0.5))
-            .shadow(color: .black.opacity(Double(0.25 * (1.0 - progress))), radius: 8, x: forward ? -4 : 4, y: 0)
-    }
-}
+
 
 
 

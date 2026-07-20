@@ -476,6 +476,7 @@ struct PDFKitRepresentedView: UIViewRepresentable {
             expectedDisplayMode = dualPageMode ? .twoUpContinuous : .singlePageContinuous
         }
         pdfView.displayMode = expectedDisplayMode
+        pdfView.displaysAsBook = !dualPageMode
         
         if isPaged && !fitToWidth && !dualPageMode {
             pdfView.displayDirection = .horizontal
@@ -619,6 +620,7 @@ struct PDFKitRepresentedView: UIViewRepresentable {
                 context.coordinator.lastFitToWidth != fitToWidth {
                 
                 pdfView.displayMode = expectedDisplayMode
+                pdfView.displaysAsBook = !dualPageMode
                 context.coordinator.lastConfiguredPaginationMode = currentMode
                 context.coordinator.lastFitToWidth = fitToWidth
                 
@@ -636,7 +638,8 @@ struct PDFKitRepresentedView: UIViewRepresentable {
                 pdfView.autoScales = false
                 if let currentPage = pdfView.currentPage {
                     let pageBounds = currentPage.bounds(for: pdfView.displayBox)
-                    let scale = pdfView.bounds.width / pageBounds.width
+                    let pageWidthMultiplier: CGFloat = dualPageMode ? 2.0 : 1.0
+                    let scale = pdfView.bounds.width / (pageBounds.width * pageWidthMultiplier)
                     if pdfView.scaleFactor != scale && scale > 0 {
                         pdfView.scaleFactor = scale
                     }
