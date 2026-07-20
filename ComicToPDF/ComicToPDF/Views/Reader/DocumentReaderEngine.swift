@@ -477,12 +477,12 @@ struct PDFKitRepresentedView: UIViewRepresentable {
         }
         pdfView.displayMode = expectedDisplayMode
         
-        if isPaged && !fitToWidth {
+        if isPaged && !fitToWidth && !dualPageMode {
             pdfView.displayDirection = .horizontal
             pdfView.usePageViewController(true, withViewOptions: nil)
         } else {
             pdfView.usePageViewController(false)
-            pdfView.displayDirection = .vertical
+            pdfView.displayDirection = isPaged && dualPageMode ? .horizontal : .vertical
         }
         pdfView.layoutDocumentView()
     }
@@ -622,12 +622,12 @@ struct PDFKitRepresentedView: UIViewRepresentable {
                 context.coordinator.lastConfiguredPaginationMode = currentMode
                 context.coordinator.lastFitToWidth = fitToWidth
                 
-                if isPaged && !fitToWidth {
+                if isPaged && !fitToWidth && !dualPageMode {
                     pdfView.displayDirection = .horizontal
                     pdfView.usePageViewController(true, withViewOptions: nil)
                 } else {
                     pdfView.usePageViewController(false)
-                    pdfView.displayDirection = .vertical
+                    pdfView.displayDirection = isPaged && dualPageMode ? .horizontal : .vertical
                 }
                 pdfView.layoutDocumentView()
             }
