@@ -56,7 +56,7 @@ actor LibraryModelActor {
             var foundReanchor = false
             var checkURL: URL?
             
-            if let docRange = oldPath.range(of: "/Documents/") {
+            if let docRange = oldPath.range(of: "/Documents/", options: .caseInsensitive) {
                 let relPath = String(oldPath[docRange.upperBound...])
                 if let docsRoot = docsRoot {
                     let testURL = docsRoot.appendingPathComponent(relPath)
@@ -68,7 +68,7 @@ actor LibraryModelActor {
             }
             
             if !foundReanchor, let appSupport = appSupport {
-                if let inboxRange = oldPath.range(of: "/InksyncVault/Inbox/") {
+                if let inboxRange = oldPath.range(of: "/InksyncVault/Inbox/", options: .caseInsensitive) {
                     let relPath = String(oldPath[inboxRange.upperBound...])
                     let testURL = appSupport.appendingPathComponent("InksyncVault/Inbox").appendingPathComponent(relPath)
                     if fileManager.fileExists(atPath: testURL.path) {
@@ -77,9 +77,9 @@ actor LibraryModelActor {
                     }
                 }
                 
-                if !foundReanchor, let vaultRange = oldPath.range(of: "/InksyncVault/") {
+                if !foundReanchor, let vaultRange = oldPath.range(of: "/InksyncVault/", options: .caseInsensitive) {
                     let relPath = String(oldPath[vaultRange.upperBound...])
-                    if !relPath.hasPrefix("Inbox/") {
+                    if !relPath.lowercased().hasPrefix("inbox/") {
                         let testURL = appSupport.appendingPathComponent("InksyncVault").appendingPathComponent(relPath)
                         if fileManager.fileExists(atPath: testURL.path) {
                             checkURL = testURL

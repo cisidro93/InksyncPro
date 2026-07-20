@@ -78,13 +78,13 @@ actor LibraryScanner {
 
         func relativePath(for url: URL) -> String {
             let path = url.path
-            if let range = path.range(of: "/Documents/") {
-                return "Documents/" + String(path[range.upperBound...])
+            if let range = path.range(of: "/Documents/", options: .caseInsensitive) {
+                return "Documents/" + String(path[range.upperBound...]).lowercased()
             }
-            if let range = path.range(of: "/InksyncVault/Inbox/") {
-                return "Inbox/" + String(path[range.upperBound...])
+            if let range = path.range(of: "/InksyncVault/Inbox/", options: .caseInsensitive) {
+                return "Inbox/" + String(path[range.upperBound...]).lowercased()
             }
-            return url.lastPathComponent
+            return url.lastPathComponent.lowercased()
         }
 
         var newPDFs: [ConvertedPDF] = []
