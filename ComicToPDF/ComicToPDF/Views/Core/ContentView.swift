@@ -210,10 +210,10 @@ struct ContentView: View {
                 await SandboxCleanupManager.shared.passiveScan()
                 await SandboxCleanupManager.shared.autoCleanupIfStorageLow()
                 
-                // Enforce a minimum display duration of 2.8s for smooth animation
+                // Enforce a minimum display duration of 0.5s for smooth animation
                 let elapsed = Date().timeIntervalSince(startTime)
-                if elapsed < 2.8 {
-                    try? await Task.sleep(for: .seconds(2.8 - elapsed))
+                if elapsed < 0.5 {
+                    try? await Task.sleep(for: .seconds(0.5 - elapsed))
                 }
                 
                 withAnimation(.spring(response: 0.7, dampingFraction: 0.8)) {
