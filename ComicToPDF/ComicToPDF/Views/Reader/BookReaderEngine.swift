@@ -1844,7 +1844,7 @@ struct AmbientReaderBackground: View {
                 GeometryReader { _ in
                     Canvas { context, size in
                         // Overlay soft grid noise to simulate paper fiber
-                        var rng = SeededRandom(seed: 42)
+                        var rng = ParchmentPaperSeededRandom(seed: 42)
                         let dotCount = Int((size.width * size.height) * 0.0015)
                         context.opacity = theme.isDark ? 0.03 : 0.012
                         context.blendMode = .multiply
@@ -1866,7 +1866,7 @@ struct AmbientReaderBackground: View {
 }
 
 /// A simple seeded pseudo-random number generator for deterministic paper texture generation
-struct SeededRandom {
+struct ParchmentPaperSeededRandom {
     private var state: UInt64
     
     init(seed: UInt64) {
