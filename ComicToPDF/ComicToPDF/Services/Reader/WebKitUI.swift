@@ -73,6 +73,8 @@ public struct WebView: UIViewRepresentable {
         webView.isOpaque = false
         webView.backgroundColor = .clear
         webView.scrollView.backgroundColor = .clear
+        webView.scrollView.contentInsetAdjustmentBehavior = .never
+        webView.scrollView.contentInset = .zero
         
         DispatchQueue.main.async {
             self.webViewRef = webView

@@ -1408,7 +1408,8 @@ struct BookReaderEngine: View {
                     vm.loadChapter(index: min(lastIdx, vm.currentChapterIndex + 1))
                 }
             } else {
-                scroll.setContentOffset(CGPoint(x: min(targetOffset, maxOffset), y: 0), animated: true)
+                let rect = CGRect(x: min(targetOffset, maxOffset), y: 0, width: width, height: max(scroll.bounds.height, 1))
+                scroll.scrollRectToVisible(rect, animated: true)
             }
         } else {
             let height = max(webView.bounds.height, 1)
@@ -1450,8 +1451,9 @@ struct BookReaderEngine: View {
                     vm.loadChapter(index: vm.currentChapterIndex - 1)
                 }
             } else {
-                let targetOffset = currentOffset - width
-                scroll.setContentOffset(CGPoint(x: max(0, targetOffset), y: 0), animated: true)
+                let targetOffset = max(0, currentOffset - width)
+                let rect = CGRect(x: targetOffset, y: 0, width: width, height: max(scroll.bounds.height, 1))
+                scroll.scrollRectToVisible(rect, animated: true)
             }
         } else {
             let height = max(webView.bounds.height, 1)
