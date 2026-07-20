@@ -33,7 +33,8 @@ struct DocumentReaderEngine: View {
     
     var body: some View {
         ZStack {
-            prefs.activeTheme.background.edgesIgnoringSafeArea(.all)
+            AmbientReaderBackground(theme: EBookTheme(rawValue: prefs.themeRaw) ?? .paper)
+                .ignoresSafeArea()
             
             Group {
                 if isReflowMode {
@@ -58,13 +59,19 @@ struct DocumentReaderEngine: View {
                         }
                     )
                 } else if let doc = pdfDocument {
-                    PDFKitRepresentedView(document: doc,
-                                          pdf: pdf,
-                                          currentPageIndex: $currentPageIndex,
-                                          chromeVisible: $chromeVisible,
-                                          isPencilMode: $isPencilMode,
-                                          pdfViewRef: $pdfViewReference)
-                    .colorInvertIfDark(theme: prefs.activeTheme)
+                    ZStack {
+                        PDFKitRepresentedView(document: doc,
+                                              pdf: pdf,
+                                              currentPageIndex: $currentPageIndex,
+                                              chromeVisible: $chromeVisible,
+                                              isPencilMode: $isPencilMode,
+                                              pdfViewRef: $pdfViewReference)
+                        .colorInvertIfDark(theme: prefs.activeTheme)
+                        
+                        if prefs.pdfDualPage {
+                            BookSpineCreaseOverlay()
+                        }
+                    }
                 } else {
                     ProgressView("Loading Document...")
                 }

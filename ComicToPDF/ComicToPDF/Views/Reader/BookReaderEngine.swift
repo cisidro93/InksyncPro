@@ -656,7 +656,7 @@ struct EPUBWebView: View {
             width: 100% !important;
             column-width: auto !important;
             touch-action: pan-x pan-y;
-            background-color: \(bgColor) !important;
+            background-color: transparent !important;
             \(isPaged ? """
             height: 100% !important;
             overflow-x: scroll !important;
@@ -1057,105 +1057,122 @@ struct BookReaderEngine: View {
         self._vm = StateObject(wrappedValue: BookReaderViewModel(pdf: pdf))
     }
     
+    private func computeColumnCount(for size: CGSize) -> Int {
+        let renderWidth = size.width > 0 ? size.width : UIScreen.main.bounds.width
+        let renderHeight = size.height > 0 ? size.height : UIScreen.main.bounds.height
+        let isPad = UIDevice.current.userInterfaceIdiom == .pad
+        let isLandscape = renderWidth > renderHeight
+        let defaultColumns = (isPad && isLandscape) ? 2 : 1
+        return prefs.columnCount == 0 ? defaultColumns : prefs.columnCount
+    }
+
     var body: some View {
-        ZStack {
-            Color(prefs.activeTheme.background).edgesIgnoringSafeArea(.all)
-            
-            if vm.isLoading {
-                ProgressView("Unpacking EPUB...")
-                    .foregroundColor(prefs.activeTheme.foreground(colorScheme: .light))
-            } else {
-                if !vm.chapterHtmlFiles.isEmpty {
-                    let currentChapterURL = vm.chapterHtmlFiles[vm.currentChapterIndex]
-                    EPUBWebView(
-                        htmlContent: $vm.currentChapterHTML,
-                        baseUrl: .constant(currentChapterURL),
-                        prefs: EBookPreferences.shared,
-                        scrollToLastPageOnLoad: $scrollToLastPageOnLoad,
-                        initialScrollFraction: initialScrollFraction,
-                        onScrollFractionChanged: { fraction in
-                            chapterScrollFraction = fraction
-                            saveProgress()
-                        },
-                        webViewRef: $webViewReference,
-                        pdf: pdf,
-                        currentPage: $chapterPage,
-                        totalPages: $chapterTotalPages,
-                        onHighlightCreated: { selectedText, _ in
-
-                        let rawLabel = vm.tocItems[safe: vm.currentChapterIndex]?.label ?? ""
-                        let spineLabel = !rawLabel.isEmpty ? rawLabel : nil
-                        let highlight = Annotation(
-                            pdfID: pdf.id,
-                            pageIndex: vm.currentChapterIndex,
-                            chapterTitle: spineLabel,
-                            kind: .highlight,
-                            createdAt: Date(),
-                            modifiedAt: Date(),
-                            colorHex: "#ffd700",
-                            selectedText: selectedText
-                        )
-                        AnnotationStore.shared.add(highlight)
-                        StudyNotesStore.shared.appendHighlight(selectedText, chapter: spineLabel ?? "Chapter \(vm.currentChapterIndex + 1)")
-
-                        // Zettelkasten Integration: Instantly pop up editor for new highlight
-                        let sdAnnotation = SDAnnotation(from: highlight)
-                        modelContext.insert(sdAnnotation)
-                        try? modelContext.save()
-                        self.activeHighlightToEdit = sdAnnotation
-
-                    }, onPageLoaded: { webView in
-                        self.webViewReference = webView
-                        let pageAnnotations = AnnotationStore.shared.annotations(for: pdf.id).filter { $0.pageIndex == vm.currentChapterIndex && $0.kind == .highlight }
-                        for ann in pageAnnotations {
-                            if let text = ann.selectedText, let color = ann.colorHex {
-                                let safeText = text.replacingOccurrences(of: "`", with: "\\`")
-                                                   .replacingOccurrences(of: "\"", with: "\\\"")
-                                                   .replacingOccurrences(of: "\n", with: " ")
-                                                   let js = "window.restoreInksyncHighlight(`\(safeText)`, '\(color)');"
-                                webView.evaluateJavaScript(js)
+        GeometryReader { geo in
+            ZStack {
+                AmbientReaderBackground(theme: prefs.activeTheme)
+                    .ignoresSafeArea()
+                
+                if vm.isLoading {
+                    ProgressView("Unpacking EPUB...")
+                        .foregroundColor(prefs.activeTheme.foreground(colorScheme: .light))
+                } else {
+                    if !vm.chapterHtmlFiles.isEmpty {
+                        let currentChapterURL = vm.chapterHtmlFiles[vm.currentChapterIndex]
+                        ZStack {
+                            EPUBWebView(
+                                htmlContent: $vm.currentChapterHTML,
+                                baseUrl: .constant(currentChapterURL),
+                                prefs: EBookPreferences.shared,
+                                scrollToLastPageOnLoad: $scrollToLastPageOnLoad,
+                                initialScrollFraction: initialScrollFraction,
+                                onScrollFractionChanged: { fraction in
+                                    chapterScrollFraction = fraction
+                                    saveProgress()
+                                },
+                                webViewRef: $webViewReference,
+                                pdf: pdf,
+                                currentPage: $chapterPage,
+                                totalPages: $chapterTotalPages,
+                                onHighlightCreated: { selectedText, _ in
+        
+                                let rawLabel = vm.tocItems[safe: vm.currentChapterIndex]?.label ?? ""
+                                let spineLabel = !rawLabel.isEmpty ? rawLabel : nil
+                                let highlight = Annotation(
+                                    pdfID: pdf.id,
+                                    pageIndex: vm.currentChapterIndex,
+                                    chapterTitle: spineLabel,
+                                    kind: .highlight,
+                                    createdAt: Date(),
+                                    modifiedAt: Date(),
+                                    colorHex: "#ffd700",
+                                    selectedText: selectedText
+                                )
+                                AnnotationStore.shared.add(highlight)
+                                StudyNotesStore.shared.appendHighlight(selectedText, chapter: spineLabel ?? "Chapter \(vm.currentChapterIndex + 1)")
+        
+                                // Zettelkasten Integration: Instantly pop up editor for new highlight
+                                let sdAnnotation = SDAnnotation(from: highlight)
+                                modelContext.insert(sdAnnotation)
+                                try? modelContext.save()
+                                self.activeHighlightToEdit = sdAnnotation
+        
+                            }, onPageLoaded: { webView in
+                                self.webViewReference = webView
+                                let pageAnnotations = AnnotationStore.shared.annotations(for: pdf.id).filter { $0.pageIndex == vm.currentChapterIndex && $0.kind == .highlight }
+                                for ann in pageAnnotations {
+                                    if let text = ann.selectedText, let color = ann.colorHex {
+                                        let safeText = text.replacingOccurrences(of: "`", with: "\\`")
+                                                           .replacingOccurrences(of: "\"", with: "\\\"")
+                                                           .replacingOccurrences(of: "\n", with: " ")
+                                                           let js = "window.restoreInksyncHighlight(`\(safeText)`, '\(color)');"
+                                        webView.evaluateJavaScript(js)
+                                    }
+                                }
+                            },
+                            onCenterTap: { chromeVisible.toggle() },
+                            onLeftTap: { pageBackward() },
+                            onRightTap: { pageForward() },
+                            onNextChapter: {
+                                let lastIdx = vm.chapterHtmlFiles.count - 1
+                                if vm.currentChapterIndex >= lastIdx {
+                                    // Last chapter — attempt series continuation
+                                    attemptBookSeriesContinuation()
+                                } else {
+                                    vm.loadChapter(index: min(lastIdx, vm.currentChapterIndex + 1))
+                                }
+                            },
+                            onPrevChapter: {
+                                scrollToLastPageOnLoad = true
+                                vm.loadChapter(index: max(0, vm.currentChapterIndex - 1))
+                            },
+                            onFootnoteTapped: { text in
+                                activeFootnoteText = text
+                            })
+                            .ignoresSafeArea()
+                            
+                            if prefs.paginationMode == EBookPaginationMode.paged.rawValue && computeColumnCount(for: geo.size) == 2 {
+                                BookSpineCreaseOverlay()
                             }
                         }
-                    },
-                    onCenterTap: { chromeVisible.toggle() },
-                    onLeftTap: { pageBackward() },
-                    onRightTap: { pageForward() },
-                    onNextChapter: {
-                        let lastIdx = vm.chapterHtmlFiles.count - 1
-                        if vm.currentChapterIndex >= lastIdx {
-                            // Last chapter — attempt series continuation
-                            attemptBookSeriesContinuation()
-                        } else {
-                            vm.loadChapter(index: min(lastIdx, vm.currentChapterIndex + 1))
+                        
+                        // Edge Brightness Gesture Zones
+                        HStack {
+                            Color.clear
+                                .contentShape(Rectangle())
+                                .frame(width: 30)
+                                .gesture(
+                                    DragGesture()
+                                        .onChanged { value in
+                                            let delta = value.translation.height - lastBrightnessDragValue
+                                            lastBrightnessDragValue = value.translation.height
+                                            UIScreen.main.brightness -= delta * 0.001
+                                        }
+                                        .onEnded { _ in lastBrightnessDragValue = 0 }
+                                )
+                            Spacer()
                         }
-                    },
-                    onPrevChapter: {
-                        scrollToLastPageOnLoad = true
-                        vm.loadChapter(index: max(0, vm.currentChapterIndex - 1))
-                    },
-                    onFootnoteTapped: { text in
-                        activeFootnoteText = text
-                    })
-                    .ignoresSafeArea()
-                    
-                    // Edge Brightness Gesture Zones
-                    HStack {
-                        Color.clear
-                            .contentShape(Rectangle())
-                            .frame(width: 30)
-                            .gesture(
-                                DragGesture()
-                                    .onChanged { value in
-                                        let delta = value.translation.height - lastBrightnessDragValue
-                                        lastBrightnessDragValue = value.translation.height
-                                        UIScreen.main.brightness -= delta * 0.001
-                                    }
-                                    .onEnded { _ in lastBrightnessDragValue = 0 }
-                            )
-                        Spacer()
                     }
                 }
-            }
             
             ReaderChrome(
                 title: pdf.name,
@@ -1799,6 +1816,104 @@ struct HighlightQuickPopoverView: View {
 struct FootnoteItem: Identifiable {
     let id = UUID()
     let text: String
+}
+
+struct AmbientReaderBackground: View {
+    let theme: EBookTheme
+    
+    var body: some View {
+        ZStack {
+            theme.background
+                .ignoresSafeArea()
+            
+            // Warm reading lamp radial gradient
+            RadialGradient(
+                colors: [
+                    Color.white.opacity(theme.isDark ? 0.03 : 0.45),
+                    Color.black.opacity(theme.isDark ? 0.40 : 0.08)
+                ],
+                center: .center,
+                startRadius: 20,
+                endRadius: 700
+            )
+            .ignoresSafeArea()
+            
+            // Subtle parchment paper grain overlay (if not OLED)
+            if theme != .oled {
+                GeometryReader { _ in
+                    Canvas { context, size in
+                        // Overlay soft grid noise to simulate paper fiber
+                        var rng = SeededRandom(seed: 42)
+                        let dotCount = Int((size.width * size.height) * 0.0015)
+                        context.opacity = theme.isDark ? 0.03 : 0.012
+                        context.blendMode = .multiply
+                        
+                        for _ in 0..<dotCount {
+                            let x = CGFloat(rng.nextUniform()) * size.width
+                            let y = CGFloat(rng.nextUniform()) * size.height
+                            let r = CGFloat(rng.nextUniform() * 0.8 + 0.4)
+                            let rect = CGRect(x: x, y: y, width: r, height: r)
+                            context.fill(Path(ellipseIn: rect), with: .color(Color.black))
+                        }
+                    }
+                }
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
+            }
+        }
+    }
+}
+
+/// A simple seeded pseudo-random number generator for deterministic paper texture generation
+struct SeededRandom {
+    private var state: UInt64
+    
+    init(seed: UInt64) {
+        self.state = seed
+    }
+    
+    mutating func next() -> UInt64 {
+        state = state &* 6364136223846793005 &+ 1442695040888963407
+        return state
+    }
+    
+    mutating func nextUniform() -> Double {
+        let val = next()
+        return Double(val) / Double(UInt64.max)
+    }
+}
+
+struct BookSpineCreaseOverlay: View {
+    var body: some View {
+        HStack {
+            Spacer()
+            // The fold shadow
+            LinearGradient(
+                colors: [
+                    Color.black.opacity(0.16),
+                    Color.black.opacity(0.04),
+                    Color.clear
+                ],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+            .frame(width: 14)
+            
+            LinearGradient(
+                colors: [
+                    Color.clear,
+                    Color.black.opacity(0.04),
+                    Color.black.opacity(0.16)
+                ],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+            .frame(width: 14)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .allowsHitTesting(false)
+    }
 }
 
 

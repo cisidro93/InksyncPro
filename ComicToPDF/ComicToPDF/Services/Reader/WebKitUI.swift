@@ -69,6 +69,10 @@ public struct WebView: UIViewRepresentable {
         webView.navigationDelegate = context.coordinator
         webView.scrollView.delegate = context.coordinator
         
+        webView.isOpaque = false
+        webView.backgroundColor = .clear
+        webView.scrollView.backgroundColor = .clear
+        
         DispatchQueue.main.async {
             self.webViewRef = webView
         }
