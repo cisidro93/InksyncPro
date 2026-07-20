@@ -722,6 +722,11 @@ struct EPUBWebView: View {
         body * {
             max-width: 100% !important;
         }
+        /* Force container backgrounds to be transparent so the ambient paper texture is visible */
+        #inksync-viewport, #inksync-viewport *:not(mark):not(.inksync-highlight):not(pre):not(code):not(table):not(tr):not(td):not(th) {
+            background-color: transparent !important;
+            background: transparent !important;
+        }
         \(isPaged ? """
         div, section, article, main, p, span, blockquote {
             max-height: none !important;
