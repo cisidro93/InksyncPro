@@ -18,12 +18,6 @@ public struct ProMotionFrameRateModifier: ViewModifier {
                 }
                 link.add(to: .main, forMode: .common)
                 self.displayLink = link
-                
-                // Automatically pause after 1.5 seconds to protect battery life and prevent device heating.
-                // Capture link weakly so it is not retained if the view disappears before the timeout.
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak link] in
-                    link?.isPaused = true
-                }
             }
             .onDisappear {
                 displayLink?.invalidate()
