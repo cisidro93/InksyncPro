@@ -8,6 +8,7 @@ public struct WebView: UIViewRepresentable {
     @Binding public var isLoading: Bool
     @Binding public var progress: Double
     @Binding public var webViewRef: WKWebView?
+    @ObservedObject private var prefs = EBookPreferences.shared
     
     // Callbacks for navigation and messaging
     public let onNavigate: ((URL, WKWebView) -> Bool)?

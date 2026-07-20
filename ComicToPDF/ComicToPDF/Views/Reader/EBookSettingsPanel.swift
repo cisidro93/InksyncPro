@@ -31,11 +31,21 @@ struct EBookSettingsPanel: View {
         }
     }
 
+    private var visibleTabs: [PanelTab] {
+        if isPDF {
+            return [.themes, .layout]
+        } else {
+            return PanelTab.allCases
+        }
+    }
+
     var body: some View {
         NavigationView {
             VStack(spacing: 0) {
                 // ── Live Preview Strip ────────────────────────────────────────
-                livePreviewStrip
+                if !isPDF {
+                    livePreviewStrip
+                }
 
                 // ── Tab Strip ────────────────────────────────────────────────
                 tabStrip
@@ -107,7 +117,7 @@ struct EBookSettingsPanel: View {
     // MARK: - Tab Strip
     private var tabStrip: some View {
         HStack(spacing: 0) {
-            ForEach(PanelTab.allCases, id: \.self) { tab in
+            ForEach(visibleTabs, id: \.self) { tab in
                 Button {
                     withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
                         activeTab = tab
