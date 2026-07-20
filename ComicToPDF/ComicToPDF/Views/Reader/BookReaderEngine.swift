@@ -1356,6 +1356,7 @@ struct BookReaderEngine: View {
             return .handled
         }
         .preferredColorScheme(prefs.activeTheme.isDark ? .dark : .light)
+        }
     }
 
     private func showToastMessage(_ message: String) {
