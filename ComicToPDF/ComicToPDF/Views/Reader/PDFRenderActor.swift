@@ -77,7 +77,7 @@ actor PDFRenderActor {
             let renderer = UIGraphicsImageRenderer(size: size)
             return renderer.image { ctx in
                 let cgCtx = ctx.cgContext
-                cgCtx.setFillColor(UIColor.white.cgColor)
+                cgCtx.setFillColor(CGColor(gray: 1.0, alpha: 1.0))
                 cgCtx.fill(CGRect(origin: .zero, size: size))
                 cgCtx.translateBy(x: 0, y: size.height)
                 let actualScaleX = size.width / pageRect.width
