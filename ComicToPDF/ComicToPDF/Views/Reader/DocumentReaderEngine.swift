@@ -67,6 +67,28 @@ struct DocumentReaderEngine: View {
                     if prefs.pdfDualPage && currentPageIndex > 0 {
                         BookSpineCreaseOverlay()
                     }
+                    
+                    if !isPencilMode && !isReflowMode {
+                        KindleTapZoneOverlay(
+                            onPrevPage: {
+                                if currentPageIndex > 0 {
+                                    currentPageIndex -= 1
+                                    HapticEngine.light()
+                                }
+                            },
+                            onNextPage: {
+                                if currentPageIndex < totalPages - 1 {
+                                    currentPageIndex += 1
+                                    HapticEngine.light()
+                                }
+                            },
+                            onCenterTap: {
+                                withAnimation(.spring(response: 0.38, dampingFraction: 0.85)) {
+                                    chromeVisible.toggle()
+                                }
+                            }
+                        )
+                    }
                 }
             } else {
                 ProgressView("Loading Document...")
@@ -501,6 +523,7 @@ struct PDFKitRepresentedView: UIViewRepresentable {
         pdfView.autoScales = true
         pdfView.displaysPageBreaks = false
         pdfView.pageBreakMargins = .zero
+        pdfView.insetsLayoutMarginsFromSafeArea = false
         
         if let scrollView = pdfView.subviews.first(where: { $0 is UIScrollView }) as? UIScrollView {
             scrollView.contentInset = .zero
