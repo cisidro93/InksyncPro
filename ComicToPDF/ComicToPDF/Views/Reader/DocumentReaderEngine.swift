@@ -89,6 +89,14 @@ struct DocumentReaderEngine: View {
                             }
                         )
                     }
+                    
+                    if !chromeVisible && !isPencilMode {
+                        KindleProgressFooterView(
+                            currentPage: currentPageIndex + 1,
+                            totalPages: totalPages,
+                            estimatedMinutesLeft: ReaderProgressTracker.shared.progress(for: pdf.id)?.estimatedMinutesRemaining
+                        )
+                    }
                 }
             } else {
                 ProgressView("Loading Document...")
@@ -505,7 +513,8 @@ struct PDFKitRepresentedView: UIViewRepresentable {
         
         if isPaged && !fitToWidth && !dualPageMode {
             pdfView.displayDirection = .horizontal
-            pdfView.usePageViewController(true, withViewOptions: nil)
+            let options: [UIPageViewController.OptionsKey: Any] = [.interPageSpacing: 16.0]
+            pdfView.usePageViewController(true, withViewOptions: options)
         } else {
             pdfView.usePageViewController(false)
             pdfView.displayDirection = isPaged && dualPageMode ? .horizontal : .vertical

@@ -201,6 +201,14 @@ struct EBookReaderView: View {
                             }
                         }
                     }
+                    
+                    if !showHUD {
+                        KindleProgressFooterView(
+                            currentPage: currentIndex + 1,
+                            totalPages: totalChapters,
+                            estimatedMinutesLeft: ReaderProgressTracker.shared.progress(for: pdf?.id ?? UUID())?.estimatedMinutesRemaining
+                        )
+                    }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .ignoresSafeArea()
