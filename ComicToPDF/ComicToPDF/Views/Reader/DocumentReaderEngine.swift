@@ -511,9 +511,14 @@ struct PDFKitRepresentedView: UIViewRepresentable {
         pdfView.displayMode = expectedDisplayMode
         pdfView.displaysAsBook = !dualPageMode
         
-        if isPaged && !fitToWidth && !dualPageMode {
+        if isPaged && !fitToWidth {
             pdfView.displayDirection = .horizontal
-            let options: [UIPageViewController.OptionsKey: Any] = [.interPageSpacing: 16.0]
+            pdfView.displaysAsBook = true
+            let spineLoc: UIPageViewController.SpineLocation = dualPageMode ? .mid : .min
+            let options: [UIPageViewController.OptionsKey: Any] = [
+                .spineLocation: NSNumber(value: spineLoc.rawValue),
+                .interPageSpacing: 16.0
+            ]
             pdfView.usePageViewController(true, withViewOptions: options)
         } else {
             pdfView.usePageViewController(false)
