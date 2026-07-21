@@ -75,7 +75,11 @@ struct UnifiedReaderView: View {
                             .onChanged { value in
                                 let totalWidth = geo.size.width
                                 let newWidth = value.location.x
-                                notebookWidth = max(260, min(newWidth, totalWidth * 0.65))
+                                let clamped = max(260, min(newWidth, totalWidth * 0.65))
+                                if abs(clamped - notebookWidth) > 15 {
+                                    HapticEngine.selection()
+                                }
+                                notebookWidth = clamped
                             }
                     )
                 }
@@ -128,7 +132,11 @@ struct UnifiedReaderView: View {
                             .onChanged { value in
                                 let totalWidth = geo.size.width
                                 let newWidth = totalWidth - value.location.x
-                                notebookWidth = max(260, min(newWidth, totalWidth * 0.65))
+                                let clamped = max(260, min(newWidth, totalWidth * 0.65))
+                                if abs(clamped - notebookWidth) > 15 {
+                                    HapticEngine.selection()
+                                }
+                                notebookWidth = clamped
                             }
                     )
                     

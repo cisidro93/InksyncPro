@@ -114,7 +114,7 @@ final class ComicImageCache: ObservableObject {
     
     private var maxCacheSize: Int {
         let usage = MemoryMonitor.reportMemoryUsage()
-        return usage > 300.0 ? 3 : 7 // Dynamic Memory Cache scaling
+        return usage > 400.0 ? 6 : 12 // Minimum 6 pages cap for dual-spread stability
     }
     private let prefetchLimit: Int // Configurable read-ahead page buffer
     
@@ -3047,6 +3047,9 @@ struct ComicGuidedPageView: View {
         
         let panel = panels[currentPanelIndex]
         let imgSize = image.size
+        guard imgSize.width > 0, imgSize.height > 0 else {
+            return ViewMetrics(scale: 1.0, offsetX: 0, offsetY: 0)
+        }
         
         // Convert Vision Normalized Rect to Image Pixel Rect (UIKit / Top-Left origin)
         let rect = CGRect(
@@ -3059,6 +3062,9 @@ struct ComicGuidedPageView: View {
         // 1. Calculate how the image fits perfectly on screen at scale=1
         let imageRatio = imgSize.width / imgSize.height
         let screenRatio = proxy.width / proxy.height
+        guard imageRatio > 0, !imageRatio.isNaN, screenRatio > 0, !screenRatio.isNaN else {
+            return ViewMetrics(scale: 1.0, offsetX: 0, offsetY: 0)
+        }
         
         var renderW: CGFloat
         var renderH: CGFloat
@@ -3075,6 +3081,9 @@ struct ComicGuidedPageView: View {
         let mappedY = (rect.minY / imgSize.height) * renderH
         let mappedW = (rect.width / imgSize.width) * renderW
         let mappedH = (rect.height / imgSize.height) * renderH
+        guard mappedW > 0, mappedH > 0, !mappedW.isNaN, !mappedH.isNaN else {
+            return ViewMetrics(scale: 1.0, offsetX: 0, offsetY: 0)
+        }
         
         // 3. Target Scale to fit the panel perfectly (with 5% breathing room)
         let scaleX = proxy.width / mappedW

@@ -188,7 +188,7 @@ class BookReaderViewModel: NSObject, ObservableObject, WKNavigationDelegate {
             // Normalise charset declaration so WKWebView always uses UTF-8
             let pattern = "<meta[^>]*charset[^>]*>"
             if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) {
-                html = regex.stringByReplacingMatches(in: html, options: [], range: NSRange(html.startIndex..., in: html), withTemplate: "<meta charset=\\\"utf-8\\\">")
+                html = regex.stringByReplacingMatches(in: html, options: [], range: NSRange(html.startIndex..., in: html), withTemplate: "<meta charset=\"utf-8\">")
             }
             // Update @Published properties directly on MainActor
             self.currentChapterHTML = html

@@ -268,9 +268,11 @@ struct WebtoonScrollView: UIViewRepresentable {
                     }
                     
                     // Sliding Window Eviction: Unload images outside [-2, +2] radius to prevent OOM memory leak
-                    for key in loadTasks.keys {
-                        if abs(key - idx) > 2 {
-                            unloadImage(at: key)
+                    for i in 0..<imageViews.count {
+                        if abs(i - idx) > 2 {
+                            if imageViews[i].image != nil || loadTasks[i] != nil {
+                                unloadImage(at: i)
+                            }
                         }
                     }
                     

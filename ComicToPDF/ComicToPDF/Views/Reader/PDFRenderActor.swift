@@ -13,7 +13,8 @@ actor PDFRenderActor {
     private var accessingResource = false
     
     /// Loads a PDF document thread-safely. Returns page count.
-    func loadDocument(at url: URL) -> Int {
+    /// - Parameter externalAccessing: If true, the caller already holds security scope access.
+    func loadDocument(at url: URL, externalAccessing: Bool = false) -> Int {
         if currentURL == url, let doc = currentDocument {
             return doc.pageCount
         }
@@ -25,7 +26,7 @@ actor PDFRenderActor {
         
         Logger.shared.log("Loading PDF document from \(url.lastPathComponent)", category: "PDFRenderActor", type: .info)
         
-        let accessing = url.startAccessingSecurityScopedResource()
+        let accessing = externalAccessing ? false : url.startAccessingSecurityScopedResource()
         let doc = PDFDocument(url: url)
         guard let doc = doc else {
             if accessing { url.stopAccessingSecurityScopedResource() }
@@ -56,7 +57,17 @@ actor PDFRenderActor {
             return nil
         }
         
-        let size = CGSize(width: pageRect.width * scale, height: pageRect.height * scale)
+        // Cap max pixel dimension at 2048 to prevent memory spikes
+        var size = CGSize(width: pageRect.width * scale, height: pageRect.height * scale)
+        let maxDim: CGFloat = 2048.0
+        if size.width > maxDim || size.height > maxDim {
+            let aspect = size.width / size.height
+            if aspect > 1.0 {
+                size = CGSize(width: maxDim, height: maxDim / aspect)
+            } else {
+                size = CGSize(width: maxDim * aspect, height: maxDim)
+            }
+        }
         guard size.width > 0 && size.height > 0 && !size.width.isNaN && !size.height.isNaN else {
             Logger.shared.log("Computed render size for page index \(index) is invalid: \(size).", category: "PDFRenderActor", type: .warning)
             return nil
@@ -69,7 +80,9 @@ actor PDFRenderActor {
                 cgCtx.setFillColor(UIColor.white.cgColor)
                 cgCtx.fill(CGRect(origin: .zero, size: size))
                 cgCtx.translateBy(x: 0, y: size.height)
-                cgCtx.scaleBy(x: scale, y: -scale)
+                let actualScaleX = size.width / pageRect.width
+                let actualScaleY = size.height / pageRect.height
+                cgCtx.scaleBy(x: actualScaleX, y: -actualScaleY)
                 page.draw(with: .mediaBox, to: cgCtx)
             }
         }

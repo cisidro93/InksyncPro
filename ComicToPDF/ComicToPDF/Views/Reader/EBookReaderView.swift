@@ -191,7 +191,9 @@ struct EBookReaderView: View {
                                             .onChanged { value in
                                                 let delta = value.translation.height - lastBrightnessDragValue
                                                 lastBrightnessDragValue = value.translation.height
-                                                UIScreen.main.brightness -= delta * 0.001
+                                                let current = UIScreen.main.brightness
+                                                let target = max(0.05, min(1.0, current - delta * 0.001))
+                                                UIScreen.main.brightness = target
                                             }
                                             .onEnded { _ in lastBrightnessDragValue = 0 }
                                     )
@@ -1165,7 +1167,7 @@ struct EBookWebReader: View {
         
         let isPad = UIDevice.current.userInterfaceIdiom == .pad
         let isLandscape = renderWidth > renderHeight
-        let defaultColumns = (isPad && isLandscape) ? 2 : 1
+        let defaultColumns = isLandscape ? (prefs.autoLandscapeDualPage ? 2 : (isPad ? 2 : 1)) : 1
         let cols = prefs.columnCount == 0 ? defaultColumns : prefs.columnCount
         
         let m = isPaged ? max(20.0, margin) : margin

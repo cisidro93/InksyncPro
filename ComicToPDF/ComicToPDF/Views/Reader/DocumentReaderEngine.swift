@@ -93,7 +93,9 @@ struct DocumentReaderEngine: View {
                             .onChanged { value in
                                 let delta = value.translation.height - lastBrightnessDragValue
                                 lastBrightnessDragValue = value.translation.height
-                                UIScreen.main.brightness -= delta * 0.001
+                                let current = UIScreen.main.brightness
+                                let target = max(0.05, min(1.0, current - delta * 0.001))
+                                UIScreen.main.brightness = target
                             }
                             .onEnded { _ in lastBrightnessDragValue = 0 }
                     )
@@ -218,7 +220,7 @@ struct DocumentReaderEngine: View {
             self.accessedURL = accessed
             self.resolvedURL = resolvedURL
             pdfDocument = doc
-            _ = await PDFRenderActor.shared.loadDocument(at: resolvedURL)
+            _ = await PDFRenderActor.shared.loadDocument(at: resolvedURL, externalAccessing: accessed != nil)
             if let saved = ReaderProgressTracker.shared.progress(for: pdf.id) {
                 currentPageIndex = saved.currentPageIndex
             }
@@ -467,7 +469,8 @@ struct PDFKitRepresentedView: UIViewRepresentable {
         context.coordinator.lastFitToWidth = prefs.pdfFitToWidth
         let isPaged = currentMode == EBookPaginationMode.paged.rawValue
         let fitToWidth = prefs.pdfFitToWidth
-        let dualPageMode = prefs.pdfDualPage
+        let isLandscape = pdfView.bounds.width > pdfView.bounds.height
+        let dualPageMode = prefs.pdfDualPage || (prefs.autoLandscapeDualPage && isLandscape)
         
         let expectedDisplayMode: PDFDisplayMode
         if isPaged {
@@ -604,10 +607,11 @@ struct PDFKitRepresentedView: UIViewRepresentable {
         
         if let pdfView = context.coordinator.pdfView {
             let currentMode = prefs.paginationMode
-            let dualPageMode = prefs.pdfDualPage
+            let isPaged = currentMode == EBookPaginationMode.paged.rawValue
+            let isLandscape = pdfView.bounds.width > pdfView.bounds.height
+            let dualPageMode = prefs.pdfDualPage || (prefs.autoLandscapeDualPage && isLandscape)
             let fitToWidth = prefs.pdfFitToWidth
             
-            let isPaged = currentMode == EBookPaginationMode.paged.rawValue
             let expectedDisplayMode: PDFDisplayMode
             if isPaged {
                 expectedDisplayMode = dualPageMode ? .twoUp : .singlePage
