@@ -33,7 +33,7 @@ struct KindleProgressFooterView: View {
             HStack {
                 Text(progressText)
                     .font(.system(size: 11, weight: .medium, design: .rounded))
-                    .foregroundColor(prefs.activeTheme == .dark ? Color.white.opacity(0.45) : Color.black.opacity(0.45))
+                    .foregroundColor(prefs.activeTheme == .night ? Color.white.opacity(0.45) : Color.black.opacity(0.45))
                     .padding(.horizontal, 16)
                     .padding(.vertical, 6)
                     .contentShape(Rectangle())
