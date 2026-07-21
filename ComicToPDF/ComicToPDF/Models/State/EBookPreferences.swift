@@ -91,6 +91,7 @@ class EBookPreferences: ObservableObject {
     @AppStorage("pdf_dualPage") var pdfDualPage: Bool = false
     @AppStorage("pdf_fitToWidth") var pdfFitToWidth: Bool = false
     @AppStorage("pdf_rtlDirection") var pdfRTL: Bool = false
+    @AppStorage("autoLandscapeDualPage") var autoLandscapeDualPage: Bool = true
 
     // MARK: - Image Filters (legacy, kept for compatibility)
     @AppStorage("ebook_isSmartCropEnabled") var isSmartCropEnabled: Bool = false
