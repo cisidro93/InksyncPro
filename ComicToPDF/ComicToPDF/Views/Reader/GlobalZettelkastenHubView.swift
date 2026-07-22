@@ -864,6 +864,7 @@ struct GlobalHighlightRow: View {
     @EnvironmentObject var conversionManager: ConversionManager   // Item 7: jump-to-source
     @State private var showingEdit = false
     @State private var showingArchiveAlert = false
+    @State private var showingDeleteConfirmation = false
     @Query private var manuscriptProjects: [SDManuscriptProject]
 
     // User-applied tags (excludes Readwise source tags already shown via readwiseTags)
@@ -1056,6 +1057,19 @@ struct GlobalHighlightRow: View {
                         }
                         .buttonStyle(.plain)
                         
+                        // Quick-delete shortcut button
+                        Button(role: .destructive) {
+                            HapticEngine.medium()
+                            showingDeleteConfirmation = true
+                        } label: {
+                            Image(systemName: "trash")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundColor(.red.opacity(0.85))
+                                .padding(5)
+                                .background(Color.red.opacity(0.12), in: Circle())
+                        }
+                        .buttonStyle(.plain)
+                        
                         HStack(spacing: 3) {
                             Text(annotation.modifiedAt, style: .relative)
                             Text("ago")
@@ -1085,6 +1099,17 @@ struct GlobalHighlightRow: View {
             Button("Dismiss", role: .cancel) { }
         } message: {
             Text("This highlight is preserved in your Zettelkasten, but the source book ('\(sourceTitle)') has been removed from this device to save storage space.")
+        }
+        .alert("Delete Highlight?", isPresented: $showingDeleteConfirmation) {
+            Button("Delete", role: .destructive) {
+                HapticEngine.medium()
+                AnnotationStore.shared.delete(id: annotation.id, pdfID: annotation.pdfID)
+                modelContext.delete(annotation)
+                try? modelContext.save()
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Are you sure you want to delete this highlight? This action cannot be undone.")
         }
         .contextMenu {
             Button {
@@ -1129,6 +1154,14 @@ struct GlobalHighlightRow: View {
                         }
                     }
                 }
+            }
+            
+            Divider()
+            
+            Button(role: .destructive) {
+                showingDeleteConfirmation = true
+            } label: {
+                Label("Delete Highlight", systemImage: "trash")
             }
         }
         .sheet(isPresented: $showingEdit) {
