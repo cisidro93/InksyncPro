@@ -32,6 +32,7 @@ struct DocumentReaderEngine: View {
     @ObservedObject private var sleepTimer = SleepTimerManager.shared
     @StateObject private var velocityEngine = ReaderVelocityEngine()
     @State private var pagesReadThisSession: Int = 0
+    @State private var showReadingStatsHUD = false
     
     @ViewBuilder private var documentContentView: some View {
         if isReflowMode {
@@ -207,6 +208,16 @@ struct DocumentReaderEngine: View {
             }
         }
         .overlay { if prefs.showReadingRuler { ReadingRulerOverlay() } }
+        .sheet(isPresented: $showReadingStatsHUD) {
+            ReadingStatsHUDView(
+                pdfID: pdf.id,
+                bookTitle: pdf.name,
+                totalPages: totalPages,
+                currentPageIndex: currentPageIndex
+            )
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+        }
         .onChange(of: sleepTimer.didFire) { _, fired in
             if fired {
                 let frac = Double(currentPageIndex + 1) / Double(max(1, totalPages))

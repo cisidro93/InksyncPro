@@ -1058,6 +1058,7 @@ struct BookReaderEngine: View {
     @StateObject private var vm: BookReaderViewModel
     @State private var webViewReference: WKWebView?
     @State private var chromeVisible = false
+    @State private var showReadingStatsHUD = false
     @State private var showAnnotations = false
     @State private var showTypographyHUD = false
     @State private var showTOC = false
@@ -1192,22 +1193,6 @@ struct BookReaderEngine: View {
                         }
                         .readingFilter(prefs.readingFilter)
                         
-                        if prefs.showReadingSpeedStats && !chromeVisible {
-                            VStack {
-                                HStack {
-                                    Spacer()
-                                    ReadingStatsHUDView(
-                                        velocity: String(format: "%.0f pph", 60.0 / max(1.0, prefs.readingSpeedWPM / 250.0 * 60.0)),
-                                        estRemainingMinutes: ReaderProgressTracker.shared.progress(for: pdf.id)?.estimatedMinutesRemaining ?? 0
-                                    )
-                                    .padding(.trailing, 16)
-                                    .padding(.top, 50)
-                                }
-                                Spacer()
-                            }
-                            .allowsHitTesting(false)
-                        }
-                        
                         // Edge Brightness Gesture Zones
                         HStack {
                             Color.clear
@@ -1284,6 +1269,16 @@ struct BookReaderEngine: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                     .zIndex(100)
             }
+        }
+        .sheet(isPresented: $showReadingStatsHUD) {
+            ReadingStatsHUDView(
+                pdfID: pdf.id,
+                bookTitle: pdf.name,
+                totalPages: max(1, vm.chapterHtmlFiles.count),
+                currentPageIndex: vm.currentChapterIndex
+            )
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
         }
         .onAppear {
             if let saved = ReaderProgressTracker.shared.progress(for: pdf.id), let ch = saved.currentChapterIndex {
