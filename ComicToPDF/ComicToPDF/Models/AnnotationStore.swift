@@ -214,6 +214,8 @@ struct Annotation: Codable, Identifiable {
         self.outlineColumn = nil
         self.outlineOrder = 0
         self.linkedAnnotationIDs = []
+        self.executiveSummary = nil
+        self.maturityRaw = "seedling"
     }
     
     func toDTO() -> Annotation {

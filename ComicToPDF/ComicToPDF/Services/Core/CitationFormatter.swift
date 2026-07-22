@@ -8,6 +8,7 @@ enum CitationStyle: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+@MainActor
 struct CitationFormatter {
     static func format(annotation: SDAnnotation, style: CitationStyle = .apa) -> String {
         let author = annotation.readwiseAuthor ?? "Unknown Author"

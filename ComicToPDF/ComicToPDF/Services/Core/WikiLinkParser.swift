@@ -6,6 +6,7 @@ struct WikiLinkToken: Identifiable, Hashable {
     let range: NSRange
 }
 
+@MainActor
 struct WikiLinkParser {
     static let shared = WikiLinkParser()
     
