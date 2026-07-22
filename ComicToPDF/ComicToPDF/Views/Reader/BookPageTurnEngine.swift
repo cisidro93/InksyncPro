@@ -476,20 +476,10 @@ struct BookPager: View {
 
     // ── Flat Slide (TabView / PageTabViewStyle) ────────────────────────
     private var slidePager: some View {
-        let selectionBinding = Binding<Int>(
-            get: {
-                isMangaRTL ? (totalPages - 1 - currentIndex) : currentIndex
-            },
-            set: { newValue in
-                currentIndex = isMangaRTL ? (totalPages - 1 - newValue) : newValue
-            }
-        )
-
-        return TabView(selection: selectionBinding) {
+        return TabView(selection: $currentIndex) {
             ForEach(0..<totalPages, id: \.self) { idx in
-                let pageIndex = isMangaRTL ? (totalPages - 1 - idx) : idx
                 ComicPageView(
-                    index: pageIndex,
+                    index: idx,
                     cache: cache
                 )
                 .applyFilterPreset(activeFilterPreset)
@@ -520,28 +510,16 @@ struct BookPager: View {
             DragGesture(minimumDistance: 30)
                 .onEnded { val in
                     if val.translation.width < -30 {
-                        if isMangaRTL {
-                            if currentIndex > 0 {
-                                withAnimation(.easeInOut(duration: 0.28)) { currentIndex -= 1 }
-                            }
+                        // Swiping finger leftward -> Next page
+                        if currentIndex < totalPages - 1 {
+                            withAnimation(.easeInOut(duration: 0.28)) { currentIndex += 1 }
                         } else {
-                            if currentIndex < totalPages - 1 {
-                                withAnimation(.easeInOut(duration: 0.28)) { currentIndex += 1 }
-                            } else {
-                                onFlipPastEnd?()
-                            }
+                            onFlipPastEnd?()
                         }
                     } else if val.translation.width > 30 {
-                        if isMangaRTL {
-                            if currentIndex < totalPages - 1 {
-                                withAnimation(.easeInOut(duration: 0.28)) { currentIndex += 1 }
-                            } else {
-                                onFlipPastEnd?()
-                            }
-                        } else {
-                            if currentIndex > 0 {
-                                withAnimation(.easeInOut(duration: 0.28)) { currentIndex -= 1 }
-                            }
+                        // Swiping finger rightward -> Previous page
+                        if currentIndex > 0 {
+                            withAnimation(.easeInOut(duration: 0.28)) { currentIndex -= 1 }
                         }
                     }
                 }

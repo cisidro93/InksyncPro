@@ -112,6 +112,16 @@ class LibraryViewModel: ObservableObject {
         }
     }
 
+    static nonisolated func normalizeSeriesTitle(_ text: String) -> String {
+        var s = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        while s.hasSuffix(".") || s.hasSuffix(",") || s.hasSuffix("-") || s.hasSuffix(":") {
+            s.removeLast()
+            s = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        let components = s.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }
+        return components.joined(separator: " ")
+    }
+
     static nonisolated func rebuildCacheInBackground(
         pdfs: [ConvertedPDF],
         collections: [PDFCollection],
@@ -209,11 +219,15 @@ class LibraryViewModel: ObservableObject {
             // 1. Process standard Publisher Series (Only at Root)
             if folderID == nil, let rawSeriesName = pdf.metadata.series, !rawSeriesName.isEmpty, isOrphan {
                 let seriesName = seriesAliases[rawSeriesName.lowercased()] ?? rawSeriesName
+                let normalizedSeries = LibraryViewModel.normalizeSeriesTitle(seriesName)
                 let lowerSeries = seriesName.lowercased()
                 
                 // If a custom collection with matching title exists at root, coalesce into collection key
-                let matchingCol = collections.first(where: { $0.parentId == folderID && $0.name.lowercased() == lowerSeries })
-                let targetKey = matchingCol != nil ? "col_\(matchingCol!.id.uuidString)" : "series_\(seriesName)"
+                let matchingCol = collections.first(where: { 
+                    $0.parentId == folderID && 
+                    (LibraryViewModel.normalizeSeriesTitle($0.name) == normalizedSeries || $0.name.lowercased() == lowerSeries)
+                })
+                let targetKey = matchingCol != nil ? "col_\(matchingCol!.id.uuidString)" : "series_\(normalizedSeries)"
                 
                 if firstAppearanceIndex[targetKey] == nil { firstAppearanceIndex[targetKey] = index }
                 
@@ -222,8 +236,10 @@ class LibraryViewModel: ObservableObject {
                     let coverID = matchingCol?.explicitCoverFileID ?? pdf.id
                     groups[targetKey] = SeriesGroup(id: matchingCol?.id.uuidString ?? seriesName, title: title, coverIssueID: coverID, count: 0, issues: [])
                 }
-                groups[targetKey]?.issues.append(pdf)
-                groups[targetKey]?.count += 1
+                if !(groups[targetKey]?.issues.contains(where: { $0.id == pdf.id }) ?? false) {
+                    groups[targetKey]?.issues.append(pdf)
+                    groups[targetKey]?.count += 1
+                }
                 inAnyGroup = true
             }
             

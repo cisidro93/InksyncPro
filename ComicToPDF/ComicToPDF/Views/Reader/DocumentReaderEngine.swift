@@ -675,19 +675,24 @@ struct PDFKitRepresentedView: UIViewRepresentable {
                 pdfView.layoutDocumentView()
             }
             
-            if fitToWidth {
-                pdfView.autoScales = false
-                if let currentPage = pdfView.currentPage {
-                    let pageBounds = currentPage.bounds(for: pdfView.displayBox)
-                    let pageWidthMultiplier: CGFloat = dualPageMode ? 2.0 : 1.0
-                    let scale = pdfView.bounds.width / (pageBounds.width * pageWidthMultiplier)
-                    if pdfView.scaleFactor != scale && scale > 0 {
-                        pdfView.scaleFactor = scale
-                    }
+            if let currentPage = pdfView.currentPage, pdfView.bounds.width > 0 && pdfView.bounds.height > 0 {
+                let pageBounds = currentPage.bounds(for: pdfView.displayBox)
+                let pageWidthMultiplier: CGFloat = dualPageMode ? 2.0 : 1.0
+                let totalPageWidth = pageBounds.width * pageWidthMultiplier
+                let totalPageHeight = pageBounds.height
+                
+                let scaleForWidth = pdfView.bounds.width / max(totalPageWidth, 1.0)
+                let scaleForHeight = pdfView.bounds.height / max(totalPageHeight, 1.0)
+                
+                let targetScale: CGFloat
+                if fitToWidth {
+                    targetScale = scaleForWidth
+                } else {
+                    targetScale = min(scaleForWidth, scaleForHeight)
                 }
-            } else {
-                if !pdfView.autoScales {
-                    pdfView.autoScales = true
+                
+                if targetScale > 0 && abs(pdfView.scaleFactor - targetScale) > 0.01 {
+                    pdfView.scaleFactor = targetScale
                 }
             }
             
