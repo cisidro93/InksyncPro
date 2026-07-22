@@ -6,31 +6,25 @@ struct ActiveReaderDashboardView: View {
     
     @State private var pdfToRead: ConvertedPDF?
     
-    // Derived state
-    var recentPDFs: [(progress: ReadingProgress, pdf: ConvertedPDF)] {
+    // Single-pass derived state to eliminate O(N^2) view body evaluation thrashing
+    private var dashboardData: (hero: (progress: ReadingProgress, pdf: ConvertedPDF)?, shelf: [(progress: ReadingProgress, pdf: ConvertedPDF)]) {
         let sessions = tracker.recentSessions()
-        return sessions.compactMap { session in
-            if let pdf = conversionManager.convertedPDFs.first(where: { $0.id == session.pdfID }) {
-                return (session, pdf)
-            }
-            return nil
+        let items: [(progress: ReadingProgress, pdf: ConvertedPDF)] = sessions.compactMap { session in
+            guard let pdf = conversionManager.convertedPDFs.first(where: { $0.id == session.pdfID }) else { return nil }
+            return (session, pdf)
         }
-    }
-    
-    var activeHero: (progress: ReadingProgress, pdf: ConvertedPDF)? {
-        recentPDFs.first(where: { $0.progress.completionFraction < 0.98 })
-    }
-    
-    var shelfItems: [(progress: ReadingProgress, pdf: ConvertedPDF)] {
-        let heroID = activeHero?.pdf.id
-        return recentPDFs.filter { $0.pdf.id != heroID }.prefix(10).map { $0 }
+        let hero = items.first(where: { $0.progress.completionFraction < 0.98 })
+        let heroID = hero?.pdf.id
+        let shelf = items.filter { $0.pdf.id != heroID }.prefix(10).map { $0 }
+        return (hero, shelf)
     }
     
     var body: some View {
-        ScrollView {
+        let data = dashboardData
+        return ScrollView {
             VStack(spacing: 32) {
 
-                if let hero = activeHero {
+                if let hero = data.hero {
                     // ── HERO SECTION ─────────────────────────
                     VStack(alignment: .leading, spacing: 16) {
                         Text("Continue Reading")
@@ -47,7 +41,7 @@ struct ActiveReaderDashboardView: View {
                     }
                     
                     // ── RECENT SHELF ─────────────────────────
-                    if !shelfItems.isEmpty {
+                    if !data.shelf.isEmpty {
                         VStack(alignment: .leading, spacing: 16) {
                             Text("Jump Back In")
                                 .font(.system(size: 20, weight: .semibold, design: .rounded))
@@ -55,7 +49,7 @@ struct ActiveReaderDashboardView: View {
                             
                             ScrollView(.horizontal, showsIndicators: false) {
                                 HStack(spacing: 16) {
-                                    ForEach(shelfItems, id: \.pdf.id) { item in
+                                    ForEach(data.shelf, id: \.pdf.id) { item in
                                         Button {
                                             pdfToRead = item.pdf
                                         } label: {

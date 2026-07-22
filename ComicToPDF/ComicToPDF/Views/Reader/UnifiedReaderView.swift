@@ -204,35 +204,25 @@ struct UnifiedReaderView: View {
     
     // MARK: - Static EPUB Comic Detection (runs off main thread)
     
-    /// Strips HTML tags and script/style contents, returning only readable plain text characters.
+    /// Strips HTML tags and script/style contents, returning only readable plain text character count.
     nonisolated private static func extractPlainTextLength(from html: String) -> Int {
-        var result = ""
+        var count = 0
         var inTag = false
         var skipContent = false
         
-        let chars = Array(html)
-        var i = 0
-        while i < chars.count {
-            let c = chars[i]
+        for c in html {
             if c == "<" {
                 inTag = true
-                if i + 6 < chars.count {
-                    let sub = String(chars[i..<(i+7)]).lowercased()
-                    if sub.hasPrefix("<style") || sub.hasPrefix("<script") {
-                        skipContent = true
-                    }
-                }
             } else if c == ">" {
                 inTag = false
                 skipContent = false
             } else if !inTag && !skipContent {
                 if !c.isWhitespace {
-                    result.append(c)
+                    count += 1
                 }
             }
-            i += 1
         }
-        return result.count
+        return count
     }
     
     /// Determines whether a .book-classified EPUB is actually a fixed-layout comic.
