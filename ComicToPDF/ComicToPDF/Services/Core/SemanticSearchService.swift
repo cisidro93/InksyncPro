@@ -2,11 +2,17 @@ import Foundation
 import NaturalLanguage
 import SwiftData
 
-@MainActor
-struct SemanticRecommendation: Identifiable {
-    var id: UUID { annotation.id }
-    let annotation: SDAnnotation
+struct SemanticRecommendation: Identifiable, Sendable {
+    let id: UUID
+    @MainActor let annotation: SDAnnotation
     let score: Double
+    
+    @MainActor
+    init(annotation: SDAnnotation, score: Double) {
+        self.id = annotation.id
+        self.annotation = annotation
+        self.score = score
+    }
 }
 
 @MainActor
@@ -34,11 +40,14 @@ final class SemanticSearchService {
                 if w1 == w2 {
                     totalScore += 1.0
                     matchCount += 1.0
-                } else if let distance = embedding.distance(between: w1, and: w2) {
-                    let sim = max(0, 1.0 - distance)
-                    if sim > 0.4 {
-                        totalScore += sim
-                        matchCount += 1.0
+                } else {
+                    let distance = embedding.distance(between: w1, and: w2)
+                    if distance < 2.0 {
+                        let sim = max(0, 1.0 - distance)
+                        if sim > 0.4 {
+                            totalScore += sim
+                            matchCount += 1.0
+                        }
                     }
                 }
             }
