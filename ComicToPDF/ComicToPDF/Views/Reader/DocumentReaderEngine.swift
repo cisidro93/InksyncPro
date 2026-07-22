@@ -260,7 +260,8 @@ struct DocumentReaderEngine: View {
         }
         .onChange(of: currentPageIndex) { _, new in
             if isReflowMode { updateReflowText() }
-            velocityEngine.recordPageTurn(pageIndex: new)
+            let duration = Date().timeIntervalSince(sessionStartTime ?? Date())
+            velocityEngine.recordPageDuration(duration, remainingPages: max(0, totalPages - new - 1))
             pagesReadThisSession += 1
             savePosition(pageIndex: new)
         }
