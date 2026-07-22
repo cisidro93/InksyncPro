@@ -99,22 +99,6 @@ struct DocumentReaderEngine: View {
                         estimatedMinutesLeft: ReaderProgressTracker.shared.progress(for: pdf.id)?.estimatedMinutesRemaining
                     )
                 }
-                
-                if prefs.showReadingSpeedStats && !chromeVisible {
-                    VStack {
-                        HStack {
-                            Spacer()
-                            ReadingStatsHUDView(
-                                velocity: velocityEngine.currentPPH > 0 ? String(format: "%.0f pph", velocityEngine.currentPPH) : "-- pph",
-                                estRemainingMinutes: ReaderProgressTracker.shared.progress(for: pdf.id)?.estimatedMinutesRemaining ?? 0
-                            )
-                            .padding(.trailing, 16)
-                            .padding(.top, 50)
-                        }
-                        Spacer()
-                    }
-                    .allowsHitTesting(false)
-                }
             }
         } else {
             ProgressView("Loading Document...")
@@ -219,17 +203,18 @@ struct DocumentReaderEngine: View {
             .presentationDragIndicator(.visible)
         }
         .onChange(of: sleepTimer.didFire) { _, fired in
-            if fired {
-                let frac = Double(currentPageIndex + 1) / Double(max(1, totalPages))
-                let prog = ReadingProgress(
-                    pdfID: pdf.id, lastOpenedAt: Date(), currentPageIndex: currentPageIndex,
-                    currentChapterIndex: nil, currentChapterOffset: nil,
-                    totalPagesRead: 1, completionFraction: frac,
-                    readingSessionDates: [Date()], estimatedMinutesRemaining: nil
-                )
-                ReaderProgressTracker.shared.update(prog)
-                onDismiss()
-            }
+            guard fired else { return }
+            let maxP = max(1, totalPages)
+            let curr = currentPageIndex + 1
+            let frac = Double(curr) / Double(maxP)
+            let prog = ReadingProgress(
+                pdfID: pdf.id, lastOpenedAt: Date(), currentPageIndex: currentPageIndex,
+                currentChapterIndex: nil, currentChapterOffset: nil,
+                totalPagesRead: 1, completionFraction: frac,
+                readingSessionDates: [Date()], estimatedMinutesRemaining: nil
+            )
+            ReaderProgressTracker.shared.update(prog)
+            onDismiss()
         }
         .onDisappear {
             savePosition(pageIndex: currentPageIndex)
