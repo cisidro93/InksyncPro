@@ -90,15 +90,7 @@ class ExportOrchestrator {
                          if let image = UIImage(contentsOfFile: fileURL.path) {
                             let detected = await PanelExtractor.detectPanels(in: image, mode: .automatic, mangaMode: AppSettingsManager.shared.conversionSettings.mangaMode)
                             if !detected.isEmpty {
-                                let editedRects = await withCheckedContinuation { (continuation: CheckedContinuation<[CGRect], Never>) in
-                                    Task { @MainActor in
-                                        manager.currentEditorImage = image
-                                        manager.currentEditorPanels = detected.map { $0.boundingBox }
-                                        manager.setPanelEditorContinuation(continuation) // Requires helper on manager
-                                        manager.isPresentingPanelEditor = true
-                                    }
-                                }
-                                panelsToInject[index] = editedRects.map { PanelExtractor.Panel(boundingBox: $0) }
+                                panelsToInject[index] = detected
                             }
                         }
                     }
