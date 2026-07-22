@@ -2,11 +2,17 @@ import Foundation
 import NaturalLanguage
 import SwiftData
 
-@MainActor
 struct SemanticRecommendation: Identifiable {
-    var id: UUID { annotation.id }
+    let id: UUID
     let annotation: SDAnnotation
     let score: Double
+    
+    @MainActor
+    init(annotation: SDAnnotation, score: Double) {
+        self.id = annotation.id
+        self.annotation = annotation
+        self.score = score
+    }
 }
 
 @MainActor
