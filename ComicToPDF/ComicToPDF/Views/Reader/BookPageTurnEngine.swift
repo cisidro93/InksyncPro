@@ -101,6 +101,11 @@ struct PageCurlReader: UIViewControllerRepresentable {
     func updateUIViewController(_ uiViewController: UIPageViewController, context: Context) {
         context.coordinator.parent = self
         
+        // Prevent interrupting interactive swipe gestures
+        if context.coordinator.isTransitioning {
+            return
+        }
+        
         let targetIndex = currentIndex
         let targetControllerIndex: Int
         
@@ -123,7 +128,13 @@ struct PageCurlReader: UIViewControllerRepresentable {
             
             if currentVC.index != targetControllerIndex || currentVC.isTwoUp != isTwoUp || currentVC.activeFilterPreset != activeFilterPreset || spreadsChanged {
                 let vc = context.coordinator.makeViewController(for: targetControllerIndex)
-                let direction: UIPageViewController.NavigationDirection = targetControllerIndex >= currentVC.index ? .forward : .reverse
+                let isForward = targetControllerIndex >= currentVC.index
+                let direction: UIPageViewController.NavigationDirection
+                if isMangaRTL {
+                    direction = isForward ? .reverse : .forward
+                } else {
+                    direction = isForward ? .forward : .reverse
+                }
                 uiViewController.setViewControllers([vc], direction: direction, animated: false, completion: nil)
             }
         } else {
@@ -138,6 +149,7 @@ extension PageCurlReader {
     class Coordinator: NSObject, UIPageViewControllerDataSource, UIPageViewControllerDelegate {
         var parent: PageCurlReader
         weak var pageViewController: UIPageViewController?
+        var isTransitioning: Bool = false
         
         init(_ parent: PageCurlReader) {
             self.parent = parent
@@ -169,13 +181,7 @@ extension PageCurlReader {
         ) -> UIViewController? {
             guard let contentVC = viewController as? PageContentViewController else { return nil }
             let currentIndex = contentVC.index
-            let targetIndex: Int
-            
-            if parent.isMangaRTL {
-                targetIndex = currentIndex + 1
-            } else {
-                targetIndex = currentIndex - 1
-            }
+            let targetIndex = currentIndex - 1
             
             let maxCount = parent.isTwoUp ? parent.computeSpreads().count : parent.totalPages
             guard targetIndex >= 0 && targetIndex < maxCount else { return nil }
@@ -188,13 +194,7 @@ extension PageCurlReader {
         ) -> UIViewController? {
             guard let contentVC = viewController as? PageContentViewController else { return nil }
             let currentIndex = contentVC.index
-            let targetIndex: Int
-            
-            if parent.isMangaRTL {
-                targetIndex = currentIndex - 1
-            } else {
-                targetIndex = currentIndex + 1
-            }
+            let targetIndex = currentIndex + 1
             
             let maxCount = parent.isTwoUp ? parent.computeSpreads().count : parent.totalPages
             guard targetIndex >= 0 && targetIndex < maxCount else { return nil }
@@ -205,10 +205,18 @@ extension PageCurlReader {
         
         func pageViewController(
             _ pageViewController: UIPageViewController,
+            willTransitionTo pendingViewControllers: [UIViewController]
+        ) {
+            isTransitioning = true
+        }
+
+        func pageViewController(
+            _ pageViewController: UIPageViewController,
             didFinishAnimating finished: Bool,
             previousViewControllers: [UIViewController],
             transitionCompleted completed: Bool
         ) {
+            isTransitioning = false
             guard completed,
                   let currentVC = pageViewController.viewControllers?.first as? PageContentViewController else {
                 return
