@@ -9,29 +9,39 @@ struct KindleTapZoneOverlay: View {
     let onNextPage: () -> Void
     let onCenterTap: () -> Void
     
+    private var tapZoneStyle: TapZoneStyle {
+        EBookPreferences.shared.tapZoneStyle
+    }
+
     var body: some View {
         GeometryReader { geo in
+            let width = geo.size.width
+            let zones = tapZoneStyle.zones
+            let leftWidth = width * zones.leftEdge
+            let centerWidth = width * max(0.05, zones.rightEdge - zones.leftEdge)
+            let rightWidth = max(0, width - leftWidth - centerWidth)
+
             HStack(spacing: 0) {
-                // Left 15% — Previous Page Zone
+                // Left Zone — Previous Page
                 Color.clear
                     .contentShape(Rectangle())
-                    .frame(width: geo.size.width * 0.15)
+                    .frame(width: leftWidth)
                     .onTapGesture {
                         onPrevPage()
                     }
                 
-                // Center 10% — Toggle HUD Zone
+                // Center Zone — Toggle HUD / Chrome to return to library
                 Color.clear
                     .contentShape(Rectangle())
-                    .frame(width: geo.size.width * 0.10)
+                    .frame(width: centerWidth)
                     .onTapGesture {
                         onCenterTap()
                     }
                 
-                // Right 75% — Next Page Zone
+                // Right Zone — Next Page
                 Color.clear
                     .contentShape(Rectangle())
-                    .frame(width: geo.size.width * 0.75)
+                    .frame(width: rightWidth)
                     .onTapGesture {
                         onNextPage()
                     }
