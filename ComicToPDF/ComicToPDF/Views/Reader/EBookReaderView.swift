@@ -75,16 +75,7 @@ struct EBookReaderView: View {
     private var totalChapters: Int { metadata?.spineItems.count ?? 1 }
     private var visibleChapters: [(index: Int, label: String)] {
         guard let spine = metadata?.spineItems else { return [] }
-        let hasTOC = spine.contains(where: { !$0.label.isEmpty })
-        
-        if hasTOC {
-            return spine.enumerated()
-                .filter { !$0.element.label.isEmpty }
-                .map { (index: $0.offset, label: $0.element.label) }
-        } else {
-            return spine.enumerated()
-                .map { (index: $0.offset, label: "Chapter \($0.offset + 1)") }
-        }
+        return spine.enumerated().map { (index: $0.offset, label: !$0.element.label.isEmpty ? $0.element.label : "Chapter \($0.offset + 1)") }
     }
     private var progressFraction: Double {
         guard totalChapters > 1 else { return 0 }

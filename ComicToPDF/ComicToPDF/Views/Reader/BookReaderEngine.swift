@@ -95,34 +95,67 @@ class BookReaderViewModel: NSObject, ObservableObject, WKNavigationDelegate {
     
     private func parseNCXOrSpine(tempDir: URL, parsedMetadata: EBookMetadata?) async {
         // Walk the unpacked EPUB directory on a background thread
-        let htmlFiles: [URL] = await Task.detached(priority: .userInitiated) {
+        let (htmlFiles, spineItems): ([URL], [EBookMetadata.SpineItem]) = await Task.detached(priority: .userInitiated) {
             if let spine = parsedMetadata?.spineItems, !spine.isEmpty {
-                return spine.compactMap { item in
+                var validFiles: [URL] = []
+                var validItems: [EBookMetadata.SpineItem] = []
+                for item in spine {
                     let dest = tempDir.appendingPathComponent(item.href)
-                    return FileManager.default.fileExists(atPath: dest.path) ? dest : nil
+                    if FileManager.default.fileExists(atPath: dest.path) {
+                        validFiles.append(dest)
+                        validItems.append(item)
+                    }
                 }
+                return (validFiles, validItems)
             } else {
-                guard let enumerator = FileManager.default.enumerator(at: tempDir, includingPropertiesForKeys: nil) else { return [] }
+                guard let enumerator = FileManager.default.enumerator(at: tempDir, includingPropertiesForKeys: nil) else { return ([], []) }
                 var htmls: [URL] = []
                 while let file = enumerator.nextObject() as? URL {
                     let ext = file.pathExtension.lowercased()
                     if ext == "html" || ext == "xhtml" { htmls.append(file) }
                 }
                 htmls.sort { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
-                return htmls
+                let items = htmls.enumerated().map { idx, url in
+                    EBookMetadata.SpineItem(id: "ch_\(idx)", href: url.lastPathComponent, label: "Chapter \(idx + 1)")
+                }
+                return (htmls, items)
             }
         }.value
 
         // Back on @MainActor — safe to mutate @Published properties
         self.metadata = parsedMetadata
-        self.tocItems = parsedMetadata?.spineItems ?? []
         self.chapterHtmlFiles = htmlFiles
+        
+        // Ensure every item has a non-empty fallback label if unlabelled
+        var finalItems = spineItems
+        for i in 0..<finalItems.count {
+            if finalItems[i].label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                let url = htmlFiles[safe: i]
+                var heading: String? = nil
+                if let url = url, let content = try? String(contentsOf: url) {
+                    heading = self.extractFirstHeading(from: content)
+                }
+                finalItems[i].label = heading ?? "Chapter \(i + 1)"
+            }
+        }
+        self.tocItems = finalItems
         if !htmlFiles.isEmpty {
             self.loadChapter(index: self.currentChapterIndex)
             self.buildOrLoadSearchIndex()
         } else {
             self.isLoading = false
         }
+    }
+    
+    private func extractFirstHeading(from html: String) -> String? {
+        let pattern = "<h[12][^>]*>(.*?)</h[12]>"
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive, .dotMatchesLineSeparators]),
+              let match = regex.firstMatch(in: html, options: [], range: NSRange(html.startIndex..., in: html)),
+              let range = Range(match.range(at: 1), in: html) else { return nil }
+        let raw = String(html[range])
+        let stripped = raw.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression, range: nil)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return stripped.isEmpty ? nil : stripped
     }
     
     private func buildOrLoadSearchIndex() {

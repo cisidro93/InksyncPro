@@ -183,8 +183,10 @@ actor EBookParser {
             // Match the TOC href strictly locally as found in the OPF
             let localHref = parser.manifestHref(forId: idref, opfDir: "") ?? ""
             let baseHref = localHref.components(separatedBy: "#").first ?? localHref
+            let normalizedBase = baseHref.replacingOccurrences(of: "\\", with: "/").components(separatedBy: "/").filter { $0 != "." && !$0.isEmpty }.joined(separator: "/")
+            let filename = (normalizedBase as NSString).lastPathComponent
             
-            let tocTitle = tocMap[baseHref]
+            let tocTitle = tocMap[normalizedBase] ?? tocMap[filename]
             let label = tocTitle ?? ""
             
             items.append(EBookMetadata.SpineItem(id: idref, href: fullHref, label: label, tocTitle: tocTitle))
@@ -203,9 +205,12 @@ private class TOCParser: NSObject, XMLParserDelegate {
     
     private var currentText = ""
     private var currentHref: String?
+    private var navPointLabel: String?
+    private var navPointHref: String?
     
     private var inNavLabel = false
     private var inNav = false
+    private var navPointDepth = 0
     
     init(data: Data) { self.data = data }
     
@@ -213,6 +218,36 @@ private class TOCParser: NSObject, XMLParserDelegate {
         let parser = XMLParser(data: data)
         parser.delegate = self
         parser.parse()
+    }
+    
+    private func normalizePath(_ path: String) -> String {
+        let base = path.components(separatedBy: "#").first ?? path
+        let cleaned = base.replacingOccurrences(of: "\\", with: "/")
+        let parts = cleaned.components(separatedBy: "/")
+            .filter { $0 != "." && !$0.isEmpty }
+        var result: [String] = []
+        for part in parts {
+            if part == ".." {
+                if !result.isEmpty { result.removeLast() }
+            } else {
+                result.append(part)
+            }
+        }
+        return result.joined(separator: "/")
+    }
+    
+    private func recordTOCEntry(href: String, title: String) {
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedTitle.isEmpty else { return }
+        
+        let normalized = normalizePath(href)
+        if tocMap[normalized] == nil {
+            tocMap[normalized] = trimmedTitle
+        }
+        let filename = (normalized as NSString).lastPathComponent
+        if !filename.isEmpty && tocMap[filename] == nil {
+            tocMap[filename] = trimmedTitle
+        }
     }
     
     func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?, qualifiedName qName: String?, attributes: [String: String]) {
@@ -223,10 +258,18 @@ private class TOCParser: NSObject, XMLParserDelegate {
         
         if lower == "navmap" || lower == "nav" {
             inNav = true
+        } else if lower == "navpoint" {
+            navPointDepth += 1
+            navPointLabel = nil
+            navPointHref = nil
         } else if lower == "navlabel" {
             inNavLabel = true
         } else if lower == "content", let src = attributes["src"] {
-            currentHref = src // EPUB 2 NCX
+            if navPointDepth > 0 {
+                navPointHref = src
+            } else {
+                currentHref = src
+            }
         } else if lower == "a", let href = attributes["href"] {
             currentHref = href // EPUB 3 NAV
         }
@@ -240,15 +283,17 @@ private class TOCParser: NSObject, XMLParserDelegate {
         if lower == "navlabel" {
             inNavLabel = false
         } else if lower == "text" && inNavLabel {
-            if let href = currentHref, !trimmed.isEmpty {
-                let baseHref = href.components(separatedBy: "#").first ?? href
-                // Only write the first instance to avoid sub-chapter overwrites
-                if tocMap[baseHref] == nil { tocMap[baseHref] = trimmed }
+            if !trimmed.isEmpty {
+                navPointLabel = trimmed
             }
-        } else if lower == "a" && inNav {
+        } else if lower == "navpoint" {
+            if let href = navPointHref, let label = navPointLabel {
+                recordTOCEntry(href: href, title: label)
+            }
+            navPointDepth = max(0, navPointDepth - 1)
+        } else if lower == "a" && (inNav || navPointDepth > 0) {
             if let href = currentHref, !trimmed.isEmpty {
-                let baseHref = href.components(separatedBy: "#").first ?? href
-                if tocMap[baseHref] == nil { tocMap[baseHref] = trimmed }
+                recordTOCEntry(href: href, title: trimmed)
             }
         } else if lower == "navmap" || lower == "nav" {
             inNav = false
