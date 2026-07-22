@@ -33,7 +33,7 @@ final class SemanticSearchService {
                 if w1 == w2 {
                     totalScore += 1.0
                     matchCount += 1.0
-                } else if let distance = embedding.distance(between: w1, and: w2, distanceType: .cosine) {
+                } else if let distance = embedding.distance(between: w1, and: w2) {
                     let sim = max(0, 1.0 - distance)
                     if sim > 0.4 {
                         totalScore += sim

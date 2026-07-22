@@ -377,9 +377,8 @@ struct DocumentReaderEngine: View {
                             results[i] = finalCrop
                         }
                     } else {
-                        var crop = pageBounds
-                        crop = crop.insetBy(dx: crop.width * 0.08, dy: crop.height * 0.08)
-                        results[i] = crop
+                        // Preserve full original page bounds — do not chop off headers/margins
+                        results[i] = pageBounds
                     }
                 }
                 return results
