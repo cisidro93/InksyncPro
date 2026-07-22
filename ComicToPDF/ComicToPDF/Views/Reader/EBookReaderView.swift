@@ -165,9 +165,20 @@ struct EBookReaderView: View {
                             // on every chapter change, guaranteeing the transition fires.
                             .id(currentIndex)
                             .transition(
+                                prefs.pageTurnStyle == .slide ?
                                 .asymmetric(
                                     insertion: .push(from: isGoingForward ? .trailing : .leading),
                                     removal:   .push(from: isGoingForward ? .leading  : .trailing)
+                                ) :
+                                .asymmetric(
+                                    insertion: .modifier(
+                                        active: PageCurl3DEffect(angle: isGoingForward ? 90 : -90, axis: (x: 0, y: 1, z: 0), anchor: isGoingForward ? .trailing : .leading),
+                                        identity: PageCurl3DEffect(angle: 0, axis: (x: 0, y: 1, z: 0), anchor: isGoingForward ? .trailing : .leading)
+                                    ),
+                                    removal: .modifier(
+                                        active: PageCurl3DEffect(angle: isGoingForward ? -90 : 90, axis: (x: 0, y: 1, z: 0), anchor: isGoingForward ? .leading : .trailing),
+                                        identity: PageCurl3DEffect(angle: 0, axis: (x: 0, y: 1, z: 0), anchor: isGoingForward ? .leading : .trailing)
+                                    )
                                 )
                             )
                             .animation(.spring(response: 0.35, dampingFraction: 0.85), value: currentIndex)
@@ -1698,5 +1709,23 @@ struct EBookWebReader: View {
 extension Array {
     subscript(safe index: Int) -> Element? {
         indices.contains(index) ? self[index] : nil
+    }
+}
+
+// MARK: - 3D Page Curl Effect for EPUB Books
+struct PageCurl3DEffect: ViewModifier {
+    let angle: Double
+    let axis: (x: CGFloat, y: CGFloat, z: CGFloat)
+    let anchor: UnitPoint
+
+    func body(content: Content) -> some View {
+        content
+            .rotation3DEffect(
+                .degrees(angle),
+                axis: axis,
+                anchor: anchor,
+                perspective: 0.45
+            )
+            .shadow(color: .black.opacity(abs(angle) > 0 ? 0.35 : 0.0), radius: 8, x: angle > 0 ? -4 : 4, y: 0)
     }
 }

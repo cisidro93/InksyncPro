@@ -80,6 +80,15 @@ class EBookPreferences: ObservableObject {
         }
     }
 
+    @AppStorage("ebook_pageTurnStyle") var pageTurnStyleRaw: String = PageTurnStyle.flip3D.rawValue
+    var pageTurnStyle: PageTurnStyle {
+        get { PageTurnStyle(rawValue: pageTurnStyleRaw) ?? .flip3D }
+        set { 
+            pageTurnStyleRaw = newValue.rawValue
+            objectWillChange.send()
+        }
+    }
+
     // MARK: - Reading Color Filters (Midnight, Amber, Sepia)
     @AppStorage("ebook_readingFilter") var readingFilterRaw: String = ReadingFilter.none.rawValue
     var readingFilter: ReadingFilter {
