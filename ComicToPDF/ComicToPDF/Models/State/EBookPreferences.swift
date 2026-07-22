@@ -66,6 +66,8 @@ class EBookPreferences: ObservableObject {
     @AppStorage("ebook_rulerYPosition") var rulerYPosition: Double  = 0.4   // fraction of screen height
     @AppStorage("ebook_autoScroll")     var autoScroll: Bool        = false
     @AppStorage("ebook_autoScrollSpeed") var autoScrollSpeed: Double = 1.0  // multiplier
+    @AppStorage("ebook_showReadingSpeedStats") var showReadingSpeedStats: Bool = false
+    @AppStorage("ebook_readingSpeedWPM") var readingSpeedWPM: Double = 250.0
 
     // Progress display mode (cycles on tap)
     @AppStorage("ebook_progressMode")   var progressMode: Int = 0  // 0=page, 1=chapter, 2=timeLeft

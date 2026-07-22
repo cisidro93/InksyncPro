@@ -34,94 +34,90 @@ struct DocumentReaderEngine: View {
     @State private var pagesReadThisSession: Int = 0
     
     @ViewBuilder private var documentContentView: some View {
-        Group {
-            if isReflowMode {
-                ReflowTextView(
-                    text: reflowText,
-                    onCenterTap: {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            chromeVisible.toggle()
-                        }
-                    },
-                    onPrevPage: {
-                        if currentPageIndex > 0 {
-                            currentPageIndex -= 1
-                            HapticEngine.light()
-                        }
-                    },
-                    onNextPage: {
-                        if currentPageIndex < totalPages - 1 {
-                            currentPageIndex += 1
-                            HapticEngine.light()
-                        }
+        if isReflowMode {
+            ReflowTextView(
+                text: reflowText,
+                onCenterTap: {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        chromeVisible.toggle()
                     }
-                )
-            } else if let doc = pdfDocument {
-                ZStack {
-                    PDFKitRepresentedView(document: doc,
-                                          pdf: pdf,
-                                          currentPageIndex: $currentPageIndex,
-                                          chromeVisible: $chromeVisible,
-                                          isPencilMode: $isPencilMode,
-                                          pdfViewRef: $pdfViewReference)
-                    .colorInvertIfDark(theme: prefs.activeTheme)
-                    
-                    if prefs.pdfDualPage && currentPageIndex > 0 {
-                        BookSpineCreaseOverlay()
+                },
+                onPrevPage: {
+                    if currentPageIndex > 0 {
+                        currentPageIndex -= 1
+                        HapticEngine.light()
                     }
-                    
-                    if !isPencilMode && !isReflowMode {
-                        KindleTapZoneOverlay(
-                            onPrevPage: {
-                                if currentPageIndex > 0 {
-                                    currentPageIndex -= 1
-                                    HapticEngine.light()
-                                }
-                            },
-                            onNextPage: {
-                                if currentPageIndex < totalPages - 1 {
-                                    currentPageIndex += 1
-                                    HapticEngine.light()
-                                }
-                            },
-                            onCenterTap: {
-                                withAnimation(.spring(response: 0.38, dampingFraction: 0.85)) {
-                                    chromeVisible.toggle()
-                                }
-                            }
-                        )
-                    }
-                    
-                    if !chromeVisible && !isPencilMode {
-                        KindleProgressFooterView(
-                            currentPage: currentPageIndex + 1,
-                            totalPages: totalPages,
-                            estimatedMinutesLeft: ReaderProgressTracker.shared.progress(for: pdf.id)?.estimatedMinutesRemaining
-                        )
-                    }
-                    
-                    if prefs.showReadingSpeedStats && !chromeVisible {
-                        VStack {
-                            HStack {
-                                Spacer()
-                                ReadingStatsHUDView(
-                                    velocity: velocityEngine.currentPPH > 0 ? String(format: "%.0f pph", velocityEngine.currentPPH) : "-- pph",
-                                    estRemainingMinutes: ReaderProgressTracker.shared.progress(for: pdf.id)?.estimatedMinutesRemaining ?? 0
-                                )
-                                .padding(.trailing, 16)
-                                .padding(.top, 50)
-                            }
-                            Spacer()
-                        }
-                        .allowsHitTesting(false)
+                },
+                onNextPage: {
+                    if currentPageIndex < totalPages - 1 {
+                        currentPageIndex += 1
+                        HapticEngine.light()
                     }
                 }
-            } else {
-                ProgressView("Loading Document...")
+            )
+        } else if let doc = pdfDocument {
+            ZStack {
+                PDFKitRepresentedView(document: doc,
+                                      pdf: pdf,
+                                      currentPageIndex: $currentPageIndex,
+                                      chromeVisible: $chromeVisible,
+                                      isPencilMode: $isPencilMode,
+                                      pdfViewRef: $pdfViewReference)
+                .colorInvertIfDark(theme: prefs.activeTheme)
+                
+                if prefs.pdfDualPage && currentPageIndex > 0 {
+                    BookSpineCreaseOverlay()
+                }
+                
+                if !isPencilMode && !isReflowMode {
+                    KindleTapZoneOverlay(
+                        onPrevPage: {
+                            if currentPageIndex > 0 {
+                                currentPageIndex -= 1
+                                HapticEngine.light()
+                            }
+                        },
+                        onNextPage: {
+                            if currentPageIndex < totalPages - 1 {
+                                currentPageIndex += 1
+                                HapticEngine.light()
+                            }
+                        },
+                        onCenterTap: {
+                            withAnimation(.spring(response: 0.38, dampingFraction: 0.85)) {
+                                chromeVisible.toggle()
+                            }
+                        }
+                    )
+                }
+                
+                if !chromeVisible && !isPencilMode {
+                    KindleProgressFooterView(
+                        currentPage: currentPageIndex + 1,
+                        totalPages: totalPages,
+                        estimatedMinutesLeft: ReaderProgressTracker.shared.progress(for: pdf.id)?.estimatedMinutesRemaining
+                    )
+                }
+                
+                if prefs.showReadingSpeedStats && !chromeVisible {
+                    VStack {
+                        HStack {
+                            Spacer()
+                            ReadingStatsHUDView(
+                                velocity: velocityEngine.currentPPH > 0 ? String(format: "%.0f pph", velocityEngine.currentPPH) : "-- pph",
+                                estRemainingMinutes: ReaderProgressTracker.shared.progress(for: pdf.id)?.estimatedMinutesRemaining ?? 0
+                            )
+                            .padding(.trailing, 16)
+                            .padding(.top, 50)
+                        }
+                        Spacer()
+                    }
+                    .allowsHitTesting(false)
+                }
             }
+        } else {
+            ProgressView("Loading Document...")
         }
-        .readingFilter(prefs.readingFilter)
-        .ignoresSafeArea()
     }
     
     var body: some View {
@@ -213,12 +209,14 @@ struct DocumentReaderEngine: View {
         .overlay { if prefs.showReadingRuler { ReadingRulerOverlay() } }
         .onChange(of: sleepTimer.didFire) { _, fired in
             if fired {
-                ReaderProgressTracker.shared.update(ReadingProgress(
+                let frac = Double(currentPageIndex + 1) / Double(max(1, totalPages))
+                let prog = ReadingProgress(
                     pdfID: pdf.id, lastOpenedAt: Date(), currentPageIndex: currentPageIndex,
                     currentChapterIndex: nil, currentChapterOffset: nil,
-                    totalPagesRead: 1, completionFraction: Double(currentPageIndex + 1) / Double(max(1, totalPages)),
+                    totalPagesRead: 1, completionFraction: frac,
                     readingSessionDates: [Date()], estimatedMinutesRemaining: nil
-                ))
+                )
+                ReaderProgressTracker.shared.update(prog)
                 onDismiss()
             }
         }
