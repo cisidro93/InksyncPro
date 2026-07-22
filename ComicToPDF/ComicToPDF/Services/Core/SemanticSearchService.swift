@@ -2,6 +2,7 @@ import Foundation
 import NaturalLanguage
 import SwiftData
 
+@MainActor
 struct SemanticRecommendation: Identifiable {
     var id: UUID { annotation.id }
     let annotation: SDAnnotation
