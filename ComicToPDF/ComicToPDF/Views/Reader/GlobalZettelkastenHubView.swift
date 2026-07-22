@@ -935,6 +935,31 @@ struct GlobalHighlightRow: View {
                     
                     Spacer()
                     
+                    // Maturity Badge
+                    let maturity = annotation.maturityRaw ?? "seedling"
+                    if maturity == "evergreen" {
+                        Text("🌲 Evergreen")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(.green)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.green.opacity(0.12), in: Capsule())
+                    } else if maturity == "incubating" {
+                        Text("🐣 Incubating")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(.purple)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.purple.opacity(0.12), in: Capsule())
+                    } else {
+                        Text("🌱 Seedling")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(.orange)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.orange.opacity(0.12), in: Capsule())
+                    }
+                    
                     if annotation.isReadwiseImport {
                         Image(systemName: "bird.fill")
                             .font(.system(size: 9))
@@ -950,6 +975,23 @@ struct GlobalHighlightRow: View {
                     }
                 }
                 .padding(.bottom, 2)
+
+                // Executive Summary (Layer 3)
+                if let summary = annotation.executiveSummary, !summary.isEmpty {
+                    HStack(alignment: .top, spacing: 6) {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(.purple)
+                            .padding(.top, 2)
+                        Text(summary)
+                            .font(.system(size: 13, weight: .semibold, design: .rounded))
+                            .foregroundColor(.primary)
+                    }
+                    .padding(8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.purple.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.purple.opacity(0.15), lineWidth: 0.5))
+                }
 
                 // Highlight text with warm amber/pastel highlighter background layer
                 if let text = annotation.selectedText, !text.isEmpty {

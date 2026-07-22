@@ -14,6 +14,8 @@ struct AnnotationEditSheet: View {
 
     // Local drafts — committed on Save
     @State private var draftNote: String = ""
+    @State private var draftExecutiveSummary: String = ""
+    @State private var draftMaturity: String = "seedling"
     @State private var draftTags: [String] = []
     @State private var tagInput: String = ""
     @State private var isSaving: Bool = false
@@ -90,9 +92,93 @@ struct AnnotationEditSheet: View {
 
                     Divider()
 
+                    // ── Note Maturity & Life-Cycle State ───────────────────────
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack {
+                            Label("Note Maturity", systemImage: "leaf.fill")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            if draftMaturity == "evergreen" {
+                                Text("Evergreen Zettel")
+                                    .font(.caption2.bold())
+                                    .foregroundStyle(.green)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 3)
+                                    .background(Color.green.opacity(0.12), in: Capsule())
+                            }
+                        }
+
+                        HStack(spacing: 8) {
+                            Button {
+                                draftMaturity = "seedling"
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Text("🌱")
+                                    Text("Seedling")
+                                        .font(.caption.weight(.semibold))
+                                }
+                                .foregroundStyle(draftMaturity == "seedling" ? Color.white : Color.primary)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                                .background(draftMaturity == "seedling" ? Color.orange : Color(UIColor.secondarySystemGroupedBackground), in: Capsule())
+                            }
+                            .buttonStyle(.plain)
+
+                            Button {
+                                draftMaturity = "incubating"
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Text("🐣")
+                                    Text("Incubating")
+                                        .font(.caption.weight(.semibold))
+                                }
+                                .foregroundStyle(draftMaturity == "incubating" ? Color.white : Color.primary)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                                .background(draftMaturity == "incubating" ? Color.purple : Color(UIColor.secondarySystemGroupedBackground), in: Capsule())
+                            }
+                            .buttonStyle(.plain)
+
+                            Button {
+                                draftMaturity = "evergreen"
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Text("🌲")
+                                    Text("Evergreen")
+                                        .font(.caption.weight(.semibold))
+                                }
+                                .foregroundStyle(draftMaturity == "evergreen" ? Color.white : Color.primary)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                                .background(draftMaturity == "evergreen" ? Color.green : Color(UIColor.secondarySystemGroupedBackground), in: Capsule())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+
+                    Divider()
+
+                    // ── Progressive Summarization: Executive Summary ──────────
+                    VStack(alignment: .leading, spacing: 10) {
+                        Label("Executive Summary (Layer 3)", systemImage: "sparkles")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+
+                        TextField("Summarize key takeaway in 1 sentence...", text: $draftExecutiveSummary)
+                            .font(.subheadline)
+                            .padding(12)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(Color(UIColor.secondarySystemGroupedBackground))
+                            )
+                    }
+
+                    Divider()
+
                     // ── My Thoughts ─────────────────────────────────────────
                     VStack(alignment: .leading, spacing: 10) {
-                        Label("My Thoughts", systemImage: "text.bubble.fill")
+                        Label("My Thoughts & Annotations", systemImage: "text.bubble.fill")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.secondary)
 
@@ -101,7 +187,7 @@ struct AnnotationEditSheet: View {
                                 .fill(Color(UIColor.secondarySystemGroupedBackground))
 
                             if draftNote.isEmpty {
-                                Text("Write your thoughts, reflections, or connections…")
+                                Text("Write your thoughts, reflections, or connections (use [[WikiLinks]] to connect ideas)...")
                                     .font(.body)
                                     .foregroundStyle(.tertiary)
                                     .padding(14)
@@ -225,6 +311,8 @@ struct AnnotationEditSheet: View {
 
     private func loadDrafts() {
         draftNote = annotation.noteText ?? ""
+        draftExecutiveSummary = annotation.executiveSummary ?? ""
+        draftMaturity = annotation.maturityRaw ?? "seedling"
         // User tags = tags minus the readwise-sourced ones
         let rwTagSet = Set((annotation.readwiseTags ?? []) + (annotation.readwiseDocumentTags ?? []))
         draftTags = (annotation.tags ?? []).filter { !rwTagSet.contains($0) }
@@ -254,6 +342,10 @@ struct AnnotationEditSheet: View {
         annotation.noteText = draftNote.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             ? nil
             : draftNote.trimmingCharacters(in: .whitespacesAndNewlines)
+        annotation.executiveSummary = draftExecutiveSummary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? nil
+            : draftExecutiveSummary.trimmingCharacters(in: .whitespacesAndNewlines)
+        annotation.maturityRaw = draftMaturity
         annotation.modifiedAt = Date()
 
         // Merge user tags back with read-only Readwise tags

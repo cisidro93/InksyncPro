@@ -55,6 +55,10 @@ struct Annotation: Codable, Identifiable {
     // ✅ Phase 6: Handwriting OCR
     var drawingOCRText: String? = nil
 
+    // ✅ Progressive Summarization & Life-Cycle State
+    var executiveSummary: String? = nil
+    var maturityRaw: String? = "seedling"
+
     enum AnnotationKind: String, Codable {
         case highlight
         case note           // text note attached to a location
@@ -117,6 +121,10 @@ struct Annotation: Codable, Identifiable {
     // ✅ Phase 6: Handwriting OCR
     var drawingOCRText: String?
     
+    // ✅ Progressive Summarization & Life-Cycle State
+    var executiveSummary: String?
+    var maturityRaw: String? = "seedling"
+    
     init(from dto: Annotation) {
         self.id = dto.id
         self.pdfID = dto.pdfID
@@ -144,6 +152,8 @@ struct Annotation: Codable, Identifiable {
         self.outlineColumn = dto.outlineColumn
         self.outlineOrder = dto.outlineOrder
         self.linkedAnnotationIDs = dto.linkedAnnotationIDs ?? []
+        self.executiveSummary = dto.executiveSummary
+        self.maturityRaw = dto.maturityRaw ?? "seedling"
     }
     
     // ✅ Phase 31 Native Constructor for Readwise Importers
@@ -222,6 +232,8 @@ struct Annotation: Codable, Identifiable {
         dto.outlineColumn = self.outlineColumn
         dto.outlineOrder = self.outlineOrder
         dto.linkedAnnotationIDs = self.linkedAnnotationIDs ?? []
+        dto.executiveSummary = self.executiveSummary
+        dto.maturityRaw = self.maturityRaw ?? "seedling"
         return dto
     }
     
@@ -248,6 +260,8 @@ struct Annotation: Codable, Identifiable {
         self.outlineColumn = dto.outlineColumn
         self.outlineOrder = dto.outlineOrder
         self.linkedAnnotationIDs = dto.linkedAnnotationIDs ?? []
+        self.executiveSummary = dto.executiveSummary
+        self.maturityRaw = dto.maturityRaw ?? "seedling"
     }
 }
 
