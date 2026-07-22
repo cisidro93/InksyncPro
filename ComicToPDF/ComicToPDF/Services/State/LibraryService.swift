@@ -17,10 +17,13 @@ final class LibraryService: ObservableObject {
     func loadLibrary() async {
         do {
             let (loadedItems, loadedCollections) = try await LibraryRepository.shared.loadLibrary()
+            let loadedOmnibuses = await LibraryDatabaseService.shared.loadVirtualOmnibuses()
+            
+            // Assign atomically on MainActor to avoid intermediate partial state
             self.items = loadedItems
             self.collections = loadedCollections
-            self.virtualOmnibuses = await LibraryDatabaseService.shared.loadVirtualOmnibuses()
-            Logger.shared.log("LibraryService: loaded \(loadedItems.count) items, \(loadedCollections.count) collections, \(self.virtualOmnibuses.count) virtual omnibuses.", category: "Library")
+            self.virtualOmnibuses = loadedOmnibuses
+            Logger.shared.log("LibraryService: loaded \(loadedItems.count) items, \(loadedCollections.count) collections, \(loadedOmnibuses.count) virtual omnibuses.", category: "Library")
             self.syncAllRemoteVirtualOmnibuses()
         } catch {
             Logger.shared.log("LibraryService: failed to load library: \(error.localizedDescription)", category: "Library", type: .error)

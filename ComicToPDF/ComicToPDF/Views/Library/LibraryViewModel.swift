@@ -203,20 +203,27 @@ class LibraryViewModel: ObservableObject {
                 // Show only files sourced from cloud providers
                 guard case .cloud = pdf.sourceMode else { continue }
             }
-            let isOrphan = pdf.collectionId == nil || collectionByID[pdf.collectionId!] == nil
+            let isOrphan = pdf.collectionId == nil || (collectionByID[pdf.collectionId!] == nil && !collections.isEmpty)
             var inAnyGroup = false
             
             // 1. Process standard Publisher Series (Only at Root)
             if folderID == nil, let rawSeriesName = pdf.metadata.series, !rawSeriesName.isEmpty, isOrphan {
                 let seriesName = seriesAliases[rawSeriesName.lowercased()] ?? rawSeriesName
-                let seriesKey = "series_\(seriesName)"
-                if firstAppearanceIndex[seriesKey] == nil { firstAppearanceIndex[seriesKey] = index }
+                let lowerSeries = seriesName.lowercased()
                 
-                if groups[seriesKey] == nil {
-                    groups[seriesKey] = SeriesGroup(id: seriesName, title: seriesName, coverIssueID: pdf.id, count: 0, issues: [])
+                // If a custom collection with matching title exists at root, coalesce into collection key
+                let matchingCol = collections.first(where: { $0.parentId == folderID && $0.name.lowercased() == lowerSeries })
+                let targetKey = matchingCol != nil ? "col_\(matchingCol!.id.uuidString)" : "series_\(seriesName)"
+                
+                if firstAppearanceIndex[targetKey] == nil { firstAppearanceIndex[targetKey] = index }
+                
+                if groups[targetKey] == nil {
+                    let title = matchingCol?.name ?? seriesName
+                    let coverID = matchingCol?.explicitCoverFileID ?? pdf.id
+                    groups[targetKey] = SeriesGroup(id: matchingCol?.id.uuidString ?? seriesName, title: title, coverIssueID: coverID, count: 0, issues: [])
                 }
-                groups[seriesKey]?.issues.append(pdf)
-                groups[seriesKey]?.count += 1
+                groups[targetKey]?.issues.append(pdf)
+                groups[targetKey]?.count += 1
                 inAnyGroup = true
             }
             
@@ -231,8 +238,10 @@ class LibraryViewModel: ObservableObject {
                         let coverID = collection.explicitCoverFileID ?? pdf.id
                         groups[colKey] = SeriesGroup(id: collection.id.uuidString, title: collection.name, coverIssueID: coverID, count: 0, issues: [])
                     }
-                    groups[colKey]?.issues.append(pdf)
-                    groups[colKey]?.count += 1
+                    if !(groups[colKey]?.issues.contains(where: { $0.id == pdf.id }) ?? false) {
+                        groups[colKey]?.issues.append(pdf)
+                        groups[colKey]?.count += 1
+                    }
                     inAnyGroup = true
                 } else if cid == folderID {
                     // If the PDF is INSIDE the current folder we are viewing, render it as a single
