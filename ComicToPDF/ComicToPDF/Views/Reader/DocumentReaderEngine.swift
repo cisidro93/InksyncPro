@@ -203,18 +203,7 @@ struct DocumentReaderEngine: View {
             .presentationDragIndicator(.visible)
         }
         .onChange(of: sleepTimer.didFire) { _, fired in
-            guard fired else { return }
-            let maxP = max(1, totalPages)
-            let curr = currentPageIndex + 1
-            let frac = Double(curr) / Double(maxP)
-            let prog = ReadingProgress(
-                pdfID: pdf.id, lastOpenedAt: Date(), currentPageIndex: currentPageIndex,
-                currentChapterIndex: nil, currentChapterOffset: nil,
-                totalPagesRead: 1, completionFraction: frac,
-                readingSessionDates: [Date()], estimatedMinutesRemaining: nil
-            )
-            ReaderProgressTracker.shared.update(prog)
-            onDismiss()
+            if fired { updateProgressAndDismiss() }
         }
         .onDisappear {
             savePosition(pageIndex: currentPageIndex)
@@ -308,13 +297,7 @@ struct DocumentReaderEngine: View {
             return .handled
         }
         .onKeyPress(.escape) {
-            ReaderProgressTracker.shared.update(ReadingProgress(
-                pdfID: pdf.id, lastOpenedAt: Date(), currentPageIndex: currentPageIndex,
-                currentChapterIndex: nil, currentChapterOffset: nil,
-                totalPagesRead: 1, completionFraction: Double(currentPageIndex + 1) / Double(max(1, totalPages)),
-                readingSessionDates: [Date()], estimatedMinutesRemaining: nil
-            ))
-            onDismiss()
+            updateProgressAndDismiss()
             return .handled
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("Reader_JumpToPage"))) { notification in
@@ -327,6 +310,19 @@ struct DocumentReaderEngine: View {
         .preferredColorScheme(prefs.activeTheme.isDark ? .dark : .light)
     }
 
+    private func updateProgressAndDismiss() {
+        let maxP = max(1, totalPages)
+        let curr = currentPageIndex + 1
+        let frac = Double(curr) / Double(maxP)
+        let prog = ReadingProgress(
+            pdfID: pdf.id, lastOpenedAt: Date(), currentPageIndex: currentPageIndex,
+            currentChapterIndex: nil, currentChapterOffset: nil,
+            totalPagesRead: 1, completionFraction: frac,
+            readingSessionDates: [Date()], estimatedMinutesRemaining: nil
+        )
+        ReaderProgressTracker.shared.update(prog)
+        onDismiss()
+    }
     
     private func pageForward() {
         if let pv = pdfViewReference, pv.canGoToNextPage {
