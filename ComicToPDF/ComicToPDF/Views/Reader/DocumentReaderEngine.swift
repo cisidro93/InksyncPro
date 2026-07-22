@@ -605,9 +605,6 @@ struct PDFKitRepresentedView: UIViewRepresentable {
         canvasView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         container.addSubview(canvasView)
         
-        let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(context.coordinator.handleTap(_:)))
-        pdfView.addGestureRecognizer(tap)
-        
         let swipeLeft = UISwipeGestureRecognizer(target: context.coordinator, action: #selector(context.coordinator.handleSwipe(_:)))
         swipeLeft.direction = .left
         pdfView.addGestureRecognizer(swipeLeft)
@@ -684,12 +681,8 @@ struct PDFKitRepresentedView: UIViewRepresentable {
                 let scaleForWidth = pdfView.bounds.width / max(totalPageWidth, 1.0)
                 let scaleForHeight = pdfView.bounds.height / max(totalPageHeight, 1.0)
                 
-                let targetScale: CGFloat
-                if fitToWidth {
-                    targetScale = scaleForWidth
-                } else {
-                    targetScale = min(scaleForWidth, scaleForHeight)
-                }
+                // Scale to fill full screen width edge-to-edge, removing letterboxing margins
+                let targetScale = scaleForWidth > 0 ? scaleForWidth : min(scaleForWidth, scaleForHeight)
                 
                 if targetScale > 0 && abs(pdfView.scaleFactor - targetScale) > 0.01 {
                     pdfView.scaleFactor = targetScale

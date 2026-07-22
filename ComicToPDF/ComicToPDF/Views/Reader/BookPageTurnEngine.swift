@@ -181,7 +181,7 @@ extension PageCurlReader {
         ) -> UIViewController? {
             guard let contentVC = viewController as? PageContentViewController else { return nil }
             let currentIndex = contentVC.index
-            let targetIndex = currentIndex - 1
+            let targetIndex: Int = parent.isMangaRTL ? (currentIndex + 1) : (currentIndex - 1)
             
             let maxCount = parent.isTwoUp ? parent.computeSpreads().count : parent.totalPages
             guard targetIndex >= 0 && targetIndex < maxCount else { return nil }
@@ -194,7 +194,7 @@ extension PageCurlReader {
         ) -> UIViewController? {
             guard let contentVC = viewController as? PageContentViewController else { return nil }
             let currentIndex = contentVC.index
-            let targetIndex = currentIndex + 1
+            let targetIndex: Int = parent.isMangaRTL ? (currentIndex - 1) : (currentIndex + 1)
             
             let maxCount = parent.isTwoUp ? parent.computeSpreads().count : parent.totalPages
             guard targetIndex >= 0 && targetIndex < maxCount else { return nil }
