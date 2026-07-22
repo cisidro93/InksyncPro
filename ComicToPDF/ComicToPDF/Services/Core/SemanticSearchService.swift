@@ -64,10 +64,9 @@ final class SemanticSearchService {
             }
         }
         
-        return recommendations
+        return Array(recommendations
             .sorted { $0.score > $1.score }
-            .prefix(limit)
-            .map { $0 }
+            .prefix(limit))
     }
     
     private func extractKeywords(from text: String) -> [String] {
@@ -77,7 +76,7 @@ final class SemanticSearchService {
         
         var words: [String] = []
         tagger.enumerateTags(in: text.startIndex..<text.endIndex, unit: .word, scheme: .lexicalClass, options: options) { tag, tokenRange in
-            if tag == .noun || tag == .verb || tag == .adjective {
+            if let tag = tag, tag == .noun || tag == .verb || tag == .adjective {
                 let word = String(text[tokenRange]).lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
                 if word.count > 3 { words.append(word) }
             }

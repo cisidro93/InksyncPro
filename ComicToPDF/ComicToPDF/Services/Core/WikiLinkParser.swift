@@ -1,19 +1,16 @@
 import Foundation
 
-struct WikiLinkToken: Identifiable, Hashable {
+struct WikiLinkToken: Identifiable, Hashable, Sendable {
     var id: String { target + "_\(range.location)" }
     let target: String
     let range: NSRange
 }
 
-@MainActor
-struct WikiLinkParser {
+struct WikiLinkParser: Sendable {
     static let shared = WikiLinkParser()
     
-    private let regex = try? NSRegularExpression(pattern: "\\[\\[([^\\]]+)\\]\\]", options: [])
-    
     func parseLinks(in text: String) -> [WikiLinkToken] {
-        guard let regex = regex else { return [] }
+        guard let regex = try? NSRegularExpression(pattern: "\\[\\[([^\\]]+)\\]\\]", options: []) else { return [] }
         let nsText = text as NSString
         let matches = regex.matches(in: text, options: [], range: NSRange(location: 0, length: nsText.length))
         

@@ -1,6 +1,6 @@
 import Foundation
 
-enum CitationStyle: String, CaseIterable, Identifiable {
+enum CitationStyle: String, CaseIterable, Identifiable, Sendable {
     case apa = "APA"
     case chicago = "Chicago"
     case mla = "MLA"
