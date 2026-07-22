@@ -212,6 +212,7 @@ struct EBookReaderView: View {
                         )
                     }
                 }
+                .readingFilter(prefs.readingFilter)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .ignoresSafeArea()
             }

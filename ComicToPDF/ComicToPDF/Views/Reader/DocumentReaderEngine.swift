@@ -30,6 +30,8 @@ struct DocumentReaderEngine: View {
     @FocusState private var isReaderFocused: Bool
     @State private var lastBrightnessDragValue: CGFloat = 0
     @ObservedObject private var sleepTimer = SleepTimerManager.shared
+    @StateObject private var velocityEngine = ReaderVelocityEngine()
+    @State private var pagesReadThisSession: Int = 0
     
     @ViewBuilder private var documentContentView: some View {
         Group {
@@ -96,6 +98,22 @@ struct DocumentReaderEngine: View {
                             totalPages: totalPages,
                             estimatedMinutesLeft: ReaderProgressTracker.shared.progress(for: pdf.id)?.estimatedMinutesRemaining
                         )
+                    }
+                    
+                    if prefs.showReadingSpeedStats && !chromeVisible {
+                        VStack {
+                            HStack {
+                                Spacer()
+                                ReadingStatsHUDView(
+                                    velocity: velocityEngine.currentPPH > 0 ? String(format: "%.0f pph", velocityEngine.currentPPH) : "-- pph",
+                                    estRemainingMinutes: ReaderProgressTracker.shared.progress(for: pdf.id)?.estimatedMinutesRemaining ?? 0
+                                )
+                                .padding(.trailing, 16)
+                                .padding(.top, 50)
+                            }
+                            Spacer()
+                        }
+                        .allowsHitTesting(false)
                     }
                 }
             } else {
@@ -259,6 +277,8 @@ struct DocumentReaderEngine: View {
         }
         .onChange(of: currentPageIndex) { _, new in
             if isReflowMode { updateReflowText() }
+            velocityEngine.recordPageTurn(pageIndex: new)
+            pagesReadThisSession += 1
             savePosition(pageIndex: new)
         }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in

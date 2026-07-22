@@ -1190,6 +1190,23 @@ struct BookReaderEngine: View {
                                 BookSpineCreaseOverlay()
                             }
                         }
+                        .readingFilter(prefs.readingFilter)
+                        
+                        if prefs.showReadingSpeedStats && !chromeVisible {
+                            VStack {
+                                HStack {
+                                    Spacer()
+                                    ReadingStatsHUDView(
+                                        velocity: String(format: "%.0f pph", 60.0 / max(1.0, prefs.readingSpeedWPM / 250.0 * 60.0)),
+                                        estRemainingMinutes: ReaderProgressTracker.shared.progress(for: pdf.id)?.estimatedMinutesRemaining ?? 0
+                                    )
+                                    .padding(.trailing, 16)
+                                    .padding(.top, 50)
+                                }
+                                Spacer()
+                            }
+                            .allowsHitTesting(false)
+                        }
                         
                         // Edge Brightness Gesture Zones
                         HStack {
