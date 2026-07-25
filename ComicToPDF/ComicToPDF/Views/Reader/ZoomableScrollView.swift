@@ -68,6 +68,10 @@ struct ZoomableScrollView<Content: View>: UIViewRepresentable {
         return Coordinator()
     }
 
+    static func dismantleUIView(_ uiView: UIScrollView, coordinator: Coordinator) {
+        NotificationCenter.default.removeObserver(coordinator)
+    }
+
     // MARK: - Coordinator
 
     final class Coordinator: NSObject, UIScrollViewDelegate {
