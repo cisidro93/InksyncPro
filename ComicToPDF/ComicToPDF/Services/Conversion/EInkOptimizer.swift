@@ -22,8 +22,13 @@ final class EInkOptimizer: @unchecked Sendable {
         isOddPage: Bool = true,
         customTargetSize: CGSize? = nil
     ) -> UIImage {
+        let effectiveMaxDim = settings.compressionQuality.maxDimension
+        let presetTargetSize = settings.targetDeviceProfile.resolution ?? (effectiveMaxDim.map { CGSize(width: $0, height: $0) })
+        let targetSizeToUse = customTargetSize ?? presetTargetSize
+
         // Fast-path: return original image if no processing is requested
         if settings.targetDeviceProfile == .original
+            && settings.compressionQuality.maxDimension == nil
             && !settings.imageEnhancement.grayscale
             && !settings.trimMargins
             && !settings.imageEnhancement.reduceMoire
@@ -64,7 +69,7 @@ final class EInkOptimizer: @unchecked Sendable {
         }
         
         // 4. High-Performance aspect-fit scaling using Accelerate vImage
-        if let targetSize = customTargetSize ?? settings.targetDeviceProfile.resolution {
+        if let targetSize = targetSizeToUse {
             let originalSize = workingImage.size
             if customTargetSize != nil || originalSize.width > targetSize.width || originalSize.height > targetSize.height {
                 var safeTargetSize = targetSize

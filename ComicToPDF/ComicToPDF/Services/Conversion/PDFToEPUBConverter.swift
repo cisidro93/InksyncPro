@@ -345,8 +345,7 @@ final class PDFToEPUBConverter: Sendable {
             xhtmlFiles.append(chunkFileName)
         }
         
-            // Suppress OPF cover meta tag on spread-linked covers to prevent Kindle double cover duplication.
-            let coverMetaContent = linkCoverAsSpread ? nil : ((firstBatchCoverData != nil && batchDirectories.count > 1) ? "cover-image" : "img1")
+            let coverMetaContent: String? = (firstBatchCoverData != nil && batchDirectories.count > 1) ? "cover-image" : "img1"
 
             // Generate content.opf
             let contentOPF = generateContentOPF(

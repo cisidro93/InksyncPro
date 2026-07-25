@@ -138,7 +138,7 @@ public struct EPUBManifestBuilder {
         """
     }
 
-    public static func buildChunkXHTML(chunkIndex: Int, images: [String], title: String, bookUUID: String? = nil, pageIndex: Int? = nil, isManga: Bool = false) -> String {
+    public static func buildChunkXHTML(chunkIndex: Int, images: [String], title: String, bookUUID: String? = nil, pageIndex: Int? = nil, isManga: Bool = false, pageWidth: Int = 1980, pageHeight: Int = 2640) -> String {
         let imageElements = images.enumerated().map { _, imageName in
             """
                     <div class="page">
@@ -166,7 +166,7 @@ public struct EPUBManifestBuilder {
         <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="en" xml:lang="en">
         <head>
             <meta charset="UTF-8"/>
-            <meta name="viewport" content="width=1980, height=2640"/>
+            <meta name="viewport" content="width=\(pageWidth), height=\(pageHeight)"/>
             <title>\(title)</title>
             <link rel="stylesheet" type="text/css" href="../css/comic.css"/>
             <style type="text/css">

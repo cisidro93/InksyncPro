@@ -129,8 +129,16 @@ struct CBZToEPUBConverter: Sendable {
                    let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] {
                     let wVal = properties[kCGImagePropertyPixelWidth] as? NSNumber
                     let hVal = properties[kCGImagePropertyPixelHeight] as? NSNumber
-                    width = CGFloat(wVal?.doubleValue ?? 0)
-                    height = CGFloat(hVal?.doubleValue ?? 0)
+                    var w = CGFloat(wVal?.doubleValue ?? 0)
+                    var h = CGFloat(hVal?.doubleValue ?? 0)
+                    if let orientationNum = properties[kCGImagePropertyOrientation] as? NSNumber {
+                        let rawOrientation = orientationNum.intValue
+                        if rawOrientation == 5 || rawOrientation == 6 || rawOrientation == 7 || rawOrientation == 8 {
+                            swap(&w, &h)
+                        }
+                    }
+                    width = w
+                    height = h
                 }
                 
                 if settings.splitWebtoon && height > width * 1.5 {
@@ -383,12 +391,39 @@ struct CBZToEPUBConverter: Sendable {
             
             currentChunkImages.append(newImageName)
             
+            // Determine image dimensions and aspect ratio for dynamic viewport
+            var imgW = 1980
+            var imgH = 2640
+            var isLandscapeImage = false
+            if let source = CGImageSourceCreateWithURL(destURL as CFURL, nil),
+               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+               let wVal = properties[kCGImagePropertyPixelWidth] as? NSNumber,
+               let hVal = properties[kCGImagePropertyPixelHeight] as? NSNumber {
+                var w = CGFloat(wVal.doubleValue)
+                var h = CGFloat(hVal.doubleValue)
+                if let orientationNum = properties[kCGImagePropertyOrientation] as? NSNumber {
+                    let rawOrientation = orientationNum.intValue
+                    if rawOrientation == 5 || rawOrientation == 6 || rawOrientation == 7 || rawOrientation == 8 {
+                        swap(&w, &h)
+                    }
+                }
+                if w > 0 && h > 0 {
+                    if w > h * 1.1 {
+                        isLandscapeImage = true
+                        imgW = 2640
+                        imgH = 1980
+                    }
+                }
+            }
+            
             // Generate DOM Page
             chunkIndex += 1
             let chunkXHTML = CBZToEPUBConverter.generateChunkXHTML(
                 chunkIndex: chunkIndex,
                 images: currentChunkImages,
                 title: "Page \(chunkIndex)",
+                width: imgW,
+                height: imgH,
                 bookUUID: bookUUID,
                 pageIndex: item.index,
                 isManga: isManga
@@ -399,7 +434,9 @@ struct CBZToEPUBConverter: Sendable {
             
             // Universally Apply Advanced Landscape Spread Tagging (RTL vs LTR)
             let spreadTag: String
-            if settings.linkCoverAsSpread {
+            if isLandscapeImage {
+                spreadTag = " properties=\"rendition:page-spread-center\""
+            } else if settings.linkCoverAsSpread {
                 if isManga {
                     // RTL Manga Sequence: Cover (page 1) is Right, Page 2 is Left, Page 3 is Right
                     spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
@@ -447,8 +484,8 @@ struct CBZToEPUBConverter: Sendable {
         
         // For single-volume: cover image is img_1 (with properties="cover-image").
         // For multi-batch: the badged cover written above is "cover-image".
-        // Suppress OPF cover meta tag on spread-linked covers to prevent Kindle double cover duplication.
-        let coverMetaID = settings.linkCoverAsSpread ? nil : ((totalBatches > 1 && hasBadgedCover) ? "cover-image" : "img_1")
+        // Always provide coverMetaID so Kindle Cloud ingest preserves the spine structure for dual-page spreads.
+        let coverMetaID: String? = (totalBatches > 1 && hasBadgedCover) ? "cover-image" : "img_1"
         let opfContent = EPUBManifestBuilder.buildOPFContent(
             bookUUID: bookUUID,
             baseFilename: baseFilename,
@@ -556,6 +593,6 @@ struct CBZToEPUBConverter: Sendable {
     }
 
     static func generateChunkXHTML(chunkIndex: Int, images: [String], title: String, width: Int? = nil, height: Int? = nil, bookUUID: String? = nil, pageIndex: Int? = nil, isManga: Bool = false) -> String {
-        return EPUBManifestBuilder.buildChunkXHTML(chunkIndex: chunkIndex, images: images, title: title, bookUUID: bookUUID, pageIndex: pageIndex, isManga: isManga)
+        return EPUBManifestBuilder.buildChunkXHTML(chunkIndex: chunkIndex, images: images, title: title, bookUUID: bookUUID, pageIndex: pageIndex, isManga: isManga, pageWidth: width ?? 1980, pageHeight: height ?? 2640)
     }
 }

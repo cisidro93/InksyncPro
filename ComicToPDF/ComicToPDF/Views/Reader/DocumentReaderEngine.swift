@@ -663,6 +663,9 @@ struct PDFKitRepresentedView: UIViewRepresentable {
                 expectedDisplayMode = dualPageMode ? .twoUpContinuous : .singlePageContinuous
             }
             
+            let currentBoundsSize = pdfView.bounds.size
+            let boundsChanged = currentBoundsSize != context.coordinator.lastBoundsSize && currentBoundsSize.width > 0 && currentBoundsSize.height > 0
+            
             if pdfView.displayMode != expectedDisplayMode ||
                 context.coordinator.lastConfiguredPaginationMode != currentMode ||
                 context.coordinator.lastFitToWidth != fitToWidth {
@@ -672,36 +675,43 @@ struct PDFKitRepresentedView: UIViewRepresentable {
                 context.coordinator.lastConfiguredPaginationMode = currentMode
                 context.coordinator.lastFitToWidth = fitToWidth
                 
-                if isPaged && !fitToWidth && !dualPageMode {
+                if isPaged {
                     pdfView.displayDirection = .horizontal
-                    pdfView.usePageViewController(true, withViewOptions: nil)
+                    let pageViewOptions: [UIPageViewController.OptionKey: Any] = [
+                        .spineLocation: dualPageMode ? UIPageViewController.SpineLocation.mid.rawValue : UIPageViewController.SpineLocation.min.rawValue
+                    ]
+                    pdfView.usePageViewController(true, withViewOptions: pageViewOptions)
                 } else {
                     pdfView.usePageViewController(false)
-                    pdfView.displayDirection = isPaged && dualPageMode ? .horizontal : .vertical
+                    pdfView.displayDirection = .vertical
                 }
+                pdfView.autoScales = true
                 pdfView.layoutDocumentView()
             }
             
-            if let currentPage = pdfView.currentPage, pdfView.bounds.width > 0 && pdfView.bounds.height > 0 {
-                let pageBounds = currentPage.bounds(for: pdfView.displayBox)
-                let pageWidthMultiplier: CGFloat = dualPageMode ? 2.0 : 1.0
-                let totalPageWidth = pageBounds.width * pageWidthMultiplier
-                let totalPageHeight = pageBounds.height
-                
-                let scaleForWidth = pdfView.bounds.width / max(totalPageWidth, 1.0)
-                let scaleForHeight = pdfView.bounds.height / max(totalPageHeight, 1.0)
-                
-                // Scale to fill full screen width edge-to-edge, removing letterboxing margins
-                let targetScale = scaleForWidth > 0 ? scaleForWidth : min(scaleForWidth, scaleForHeight)
-                
-                if targetScale > 0 && abs(pdfView.scaleFactor - targetScale) > 0.01 {
-                    pdfView.scaleFactor = targetScale
+            // Recalculate scaleFactor ONLY on physical bounds changes (e.g. device rotation),
+            // NOT during live page index transitions to eliminate flashing and size glitching.
+            if boundsChanged {
+                context.coordinator.lastBoundsSize = currentBoundsSize
+                if let currentPage = pdfView.currentPage {
+                    let pageBounds = currentPage.bounds(for: pdfView.displayBox)
+                    let pageWidthMultiplier: CGFloat = dualPageMode ? 2.0 : 1.0
+                    let totalPageWidth = pageBounds.width * pageWidthMultiplier
+                    let totalPageHeight = pageBounds.height
+                    
+                    let scaleForWidth = currentBoundsSize.width / max(totalPageWidth, 1.0)
+                    let scaleForHeight = currentBoundsSize.height / max(totalPageHeight, 1.0)
+                    let targetScale = scaleForWidth > 0 ? scaleForWidth : min(scaleForWidth, scaleForHeight)
+                    
+                    if targetScale > 0 && abs(pdfView.scaleFactor - targetScale) > 0.01 {
+                        pdfView.scaleFactor = targetScale
+                    }
                 }
             }
             
             makePdfViewTransparent(pdfView)
             
-            // Sync outer page change to the PDFView
+            // Sync outer page change to the PDFView without triggering tile-destroying scale mutations
             if let document = pdfView.document,
                let currentPage = pdfView.currentPage {
                 let viewPageIndex = document.index(for: currentPage)
@@ -742,6 +752,7 @@ struct PDFKitRepresentedView: UIViewRepresentable {
         var toolPicker = PKToolPicker()
         var lastConfiguredPaginationMode: String?
         var lastFitToWidth: Bool?
+        var lastBoundsSize: CGSize = .zero
         
         init(_ parent: PDFKitRepresentedView) {
             self.parent = parent

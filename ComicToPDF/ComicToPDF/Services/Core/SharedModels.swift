@@ -937,6 +937,14 @@ enum CompressionPreset: String, CaseIterable, Codable {
         case .compact: return 0.5
         }
     }
+    
+    var maxDimension: CGFloat? {
+        switch self {
+        case .high: return nil
+        case .balanced: return 2048.0
+        case .compact: return 1600.0
+        }
+    }
 }
 
 struct ConversionPreset: Identifiable, Codable, Sendable {
