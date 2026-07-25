@@ -112,24 +112,7 @@ struct DocumentReaderEngine: View {
             
             documentContentView
             
-            // Edge Brightness Gesture Zones
-            HStack {
-                Color.clear
-                    .contentShape(Rectangle())
-                    .frame(width: 30)
-                    .gesture(
-                        DragGesture()
-                            .onChanged { value in
-                                let delta = value.translation.height - lastBrightnessDragValue
-                                lastBrightnessDragValue = value.translation.height
-                                let current = UIScreen.main.brightness
-                                let target = max(0.05, min(1.0, current - delta * 0.001))
-                                UIScreen.main.brightness = target
-                            }
-                            .onEnded { _ in lastBrightnessDragValue = 0 }
-                    )
-                Spacer()
-            }
+            EdgeBrightnessGestureZone()
             
             ReaderChrome(
                 title: pdf.name,

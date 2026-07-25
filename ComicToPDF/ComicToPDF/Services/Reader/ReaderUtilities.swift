@@ -120,3 +120,44 @@ final class SleepTimerManager: ObservableObject {
         return String(format: "%d:%02d", m, s)
     }
 }
+
+// MARK: - Clean Code Constants & Shared Components
+
+/// Centralized reader layout and gesture constants (eliminates magic numbers)
+enum ReaderLayoutConstants {
+    static let brightnessZoneWidth: CGFloat = 30.0
+    static let minBrightnessThreshold: CGFloat = 0.05
+    static let maxBrightnessThreshold: CGFloat = 1.0
+    static let defaultAnimationDuration: Double = 0.2
+    static let springResponse: Double = 0.35
+    static let springDamping: Double = 0.85
+    static let autoSaveDebounceNanoseconds: UInt64 = 1_200_000_000
+}
+
+/// Reusable edge brightness gesture zone (DRY principle — eliminates duplicate gesture code across readers)
+struct EdgeBrightnessGestureZone: View {
+    @State private var lastDragTranslationY: CGFloat = 0
+
+    var body: some View {
+        HStack {
+            Color.clear
+                .contentShape(Rectangle())
+                .frame(width: ReaderLayoutConstants.brightnessZoneWidth)
+                .gesture(
+                    DragGesture()
+                        .onChanged { value in
+                            let delta = value.translation.height - lastDragTranslationY
+                            lastDragTranslationY = value.translation.height
+                            let currentBrightness = UIScreen.main.brightness
+                            let targetBrightness = max(
+                                ReaderLayoutConstants.minBrightnessThreshold,
+                                min(ReaderLayoutConstants.maxBrightnessThreshold, currentBrightness - delta * 0.001)
+                            )
+                            UIScreen.main.brightness = targetBrightness
+                        }
+                        .onEnded { _ in lastDragTranslationY = 0 }
+                )
+            Spacer()
+        }
+    }
+}
