@@ -927,8 +927,11 @@ struct StudyNotebookView: View {
         var resolvedPageIndex: Int? = nil
         if url.scheme == "inksync", url.host == "page", let lastComp = url.pathComponents.last, let idx = Int(lastComp) {
             resolvedPageIndex = idx
-        } else if url.scheme == "page", let idx = Int(url.resourceSpecifier.trimmingCharacters(in: CharacterSet(charactersIn: "/"))) {
-            resolvedPageIndex = idx
+        } else if url.scheme == "page" {
+            let spec = url.absoluteString.replacingOccurrences(of: "page:", with: "").trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            if let idx = Int(spec) {
+                resolvedPageIndex = idx
+            }
         }
         
         guard let pageIndex = resolvedPageIndex else { return }

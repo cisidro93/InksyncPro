@@ -1721,7 +1721,7 @@ struct PageCurl3DEffect: ViewModifier {
 
     func body(content: Content) -> some View {
         let progress = abs(angle) / 90.0
-        let isTrailingAnchor = (anchor == .trailing || anchor == .bottomRight)
+        let isTrailingAnchor = (anchor == .trailing || anchor == .topTrailing || anchor == .bottomTrailing)
         let curlOffset = isTrailingAnchor ? -progress * 20.0 : progress * 20.0
         
         content
