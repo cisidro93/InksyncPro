@@ -678,7 +678,7 @@ struct PDFKitRepresentedView: UIViewRepresentable {
                 if isPaged {
                     pdfView.displayDirection = .horizontal
                     let pageViewOptions: [UIPageViewController.OptionKey: Any] = [
-                        .spineLocation: dualPageMode ? UIPageViewController.SpineLocation.mid.rawValue : UIPageViewController.SpineLocation.min.rawValue
+                        .spineLocation: NSNumber(value: dualPageMode ? UIPageViewController.SpineLocation.mid.rawValue : UIPageViewController.SpineLocation.min.rawValue)
                     ]
                     pdfView.usePageViewController(true, withViewOptions: pageViewOptions)
                 } else {

@@ -23,6 +23,37 @@ struct StudyNotebookView: View {
     @EnvironmentObject var conversionManager: ConversionManager
     @EnvironmentObject var settingsManager: AppSettingsManager
     @State private var activeNoteAnnotation: SDAnnotation?
+    @ObservedObject private var progressTracker = ReaderProgressTracker.shared
+    @State private var referencedPageIndices: Set<Int> = []
+
+    private var activeReaderPageIndex: Int? {
+        var targetUUID: UUID? = UUID(uuidString: bookID)
+        if targetUUID == nil {
+            targetUUID = resolvedPDF?.id
+        }
+        guard let pdfID = targetUUID else { return nil }
+        return progressTracker.progress(for: pdfID)?.currentPageIndex
+    }
+
+    private func jumpToPage(_ pageIndex: Int) {
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        NotificationCenter.default.post(
+            name: NSNotification.Name("Reader_JumpToPage"),
+            object: nil,
+            userInfo: ["page": pageIndex]
+        )
+        Logger.shared.log("Smart Notebook: Jumped open reader to page \(pageIndex + 1)", category: "Notebook", type: .info)
+    }
+
+    private func stampCurrentPageLink() {
+        guard let pageIdx = activeReaderPageIndex else { return }
+        let displayPage = pageIdx + 1
+        let stampTag = " [📍 Page \(displayPage)](page:\(pageIdx)) "
+        self.localNotes += stampTag
+        self.referencedPageIndices.insert(pageIdx)
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        debounceSave()
+    }
     
     @Environment(\.colorScheme) var colorScheme
     @State private var isFocused: Bool = false
@@ -502,6 +533,8 @@ struct StudyNotebookView: View {
                     )
                     .overlay(Rectangle().frame(height: 1).foregroundColor(Color.primary.opacity(0.05)), alignment: .bottom)
                     
+                    smartPageIndexBar
+                    
                     if inputMode == .handwriting {
                         canvasToolbar
                     }
@@ -678,9 +711,26 @@ struct StudyNotebookView: View {
         if let allNotes = try? modelContext.fetch(fetchDescriptor),
            let existing = allNotes.first(where: { $0.pdfID == targetPDFID }) {
             self.activeNoteAnnotation = existing
-            self.localNotes = existing.noteText ?? ""
-            let wordCount = (existing.noteText ?? "").split { $0.isWhitespace }.count
+            let loadedText = existing.noteText ?? ""
+            self.localNotes = loadedText
+            let wordCount = loadedText.split { $0.isWhitespace }.count
             Logger.shared.log("Loaded existing note for '\(bookTitle)' (\(wordCount) words)", category: "Notebook", type: .success)
+            
+            if existing.pageIndex >= 0 {
+                self.referencedPageIndices.insert(existing.pageIndex)
+            }
+            
+            let linkRegexPattern = #"\((?:page:|inksync://page/)(\d+)\)"#
+            if let regex = try? NSRegularExpression(pattern: linkRegexPattern) {
+                let nsText = loadedText as NSString
+                let matches = regex.matches(in: loadedText, range: NSRange(location: 0, length: nsText.length))
+                for match in matches {
+                    if match.numberOfRanges > 1, let pIdx = Int(nsText.substring(with: match.range(at: 1))) {
+                        self.referencedPageIndices.insert(pIdx)
+                    }
+                }
+            }
+            
             if let dData = existing.drawingData, let drawing = try? PKDrawing(data: dData) {
                 self.canvasView.drawing = drawing
                 Logger.shared.log("Restored PencilKit drawing for '\(bookTitle)'", category: "Notebook", type: .info)
@@ -753,6 +803,10 @@ struct StudyNotebookView: View {
                 let drawingData = drawing.dataRepresentation()
                 
                 await MainActor.run {
+                    if let activePage = self.activeReaderPageIndex {
+                        self.activeNoteAnnotation?.pageIndex = activePage
+                        self.referencedPageIndices.insert(activePage)
+                    }
                     self.activeNoteAnnotation?.noteText = note
                     self.activeNoteAnnotation?.drawingData = drawingData
                     self.activeNoteAnnotation?.modifiedAt = Date()
@@ -870,12 +924,18 @@ struct StudyNotebookView: View {
     }
 
     private func handleLinkTapped(_ url: URL) {
-        guard url.scheme == "inksync",
-              url.host == "page",
-              let lastComponent = url.pathComponents.last,
-              let pageIndex = Int(lastComponent) else { return }
+        var resolvedPageIndex: Int? = nil
+        if url.scheme == "inksync", url.host == "page", let lastComp = url.pathComponents.last, let idx = Int(lastComp) {
+            resolvedPageIndex = idx
+        } else if url.scheme == "page", let idx = Int(url.resourceSpecifier.trimmingCharacters(in: CharacterSet(charactersIn: "/"))) {
+            resolvedPageIndex = idx
+        }
         
-        Logger.shared.log("Page link tapped: page index \(pageIndex)", category: "Notebook", type: .info)
+        guard let pageIndex = resolvedPageIndex else { return }
+        
+        Logger.shared.log("Page link tapped: jumping open reader & preview to page index \(pageIndex)", category: "Notebook", type: .info)
+        
+        jumpToPage(pageIndex)
         
         self.previewPageIndex = pageIndex
         self.previewImage = nil
@@ -1774,7 +1834,7 @@ struct MarkdownTextEditor: UIViewRepresentable {
             
             if charIndex < textView.textStorage.length {
                 if let url = textView.textStorage.attribute(.link, at: charIndex, effectiveRange: nil) as? URL {
-                    if url.scheme == "inksync" {
+                    if url.scheme == "inksync" || url.scheme == "page" {
                         parent.onLinkTapped?(url)
                     }
                 }
@@ -1782,7 +1842,7 @@ struct MarkdownTextEditor: UIViewRepresentable {
         }
 
         func textView(_ textView: UITextView, shouldInteractWith URL: URL, in characterRange: NSRange, interaction: UITextItemInteraction) -> Bool {
-            if URL.scheme == "inksync" {
+            if URL.scheme == "inksync" || URL.scheme == "page" {
                 parent.onLinkTapped?(URL)
                 return false
             }
@@ -1922,6 +1982,25 @@ struct MarkdownHighlighter {
             }
         }
         
+        // Markdown Links ([label](url))
+        let mdLinkPattern = "\\[([^\\]]+)\\]\\(([^\\)]+)\\)"
+        if let regex = try? NSRegularExpression(pattern: mdLinkPattern, options: []) {
+            let matches = regex.matches(in: text, range: fullRange)
+            let nsText = text as NSString
+            for match in matches {
+                if match.numberOfRanges > 2 {
+                    let urlStr = nsText.substring(with: match.range(at: 2))
+                    if let url = URL(string: urlStr) {
+                        attrString.addAttributes([
+                            .foregroundColor: UIColor.systemOrange,
+                            .font: boldFont,
+                            .link: url
+                        ], range: match.range)
+                    }
+                }
+            }
+        }
+        
         // Tags (#tag)
         let tagPattern = "(?<!\\w)#\\w+"
         if let regex = try? NSRegularExpression(pattern: tagPattern, options: []) {
@@ -1975,6 +2054,83 @@ struct MarkdownHighlighter {
 }
 
 extension StudyNotebookView {
+    // MARK: - Smart Split-Screen Page Index Bar (Jump Chips)
+    @ViewBuilder
+    private var smartPageIndexBar: some View {
+        let activePage = activeReaderPageIndex
+        let allPages = Array(referencedPageIndices.union(activePage != nil ? [activePage!] : [])).sorted()
+        
+        if !allPages.isEmpty || activePage != nil {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    if let current = activePage {
+                        Button {
+                            jumpToPage(current)
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "mappin.and.ellipse")
+                                    .font(.system(size: 11, weight: .bold))
+                                Text("Active: Page \(current + 1)")
+                                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                            }
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(
+                                LinearGradient(colors: [.orange, .red], startPoint: .leading, endPoint: .trailing),
+                                in: Capsule()
+                            )
+                            .shadow(color: .orange.opacity(0.3), radius: 4, x: 0, y: 2)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    
+                    ForEach(allPages, id: \.self) { pageIdx in
+                        if pageIdx != activePage {
+                            Button {
+                                jumpToPage(pageIdx)
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "book.pages")
+                                        .font(.system(size: 10, weight: .semibold))
+                                    Text("p. \(pageIdx + 1)")
+                                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                }
+                                .foregroundColor(.primary)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.primary.opacity(0.08), in: Capsule())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    
+                    if inputMode == .markdown && activePage != nil {
+                        Button {
+                            stampCurrentPageLink()
+                        } label: {
+                            HStack(spacing: 3) {
+                                Image(systemName: "plus.circle.fill")
+                                    .font(.system(size: 10, weight: .bold))
+                                Text("Stamp Link")
+                                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                            }
+                            .foregroundColor(.orange)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.orange.opacity(0.12), in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+            }
+            .background(Color.inkSurfaceRaised.opacity(0.3).background(.ultraThinMaterial))
+            .overlay(Rectangle().frame(height: 1).foregroundColor(Color.primary.opacity(0.05)), alignment: .bottom)
+        }
+    }
+
     // MARK: - PencilKit Custom Drawing Toolbar
     @ViewBuilder
     private var canvasToolbar: some View {
