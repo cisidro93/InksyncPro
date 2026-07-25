@@ -155,12 +155,68 @@ struct StudyNotebookView: View {
         GeometryReader { notebookGeo in
             let availableWidth = notebookGeo.size.width
             
-            let inputPicker = Picker("Input", selection: $inputMode) {
-                Image(systemName: "keyboard").tag(InputMode.markdown)
-                Image(systemName: "applepencil").tag(InputMode.handwriting)
+            let inputPicker = HStack(spacing: 0) {
+                Button {
+                    HapticEngine.light()
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                        inputMode = .markdown
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "square.and.pencil")
+                            .font(.system(size: 11, weight: .bold))
+                        Text("Text")
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                    }
+                    .foregroundColor(inputMode == .markdown ? .white : .primary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(
+                        Group {
+                            if inputMode == .markdown {
+                                LinearGradient(colors: [Theme.blue, Color.purple], startPoint: .leading, endPoint: .trailing)
+                                    .clipShape(Capsule())
+                                    .shadow(color: Theme.blue.opacity(0.3), radius: 4, x: 0, y: 2)
+                            } else {
+                                Color.clear
+                            }
+                        }
+                    )
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    HapticEngine.light()
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                        inputMode = .handwriting
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "applepencil")
+                            .font(.system(size: 11, weight: .bold))
+                        Text("Pencil")
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                    }
+                    .foregroundColor(inputMode == .handwriting ? .white : .primary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(
+                        Group {
+                            if inputMode == .handwriting {
+                                LinearGradient(colors: [.orange, .red], startPoint: .leading, endPoint: .trailing)
+                                    .clipShape(Capsule())
+                                    .shadow(color: .orange.opacity(0.3), radius: 4, x: 0, y: 2)
+                            } else {
+                                Color.clear
+                            }
+                        }
+                    )
+                }
+                .buttonStyle(.plain)
             }
-            .pickerStyle(.segmented)
-            .frame(width: 110)
+            .padding(2)
+            .background(Color.primary.opacity(0.06), in: Capsule())
+            .overlay(Capsule().stroke(Color.primary.opacity(0.08), lineWidth: 0.8))
             
             let micButton = Button {
                 toggleSpeechDictation()
@@ -1521,6 +1577,7 @@ struct MarkdownTextEditor: UIViewRepresentable {
             ("≡ List",  "- ",     nil),
             ("☑ Todo",  "- [ ] ", nil),
             ("`Code`",  "`",      "`"),
+            ("📍 Stamp", " [📍 Page] ", nil),
             ("—— Rule", "---\n",  nil),
             ("[[",      "[[",     "]]"),
             ("#",       "#",      nil),
