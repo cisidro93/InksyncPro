@@ -11,6 +11,9 @@ class ShareViewController: UIViewController {
         let contentView = ShareExtensionView(
             extensionContext: extensionContext,
             onDismiss: { [weak self] in
+                if let url = URL(string: "inksyncpro://shared-import") {
+                    self?.extensionContext?.open(url, completionHandler: nil)
+                }
                 self?.extensionContext?.completeRequest(returningItems: nil, completionHandler: nil)
             }
         )

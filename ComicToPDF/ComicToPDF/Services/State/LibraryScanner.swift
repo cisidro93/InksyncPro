@@ -60,13 +60,27 @@ actor LibraryScanner {
                         let ext = fileURL.pathExtension.lowercased()
                         if ext == "manifest" || fileURL.lastPathComponent.contains(".manifest.json") {
                             try? fileManager.removeItem(at: fileURL)
-                        } else if ext == "cbz" || ext == "cbr" || ext == "pdf" || ext == "epub" {
+                        } else if ["cbz", "cbr", "pdf", "epub", "zip", "rar", "cb7", "cbt"].contains(ext) || isSupportedSharedFile(fileURL) {
                             try? fileManager.createDirectory(at: inboxDir, withIntermediateDirectories: true)
-                            let dest = inboxDir.appendingPathComponent(fileURL.lastPathComponent)
+                            
+                            let cleanBase = (fileURL.lastPathComponent as NSString).deletingPathExtension
+                            let targetExt: String
+                            if ext == "zip" {
+                                targetExt = "cbz"
+                            } else if ext == "rar" {
+                                targetExt = "cbr"
+                            } else if ext.isEmpty {
+                                targetExt = detectExtensionFromMagicBytes(fileURL) ?? "cbz"
+                            } else {
+                                targetExt = ext
+                            }
+                            
+                            let targetFilename = cleanBase + "." + targetExt
+                            let dest = inboxDir.appendingPathComponent(targetFilename)
                             try? fileManager.removeItem(at: dest)
                             do {
                                 try fileManager.moveItem(at: fileURL, to: dest)
-                                Logger.shared.log("LibraryScanner: imported shared file '\(fileURL.lastPathComponent)'", category: "Import", type: .success)
+                                Logger.shared.log("LibraryScanner: imported shared file '\(targetFilename)'", category: "Import", type: .success)
                             } catch {
                                 Logger.shared.log("LibraryScanner: failed to import shared file: \(error.localizedDescription)", category: "Import", type: .error)
                             }
@@ -459,5 +473,33 @@ actor LibraryScanner {
         default:
             return true
         }
+    }
+
+    // MARK: - Magic Byte Detection Helpers
+
+    private func isSupportedSharedFile(_ fileURL: URL) -> Bool {
+        return detectExtensionFromMagicBytes(fileURL) != nil
+    }
+
+    private func detectExtensionFromMagicBytes(_ fileURL: URL) -> String? {
+        guard let fileHandle = try? FileHandle(forReadingFrom: fileURL),
+              let data = try? fileHandle.read(upToCount: 2000) else { return nil }
+        defer { try? fileHandle.close() }
+        guard data.count >= 4 else { return nil }
+
+        // PDF (%PDF)
+        if data[0] == 0x25 && data[1] == 0x50 && data[2] == 0x44 && data[3] == 0x46 { return "pdf" }
+        // RAR (Rar!)
+        if data[0] == 0x52 && data[1] == 0x61 && data[2] == 0x72 && data[3] == 0x21 { return "cbr" }
+        // ZIP / CBZ / EPUB (PK\x03\x04 or PK\x05\x06)
+        if (data[0] == 0x50 && data[1] == 0x4B && data[2] == 0x03 && data[3] == 0x04) ||
+           (data[0] == 0x50 && data[1] == 0x4B && data[2] == 0x05 && data[3] == 0x06) {
+            let header = String(decoding: data.prefix(500), as: UTF8.self)
+            if header.contains("mimetype") && (header.contains("epub+zip") || header.contains("epub")) {
+                return "epub"
+            }
+            return "cbz"
+        }
+        return nil
     }
 }

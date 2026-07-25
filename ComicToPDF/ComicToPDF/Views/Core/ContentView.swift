@@ -286,6 +286,10 @@ struct ContentView: View {
             }
             Logger.shared.log("⚠️ Memory warning received — purged ReaderImageFilterEngine cache and verified disk storage limits.", category: "Memory", type: .warning)
         }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
+            Logger.shared.log("App returned to foreground: trigger auto scan for shared container files", category: "Import")
+            conversionManager.scanLibrary()
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("SwitchToLibraryTab"))) { _ in
             // No-op
         }
@@ -302,6 +306,10 @@ struct ContentView: View {
         ))
         .onOpenURL { url in
             Logger.shared.log("onOpenURL received: \(url.absoluteString)", category: "Import")
+            if url.scheme == "inksyncpro" {
+                conversionManager.scanLibrary()
+                return
+            }
             guard url.isFileURL else { return }
             
             let accessing = url.startAccessingSecurityScopedResource()
@@ -336,6 +344,11 @@ struct ContentView: View {
                         }
                         AppRouter.shared.presentSheet(.importQueue)
                     }
+                }
+                
+                // Perform a complete scan so App Group / shared container files are ingested
+                await MainActor.run {
+                    conversionManager.scanLibrary()
                 }
             }
         }
