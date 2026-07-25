@@ -10,25 +10,9 @@ struct CBZToEPUBConverter: Sendable {
         
         let fileManager = FileManager.default
         
-        // Strip ALL extensions
-        var baseFilename: String
-        if let customName = customOutputName, !customName.isEmpty {
-            var derived = customName
-            while derived.contains(".") {
-                let stripped = (derived as NSString).deletingPathExtension
-                if stripped == derived { break }
-                derived = stripped
-            }
-            baseFilename = derived
-        } else {
-            var derived = sourceURL.lastPathComponent
-            while !derived.isEmpty && derived.contains(".") {
-                let stripped = (derived as NSString).deletingPathExtension
-                if stripped == derived { break } // No more extensions
-                derived = stripped
-            }
-            baseFilename = derived
-        }
+        // Strip ALL extensions cleanly (DRY principle)
+        let rawName = (customOutputName?.isEmpty == false) ? customOutputName! : sourceURL.lastPathComponent
+        let baseFilename = rawName.baseFilenameWithoutExtensions
         
         // Stage 1
         progress(0.1)

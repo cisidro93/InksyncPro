@@ -18,6 +18,20 @@ extension Set where Element == String {
     static let comicImageExtensions: Set<String> = ["jpg", "jpeg", "png", "webp", "gif", "heic"]
 }
 
+// MARK: - String Extension Utilities
+extension String {
+    /// Strips all trailing file extensions (e.g., "MyBook.cbz.zip" -> "MyBook")
+    var baseFilenameWithoutExtensions: String {
+        var derived = self
+        while derived.contains(".") {
+            let stripped = (derived as NSString).deletingPathExtension
+            if stripped == derived { break }
+            derived = stripped
+        }
+        return derived
+    }
+}
+
 // MARK: - Core Data Models
 
 // ✅ NEW: Unified App UI Mode
