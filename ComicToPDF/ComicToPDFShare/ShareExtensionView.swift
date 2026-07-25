@@ -226,29 +226,40 @@ struct ShareExtensionView: View {
     
     /// Inspects the first bytes of a file to identify its format.
     private func detectFileExtension(from url: URL) -> String? {
+        let existingExt = url.pathExtension.lowercased()
+        
+        let accessing = url.startAccessingSecurityScopedResource()
+        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+        
         guard let fileHandle = try? FileHandle(forReadingFrom: url),
-              let data = try? fileHandle.read(upToCount: 200) else { return nil }
+              let data = try? fileHandle.read(upToCount: 2000) else {
+            return ["pdf", "epub", "cbz", "cbr"].contains(existingExt) ? existingExt : nil
+        }
         defer { try? fileHandle.close() }
-        guard data.count >= 4 else { return nil }
+        guard data.count >= 4 else {
+            return ["pdf", "epub", "cbz", "cbr"].contains(existingExt) ? existingExt : nil
+        }
 
-        // ZIP / CBZ / EPUB  (PK\x03\x04)
-        if data[0] == 0x50 && data[1] == 0x4B && data[2] == 0x03 && data[3] == 0x04 {
-            // Prefer existing extension if it's already correct
-            let existing = url.pathExtension.lowercased()
-            if existing == "epub" { return "epub" }
-            if existing == "cbz"  { return "cbz" }
-            // Peek into the archive: EPUB always stores a "mimetype" entry as the first local file
-            let header = String(decoding: data.prefix(150), as: UTF8.self)
+        // PDF  (%PDF)
+        if data[0] == 0x25 && data[1] == 0x50 && data[2] == 0x44 && data[3] == 0x46 { return "pdf" }
+        // RAR / CBR  (Rar!)
+        if data[0] == 0x52 && data[1] == 0x61 && data[2] == 0x72 && data[3] == 0x21 { return "cbr" }
+
+        // ZIP / CBZ / EPUB  (PK\x03\x04 or PK\x05\x06)
+        if (data[0] == 0x50 && data[1] == 0x4B && data[2] == 0x03 && data[3] == 0x04) ||
+           (data[0] == 0x50 && data[1] == 0x4B && data[2] == 0x05 && data[3] == 0x06) {
+            if existingExt == "epub" { return "epub" }
+            if existingExt == "cbz"  { return "cbz" }
+            
+            // Peek into the archive: EPUB stores "mimetype" entry
+            let header = String(decoding: data.prefix(500), as: UTF8.self)
             if header.contains("mimetype") && (header.contains("epub+zip") || header.contains("epub")) {
                 return "epub"
             }
             return "cbz"
         }
-        // PDF  (%PDF)
-        if data[0] == 0x25 && data[1] == 0x50 && data[2] == 0x44 && data[3] == 0x46 { return "pdf" }
-        // RAR / CBR  (Rar!)
-        if data[0] == 0x52 && data[1] == 0x61 && data[2] == 0x72 && data[3] == 0x21 { return "cbr" }
-        return nil
+
+        return ["pdf", "epub", "cbz", "cbr"].contains(existingExt) ? existingExt : nil
     }
 
     // MARK: - Load Shared Files
@@ -330,15 +341,29 @@ struct ShareExtensionView: View {
                             tempName = baseName
                         }
 
-                        // --- Method A: loadFileRepresentation ---
+                        // --- Method A: loadInPlaceFileRepresentation (Files app / iCloud Drive) ---
+                        if let url = await tryLoadInPlaceFileRepresentation(provider: provider, typeId: typeId, filename: tempName) {
+                            loadedURL = url
+                            resolvedExt = hintExt ?? detectFileExtension(from: url) ?? url.pathExtension.lowercased().nonEmpty
+                            break
+                        }
+
+                        // --- Method B: loadFileRepresentation ---
                         if let url = await tryLoadFileRepresentation(provider: provider, typeId: typeId, filename: tempName) {
                             loadedURL = url
                             resolvedExt = hintExt ?? detectFileExtension(from: url) ?? url.pathExtension.lowercased().nonEmpty
                             break
                         }
 
-                        // --- Method B: loadItem ---
+                        // --- Method C: loadItem ---
                         if let url = await tryLoadItem(provider: provider, typeId: typeId, filename: tempName) {
+                            loadedURL = url
+                            resolvedExt = hintExt ?? detectFileExtension(from: url) ?? url.pathExtension.lowercased().nonEmpty
+                            break
+                        }
+
+                        // --- Method D: loadDataRepresentation (Safari / Mail / Data buffers) ---
+                        if let url = await tryLoadDataRepresentation(provider: provider, typeId: typeId, filename: tempName) {
                             loadedURL = url
                             resolvedExt = hintExt ?? detectFileExtension(from: url) ?? url.pathExtension.lowercased().nonEmpty
                             break
@@ -399,6 +424,19 @@ struct ShareExtensionView: View {
 
     // MARK: - Low-level load helpers
 
+    private func tryLoadInPlaceFileRepresentation(provider: NSItemProvider, typeId: String, filename: String) async -> URL? {
+        await withCheckedContinuation { continuation in
+            provider.loadInPlaceFileRepresentation(forTypeIdentifier: typeId) { fileURL, isInPlace, error in
+                guard error == nil, let fileURL = fileURL else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                let result = self.copyToSharedContainer(fileURL, destFilename: filename)
+                continuation.resume(returning: result)
+            }
+        }
+    }
+
     private func tryLoadFileRepresentation(provider: NSItemProvider, typeId: String, filename: String) async -> URL? {
         await withCheckedContinuation { continuation in
             provider.loadFileRepresentation(forTypeIdentifier: typeId) { tempURL, error in
@@ -452,6 +490,19 @@ struct ShareExtensionView: View {
                 } else {
                     continuation.resume(returning: nil)
                 }
+            }
+        }
+    }
+
+    private func tryLoadDataRepresentation(provider: NSItemProvider, typeId: String, filename: String) async -> URL? {
+        await withCheckedContinuation { continuation in
+            provider.loadDataRepresentation(forTypeIdentifier: typeId) { data, error in
+                guard error == nil, let data = data, !data.isEmpty else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                let result = self.writeRawDataToSharedContainer(data, destFilename: filename)
+                continuation.resume(returning: result)
             }
         }
     }

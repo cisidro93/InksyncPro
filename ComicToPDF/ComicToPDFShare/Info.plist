@@ -34,7 +34,9 @@
                      cloud-sourced dynamic UTIs (dyn.xxx from Drive/Dropbox) are not silently
                      excluded by the OS's compile-time UTI conformance table.            -->
                 <key>NSExtensionActivationSupportsFileWithMaxCount</key>
-                <integer>10</integer>
+                <integer>20</integer>
+                <key>NSExtensionActivationSupportsAttachmentsWithMaxCount</key>
+                <integer>20</integer>
             </dict>
         </dict>
         <key>NSExtensionPrincipalClass</key>
