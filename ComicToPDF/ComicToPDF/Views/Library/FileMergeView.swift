@@ -96,9 +96,25 @@ struct FileMergeView: View {
                     Toggle("E-Ink High Contrast Filter", isOn: $settingsManager.conversionSettings.optimizeForDevice)
                     
                     Picker("Image Quality", selection: $settingsManager.conversionSettings.compressionQuality) {
-                        ForEach(CompressionPreset.allCases, id: \.self) { preset in
-                            Text(preset.rawValue).tag(preset)
+                        ForEach(CompressionPreset.allCases) { preset in
+                            Text(preset.displayName).tag(preset)
                         }
+                    }
+                    
+                    if settingsManager.conversionSettings.compressionQuality == .customTarget {
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack {
+                                Text("Target File Size")
+                                    .font(.subheadline)
+                                Spacer()
+                                Text("\(Int(settingsManager.conversionSettings.targetFileSizeMB)) MB")
+                                    .font(.subheadline)
+                                    .bold()
+                                    .foregroundColor(.blue)
+                            }
+                            Slider(value: $settingsManager.conversionSettings.targetFileSizeMB, in: 10...1000, step: 10)
+                        }
+                        .padding(.vertical, 4)
                     }
                     
                     Picker("Smart File Splitting", selection: $settingsManager.conversionSettings.splitMode) {

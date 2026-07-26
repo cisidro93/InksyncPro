@@ -81,9 +81,25 @@ struct SeriesMergeConfigurationView: View {
                             Toggle("Delete original files after merge", isOn: $deleteSourceFilesAfterMerge)
                             
                             Picker("Image Quality", selection: $settingsManager.conversionSettings.compressionQuality) {
-                                ForEach(CompressionPreset.allCases, id: \.self) { preset in
-                                    Text("\(preset.rawValue) (Est: \(estimatedSize(for: preset)))").tag(preset)
+                                ForEach(CompressionPreset.allCases) { preset in
+                                    Text("\(preset.displayName) (Est: \(estimatedSize(for: preset)))").tag(preset)
                                 }
+                            }
+                            
+                            if settingsManager.conversionSettings.compressionQuality == .customTarget {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    HStack {
+                                        Text("Target File Size")
+                                            .font(.subheadline)
+                                        Spacer()
+                                        Text("\(Int(settingsManager.conversionSettings.targetFileSizeMB)) MB")
+                                            .font(.subheadline)
+                                            .bold()
+                                            .foregroundColor(.blue)
+                                    }
+                                    Slider(value: $settingsManager.conversionSettings.targetFileSizeMB, in: 10...1000, step: 10)
+                                }
+                                .padding(.vertical, 4)
                             }
                             
                             Picker("Smart File Splitting", selection: $settingsManager.conversionSettings.splitMode) {
@@ -424,31 +440,19 @@ struct SeriesMergeConfigurationView: View {
         let format = settingsManager.conversionSettings.outputFormat
         let optimize = settingsManager.conversionSettings.optimizeForDevice
         
-        switch format {
-        case .pdf:
-            if optimize {
-                switch preset {
-                case .high: return 0.85
-                case .balanced: return 0.65
-                case .compact: return 0.45
-                }
-            } else {
-                return 1.0
-            }
-        case .cbz, .epub:
-            if optimize {
-                switch preset {
-                case .high: return 0.60
-                case .balanced: return 0.40
-                case .compact: return 0.20
-                }
-            } else {
-                switch preset {
-                case .high: return 0.90
-                case .balanced: return 0.75
-                case .compact: return 0.50
-                }
-            }
+        switch preset {
+        case .ultra:
+            return 1.0
+        case .customTarget:
+            let targetMB = settingsManager.conversionSettings.targetFileSizeMB
+            let totalMB = Double(totalInputSize) / 1024 / 1024
+            return totalMB > 0 ? min(1.0, max(0.05, targetMB / totalMB)) : 0.70
+        case .high:
+            return optimize ? (format == .pdf ? 0.90 : 0.75) : 0.95
+        case .balanced:
+            return optimize ? (format == .pdf ? 0.75 : 0.55) : 0.80
+        case .compact:
+            return optimize ? (format == .pdf ? 0.55 : 0.35) : 0.60
         }
     }
 

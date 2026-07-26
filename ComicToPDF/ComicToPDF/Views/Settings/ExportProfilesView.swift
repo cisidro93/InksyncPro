@@ -78,7 +78,7 @@ struct ExportProfilesView: View {
                             ForEach(OutputFormat.allCases) { format in Label(format.rawValue, systemImage: format.icon).tag(format) }
                         }
                         Picker("Compression", selection: $newPresetSettings.compressionQuality) {
-                            ForEach(CompressionPreset.allCases, id: \.self) { preset in Text(preset.rawValue).tag(preset) }
+                            ForEach(CompressionPreset.allCases) { preset in Text(preset.displayName).tag(preset) }
                         }
                         Toggle("Default Manga Mode (RTL)", isOn: $newPresetSettings.mangaMode)
                     }

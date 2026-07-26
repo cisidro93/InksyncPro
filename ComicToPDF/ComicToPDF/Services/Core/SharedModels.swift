@@ -590,6 +590,7 @@ enum CoverBadgePlacement: String, Codable, CaseIterable, Identifiable {
 struct ConversionSettings: Codable, Equatable, Sendable {
     var outputFormat: OutputFormat = .epub
     var compressionQuality: CompressionPreset = .balanced
+    var targetFileSizeMB: Double = 100.0 // Custom target output size in MB
     var optimizeForDevice: Bool = true
     var targetDeviceProfile: TargetDeviceProfile = .original // âœ… NEW: E-Ink Target
     var mangaMode: Bool = false
@@ -939,24 +940,42 @@ enum OutputFormat: String, CaseIterable, Codable, Identifiable {
     }
 }
 
-enum CompressionPreset: String, CaseIterable, Codable {
+enum CompressionPreset: String, CaseIterable, Codable, Identifiable {
+    case ultra = "Ultra"
     case high = "High Quality"
     case balanced = "Balanced"
     case compact = "Compact"
+    case customTarget = "Custom File Size"
+    
+    var id: String { rawValue }
+    
+    var displayName: String {
+        switch self {
+        case .ultra: return "Ultra (Lossless Original)"
+        case .high: return "High Quality (95% JPEG, 4K)"
+        case .balanced: return "Standard (85% JPEG, 2.5K)"
+        case .compact: return "Compact (70% JPEG, Full HD)"
+        case .customTarget: return "Custom Target Size (MB)"
+        }
+    }
     
     var value: CGFloat {
         switch self {
-        case .high: return 0.9
-        case .balanced: return 0.75
-        case .compact: return 0.5
+        case .ultra: return 1.0
+        case .high: return 0.95
+        case .balanced: return 0.85
+        case .compact: return 0.70
+        case .customTarget: return 0.85
         }
     }
     
     var maxDimension: CGFloat? {
         switch self {
-        case .high: return nil
-        case .balanced: return 2048.0
-        case .compact: return 1600.0
+        case .ultra: return nil
+        case .high: return 3840.0
+        case .balanced: return 2560.0
+        case .compact: return 1920.0
+        case .customTarget: return nil
         }
     }
 }

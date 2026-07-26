@@ -428,14 +428,59 @@ struct GoConvertView: View {
                     }
                 }
                 Divider().overlay(Color.inkBorderSubtle)
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Image Quality")
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Image Quality & Compression")
                         .font(.system(size: 12, design: .monospaced))
                         .foregroundColor(.inkTextSecondary)
+                    
                     Picker("", selection: $settingsManager.conversionSettings.compressionQuality) {
-                        ForEach(CompressionPreset.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                        ForEach(CompressionPreset.allCases) { preset in
+                            Text(preset.displayName).tag(preset)
+                        }
                     }
-                    .pickerStyle(.segmented)
+                    .pickerStyle(.menu)
+                    .tint(.inkBlue)
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.inkSurfaceRaised)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    
+                    if settingsManager.conversionSettings.compressionQuality == .customTarget {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("Target File Size Limit")
+                                    .font(.system(size: 13, weight: .medium))
+                                Spacer()
+                                Text("\(Int(settingsManager.conversionSettings.targetFileSizeMB)) MB")
+                                    .font(.system(size: 13, weight: .bold, design: .monospaced))
+                                    .foregroundColor(.inkBlue)
+                            }
+                            
+                            HStack(spacing: 8) {
+                                ForEach([50.0, 100.0, 250.0, 500.0], id: \.self) { mb in
+                                    Button {
+                                        HapticEngine.light()
+                                        settingsManager.conversionSettings.targetFileSizeMB = mb
+                                    } label: {
+                                        Text("\(Int(mb))MB")
+                                            .font(.caption2)
+                                            .fontWeight(.semibold)
+                                            .padding(.horizontal, 10)
+                                            .padding(.vertical, 6)
+                                            .background(settingsManager.conversionSettings.targetFileSizeMB == mb ? Color.inkBlue : Color.inkSurfaceRaised)
+                                            .foregroundColor(settingsManager.conversionSettings.targetFileSizeMB == mb ? .white : .primary)
+                                            .cornerRadius(6)
+                                    }
+                                }
+                            }
+                            
+                            Slider(value: $settingsManager.conversionSettings.targetFileSizeMB, in: 10...1000, step: 10)
+                                .tint(.inkBlue)
+                        }
+                        .padding(10)
+                        .background(Color.inkSurfaceRaised.opacity(0.5))
+                        .cornerRadius(8)
+                    }
                 }
             }
 
