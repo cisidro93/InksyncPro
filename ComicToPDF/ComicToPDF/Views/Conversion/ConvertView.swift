@@ -14,29 +14,81 @@ struct ConvertView: View {
         ScrollView {
             VStack(spacing: 16) {
 
-                // MARK: Output Filename
-                InkCard(header: "Output Filename") {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Output Name")
-                            .font(.system(size: 12, design: .monospaced))
-                            .foregroundColor(.inkTextSecondary)
-                        HStack(spacing: 8) {
-                            TextField("Enter filename", text: $viewModel.targetFilename)
+                // MARK: Output Metadata
+                InkCard(header: "Output Metadata") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Output Title")
+                                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                .foregroundColor(.inkTextSecondary)
+                            HStack(spacing: 8) {
+                                TextField("Enter filename", text: $viewModel.targetFilename)
+                                    .textFieldStyle(PlainTextFieldStyle())
+                                    .font(.system(size: 14))
+                                    .padding(10)
+                                    .background(Color.inkSurfaceRaised)
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .stroke(Color.inkBorderSubtle, lineWidth: 1)
+                                    )
+                                    .disabled(conversionManager.isConverting)
+                                
+                                Text(".\(settingsManager.conversionSettings.outputFormat.rawValue)")
+                                    .font(.system(size: 13, design: .monospaced))
+                                    .foregroundColor(.inkTextSecondary)
+                            }
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Author / Writer")
+                                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                .foregroundColor(.inkTextSecondary)
+                            TextField("Enter author name (e.g. Eiichiro Oda)", text: $viewModel.targetAuthor)
                                 .textFieldStyle(PlainTextFieldStyle())
-                                .font(.system(size: 15))
-                                .padding(12)
+                                .font(.system(size: 14))
+                                .padding(10)
                                 .background(Color.inkSurfaceRaised)
-                                .clipShape(RoundedRectangle(cornerRadius: 10))
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
                                 .overlay(
-                                    RoundedRectangle(cornerRadius: 10)
+                                    RoundedRectangle(cornerRadius: 8)
                                         .stroke(Color.inkBorderSubtle, lineWidth: 1)
                                 )
                                 .disabled(conversionManager.isConverting)
                             
-                            Text(".\(settingsManager.conversionSettings.outputFormat.rawValue)")
-                                .font(.system(size: 14, design: .monospaced))
-                                .foregroundColor(.inkTextSecondary)
-                                .padding(.horizontal, 8)
+                            // Smart Library Author Auto-Fill Suggestion Chips
+                            let knownAuthors: [String] = Array(Set(conversionManager.libraryFiles.compactMap { $0.metadata.author?.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty })).sorted()
+                            let filteredAuthors = viewModel.targetAuthor.isEmpty ? knownAuthors : knownAuthors.filter { $0.localizedCaseInsensitiveContains(viewModel.targetAuthor) && $0 != viewModel.targetAuthor }
+                            
+                            if !filteredAuthors.isEmpty {
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 6) {
+                                        Text("Library Authors:")
+                                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                            .foregroundColor(.inkTextSecondary)
+                                        
+                                        ForEach(Array(filteredAuthors.prefix(6)), id: \.self) { authorName in
+                                            Button {
+                                                HapticEngine.light()
+                                                viewModel.targetAuthor = authorName
+                                            } label: {
+                                                HStack(spacing: 4) {
+                                                    Image(systemName: "person.fill")
+                                                        .font(.system(size: 9))
+                                                    Text(authorName)
+                                                        .font(.system(size: 11, weight: .medium))
+                                                }
+                                                .padding(.horizontal, 8)
+                                                .padding(.vertical, 4)
+                                                .background(Color.inkBlue.opacity(0.12))
+                                                .foregroundColor(.inkBlue)
+                                                .cornerRadius(6)
+                                            }
+                                        }
+                                    }
+                                    .padding(.vertical, 2)
+                                }
+                            }
                         }
                     }
                 }
@@ -349,6 +401,18 @@ struct ConvertView: View {
                 derived = stripped
             }
             viewModel.targetFilename = derived
+            if let author = pdf.metadata.author, !author.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                viewModel.targetAuthor = author
+            } else {
+                let fileURL = pdf.url
+                Task.detached(priority: .userInitiated) {
+                    if let comicInfo = ComicInfoParser.parse(from: fileURL), let writer = comicInfo.writer, !writer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        await MainActor.run {
+                            viewModel.targetAuthor = writer
+                        }
+                    }
+                }
+            }
         }
         .sheet(isPresented: $viewModel.showingPreview) {
             PrecisionCanvasView(pdf: pdf, pageIndex: .constant(3), totalCount: pdf.pageCount, conversionManager: conversionManager)

@@ -39,13 +39,13 @@ struct PPLReaderView: View {
     @AppStorage("autoLandscapeDualPage")  private var autoLandscapeDualPage = true
     @AppStorage("autoSplitPortraitSpreads") private var autoSplitPortraitSpreads = true
     @AppStorage("tapZoneStyle")           private var tapZoneStyleRaw     = TapZoneStyle.classic.rawValue
-    @AppStorage("pageTurnStyle")          private var pageTurnStyleRaw    = PageTurnStyle.slide.rawValue
+    @AppStorage("pageTurnStyle")          private var pageTurnStyleRaw    = PageTurnStyle.flip3D.rawValue
     @AppStorage("showSpreadSeam")         private var showSpreadSeam      = true
     @AppStorage("isAutoCropEnabled")      private var isAutoCropEnabled   = false
     @AppStorage("isZoomLockEnabled")      private var isZoomLockEnabled   = false
 
     private var tapZoneStyle:  TapZoneStyle  { TapZoneStyle(rawValue: tapZoneStyleRaw)   ?? .classic }
-    private var pageTurnStyle: PageTurnStyle { PageTurnStyle(rawValue: pageTurnStyleRaw) ?? .slide   }
+    private var pageTurnStyle: PageTurnStyle { PageTurnStyle(rawValue: pageTurnStyleRaw) ?? .flip3D }
 
     // ── Spread splitting ──────────────────────────────────────────────────────
     @State private var splitHalf: Int = 0

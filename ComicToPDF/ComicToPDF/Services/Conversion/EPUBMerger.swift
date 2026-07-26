@@ -159,7 +159,8 @@ struct EPUBMerger: Sendable {
             manifestItems: manifestItems,
             spineItems: spineItems,
             isManga: settings.mangaMode,
-            firstPageHref: firstPageHref
+            firstPageHref: firstPageHref,
+            author: sourceMetadata?.writer ?? sourceMetadata?.author
         )
         try opfContent.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8)
         
@@ -264,7 +265,8 @@ struct EPUBMerger: Sendable {
                 manifestItems: mItems,
                 spineItems: sItems,
                 isManga: settings.mangaMode,
-                firstPageHref: firstPageHref
+                firstPageHref: firstPageHref,
+                author: sourceMetadata?.writer ?? sourceMetadata?.author
             )
             try opf.write(to: oebps.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8)
             

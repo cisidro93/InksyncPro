@@ -452,7 +452,7 @@ struct BookPager: View {
     var body: some View {
         switch readingMode {
         case .pageSlide:
-            slidePager
+            curlPager
         case .pageFade:
             fadePager
         default:
@@ -472,23 +472,6 @@ struct BookPager: View {
             onChromeTap: onChromeTap,
             onFlipPastEnd: onFlipPastEnd
         )
-    }
-
-    // ── Flat Slide (TabView / PageTabViewStyle) ────────────────────────
-    private var slidePager: some View {
-        return TabView(selection: $currentIndex) {
-            ForEach(0..<totalPages, id: \.self) { idx in
-                ComicPageView(
-                    index: idx,
-                    cache: cache
-                )
-                .applyFilterPreset(activeFilterPreset)
-                .tag(idx)
-                .onTapGesture { onChromeTap() }
-            }
-        }
-        .tabViewStyle(.page(indexDisplayMode: .never))
-        .ignoresSafeArea()
     }
 
     // ── Fade Crossfade ─────────────────────────────────────────────────

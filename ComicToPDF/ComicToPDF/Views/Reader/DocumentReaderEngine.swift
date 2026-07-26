@@ -766,7 +766,7 @@ struct PDFKitRepresentedView: UIViewRepresentable {
                         
                         if maxOffsetY > 0.5 && currentOffset > 1.0 {
                             let newOffset = max(currentOffset - (pageHeight - 40), 0.0)
-                            scrollView.setContentOffset(CGPoint(x: 0, y: newOffset), animated: true)
+                            scrollView.setContentOffset(CGPoint(x: 0, y: newOffset), animated: false)
                             HapticEngine.light()
                         } else {
                             if parent.currentPageIndex > 0 {
@@ -796,7 +796,7 @@ struct PDFKitRepresentedView: UIViewRepresentable {
                         
                         if maxOffsetY > 0.5 && currentOffset < maxOffsetY - 5.0 {
                             let newOffset = min(currentOffset + (pageHeight - 40), maxOffsetY)
-                            scrollView.setContentOffset(CGPoint(x: 0, y: newOffset), animated: true)
+                            scrollView.setContentOffset(CGPoint(x: 0, y: newOffset), animated: false)
                             HapticEngine.light()
                         } else {
                             if let doc = pv.document, parent.currentPageIndex < doc.pageCount - 1 {

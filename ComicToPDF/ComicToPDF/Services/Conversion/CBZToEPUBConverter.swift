@@ -470,9 +470,11 @@ struct CBZToEPUBConverter: Sendable {
         // For multi-batch: the badged cover written above is "cover-image".
         // Always provide coverMetaID so Kindle Cloud ingest preserves the spine structure for dual-page spreads.
         let coverMetaID: String? = (totalBatches > 1 && hasBadgedCover) ? "cover-image" : "img_1"
+        let authorName = (metadataInfo.writer?.isEmpty == false) ? metadataInfo.writer : metadataInfo.publisher
         let opfContent = EPUBManifestBuilder.buildOPFContent(
             bookUUID: bookUUID,
             baseFilename: baseFilename,
+            author: authorName,
             coverMetaID: coverMetaID,
             manifestItems: manifestItems,
             spineItems: spineItems,

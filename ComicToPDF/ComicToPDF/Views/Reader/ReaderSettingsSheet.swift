@@ -123,11 +123,11 @@ struct ReaderSettingsSheet: View {
 
 
     // MARK: - Page Turn Style
-    @AppStorage("pageTurnStyle") private var pageTurnStyleRaw = PageTurnStyle.slide.rawValue
+    @AppStorage("pageTurnStyle") private var pageTurnStyleRaw = PageTurnStyle.flip3D.rawValue
     @AppStorage("essentialReaderMode") private var essentialReaderMode = false
     @AppStorage("isHapticsEnabled") private var isHapticsEnabled = true
     @AppStorage("backTapEnabled") private var backTapEnabled = false
-    private var currentTurnStyle: PageTurnStyle { PageTurnStyle(rawValue: pageTurnStyleRaw) ?? .slide }
+    private var currentTurnStyle: PageTurnStyle { PageTurnStyle(rawValue: pageTurnStyleRaw) ?? .flip3D }
 
     @AppStorage("isZoomLockEnabled") private var isZoomLockEnabled = false
     @AppStorage("tapZoneStyle") private var tapZoneStyleRaw = TapZoneStyle.classic.rawValue

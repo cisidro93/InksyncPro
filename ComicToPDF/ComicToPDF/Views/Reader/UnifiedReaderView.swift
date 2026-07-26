@@ -88,7 +88,11 @@ struct UnifiedReaderView: View {
                     Color(hex: "#0a0a0f").edgesIgnoringSafeArea(.all)
                     
                     if pdf.url.pathExtension.lowercased() == "pdf" {
-                        DocumentReaderEngine(pdf: pdf, onDismiss: { dismiss() })
+                        if pdf.contentType == .book {
+                            DocumentReaderEngine(pdf: pdf, onDismiss: { dismiss() })
+                        } else {
+                            ComicReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
+                        }
                     } else if needsEPUBComicCheck {
                         ProgressView("Loading…")
                             .foregroundColor(.white)
@@ -100,11 +104,7 @@ struct UnifiedReaderView: View {
                                 BookReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
                             }
                         } else {
-                            if pdf.contentType == .book {
-                                BookReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
-                            } else {
-                                ComicReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
-                            }
+                            ComicReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
                         }
                     }
                 }
