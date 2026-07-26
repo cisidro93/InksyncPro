@@ -135,11 +135,21 @@ struct PageCurlReader: UIViewControllerRepresentable {
                 } else {
                     direction = isForward ? .forward : .reverse
                 }
-                uiViewController.setViewControllers([vc], direction: direction, animated: false, completion: nil)
+                uiViewController.setViewControllers([vc], direction: direction, animated: false) { _ in
+                    DispatchQueue.main.async {
+                        uiViewController.dataSource = nil
+                        uiViewController.dataSource = context.coordinator
+                    }
+                }
             }
         } else {
             let vc = context.coordinator.makeViewController(for: targetControllerIndex)
-            uiViewController.setViewControllers([vc], direction: .forward, animated: false, completion: nil)
+            uiViewController.setViewControllers([vc], direction: .forward, animated: false) { _ in
+                DispatchQueue.main.async {
+                    uiViewController.dataSource = nil
+                    uiViewController.dataSource = context.coordinator
+                }
+            }
         }
     }
 }

@@ -2885,9 +2885,12 @@ struct ComicPageView: View {
         }
         .id(index)
         .onAppear {
-            if image == nil {
-                image = cache.getImage(at: index)
-            }
+            image = cache.getImage(at: index)
+            updateDisplayImage()
+        }
+        .onChange(of: index) { _, newIndex in
+            image = cache.getImage(at: newIndex)
+            updateDisplayImage()
         }
         .onChange(of: image) { _, _ in
             updateDisplayImage()
@@ -2911,6 +2914,7 @@ struct ComicPageView: View {
                   let loadedIndex = userInfo["index"] as? Int,
                   loadedIndex == index else { return }
             image = cache.getImage(at: index)
+            updateDisplayImage()
         }
     }
 }
