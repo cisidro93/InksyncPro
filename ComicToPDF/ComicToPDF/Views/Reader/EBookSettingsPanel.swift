@@ -585,7 +585,7 @@ struct EBookSettingsPanel: View {
             }
 
             // Pagination
-            ReaderSettingsSection(title: "Pagination", icon: "book.pages") {
+            ReaderSettingsSection(title: "Pagination & Spreads", icon: "book.pages") {
                 HStack(spacing: 10) {
                     ForEach(EBookPaginationMode.allCases) { mode in
                         Button {
@@ -617,6 +617,31 @@ struct EBookSettingsPanel: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
+                
+                Divider().padding(.leading, 44)
+                
+                ReaderSettingsToggleRow(
+                    label: "Full-Screen Panoramic Spreads",
+                    icon: "arrow.up.left.and.down.right.and.arrow.up.right.and.down.left",
+                    isOn: $prefs.fullBleedSpreads
+                )
+                
+                Divider().padding(.leading, 44)
+                
+                ReaderSettingsToggleRow(
+                    label: "Show Clock & Status Header",
+                    icon: "clock",
+                    isOn: $prefs.showClockHeader
+                )
+                
+                if prefs.showClockHeader {
+                    Divider().padding(.leading, 44)
+                    ReaderSettingsToggleRow(
+                        label: "Show Battery Percentage",
+                        icon: "battery.100",
+                        isOn: $prefs.showBatteryPercentage
+                    )
+                }
             }
 
             // Reading Aids
