@@ -375,18 +375,6 @@ struct ConvertView: View {
                 }
             }
         )
-    }
-
-    private var filteredAuthors: [String] {
-        let rawList = conversionManager.libraryFiles.compactMap { $0.metadata.author?.trimmingCharacters(in: .whitespacesAndNewlines) }
-        let known = Array(Set(rawList.filter { !$0.isEmpty })).sorted()
-        let typed = viewModel.targetAuthor.trimmingCharacters(in: .whitespacesAndNewlines)
-        if typed.isEmpty {
-            return Array(known.prefix(6))
-        } else {
-            return Array(known.filter { $0.localizedCaseInsensitiveContains(typed) && $0 != typed }.prefix(6))
-        }
-    }
         .onAppear {
             if let explicitManga = pdf.metadata.isManga {
                 viewModel.isMangaMode = explicitManga
@@ -448,6 +436,17 @@ struct ConvertView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .inkTabGoToLibraryRoot)) { _ in
             dismiss()
+        }
+    }
+
+    private var filteredAuthors: [String] {
+        let rawList = conversionManager.libraryFiles.compactMap { $0.metadata.author?.trimmingCharacters(in: .whitespacesAndNewlines) }
+        let known = Array(Set(rawList.filter { !$0.isEmpty })).sorted()
+        let typed = viewModel.targetAuthor.trimmingCharacters(in: .whitespacesAndNewlines)
+        if typed.isEmpty {
+            return Array(known.prefix(6))
+        } else {
+            return Array(known.filter { $0.localizedCaseInsensitiveContains(typed) && $0 != typed }.prefix(6))
         }
     }
 }
