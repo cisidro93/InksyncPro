@@ -15,81 +15,7 @@ struct ConvertView: View {
             VStack(spacing: 16) {
 
                 // MARK: Output Metadata
-                InkCard(header: "Output Metadata") {
-                    VStack(alignment: .leading, spacing: 12) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Output Title")
-                                .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                                .foregroundColor(.inkTextSecondary)
-                            HStack(spacing: 8) {
-                                TextField("Enter filename", text: $viewModel.targetFilename)
-                                    .textFieldStyle(PlainTextFieldStyle())
-                                    .font(.system(size: 14))
-                                    .padding(10)
-                                    .background(Color.inkSurfaceRaised)
-                                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 8)
-                                            .stroke(Color.inkBorderSubtle, lineWidth: 1)
-                                    )
-                                    .disabled(conversionManager.isConverting)
-                                
-                                Text(".\(settingsManager.conversionSettings.outputFormat.rawValue)")
-                                    .font(.system(size: 13, design: .monospaced))
-                                    .foregroundColor(.inkTextSecondary)
-                            }
-                        }
-                        
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("Author / Writer")
-                                .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                                .foregroundColor(.inkTextSecondary)
-                            TextField("Enter author name (e.g. Eiichiro Oda)", text: $viewModel.targetAuthor)
-                                .textFieldStyle(PlainTextFieldStyle())
-                                .font(.system(size: 14))
-                                .padding(10)
-                                .background(Color.inkSurfaceRaised)
-                                .clipShape(RoundedRectangle(cornerRadius: 8))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .stroke(Color.inkBorderSubtle, lineWidth: 1)
-                                )
-                                .disabled(conversionManager.isConverting)
-                            
-                            // Smart Library Author Auto-Fill Suggestion Chips
-                            let authors = filteredAuthors(from: conversionManager.libraryFiles)
-                            if !authors.isEmpty {
-                                ScrollView(.horizontal, showsIndicators: false) {
-                                    HStack(spacing: 6) {
-                                        Text("Library Authors:")
-                                            .font(.system(size: 10, weight: .bold, design: .monospaced))
-                                            .foregroundColor(.inkTextSecondary)
-                                        
-                                        ForEach(authors, id: \.self) { authorName in
-                                            Button {
-                                                HapticEngine.light()
-                                                viewModel.targetAuthor = authorName
-                                            } label: {
-                                                HStack(spacing: 4) {
-                                                    Image(systemName: "person.fill")
-                                                        .font(.system(size: 9))
-                                                    Text(authorName)
-                                                        .font(.system(size: 11, weight: .medium))
-                                                }
-                                                .padding(.horizontal, 8)
-                                                .padding(.vertical, 4)
-                                                .background(Color.inkBlue.opacity(0.12))
-                                                .foregroundColor(.inkBlue)
-                                                .cornerRadius(6)
-                                            }
-                                        }
-                                    }
-                                    .padding(.vertical, 2)
-                                }
-                            }
-                        }
-                    }
-                }
+                outputMetadataSection
 
                 // MARK: Source Details
                 InkCard(header: "Source Details") {
@@ -437,6 +363,84 @@ struct ConvertView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .inkTabGoToLibraryRoot)) { _ in
             dismiss()
+        }
+    }
+
+    @ViewBuilder
+    private var outputMetadataSection: some View {
+        let authors = filteredAuthors(from: conversionManager.libraryFiles)
+        InkCard(header: "Output Metadata") {
+            VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Output Title")
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .foregroundColor(.inkTextSecondary)
+                    HStack(spacing: 8) {
+                        TextField("Enter filename", text: $viewModel.targetFilename)
+                            .textFieldStyle(PlainTextFieldStyle())
+                            .font(.system(size: 14))
+                            .padding(10)
+                            .background(Color.inkSurfaceRaised)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(Color.inkBorderSubtle, lineWidth: 1)
+                            )
+                            .disabled(conversionManager.isConverting)
+                        
+                        Text(".\(settingsManager.conversionSettings.outputFormat.rawValue)")
+                            .font(.system(size: 13, design: .monospaced))
+                            .foregroundColor(.inkTextSecondary)
+                    }
+                }
+                
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Author / Writer")
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .foregroundColor(.inkTextSecondary)
+                    TextField("Enter author name (e.g. Eiichiro Oda)", text: $viewModel.targetAuthor)
+                        .textFieldStyle(PlainTextFieldStyle())
+                        .font(.system(size: 14))
+                        .padding(10)
+                        .background(Color.inkSurfaceRaised)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(Color.inkBorderSubtle, lineWidth: 1)
+                        )
+                        .disabled(conversionManager.isConverting)
+                    
+                    if !authors.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 6) {
+                                Text("Library Authors:")
+                                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                    .foregroundColor(.inkTextSecondary)
+                                
+                                ForEach(authors, id: \.self) { authorName in
+                                    Button {
+                                        HapticEngine.light()
+                                        viewModel.targetAuthor = authorName
+                                    } label: {
+                                        HStack(spacing: 4) {
+                                            Image(systemName: "person.fill")
+                                                .font(.system(size: 9))
+                                            Text(authorName)
+                                                .font(.system(size: 11, weight: .medium))
+                                        }
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .background(Color.inkBlue.opacity(0.12))
+                                        .foregroundColor(.inkBlue)
+                                        .cornerRadius(6)
+                                    }
+                                }
+                            }
+                            .padding(.vertical, 2)
+                        }
+                    }
+                }
+            }
         }
     }
 
