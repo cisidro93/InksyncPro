@@ -1351,7 +1351,7 @@ struct PDFKitView: UIViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
     func makeUIView(context: Context) -> PDFView {
-        let pdfView = PDFHighlightableView()
+        let pdfView = PDFView()
         pdfView.autoScales = true
         pdfView.displayMode = isDoublePageMode ? .twoUp : .singlePage
         pdfView.displayDirection = isVerticalScroll ? .vertical : .horizontal
