@@ -15,7 +15,7 @@ struct ConvertView: View {
             VStack(spacing: 16) {
 
                 // MARK: Output Metadata
-                outputMetadataSection(libraryFiles: conversionManager.libraryFiles)
+                OutputMetadataSectionView(viewModel: viewModel)
 
                 // MARK: Source Details
                 InkCard(header: "Source Details") {
@@ -365,9 +365,20 @@ struct ConvertView: View {
         }
     }
 
-    @ViewBuilder
-    private func outputMetadataSection(libraryFiles: [ConvertedPDF]) -> some View {
-        let authors = filteredAuthors(from: libraryFiles)
+}
+
+// MARK: - Output Metadata Section Subview
+struct OutputMetadataSectionView: View {
+    @ObservedObject var viewModel: ConversionViewModel
+    @EnvironmentObject var conversionManager: ConversionManager
+    @EnvironmentObject var settingsManager: AppSettingsManager
+
+    var body: some View {
+        let rawList = conversionManager.libraryFiles.compactMap { $0.metadata.author?.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines) }
+        let known = Array(Set(rawList.filter { !$0.isEmpty })).sorted()
+        let typed = viewModel.targetAuthor.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+        let authors: [String] = typed.isEmpty ? Array(known.prefix(6)) : Array(known.filter { $0.localizedCaseInsensitiveContains(typed) && $0 != typed }.prefix(6))
+
         InkCard(header: "Output Metadata") {
             VStack(alignment: .leading, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
@@ -440,17 +451,6 @@ struct ConvertView: View {
                     }
                 }
             }
-        }
-    }
-
-    private func filteredAuthors(from files: [ConvertedPDF]) -> [String] {
-        let rawList = files.compactMap { $0.metadata.author?.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines) }
-        let known = Array(Set(rawList.filter { !$0.isEmpty })).sorted()
-        let typed = viewModel.targetAuthor.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
-        if typed.isEmpty {
-            return Array(known.prefix(6))
-        } else {
-            return Array(known.filter { $0.localizedCaseInsensitiveContains(typed) && $0 != typed }.prefix(6))
         }
     }
 }
