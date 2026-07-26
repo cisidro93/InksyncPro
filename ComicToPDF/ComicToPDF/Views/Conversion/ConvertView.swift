@@ -368,7 +368,7 @@ struct ConvertView: View {
 
     @ViewBuilder
     private var outputMetadataSection: some View {
-        let authors = filteredAuthors(from: conversionManager.libraryFiles)
+        let authors = filteredAuthors(from: conversionManager.wrappedValue.libraryFiles)
         InkCard(header: "Output Metadata") {
             VStack(alignment: .leading, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
