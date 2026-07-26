@@ -1727,9 +1727,6 @@ struct ComicReaderEngine: View {
                 cache.getImage(at: index)
             }
             if essentialReaderMode {
-                if readingMode == .pageHorizontal || readingMode == .mangaRTL {
-                    readingMode = .pageSlide
-                }
                 ambientPageColor = .clear
             }
             BackTapManager.shared.isEnabled = backTapEnabled
@@ -1767,11 +1764,6 @@ struct ComicReaderEngine: View {
         }
         .onChange(of: essentialReaderMode) { _, isSpeed in
             if isSpeed {
-                if readingMode == .pageHorizontal {
-                    readingMode = .pageSlide
-                } else if readingMode == .mangaRTL {
-                    readingMode = .pageSlide
-                }
                 ambientPageColor = .clear
             } else {
                 let isMangaComic = pdf.metadata.isManga == true || pdf.contentType == .manga
