@@ -1214,7 +1214,7 @@ struct ReaderView: View {
             if let mangaMode = saved.prefersMangaMode {
                 isMangaMode = mangaMode
             } else {
-                isMangaMode = (p.contentType == .manga)
+                isMangaMode = (p.contentType == .manga || p.metadata.isManga == true)
             }
             if let savedFilter = saved.colorFilter,
                let filter = ReadingFilter(rawValue: savedFilter) {
@@ -1222,7 +1222,7 @@ struct ReaderView: View {
             }
         } else {
             Logger.shared.log("restorePerBookPreferences: no saved progress for '\(fileURL.lastPathComponent)'", category: "ReaderView", type: .info)
-            isMangaMode = (p.contentType == .manga)
+            isMangaMode = (p.contentType == .manga || p.metadata.isManga == true)
         }
     }
     

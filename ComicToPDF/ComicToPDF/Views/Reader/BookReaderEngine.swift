@@ -1094,6 +1094,8 @@ struct BookReaderEngine: View {
         self._vm = StateObject(wrappedValue: BookReaderViewModel(pdf: pdf))
     }
     
+    var isMangaMode: Bool { pdf.metadata.isManga == true || pdf.contentType == .manga }
+
     private func computeColumnCount(for size: CGSize) -> Int {
         let renderWidth = size.width > 0 ? size.width : UIScreen.main.bounds.width
         let renderHeight = size.height > 0 ? size.height : UIScreen.main.bounds.height
@@ -1167,8 +1169,8 @@ struct BookReaderEngine: View {
                                 }
                             },
                             onCenterTap: { chromeVisible.toggle() },
-                            onLeftTap: { pageBackward() },
-                            onRightTap: { pageForward() },
+                            onLeftTap: { if isMangaMode { pageForward() } else { pageBackward() } },
+                            onRightTap: { if isMangaMode { pageBackward() } else { pageForward() } },
                             onNextChapter: {
                                 let lastIdx = vm.chapterHtmlFiles.count - 1
                                 if vm.currentChapterIndex >= lastIdx {
@@ -1388,11 +1390,11 @@ struct BookReaderEngine: View {
             Text("Enter a chapter number between 1 and \(vm.chapterHtmlFiles.count).")
         }
         .onKeyPress(.leftArrow) {
-            pageBackward()
+            if isMangaMode { pageForward() } else { pageBackward() }
             return .handled
         }
         .onKeyPress(.rightArrow) {
-            pageForward()
+            if isMangaMode { pageBackward() } else { pageForward() }
             return .handled
         }
         .onKeyPress(.space) {

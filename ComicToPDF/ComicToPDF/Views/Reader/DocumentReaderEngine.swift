@@ -504,6 +504,7 @@ struct PDFKitRepresentedView: UIViewRepresentable {
         pdfView.displayMode = expectedDisplayMode
         pdfView.displaysAsBook = !dualPageMode
         
+        pdfView.displaysRTL = prefs.pdfRTL || pdf.metadata.isManga == true || pdf.contentType == .manga
         if isPaged && !fitToWidth {
             pdfView.displayDirection = .horizontal
             pdfView.displaysAsBook = true
@@ -668,6 +669,7 @@ struct PDFKitRepresentedView: UIViewRepresentable {
                     pdfView.usePageViewController(false)
                     pdfView.displayDirection = .vertical
                 }
+                pdfView.displaysRTL = prefs.pdfRTL || pdf.metadata.isManga == true || pdf.contentType == .manga
                 pdfView.autoScales = true
                 pdfView.layoutDocumentView()
             }
@@ -749,7 +751,7 @@ struct PDFKitRepresentedView: UIViewRepresentable {
             let width = gesture.view?.bounds.width ?? 0
             
             let zones = EBookPreferences.shared.tapZoneStyle.zones
-            let isRTL = EBookPreferences.shared.pdfRTL
+            let isRTL = EBookPreferences.shared.pdfRTL || parent.pdf.metadata.isManga == true || parent.pdf.contentType == .manga
             
             let tappedLeft = location.x < width * zones.leftEdge
             let tappedRight = location.x > width * zones.rightEdge
