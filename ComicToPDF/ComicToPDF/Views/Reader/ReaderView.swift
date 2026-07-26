@@ -1353,10 +1353,13 @@ struct PDFKitView: UIViewRepresentable {
     func makeUIView(context: Context) -> PDFView {
         let pdfView = PDFHighlightableView()
         pdfView.autoScales = true
-        // 🚨 PANEL PARITY: True Dual Spread Engine
-        pdfView.displayMode = isDoublePageMode ? .twoUpContinuous : .singlePage
+        pdfView.displayMode = isDoublePageMode ? .twoUp : .singlePage
         pdfView.displayDirection = isVerticalScroll ? .vertical : .horizontal
         pdfView.displaysPageBreaks = false
+        if !isVerticalScroll {
+            let spineLoc: UIPageViewController.SpineLocation = isDoublePageMode ? .mid : .min
+            pdfView.usePageViewController(true, withViewOptions: [.spineLocation: NSNumber(value: spineLoc.rawValue)])
+        }
 
         let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
         tap.delegate = context.coordinator

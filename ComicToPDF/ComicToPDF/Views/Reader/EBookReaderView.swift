@@ -165,11 +165,6 @@ struct EBookReaderView: View {
                             // on every chapter change, guaranteeing the transition fires.
                             .id(currentIndex)
                             .transition(
-                                prefs.pageTurnStyle == .slide ?
-                                .asymmetric(
-                                    insertion: .push(from: isGoingForward ? .trailing : .leading),
-                                    removal:   .push(from: isGoingForward ? .leading  : .trailing)
-                                ) :
                                 .asymmetric(
                                     insertion: .modifier(
                                         active: PageCurl3DEffect(angle: isGoingForward ? 90 : -90, axis: (x: 0, y: 1, z: 0), anchor: isGoingForward ? .trailing : .leading),
