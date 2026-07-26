@@ -440,9 +440,10 @@ struct ConvertView: View {
     }
 
     private var filteredAuthors: [String] {
-        let rawList = conversionManager.libraryFiles.compactMap { $0.metadata.author?.trimmingCharacters(in: .whitespacesAndNewlines) }
+        let files = conversionManager.libraryFiles
+        let rawList = files.compactMap { $0.metadata.author?.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines) }
         let known = Array(Set(rawList.filter { !$0.isEmpty })).sorted()
-        let typed = viewModel.targetAuthor.trimmingCharacters(in: .whitespacesAndNewlines)
+        let typed = viewModel.targetAuthor.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
         if typed.isEmpty {
             return Array(known.prefix(6))
         } else {

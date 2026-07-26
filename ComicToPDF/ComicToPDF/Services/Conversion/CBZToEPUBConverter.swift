@@ -391,7 +391,7 @@ struct CBZToEPUBConverter: Sendable {
                     }
                 }
                 if w > 0 && h > 0 {
-                    if w > h * 1.1 {
+                    if Double(w) > Double(h) * 1.1 {
                         isLandscapeImage = true
                         hasAnyLandscapeSpreads = true
                         imgW = 2640
