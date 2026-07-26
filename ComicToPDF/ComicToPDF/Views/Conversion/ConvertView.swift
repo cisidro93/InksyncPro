@@ -374,7 +374,7 @@ struct OutputMetadataSectionView: View {
     @EnvironmentObject var settingsManager: AppSettingsManager
 
     var body: some View {
-        let rawList = conversionManager.libraryFiles.compactMap { $0.metadata.author?.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines) }
+        let rawList = conversionManager.convertedPDFs.compactMap { $0.metadata.author?.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines) }
         let known = Array(Set(rawList.filter { !$0.isEmpty })).sorted()
         let typed = viewModel.targetAuthor.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
         let authors: [String] = typed.isEmpty ? Array(known.prefix(6)) : Array(known.filter { $0.localizedCaseInsensitiveContains(typed) && $0 != typed }.prefix(6))
