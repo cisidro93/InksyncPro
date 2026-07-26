@@ -1192,7 +1192,20 @@ struct BookReaderEngine: View {
                             if prefs.paginationMode == EBookPaginationMode.paged.rawValue && computeColumnCount(for: geo.size) == 2 {
                                 BookSpineCreaseOverlay()
                             }
-                        }
+                        .id(vm.currentChapterIndex)
+                        .transition(
+                            .asymmetric(
+                                insertion: .modifier(
+                                    active: PageCurl3DEffect(angle: isMangaMode ? -90 : 90, axis: (x: 0, y: 1, z: 0), anchor: isMangaMode ? .leading : .trailing),
+                                    identity: PageCurl3DEffect(angle: 0, axis: (x: 0, y: 1, z: 0), anchor: isMangaMode ? .leading : .trailing)
+                                ),
+                                removal: .modifier(
+                                    active: PageCurl3DEffect(angle: isMangaMode ? 90 : -90, axis: (x: 0, y: 1, z: 0), anchor: isMangaMode ? .trailing : .leading),
+                                    identity: PageCurl3DEffect(angle: 0, axis: (x: 0, y: 1, z: 0), anchor: isMangaMode ? .trailing : .leading)
+                                )
+                            )
+                        )
+                        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: vm.currentChapterIndex)
                         .readingFilter(prefs.readingFilter)
                         
                         // Edge Brightness Gesture Zones
