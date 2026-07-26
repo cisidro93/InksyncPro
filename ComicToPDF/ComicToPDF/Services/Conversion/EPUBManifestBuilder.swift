@@ -82,15 +82,11 @@ public struct EPUBManifestBuilder {
         manifestItems: [String],
         spineItems: [String],
         isManga: Bool,
-        firstPageHref: String = "text/page_0001.xhtml"
+        firstPageHref: String = "text/page_0001.xhtml",
+        hasLandscapeSpreads: Bool = false
     ) -> String {
         let modified = ISO8601DateFormatter().string(from: Date())
         let direction = isManga ? "rtl" : "ltr"
-        // Kindle Scribe Colorsoft native B&W resolution: 1980x2640 (300ppi, portrait).
-        // The original-resolution meta is required by Amazon's KF8 fixed-layout spec so
-        // Kindle can pre-scale images to native pixels rather than stretching from an
-        // unknown source size. Without it renders are blurry on high-DPI screens.
-        let originalResolution = "1980x2640"
         
         let coverMetaTag: String
         if let cid = coverMetaID {
@@ -99,8 +95,10 @@ public struct EPUBManifestBuilder {
             coverMetaTag = ""
         }
         
-        // dc:language is fixed to "en" — see buildCoverXHTML comment. The reading
-        // direction (RTL for manga) is set on the spine's page-progression-direction.
+        // For mixed-orientation books with landscape double-page spreads, omitting fixed original-resolution
+        // allows Kindle Cloud to respect per-page viewport metadata and scale spreads across 100% of the screen.
+        let resolutionMeta = hasLandscapeSpreads ? "" : "\n                <meta name=\"original-resolution\" content=\"1980x2640\"/>"
+        
         return """
         <?xml version="1.0" encoding="UTF-8"?>
         <package xmlns="http://www.idpf.org/2007/opf" xmlns:epub="http://www.idpf.org/2007/ops" unique-identifier="BookID" version="3.0" prefix="rendition: http://www.idpf.org/vocab/rendition/# dcterms: http://purl.org/dc/terms/">
@@ -114,10 +112,11 @@ public struct EPUBManifestBuilder {
                 <meta property="rendition:layout">pre-paginated</meta>
                 <meta property="rendition:orientation">auto</meta>
                 <meta property="rendition:spread">auto</meta>
-                <meta name="fixed-layout" content="true"/>
-                <meta name="original-resolution" content="\(originalResolution)"/>\(coverMetaTag)
+                <meta name="fixed-layout" content="true"/>\(resolutionMeta)\(coverMetaTag)
                 <meta name="cdetype" content="pdoc"/>
                 <meta name="amzn:kindle:book-type" content="image-based"/>
+                <meta name="show-system-controls" content="true"/>
+                <meta name="amzn-top-status-bar" content="show"/>
                 <meta name="zero-gutter" content="true"/>
                 <meta name="zero-margin" content="true"/>
                 <meta name="ke-border-color" content="#000000"/>
@@ -139,28 +138,14 @@ public struct EPUBManifestBuilder {
     }
 
     public static func buildChunkXHTML(chunkIndex: Int, images: [String], title: String, bookUUID: String? = nil, pageIndex: Int? = nil, isManga: Bool = false, pageWidth: Int = 1980, pageHeight: Int = 2640) -> String {
-        let imageElements = images.enumerated().map { _, imageName in
+        let svgElements = images.enumerated().map { _, imageName in
             """
-                    <div class="page">
-                        <img src="../images/\(imageName)" class="page-image" alt=""/>
-                    </div>
+                    <svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="100%" height="100%" viewBox="0 0 \(pageWidth) \(pageHeight)" preserveAspectRatio="xMidYMid meet">
+                        <image width="\(pageWidth)" height="\(pageHeight)" href="../images/\(imageName)"/>
+                    </svg>
             """
         }.joined(separator: "\n")
 
-        // NOTE: The tracking pixel (http://LOCAL_IP:8080/page_sync?...) has been removed.
-        // Amazon's Send to Kindle scanner rejects EPUBs containing embedded remote HTTP
-        // requests, producing error E999. Reading-position sync is handled entirely
-        // in-app via the PPLReaderView page-turn callback chain.
-
-        // CSS rules use only the Kindle-approved fixed-layout subset:
-        // • NO position:fixed (rejected by Kindle fixed-layout as incompatible element → E013)
-        // • NO overflow:hidden on body (not in Kindle CSS subset)
-        // • NO @media amzn-kf8 (proprietary at-rules rejected by Send
-        //   to Kindle cloud converter's XML validator → E013)
-        // • NO @page { size: } (CSS Paged Media L3, rejected by Amazon's cloud validator)
-        // • NO object-fit/object-position (not in Kindle CSS subset → E013)
-        // Page sizing is controlled entirely by the viewport meta + rendition:layout OPF meta.
-        // lang is intentionally fixed to "en" regardless of manga mode — see buildCoverXHTML comment.
         return """
         <?xml version="1.0" encoding="UTF-8"?>
         <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="en" xml:lang="en">
@@ -171,15 +156,14 @@ public struct EPUBManifestBuilder {
             <link rel="stylesheet" type="text/css" href="../css/comic.css"/>
             <style type="text/css">
                 @page { margin: 0; padding: 0; }
-                html, body { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #000000; }
+                html, body { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #000000; overflow: hidden; }
                 .chunk-container { width: 100%; height: 100%; margin: 0; padding: 0; }
-                .page { width: 100%; height: 100%; margin: 0; padding: 0; }
-                .page-image { display: block; width: 100%; height: 100%; }
+                svg { width: 100%; height: 100%; display: block; margin: 0; padding: 0; }
             </style>
         </head>
         <body>
             <div class="chunk-container">
-        \(imageElements)
+        \(svgElements)
             </div>
         </body>
         </html>

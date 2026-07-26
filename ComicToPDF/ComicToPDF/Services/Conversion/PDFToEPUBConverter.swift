@@ -451,7 +451,8 @@ final class PDFToEPUBConverter: Sendable {
                 
                 <!-- Strict Fixed-Layout Flags -->
                 <meta name="fixed-layout" content="true"/>
-                <meta name="original-resolution" content="1000x1500"/>
+                <meta name="show-system-controls" content="true"/>
+                <meta name="amzn-top-status-bar" content="show"/>
                 <meta name="orientation-lock" content="none"/>
                 <meta name="book-type" content="comic"/>
                 <meta name="cdetype" content="pdoc"/>

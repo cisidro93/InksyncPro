@@ -342,6 +342,7 @@ struct CBZToEPUBConverter: Sendable {
         
         var currentChunkImages: [String] = []
         var chunkIndex = 0
+        var hasAnyLandscapeSpreads = false
         
         // Multi-batch: cover.xhtml occupies spine slot 1, so content pages start at 2.
         // Single-volume: img_1 IS page 1, content pages start at 1.
@@ -379,21 +380,20 @@ struct CBZToEPUBConverter: Sendable {
             var imgW = 1980
             var imgH = 2640
             var isLandscapeImage = false
-            if let source = CGImageSourceCreateWithURL(destURL as CFURL, nil),
-               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
-               let wVal = properties[kCGImagePropertyPixelWidth] as? NSNumber,
-               let hVal = properties[kCGImagePropertyPixelHeight] as? NSNumber {
-                var w = CGFloat(wVal.doubleValue)
-                var h = CGFloat(hVal.doubleValue)
-                if let orientationNum = properties[kCGImagePropertyOrientation] as? NSNumber {
-                    let rawOrientation = orientationNum.intValue
-                    if rawOrientation == 5 || rawOrientation == 6 || rawOrientation == 7 || rawOrientation == 8 {
+            
+            if let imageSource = CGImageSourceCreateWithURL(destURL as CFURL, nil),
+               let properties = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil) as? [CFString: Any] {
+                var w = (properties[kCGImagePropertyPixelWidth] as? Int) ?? 1980
+                var h = (properties[kCGImagePropertyPixelHeight] as? Int) ?? 2640
+                if let orientation = properties[kCGImagePropertyOrientation] as? UInt32 {
+                    if orientation == 5 || orientation == 6 || orientation == 7 || orientation == 8 {
                         swap(&w, &h)
                     }
                 }
                 if w > 0 && h > 0 {
                     if w > h * 1.1 {
                         isLandscapeImage = true
+                        hasAnyLandscapeSpreads = true
                         imgW = 2640
                         imgH = 1980
                     }
@@ -419,7 +419,7 @@ struct CBZToEPUBConverter: Sendable {
             // Universally Apply Advanced Landscape Spread Tagging (RTL vs LTR)
             let spreadTag: String
             if isLandscapeImage {
-                spreadTag = " properties=\"rendition:page-spread-center\""
+                spreadTag = " properties=\"rendition:page-spread-center page-spread-center\""
             } else if settings.linkCoverAsSpread {
                 if isManga {
                     // RTL Manga Sequence: Cover (page 1) is Right, Page 2 is Left, Page 3 is Right
@@ -477,7 +477,8 @@ struct CBZToEPUBConverter: Sendable {
             manifestItems: manifestItems,
             spineItems: spineItems,
             isManga: settings.mangaMode,
-            firstPageHref: firstPageHref
+            firstPageHref: firstPageHref,
+            hasLandscapeSpreads: hasAnyLandscapeSpreads
         )
         try opfContent.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8)
 
