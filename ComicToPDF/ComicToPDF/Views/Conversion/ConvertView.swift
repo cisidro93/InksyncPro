@@ -57,14 +57,15 @@ struct ConvertView: View {
                                 .disabled(conversionManager.isConverting)
                             
                             // Smart Library Author Auto-Fill Suggestion Chips
-                            if !filteredAuthors.isEmpty {
+                            let authors = filteredAuthors(from: conversionManager.libraryFiles)
+                            if !authors.isEmpty {
                                 ScrollView(.horizontal, showsIndicators: false) {
                                     HStack(spacing: 6) {
                                         Text("Library Authors:")
                                             .font(.system(size: 10, weight: .bold, design: .monospaced))
                                             .foregroundColor(.inkTextSecondary)
                                         
-                                        ForEach(filteredAuthors, id: \.self) { authorName in
+                                        ForEach(authors, id: \.self) { authorName in
                                             Button {
                                                 HapticEngine.light()
                                                 viewModel.targetAuthor = authorName
@@ -439,8 +440,7 @@ struct ConvertView: View {
         }
     }
 
-    private var filteredAuthors: [String] {
-        let files = conversionManager.libraryFiles
+    private func filteredAuthors(from files: [ConvertedPDF]) -> [String] {
         let rawList = files.compactMap { $0.metadata.author?.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines) }
         let known = Array(Set(rawList.filter { !$0.isEmpty })).sorted()
         let typed = viewModel.targetAuthor.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
