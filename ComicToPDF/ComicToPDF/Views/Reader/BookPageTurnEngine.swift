@@ -467,7 +467,7 @@ struct BookPager: View {
             totalPages: totalPages,
             cache: cache,
             isTwoUp: false,
-            isMangaRTL: readingMode == .mangaRTL,
+            isMangaRTL: isMangaRTL || readingMode == .mangaRTL,
             activeFilterPreset: activeFilterPreset,
             onChromeTap: onChromeTap,
             onFlipPastEnd: onFlipPastEnd
@@ -477,6 +477,7 @@ struct BookPager: View {
     // ── Fade Crossfade ─────────────────────────────────────────────────
     @ViewBuilder
     private var fadePager: some View {
+        let isRTL = isMangaRTL || readingMode == .mangaRTL
         ZStack {
             ComicPageView(
                 index: currentIndex,
@@ -492,15 +493,15 @@ struct BookPager: View {
         .gesture(
             DragGesture(minimumDistance: 30)
                 .onEnded { val in
-                    if val.translation.width < -30 {
-                        // Swiping finger leftward -> Next page
+                    let isNextSwipe = isRTL ? (val.translation.width > 30) : (val.translation.width < -30)
+                    let isPrevSwipe = isRTL ? (val.translation.width < -30) : (val.translation.width > 30)
+                    if isNextSwipe {
                         if currentIndex < totalPages - 1 {
                             withAnimation(.easeInOut(duration: 0.28)) { currentIndex += 1 }
                         } else {
                             onFlipPastEnd?()
                         }
-                    } else if val.translation.width > 30 {
-                        // Swiping finger rightward -> Previous page
+                    } else if isPrevSwipe {
                         if currentIndex > 0 {
                             withAnimation(.easeInOut(duration: 0.28)) { currentIndex -= 1 }
                         }

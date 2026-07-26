@@ -1664,13 +1664,13 @@ struct ComicReaderEngine: View {
             KeyCommandHandler { command in
                 let input = command.input
                 if input == UIKeyCommand.inputLeftArrow {
-                    if readingMode == .mangaRTL {
+                    if isMangaComic || readingMode == .mangaRTL {
                         nextPage()
                     } else {
                         prevPage()
                     }
                 } else if input == UIKeyCommand.inputRightArrow {
-                    if readingMode == .mangaRTL {
+                    if isMangaComic || readingMode == .mangaRTL {
                         prevPage()
                     } else {
                         nextPage()
@@ -1861,7 +1861,7 @@ struct ComicReaderEngine: View {
             Text("Enter a page number between 1 and \(cache.pageCount).")
         }
         .onKeyPress(.leftArrow) {
-            if readingMode == .mangaRTL {
+            if isMangaComic || readingMode == .mangaRTL {
                 nextPage()
             } else {
                 prevPage()
@@ -1869,7 +1869,7 @@ struct ComicReaderEngine: View {
             return .handled
         }
         .onKeyPress(.rightArrow) {
-            if readingMode == .mangaRTL {
+            if isMangaComic || readingMode == .mangaRTL {
                 prevPage()
             } else {
                 nextPage()
@@ -1897,7 +1897,7 @@ struct ComicReaderEngine: View {
                     panels: panelsForPage,
                     masterIndex: $currentIndex,
                     totalPages: cache.pageCount,
-                    isMangaMode: readingMode == .mangaRTL,
+                    isMangaMode: isMangaComic || readingMode == .mangaRTL,
                     onTapChrome: { chromeVisible.toggle() }
                 )
                 .applyFilterPreset(activeFilterPreset)
@@ -1944,7 +1944,7 @@ struct ComicReaderEngine: View {
             currentIndex: $currentIndex,
             cache: cache,
             activeFilterPreset: activeFilterPreset,
-            isMangaRTL: readingMode == .mangaRTL || pdf.metadata.isManga == true,
+            isMangaRTL: isMangaComic || readingMode == .mangaRTL,
             onChromeTap: { chromeVisible.toggle() },
             onFlipPastEnd: { attemptComicSeriesContinuation() }
         )
@@ -2186,7 +2186,7 @@ struct ComicReaderEngine: View {
                     currentIndex: $currentIndex,
                     totalPages: cache.pageCount,
                     cache: cache,
-                    isMangaMode: readingMode == .mangaRTL
+                    isMangaMode: isMangaComic || readingMode == .mangaRTL
                 )
             ),
             onJumpToPage: {
@@ -2278,7 +2278,7 @@ struct ComicReaderEngine: View {
         progress.currentPageIndex = currentIndex
         progress.lastOpenedAt = Date()
         progress.completionFraction = Double(currentIndex + 1) / Double(cache.pageCount)
-        progress.prefersMangaMode = (readingMode == .mangaRTL)
+        progress.prefersMangaMode = isMangaComic || (readingMode == .mangaRTL)
         progress.colorFilter = activeFilterPreset.rawValue
         progress.lastCanonicalLeadIndex = currentIndex
         progress.wasInDualPageMode = prefersTwoUpSpreads
