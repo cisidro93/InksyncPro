@@ -1461,17 +1461,22 @@ struct ComicReaderEngine: View {
     }
     
     func shouldShowTwoUpSpread(for size: CGSize) -> Bool {
-        guard prefersTwoUpSpreads else { return false }
-        // Spread layouts are page-based only (not webtoon vertical scroll, nor panel navigation)
+        let isLandscape = size.width > size.height
+        let pdfDual = EBookPreferences.shared.pdfDualPage || (EBookPreferences.shared.autoLandscapeDualPage && isLandscape)
+        let isDual = prefersTwoUpSpreads || pdfDual
+        guard isDual else { return false }
         guard readingMode == .pageHorizontal || readingMode == .mangaRTL || readingMode == .pageSlide || readingMode == .pageFade else { return false }
-        return size.width > size.height
+        return isLandscape
     }
 
     private var isCurrentlyTwoUp: Bool {
-        guard prefersTwoUpSpreads else { return false }
-        guard readingMode == .pageHorizontal || readingMode == .mangaRTL || readingMode == .pageSlide || readingMode == .pageFade else { return false }
         if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
-            return windowScene.interfaceOrientation.isLandscape
+            let isLandscape = windowScene.interfaceOrientation.isLandscape
+            let pdfDual = EBookPreferences.shared.pdfDualPage || (EBookPreferences.shared.autoLandscapeDualPage && isLandscape)
+            let isDual = prefersTwoUpSpreads || pdfDual
+            guard isDual else { return false }
+            guard readingMode == .pageHorizontal || readingMode == .mangaRTL || readingMode == .pageSlide || readingMode == .pageFade else { return false }
+            return isLandscape
         }
         return false
     }
@@ -2775,10 +2780,10 @@ struct ComicPageView: View {
 
                         Image(uiImage: img)
                             .resizable()
-                            .frame(width: rendered.width, height: rendered.height)
+                            .aspectRatio(contentMode: .fit)
+                            .frame(maxWidth: geo.size.width, maxHeight: geo.size.height)
                             .scaleEffect(currentScale)
                             .offset(offset)
-                            .position(x: geo.size.width / 2, y: geo.size.height / 2)
                             .gesture(
                                 MagnificationGesture()
                                     .onChanged { val in
