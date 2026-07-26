@@ -1190,12 +1190,12 @@ struct BookReaderEngine: View {
                             .transition(
                                 .asymmetric(
                                     insertion: .modifier(
-                                        active: PageCurl3DEffect(angle: isMangaMode ? -90 : 90, axis: (x: 0, y: 1, z: 0), anchor: isMangaMode ? .leading : .trailing),
-                                        identity: PageCurl3DEffect(angle: 0, axis: (x: 0, y: 1, z: 0), anchor: isMangaMode ? .leading : .trailing)
+                                        active: PageCurl3DEffect(angle: isMangaMode ? -90 : 90, axis: (x: 0.0, y: 1.0, z: 0.0), anchor: isMangaMode ? .leading : .trailing),
+                                        identity: PageCurl3DEffect(angle: 0, axis: (x: 0.0, y: 1.0, z: 0.0), anchor: isMangaMode ? .leading : .trailing)
                                     ),
                                     removal: .modifier(
-                                        active: PageCurl3DEffect(angle: isMangaMode ? 90 : -90, axis: (x: 0, y: 1, z: 0), anchor: isMangaMode ? .trailing : .leading),
-                                        identity: PageCurl3DEffect(angle: 0, axis: (x: 0, y: 1, z: 0), anchor: isMangaMode ? .trailing : .leading)
+                                        active: PageCurl3DEffect(angle: isMangaMode ? 90 : -90, axis: (x: 0.0, y: 1.0, z: 0.0), anchor: isMangaMode ? .trailing : .leading),
+                                        identity: PageCurl3DEffect(angle: 0, axis: (x: 0.0, y: 1.0, z: 0.0), anchor: isMangaMode ? .trailing : .leading)
                                     )
                                 )
                             )
