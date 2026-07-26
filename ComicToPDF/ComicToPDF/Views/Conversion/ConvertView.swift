@@ -15,7 +15,7 @@ struct ConvertView: View {
             VStack(spacing: 16) {
 
                 // MARK: Output Metadata
-                outputMetadataSection
+                outputMetadataSection(libraryFiles: conversionManager.libraryFiles)
 
                 // MARK: Source Details
                 InkCard(header: "Source Details") {
@@ -367,8 +367,8 @@ struct ConvertView: View {
     }
 
     @ViewBuilder
-    private var outputMetadataSection: some View {
-        let authors = filteredAuthors(from: conversionManager.wrappedValue.libraryFiles)
+    private func outputMetadataSection(libraryFiles: [ConvertedPDF]) -> some View {
+        let authors = filteredAuthors(from: libraryFiles)
         InkCard(header: "Output Metadata") {
             VStack(alignment: .leading, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
