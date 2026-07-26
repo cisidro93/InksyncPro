@@ -1690,39 +1690,3 @@ extension Array {
         indices.contains(index) ? self[index] : nil
     }
 }
-
-// MARK: - 3D Authentic Page Curl Effect for EPUB Books
-struct PageCurl3DEffect: ViewModifier {
-    let angle: Double
-    let axis: (x: CGFloat, y: CGFloat, z: CGFloat)
-    let anchor: UnitPoint
-
-    func body(content: Content) -> some View {
-        let progress = abs(angle) / 90.0
-        let isTrailingAnchor = (anchor == .trailing || anchor == .topTrailing || anchor == .bottomTrailing)
-        let curlOffset = isTrailingAnchor ? -progress * 20.0 : progress * 20.0
-        
-        content
-            .rotation3DEffect(
-                .degrees(angle),
-                axis: axis,
-                anchor: anchor,
-                anchorZ: 0,
-                perspective: 0.35
-            )
-            .offset(x: curlOffset)
-            .overlay(
-                LinearGradient(
-                    colors: [
-                        Color.black.opacity(0.40 * progress),
-                        Color.black.opacity(0.12 * progress),
-                        Color.clear
-                    ],
-                    startPoint: isTrailingAnchor ? .trailing : .leading,
-                    endPoint: isTrailingAnchor ? .leading : .trailing
-                )
-                .allowsHitTesting(false)
-            )
-            .shadow(color: .black.opacity(0.4 * progress), radius: 10, x: isTrailingAnchor ? -6 : 6, y: 2)
-    }
-}
