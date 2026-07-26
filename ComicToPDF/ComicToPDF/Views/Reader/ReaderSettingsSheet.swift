@@ -135,7 +135,7 @@ struct ReaderSettingsSheet: View {
     private var pageTurnSection: some View {
         SettingsSection(title: "Page Turn Style", icon: "hand.draw") {
             HStack(spacing: 12) {
-                ForEach(PageTurnStyle.allCases, id: \.self) { style in
+                ForEach(PageTurnStyle.displayCases, id: \.self) { style in
                     PageTurnStyleCard(style: style, isSelected: currentTurnStyle == style) {
                         UserDefaults.standard.set(style.rawValue, forKey: "pageTurnStyle")
                     }

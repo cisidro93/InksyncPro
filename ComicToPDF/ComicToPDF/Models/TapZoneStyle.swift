@@ -42,23 +42,25 @@ enum TapZoneStyle: String, CaseIterable, Codable {
 
 /// Page turn visual style for the Metal comic reader.
 enum PageTurnStyle: String, CaseIterable, Codable {
-    case slide    = "slide"    // Default: live swipe peel reveals next/prev behind current
     case flip3D   = "flip3D"   // 3-D book-page curl using rotation3DEffect
     case instant  = "instant"  // No animation (accessibility / performance mode)
+    case slide    = "slide"    // Legacy alias mapped to stationary 3D curl
+
+    static var displayCases: [PageTurnStyle] {
+        [.flip3D, .instant]
+    }
 
     var label: String {
         switch self {
-        case .slide:   return "Slide"
-        case .flip3D:  return "Book Flip (3D)"
-        case .instant: return "Instant"
+        case .flip3D, .slide: return "Book Flip (3D)"
+        case .instant:        return "Instant"
         }
     }
 
     var icon: String {
         switch self {
-        case .slide:   return "arrow.left.arrow.right"
-        case .flip3D:  return "book"
-        case .instant: return "bolt.fill"
+        case .flip3D, .slide: return "book"
+        case .instant:        return "bolt.fill"
         }
     }
 }

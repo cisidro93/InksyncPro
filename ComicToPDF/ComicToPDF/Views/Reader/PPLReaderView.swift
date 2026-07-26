@@ -402,26 +402,24 @@ struct PPLReaderView: View {
         isCommittingSwipe = true
 
         if triggerNext && currentPageIndex < pages.count - 1 {
-            let targetX: CGFloat = pageTurnStyle == .flip3D ? 0 : -w
             withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) {
-                swipeDragX = targetX
+                swipeDragX = 0
             }
             Task { @MainActor in
-                try? await Task.sleep(nanoseconds: pageTurnStyle == .flip3D ? 200_000_000 : 160_000_000)
+                try? await Task.sleep(nanoseconds: 200_000_000)
                 nextPage(geo: geo.size, targetDual: showingDual)
-                swipeDragX = pageTurnStyle == .flip3D ? 0 : w * 0.15
+                swipeDragX = 0
                 withAnimation(.spring(response: 0.22, dampingFraction: 0.9)) { swipeDragX = 0 }
                 isCommittingSwipe = false
             }
         } else if triggerPrev && currentPageIndex > 0 {
-            let targetX: CGFloat = pageTurnStyle == .flip3D ? 0 : w
             withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) {
-                swipeDragX = targetX
+                swipeDragX = 0
             }
             Task { @MainActor in
                 try? await Task.sleep(nanoseconds: 160_000_000)
                 prevPage(geo: geo.size, targetDual: showingDual)
-                swipeDragX = -w * 0.15
+                swipeDragX = 0
                 withAnimation(.spring(response: 0.22, dampingFraction: 0.9)) { swipeDragX = 0 }
                 isCommittingSwipe = false
             }
