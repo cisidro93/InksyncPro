@@ -57,9 +57,6 @@ struct ConvertView: View {
                                 .disabled(conversionManager.isConverting)
                             
                             // Smart Library Author Auto-Fill Suggestion Chips
-                            let knownAuthors: [String] = Array(Set(conversionManager.libraryFiles.compactMap { $0.metadata.author?.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty })).sorted()
-                            let filteredAuthors = viewModel.targetAuthor.isEmpty ? knownAuthors : knownAuthors.filter { $0.localizedCaseInsensitiveContains(viewModel.targetAuthor) && $0 != viewModel.targetAuthor }
-                            
                             if !filteredAuthors.isEmpty {
                                 ScrollView(.horizontal, showsIndicators: false) {
                                     HStack(spacing: 6) {
@@ -67,7 +64,7 @@ struct ConvertView: View {
                                             .font(.system(size: 10, weight: .bold, design: .monospaced))
                                             .foregroundColor(.inkTextSecondary)
                                         
-                                        ForEach(Array(filteredAuthors.prefix(6)), id: \.self) { authorName in
+                                        ForEach(filteredAuthors, id: \.self) { authorName in
                                             Button {
                                                 HapticEngine.light()
                                                 viewModel.targetAuthor = authorName
@@ -368,7 +365,6 @@ struct ConvertView: View {
             .padding(.top, 8)
         }
         .background(Color.clear.ignoresSafeArea())
-        // ✅ #7: Show the actual filename, not a generic title
         .navigationTitle(pdf.name)
         .navigationBarTitleDisplayMode(.inline)
         .overlay(
@@ -379,6 +375,18 @@ struct ConvertView: View {
                 }
             }
         )
+    }
+
+    private var filteredAuthors: [String] {
+        let rawList = conversionManager.libraryFiles.compactMap { $0.metadata.author?.trimmingCharacters(in: .whitespacesAndNewlines) }
+        let known = Array(Set(rawList.filter { !$0.isEmpty })).sorted()
+        let typed = viewModel.targetAuthor.trimmingCharacters(in: .whitespacesAndNewlines)
+        if typed.isEmpty {
+            return Array(known.prefix(6))
+        } else {
+            return Array(known.filter { $0.localizedCaseInsensitiveContains(typed) && $0 != typed }.prefix(6))
+        }
+    }
         .onAppear {
             if let explicitManga = pdf.metadata.isManga {
                 viewModel.isMangaMode = explicitManga

@@ -266,7 +266,7 @@ struct EPUBMerger: Sendable {
                 spineItems: sItems,
                 isManga: settings.mangaMode,
                 firstPageHref: firstPageHref,
-                author: sourceMetadata?.writer ?? sourceMetadata?.author
+                author: nil
             )
             try opf.write(to: oebps.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8)
             
