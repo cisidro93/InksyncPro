@@ -7,6 +7,7 @@ struct ConvertView: View {
     @EnvironmentObject var conversionManager: ConversionManager
     @EnvironmentObject var settingsManager: AppSettingsManager
     @StateObject private var viewModel = ConversionViewModel()
+    @State private var showingQualityPreviewModal = false
     let pdf: ConvertedPDF
 
     var body: some View {
@@ -130,6 +131,22 @@ struct ConvertView: View {
                             }
                             .padding(10)
                             .background(Color.inkSurfaceRaised.opacity(0.5))
+                            .cornerRadius(8)
+                        }
+                        
+                        Button {
+                            HapticEngine.medium()
+                            showingQualityPreviewModal = true
+                        } label: {
+                            HStack {
+                                Image(systemName: "eye.trianglebadge.exclamationmark")
+                                Text("Live Quality & Compression Preview")
+                                    .font(.system(size: 13, weight: .semibold))
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                            .background(Color.inkBlue.opacity(0.12))
+                            .foregroundColor(.inkBlue)
                             .cornerRadius(8)
                         }
                     }
@@ -338,6 +355,15 @@ struct ConvertView: View {
         }
         .sheet(isPresented: $viewModel.showingCalibreGuide) {
             CalibreGuideView()
+        }
+        .sheet(isPresented: $showingQualityPreviewModal) {
+            QualityPreviewModalView(
+                settings: $settingsManager.conversionSettings,
+                sampleImage: UIImage(contentsOfFile: pdf.url.path),
+                fileTitle: pdf.name,
+                totalPageCount: pdf.pageCount,
+                totalInputSizeBytes: pdf.fileSize
+            )
         }
         .onChange(of: conversionManager.isConverting) { oldValue, newValue in
             if oldValue == true && newValue == false {
