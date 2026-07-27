@@ -61,10 +61,9 @@ struct ProPDFReaderEngine: View {
                     // PencilKit Ink Bearing Canvas Layer
                     if isPencilMode {
                         PageCanvasOverlay(
-                            pageID: "\(pdf.id.uuidString)_page_\(currentPageIndex)",
                             pdfID: pdf.id,
                             pageIndex: currentPageIndex,
-                            isVisible: isPencilMode
+                            isMarkupEnabled: isPencilMode
                         )
                         .ignoresSafeArea()
                     }
@@ -431,21 +430,19 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
             self.parent = parent
         }
 
-        @objc func handleTap(_ gesture: UITapGestureRecognizer) {
+        @MainActor @objc func handleTap(_ gesture: UITapGestureRecognizer) {
             parent.onTapCenter()
         }
 
-        @objc func pageChanged(_ notification: Notification) {
+        @MainActor @objc func pageChanged(_ notification: Notification) {
             guard let pdfView = notification.object as? PDFView,
                   let page = pdfView.currentPage,
                   let doc = pdfView.document else { return }
             let idx = doc.index(for: page)
-            DispatchQueue.main.async {
-                self.parent.currentPageIndex = idx
-            }
+            self.parent.currentPageIndex = idx
         }
 
-        @objc func selectionChanged(_ notification: Notification) {
+        @MainActor @objc func selectionChanged(_ notification: Notification) {
             guard let pdfView = notification.object as? PDFView else { return }
             if let selection = pdfView.currentSelection, let text = selection.string, !text.isEmpty {
                 parent.onTextSelectionChanged(text)
