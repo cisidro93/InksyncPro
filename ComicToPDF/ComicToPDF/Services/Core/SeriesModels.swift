@@ -45,6 +45,9 @@ struct SeriesGroup: Identifiable, Hashable {
     var issues: [ConvertedPDF] // Mutable to support drag-and-drop
     var readCount: Int
     var newCount: Int
+    var isEmpty: Bool {
+        count == 0 || issues.isEmpty
+    }
 
     init(id: String, title: String, coverIssueID: UUID? = nil, count: Int, issues: [ConvertedPDF], readCount: Int = 0, newCount: Int = 0) {
         self.id = id
