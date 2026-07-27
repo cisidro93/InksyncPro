@@ -1183,9 +1183,9 @@ struct BookReaderEngine: View {
                             onPrevChapter: {
                                 scrollToLastPageOnLoad = true
                                 vm.loadChapter(index: max(0, vm.currentChapterIndex - 1))
-                            },
-                            })
-                            .ignoresSafeArea()
+                            }
+                        )
+                        .ignoresSafeArea()
                             .id(vm.currentChapterIndex)
                             .transition(
                                 .asymmetric(
