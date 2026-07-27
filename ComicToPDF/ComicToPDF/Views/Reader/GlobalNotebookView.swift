@@ -44,6 +44,7 @@ struct GlobalNotebookView: View {
     enum Tab: String, CaseIterable, Identifiable {
         case notebooks = "Notebooks"
         case highlights = "Highlights"
+        case vocabulary = "Vocabulary"
         
         var id: String { rawValue }
         
@@ -51,6 +52,7 @@ struct GlobalNotebookView: View {
             switch self {
             case .notebooks: return "note.text"
             case .highlights: return "highlighter"
+            case .vocabulary: return "character.book.closed"
             }
         }
     }
@@ -224,8 +226,10 @@ struct GlobalNotebookView: View {
                             }
                         }
                     }
-                } else {
+                } else if activeTab == .highlights {
                     GlobalZettelkastenHubView(activeTab: $activeTab)
+                } else {
+                    VocabularyNotebookHubView()
                 }
             }
         }
@@ -2114,5 +2118,200 @@ struct EditNotebookSheet: View {
             .padding(.horizontal, 4)
             .padding(.vertical, 6)
         }
+    }
+}
+
+// ============================================================
+// MARK: - Vocabulary Builder Notebook Hub View
+// ============================================================
+struct VocabularyNotebookHubView: View {
+    @Environment(\.modelContext) private var modelContext
+    @Query(sort: \SDVocabularyWord.dateAdded, order: .reverse) private var vocabularyWords: [SDVocabularyWord]
+    
+    @State private var searchQuery = ""
+    @State private var selectedFilter: VocabularyFilter = .all
+    
+    enum VocabularyFilter: String, CaseIterable, Identifiable {
+        case all = "All Words"
+        case favorites = "Favorites"
+        case learning = "Learning (<5 ★)"
+        case mastered = "Mastered (5 ★)"
+        
+        var id: String { rawValue }
+    }
+    
+    private var filteredWords: [SDVocabularyWord] {
+        vocabularyWords.filter { item in
+            if !searchQuery.isEmpty {
+                let matchesWord = item.word.localizedCaseInsensitiveContains(searchQuery)
+                let matchesContext = item.contextSentence.localizedCaseInsensitiveContains(searchQuery)
+                let matchesBook = item.bookTitle.localizedCaseInsensitiveContains(searchQuery)
+                if !matchesWord && !matchesContext && !matchesBook { return false }
+            }
+            switch selectedFilter {
+            case .all:
+                return true
+            case .favorites:
+                return item.isFavorite
+            case .learning:
+                return item.masteryLevel < 5
+            case .mastered:
+                return item.masteryLevel >= 5
+            }
+        }
+    }
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            // Filter Bar
+            HStack(spacing: 12) {
+                HStack {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundColor(.inkTextSecondary)
+                    TextField("Search vocabulary...", text: $searchQuery)
+                        .font(.system(size: 14, design: .rounded))
+                    if !searchQuery.isEmpty {
+                        Button(action: { searchQuery = "" }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.inkTextSecondary)
+                        }
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(Color.inkSecondaryBackground)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                
+                Picker("Filter", selection: $selectedFilter) {
+                    ForEach(VocabularyFilter.allCases) { filter in
+                        Text(filter.rawValue).tag(filter)
+                    }
+                }
+                .pickerStyle(.menu)
+                .tint(.orange)
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 12)
+            
+            if filteredWords.isEmpty {
+                VStack(spacing: 16) {
+                    Image(systemName: "character.book.closed.fill")
+                        .font(.system(size: 48))
+                        .foregroundStyle(LinearGradient(colors: [.orange, .amber], startPoint: .topLeading, endPoint: .bottomTrailing))
+                    Text("No Vocabulary Words Found")
+                        .font(.system(size: 18, weight: .bold, design: .rounded))
+                        .foregroundColor(.inkTextPrimary)
+                    Text("Look up words while reading EPUBs or PDFs to automatically build your personal vocabulary dictionary!")
+                        .font(.system(size: 13, design: .rounded))
+                        .foregroundColor(.inkTextSecondary)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 360)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(.bottom, 100)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 16) {
+                        ForEach(filteredWords) { word in
+                            VocabularyWordCard(word: word)
+                        }
+                    }
+                    .padding(.horizontal, 24)
+                    .padding(.top, 12)
+                    .padding(.bottom, 120)
+                }
+            }
+        }
+    }
+}
+
+struct VocabularyWordCard: View {
+    @Environment(\.modelContext) private var modelContext
+    let word: SDVocabularyWord
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text(word.word)
+                    .font(.system(size: 20, weight: .bold, design: .rounded))
+                    .foregroundColor(.inkTextPrimary)
+                
+                Spacer()
+                
+                Button(action: {
+                    HapticEngine.light()
+                    word.isFavorite.toggle()
+                    try? modelContext.save()
+                }) {
+                    Image(systemName: word.isFavorite ? "heart.fill" : "heart")
+                        .foregroundColor(word.isFavorite ? .pink : .inkTextSecondary)
+                }
+                
+                Button(action: {
+                    HapticEngine.light()
+                    DictionaryLookupService.shared.presentSystemDictionary(for: word.word)
+                }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "book.fill")
+                        Text("Define")
+                    }
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(Color.orange.opacity(0.15))
+                    .foregroundColor(.orange)
+                    .clipShape(Capsule())
+                }
+            }
+            
+            HStack(spacing: 6) {
+                Image(systemName: "book.closed")
+                    .font(.system(size: 11))
+                Text(word.bookTitle)
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+            }
+            .foregroundColor(.inkTextSecondary)
+            
+            if !word.contextSentence.isEmpty {
+                Text("\"\(word.contextSentence)\"")
+                    .font(.system(size: 13, weight: .regular, design: .serif))
+                    .italic()
+                    .foregroundColor(.inkTextSecondary)
+                    .padding(.vertical, 2)
+            }
+            
+            HStack {
+                Text("Mastery:")
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundColor(.inkTextSecondary)
+                
+                HStack(spacing: 4) {
+                    ForEach(1...5, id: \.self) { star in
+                        Image(systemName: star <= word.masteryLevel ? "star.fill" : "star")
+                            .font(.system(size: 12))
+                            .foregroundColor(star <= word.masteryLevel ? .amber : .inkTextSecondary.opacity(0.4))
+                            .onTapGesture {
+                                HapticEngine.light()
+                                word.masteryLevel = star
+                                try? modelContext.save()
+                            }
+                    }
+                }
+                
+                Spacer()
+                
+                Text(word.dateAdded.formatted(date: .abbreviated, time: .omitted))
+                    .font(.system(size: 11, design: .rounded))
+                    .foregroundColor(.inkTextSecondary.opacity(0.7))
+            }
+        }
+        .padding(16)
+        .background(Color.inkSecondaryBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(Color.inkDivider.opacity(0.4), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.04), radius: 6, x: 0, y: 3)
     }
 }

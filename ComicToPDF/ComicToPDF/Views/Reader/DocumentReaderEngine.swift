@@ -436,7 +436,7 @@ class HighlightablePDFView: PDFView {
     }
     
     override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
-        if action == #selector(customHighlightAction(_:)) { return true }
+        if action == #selector(customHighlightAction(_:)) || action == #selector(customLookupAction(_:)) { return true }
         let allowed = ["copy:", "share:", "_lookup:", "_define:"]
         if allowed.contains(NSStringFromSelector(action)) { return true }
         return super.canPerformAction(action, withSender: sender)
@@ -456,10 +456,21 @@ class HighlightablePDFView: PDFView {
         onHighlightCreated?(text, bounds)
     }
     
+    @objc func customLookupAction(_ sender: Any?) {
+        guard let selection = self.currentSelection, let text = selection.string, !text.isEmpty else { return }
+        let docTitle = self.document?.documentAttributes?[PDFDocumentAttribute.titleAttribute] as? String ?? "PDF Document"
+        DictionaryLookupService.shared.lookupAndSave(
+            term: text,
+            contextSentence: text,
+            bookTitle: docTitle
+        )
+    }
+    
     override func buildMenu(with builder: UIMenuBuilder) {
         super.buildMenu(with: builder)
         let highlightCommand = UICommand(title: "Highlight", action: #selector(customHighlightAction(_:)))
-        let highlightMenu = UIMenu(title: "Inksync", options: .displayInline, children: [highlightCommand])
+        let lookupCommand = UICommand(title: "Look Up 📖", action: #selector(customLookupAction(_:)))
+        let highlightMenu = UIMenu(title: "Inksync", options: .displayInline, children: [highlightCommand, lookupCommand])
         builder.insertSibling(highlightMenu, afterMenu: .standardEdit)
     }
 }
