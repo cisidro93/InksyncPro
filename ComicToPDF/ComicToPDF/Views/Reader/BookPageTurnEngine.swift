@@ -116,6 +116,14 @@ struct PageCurlReader: UIViewControllerRepresentable {
             targetControllerIndex = targetIndex
         }
         
+        // ✅ GUARANTEE: If a page turn gesture just completed to targetControllerIndex, do NOT re-trigger setViewControllers!
+        if let lastCompleted = context.coordinator.lastCompletedControllerIndex {
+            context.coordinator.lastCompletedControllerIndex = nil
+            if lastCompleted == targetControllerIndex {
+                return
+            }
+        }
+        
         if let currentVC = uiViewController.viewControllers?.first as? PageContentViewController {
             let spreadsChanged: Bool
             if isTwoUp {
@@ -150,7 +158,8 @@ extension PageCurlReader {
         var parent: PageCurlReader
         weak var pageViewController: UIPageViewController?
         var isTransitioning: Bool = false
-        
+        var lastCompletedControllerIndex: Int? = nil
+
         init(_ parent: PageCurlReader) {
             self.parent = parent
             super.init()
@@ -223,6 +232,7 @@ extension PageCurlReader {
             }
             
             let newControllerIndex = currentVC.index
+            lastCompletedControllerIndex = newControllerIndex
             
             if self.parent.isTwoUp {
                 let spreads = self.parent.computeSpreads()
