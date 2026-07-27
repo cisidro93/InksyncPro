@@ -530,6 +530,301 @@ struct BookPager: View {
 }
 
 // ============================================================
+// MARK: - Smart Mid-Spine 3D Physical Page Curl Engine
+// ============================================================
+struct SmartMidSpineCurlReader: UIViewControllerRepresentable {
+    @Binding var currentIndex: Int
+    let totalPages: Int
+    let cache: ComicImageCache
+    let isMangaRTL: Bool
+    let activeFilterPreset: ReadingFilterPreset
+    var onChromeTap: () -> Void
+    var onFlipPastEnd: (() -> Void)? = nil
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    func makeUIViewController(context: Context) -> UIPageViewController {
+        let pageViewController = UIPageViewController(
+            transitionStyle: .pageCurl,
+            navigationOrientation: .horizontal,
+            options: [.spineLocation: UIPageViewController.SpineLocation.mid.rawValue]
+        )
+        pageViewController.isDoubleSided = true
+        pageViewController.dataSource = context.coordinator
+        pageViewController.delegate = context.coordinator
+
+        for gesture in pageViewController.gestureRecognizers {
+            if gesture is UITapGestureRecognizer {
+                gesture.isEnabled = false
+            }
+        }
+
+        let view = pageViewController.view!
+        
+        let doubleTap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleDoubleTap(_:)))
+        doubleTap.numberOfTapsRequired = 2
+        doubleTap.cancelsTouchesInView = false
+        view.addGestureRecognizer(doubleTap)
+
+        let singleTap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleSingleTap(_:)))
+        singleTap.numberOfTapsRequired = 1
+        singleTap.require(toFail: doubleTap)
+        view.addGestureRecognizer(singleTap)
+
+        context.coordinator.pageViewController = pageViewController
+        
+        let initialSpread = context.coordinator.spreadViewControllers(for: currentIndex)
+        pageViewController.setViewControllers(initialSpread, direction: .forward, animated: false)
+        return pageViewController
+    }
+
+    func updateUIViewController(_ uiViewController: UIPageViewController, context: Context) {
+        context.coordinator.parent = self
+        
+        if context.coordinator.isTransitioning {
+            return
+        }
+        
+        if let lastCompleted = context.coordinator.lastCompletedIndex, lastCompleted == currentIndex {
+            context.coordinator.lastCompletedIndex = nil
+            return
+        }
+        
+        if let currentVCs = uiViewController.viewControllers,
+           let firstLeaf = currentVCs.first as? SingleLeafViewController {
+            let displayedPage = firstLeaf.pageIndex < 0 ? 0 : firstLeaf.pageIndex
+            if displayedPage == currentIndex {
+                return
+            }
+        }
+        
+        let targetSpread = context.coordinator.spreadViewControllers(for: currentIndex)
+        uiViewController.setViewControllers(targetSpread, direction: .forward, animated: false)
+    }
+}
+
+extension SmartMidSpineCurlReader {
+    @MainActor
+    class Coordinator: NSObject, UIPageViewControllerDataSource, UIPageViewControllerDelegate {
+        var parent: SmartMidSpineCurlReader
+        weak var pageViewController: UIPageViewController?
+        var isTransitioning: Bool = false
+        var lastCompletedIndex: Int? = nil
+
+        init(_ parent: SmartMidSpineCurlReader) {
+            self.parent = parent
+            super.init()
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(handleZoomStateChanged(_:)),
+                name: .readerZoomStateChanged,
+                object: nil
+            )
+        }
+
+        deinit {
+            NotificationCenter.default.removeObserver(self)
+        }
+
+        func spreadViewControllers(for pageIndex: Int) -> [UIViewController] {
+            let isCover = (pageIndex == 0)
+            if isCover {
+                let coverVC = SingleLeafViewController(pageIndex: 0, parent: parent)
+                let blankVC = SingleLeafViewController(pageIndex: -1, parent: parent)
+                return parent.isMangaRTL ? [coverVC, blankVC] : [blankVC, coverVC]
+            } else {
+                let leftIdx = (pageIndex % 2 == 0) ? (pageIndex - 1) : pageIndex
+                let rightIdx = leftIdx + 1
+                
+                let leftVC = SingleLeafViewController(pageIndex: leftIdx, parent: parent)
+                let rightVC = (rightIdx < parent.totalPages)
+                    ? SingleLeafViewController(pageIndex: rightIdx, parent: parent)
+                    : SingleLeafViewController(pageIndex: -1, parent: parent)
+                
+                return parent.isMangaRTL ? [rightVC, leftVC] : [leftVC, rightVC]
+            }
+        }
+
+        // MARK: - UIPageViewControllerDataSource
+
+        func pageViewController(
+            _ pageViewController: UIPageViewController,
+            viewControllerBefore viewController: UIViewController
+        ) -> UIViewController? {
+            guard let leafVC = viewController as? SingleLeafViewController else { return nil }
+            let currentLeafIndex = leafVC.pageIndex
+            let targetIndex: Int = parent.isMangaRTL ? (currentLeafIndex + 1) : (currentLeafIndex - 1)
+            guard targetIndex >= -1 && targetIndex < parent.totalPages else { return nil }
+            return SingleLeafViewController(pageIndex: targetIndex, parent: parent)
+        }
+
+        func pageViewController(
+            _ pageViewController: UIPageViewController,
+            viewControllerAfter viewController: UIViewController
+        ) -> UIViewController? {
+            guard let leafVC = viewController as? SingleLeafViewController else { return nil }
+            let currentLeafIndex = leafVC.pageIndex
+            let targetIndex: Int = parent.isMangaRTL ? (currentLeafIndex - 1) : (currentLeafIndex + 1)
+            guard targetIndex >= -1 && targetIndex < parent.totalPages else { return nil }
+            return SingleLeafViewController(pageIndex: targetIndex, parent: parent)
+        }
+
+        // MARK: - UIPageViewControllerDelegate
+
+        func pageViewController(
+            _ pageViewController: UIPageViewController,
+            willTransitionTo pendingViewControllers: [UIViewController]
+        ) {
+            isTransitioning = true
+        }
+
+        func pageViewController(
+            _ pageViewController: UIPageViewController,
+            didFinishAnimating finished: Bool,
+            previousViewControllers: [UIViewController],
+            transitionCompleted completed: Bool
+        ) {
+            isTransitioning = false
+            guard completed,
+                  let visibleVCs = pageViewController.viewControllers,
+                  let firstLeaf = visibleVCs.first as? SingleLeafViewController else {
+                return
+            }
+            let newIndex = firstLeaf.pageIndex < 0 ? 0 : firstLeaf.pageIndex
+            lastCompletedIndex = newIndex
+            if parent.currentIndex != newIndex {
+                parent.currentIndex = newIndex
+            }
+        }
+
+        func pageViewController(
+            _ pageViewController: UIPageViewController,
+            spineLocationFor orientation: UIInterfaceOrientation
+        ) -> UIPageViewController.SpineLocation {
+            pageViewController.isDoubleSided = true
+            return .mid
+        }
+
+        // MARK: - Gesture Handlers
+
+        @objc func handleDoubleTap(_ gesture: UITapGestureRecognizer) {
+            // Cooperative gesture helper
+        }
+
+        private var tapZoneStyle: TapZoneStyle {
+            TapZoneStyle(rawValue: UserDefaults.standard.string(forKey: "tapZoneStyle") ?? "") ?? .classic
+        }
+
+        @objc func handleSingleTap(_ gesture: UITapGestureRecognizer) {
+            guard let view = gesture.view, let pvc = pageViewController else { return }
+            let location = gesture.location(in: view)
+            let width = view.bounds.width
+            let zones = tapZoneStyle.zones
+
+            if location.x < width * zones.leftEdge {
+                if parent.isMangaRTL { turnForward(pvc) } else { turnBackward(pvc) }
+            } else if location.x > width * zones.rightEdge {
+                if parent.isMangaRTL { turnBackward(pvc) } else { turnForward(pvc) }
+            } else {
+                parent.onChromeTap()
+            }
+        }
+
+        private func turnForward(_ pvc: UIPageViewController) {
+            let nextIndex = min(parent.totalPages - 1, parent.currentIndex + 2)
+            if nextIndex != parent.currentIndex {
+                let targetSpread = spreadViewControllers(for: nextIndex)
+                HapticEngine.light()
+                let direction: UIPageViewController.NavigationDirection = parent.isMangaRTL ? .reverse : .forward
+                pvc.setViewControllers(targetSpread, direction: direction, animated: true) { [weak self] completed in
+                    if completed {
+                        DispatchQueue.main.async {
+                            self?.parent.currentIndex = nextIndex
+                        }
+                    }
+                }
+            } else {
+                parent.onFlipPastEnd?()
+            }
+        }
+
+        private func turnBackward(_ pvc: UIPageViewController) {
+            let prevIndex = max(0, parent.currentIndex - 2)
+            if prevIndex != parent.currentIndex {
+                let targetSpread = spreadViewControllers(for: prevIndex)
+                HapticEngine.light()
+                let direction: UIPageViewController.NavigationDirection = parent.isMangaRTL ? .forward : .reverse
+                pvc.setViewControllers(targetSpread, direction: direction, animated: true) { [weak self] completed in
+                    if completed {
+                        DispatchQueue.main.async {
+                            self?.parent.currentIndex = prevIndex
+                        }
+                    }
+                }
+            }
+        }
+
+        @objc func handleZoomStateChanged(_ notification: Notification) {
+            guard let isZoomed = notification.userInfo?["isZoomed"] as? Bool else { return }
+            guard let pvc = self.pageViewController else { return }
+            for gesture in pvc.gestureRecognizers {
+                if gesture is UIPanGestureRecognizer {
+                    gesture.isEnabled = !isZoomed
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Single Leaf VC
+@MainActor
+class SingleLeafViewController: UIViewController {
+    let pageIndex: Int
+    
+    init(pageIndex: Int, parent: SmartMidSpineCurlReader) {
+        self.pageIndex = pageIndex
+        super.init(nibName: nil, bundle: nil)
+        
+        view.backgroundColor = .black
+        
+        let leafContent: AnyView
+        if pageIndex >= 0 && pageIndex < parent.totalPages {
+            leafContent = AnyView(
+                TwoUpPageCell(
+                    index: pageIndex,
+                    cache: parent.cache,
+                    activeFilterPreset: parent.activeFilterPreset,
+                    alignment: .center
+                )
+                .background(Color.black)
+                .ignoresSafeArea()
+            )
+        } else {
+            leafContent = AnyView(Color.black.ignoresSafeArea())
+        }
+        
+        let hostingController = UIHostingController(rootView: leafContent)
+        hostingController.view.backgroundColor = .black
+        addChild(hostingController)
+        view.addSubview(hostingController.view)
+        hostingController.view.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            hostingController.view.topAnchor.constraint(equalTo: view.topAnchor),
+            hostingController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            hostingController.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            hostingController.view.trailingAnchor.constraint(equalTo: view.trailingAnchor)
+        ])
+        hostingController.didMove(toParent: self)
+    }
+    
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+}
+
+// ============================================================
 // MARK: - Two-Up Spread Pager
 // ============================================================
 struct TwoUpBookPager: View {
@@ -541,11 +836,10 @@ struct TwoUpBookPager: View {
     var onFlipPastEnd: (() -> Void)? = nil
 
     var body: some View {
-        PageCurlReader(
+        SmartMidSpineCurlReader(
             currentIndex: $currentIndex,
             totalPages: cache.pageCount,
             cache: cache,
-            isTwoUp: true,
             isMangaRTL: isMangaRTL,
             activeFilterPreset: activeFilterPreset,
             onChromeTap: onChromeTap,
