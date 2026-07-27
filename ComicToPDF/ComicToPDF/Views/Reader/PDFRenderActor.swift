@@ -57,9 +57,9 @@ actor PDFRenderActor {
             return nil
         }
         
-        // Cap max pixel dimension at 2048 to prevent memory spikes
+// Cap max pixel dimension at 3072 for ultra-sharp Retina/iPad Pro rendering
         var size = CGSize(width: pageRect.width * scale, height: pageRect.height * scale)
-        let maxDim: CGFloat = 2048.0
+        let maxDim: CGFloat = 3072.0
         if size.width > maxDim || size.height > maxDim {
             let aspect = size.width / size.height
             if aspect > 1.0 {
@@ -77,6 +77,14 @@ actor PDFRenderActor {
             let renderer = UIGraphicsImageRenderer(size: size)
             return renderer.image { ctx in
                 let cgCtx = ctx.cgContext
+                
+                // Ultra-sharp vector typography & subpixel anti-aliasing configuration
+                cgCtx.setShouldAntialias(true)
+                cgCtx.setAllowsAntialiasing(true)
+                cgCtx.setShouldSmoothFonts(true)
+                cgCtx.setAllowsFontSmoothing(true)
+                cgCtx.interpolationQuality = .high
+                
                 cgCtx.setFillColor(CGColor(gray: 1.0, alpha: 1.0))
                 cgCtx.fill(CGRect(origin: .zero, size: size))
                 cgCtx.translateBy(x: 0, y: size.height)
