@@ -122,6 +122,7 @@ class LibraryViewModel: ObservableObject {
         return components.joined(separator: " ")
     }
 
+    // swiftlint:disable function_parameter_count
     static nonisolated func rebuildCacheInBackground(
         pdfs: [ConvertedPDF],
         collections: [PDFCollection],

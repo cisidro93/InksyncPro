@@ -606,7 +606,7 @@ struct ModernGridSeriesCell: View {
 
                     Spacer()
 
-                    if group.readCount > 0 || group.count > 0 {
+                    if group.readCount > 0 || !group.isEmpty {
                         SeriesProgressRing(
                             readCount: group.readCount,
                             totalCount: group.count

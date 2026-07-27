@@ -100,7 +100,7 @@ struct NeuralWaveformView: View {
             return 1.0 / 120.0
         }
     }
-
+    // swiftlint:disable function_parameter_count
     private func drawWave(
         in gc: inout GraphicsContext,
         size: CGSize,

@@ -90,7 +90,7 @@ final class CloudStreamCoordinator: ObservableObject {
         do {
             let manifest = try await ZipCentralDirectory.fetch(from: url, authHeader: authHeader)
 
-            guard manifest.pageEntries.count > 0 else {
+            guard !manifest.pageEntries.isEmpty else {
                 Logger.shared.log("CloudStreamCoordinator: No pages in '\(pdf.name)' — falling back", category: "Cloud", type: .error)
                 return try await prepareGenericFallback(pdf: pdf)
             }

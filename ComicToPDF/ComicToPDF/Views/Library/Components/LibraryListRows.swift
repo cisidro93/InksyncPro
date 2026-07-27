@@ -269,7 +269,7 @@ struct ModernSeriesRow: View {
                         .foregroundColor(Theme.text)
                         .lineLimit(1)
                     
-                    if group.count > 0 {
+                    if !group.isEmpty {
                         let readCount = group.issues.filter {
                             (ReaderProgressTracker.shared.progress(for: $0.id)?.completionFraction ?? 0.0) >= 0.95
                         }.count

@@ -56,6 +56,7 @@ private struct ShelfTab: View {
                     .foregroundColor(isSelected ? .white : Theme.text)
 
                 // Count badge — only when there's content and not "All"
+                // swiftlint:disable:next empty_count
                 if shelf != .all && count > 0 {
                     Text("\(count)")
                         .font(.system(size: 11, weight: .bold, design: .rounded))

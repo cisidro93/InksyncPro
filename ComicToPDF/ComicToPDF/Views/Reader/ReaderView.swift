@@ -1484,7 +1484,7 @@ struct PDFKitView: UIViewRepresentable {
             
             // Fallback: 2x Zoom on Tap Center
             UIView.animate(withDuration: 0.3) {
-                pdfView.scaleFactor = pdfView.scaleFactor * 2.0
+                pdfView.scaleFactor *= 2.0
                 pdfView.go(to: CGRect(x: pagePoint.x, y: pagePoint.y, width: 1, height: 1), on: currentPage)
             }
         }

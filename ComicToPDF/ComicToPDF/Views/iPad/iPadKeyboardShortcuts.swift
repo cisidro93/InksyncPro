@@ -1,5 +1,6 @@
 import SwiftUI
 
+// swiftlint:disable type_name
 struct iPadKeyboardShortcuts: ViewModifier {
     @Binding var selectedTab: Int
     @Binding var showImport: Bool
