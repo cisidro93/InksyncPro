@@ -139,7 +139,7 @@ struct PageCurlReader: UIViewControllerRepresentable {
             }
             
             if currentVC.index != targetControllerIndex || currentVC.isTwoUp != isTwoUp || currentVC.activeFilterPreset != activeFilterPreset || spreadsChanged {
-                let vc = context.coordinator.makeViewController(for: targetControllerIndex)
+                let vcs = context.coordinator.makeViewControllers(for: targetControllerIndex)
                 let isForward = targetControllerIndex >= currentVC.index
                 let direction: UIPageViewController.NavigationDirection
                 if isMangaRTL {
@@ -147,11 +147,11 @@ struct PageCurlReader: UIViewControllerRepresentable {
                 } else {
                     direction = isForward ? .forward : .reverse
                 }
-                uiViewController.setViewControllers([vc], direction: direction, animated: false, completion: nil)
+                uiViewController.setViewControllers(vcs, direction: direction, animated: false, completion: nil)
             }
         } else {
-            let vc = context.coordinator.makeViewController(for: targetControllerIndex)
-            uiViewController.setViewControllers([vc], direction: .forward, animated: false, completion: nil)
+            let vcs = context.coordinator.makeViewControllers(for: targetControllerIndex)
+            uiViewController.setViewControllers(vcs, direction: .forward, animated: false, completion: nil)
         }
     }
 }
@@ -186,6 +186,24 @@ extension PageCurlReader {
             )
         }
         
+        func makeViewControllers(for controllerIndex: Int) -> [UIViewController] {
+            if parent.isTwoUp {
+                let spreads = parent.computeSpreads()
+                let pages = (controllerIndex >= 0 && controllerIndex < spreads.count) ? spreads[controllerIndex] : [0]
+                if pages.count == 2 {
+                    let leftVC = makeViewController(for: pages[0])
+                    let rightVC = makeViewController(for: pages[1])
+                    return parent.isMangaRTL ? [rightVC, leftVC] : [leftVC, rightVC]
+                } else {
+                    let coverVC = makeViewController(for: pages[0])
+                    let dummyVC = PageContentViewController(index: -1, parent: parent)
+                    return [dummyVC, coverVC]
+                }
+            } else {
+                return [makeViewController(for: controllerIndex)]
+            }
+        }
+
         // MARK: - UIPageViewControllerDataSource
         
         func pageViewController(
@@ -312,10 +330,10 @@ extension PageCurlReader {
             
             let targetIndex = currentControllerIndex + 1
             if targetIndex < maxCount {
-                let vc = makeViewController(for: targetIndex)
+                let vcs = makeViewControllers(for: targetIndex)
                 HapticEngine.light()
                 let direction: UIPageViewController.NavigationDirection = parent.isMangaRTL ? .reverse : .forward
-                pvc.setViewControllers([vc], direction: direction, animated: true) { [weak self] completed in
+                pvc.setViewControllers(vcs, direction: direction, animated: true) { [weak self] completed in
                     if completed {
                         DispatchQueue.main.async {
                             self?.updateParentIndex(to: targetIndex)
@@ -338,10 +356,10 @@ extension PageCurlReader {
             
             let targetIndex = currentControllerIndex - 1
             if targetIndex >= 0 {
-                let vc = makeViewController(for: targetIndex)
+                let vcs = makeViewControllers(for: targetIndex)
                 HapticEngine.light()
                 let direction: UIPageViewController.NavigationDirection = parent.isMangaRTL ? .forward : .reverse
-                pvc.setViewControllers([vc], direction: direction, animated: true) { [weak self] completed in
+                pvc.setViewControllers(vcs, direction: direction, animated: true) { [weak self] completed in
                     if completed {
                         DispatchQueue.main.async {
                             self?.updateParentIndex(to: targetIndex)
