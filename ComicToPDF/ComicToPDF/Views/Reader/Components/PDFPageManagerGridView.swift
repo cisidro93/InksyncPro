@@ -187,12 +187,10 @@ private struct PDFPageThumbnailCard: View {
 
     private func loadThumbnail() {
         guard let doc = pdfDocument, pageIndex < doc.pageCount, let page = doc.page(at: pageIndex) else { return }
-        Task.detached(priority: .userInitiated) {
+        Task {
             let size = CGSize(width: 140, height: 190)
             let thumb = page.thumbnail(of: size, for: .mediaBox)
-            await MainActor.run {
-                self.thumbnailImage = thumb
-            }
+            self.thumbnailImage = thumb
         }
     }
 }

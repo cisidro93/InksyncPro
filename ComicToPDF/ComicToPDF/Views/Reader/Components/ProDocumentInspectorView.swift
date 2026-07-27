@@ -303,12 +303,10 @@ struct ProDocumentInspectorView: View {
         isSearching = true
         searchResults.removeAll()
 
-        Task.detached(priority: .userInitiated) {
+        Task {
             let matches = doc.findString(query, withOptions: [.caseInsensitive])
-            await MainActor.run {
-                self.searchResults = matches
-                self.isSearching = false
-            }
+            self.searchResults = matches
+            self.isSearching = false
         }
     }
 }

@@ -426,6 +426,11 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
             uiView.displayMode = targetDisplayMode
             uiView.displaysAsBook = isDual
         }
+
+        // ✅ Guarantee PDFView active page always displays the target pageIndex
+        if let targetPage = document.page(at: currentPageIndex), uiView.currentPage != targetPage {
+            uiView.go(to: targetPage)
+        }
     }
 
     func makeCoordinator() -> Coordinator {
