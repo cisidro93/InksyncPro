@@ -35,7 +35,7 @@ struct ProPDFReaderEngine: View {
 
     var body: some View {
         ZStack {
-            Theme.background
+            Color.inkBackground
                 .ignoresSafeArea()
 
             if let doc = pdfDocument {
@@ -296,7 +296,7 @@ struct ProPDFReaderEngine: View {
                     self.pdfDocument = doc
                     self.resolvedURL = docURL
                     // Restore last saved page index
-                    if let saved = ReaderProgressTracker.shared.progress(for: pdf.id)?.currentPage {
+                    if let saved = ReaderProgressTracker.shared.progress(for: pdf.id)?.currentPageIndex {
                         self.currentPageIndex = min(saved, doc.pageCount - 1)
                     }
                 }
@@ -309,7 +309,19 @@ struct ProPDFReaderEngine: View {
         if let targetPage = doc.page(at: pageIndex) {
             pdfView.go(to: targetPage)
             currentPageIndex = pageIndex
-            ReaderProgressTracker.shared.updateProgress(for: pdf.id, currentPage: pageIndex, totalPages: doc.pageCount)
+            
+            var progress = ReaderProgressTracker.shared.progress(for: pdf.id) ?? ReadingProgress(
+                pdfID: pdf.id,
+                lastOpenedAt: Date(),
+                currentPageIndex: pageIndex,
+                totalPagesRead: doc.pageCount,
+                completionFraction: Double(pageIndex + 1) / Double(doc.pageCount),
+                readingSessionDates: [Date()]
+            )
+            progress.currentPageIndex = pageIndex
+            progress.lastOpenedAt = Date()
+            progress.completionFraction = Double(pageIndex + 1) / Double(doc.pageCount)
+            ReaderProgressTracker.shared.update(progress)
         }
     }
 
@@ -354,8 +366,7 @@ struct ProPDFReaderEngine: View {
     private func createZettelkastenCard(text: String) {
         let card = SDNotebook(
             title: "Quote from \(pdf.name) (Page \(currentPageIndex + 1))",
-            content: text,
-            tags: ["PDF", "Excerpt"]
+            linkedBookID: pdf.id
         )
         modelContext.insert(card)
         try? modelContext.save()

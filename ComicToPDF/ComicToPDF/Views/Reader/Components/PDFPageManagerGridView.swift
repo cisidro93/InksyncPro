@@ -128,7 +128,7 @@ struct PDFPageManagerGridView: View {
                     .foregroundColor(.inkGreen)
                 }
             }
-            .background(Theme.background)
+            .background(Color.inkBackground)
         }
     }
 

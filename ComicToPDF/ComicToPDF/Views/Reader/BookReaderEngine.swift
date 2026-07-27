@@ -1186,7 +1186,7 @@ struct BookReaderEngine: View {
                             }
                         )
                         .ignoresSafeArea()
-                            .id(vm.currentChapterIndex)
+                            .id("\(vm.currentChapterIndex)_\(chapterPage)")
                             .transition(
                                 .asymmetric(
                                     insertion: .modifier(
@@ -1199,7 +1199,7 @@ struct BookReaderEngine: View {
                                     )
                                 )
                             )
-                            .animation(.spring(response: 0.35, dampingFraction: 0.85), value: vm.currentChapterIndex)
+                            .animation(.spring(response: 0.35, dampingFraction: 0.85), value: chapterPage)
                             
                             if prefs.paginationMode == EBookPaginationMode.paged.rawValue && computeColumnCount(for: geo.size) == 2 {
                                 BookSpineCreaseOverlay()

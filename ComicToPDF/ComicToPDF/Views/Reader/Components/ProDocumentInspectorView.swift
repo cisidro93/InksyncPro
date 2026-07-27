@@ -93,7 +93,7 @@ struct ProDocumentInspectorView: View {
                     .foregroundColor(.inkGreen)
                 }
             }
-            .background(Theme.background)
+            .background(Color.inkBackground)
         }
     }
 
@@ -298,12 +298,13 @@ struct ProDocumentInspectorView: View {
     }
 
     private func performPDFSearch() {
-        guard let doc = pdfDocument, !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let doc = pdfDocument, !query.isEmpty else { return }
         isSearching = true
         searchResults.removeAll()
 
         Task.detached(priority: .userInitiated) {
-            let matches = doc.findString(searchQuery, withOptions: [.caseInsensitive])
+            let matches = doc.findString(query, withOptions: [.caseInsensitive])
             await MainActor.run {
                 self.searchResults = matches
                 self.isSearching = false
