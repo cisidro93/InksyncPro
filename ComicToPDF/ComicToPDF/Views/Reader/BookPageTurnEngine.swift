@@ -213,9 +213,7 @@ extension PageCurlReader {
             guard let contentVC = viewController as? PageContentViewController else { return nil }
             let currentIndex = contentVC.index
             let targetIndex: Int = parent.isMangaRTL ? (currentIndex + 1) : (currentIndex - 1)
-            
-            let maxCount = parent.isTwoUp ? parent.computeSpreads().count : parent.totalPages
-            guard targetIndex >= 0 && targetIndex < maxCount else { return nil }
+            guard targetIndex >= 0 && targetIndex < parent.totalPages else { return nil }
             return makeViewController(for: targetIndex)
         }
         
@@ -226,9 +224,7 @@ extension PageCurlReader {
             guard let contentVC = viewController as? PageContentViewController else { return nil }
             let currentIndex = contentVC.index
             let targetIndex: Int = parent.isMangaRTL ? (currentIndex - 1) : (currentIndex + 1)
-            
-            let maxCount = parent.isTwoUp ? parent.computeSpreads().count : parent.totalPages
-            guard targetIndex >= 0 && targetIndex < maxCount else { return nil }
+            guard targetIndex >= 0 && targetIndex < parent.totalPages else { return nil }
             return makeViewController(for: targetIndex)
         }
         
@@ -409,50 +405,14 @@ class PageContentViewController: UIViewController {
         let spreads = parent.computeSpreads()
         self.spreads = spreads
         
-        if parent.isTwoUp {
-            let pages = index < spreads.count ? spreads[index] : [0]
-            
-            let spreadView = GeometryReader { geo in
-                if pages.count == 1 {
-                    TwoUpPageCell(index: pages[0], cache: parent.cache, activeFilterPreset: parent.activeFilterPreset, alignment: .center)
-                        .frame(width: geo.size.width, height: geo.size.height)
-                } else if parent.isMangaRTL {
-                    HStack(spacing: 0) {
-                        if pages.count == 2 {
-                            TwoUpPageCell(index: pages[1], cache: parent.cache, activeFilterPreset: parent.activeFilterPreset, alignment: .trailing)
-                                .frame(width: geo.size.width / 2, height: geo.size.height)
-                        } else {
-                            Color.black
-                                .frame(width: geo.size.width / 2, height: geo.size.height)
-                        }
-                        TwoUpPageCell(index: pages[0], cache: parent.cache, activeFilterPreset: parent.activeFilterPreset, alignment: .leading)
-                            .frame(width: geo.size.width / 2, height: geo.size.height)
-                    }
-                } else {
-                    HStack(spacing: 0) {
-                        TwoUpPageCell(index: pages[0], cache: parent.cache, activeFilterPreset: parent.activeFilterPreset, alignment: .trailing)
-                            .frame(width: geo.size.width / 2, height: geo.size.height)
-                        if pages.count == 2 {
-                            TwoUpPageCell(index: pages[1], cache: parent.cache, activeFilterPreset: parent.activeFilterPreset, alignment: .leading)
-                                .frame(width: geo.size.width / 2, height: geo.size.height)
-                        } else {
-                            Color.black
-                                .frame(width: geo.size.width / 2, height: geo.size.height)
-                        }
-                    }
-                }
-            }
-            .id("spread_\(pages.first ?? 0)")
-            .background(Color.black)
-            .ignoresSafeArea()
-            
-            self.content = AnyView(spreadView)
-        } else {
-            let singleView = ComicPageView(index: index, cache: parent.cache)
-                .applyFilterPreset(parent.activeFilterPreset)
+        if index >= 0 && index < parent.totalPages {
+            let singleView = TwoUpPageCell(index: index, cache: parent.cache, activeFilterPreset: parent.activeFilterPreset, alignment: .center)
                 .background(Color.black)
                 .ignoresSafeArea()
             self.content = AnyView(singleView)
+        } else {
+            let blankView = Color.black.ignoresSafeArea()
+            self.content = AnyView(blankView)
         }
         
         super.init(nibName: nil, bundle: nil)
