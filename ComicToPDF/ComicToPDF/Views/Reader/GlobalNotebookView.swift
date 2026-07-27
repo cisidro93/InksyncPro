@@ -2167,19 +2167,19 @@ struct VocabularyNotebookHubView: View {
             HStack(spacing: 12) {
                 HStack {
                     Image(systemName: "magnifyingglass")
-                        .foregroundColor(.inkTextSecondary)
+                        .foregroundColor(.secondary)
                     TextField("Search vocabulary...", text: $searchQuery)
                         .font(.system(size: 14, design: .rounded))
                     if !searchQuery.isEmpty {
                         Button(action: { searchQuery = "" }) {
                             Image(systemName: "xmark.circle.fill")
-                                .foregroundColor(.inkTextSecondary)
+                                .foregroundColor(.secondary)
                         }
                     }
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
-                .background(Color.inkSecondaryBackground)
+                .background(Color.inkSurfaceRaised)
                 .clipShape(RoundedRectangle(cornerRadius: 10))
                 
                 Picker("Filter", selection: $selectedFilter) {
@@ -2197,13 +2197,13 @@ struct VocabularyNotebookHubView: View {
                 VStack(spacing: 16) {
                     Image(systemName: "character.book.closed.fill")
                         .font(.system(size: 48))
-                        .foregroundStyle(LinearGradient(colors: [.orange, .amber], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .foregroundStyle(LinearGradient(colors: [.orange, .yellow], startPoint: .topLeading, endPoint: .bottomTrailing))
                     Text("No Vocabulary Words Found")
                         .font(.system(size: 18, weight: .bold, design: .rounded))
-                        .foregroundColor(.inkTextPrimary)
+                        .foregroundColor(.primary)
                     Text("Look up words while reading EPUBs or PDFs to automatically build your personal vocabulary dictionary!")
                         .font(.system(size: 13, design: .rounded))
-                        .foregroundColor(.inkTextSecondary)
+                        .foregroundColor(.secondary)
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: 360)
                 }
@@ -2234,7 +2234,7 @@ struct VocabularyWordCard: View {
             HStack {
                 Text(word.word)
                     .font(.system(size: 20, weight: .bold, design: .rounded))
-                    .foregroundColor(.inkTextPrimary)
+                    .foregroundColor(.primary)
                 
                 Spacer()
                 
@@ -2244,7 +2244,7 @@ struct VocabularyWordCard: View {
                     try? modelContext.save()
                 }) {
                     Image(systemName: word.isFavorite ? "heart.fill" : "heart")
-                        .foregroundColor(word.isFavorite ? .pink : .inkTextSecondary)
+                        .foregroundColor(word.isFavorite ? .pink : .secondary)
                 }
                 
                 Button(action: {
@@ -2270,26 +2270,26 @@ struct VocabularyWordCard: View {
                 Text(word.bookTitle)
                     .font(.system(size: 11, weight: .medium, design: .rounded))
             }
-            .foregroundColor(.inkTextSecondary)
+            .foregroundColor(.secondary)
             
             if !word.contextSentence.isEmpty {
                 Text("\"\(word.contextSentence)\"")
                     .font(.system(size: 13, weight: .regular, design: .serif))
                     .italic()
-                    .foregroundColor(.inkTextSecondary)
+                    .foregroundColor(.secondary)
                     .padding(.vertical, 2)
             }
             
             HStack {
                 Text("Mastery:")
                     .font(.system(size: 11, weight: .medium, design: .rounded))
-                    .foregroundColor(.inkTextSecondary)
+                    .foregroundColor(.secondary)
                 
                 HStack(spacing: 4) {
                     ForEach(1...5, id: \.self) { star in
                         Image(systemName: star <= word.masteryLevel ? "star.fill" : "star")
                             .font(.system(size: 12))
-                            .foregroundColor(star <= word.masteryLevel ? .amber : .inkTextSecondary.opacity(0.4))
+                            .foregroundColor(star <= word.masteryLevel ? .orange : .secondary.opacity(0.4))
                             .onTapGesture {
                                 HapticEngine.light()
                                 word.masteryLevel = star
@@ -2302,15 +2302,15 @@ struct VocabularyWordCard: View {
                 
                 Text(word.dateAdded.formatted(date: .abbreviated, time: .omitted))
                     .font(.system(size: 11, design: .rounded))
-                    .foregroundColor(.inkTextSecondary.opacity(0.7))
+                    .foregroundColor(.secondary.opacity(0.7))
             }
         }
         .padding(16)
-        .background(Color.inkSecondaryBackground)
+        .background(Color.inkSurface)
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .overlay(
             RoundedRectangle(cornerRadius: 14)
-                .stroke(Color.inkDivider.opacity(0.4), lineWidth: 1)
+                .stroke(Color.inkBorderSubtle, lineWidth: 0.8)
         )
         .shadow(color: Color.black.opacity(0.04), radius: 6, x: 0, y: 3)
     }
