@@ -167,12 +167,12 @@ struct EBookReaderView: View {
                             .transition(
                                 .asymmetric(
                                     insertion: .modifier(
-                                        active: PageCurl3DEffect(angle: isGoingForward ? 90 : -90, axis: (x: 0, y: 1, z: 0), anchor: isGoingForward ? .trailing : .leading),
-                                        identity: PageCurl3DEffect(angle: 0, axis: (x: 0, y: 1, z: 0), anchor: isGoingForward ? .trailing : .leading)
+                                        active: PageCurl3DEffect(angle: isGoingForward ? 90 : -90, axis: (x: 0.0, y: 1.0, z: 0.0), anchor: isGoingForward ? .trailing : .leading),
+                                        identity: PageCurl3DEffect(angle: 0, axis: (x: 0.0, y: 1.0, z: 0.0), anchor: isGoingForward ? .trailing : .leading)
                                     ),
                                     removal: .modifier(
-                                        active: PageCurl3DEffect(angle: isGoingForward ? -90 : 90, axis: (x: 0, y: 1, z: 0), anchor: isGoingForward ? .leading : .trailing),
-                                        identity: PageCurl3DEffect(angle: 0, axis: (x: 0, y: 1, z: 0), anchor: isGoingForward ? .leading : .trailing)
+                                        active: PageCurl3DEffect(angle: isGoingForward ? -90 : 90, axis: (x: 0.0, y: 1.0, z: 0.0), anchor: isGoingForward ? .leading : .trailing),
+                                        identity: PageCurl3DEffect(angle: 0, axis: (x: 0.0, y: 1.0, z: 0.0), anchor: isGoingForward ? .leading : .trailing)
                                     )
                                 )
                             )
