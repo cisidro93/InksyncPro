@@ -588,8 +588,18 @@ struct TwoUpPageCell: View {
 // MARK: - 3D Authentic Page Curl Effect for Reader Engines
 struct PageCurl3DEffect: ViewModifier {
     let angle: Double
-    let axis: (x: CGFloat, y: CGFloat, z: CGFloat)
+    let axisX: CGFloat
+    let axisY: CGFloat
+    let axisZ: CGFloat
     let anchor: UnitPoint
+
+    init(angle: Double, axis: (x: CGFloat, y: CGFloat, z: CGFloat), anchor: UnitPoint) {
+        self.angle = angle
+        self.axisX = axis.x
+        self.axisY = axis.y
+        self.axisZ = axis.z
+        self.anchor = anchor
+    }
 
     func body(content: Content) -> some View {
         let progress = abs(angle) / 90.0
@@ -599,7 +609,7 @@ struct PageCurl3DEffect: ViewModifier {
         content
             .rotation3DEffect(
                 .degrees(angle),
-                axis: axis,
+                axis: (x: axisX, y: axisY, z: axisZ),
                 anchor: anchor,
                 anchorZ: 0,
                 perspective: 0.35
