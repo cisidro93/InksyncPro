@@ -116,12 +116,9 @@ struct PageCurlReader: UIViewControllerRepresentable {
             targetControllerIndex = targetIndex
         }
         
-        // ✅ GUARANTEE: If a page turn gesture just completed to targetControllerIndex, do NOT re-trigger setViewControllers!
-        if let lastCompleted = context.coordinator.lastCompletedControllerIndex {
+        // Clear gesture completion marker if set
+        if context.coordinator.lastCompletedControllerIndex != nil {
             context.coordinator.lastCompletedControllerIndex = nil
-            if lastCompleted == targetControllerIndex {
-                return
-            }
         }
         
         if let currentVC = uiViewController.viewControllers?.first as? PageContentViewController {
@@ -134,17 +131,27 @@ struct PageCurlReader: UIViewControllerRepresentable {
                 spreadsChanged = false
             }
             
-            if currentVC.index != targetControllerIndex || currentVC.isTwoUp != isTwoUp || currentVC.activeFilterPreset != activeFilterPreset || spreadsChanged {
-                let vc = context.coordinator.makeViewController(for: targetControllerIndex)
-                let isForward = targetControllerIndex >= currentVC.index
-                let direction: UIPageViewController.NavigationDirection
-                if isMangaRTL {
-                    direction = isForward ? .reverse : .forward
-                } else {
-                    direction = isForward ? .forward : .reverse
-                }
-                uiViewController.setViewControllers([vc], direction: direction, animated: false, completion: nil)
+            let isDisplayed: Bool
+            if isTwoUp {
+                let currentSpreadPages = currentVC.spreads.first(where: { $0.contains(currentVC.index) }) ?? [currentVC.index]
+                isDisplayed = currentSpreadPages.contains(targetIndex)
+            } else {
+                isDisplayed = (currentVC.index == targetControllerIndex)
             }
+            
+            if isDisplayed && currentVC.isTwoUp == isTwoUp && currentVC.activeFilterPreset == activeFilterPreset && !spreadsChanged {
+                return // ✅ Target page is ALREADY displayed on screen -- DO NOT TOUCH setViewControllers!
+            }
+            
+            let vc = context.coordinator.makeViewController(for: targetControllerIndex)
+            let isForward = targetControllerIndex >= currentVC.index
+            let direction: UIPageViewController.NavigationDirection
+            if isMangaRTL {
+                direction = isForward ? .reverse : .forward
+            } else {
+                direction = isForward ? .forward : .reverse
+            }
+            uiViewController.setViewControllers([vc], direction: direction, animated: false, completion: nil)
         } else {
             let vc = context.coordinator.makeViewController(for: targetControllerIndex)
             uiViewController.setViewControllers([vc], direction: .forward, animated: false, completion: nil)
@@ -587,16 +594,18 @@ struct SmartMidSpineCurlReader: UIViewControllerRepresentable {
             return
         }
         
-        if let lastCompleted = context.coordinator.lastCompletedIndex, lastCompleted == currentIndex {
+        if context.coordinator.lastCompletedIndex != nil {
             context.coordinator.lastCompletedIndex = nil
-            return
         }
         
-        if let currentVCs = uiViewController.viewControllers,
-           let firstLeaf = currentVCs.first as? SingleLeafViewController {
-            let displayedPage = firstLeaf.pageIndex < 0 ? 0 : firstLeaf.pageIndex
-            if displayedPage == currentIndex {
-                return
+        if let currentVCs = uiViewController.viewControllers as? [SingleLeafViewController] {
+            let displayedIndices = currentVCs.map { $0.pageIndex }
+            let filterPresets = currentVCs.map { $0.activeFilterPreset }
+            let allPresetMatch = filterPresets.allSatisfy { $0 == activeFilterPreset }
+            
+            let spreadMatches = displayedIndices.contains(currentIndex) || (currentIndex == 0 && displayedIndices.contains(-1))
+            if spreadMatches && allPresetMatch {
+                return // ✅ Target spread is ALREADY displayed on screen -- DO NOT TOUCH setViewControllers!
             }
         }
         
@@ -782,9 +791,11 @@ extension SmartMidSpineCurlReader {
 @MainActor
 class SingleLeafViewController: UIViewController {
     let pageIndex: Int
+    let activeFilterPreset: ReadingFilterPreset
     
     init(pageIndex: Int, parent: SmartMidSpineCurlReader) {
         self.pageIndex = pageIndex
+        self.activeFilterPreset = parent.activeFilterPreset
         super.init(nibName: nil, bundle: nil)
         
         view.backgroundColor = .black
