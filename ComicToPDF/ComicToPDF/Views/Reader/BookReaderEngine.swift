@@ -1856,11 +1856,25 @@ struct HighlightQuickPopoverView: View {
             Divider()
             
             // Actions row
-            HStack(spacing: 20) {
+            HStack(spacing: 16) {
                 Button(action: onEditNote) {
-                    Label("Add Note", systemImage: "square.and.pencil")
+                    Label("Note", systemImage: "square.and.pencil")
                         .font(.subheadline)
                         .foregroundColor(.primary)
+                }
+                
+                Button(action: {
+                    if let text = annotation.selectedText, !text.isEmpty {
+                        DictionaryLookupService.shared.lookupAndSave(
+                            term: text,
+                            contextSentence: text,
+                            bookTitle: annotation.readwiseBookTitle ?? "EPUB Book"
+                        )
+                    }
+                }) {
+                    Label("Look Up", systemImage: "book.fill")
+                        .font(.subheadline)
+                        .foregroundColor(.orange)
                 }
                 
                 Spacer()
