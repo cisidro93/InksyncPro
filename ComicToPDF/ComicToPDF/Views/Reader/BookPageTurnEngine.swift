@@ -68,17 +68,13 @@ struct PageCurlReader: UIViewControllerRepresentable {
     }
 
     func makeUIViewController(context: Context) -> UIPageViewController {
-        let options: [UIPageViewController.OptionsKey: Any]? = isTwoUp ? [.spineLocation: UIPageViewController.SpineLocation.mid.rawValue] : nil
         let pageViewController = UIPageViewController(
             transitionStyle: .pageCurl,
             navigationOrientation: .horizontal,
-            options: options
+            options: nil
         )
         pageViewController.dataSource = context.coordinator
         pageViewController.delegate = context.coordinator
-        if isTwoUp {
-            pageViewController.isDoubleSided = true
-        }
 
         for gesture in pageViewController.gestureRecognizers {
             if gesture is UITapGestureRecognizer {
@@ -139,7 +135,7 @@ struct PageCurlReader: UIViewControllerRepresentable {
             }
             
             if currentVC.index != targetControllerIndex || currentVC.isTwoUp != isTwoUp || currentVC.activeFilterPreset != activeFilterPreset || spreadsChanged {
-                let vcs = context.coordinator.makeViewControllers(for: targetControllerIndex)
+                let vc = context.coordinator.makeViewController(for: targetControllerIndex)
                 let isForward = targetControllerIndex >= currentVC.index
                 let direction: UIPageViewController.NavigationDirection
                 if isMangaRTL {
@@ -147,11 +143,11 @@ struct PageCurlReader: UIViewControllerRepresentable {
                 } else {
                     direction = isForward ? .forward : .reverse
                 }
-                uiViewController.setViewControllers(vcs, direction: direction, animated: false, completion: nil)
+                uiViewController.setViewControllers([vc], direction: direction, animated: false, completion: nil)
             }
         } else {
-            let vcs = context.coordinator.makeViewControllers(for: targetControllerIndex)
-            uiViewController.setViewControllers(vcs, direction: .forward, animated: false, completion: nil)
+            let vc = context.coordinator.makeViewController(for: targetControllerIndex)
+            uiViewController.setViewControllers([vc], direction: .forward, animated: false, completion: nil)
         }
     }
 }
@@ -186,24 +182,6 @@ extension PageCurlReader {
             )
         }
         
-        func makeViewControllers(for controllerIndex: Int) -> [UIViewController] {
-            if parent.isTwoUp {
-                let spreads = parent.computeSpreads()
-                let pages = (controllerIndex >= 0 && controllerIndex < spreads.count) ? spreads[controllerIndex] : [0]
-                if pages.count == 2 {
-                    let leftVC = makeViewController(for: pages[0])
-                    let rightVC = makeViewController(for: pages[1])
-                    return parent.isMangaRTL ? [rightVC, leftVC] : [leftVC, rightVC]
-                } else {
-                    let coverVC = makeViewController(for: pages[0])
-                    let dummyVC = PageContentViewController(index: -1, parent: parent)
-                    return [dummyVC, coverVC]
-                }
-            } else {
-                return [makeViewController(for: controllerIndex)]
-            }
-        }
-
         // MARK: - UIPageViewControllerDataSource
         
         func pageViewController(
@@ -213,7 +191,9 @@ extension PageCurlReader {
             guard let contentVC = viewController as? PageContentViewController else { return nil }
             let currentIndex = contentVC.index
             let targetIndex: Int = parent.isMangaRTL ? (currentIndex + 1) : (currentIndex - 1)
-            guard targetIndex >= 0 && targetIndex < parent.totalPages else { return nil }
+            
+            let maxCount = parent.isTwoUp ? parent.computeSpreads().count : parent.totalPages
+            guard targetIndex >= 0 && targetIndex < maxCount else { return nil }
             return makeViewController(for: targetIndex)
         }
         
@@ -224,7 +204,9 @@ extension PageCurlReader {
             guard let contentVC = viewController as? PageContentViewController else { return nil }
             let currentIndex = contentVC.index
             let targetIndex: Int = parent.isMangaRTL ? (currentIndex - 1) : (currentIndex + 1)
-            guard targetIndex >= 0 && targetIndex < parent.totalPages else { return nil }
+            
+            let maxCount = parent.isTwoUp ? parent.computeSpreads().count : parent.totalPages
+            guard targetIndex >= 0 && targetIndex < maxCount else { return nil }
             return makeViewController(for: targetIndex)
         }
         
@@ -271,13 +253,8 @@ extension PageCurlReader {
             _ pageViewController: UIPageViewController,
             spineLocationFor orientation: UIInterfaceOrientation
         ) -> UIPageViewController.SpineLocation {
-            if parent.isTwoUp {
-                pageViewController.isDoubleSided = true
-                return .mid
-            } else {
-                pageViewController.isDoubleSided = false
-                return .min
-            }
+            pageViewController.isDoubleSided = false
+            return .min
         }
 
         // MARK: - Gesture Handlers
@@ -326,10 +303,10 @@ extension PageCurlReader {
             
             let targetIndex = currentControllerIndex + 1
             if targetIndex < maxCount {
-                let vcs = makeViewControllers(for: targetIndex)
+                let vc = makeViewController(for: targetIndex)
                 HapticEngine.light()
                 let direction: UIPageViewController.NavigationDirection = parent.isMangaRTL ? .reverse : .forward
-                pvc.setViewControllers(vcs, direction: direction, animated: true) { [weak self] completed in
+                pvc.setViewControllers([vc], direction: direction, animated: true) { [weak self] completed in
                     if completed {
                         DispatchQueue.main.async {
                             self?.updateParentIndex(to: targetIndex)
@@ -352,10 +329,10 @@ extension PageCurlReader {
             
             let targetIndex = currentControllerIndex - 1
             if targetIndex >= 0 {
-                let vcs = makeViewControllers(for: targetIndex)
+                let vc = makeViewController(for: targetIndex)
                 HapticEngine.light()
                 let direction: UIPageViewController.NavigationDirection = parent.isMangaRTL ? .forward : .reverse
-                pvc.setViewControllers(vcs, direction: direction, animated: true) { [weak self] completed in
+                pvc.setViewControllers([vc], direction: direction, animated: true) { [weak self] completed in
                     if completed {
                         DispatchQueue.main.async {
                             self?.updateParentIndex(to: targetIndex)
@@ -405,14 +382,50 @@ class PageContentViewController: UIViewController {
         let spreads = parent.computeSpreads()
         self.spreads = spreads
         
-        if index >= 0 && index < parent.totalPages {
-            let singleView = TwoUpPageCell(index: index, cache: parent.cache, activeFilterPreset: parent.activeFilterPreset, alignment: .center)
+        if parent.isTwoUp {
+            let pages = index < spreads.count ? spreads[index] : [0]
+            
+            let spreadView = GeometryReader { geo in
+                if pages.count == 1 {
+                    TwoUpPageCell(index: pages[0], cache: parent.cache, activeFilterPreset: parent.activeFilterPreset, alignment: .center)
+                        .frame(width: geo.size.width, height: geo.size.height)
+                } else if parent.isMangaRTL {
+                    HStack(spacing: 0) {
+                        if pages.count == 2 {
+                            TwoUpPageCell(index: pages[1], cache: parent.cache, activeFilterPreset: parent.activeFilterPreset, alignment: .trailing)
+                                .frame(width: geo.size.width / 2, height: geo.size.height)
+                        } else {
+                            Color.black
+                                .frame(width: geo.size.width / 2, height: geo.size.height)
+                        }
+                        TwoUpPageCell(index: pages[0], cache: parent.cache, activeFilterPreset: parent.activeFilterPreset, alignment: .leading)
+                            .frame(width: geo.size.width / 2, height: geo.size.height)
+                    }
+                } else {
+                    HStack(spacing: 0) {
+                        TwoUpPageCell(index: pages[0], cache: parent.cache, activeFilterPreset: parent.activeFilterPreset, alignment: .trailing)
+                            .frame(width: geo.size.width / 2, height: geo.size.height)
+                        if pages.count == 2 {
+                            TwoUpPageCell(index: pages[1], cache: parent.cache, activeFilterPreset: parent.activeFilterPreset, alignment: .leading)
+                                .frame(width: geo.size.width / 2, height: geo.size.height)
+                        } else {
+                            Color.black
+                                .frame(width: geo.size.width / 2, height: geo.size.height)
+                        }
+                    }
+                }
+            }
+            .id("spread_\(pages.first ?? 0)")
+            .background(Color.black)
+            .ignoresSafeArea()
+            
+            self.content = AnyView(spreadView)
+        } else {
+            let singleView = ComicPageView(index: index, cache: parent.cache)
+                .applyFilterPreset(parent.activeFilterPreset)
                 .background(Color.black)
                 .ignoresSafeArea()
             self.content = AnyView(singleView)
-        } else {
-            let blankView = Color.black.ignoresSafeArea()
-            self.content = AnyView(blankView)
         }
         
         super.init(nibName: nil, bundle: nil)
