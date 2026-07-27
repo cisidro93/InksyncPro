@@ -1401,6 +1401,7 @@ struct ComicReaderEngine: View {
     }
     
     @EnvironmentObject var conversionManager: ConversionManager
+    @ObservedObject private var prefs = EBookPreferences.shared
     
     @StateObject private var cache: ComicImageCache
     @StateObject private var velocityEngine = ReaderVelocityEngine()

@@ -417,6 +417,15 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         if uiView.document != document {
             uiView.document = document
         }
+
+        let prefs = EBookPreferences.shared
+        let isLandscape = uiView.bounds.width > uiView.bounds.height
+        let isDual = prefs.pdfDualPage || (prefs.autoLandscapeDualPage && isLandscape)
+        let targetDisplayMode: PDFDisplayMode = isDual ? .twoUp : .singlePage
+        if uiView.displayMode != targetDisplayMode {
+            uiView.displayMode = targetDisplayMode
+            uiView.displaysAsBook = isDual
+        }
     }
 
     func makeCoordinator() -> Coordinator {
