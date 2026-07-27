@@ -68,13 +68,17 @@ struct PageCurlReader: UIViewControllerRepresentable {
     }
 
     func makeUIViewController(context: Context) -> UIPageViewController {
+        let options: [UIPageViewController.OptionsKey: Any]? = isTwoUp ? [.spineLocation: UIPageViewController.SpineLocation.mid.rawValue] : nil
         let pageViewController = UIPageViewController(
             transitionStyle: .pageCurl,
             navigationOrientation: .horizontal,
-            options: nil
+            options: options
         )
         pageViewController.dataSource = context.coordinator
         pageViewController.delegate = context.coordinator
+        if isTwoUp {
+            pageViewController.isDoubleSided = true
+        }
 
         for gesture in pageViewController.gestureRecognizers {
             if gesture is UITapGestureRecognizer {
@@ -249,6 +253,19 @@ extension PageCurlReader {
             }
         }
         
+        func pageViewController(
+            _ pageViewController: UIPageViewController,
+            spineLocationFor orientation: UIInterfaceOrientation
+        ) -> UIPageViewController.SpineLocation {
+            if parent.isTwoUp {
+                pageViewController.isDoubleSided = true
+                return .mid
+            } else {
+                pageViewController.isDoubleSided = false
+                return .min
+            }
+        }
+
         // MARK: - Gesture Handlers
         
         @objc func handleDoubleTap(_ gesture: UITapGestureRecognizer) {
