@@ -88,7 +88,7 @@ struct UnifiedReaderView: View {
                     Color(hex: "#0a0a0f").edgesIgnoringSafeArea(.all)
                     
                     if pdf.url.pathExtension.lowercased() == "pdf" {
-                        ComicReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
+                        ProPDFReaderEngine(pdf: pdf, onDismiss: { dismiss() })
                     } else if needsEPUBComicCheck {
                         ProgressView("Loading…")
                             .foregroundColor(.white)
