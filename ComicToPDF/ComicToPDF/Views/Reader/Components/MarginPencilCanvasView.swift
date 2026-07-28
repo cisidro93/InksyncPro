@@ -79,8 +79,8 @@ struct MarginPencilCanvasView: View {
             createdAt: Date(),
             modifiedAt: Date(),
             colorHex: "#FF9500",
-            drawingData: inkData,
-            selectedText: "Apple Pencil Margin Note (Page \(pageIndex + 1))"
+            selectedText: "Apple Pencil Margin Note (Page \(pageIndex + 1))",
+            drawingData: inkData
         )
         
         AnnotationStore.shared.add(annotation)
