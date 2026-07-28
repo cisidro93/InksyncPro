@@ -685,16 +685,18 @@ struct EPUBWebView: View {
             font-weight: bold;
             font-style: italic;
         }
-        *, *::before, *::after { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        *, *::before, *::after { box-sizing: border-box; -webkit-tap-highlight-color: transparent; scroll-behavior: auto !important; }
         html {
             margin: 0 !important; padding: 0 !important;
             width: 100% !important;
             column-width: auto !important;
             touch-action: pan-x pan-y;
+            scroll-behavior: auto !important;
+            scroll-snap-type: none !important;
             background-color: transparent !important;
             \(isPaged ? """
             height: 100% !important;
-            overflow-x: scroll !important;
+            overflow-x: hidden !important;
             overflow-y: hidden !important;
             """ : """
             height: auto !important;
