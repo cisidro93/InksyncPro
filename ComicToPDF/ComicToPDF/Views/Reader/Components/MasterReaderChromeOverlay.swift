@@ -102,7 +102,7 @@ struct MasterReaderChromeOverlay: View {
             }) {
                 Image(systemName: isBookmarked ? "bookmark.fill" : "bookmark")
                     .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(isBookmarked ? .amber : .primary)
+                    .foregroundColor(isBookmarked ? .yellow : .primary)
                     .frame(width: 36, height: 36)
                     .background(Color.primary.opacity(0.08))
                     .clipShape(Circle())
