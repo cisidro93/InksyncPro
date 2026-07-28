@@ -58,8 +58,8 @@ struct MarginPencilCanvasView: View {
     
     private func loadExistingInkDrawing() {
         let annotations = AnnotationStore.shared.annotations(for: pdfID)
-            .filter { $0.pageIndex == pageIndex && $0.kind == .inkNote }
-        if let firstInk = annotations.first, let rawData = firstInk.inkData {
+            .filter { $0.pageIndex == pageIndex && $0.kind == .ink }
+        if let firstInk = annotations.first, let rawData = firstInk.drawingData {
             if let drawing = try? PKDrawing(data: rawData) {
                 canvasView.drawing = drawing
             }
@@ -75,11 +75,11 @@ struct MarginPencilCanvasView: View {
             pdfID: pdfID,
             pageIndex: pageIndex,
             chapterTitle: chapterTitle,
-            kind: .inkNote,
+            kind: .ink,
             createdAt: Date(),
             modifiedAt: Date(),
             colorHex: "#FF9500",
-            inkData: inkData,
+            drawingData: inkData,
             selectedText: "Apple Pencil Margin Note (Page \(pageIndex + 1))"
         )
         
