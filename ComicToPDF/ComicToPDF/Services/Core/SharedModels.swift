@@ -598,7 +598,6 @@ struct ConversionSettings: Codable, Equatable, Sendable {
     var splitWebtoon: Bool = false // âœ… Added for Smart Slicing
     var splitSpreads: Bool = false // âœ… NEW: Landscape Double-Page Split for E-Ink
     var trimMargins: Bool = false
-    var embedCharacterGlossary: Bool = false // ✅ Disabled by default as requested
     var linkCoverAsSpread: Bool = false // ✅ NEW: Pair Cover Page with Page 2 as a spread
     var customAliases: [String: String] = [:]
     var pencilOnlyDrawing: Bool = false
@@ -618,8 +617,7 @@ struct ConversionSettings: Codable, Equatable, Sendable {
         trimMargins                         ||
         targetDeviceProfile != .original    ||
         bindingMarginOffset  != 0           ||
-        linkCoverAsSpread                   ||
-        !embedCharacterGlossary
+        linkCoverAsSpread
     }
     var splitMode: FileSizeSplitMode = .none
     var enableBackgroundQueue: Bool = true
@@ -747,6 +745,82 @@ struct ConversionSettings: Codable, Equatable, Sendable {
     
     var epubSettings: EPUBSettings = EPUBSettings()
     var imageEnhancement: ImageEnhancementSettings = ImageEnhancementSettings()
+
+    enum CodingKeys: String, CodingKey {
+        case outputFormat, compressionQuality, optimizeForDevice, targetDeviceProfile
+        case mangaMode, enablePanelSplit, splitWebtoon, splitSpreads, trimMargins, linkCoverAsSpread
+        case splitMode, enableBackgroundQueue, textSize, panelEditorMode
+        case bindingMarginOffset, bindingMarginSide, showEditorDebug
+        case readingPrefetchLimit
+        case epubSettings, imageEnhancement
+        case omnibusSplitThresholdMB, omnibusBadgePlacement
+        case deepFetchComicVineIssues
+        case outputPipeline, isGuidedView, comicVineAPIKey
+        case customAliases
+        case pencilOnlyDrawing
+        case skipDisclaimerPages
+    }
+    
+    init() {}
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        outputFormat = try container.decode(OutputFormat.self, forKey: .outputFormat)
+        compressionQuality = try container.decode(CompressionPreset.self, forKey: .compressionQuality)
+        optimizeForDevice = try container.decode(Bool.self, forKey: .optimizeForDevice)
+        targetDeviceProfile = try container.decodeIfPresent(TargetDeviceProfile.self, forKey: .targetDeviceProfile) ?? .original
+        mangaMode = try container.decode(Bool.self, forKey: .mangaMode)
+        enablePanelSplit = try container.decode(Bool.self, forKey: .enablePanelSplit)
+        splitWebtoon = try container.decodeIfPresent(Bool.self, forKey: .splitWebtoon) ?? false
+        splitSpreads = try container.decodeIfPresent(Bool.self, forKey: .splitSpreads) ?? false
+        trimMargins = try container.decodeIfPresent(Bool.self, forKey: .trimMargins) ?? false
+        linkCoverAsSpread = try container.decodeIfPresent(Bool.self, forKey: .linkCoverAsSpread) ?? false
+        splitMode = try container.decode(FileSizeSplitMode.self, forKey: .splitMode)
+        enableBackgroundQueue = try container.decodeIfPresent(Bool.self, forKey: .enableBackgroundQueue) ?? true
+        epubSettings = try container.decode(EPUBSettings.self, forKey: .epubSettings)
+        imageEnhancement = try container.decode(ImageEnhancementSettings.self, forKey: .imageEnhancement)
+        textSize = try container.decodeIfPresent(AppTextSize.self, forKey: .textSize) ?? .medium
+        panelEditorMode = try container.decodeIfPresent(PanelEditorPresentationMode.self, forKey: .panelEditorMode) ?? .sheet
+        bindingMarginOffset = try container.decodeIfPresent(Int.self, forKey: .bindingMarginOffset) ?? 0
+        bindingMarginSide = try container.decodeIfPresent(BindingMarginSide.self, forKey: .bindingMarginSide) ?? .none
+        showEditorDebug = try container.decodeIfPresent(Bool.self, forKey: .showEditorDebug) ?? false
+        readingPrefetchLimit = try container.decodeIfPresent(Int.self, forKey: .readingPrefetchLimit) ?? 2
+        omnibusSplitThresholdMB = try container.decodeIfPresent(Int.self, forKey: .omnibusSplitThresholdMB) ?? 200
+        omnibusBadgePlacement = try container.decodeIfPresent(CoverBadgePlacement.self, forKey: .omnibusBadgePlacement) ?? .bottomRight
+        deepFetchComicVineIssues = try container.decodeIfPresent(Bool.self, forKey: .deepFetchComicVineIssues) ?? false
+        
+        if let pipeline = try? container.decodeIfPresent(OutputPipeline.self, forKey: .outputPipeline) {
+            if pipeline.rawValue == "Pro Panel (Sideload Only)" || pipeline.rawValue == "Pro Panel EPUB (Previewer)" {
+                outputPipeline = .proPanel
+            } else {
+                outputPipeline = pipeline
+            }
+        } else {
+            let legacyGuided = (try? container.decodeIfPresent(Bool.self, forKey: .isGuidedView)) ?? false
+            outputPipeline = legacyGuided ? .proPanel : .standard
+        }
+        
+        customAliases = (try? container.decodeIfPresent([String: String].self, forKey: .customAliases)) ?? [:]
+        pencilOnlyDrawing = (try? container.decodeIfPresent(Bool.self, forKey: .pencilOnlyDrawing)) ?? false
+        skipDisclaimerPages = (try? container.decodeIfPresent(Bool.self, forKey: .skipDisclaimerPages)) ?? false
+    }
+    
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(outputFormat, forKey: .outputFormat)
+        try container.encode(compressionQuality, forKey: .compressionQuality)
+        try container.encode(optimizeForDevice, forKey: .optimizeForDevice)
+        try container.encode(targetDeviceProfile, forKey: .targetDeviceProfile)
+        try container.encode(mangaMode, forKey: .mangaMode)
+        try container.encode(enablePanelSplit, forKey: .enablePanelSplit)
+        try container.encode(splitWebtoon, forKey: .splitWebtoon)
+        try container.encode(splitSpreads, forKey: .splitSpreads)
+        try container.encode(trimMargins, forKey: .trimMargins)
+        try container.encode(linkCoverAsSpread, forKey: .linkCoverAsSpread)
+        try container.encode(splitMode, forKey: .splitMode)
+        try container.encode(enableBackgroundQueue, forKey: .enableBackgroundQueue)
+        try container.encode(epubSettings, forKey: .epubSettings)
+        try container.encode(imageEnhancement, forKey: .imageEnhancement)
         try container.encode(textSize, forKey: .textSize)
         try container.encode(panelEditorMode, forKey: .panelEditorMode)
         try container.encode(bindingMarginOffset, forKey: .bindingMarginOffset)
@@ -754,13 +828,9 @@ struct ConversionSettings: Codable, Equatable, Sendable {
         try container.encode(outputPipeline, forKey: .outputPipeline)
         try container.encode(showEditorDebug, forKey: .showEditorDebug)
         try container.encode(readingPrefetchLimit, forKey: .readingPrefetchLimit)
-        // Omnibus settings
         try container.encode(omnibusSplitThresholdMB, forKey: .omnibusSplitThresholdMB)
         try container.encode(omnibusBadgePlacement, forKey: .omnibusBadgePlacement)
-        // Metadata strategy
         try container.encode(deepFetchComicVineIssues, forKey: .deepFetchComicVineIssues)
-        // comicVineAPIKey is intentionally not encoded (moved to Keychain)
-        // isGuidedView is intentionally not encoded (computed from outputPipeline)
         try container.encode(customAliases, forKey: .customAliases)
         try container.encode(pencilOnlyDrawing, forKey: .pencilOnlyDrawing)
         try container.encode(skipDisclaimerPages, forKey: .skipDisclaimerPages)
