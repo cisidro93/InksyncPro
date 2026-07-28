@@ -362,6 +362,7 @@ class PanelViewEPUBConverter {
         }
         if needsBlank {
             manifestItems.append(#"<item id="page-blank" href="pages/blank.xhtml" media-type="application/xhtml+xml"/>"#)
+        }
         let coverMetaID = hasBadgedCover ? "cover-image" : "img-001"
         let spineItems = buildSpineItems(
             pageCatalog: pageCatalog,
