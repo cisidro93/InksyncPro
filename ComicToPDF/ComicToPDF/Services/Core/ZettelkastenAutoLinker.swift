@@ -4,12 +4,20 @@ import SwiftData
 /// Zettelkasten Auto-Linker Engine
 /// Analyzes keywords, topics, and annotations across all books in the library
 /// to automatically discover and suggest interconnected knowledge links.
-struct ZettelkastenConnection: Identifiable, Hashable {
+struct ZettelkastenConnection: Identifiable, Hashable, Equatable {
     var id: UUID { targetAnnotation.id }
     let sourceAnnotationID: UUID
     let targetAnnotation: Annotation
     let score: Double
     let matchedKeywords: [String]
+    
+    static func == (lhs: ZettelkastenConnection, rhs: ZettelkastenConnection) -> Bool {
+        lhs.id == rhs.id
+    }
+    
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
 }
 
 @MainActor
