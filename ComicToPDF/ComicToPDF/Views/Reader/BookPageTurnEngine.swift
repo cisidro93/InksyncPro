@@ -233,25 +233,39 @@ extension PageCurlReader {
             transitionCompleted completed: Bool
         ) {
             isTransitioning = false
-            guard completed,
-                  let currentVC = pageViewController.viewControllers?.first as? PageContentViewController else {
+            guard let currentVC = pageViewController.viewControllers?.first as? PageContentViewController else {
                 return
             }
             
             let newControllerIndex = currentVC.index
             lastCompletedControllerIndex = newControllerIndex
             
-            if self.parent.isTwoUp {
-                let spreads = self.parent.computeSpreads()
-                if newControllerIndex < spreads.count {
-                    let newPageIndex = spreads[newControllerIndex].first ?? 0
-                    if self.parent.currentIndex != newPageIndex {
-                        self.parent.currentIndex = newPageIndex
+            if completed {
+                if self.parent.isTwoUp {
+                    let spreads = self.parent.computeSpreads()
+                    if newControllerIndex < spreads.count {
+                        let newPageIndex = spreads[newControllerIndex].first ?? 0
+                        if self.parent.currentIndex != newPageIndex {
+                            self.parent.currentIndex = newPageIndex
+                        }
+                    }
+                } else {
+                    if self.parent.currentIndex != newControllerIndex {
+                        self.parent.currentIndex = newControllerIndex
                     }
                 }
             } else {
-                if self.parent.currentIndex != newControllerIndex {
-                    self.parent.currentIndex = newControllerIndex
+                // 🔴 CRITICAL SNAP-BACK GUARD: User cancelled swipe!
+                // Re-sync parent.currentIndex to whatever page is ACTUALLY visible on screen
+                let actualIndex: Int
+                if self.parent.isTwoUp {
+                    let spreads = self.parent.computeSpreads()
+                    actualIndex = (newControllerIndex < spreads.count) ? (spreads[newControllerIndex].first ?? 0) : 0
+                } else {
+                    actualIndex = newControllerIndex
+                }
+                if self.parent.currentIndex != actualIndex {
+                    self.parent.currentIndex = actualIndex
                 }
             }
         }
@@ -299,6 +313,7 @@ extension PageCurlReader {
         }
         
         private func turnForward(_ pvc: UIPageViewController) {
+            guard !isTransitioning else { return }
             let maxCount = parent.isTwoUp ? parent.computeSpreads().count : parent.totalPages
             let currentControllerIndex: Int
             if parent.isTwoUp {
@@ -313,7 +328,9 @@ extension PageCurlReader {
                 let vc = makeViewController(for: targetIndex)
                 HapticEngine.light()
                 let direction: UIPageViewController.NavigationDirection = parent.isMangaRTL ? .reverse : .forward
+                isTransitioning = true // 🔴 Lock transitions during tap page flip
                 pvc.setViewControllers([vc], direction: direction, animated: true) { [weak self] completed in
+                    self?.isTransitioning = false // 🔓 Unlock transition
                     if completed {
                         DispatchQueue.main.async {
                             self?.updateParentIndex(to: targetIndex)
@@ -326,6 +343,7 @@ extension PageCurlReader {
         }
         
         private func turnBackward(_ pvc: UIPageViewController) {
+            guard !isTransitioning else { return }
             let currentControllerIndex: Int
             if parent.isTwoUp {
                 let spreads = parent.computeSpreads()
@@ -339,7 +357,9 @@ extension PageCurlReader {
                 let vc = makeViewController(for: targetIndex)
                 HapticEngine.light()
                 let direction: UIPageViewController.NavigationDirection = parent.isMangaRTL ? .forward : .reverse
+                isTransitioning = true // 🔴 Lock transitions during tap page flip
                 pvc.setViewControllers([vc], direction: direction, animated: true) { [weak self] completed in
+                    self?.isTransitioning = false // 🔓 Unlock transition
                     if completed {
                         DispatchQueue.main.async {
                             self?.updateParentIndex(to: targetIndex)
@@ -696,15 +716,24 @@ extension SmartMidSpineCurlReader {
             transitionCompleted completed: Bool
         ) {
             isTransitioning = false
-            guard completed,
-                  let visibleVCs = pageViewController.viewControllers,
+            guard let visibleVCs = pageViewController.viewControllers,
                   let firstLeaf = visibleVCs.first as? SingleLeafViewController else {
                 return
             }
-            let newIndex = firstLeaf.pageIndex < 0 ? 0 : firstLeaf.pageIndex
-            lastCompletedIndex = newIndex
-            if parent.currentIndex != newIndex {
-                parent.currentIndex = newIndex
+            let visibleIndices = visibleVCs.compactMap { ($0 as? SingleLeafViewController)?.pageIndex }.filter { $0 >= 0 }
+            let actualIndex = visibleIndices.first ?? (firstLeaf.pageIndex < 0 ? 0 : firstLeaf.pageIndex)
+            lastCompletedIndex = actualIndex
+            
+            if completed {
+                if parent.currentIndex != actualIndex {
+                    parent.currentIndex = actualIndex
+                }
+            } else {
+                // 🔴 CRITICAL SNAP-BACK GUARD: User cancelled drag gesture midway!
+                // Restore parent.currentIndex to match the page currently visible
+                if parent.currentIndex != actualIndex {
+                    parent.currentIndex = actualIndex
+                }
             }
         }
 
@@ -742,12 +771,15 @@ extension SmartMidSpineCurlReader {
         }
 
         private func turnForward(_ pvc: UIPageViewController) {
+            guard !isTransitioning else { return }
             let nextIndex = min(parent.totalPages - 1, parent.currentIndex + 2)
             if nextIndex != parent.currentIndex {
                 let targetSpread = spreadViewControllers(for: nextIndex)
                 HapticEngine.light()
                 let direction: UIPageViewController.NavigationDirection = parent.isMangaRTL ? .reverse : .forward
+                isTransitioning = true // 🔴 Lock transitions during tap page flip
                 pvc.setViewControllers(targetSpread, direction: direction, animated: true) { [weak self] completed in
+                    self?.isTransitioning = false // 🔓 Unlock transition
                     if completed {
                         DispatchQueue.main.async {
                             self?.parent.currentIndex = nextIndex
@@ -760,12 +792,15 @@ extension SmartMidSpineCurlReader {
         }
 
         private func turnBackward(_ pvc: UIPageViewController) {
+            guard !isTransitioning else { return }
             let prevIndex = max(0, parent.currentIndex - 2)
             if prevIndex != parent.currentIndex {
                 let targetSpread = spreadViewControllers(for: prevIndex)
                 HapticEngine.light()
                 let direction: UIPageViewController.NavigationDirection = parent.isMangaRTL ? .forward : .reverse
+                isTransitioning = true // 🔴 Lock transitions during tap page flip
                 pvc.setViewControllers(targetSpread, direction: direction, animated: true) { [weak self] completed in
+                    self?.isTransitioning = false // 🔓 Unlock transition
                     if completed {
                         DispatchQueue.main.async {
                             self?.parent.currentIndex = prevIndex

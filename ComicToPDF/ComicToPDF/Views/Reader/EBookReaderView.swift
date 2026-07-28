@@ -176,7 +176,7 @@ struct EBookReaderView: View {
                                     )
                                 )
                             )
-                            .animation(.spring(response: 0.35, dampingFraction: 0.85), value: currentIndex)
+                            .animation(.easeInOut(duration: 0.42), value: currentIndex)
                             
                             EdgeBrightnessGestureZone()
                         }
