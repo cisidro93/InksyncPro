@@ -907,7 +907,7 @@ struct EPUBWebView: View {
 
         function goToPage(page, smooth) {
             _currentPage = Math.max(0, Math.min(page, _totalPages - 1));
-            var behavior = smooth ? 'smooth' : 'instant';
+            var behavior = 'instant';
             
             var sv = document.scrollingElement || document.documentElement;
             var isHoriz = \(isPaged);
@@ -1199,7 +1199,7 @@ struct BookReaderEngine: View {
                                     )
                                 )
                             )
-                            .animation(.spring(response: 0.35, dampingFraction: 0.85), value: chapterPage)
+                            .animation(.easeInOut(duration: 0.42), value: chapterPage)
                             
                             if prefs.paginationMode == EBookPaginationMode.paged.rawValue && computeColumnCount(for: geo.size) == 2 {
                                 BookSpineCreaseOverlay()

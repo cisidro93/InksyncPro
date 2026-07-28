@@ -1514,7 +1514,7 @@ struct EBookWebReader: View {
 
         function goToPage(page, smooth) {
             _currentPage = Math.max(0, Math.min(page, _totalPages - 1));
-            var behavior = smooth ? 'smooth' : 'instant';
+            var behavior = 'instant';
             
             var sv = document.scrollingElement || document.documentElement;
             var isHoriz = \(isPaged);
@@ -1546,10 +1546,10 @@ struct EBookWebReader: View {
             var leftEdge = window.__inksync_left_edge || 0.30;
             var rightEdge = window.__inksync_right_edge || 0.70;
             if (x < w * leftEdge) {
-                if (_currentPage > 0) goToPage(_currentPage - 1, true);
+                if (_currentPage > 0) goToPage(_currentPage - 1, false);
                 else window.webkit.messageHandlers.nav.postMessage('prev');
             } else if (x > w * rightEdge) {
-                if (_currentPage < _totalPages - 1) goToPage(_currentPage + 1, true);
+                if (_currentPage < _totalPages - 1) goToPage(_currentPage + 1, false);
                 else window.webkit.messageHandlers.nav.postMessage('next');
             } else {
                 window.webkit.messageHandlers.nav.postMessage('center');
@@ -1558,11 +1558,11 @@ struct EBookWebReader: View {
 
         document.addEventListener('keydown', function(e) {
             if (e.key === 'ArrowRight' || e.key === 'Space') {
-                if (_currentPage < _totalPages - 1) goToPage(_currentPage + 1, true);
+                if (_currentPage < _totalPages - 1) goToPage(_currentPage + 1, false);
                 else window.webkit.messageHandlers.nav.postMessage('next');
                 e.preventDefault();
             } else if (e.key === 'ArrowLeft') {
-                if (_currentPage > 0) goToPage(_currentPage - 1, true);
+                if (_currentPage > 0) goToPage(_currentPage - 1, false);
                 else window.webkit.messageHandlers.nav.postMessage('prev');
                 e.preventDefault();
             }
