@@ -19,11 +19,28 @@ final class LibraryService: ObservableObject {
             let (loadedItems, loadedCollections) = try await LibraryRepository.shared.loadLibrary()
             let loadedOmnibuses = await LibraryDatabaseService.shared.loadVirtualOmnibuses()
             
-            // Assign atomically on MainActor to avoid intermediate partial state
-            self.items = loadedItems
+            // 🔴 AUTOMATIC STARTUP DEDUPLICATION: Purge duplicate entries matching the same filename
+            var uniqueItems: [ConvertedPDF] = []
+            var seenFilenames = Set<String>()
+            for item in loadedItems {
+                let key = item.url.lastPathComponent.lowercased()
+                if !seenFilenames.contains(key) {
+                    seenFilenames.insert(key)
+                    uniqueItems.append(item)
+                }
+            }
+            
+            if uniqueItems.count < loadedItems.count {
+                Logger.shared.log("LibraryService: Purged \(loadedItems.count - uniqueItems.count) duplicate items from startup load.", category: "Library", type: .warning)
+                self.items = uniqueItems
+                self.saveLibrary(isStructural: true)
+            } else {
+                self.items = loadedItems
+            }
+            
             self.collections = loadedCollections
             self.virtualOmnibuses = loadedOmnibuses
-            Logger.shared.log("LibraryService: loaded \(loadedItems.count) items, \(loadedCollections.count) collections, \(loadedOmnibuses.count) virtual omnibuses.", category: "Library")
+            Logger.shared.log("LibraryService: loaded \(self.items.count) items, \(loadedCollections.count) collections, \(loadedOmnibuses.count) virtual omnibuses.", category: "Library")
             self.syncAllRemoteVirtualOmnibuses()
         } catch {
             Logger.shared.log("LibraryService: failed to load library: \(error.localizedDescription)", category: "Library", type: .error)

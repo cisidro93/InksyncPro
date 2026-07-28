@@ -104,16 +104,21 @@ actor LibraryScanner {
         var newPDFs: [ConvertedPDF] = []
         let keys: [URLResourceKey] = [.nameKey, .isDirectoryKey, .fileSizeKey]
 
-        let currentPaths = await MainActor.run {
-            manager.convertedPDFs.map { pdf -> String in
+        let (existingRelPaths, existingFilenames, existingCanonicalPaths) = await MainActor.run {
+            var rels = Set<String>()
+            var names = Set<String>()
+            var paths = Set<String>()
+            for pdf in manager.convertedPDFs {
                 if pdf.isLinked {
-                    return pdf.url.path
+                    paths.insert(pdf.url.path.lowercased())
                 } else {
-                    return relativePath(for: pdf.url)
+                    rels.insert(relativePath(for: pdf.url).lowercased())
                 }
+                names.insert(pdf.url.lastPathComponent.lowercased())
+                paths.insert(pdf.url.resolvingSymlinksInPath().path.lowercased())
             }
+            return (rels, names, paths)
         }
-        let pathSet = Set(currentPaths)
 
         // Scan both the Documents directory and the Wi-Fi transfer Inbox
         let dirsToScan = [docDir, inboxDir]
@@ -142,9 +147,14 @@ actor LibraryScanner {
                 let ext = fileURL.pathExtension.lowercased()
                 guard ["pdf", "epub", "cbz", "cbr", "cb7", "cbt", "zip"].contains(ext) else { continue }
 
-                let filename = fileURL.lastPathComponent
-                let relPath = relativePath(for: fileURL)
-                guard !pathSet.contains(relPath) else { continue }
+                let filename = fileURL.lastPathComponent.lowercased()
+                let relPath = relativePath(for: fileURL).lowercased()
+                let canonicalPath = fileURL.resolvingSymlinksInPath().path.lowercased()
+                
+                // 🔴 TRIPLE-GUARD DUPLICATE PROTECTION: Skip if filename, relative path, or canonical path already exists!
+                if existingRelPaths.contains(relPath) || existingFilenames.contains(filename) || existingCanonicalPaths.contains(canonicalPath) {
+                    continue
+                }
                 
                 // Skip files currently being uploaded via WiFi
                 guard !ActiveUploadRegistry.shared.isUploading(fileURL) else { continue }
