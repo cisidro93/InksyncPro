@@ -446,26 +446,7 @@ struct CBZToEPUBConverter: Sendable {
             currentChunkImages.removeAll()
         }
         
-        // embedCharacterGlossary uses the pre-fetched metadataInfo — no MainActor round-trip needed.
-        if settings.embedCharacterGlossary {
-            let glossaryHTML = await MainActor.run {
-                CharacterGlossaryBuilder.shared.buildGlossaryHTML(
-                    seriesIDString: metadataInfo.seriesID,
-                    seriesName: metadataInfo.seriesName ?? baseFilename,
-                    issueNumber: metadataInfo.issueNum
-                )
-            }
-            
-            if let html = glossaryHTML {
-                let glossaryFilename = "glossary.xhtml"
-                let glossaryURL = textDir.appendingPathComponent(glossaryFilename)
-                try? html.write(to: glossaryURL, atomically: true, encoding: .utf8)
-                
-                manifestItems.append("<item id=\"character-glossary\" href=\"text/\(glossaryFilename)\" media-type=\"application/xhtml+xml\"/>")
-                spineItems.append("<itemref idref=\"character-glossary\"/>")
-            }
-        }
-        
+
         // For single-volume: cover image is img_1 (with properties="cover-image").
         // For multi-batch: the badged cover written above is "cover-image".
         // Always provide coverMetaID so Kindle Cloud ingest preserves the spine structure for dual-page spreads.

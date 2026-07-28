@@ -1802,13 +1802,6 @@ struct ComicReaderEngine: View {
                 }
             }
         }
-        .sheet(isPresented: $showingCharacterMap) {
-            CharacterOverlayView(
-                seriesName: pdf.metadata.series ?? pdf.name,
-                issueNumber: Int(pdf.metadata.issueNumber ?? "") ?? 1,
-                pageIndex: currentIndex
-            )
-        }
 
         .sheet(item: $activeHighlightToEdit) { annotation in
             AnnotationEditSheet(annotation: annotation)
