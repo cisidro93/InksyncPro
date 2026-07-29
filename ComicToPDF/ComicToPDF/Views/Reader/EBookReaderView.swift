@@ -1512,7 +1512,11 @@ struct EBookWebReader: View {
             var isHoriz = \(isPaged);
             
             if (isHoriz) {
-                _totalPages = Math.max(1, Math.round(sv.scrollWidth / pageStep));
+                var scrollW = Math.max(sv.scrollWidth, document.body.scrollWidth);
+                var total = Math.floor((scrollW + 5) / pageStep);
+                var remainder = (scrollW + 5) % pageStep;
+                if (remainder > 35) { total += 1; }
+                _totalPages = Math.max(1, total);
                 if (_firstRun) {
                     _firstRun = false;
                     if (_currentPage === 99999) {

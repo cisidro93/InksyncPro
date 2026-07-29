@@ -554,7 +554,21 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
 
         func buildPageScript() -> String {
             """
+            var _targetPage = 0;
+            var _totalPages = 1;
+
+            function applyPagePosition() {
+                var pageStep = window.innerWidth;
+                if (pageStep <= 0) return;
+                var sv = document.scrollingElement || document.documentElement;
+                sv.scrollLeft = _targetPage * pageStep;
+            }
+
+            // Set scrollLeft immediately during script evaluation
+            applyPagePosition();
+
             document.addEventListener('DOMContentLoaded', function() {
+                applyPagePosition();
                 document.querySelectorAll('[style]').forEach(function(el) {
                     el.style.removeProperty('background-color');
                     el.style.removeProperty('color');
@@ -565,39 +579,35 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
                 document.body.style.userSelect = 'text';
             });
 
-            var _targetPage = 0;
-            var _totalPages = 1;
-
             function computeMetrics() {
                 var sv = document.scrollingElement || document.documentElement;
                 var pageStep = window.innerWidth;
-                _totalPages = Math.max(1, Math.round(sv.scrollWidth / pageStep));
+                if (pageStep <= 0) return 1;
+                var scrollW = Math.max(sv.scrollWidth, document.body.scrollWidth);
+                var total = Math.floor((scrollW + 5) / pageStep);
+                var remainder = (scrollW + 5) % pageStep;
+                if (remainder > 35) {
+                    total += 1;
+                }
+                _totalPages = Math.max(1, total);
                 return _totalPages;
             }
 
             function goToPage(page) {
                 _targetPage = Math.max(0, Math.min(page, _totalPages - 1));
-                var pageStep = window.innerWidth;
-                var sv = document.scrollingElement || document.documentElement;
-                sv.scrollLeft = _targetPage * pageStep;
+                applyPagePosition();
             }
             window.goToInksyncPage = goToPage;
 
             window.onload = function() {
-                setTimeout(function() {
-                    computeMetrics();
-                    goToPage(_targetPage);
-                    window.webkit.messageHandlers.metrics.postMessage({ current: _targetPage, total: _totalPages });
-                }, 80);
-                setTimeout(function() {
-                    computeMetrics();
-                    window.webkit.messageHandlers.metrics.postMessage({ current: _targetPage, total: _totalPages });
-                }, 400);
+                computeMetrics();
+                applyPagePosition();
+                window.webkit.messageHandlers.metrics.postMessage({ current: _targetPage, total: _totalPages });
             };
 
             window.addEventListener('resize', function() {
                 computeMetrics();
-                goToPage(_targetPage);
+                applyPagePosition();
             });
 
             // ── Highlight Engine ───────────────────────────────────────
@@ -672,23 +682,17 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
         func buildPageHTML(for pageIndex: Int) -> String {
             var fullHTML = chapterHTML
 
-            // Inject CSS + JS before </head>
-            if let range = fullHTML.range(of: "</head>", options: .caseInsensitive) {
-                fullHTML = fullHTML.replacingCharacters(in: range, with: styledCSS + "</head>")
-            } else {
-                fullHTML = styledCSS + fullHTML
-            }
-
-            // Inject page-targeting script just before </body>
             let pageTargetScript = """
             <script>
-            _targetPage = \(pageIndex);
+            var _targetPage = \(pageIndex);
             </script>
             """
-            if let range = fullHTML.range(of: "</body>", options: .caseInsensitive) {
-                fullHTML = fullHTML.replacingCharacters(in: range, with: pageTargetScript + "</body>")
+
+            // Inject CSS + JS before </head>
+            if let range = fullHTML.range(of: "</head>", options: .caseInsensitive) {
+                fullHTML = fullHTML.replacingCharacters(in: range, with: pageTargetScript + styledCSS + "</head>")
             } else {
-                fullHTML += pageTargetScript
+                fullHTML = pageTargetScript + styledCSS + fullHTML
             }
 
             return fullHTML
