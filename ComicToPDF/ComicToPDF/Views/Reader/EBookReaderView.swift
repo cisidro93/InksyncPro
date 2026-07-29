@@ -109,74 +109,97 @@ struct EBookReaderView: View {
                         readerErrorView(err)
                     } else if let meta = metadata, !meta.spineItems.isEmpty {
                         ZStack {
-                            EBookWebReader(
-                                spineItem:   meta.spineItems[currentIndex],
-                                unzipDir:    unzipDir,
-                                prefs:       prefs,
-                                colorScheme: colorScheme,
-                                currentPage: $chapterPage,
-                                initialPage: chapterPage,
-                                totalPages:  $chapterTotalPages,
-                                onNext:      nextChapter,
-                                onPrev:      prevChapter,
-                                onCenterTap: { withAnimation(.easeInOut(duration: 0.2)) { showHUD.toggle() } },
-                                // FIX 1+2: Persist highlight to AnnotationStore + SwiftData.
-                                // Open the colour-picker popover immediately so the user can
-                                // change the colour — the selected hex is reflected in the DOM
-                                // via the onColorSelected callback in HighlightQuickPopoverView.
-                                onHighlightCreated: { selectedText in
-                                    guard let p = pdf else { return }
-                                    let rawLabel = metadata?.spineItems[safe: currentIndex]?.label ?? ""
-                                    let spineLabel = !rawLabel.isEmpty ? rawLabel : nil
-                                    let highlight = Annotation(
-                                        pdfID: p.id,
-                                        pageIndex: currentIndex,
-                                        chapterTitle: spineLabel,
-                                        kind: .highlight,
-                                        createdAt: Date(),
-                                        modifiedAt: Date(),
-                                        colorHex: "#ffd700",
-                                        selectedText: selectedText
-                                    )
-                                    AnnotationStore.shared.add(highlight)
-                                    let sdAnnotation = SDAnnotation(from: highlight)
-                                    modelContext.insert(sdAnnotation)
-                                    try? modelContext.save()
-                                    // Pop the colour picker popover immediately
-                                    activeHighlightToEdit = sdAnnotation
-                                },
-                                pdfID: pdf?.id,
-                                // FIX 4: Pass the saved fractional position so the chapter
-                                // is restored to the exact scroll position, not the chapter start.
-                                initialScrollFraction: UserDefaults.standard.double(forKey: "ebook_fraction_\(fileURL.lastPathComponent.hashValue)"),
-                                onScrollFractionChanged: { fraction in
-                                    chapterScrollFraction = fraction
-                                    saveProgress()
-                                },
-                                // Gap B: Expose the live WKWebView so window.find() can be injected
-                                webViewRef: $webViewReference,
-                                onFootnoteTapped: { text in
-                                    activeFootnoteText = text
-                                }
-                            )
-                            .padding(.horizontal, prefs.paginationMode == EBookPaginationMode.paged.rawValue ? prefs.textMargin : 0)
-                            // Directional page-turn: slide left for forward, right for back.
-                            // Using .id("\(currentIndex)_\(chapterPage)") forces SwiftUI to create a new view identity
-                            // on every page turn, guaranteeing the 3D page curl transition fires.
-                            .id("\(currentIndex)_\(chapterPage)")
-                            .transition(
-                                .asymmetric(
-                                    insertion: .modifier(
-                                        active: PageCurl3DEffect(angle: isGoingForward ? 90 : -90, axis: (x: 0.0, y: 1.0, z: 0.0), anchor: isGoingForward ? .trailing : .leading),
-                                        identity: PageCurl3DEffect(angle: 0, axis: (x: 0.0, y: 1.0, z: 0.0), anchor: isGoingForward ? .trailing : .leading)
-                                    ),
-                                    removal: .modifier(
-                                        active: PageCurl3DEffect(angle: isGoingForward ? -90 : 90, axis: (x: 0.0, y: 1.0, z: 0.0), anchor: isGoingForward ? .leading : .trailing),
-                                        identity: PageCurl3DEffect(angle: 0, axis: (x: 0.0, y: 1.0, z: 0.0), anchor: isGoingForward ? .leading : .trailing)
-                                    )
+                            if prefs.paginationMode == EBookPaginationMode.paged.rawValue {
+                                // ── Native UIPageViewController Page Curl ──────────────
+                                // Uses UIPageViewController(.pageCurl) — the same native
+                                // iOS page curl used by the comic and PDF readers.
+                                EBookPageCurlReader(
+                                    spineItem:   meta.spineItems[currentIndex],
+                                    unzipDir:    unzipDir,
+                                    prefs:       prefs,
+                                    colorScheme: colorScheme,
+                                    currentPage: $chapterPage,
+                                    initialPage: chapterPage,
+                                    totalPages:  $chapterTotalPages,
+                                    onNext:      nextChapter,
+                                    onPrev:      prevChapter,
+                                    onCenterTap: { withAnimation(.easeInOut(duration: 0.2)) { showHUD.toggle() } },
+                                    onHighlightCreated: { selectedText in
+                                        guard let p = pdf else { return }
+                                        let rawLabel = metadata?.spineItems[safe: currentIndex]?.label ?? ""
+                                        let spineLabel = !rawLabel.isEmpty ? rawLabel : nil
+                                        let highlight = Annotation(
+                                            pdfID: p.id,
+                                            pageIndex: currentIndex,
+                                            chapterTitle: spineLabel,
+                                            kind: .highlight,
+                                            createdAt: Date(),
+                                            modifiedAt: Date(),
+                                            colorHex: "#ffd700",
+                                            selectedText: selectedText
+                                        )
+                                        AnnotationStore.shared.add(highlight)
+                                        let sdAnnotation = SDAnnotation(from: highlight)
+                                        modelContext.insert(sdAnnotation)
+                                        try? modelContext.save()
+                                        activeHighlightToEdit = sdAnnotation
+                                    },
+                                    pdfID: pdf?.id,
+                                    initialScrollFraction: UserDefaults.standard.double(forKey: "ebook_fraction_\(fileURL.lastPathComponent.hashValue)"),
+                                    onScrollFractionChanged: { fraction in
+                                        chapterScrollFraction = fraction
+                                        saveProgress()
+                                    },
+                                    webViewRef: $webViewReference,
+                                    onFootnoteTapped: { text in
+                                        activeFootnoteText = text
+                                    }
                                 )
-                            )
-                            .animation(.easeInOut(duration: 0.42), value: chapterPage)
+                            } else {
+                                // ── Scroll Mode (continuous vertical) ──────────────────
+                                EBookWebReader(
+                                    spineItem:   meta.spineItems[currentIndex],
+                                    unzipDir:    unzipDir,
+                                    prefs:       prefs,
+                                    colorScheme: colorScheme,
+                                    currentPage: $chapterPage,
+                                    initialPage: chapterPage,
+                                    totalPages:  $chapterTotalPages,
+                                    onNext:      nextChapter,
+                                    onPrev:      prevChapter,
+                                    onCenterTap: { withAnimation(.easeInOut(duration: 0.2)) { showHUD.toggle() } },
+                                    onHighlightCreated: { selectedText in
+                                        guard let p = pdf else { return }
+                                        let rawLabel = metadata?.spineItems[safe: currentIndex]?.label ?? ""
+                                        let spineLabel = !rawLabel.isEmpty ? rawLabel : nil
+                                        let highlight = Annotation(
+                                            pdfID: p.id,
+                                            pageIndex: currentIndex,
+                                            chapterTitle: spineLabel,
+                                            kind: .highlight,
+                                            createdAt: Date(),
+                                            modifiedAt: Date(),
+                                            colorHex: "#ffd700",
+                                            selectedText: selectedText
+                                        )
+                                        AnnotationStore.shared.add(highlight)
+                                        let sdAnnotation = SDAnnotation(from: highlight)
+                                        modelContext.insert(sdAnnotation)
+                                        try? modelContext.save()
+                                        activeHighlightToEdit = sdAnnotation
+                                    },
+                                    pdfID: pdf?.id,
+                                    initialScrollFraction: UserDefaults.standard.double(forKey: "ebook_fraction_\(fileURL.lastPathComponent.hashValue)"),
+                                    onScrollFractionChanged: { fraction in
+                                        chapterScrollFraction = fraction
+                                        saveProgress()
+                                    },
+                                    webViewRef: $webViewReference,
+                                    onFootnoteTapped: { text in
+                                        activeFootnoteText = text
+                                    }
+                                )
+                            }
                             
                             EdgeBrightnessGestureZone()
                         }
