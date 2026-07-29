@@ -454,20 +454,13 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
         }
 
         private func generateAllColumnSnapshots() {
-            guard let wv = primaryWebView, computedTotalPages > 0 else { return }
-            for page in 0..<computedTotalPages {
-                if pageSnapshots[page] != nil { continue }
-                let targetPage = page
-                wv.evaluateJavaScript("if(window.goToInksyncPage) window.goToInksyncPage(\(targetPage));") { [weak self] _, _ in
-                    wv.takeSnapshot(with: nil) { image, _ in
-                        if let img = image {
-                            self?.pageSnapshots[targetPage] = img
-                        }
-                    }
+            guard let wv = primaryWebView else { return }
+            let activePage = currentPageIndex
+            wv.takeSnapshot(with: nil) { [weak self] image, _ in
+                if let img = image {
+                    self?.pageSnapshots[activePage] = img
                 }
             }
-            // Restore master webview back to current active page
-            wv.evaluateJavaScript("if(window.goToInksyncPage) window.goToInksyncPage(\(currentPageIndex));")
         }
 
         private func takePageSnapshot(for pageIndex: Int) {
