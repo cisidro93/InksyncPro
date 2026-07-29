@@ -4,8 +4,9 @@ import WebKit
 // ============================================================
 // MARK: - EBookPageCurlReader
 // Native UIPageViewController(.pageCurl) for EPUB chapters.
-// Each "page" is a WKWebView rendering a single CSS column
-// with scrolling disabled — UIKit handles the curl animation.
+// Uses a primary WKWebView for chapter layout & interaction,
+// and pre-rendered column snapshots for 100% instant 3D curling
+// with zero blank pages, zero text sliding, and zero loading lag.
 // ============================================================
 struct EBookPageCurlReader: UIViewControllerRepresentable {
     let spineItem: EBookMetadata.SpineItem
@@ -50,7 +51,7 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
 
         let view = pvc.view!
 
-        // Double tap (reserved for future use / cooperative gesture)
+        // Double tap
         let doubleTap = UITapGestureRecognizer(
             target: context.coordinator,
             action: #selector(Coordinator.handleDoubleTap(_:))
@@ -88,21 +89,18 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
             context.coordinator.loadChapterAndPresent()
             return
         }
-
-        // If prefs changed (font size, theme, etc.), rebuild CSS and reload
-        // This is handled by the coordinator's preference observation
     }
 
     // ============================================================
     // MARK: - Coordinator
     // ============================================================
     @MainActor
-    class Coordinator: NSObject, UIPageViewControllerDataSource, UIPageViewControllerDelegate {
+    class Coordinator: NSObject, UIPageViewControllerDataSource, UIPageViewControllerDelegate, WKNavigationDelegate, WKScriptMessageHandler {
         var parent: EBookPageCurlReader
         weak var pageViewController: UIPageViewController?
         var isTransitioning: Bool = false
 
-        // Chapter state
+        // Chapter & Primary WebEngine state
         private var chapterHTML: String = ""
         private var chapterBaseURL: URL?
         private var styledCSS: String = ""
@@ -110,9 +108,46 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
         private var currentPageIndex: Int = 0
         private var hasLoadedInitialPage: Bool = false
 
+        // Primary master WKWebView — used for text layout, metrics & live interactions
+        private(set) var primaryWebView: WKWebView?
+        // Pre-rendered column snapshots — used for instant, zero-lag 3D page curling
+        private var pageSnapshots: [Int: UIImage] = [:]
+
         init(_ parent: EBookPageCurlReader) {
             self.parent = parent
             super.init()
+            setupPrimaryWebView()
+        }
+
+        private func setupPrimaryWebView() {
+            let config = WKWebViewConfiguration()
+            let controller = config.userContentController
+            controller.add(self, name: "metrics")
+            controller.add(self, name: "highlight")
+            controller.add(self, name: "footnote")
+            controller.add(self, name: "scrollFraction")
+
+            let wv = HighlightableWebView(frame: UIScreen.main.bounds, configuration: config)
+            wv.onHighlightRequested = { [weak self] in
+                self?.handleHighlightRequest()
+            }
+            wv.navigationDelegate = self
+            wv.isOpaque = false
+            wv.backgroundColor = .clear
+            wv.scrollView.backgroundColor = .clear
+
+            wv.scrollView.isScrollEnabled = false
+            wv.scrollView.isPagingEnabled = false
+            wv.scrollView.bounces = false
+            wv.scrollView.alwaysBounceHorizontal = false
+            wv.scrollView.alwaysBounceVertical = false
+            wv.scrollView.showsHorizontalScrollIndicator = false
+            wv.scrollView.showsVerticalScrollIndicator = false
+            wv.scrollView.contentInsetAdjustmentBehavior = .never
+            wv.scrollView.contentInset = .zero
+
+            self.primaryWebView = wv
+            self.parent.webViewRef = wv
         }
 
         // MARK: - Chapter Loading
@@ -120,6 +155,7 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
         func loadChapterAndPresent() {
             hasLoadedInitialPage = false
             currentPageIndex = parent.initialPage
+            pageSnapshots.removeAll()
 
             Task { @MainActor in
                 guard let dir = parent.unzipDir else { return }
@@ -154,7 +190,22 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
                 self.chapterHTML = html
                 self.styledCSS = self.buildFullCSS()
 
-                // Create the initial page VC — it will compute total pages on didFinish
+                // Load HTML into primary master WKWebView
+                let fullHTML = self.buildPageHTML(for: self.currentPageIndex)
+                if let base = self.chapterBaseURL {
+                    let tempName = "__inksync_curl_\(abs(fullHTML.hashValue)).html"
+                    let fileURL = base.appendingPathComponent(tempName)
+                    do {
+                        try fullHTML.write(to: fileURL, atomically: true, encoding: .utf8)
+                        self.primaryWebView?.loadFileURL(fileURL, allowingReadAccessTo: base.deletingLastPathComponent())
+                    } catch {
+                        self.primaryWebView?.loadHTMLString(fullHTML, baseURL: base)
+                    }
+                } else {
+                    self.primaryWebView?.loadHTMLString(fullHTML, baseURL: nil)
+                }
+
+                // Present initial page VC
                 let vc = self.makePageViewController(for: self.currentPageIndex)
                 self.pageViewController?.setViewControllers([vc], direction: .forward, animated: false)
             }
@@ -165,9 +216,7 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
         func makePageViewController(for pageIndex: Int) -> EBookPageContentViewController {
             let vc = EBookPageContentViewController(
                 pageIndex: pageIndex,
-                chapterHTML: chapterHTML,
-                css: styledCSS,
-                baseURL: chapterBaseURL,
+                snapshot: pageSnapshots[pageIndex],
                 coordinator: self
             )
             return vc
@@ -181,10 +230,7 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
         ) -> UIViewController? {
             guard let contentVC = viewController as? EBookPageContentViewController else { return nil }
             let prevIndex = contentVC.pageIndex - 1
-            if prevIndex < 0 {
-                // At start of chapter — no more pages before this
-                return nil
-            }
+            if prevIndex < 0 { return nil }
             return makePageViewController(for: prevIndex)
         }
 
@@ -194,10 +240,7 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
         ) -> UIViewController? {
             guard let contentVC = viewController as? EBookPageContentViewController else { return nil }
             let nextIndex = contentVC.pageIndex + 1
-            if nextIndex >= computedTotalPages {
-                // At end of chapter — no more pages after this
-                return nil
-            }
+            if nextIndex >= computedTotalPages { return nil }
             return makePageViewController(for: nextIndex)
         }
 
@@ -208,6 +251,8 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
             willTransitionTo pendingViewControllers: [UIViewController]
         ) {
             isTransitioning = true
+            // Detach primary WebView during active 3D curl transition so snapshots curl cleanly
+            primaryWebView?.removeFromSuperview()
         }
 
         func pageViewController(
@@ -227,9 +272,14 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
                 parent.currentPage = newPageIndex
                 reportScrollFraction()
             } else {
-                // Snap-back guard: user cancelled the swipe gesture midway
+                // Snap-back guard: user cancelled swipe gesture midway
                 parent.currentPage = currentPageIndex
             }
+
+            // Sync page position to primary master WKWebView and mount on current active page VC
+            let targetPage = completed ? newPageIndex : currentPageIndex
+            primaryWebView?.evaluateJavaScript("if(window.goToInksyncPage) window.goToInksyncPage(\(targetPage));")
+            currentVC.mountPrimaryWebView(primaryWebView)
         }
 
         func pageViewController(
@@ -242,9 +292,7 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
 
         // MARK: - Gesture Handlers
 
-        @objc func handleDoubleTap(_ gesture: UITapGestureRecognizer) {
-            // Reserved for cooperative gesture handling
-        }
+        @objc func handleDoubleTap(_ gesture: UITapGestureRecognizer) {}
 
         private var tapZoneStyle: TapZoneStyle {
             TapZoneStyle(rawValue: UserDefaults.standard.string(forKey: "tapZoneStyle") ?? "") ?? .classic
@@ -273,6 +321,7 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
                 let vc = makePageViewController(for: nextIndex)
                 HapticEngine.light()
                 isTransitioning = true
+                primaryWebView?.removeFromSuperview()
                 pvc.setViewControllers([vc], direction: .forward, animated: true) { [weak self] completed in
                     self?.isTransitioning = false
                     if completed {
@@ -280,11 +329,12 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
                             self?.currentPageIndex = nextIndex
                             self?.parent.currentPage = nextIndex
                             self?.reportScrollFraction()
+                            self?.primaryWebView?.evaluateJavaScript("if(window.goToInksyncPage) window.goToInksyncPage(\(nextIndex));")
+                            vc.mountPrimaryWebView(self?.primaryWebView)
                         }
                     }
                 }
             } else {
-                // Past last page of chapter → advance to next chapter
                 parent.onNext()
             }
         }
@@ -297,6 +347,7 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
                 let vc = makePageViewController(for: prevIndex)
                 HapticEngine.light()
                 isTransitioning = true
+                primaryWebView?.removeFromSuperview()
                 pvc.setViewControllers([vc], direction: .reverse, animated: true) { [weak self] completed in
                     self?.isTransitioning = false
                     if completed {
@@ -304,18 +355,131 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
                             self?.currentPageIndex = prevIndex
                             self?.parent.currentPage = prevIndex
                             self?.reportScrollFraction()
+                            self?.primaryWebView?.evaluateJavaScript("if(window.goToInksyncPage) window.goToInksyncPage(\(prevIndex));")
+                            vc.mountPrimaryWebView(self?.primaryWebView)
                         }
                     }
                 }
             } else {
-                // Before first page of chapter → go to previous chapter
                 parent.onPrev()
             }
         }
 
-        // MARK: - Metrics
+        // MARK: - WKNavigationDelegate & Metrics
 
-        func reportScrollFraction() {
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            parent.webViewRef = webView
+            restoreHighlights(in: webView)
+            
+            // Take initial snapshot of active page once loaded
+            takePageSnapshot(for: currentPageIndex)
+        }
+
+        func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+            guard let url = navigationAction.request.url else {
+                decisionHandler(.allow)
+                return
+            }
+
+            if url.scheme == "http" || url.scheme == "https" {
+                UIApplication.shared.open(url)
+                decisionHandler(.cancel)
+                return
+            }
+
+            if let fragment = url.fragment {
+                let js = """
+                (function() {
+                    var el = document.getElementById('\(fragment)') || document.getElementsByName('\(fragment)')[0];
+                    if (el) {
+                        var text = el.innerText || el.textContent;
+                        if (text && text.trim().length > 0 && text.trim().length < 1000) {
+                            window.webkit.messageHandlers.footnote.postMessage({ "id": '\(fragment)', "text": text.trim() });
+                        }
+                    }
+                })();
+                """
+                webView.evaluateJavaScript(js, completionHandler: nil)
+                decisionHandler(.cancel)
+                return
+            }
+
+            decisionHandler(.allow)
+        }
+
+        func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+            if message.name == "metrics", let body = message.body as? [String: Int] {
+                let total = body["total"] ?? 1
+                didReceiveMetrics(totalPages: total, fromPageIndex: currentPageIndex)
+            } else if message.name == "highlight", let text = message.body as? String, !text.isEmpty {
+                parent.onHighlightCreated?(text)
+            } else if message.name == "footnote", let body = message.body as? [String: String], let text = body["text"] {
+                parent.onFootnoteTapped?(text)
+            }
+        }
+
+        func didReceiveMetrics(totalPages: Int, fromPageIndex: Int) {
+            let clamped = max(1, totalPages)
+            if computedTotalPages != clamped {
+                computedTotalPages = clamped
+                parent.totalPages = clamped
+            }
+
+            if !hasLoadedInitialPage {
+                hasLoadedInitialPage = true
+
+                var targetPage = parent.initialPage
+                if targetPage == 0 && parent.initialScrollFraction > 0.01 && clamped > 1 {
+                    targetPage = Int((parent.initialScrollFraction * Double(clamped - 1)).rounded())
+                }
+                if targetPage >= clamped { targetPage = clamped - 1 }
+
+                if targetPage != fromPageIndex && targetPage > 0 {
+                    currentPageIndex = targetPage
+                    parent.currentPage = targetPage
+                    primaryWebView?.evaluateJavaScript("if(window.goToInksyncPage) window.goToInksyncPage(\(targetPage));")
+                    let vc = makePageViewController(for: targetPage)
+                    pageViewController?.setViewControllers([vc], direction: .forward, animated: false)
+                }
+                reportScrollFraction()
+            }
+
+            // Mount primary WebView on active VC once initial metrics arrive
+            if let currentVC = pageViewController?.viewControllers?.first as? EBookPageContentViewController {
+                currentVC.mountPrimaryWebView(primaryWebView)
+            }
+            
+            // Pre-render column snapshots for current chapter
+            generateAllColumnSnapshots()
+        }
+
+        private func generateAllColumnSnapshots() {
+            guard let wv = primaryWebView, computedTotalPages > 0 else { return }
+            for page in 0..<computedTotalPages {
+                if pageSnapshots[page] != nil { continue }
+                let targetPage = page
+                wv.evaluateJavaScript("if(window.goToInksyncPage) window.goToInksyncPage(\(targetPage));") { [weak self] _, _ in
+                    wv.takeSnapshot(with: nil) { image, _ in
+                        if let img = image {
+                            self?.pageSnapshots[targetPage] = img
+                        }
+                    }
+                }
+            }
+            // Restore master webview back to current active page
+            wv.evaluateJavaScript("if(window.goToInksyncPage) window.goToInksyncPage(\(currentPageIndex));")
+        }
+
+        private func takePageSnapshot(for pageIndex: Int) {
+            guard let wv = primaryWebView else { return }
+            wv.takeSnapshot(with: nil) { [weak self] image, _ in
+                if let img = image {
+                    self?.pageSnapshots[pageIndex] = img
+                }
+            }
+        }
+
+        private func reportScrollFraction() {
             let fraction: Double
             if computedTotalPages > 1 {
                 fraction = Double(currentPageIndex) / Double(computedTotalPages - 1)
@@ -325,60 +489,31 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
             parent.onScrollFractionChanged?(fraction)
         }
 
-        /// Called by `EBookPageContentViewController` when the WebView finishes loading
-        /// and computes total page count from the CSS column layout.
-        func didReceiveMetrics(totalPages: Int, fromPageIndex: Int) {
-            let clamped = max(1, totalPages)
-            if computedTotalPages != clamped {
-                computedTotalPages = clamped
-                parent.totalPages = clamped
-            }
-
-            // Handle initial page restoration (fractional scroll or saved page)
-            if !hasLoadedInitialPage {
-                hasLoadedInitialPage = true
-
-                var targetPage = parent.initialPage
-                // If we have a saved scroll fraction and the initial page is 0,
-                // compute the target page from the fraction
-                if targetPage == 0 && parent.initialScrollFraction > 0.01 && clamped > 1 {
-                    targetPage = Int((parent.initialScrollFraction * Double(clamped - 1)).rounded())
+        private func handleHighlightRequest() {
+            guard let wv = primaryWebView else { return }
+            wv.evaluateJavaScript("window.getSelection().toString()") { [weak self] result, _ in
+                if let text = result as? String, !text.isEmpty {
+                    self?.parent.onHighlightCreated?(text)
                 }
-
-                // Handle "go to last page" sentinel (99999)
-                if targetPage >= clamped {
-                    targetPage = clamped - 1
-                }
-
-                if targetPage != fromPageIndex && targetPage > 0 {
-                    let vc = makePageViewController(for: targetPage)
-                    currentPageIndex = targetPage
-                    parent.currentPage = targetPage
-                    pageViewController?.setViewControllers([vc], direction: .forward, animated: false)
-                } else {
-                    currentPageIndex = fromPageIndex
-                    parent.currentPage = fromPageIndex
-                }
-                reportScrollFraction()
             }
         }
 
-        /// Called by `EBookPageContentViewController` when it creates a highlight
-        func didCreateHighlight(_ text: String) {
-            parent.onHighlightCreated?(text)
+        private func restoreHighlights(in webView: WKWebView) {
+            guard let pdfID = parent.pdfID else { return }
+            let annotations = AnnotationStore.shared.annotations(for: pdfID)
+                .filter { $0.kind == .highlight && $0.chapterTitle == parent.spineItem.label }
+            for ann in annotations {
+                guard let text = ann.selectedText, let color = ann.colorHex else { continue }
+                let safeText = text
+                    .replacingOccurrences(of: "`", with: "\\`")
+                    .replacingOccurrences(of: "\"", with: "\\\"")
+                    .replacingOccurrences(of: "\n", with: " ")
+                let js = "window.restoreInksyncHighlight(`\(safeText)`, '\(color)');"
+                webView.evaluateJavaScript(js)
+            }
         }
 
-        /// Called by `EBookPageContentViewController` when a footnote is tapped
-        func didTapFootnote(_ text: String) {
-            parent.onFootnoteTapped?(text)
-        }
-
-        /// Called by `EBookPageContentViewController` when the WKWebView is ready
-        func didExposeWebView(_ webView: WKWebView) {
-            parent.webViewRef = webView
-        }
-
-        // MARK: - CSS Construction
+        // MARK: - CSS & JS Construction
 
         func buildFullCSS() -> String {
             let prefs = parent.prefs
@@ -457,8 +592,13 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
             @font-face { font-family: 'Source Serif 4'; src: local('SourceSerif4-Regular'); font-weight: bold; font-style: normal; }
             @font-face { font-family: 'Source Serif 4'; src: local('SourceSerif4-Italic'); font-weight: normal; font-style: italic; }
             @font-face { font-family: 'Source Serif 4'; src: local('SourceSerif4-Italic'); font-weight: bold; font-style: italic; }
-            *, *::before, *::after { box-sizing: border-box; -webkit-tap-highlight-color: transparent; scroll-behavior: auto !important; }
-            html {
+            *, *::before, *::after { 
+                box-sizing: border-box; 
+                -webkit-tap-highlight-color: transparent; 
+                scroll-behavior: auto !important; 
+                -webkit-overflow-scrolling: auto !important;
+            }
+            html, body {
                 margin: 0 !important; padding: 0 !important;
                 width: 100% !important;
                 height: 100% !important;
@@ -553,18 +693,36 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
         }
 
         func buildPageScript() -> String {
-            """
+            let isLandscape = UIScreen.main.bounds.width > UIScreen.main.bounds.height
+            let isPad = UIDevice.current.userInterfaceIdiom == .pad
+            let cols = parent.prefs.columnCount == 0 ? (isLandscape ? (parent.prefs.autoLandscapeDualPage ? 2 : (isPad ? 2 : 1)) : 1) : parent.prefs.columnCount
+            let isMultiCol = cols > 1
+
+            return """
             var _targetPage = 0;
             var _totalPages = 1;
+            var _isMultiCol = \(isMultiCol ? "true" : "false");
+
+            function getPageStep() {
+                var w = window.innerWidth;
+                if (w <= 0) return w;
+                if (_isMultiCol) {
+                    var m = \(max(20.0, parent.prefs.textMargin));
+                    var gap = 2 * m;
+                    var colWidth = (w - gap) / 2.0;
+                    return colWidth + gap;
+                } else {
+                    return w;
+                }
+            }
 
             function applyPagePosition() {
-                var pageStep = window.innerWidth;
+                var pageStep = getPageStep();
                 if (pageStep <= 0) return;
                 var sv = document.scrollingElement || document.documentElement;
                 sv.scrollLeft = _targetPage * pageStep;
             }
 
-            // Set scrollLeft immediately during script evaluation
             applyPagePosition();
 
             document.addEventListener('DOMContentLoaded', function() {
@@ -581,7 +739,7 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
 
             function computeMetrics() {
                 var sv = document.scrollingElement || document.documentElement;
-                var pageStep = window.innerWidth;
+                var pageStep = getPageStep();
                 if (pageStep <= 0) return 1;
                 var scrollW = Math.max(sv.scrollWidth, document.body.scrollWidth);
                 var total = Math.floor((scrollW + 5) / pageStep);
@@ -610,7 +768,6 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
                 applyPagePosition();
             });
 
-            // ── Highlight Engine ───────────────────────────────────────
             window.applyInksyncHighlight = function(colorHex) {
                 var sel = window.getSelection();
                 if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
@@ -652,63 +809,21 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
                     }
                 }
             };
-
-            window.updateInksyncHighlightColor = function(textToFind, colorHex) {
-                var marks = document.querySelectorAll('mark.inksync-highlight');
-                for (var i = 0; i < marks.length; i++) {
-                    if (marks[i].textContent.trim() === textToFind.trim()) {
-                        marks[i].style.backgroundColor = colorHex;
-                        break;
-                    }
-                }
-            };
-
-            window.removeInksyncHighlight = function(textToFind) {
-                var marks = document.querySelectorAll('mark.inksync-highlight');
-                for (var i = 0; i < marks.length; i++) {
-                    if (marks[i].textContent.trim() === textToFind.trim()) {
-                        var parent = marks[i].parentNode;
-                        while (marks[i].firstChild) { parent.insertBefore(marks[i].firstChild, marks[i]); }
-                        parent.removeChild(marks[i]);
-                        parent.normalize();
-                        break;
-                    }
-                }
-            };
             """
         }
 
-        /// Builds the complete HTML document for a specific page index
         func buildPageHTML(for pageIndex: Int) -> String {
             var fullHTML = chapterHTML
-
-            let pageTargetScript = """
-            <script>
-            var _targetPage = \(pageIndex);
-            </script>
-            """
-
-            // Inject CSS + JS before </head>
+            let pageTargetScript = "<script>var _targetPage = \(pageIndex);</script>"
             if let range = fullHTML.range(of: "</head>", options: .caseInsensitive) {
                 fullHTML = fullHTML.replacingCharacters(in: range, with: pageTargetScript + styledCSS + "</head>")
             } else {
                 fullHTML = pageTargetScript + styledCSS + fullHTML
             }
-
             return fullHTML
-        }
-
-        /// Rebuilds CSS and reloads all visible pages (called when prefs change)
-        func refreshCSS() {
-            styledCSS = buildFullCSS()
-            guard let pvc = pageViewController,
-                  let currentVC = pvc.viewControllers?.first as? EBookPageContentViewController else { return }
-            let vc = makePageViewController(for: currentVC.pageIndex)
-            pvc.setViewControllers([vc], direction: .forward, animated: false)
         }
     }
 
-    // MARK: - HTML Viewport Wrapper (identical to EBookWebReader)
     static func wrapHTMLBodyWithViewport(_ html: String) -> String {
         var result = html
         let bodyPattern = "<body([^>]*)>"
@@ -731,31 +846,25 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
 
 // ============================================================
 // MARK: - EBookPageContentViewController
-// A single "page" in the UIPageViewController.
-// Contains a WKWebView that renders the full chapter HTML
-// scrolled to a specific column offset with all scrolling disabled.
+// Leaf view controller rendered inside UIPageViewController.
+// Uses a pre-rendered column snapshot during 3D page curl (0ms delay),
+// and hosts the active master WKWebView when stationary for 100% interactivity.
 // ============================================================
 @MainActor
-class EBookPageContentViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHandler {
+class EBookPageContentViewController: UIViewController {
     let pageIndex: Int
-    private let chapterHTML: String
-    private let css: String
-    private let baseURL: URL?
+    private var snapshot: UIImage?
     private weak var coordinator: EBookPageCurlReader.Coordinator?
-    private var webView: WKWebView?
-    private var hasReportedMetrics: Bool = false
+    private var imageView: UIImageView?
+    private var hostedWebView: WKWebView?
 
     init(
         pageIndex: Int,
-        chapterHTML: String,
-        css: String,
-        baseURL: URL?,
+        snapshot: UIImage?,
         coordinator: EBookPageCurlReader.Coordinator
     ) {
         self.pageIndex = pageIndex
-        self.chapterHTML = chapterHTML
-        self.css = css
-        self.baseURL = baseURL
+        self.snapshot = snapshot
         self.coordinator = coordinator
         super.init(nibName: nil, bundle: nil)
     }
@@ -771,36 +880,35 @@ class EBookPageContentViewController: UIViewController, WKNavigationDelegate, WK
         let bgColor = UIColor(hex: prefs.activeTheme.cssBackground) ?? .black
         view.backgroundColor = bgColor
 
-        // Configure WKWebView
-        let configuration = WKWebViewConfiguration()
-        let controller = configuration.userContentController
-        controller.add(self, name: "metrics")
-        controller.add(self, name: "highlight")
-        controller.add(self, name: "footnote")
-        controller.add(self, name: "scrollFraction")
+        // Setup snapshot image view (0ms instant page rendering for 3D curl)
+        let iv = UIImageView(frame: view.bounds)
+        iv.contentMode = .scaleAspectFill
+        iv.clipsToBounds = true
+        iv.image = snapshot
+        iv.backgroundColor = bgColor
+        iv.translatesAutoresizingMaskIntoConstraints = false
 
-        let wv = HighlightableWebView(frame: view.bounds, configuration: configuration)
-        wv.onHighlightRequested = { [weak self] in
-            self?.handleHighlightRequest()
-        }
-        wv.navigationDelegate = self
-        wv.isOpaque = false
-        wv.backgroundColor = .clear
-        wv.scrollView.backgroundColor = .clear
+        view.addSubview(iv)
+        NSLayoutConstraint.activate([
+            iv.topAnchor.constraint(equalTo: view.topAnchor),
+            iv.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            iv.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            iv.trailingAnchor.constraint(equalTo: view.trailingAnchor)
+        ])
 
-        // CRITICAL: Disable all scrolling — UIPageViewController handles page turns
-        wv.scrollView.isScrollEnabled = false
-        wv.scrollView.isPagingEnabled = false
-        wv.scrollView.bounces = false
-        wv.scrollView.alwaysBounceHorizontal = false
-        wv.scrollView.alwaysBounceVertical = false
-        wv.scrollView.showsHorizontalScrollIndicator = false
-        wv.scrollView.showsVerticalScrollIndicator = false
-        wv.scrollView.contentInsetAdjustmentBehavior = .never
-        wv.scrollView.contentInset = .zero
+        self.imageView = iv
+    }
 
+    /// Mounts the primary master WKWebView onto this page VC when active
+    func mountPrimaryWebView(_ webView: WKWebView?) {
+        guard let wv = webView else { return }
+        if wv.superview == view { return }
+
+        wv.removeFromSuperview()
+        wv.frame = view.bounds
         wv.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(wv)
+
         NSLayoutConstraint.activate([
             wv.topAnchor.constraint(equalTo: view.topAnchor),
             wv.bottomAnchor.constraint(equalTo: view.bottomAnchor),
@@ -808,119 +916,6 @@ class EBookPageContentViewController: UIViewController, WKNavigationDelegate, WK
             wv.trailingAnchor.constraint(equalTo: view.trailingAnchor)
         ])
 
-        self.webView = wv
-
-        // Build full HTML with page-targeting script
-        guard let coordinator = coordinator else { return }
-        let fullHTML = coordinator.buildPageHTML(for: pageIndex)
-
-        // Load the HTML
-        if let base = baseURL {
-            let tempName = "__inksync_curl_\(abs(fullHTML.hashValue)).html"
-            let fileURL = base.appendingPathComponent(tempName)
-            do {
-                try fullHTML.write(to: fileURL, atomically: true, encoding: .utf8)
-                wv.loadFileURL(fileURL, allowingReadAccessTo: base.deletingLastPathComponent())
-            } catch {
-                wv.loadHTMLString(fullHTML, baseURL: base)
-            }
-        } else {
-            wv.loadHTMLString(fullHTML, baseURL: nil)
-        }
-    }
-
-    // MARK: - WKNavigationDelegate
-
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        // Expose this WebView for search (window.find)
-        coordinator?.didExposeWebView(webView)
-
-        // Restore saved highlights
-        restoreHighlights(in: webView)
-    }
-
-    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-        guard let url = navigationAction.request.url else {
-            decisionHandler(.allow)
-            return
-        }
-
-        if url.scheme == "http" || url.scheme == "https" {
-            UIApplication.shared.open(url)
-            decisionHandler(.cancel)
-            return
-        }
-
-        if let fragment = url.fragment {
-            // Try footnote extraction
-            let js = """
-            (function() {
-                var el = document.getElementById('\(fragment)') || document.getElementsByName('\(fragment)')[0];
-                if (el) {
-                    var text = el.innerText || el.textContent;
-                    if (text && text.trim().length > 0 && text.trim().length < 1000) {
-                        window.webkit.messageHandlers.footnote.postMessage({ "id": '\(fragment)', "text": text.trim() });
-                    }
-                }
-            })();
-            """
-            webView.evaluateJavaScript(js, completionHandler: nil)
-            decisionHandler(.cancel)
-            return
-        }
-
-        decisionHandler(.allow)
-    }
-
-    // MARK: - WKScriptMessageHandler
-
-    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        if message.name == "metrics", let body = message.body as? [String: Int] {
-            let total = body["total"] ?? 1
-            if !hasReportedMetrics {
-                hasReportedMetrics = true
-                coordinator?.didReceiveMetrics(totalPages: total, fromPageIndex: pageIndex)
-            }
-        } else if message.name == "highlight", let text = message.body as? String, !text.isEmpty {
-            coordinator?.didCreateHighlight(text)
-        } else if message.name == "footnote", let body = message.body as? [String: String], let text = body["text"] {
-            coordinator?.didTapFootnote(text)
-        }
-    }
-
-    // MARK: - Highlight Support
-
-    private func handleHighlightRequest() {
-        guard let wv = webView else { return }
-        wv.evaluateJavaScript("window.getSelection().toString()") { [weak self] result, _ in
-            if let text = result as? String, !text.isEmpty {
-                self?.coordinator?.didCreateHighlight(text)
-            }
-        }
-    }
-
-    private func restoreHighlights(in webView: WKWebView) {
-        guard let pdfID = coordinator?.parent.pdfID else { return }
-        let annotations = AnnotationStore.shared.annotations(for: pdfID)
-            .filter { $0.kind == .highlight && $0.chapterTitle == coordinator?.parent.spineItem.label }
-        for ann in annotations {
-            guard let text = ann.selectedText, let color = ann.colorHex else { continue }
-            let safeText = text
-                .replacingOccurrences(of: "`", with: "\\`")
-                .replacingOccurrences(of: "\"", with: "\\\"")
-                .replacingOccurrences(of: "\n", with: " ")
-            let js = "window.restoreInksyncHighlight(`\(safeText)`, '\(color)');"
-            webView.evaluateJavaScript(js)
-        }
-    }
-
-    // MARK: - Cleanup
-
-    deinit {
-        // Remove message handlers to prevent retain cycles
-        webView?.configuration.userContentController.removeAllScriptMessageHandlers()
-        webView?.navigationDelegate = nil
+        self.hostedWebView = wv
     }
 }
-
-

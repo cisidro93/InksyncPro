@@ -193,7 +193,7 @@ struct ConvertedPDF: Identifiable, Codable, Hashable, Sendable {
         return String(format: "%.1f MB", mb)
     }
     
-    init(id: UUID = UUID(), name: String, url: URL, pageCount: Int, fileSize: Int64, metadata: PDFMetadata, collectionId: UUID? = nil, isFavorite: Bool = false, isPrivate: Bool = false, coverImageData: Data? = nil, contentType: ContentType = .comic, chapters: [Chapter] = [], addedByMode: AppUIMode = .pro, contentHash: String? = nil) {
+    init(id: UUID = UUID(), name: String, url: URL, pageCount: Int, fileSize: Int64, metadata: PDFMetadata, collectionId: UUID? = nil, isFavorite: Bool = false, isPrivate: Bool = false, coverImageData: Data? = nil, contentType: ContentType? = nil, chapters: [Chapter] = [], addedByMode: AppUIMode = .pro, contentHash: String? = nil) {
         self.id = id
         self.name = name
         self.url = url
@@ -205,7 +205,18 @@ struct ConvertedPDF: Identifiable, Codable, Hashable, Sendable {
         self.isPrivate = isPrivate
         self.isExplicitSeriesCover = false
         self.coverImageData = coverImageData
-        self.contentType = contentType
+        
+        let ext = url.pathExtension.lowercased()
+        if let explicit = contentType {
+            self.contentType = explicit
+        } else if ext == "epub" || ext == "mobi" || ext == "azw3" {
+            self.contentType = .book
+        } else if ext == "cbz" || ext == "cbr" || ext == "cb7" {
+            self.contentType = .comic
+        } else {
+            self.contentType = .comic
+        }
+        
         self.chapters = chapters
         self.addedByMode = addedByMode
         self.documentSubtype = .unknown
