@@ -827,66 +827,60 @@ class EBookPageContentViewController: UIViewController, WKNavigationDelegate, WK
 
     // MARK: - WKNavigationDelegate
 
-    nonisolated func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        Task { @MainActor in
-            // Expose this WebView for search (window.find)
-            coordinator?.didExposeWebView(webView)
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        // Expose this WebView for search (window.find)
+        coordinator?.didExposeWebView(webView)
 
-            // Restore saved highlights
-            restoreHighlights(in: webView)
-        }
+        // Restore saved highlights
+        restoreHighlights(in: webView)
     }
 
-    nonisolated func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-        Task { @MainActor in
-            guard let url = navigationAction.request.url else {
-                decisionHandler(.allow)
-                return
-            }
-
-            if url.scheme == "http" || url.scheme == "https" {
-                UIApplication.shared.open(url)
-                decisionHandler(.cancel)
-                return
-            }
-
-            if let fragment = url.fragment {
-                // Try footnote extraction
-                let js = """
-                (function() {
-                    var el = document.getElementById('\(fragment)') || document.getElementsByName('\(fragment)')[0];
-                    if (el) {
-                        var text = el.innerText || el.textContent;
-                        if (text && text.trim().length > 0 && text.trim().length < 1000) {
-                            window.webkit.messageHandlers.footnote.postMessage({ "id": '\(fragment)', "text": text.trim() });
-                        }
-                    }
-                })();
-                """
-                webView.evaluateJavaScript(js, completionHandler: nil)
-                decisionHandler(.cancel)
-                return
-            }
-
+    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        guard let url = navigationAction.request.url else {
             decisionHandler(.allow)
+            return
         }
+
+        if url.scheme == "http" || url.scheme == "https" {
+            UIApplication.shared.open(url)
+            decisionHandler(.cancel)
+            return
+        }
+
+        if let fragment = url.fragment {
+            // Try footnote extraction
+            let js = """
+            (function() {
+                var el = document.getElementById('\(fragment)') || document.getElementsByName('\(fragment)')[0];
+                if (el) {
+                    var text = el.innerText || el.textContent;
+                    if (text && text.trim().length > 0 && text.trim().length < 1000) {
+                        window.webkit.messageHandlers.footnote.postMessage({ "id": '\(fragment)', "text": text.trim() });
+                    }
+                }
+            })();
+            """
+            webView.evaluateJavaScript(js, completionHandler: nil)
+            decisionHandler(.cancel)
+            return
+        }
+
+        decisionHandler(.allow)
     }
 
     // MARK: - WKScriptMessageHandler
 
-    nonisolated func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        Task { @MainActor in
-            if message.name == "metrics", let body = message.body as? [String: Int] {
-                let total = body["total"] ?? 1
-                if !hasReportedMetrics {
-                    hasReportedMetrics = true
-                    coordinator?.didReceiveMetrics(totalPages: total, fromPageIndex: pageIndex)
-                }
-            } else if message.name == "highlight", let text = message.body as? String, !text.isEmpty {
-                coordinator?.didCreateHighlight(text)
-            } else if message.name == "footnote", let body = message.body as? [String: String], let text = body["text"] {
-                coordinator?.didTapFootnote(text)
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        if message.name == "metrics", let body = message.body as? [String: Int] {
+            let total = body["total"] ?? 1
+            if !hasReportedMetrics {
+                hasReportedMetrics = true
+                coordinator?.didReceiveMetrics(totalPages: total, fromPageIndex: pageIndex)
             }
+        } else if message.name == "highlight", let text = message.body as? String, !text.isEmpty {
+            coordinator?.didCreateHighlight(text)
+        } else if message.name == "footnote", let body = message.body as? [String: String], let text = body["text"] {
+            coordinator?.didTapFootnote(text)
         }
     }
 
