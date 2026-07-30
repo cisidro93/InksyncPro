@@ -89,6 +89,28 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
             context.coordinator.loadChapterAndPresent()
             return
         }
+
+        let targetIndex = currentPage
+
+        // Clear gesture completion marker if set
+        if context.coordinator.lastCompletedControllerIndex != nil {
+            let lastCompleted = context.coordinator.lastCompletedControllerIndex
+            context.coordinator.lastCompletedControllerIndex = nil
+            if lastCompleted == targetIndex {
+                return // Gesture completed this exact page turn — do NOT re-trigger setViewControllers!
+            }
+        }
+
+        if let currentVC = uiViewController.viewControllers?.first as? EBookPageContentViewController {
+            if currentVC.pageIndex == targetIndex {
+                return // Target page is ALREADY displayed on screen — do NOT touch setViewControllers!
+            }
+
+            let vc = context.coordinator.makePageViewController(for: targetIndex)
+            let isForward = targetIndex >= currentVC.pageIndex
+            let direction: UIPageViewController.NavigationDirection = isForward ? .forward : .reverse
+            uiViewController.setViewControllers([vc], direction: direction, animated: false, completion: nil)
+        }
     }
 
     static func dismantleUIView(_ uiViewController: UIPageViewController, coordinator: Coordinator) {
@@ -103,6 +125,7 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
         var parent: EBookPageCurlReader
         weak var pageViewController: UIPageViewController?
         var isTransitioning: Bool = false
+        var lastCompletedControllerIndex: Int? = nil
 
         // Chapter & Primary WebEngine state
         private var chapterHTML: String = ""
@@ -286,6 +309,7 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
 
             let newPageIndex = currentVC.pageIndex
             if completed {
+                lastCompletedControllerIndex = newPageIndex
                 currentPageIndex = newPageIndex
                 parent.currentPage = newPageIndex
                 reportScrollFraction()
@@ -344,6 +368,7 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
                     self?.isTransitioning = false
                     if completed {
                         DispatchQueue.main.async {
+                            self?.lastCompletedControllerIndex = nextIndex
                             self?.currentPageIndex = nextIndex
                             self?.parent.currentPage = nextIndex
                             self?.reportScrollFraction()
@@ -370,6 +395,7 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
                     self?.isTransitioning = false
                     if completed {
                         DispatchQueue.main.async {
+                            self?.lastCompletedControllerIndex = prevIndex
                             self?.currentPageIndex = prevIndex
                             self?.parent.currentPage = prevIndex
                             self?.reportScrollFraction()
