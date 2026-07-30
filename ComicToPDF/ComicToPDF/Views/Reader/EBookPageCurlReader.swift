@@ -91,6 +91,10 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
         }
     }
 
+    static func dismantleUIView(_ uiViewController: UIPageViewController, coordinator: Coordinator) {
+        coordinator.cleanup()
+    }
+
     // ============================================================
     // MARK: - Coordinator
     // ============================================================
@@ -117,6 +121,20 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
             self.parent = parent
             super.init()
             setupPrimaryWebView()
+        }
+
+        func cleanup() {
+            guard let wv = primaryWebView else { return }
+            wv.configuration.userContentController.removeScriptMessageHandler(forName: "metrics")
+            wv.configuration.userContentController.removeScriptMessageHandler(forName: "highlight")
+            wv.configuration.userContentController.removeScriptMessageHandler(forName: "footnote")
+            wv.configuration.userContentController.removeScriptMessageHandler(forName: "scrollFraction")
+            wv.navigationDelegate = nil
+            wv.scrollView.delegate = nil
+            wv.stopLoading()
+            wv.removeFromSuperview()
+            primaryWebView = nil
+            pageSnapshots.removeAll()
         }
 
         private func setupPrimaryWebView() {
@@ -373,6 +391,11 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
             
             // Take initial snapshot of active page once loaded
             takePageSnapshot(for: currentPageIndex)
+        }
+
+        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            // Auto-reload chapter if WebKit content process terminates under low memory
+            webView.reload()
         }
 
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
