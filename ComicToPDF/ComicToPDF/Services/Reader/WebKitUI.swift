@@ -88,15 +88,17 @@ public struct WebView: UIViewRepresentable {
         
         let prefs = EBookPreferences.shared
         if prefs.paginationMode == EBookPaginationMode.paged.rawValue {
-            uiView.scrollView.isScrollEnabled = true
-            uiView.scrollView.isPagingEnabled = true
+            uiView.scrollView.isScrollEnabled = false
+            uiView.scrollView.isPagingEnabled = false
+            uiView.scrollView.bounces = false
             uiView.scrollView.alwaysBounceVertical = false
-            uiView.scrollView.alwaysBounceHorizontal = true
+            uiView.scrollView.alwaysBounceHorizontal = false
             uiView.scrollView.showsHorizontalScrollIndicator = false
             uiView.scrollView.showsVerticalScrollIndicator = false
         } else {
             uiView.scrollView.isScrollEnabled = true
             uiView.scrollView.isPagingEnabled = false
+            uiView.scrollView.bounces = true
             uiView.scrollView.alwaysBounceVertical = true
             uiView.scrollView.alwaysBounceHorizontal = false
             uiView.scrollView.showsHorizontalScrollIndicator = false
