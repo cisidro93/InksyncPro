@@ -229,12 +229,29 @@ extension PageCurlReader {
             transitionCompleted completed: Bool
         ) {
             isTransitioning = false
+            guard let currentVC = pageViewController.viewControllers?.first as? PageContentViewController else {
+                return
+            }
+            
+            let newControllerIndex = currentVC.index
+            lastCompletedControllerIndex = newControllerIndex
+            
+            if completed {
+                if self.parent.isTwoUp {
+                    let spreads = self.parent.computeSpreads()
+                    if newControllerIndex < spreads.count {
+                        let newPageIndex = spreads[newControllerIndex].first ?? 0
+                        if self.parent.currentIndex != newPageIndex {
+                            self.parent.currentIndex = newPageIndex
+                        }
+                    }
+                } else {
+                    if self.parent.currentIndex != newControllerIndex {
                         self.parent.currentIndex = newControllerIndex
                     }
                 }
             } else {
                 // 🔴 CRITICAL SNAP-BACK GUARD: User cancelled swipe!
-                // Re-sync parent.currentIndex to whatever page is ACTUALLY visible on screen
                 let actualIndex: Int
                 if self.parent.isTwoUp {
                     let spreads = self.parent.computeSpreads()
