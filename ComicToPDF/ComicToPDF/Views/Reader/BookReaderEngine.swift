@@ -1137,6 +1137,7 @@ struct BookReaderEngine: View {
                                 // Native UIPageViewController(.pageCurl) for EPUB paged mode
                                 EBookPageCurlReader(
                                     spineItem: EBookMetadata.SpineItem(
+                                        id: currentChapterURL.lastPathComponent,
                                         href: currentChapterURL.lastPathComponent,
                                         label: vm.tocItems[safe: vm.currentChapterIndex]?.label ?? ""
                                     ),
