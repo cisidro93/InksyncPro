@@ -110,6 +110,7 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
             let isForward = targetIndex >= currentVC.pageIndex
             let direction: UIPageViewController.NavigationDirection = isForward ? .forward : .reverse
             uiViewController.setViewControllers([vc], direction: direction, animated: false, completion: nil)
+        }
     }
 
     static func dismantleUIView(_ uiViewController: UIPageViewController, coordinator: Coordinator) {
