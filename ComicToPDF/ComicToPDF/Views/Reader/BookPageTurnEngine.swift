@@ -96,6 +96,18 @@ struct PageCurlReader: UIViewControllerRepresentable {
         view.addGestureRecognizer(singleTap)
 
         context.coordinator.pageViewController = pageViewController
+        
+        let targetIndex = currentIndex
+        let targetControllerIndex: Int
+        if isTwoUp {
+            let spreads = computeSpreads()
+            targetControllerIndex = spreads.firstIndex(where: { $0.contains(targetIndex) }) ?? 0
+        } else {
+            targetControllerIndex = targetIndex
+        }
+        let initialVC = context.coordinator.makeViewController(for: targetControllerIndex)
+        pageViewController.setViewControllers([initialVC], direction: .forward, animated: false)
+        
         return pageViewController
     }
 

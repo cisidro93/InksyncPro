@@ -71,6 +71,9 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
 
         context.coordinator.pageViewController = pvc
 
+        let initialVC = context.coordinator.makePageViewController(for: initialPage)
+        pvc.setViewControllers([initialVC], direction: .forward, animated: false)
+
         // Start chapter load asynchronously
         context.coordinator.loadChapterAndPresent()
 
