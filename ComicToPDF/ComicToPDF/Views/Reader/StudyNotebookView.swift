@@ -66,6 +66,8 @@ struct StudyNotebookView: View {
     enum InputMode: String {
         case markdown = "Text"
         case handwriting = "Pencil"
+    }
+    
     enum NoteTakingSystem: String, CaseIterable, Identifiable {
         case zettelkasten = "Zettelkasten"
         case cornell      = "Cornell"
