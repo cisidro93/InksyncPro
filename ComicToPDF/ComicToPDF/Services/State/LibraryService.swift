@@ -20,12 +20,19 @@ final class LibraryService: ObservableObject {
             let loadedOmnibuses = await LibraryDatabaseService.shared.loadVirtualOmnibuses()
             
             // 🔴 AUTOMATIC STARTUP DEDUPLICATION: Purge duplicate entries matching the same filename
+            func normalizeFilename(_ raw: String) -> String {
+                let decoded = raw.removingPercentEncoding ?? raw
+                return decoded.precomposedStringWithCanonicalMapping.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            
             var uniqueItems: [ConvertedPDF] = []
             var seenFilenames = Set<String>()
             for item in loadedItems {
-                let key = item.url.lastPathComponent.lowercased()
-                if !seenFilenames.contains(key) {
+                let key = normalizeFilename(item.url.lastPathComponent)
+                let altKey = normalizeFilename(item.name)
+                if !seenFilenames.contains(key) && !seenFilenames.contains(altKey) {
                     seenFilenames.insert(key)
+                    seenFilenames.insert(altKey)
                     uniqueItems.append(item)
                 }
             }

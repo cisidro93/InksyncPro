@@ -90,34 +90,50 @@ actor LibraryScanner {
             }
         }
 
+        func normalizeFilename(_ raw: String) -> String {
+            let decoded = raw.removingPercentEncoding ?? raw
+            return decoded.precomposedStringWithCanonicalMapping.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
         func relativePath(for url: URL) -> String {
-            let path = url.path
+            let path = url.path.removingPercentEncoding ?? url.path
             if let range = path.range(of: "/Documents/", options: .caseInsensitive) {
                 return "Documents/" + String(path[range.upperBound...]).lowercased()
             }
             if let range = path.range(of: "/InksyncVault/Inbox/", options: .caseInsensitive) {
                 return "Inbox/" + String(path[range.upperBound...]).lowercased()
             }
-            return url.lastPathComponent.lowercased()
+            return normalizeFilename(url.lastPathComponent)
         }
 
         var newPDFs: [ConvertedPDF] = []
         let keys: [URLResourceKey] = [.nameKey, .isDirectoryKey, .fileSizeKey]
 
-        let (existingRelPaths, existingFilenames, existingCanonicalPaths) = await MainActor.run {
+        var (existingRelPaths, existingFilenames, existingCanonicalPaths, existingBaseNames) = await MainActor.run {
             var rels = Set<String>()
             var names = Set<String>()
             var paths = Set<String>()
+            var bases = Set<String>()
+            
             for pdf in manager.convertedPDFs {
+                let normLastComp = normalizeFilename(pdf.url.lastPathComponent)
+                let normName = normalizeFilename(pdf.name)
+                let normBase = (normLastComp as NSString).deletingPathExtension
+                let normNameBase = (normName as NSString).deletingPathExtension
+                
+                names.insert(normLastComp)
+                names.insert(normName)
+                bases.insert(normBase)
+                bases.insert(normNameBase)
+                
                 if pdf.isLinked {
                     paths.insert(pdf.url.path.lowercased())
                 } else {
-                    rels.insert(relativePath(for: pdf.url).lowercased())
+                    rels.insert(relativePath(for: pdf.url))
                 }
-                names.insert(pdf.url.lastPathComponent.lowercased())
                 paths.insert(pdf.url.resolvingSymlinksInPath().path.lowercased())
             }
-            return (rels, names, paths)
+            return (rels, names, paths, bases)
         }
 
         // Scan both the Documents directory and the Wi-Fi transfer Inbox
@@ -132,10 +148,6 @@ actor LibraryScanner {
 
             var filesSinceYield = 0
             while let fileURL = enumerator.nextObject() as? URL {
-                // ✅ PERF: yield every 25 files instead of every single file.
-                // Task.yield() is a cooperative scheduling checkpoint — calling it
-                // for every file in a 2000-file library creates 2000 unnecessary
-                // context switches and makes the scan visibly slower.
                 filesSinceYield += 1
                 if filesSinceYield >= 25 {
                     filesSinceYield = 0
@@ -147,14 +159,21 @@ actor LibraryScanner {
                 let ext = fileURL.pathExtension.lowercased()
                 guard ["pdf", "epub", "cbz", "cbr", "cb7", "cbt", "zip"].contains(ext) else { continue }
 
-                let filename = fileURL.lastPathComponent.lowercased()
-                let relPath = relativePath(for: fileURL).lowercased()
+                let filename = normalizeFilename(fileURL.lastPathComponent)
+                let relPath = relativePath(for: fileURL)
                 let canonicalPath = fileURL.resolvingSymlinksInPath().path.lowercased()
+                let baseName = (filename as NSString).deletingPathExtension
                 
-                // 🔴 TRIPLE-GUARD DUPLICATE PROTECTION: Skip if filename, relative path, or canonical path already exists!
-                if existingRelPaths.contains(relPath) || existingFilenames.contains(filename) || existingCanonicalPaths.contains(canonicalPath) {
+                // 🔴 TRIPLE-GUARD DUPLICATE PROTECTION: Skip if filename, base name, relative path, or canonical path already exists!
+                if existingRelPaths.contains(relPath) || existingFilenames.contains(filename) || existingCanonicalPaths.contains(canonicalPath) || existingBaseNames.contains(baseName) {
                     continue
                 }
+                
+                // Track newly discovered file in set so intra-pass duplicates across folders are also prevented:
+                existingFilenames.insert(filename)
+                existingBaseNames.insert(baseName)
+                existingRelPaths.insert(relPath)
+                existingCanonicalPaths.insert(canonicalPath)
                 
                 // Skip files currently being uploaded via WiFi
                 guard !ActiveUploadRegistry.shared.isUploading(fileURL) else { continue }
