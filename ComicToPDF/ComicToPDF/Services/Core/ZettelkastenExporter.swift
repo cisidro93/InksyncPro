@@ -103,8 +103,20 @@ struct ZettelArchiveDocument: FileDocument {
                     let atomicTitle = "⚡ \(cleanBookTitle) - \(chapterText) - \(note.id.uuidString.prefix(6))"
                     let cleanAtomicTitle = atomicTitle.components(separatedBy: CharacterSet.alphanumerics.inverted.subtracting(.whitespaces)).joined().replacingOccurrences(of: "/", with: "-").trimmingCharacters(in: .whitespacesAndNewlines)
                     
-                    var atomicMarkdown = "# \(cleanAtomicTitle)\n\n"
+                    let maturity = note.maturityRaw ?? "seedling"
+                    var atomicMarkdown = "---\n"
+                    atomicMarkdown += "id: \"\(note.id.uuidString)\"\n"
+                    atomicMarkdown += "maturity: \"\(maturity)\"\n"
+                    atomicMarkdown += "created: \"\(note.createdAt.formatted())\"\n"
+                    atomicMarkdown += "page: \(pageNum)\n"
+                    if let tags = note.tags, !tags.isEmpty {
+                        atomicMarkdown += "tags: [\(tags.map { "\"\($0)\"" }.joined(separator: ", "))]\n"
+                    }
+                    atomicMarkdown += "---\n\n"
+                    
+                    atomicMarkdown += "# \(cleanAtomicTitle)\n\n"
                     atomicMarkdown += "**Source:** [[📖 \(cleanBookTitle)]]\n"
+                    atomicMarkdown += "**Maturity:** #zettel/\(maturity)\n"
                     atomicMarkdown += "**Location:** Page \(pageNum) (Chapter: \(chapterText))\n"
                     atomicMarkdown += "**Created:** \(note.createdAt.formatted())\n\n"
                     atomicMarkdown += "---\n\n"

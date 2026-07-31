@@ -556,3 +556,63 @@ class AnnotationStore: ObservableObject {
         }
     }
 }
+
+// MARK: - Zettelkasten Extensions
+enum ZettelMaturity: String, CaseIterable, Identifiable {
+    case seedling   = "seedling"
+    case literature = "literature"
+    case permanent  = "permanent"
+    case structure  = "structure"
+    
+    var id: String { rawValue }
+    
+    var iconName: String {
+        switch self {
+        case .seedling:   return "leaf.fill"
+        case .literature: return "book.fill"
+        case .permanent:  return "tree.fill"
+        case .structure:  return "map.fill"
+        }
+    }
+    
+    var displayName: String {
+        switch self {
+        case .seedling:   return "Seedling"
+        case .literature: return "Literature Note"
+        case .permanent:  return "Permanent Zettel"
+        case .structure:  return "Structure Note"
+        }
+    }
+}
+
+extension SDAnnotation {
+    var zettelMaturity: ZettelMaturity {
+        get { ZettelMaturity(rawValue: maturityRaw ?? "seedling") ?? .seedling }
+        set { maturityRaw = newValue.rawValue }
+    }
+    
+    var formattedZettelID: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMddHHmmss"
+        let timestamp = formatter.string(from: createdAt)
+        let slug = (noteText ?? selectedText ?? "note")
+            .lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { !$0.isEmpty }
+            .prefix(3)
+            .joined(separator: "-")
+        return "\(timestamp)-\(slug.isEmpty ? "zettel" : slug)"
+    }
+    
+    /// Parse all [[Wikilinks]] from noteText
+    func extractWikilinks() -> [String] {
+        guard let note = noteText, !note.isEmpty else { return [] }
+        let regex = try? NSRegularExpression(pattern: "\\[\\[([^\\]]+)\\]\\]")
+        let nsString = note as NSString
+        let results = regex?.matches(in: note, range: NSRange(location: 0, length: nsString.length)) ?? []
+        return results.compactMap { match -> String? in
+            guard match.numberOfRanges > 1 else { return nil }
+            return nsString.substring(with: match.range(at: 1)).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+    }
+}

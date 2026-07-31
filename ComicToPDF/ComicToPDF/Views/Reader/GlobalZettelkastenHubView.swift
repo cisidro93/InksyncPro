@@ -936,29 +936,20 @@ struct GlobalHighlightRow: View {
                     Spacer()
                     
                     // Maturity Badge
-                    let maturity = annotation.maturityRaw ?? "seedling"
-                    if maturity == "evergreen" {
-                        Text("🌲 Evergreen")
+                    let maturity = annotation.zettelMaturity
+                    HStack(spacing: 3) {
+                        Image(systemName: maturity.iconName)
+                            .font(.system(size: 8, weight: .bold))
+                        Text(maturity.displayName)
                             .font(.system(size: 9, weight: .bold))
-                            .foregroundColor(.green)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Color.green.opacity(0.12), in: Capsule())
-                    } else if maturity == "incubating" {
-                        Text("🐣 Incubating")
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundColor(.purple)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Color.purple.opacity(0.12), in: Capsule())
-                    } else {
-                        Text("🌱 Seedling")
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundColor(.orange)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Color.orange.opacity(0.12), in: Capsule())
                     }
+                    .foregroundColor(maturity == .permanent ? .green : (maturity == .structure ? .purple : (maturity == .literature ? .blue : .orange)))
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 2.5)
+                    .background(
+                        (maturity == .permanent ? Color.green : (maturity == .structure ? Color.purple : (maturity == .literature ? Color.blue : Color.orange))).opacity(0.12),
+                        in: Capsule()
+                    )
                     
                     if annotation.isReadwiseImport {
                         Image(systemName: "bird.fill")
@@ -1060,6 +1051,30 @@ struct GlobalHighlightRow: View {
                             .stroke(Color.primary.opacity(0.06), lineWidth: 0.5)
                     )
                     .padding(.top, 2)
+                }
+
+                // Bi-Directional [[Wikilinks]] & Backlinks Inspector
+                let outgoingLinks = annotation.extractWikilinks()
+                if !outgoingLinks.isEmpty {
+                    HStack(spacing: 5) {
+                        Image(systemName: "arrow.up.right.square.fill")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(.purple)
+                        Text("LINKS:")
+                            .font(.system(size: 8, weight: .bold, design: .monospaced))
+                            .foregroundColor(.purple)
+                        ForEach(outgoingLinks, id: \.self) { link in
+                            Text("[[\(link)]]")
+                                .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                                .foregroundColor(.purple)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
+                                .background(Color.purple.opacity(0.12), in: Capsule())
+                        }
+                    }
+                    .padding(6)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.purple.opacity(0.04), in: RoundedRectangle(cornerRadius: 6))
                 }
 
                 // Tags row & Relative Timestamp Footer
