@@ -609,6 +609,40 @@ struct StudyNotebookView: View {
                     )
                     .overlay(Rectangle().frame(height: 1).foregroundColor(Color.primary.opacity(0.05)), alignment: .bottom)
                     
+                    // ── Multi-Modal System Selector Bar (Zettelkasten / Cornell / PARA / Marginalia) ──
+                    HStack(spacing: 6) {
+                        ForEach(NoteTakingSystem.allCases) { sys in
+                            Button {
+                                HapticEngine.light()
+                                withAnimation(.spring(response: 0.28, dampingFraction: 0.78)) {
+                                    noteSystem = sys
+                                }
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Image(systemName: sys.icon)
+                                        .font(.system(size: 10, weight: .bold))
+                                    Text(sys.rawValue)
+                                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                                }
+                                .foregroundColor(noteSystem == sys ? .white : Theme.textSecondary)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(
+                                    noteSystem == sys
+                                        ? AnyShapeStyle(Color(hex: "#7B5EA7"))
+                                        : AnyShapeStyle(Color.primary.opacity(0.05))
+                                )
+                                .clipShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        Spacer()
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Color.primary.opacity(0.02))
+                    .overlay(Rectangle().frame(height: 0.5).foregroundColor(Color.primary.opacity(0.05)), alignment: .bottom)
+                    
                     smartPageIndexBar
                     
                     if inputMode == .handwriting {
