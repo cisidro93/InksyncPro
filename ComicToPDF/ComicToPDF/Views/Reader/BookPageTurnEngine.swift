@@ -37,7 +37,9 @@ struct PageCurlReader: UIViewControllerRepresentable {
             return allSpreads
         }
 
-        var i = 0
+        // Page 0 is the physical front cover — displayed standalone on spread [0]
+        allSpreads.append([0])
+        var i = 1
         while i < totalPages {
             let isL = landscapeArray.indices.contains(i) ? landscapeArray[i] : false
             if isL {
@@ -107,7 +109,6 @@ struct PageCurlReader: UIViewControllerRepresentable {
         
         let targetIndex = currentIndex
         let targetControllerIndex: Int
-        
         if isTwoUp {
             let spreads = computeSpreads()
             targetControllerIndex = spreads.firstIndex(where: { $0.contains(targetIndex) }) ?? 0
@@ -115,27 +116,27 @@ struct PageCurlReader: UIViewControllerRepresentable {
             targetControllerIndex = targetIndex
         }
         
-        // Clear gesture completion marker if set
-        if context.coordinator.lastCompletedControllerIndex != nil {
-            context.coordinator.lastCompletedControllerIndex = nil
-        }
-        
         if let currentVC = uiViewController.viewControllers?.first as? PageContentViewController {
-            let spreadsChanged: Bool
-            if isTwoUp {
-                let currentSpreads = currentVC.spreads
-                let newSpreads = computeSpreads()
-                spreadsChanged = currentSpreads != newSpreads
-            } else {
-                spreadsChanged = false
-            }
-            
             let isDisplayed: Bool
             if isTwoUp {
-                let currentSpreadPages = currentVC.spreads.first(where: { $0.contains(currentVC.index) }) ?? [currentVC.index]
-                isDisplayed = currentSpreadPages.contains(targetIndex)
+                let spreads = computeSpreads()
+                let currentSpread = currentVC.index < spreads.count ? spreads[currentVC.index] : []
+                isDisplayed = currentSpread.contains(targetIndex)
             } else {
-                isDisplayed = (currentVC.index == targetControllerIndex)
+                isDisplayed = currentVC.index == targetIndex
+            }
+            
+            // Check if spreads changed due to orientation/cache update
+            let newSpreads = computeSpreads()
+            let spreadsChanged = currentVC.spreads != newSpreads
+            
+            // Clear gesture completion marker if set
+            if context.coordinator.lastCompletedControllerIndex != nil {
+                let lastCompleted = context.coordinator.lastCompletedControllerIndex
+                context.coordinator.lastCompletedControllerIndex = nil
+                if lastCompleted == targetControllerIndex && !spreadsChanged {
+                    return // ✅ Gesture completed this exact page turn -- DO NOT TOUCH setViewControllers!
+                }
             }
             
             if isDisplayed && currentVC.isTwoUp == isTwoUp && currentVC.activeFilterPreset == activeFilterPreset && !spreadsChanged {
@@ -194,26 +195,22 @@ extension PageCurlReader {
             _ pageViewController: UIPageViewController,
             viewControllerBefore viewController: UIViewController
         ) -> UIViewController? {
-            guard let contentVC = viewController as? PageContentViewController else { return nil }
-            let currentIndex = contentVC.index
-            let targetIndex: Int = parent.isMangaRTL ? (currentIndex + 1) : (currentIndex - 1)
-            
-            let maxCount = parent.isTwoUp ? parent.computeSpreads().count : parent.totalPages
-            guard targetIndex >= 0 && targetIndex < maxCount else { return nil }
-            return makeViewController(for: targetIndex)
+            guard let current = viewController as? PageContentViewController else { return nil }
+            let prevIndex = current.index - 1
+            guard prevIndex >= 0 else { return nil }
+            return makeViewController(for: prevIndex)
         }
         
         func pageViewController(
             _ pageViewController: UIPageViewController,
             viewControllerAfter viewController: UIViewController
         ) -> UIViewController? {
-            guard let contentVC = viewController as? PageContentViewController else { return nil }
-            let currentIndex = contentVC.index
-            let targetIndex: Int = parent.isMangaRTL ? (currentIndex - 1) : (currentIndex + 1)
-            
-            let maxCount = parent.isTwoUp ? parent.computeSpreads().count : parent.totalPages
-            guard targetIndex >= 0 && targetIndex < maxCount else { return nil }
-            return makeViewController(for: targetIndex)
+            guard let current = viewController as? PageContentViewController else { return nil }
+            let spreads = parent.computeSpreads()
+            let maxIndex = parent.isTwoUp ? spreads.count - 1 : parent.totalPages - 1
+            let nextIndex = current.index + 1
+            guard nextIndex <= maxIndex else { return nil }
+            return makeViewController(for: nextIndex)
         }
         
         // MARK: - UIPageViewControllerDelegate
@@ -232,24 +229,6 @@ extension PageCurlReader {
             transitionCompleted completed: Bool
         ) {
             isTransitioning = false
-            guard let currentVC = pageViewController.viewControllers?.first as? PageContentViewController else {
-                return
-            }
-            
-            let newControllerIndex = currentVC.index
-            lastCompletedControllerIndex = newControllerIndex
-            
-            if completed {
-                if self.parent.isTwoUp {
-                    let spreads = self.parent.computeSpreads()
-                    if newControllerIndex < spreads.count {
-                        let newPageIndex = spreads[newControllerIndex].first ?? 0
-                        if self.parent.currentIndex != newPageIndex {
-                            self.parent.currentIndex = newPageIndex
-                        }
-                    }
-                } else {
-                    if self.parent.currentIndex != newControllerIndex {
                         self.parent.currentIndex = newControllerIndex
                     }
                 }
@@ -413,31 +392,60 @@ class PageContentViewController: UIViewController {
             
             let spreadView = GeometryReader { geo in
                 if pages.count == 1 {
-                    TwoUpPageCell(index: pages[0], cache: parent.cache, activeFilterPreset: parent.activeFilterPreset, alignment: .center)
-                        .frame(width: geo.size.width, height: geo.size.height)
+                    let pageIdx = pages[0]
+                    if pageIdx == 0 {
+                        // Physical Front Cover: Positioned on natural book cover side
+                        HStack(spacing: 0) {
+                            if parent.isMangaRTL {
+                                TwoUpPageCell(index: 0, cache: parent.cache, activeFilterPreset: parent.activeFilterPreset, alignment: .leading)
+                                    .frame(width: geo.size.width / 2, height: geo.size.height)
+                                Color.black.opacity(0.95)
+                                    .frame(width: geo.size.width / 2, height: geo.size.height)
+                            } else {
+                                Color.black.opacity(0.95)
+                                    .frame(width: geo.size.width / 2, height: geo.size.height)
+                                TwoUpPageCell(index: 0, cache: parent.cache, activeFilterPreset: parent.activeFilterPreset, alignment: .leading)
+                                    .frame(width: geo.size.width / 2, height: geo.size.height)
+                            }
+                        }
+                    } else {
+                        // Wide landscape splash art: spans 100% width across both pages of the spread!
+                        TwoUpPageCell(index: pageIdx, cache: parent.cache, activeFilterPreset: parent.activeFilterPreset, alignment: .center)
+                            .frame(width: geo.size.width, height: geo.size.height)
+                    }
                 } else if parent.isMangaRTL {
-                    HStack(spacing: 0) {
-                        if pages.count == 2 {
-                            TwoUpPageCell(index: pages[1], cache: parent.cache, activeFilterPreset: parent.activeFilterPreset, alignment: .trailing)
-                                .frame(width: geo.size.width / 2, height: geo.size.height)
-                        } else {
-                            Color.black
+                    // Physical Manga Spreads (Right-to-Left): Page 2 (Left), Page 1 (Right)
+                    ZStack {
+                        HStack(spacing: 0) {
+                            if pages.count == 2 {
+                                TwoUpPageCell(index: pages[1], cache: parent.cache, activeFilterPreset: parent.activeFilterPreset, alignment: .trailing)
+                                    .frame(width: geo.size.width / 2, height: geo.size.height)
+                            } else {
+                                Color.black.opacity(0.95)
+                                    .frame(width: geo.size.width / 2, height: geo.size.height)
+                            }
+                            TwoUpPageCell(index: pages[0], cache: parent.cache, activeFilterPreset: parent.activeFilterPreset, alignment: .leading)
                                 .frame(width: geo.size.width / 2, height: geo.size.height)
                         }
-                        TwoUpPageCell(index: pages[0], cache: parent.cache, activeFilterPreset: parent.activeFilterPreset, alignment: .leading)
-                            .frame(width: geo.size.width / 2, height: geo.size.height)
+                        LinearGradient(colors: [.black.opacity(0.35), .clear, .black.opacity(0.35)], startPoint: .leading, endPoint: .trailing)
+                            .frame(width: 14, height: geo.size.height)
                     }
                 } else {
-                    HStack(spacing: 0) {
-                        TwoUpPageCell(index: pages[0], cache: parent.cache, activeFilterPreset: parent.activeFilterPreset, alignment: .trailing)
-                            .frame(width: geo.size.width / 2, height: geo.size.height)
-                        if pages.count == 2 {
-                            TwoUpPageCell(index: pages[1], cache: parent.cache, activeFilterPreset: parent.activeFilterPreset, alignment: .leading)
+                    // Physical Comic Spreads (Left-to-Right): Page 1 (Left), Page 2 (Right)
+                    ZStack {
+                        HStack(spacing: 0) {
+                            TwoUpPageCell(index: pages[0], cache: parent.cache, activeFilterPreset: parent.activeFilterPreset, alignment: .trailing)
                                 .frame(width: geo.size.width / 2, height: geo.size.height)
-                        } else {
-                            Color.black
-                                .frame(width: geo.size.width / 2, height: geo.size.height)
+                            if pages.count == 2 {
+                                TwoUpPageCell(index: pages[1], cache: parent.cache, activeFilterPreset: parent.activeFilterPreset, alignment: .leading)
+                                    .frame(width: geo.size.width / 2, height: geo.size.height)
+                            } else {
+                                Color.black.opacity(0.95)
+                                    .frame(width: geo.size.width / 2, height: geo.size.height)
+                            }
                         }
+                        LinearGradient(colors: [.black.opacity(0.35), .clear, .black.opacity(0.35)], startPoint: .leading, endPoint: .trailing)
+                            .frame(width: 14, height: geo.size.height)
                     }
                 }
             }
