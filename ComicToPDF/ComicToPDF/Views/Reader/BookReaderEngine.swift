@@ -1090,6 +1090,7 @@ struct BookReaderEngine: View {
     @State private var chapterTotalPages: Int = 1
     @State private var activeFootnoteText: String? = nil
     
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.modelContext) private var modelContext
     @State private var extractedTextParams: String = "Chapter reading is not extracted to string yet."
     @State private var lastBrightnessDragValue: CGFloat = 0
@@ -1132,93 +1133,143 @@ struct BookReaderEngine: View {
                     if !vm.chapterHtmlFiles.isEmpty {
                         let currentChapterURL = vm.chapterHtmlFiles[vm.currentChapterIndex]
                         ZStack {
-                            EPUBWebView(
-                                htmlContent: $vm.currentChapterHTML,
-                                baseUrl: .constant(currentChapterURL),
-                                prefs: EBookPreferences.shared,
-                                scrollToLastPageOnLoad: $scrollToLastPageOnLoad,
-                                initialScrollFraction: initialScrollFraction,
-                                onScrollFractionChanged: { fraction in
-                                    chapterScrollFraction = fraction
-                                    saveProgress()
-                                },
-                                webViewRef: $webViewReference,
-                                pdf: pdf,
-                                currentPage: $chapterPage,
-                                totalPages: $chapterTotalPages,
-                                onHighlightCreated: { selectedText, _ in
-        
-                                let rawLabel = vm.tocItems[safe: vm.currentChapterIndex]?.label ?? ""
-                                let spineLabel = !rawLabel.isEmpty ? rawLabel : nil
-                                let highlight = Annotation(
-                                    pdfID: pdf.id,
-                                    pageIndex: vm.currentChapterIndex,
-                                    chapterTitle: spineLabel,
-                                    kind: .highlight,
-                                    createdAt: Date(),
-                                    modifiedAt: Date(),
-                                    colorHex: "#ffd700",
-                                    selectedText: selectedText
-                                )
-                                AnnotationStore.shared.add(highlight)
-                                StudyNotesStore.shared.appendHighlight(selectedText, chapter: spineLabel ?? "Chapter \(vm.currentChapterIndex + 1)")
-        
-                                // Zettelkasten Integration: Instantly pop up editor for new highlight
-                                let sdAnnotation = SDAnnotation(from: highlight)
-                                modelContext.insert(sdAnnotation)
-                                try? modelContext.save()
-                                self.activeHighlightToEdit = sdAnnotation
-        
-                            }, onPageLoaded: { webView in
-                                self.webViewReference = webView
-                                let pageAnnotations = AnnotationStore.shared.annotations(for: pdf.id).filter { $0.pageIndex == vm.currentChapterIndex && $0.kind == .highlight }
-                                for ann in pageAnnotations {
-                                    if let text = ann.selectedText, let color = ann.colorHex {
-                                        let safeText = text.replacingOccurrences(of: "`", with: "\\`")
-                                                           .replacingOccurrences(of: "\"", with: "\\\"")
-                                                           .replacingOccurrences(of: "\n", with: " ")
-                                                           let js = "window.restoreInksyncHighlight(`\(safeText)`, '\(color)');"
-                                        webView.evaluateJavaScript(js)
-                                    }
-                                }
-                            },
-                            onCenterTap: { chromeVisible.toggle() },
-                            onLeftTap: { if isMangaMode { pageForward() } else { pageBackward() } },
-                            onRightTap: { if isMangaMode { pageBackward() } else { pageForward() } },
-                            onNextChapter: {
-                                 let lastIdx = vm.chapterHtmlFiles.count - 1
-                                 if vm.currentChapterIndex >= lastIdx {
-                                     // Last chapter — attempt series continuation
-                                     attemptBookSeriesContinuation()
-                                 } else {
-                                     scrollToLastPageOnLoad = false
-                                     initialScrollFraction = 0.0
-                                     chapterPage = 0
-                                     vm.loadChapter(index: min(lastIdx, vm.currentChapterIndex + 1))
-                                 }
-                             },
-                             onPrevChapter: {
-                                 scrollToLastPageOnLoad = true
-                                 initialScrollFraction = 1.0
-                                 chapterPage = 99999
-                                 vm.loadChapter(index: max(0, vm.currentChapterIndex - 1))
-                             }
-                        )
-                        .ignoresSafeArea()
-                            .id("epub_chapter_\(vm.currentChapterIndex)")
-                            .transition(
-                                .asymmetric(
-                                    insertion: .modifier(
-                                        active: PageCurl3DEffect(angle: isMangaMode ? -90 : 90, axis: (x: 0.0, y: 1.0, z: 0.0), anchor: isMangaMode ? .leading : .trailing),
-                                        identity: PageCurl3DEffect(angle: 0, axis: (x: 0.0, y: 1.0, z: 0.0), anchor: isMangaMode ? .leading : .trailing)
+                            if prefs.paginationMode == EBookPaginationMode.paged.rawValue {
+                                // Native UIPageViewController(.pageCurl) for EPUB paged mode
+                                EBookPageCurlReader(
+                                    spineItem: EBookMetadata.SpineItem(
+                                        href: currentChapterURL.lastPathComponent,
+                                        label: vm.tocItems[safe: vm.currentChapterIndex]?.label ?? ""
                                     ),
-                                    removal: .modifier(
-                                        active: PageCurl3DEffect(angle: isMangaMode ? 90 : -90, axis: (x: 0.0, y: 1.0, z: 0.0), anchor: isMangaMode ? .trailing : .leading),
-                                        identity: PageCurl3DEffect(angle: 0, axis: (x: 0.0, y: 1.0, z: 0.0), anchor: isMangaMode ? .trailing : .leading)
-                                    )
+                                    unzipDir: currentChapterURL.deletingLastPathComponent(),
+                                    prefs: prefs,
+                                    colorScheme: colorScheme,
+                                    currentPage: $chapterPage,
+                                    initialPage: chapterPage,
+                                    totalPages: $chapterTotalPages,
+                                    onNext: {
+                                        let lastIdx = vm.chapterHtmlFiles.count - 1
+                                        if vm.currentChapterIndex >= lastIdx {
+                                            attemptBookSeriesContinuation()
+                                        } else {
+                                            scrollToLastPageOnLoad = false
+                                            initialScrollFraction = 0.0
+                                            chapterPage = 0
+                                            vm.loadChapter(index: min(lastIdx, vm.currentChapterIndex + 1))
+                                        }
+                                    },
+                                    onPrev: {
+                                        scrollToLastPageOnLoad = true
+                                        initialScrollFraction = 1.0
+                                        chapterPage = 99999
+                                        vm.loadChapter(index: max(0, vm.currentChapterIndex - 1))
+                                    },
+                                    onCenterTap: { chromeVisible.toggle() },
+                                    onHighlightCreated: { selectedText in
+                                        let rawLabel = vm.tocItems[safe: vm.currentChapterIndex]?.label ?? ""
+                                        let spineLabel = !rawLabel.isEmpty ? rawLabel : nil
+                                        let highlight = Annotation(
+                                            pdfID: pdf.id,
+                                            pageIndex: vm.currentChapterIndex,
+                                            chapterTitle: spineLabel,
+                                            kind: .highlight,
+                                            createdAt: Date(),
+                                            modifiedAt: Date(),
+                                            colorHex: "#ffd700",
+                                            selectedText: selectedText
+                                        )
+                                        AnnotationStore.shared.add(highlight)
+                                        StudyNotesStore.shared.appendHighlight(selectedText, chapter: spineLabel ?? "Chapter \(vm.currentChapterIndex + 1)")
+
+                                        let sdAnnotation = SDAnnotation(from: highlight)
+                                        modelContext.insert(sdAnnotation)
+                                        try? modelContext.save()
+                                        self.activeHighlightToEdit = sdAnnotation
+                                    },
+                                    pdfID: pdf.id,
+                                    initialScrollFraction: initialScrollFraction,
+                                    onScrollFractionChanged: { fraction in
+                                        chapterScrollFraction = fraction
+                                        saveProgress()
+                                    },
+                                    webViewRef: $webViewReference,
+                                    onFootnoteTapped: { text in
+                                        activeFootnoteText = text
+                                    }
                                 )
-                            )
-                            .animation(.easeInOut(duration: 0.42), value: vm.currentChapterIndex)
+                            } else {
+                                // Scroll mode: EPUBWebView continuous vertical scroll
+                                EPUBWebView(
+                                    htmlContent: $vm.currentChapterHTML,
+                                    baseUrl: .constant(currentChapterURL),
+                                    prefs: EBookPreferences.shared,
+                                    scrollToLastPageOnLoad: $scrollToLastPageOnLoad,
+                                    initialScrollFraction: initialScrollFraction,
+                                    onScrollFractionChanged: { fraction in
+                                        chapterScrollFraction = fraction
+                                        saveProgress()
+                                    },
+                                    webViewRef: $webViewReference,
+                                    pdf: pdf,
+                                    currentPage: $chapterPage,
+                                    totalPages: $chapterTotalPages,
+                                    onHighlightCreated: { selectedText, _ in
+                                        let rawLabel = vm.tocItems[safe: vm.currentChapterIndex]?.label ?? ""
+                                        let spineLabel = !rawLabel.isEmpty ? rawLabel : nil
+                                        let highlight = Annotation(
+                                            pdfID: pdf.id,
+                                            pageIndex: vm.currentChapterIndex,
+                                            chapterTitle: spineLabel,
+                                            kind: .highlight,
+                                            createdAt: Date(),
+                                            modifiedAt: Date(),
+                                            colorHex: "#ffd700",
+                                            selectedText: selectedText
+                                        )
+                                        AnnotationStore.shared.add(highlight)
+                                        StudyNotesStore.shared.appendHighlight(selectedText, chapter: spineLabel ?? "Chapter \(vm.currentChapterIndex + 1)")
+
+                                        let sdAnnotation = SDAnnotation(from: highlight)
+                                        modelContext.insert(sdAnnotation)
+                                        try? modelContext.save()
+                                        self.activeHighlightToEdit = sdAnnotation
+                                    },
+                                    onPageLoaded: { webView in
+                                        self.webViewReference = webView
+                                        let pageAnnotations = AnnotationStore.shared.annotations(for: pdf.id).filter { $0.pageIndex == vm.currentChapterIndex && $0.kind == .highlight }
+                                        for ann in pageAnnotations {
+                                            if let text = ann.selectedText, let color = ann.colorHex {
+                                                let safeText = text.replacingOccurrences(of: "`", with: "\\`")
+                                                                   .replacingOccurrences(of: "\"", with: "\\\"")
+                                                                   .replacingOccurrences(of: "\n", with: " ")
+                                                let js = "window.restoreInksyncHighlight(`\(safeText)`, '\(color)');"
+                                                webView.evaluateJavaScript(js)
+                                            }
+                                        }
+                                    },
+                                    onCenterTap: { chromeVisible.toggle() },
+                                    onLeftTap: { if isMangaMode { pageForward() } else { pageBackward() } },
+                                    onRightTap: { if isMangaMode { pageBackward() } else { pageForward() } },
+                                    onNextChapter: {
+                                        let lastIdx = vm.chapterHtmlFiles.count - 1
+                                        if vm.currentChapterIndex >= lastIdx {
+                                            attemptBookSeriesContinuation()
+                                        } else {
+                                            scrollToLastPageOnLoad = false
+                                            initialScrollFraction = 0.0
+                                            chapterPage = 0
+                                            vm.loadChapter(index: min(lastIdx, vm.currentChapterIndex + 1))
+                                        }
+                                    },
+                                    onPrevChapter: {
+                                        scrollToLastPageOnLoad = true
+                                        initialScrollFraction = 1.0
+                                        chapterPage = 99999
+                                        vm.loadChapter(index: max(0, vm.currentChapterIndex - 1))
+                                    }
+                                )
+                                .ignoresSafeArea()
+                                .id("epub_chapter_\(vm.currentChapterIndex)")
+                            }
                             
                             if prefs.paginationMode == EBookPaginationMode.paged.rawValue && computeColumnCount(for: geo.size) == 2 {
                                 BookSpineCreaseOverlay()

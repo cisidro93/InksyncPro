@@ -748,15 +748,7 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
 
             function getPageStep() {
                 var w = window.innerWidth;
-                if (w <= 0) return w;
-                if (_isMultiCol) {
-                    var m = \(max(20.0, parent.prefs.textMargin));
-                    var gap = 2 * m;
-                    var colWidth = (w - gap) / 2.0;
-                    return colWidth + gap;
-                } else {
-                    return w;
-                }
+                return w > 0 ? w : 1;
             }
 
             function applyPagePosition() {
