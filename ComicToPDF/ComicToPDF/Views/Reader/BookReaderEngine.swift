@@ -907,7 +907,12 @@ struct EPUBWebView: View {
             postFraction();
         }
 
+        var _isNavigating = false;
+        var _navTimer = null;
+
         function goToPage(page, smooth) {
+            _isNavigating = true;
+            if (_navTimer) clearTimeout(_navTimer);
             _currentPage = Math.max(0, Math.min(page, _totalPages - 1));
             var behavior = 'instant';
             
@@ -924,6 +929,10 @@ struct EPUBWebView: View {
                 window.webkit.messageHandlers.metrics.postMessage({ current: _currentPage, total: _totalPages });
             }
             postFraction();
+
+            _navTimer = setTimeout(function() {
+                _isNavigating = false;
+            }, 250);
         }
         window.goToInksyncPage = goToPage;
 
@@ -961,10 +970,13 @@ struct EPUBWebView: View {
 
         var _scrollTimeout;
         window.addEventListener('scroll', function() {
+            if (_isNavigating) return;
             clearTimeout(_scrollTimeout);
             _scrollTimeout = setTimeout(function() {
-                updateMetrics();
-            }, 50);
+                if (!_isNavigating) {
+                    updateMetrics();
+                }
+            }, 80);
         });
 
         // ── Highlight Engine ─────────────────────────────────────────────────
@@ -1174,21 +1186,26 @@ struct BookReaderEngine: View {
                             onLeftTap: { if isMangaMode { pageForward() } else { pageBackward() } },
                             onRightTap: { if isMangaMode { pageBackward() } else { pageForward() } },
                             onNextChapter: {
-                                let lastIdx = vm.chapterHtmlFiles.count - 1
-                                if vm.currentChapterIndex >= lastIdx {
-                                    // Last chapter — attempt series continuation
-                                    attemptBookSeriesContinuation()
-                                } else {
-                                    vm.loadChapter(index: min(lastIdx, vm.currentChapterIndex + 1))
-                                }
-                            },
-                            onPrevChapter: {
-                                scrollToLastPageOnLoad = true
-                                vm.loadChapter(index: max(0, vm.currentChapterIndex - 1))
-                            }
+                                 let lastIdx = vm.chapterHtmlFiles.count - 1
+                                 if vm.currentChapterIndex >= lastIdx {
+                                     // Last chapter — attempt series continuation
+                                     attemptBookSeriesContinuation()
+                                 } else {
+                                     scrollToLastPageOnLoad = false
+                                     initialScrollFraction = 0.0
+                                     chapterPage = 0
+                                     vm.loadChapter(index: min(lastIdx, vm.currentChapterIndex + 1))
+                                 }
+                             },
+                             onPrevChapter: {
+                                 scrollToLastPageOnLoad = true
+                                 initialScrollFraction = 1.0
+                                 chapterPage = 99999
+                                 vm.loadChapter(index: max(0, vm.currentChapterIndex - 1))
+                             }
                         )
                         .ignoresSafeArea()
-                            .id("\(vm.currentChapterIndex)_\(chapterPage)")
+                            .id("epub_chapter_\(vm.currentChapterIndex)")
                             .transition(
                                 .asymmetric(
                                     insertion: .modifier(
@@ -1201,7 +1218,7 @@ struct BookReaderEngine: View {
                                     )
                                 )
                             )
-                            .animation(.easeInOut(duration: 0.42), value: chapterPage)
+                            .animation(.easeInOut(duration: 0.42), value: vm.currentChapterIndex)
                             
                             if prefs.paginationMode == EBookPaginationMode.paged.rawValue && computeColumnCount(for: geo.size) == 2 {
                                 BookSpineCreaseOverlay()
@@ -1466,6 +1483,9 @@ struct BookReaderEngine: View {
                 if vm.currentChapterIndex >= lastIdx {
                     attemptBookSeriesContinuation()
                 } else {
+                    scrollToLastPageOnLoad = false
+                    initialScrollFraction = 0.0
+                    chapterPage = 0
                     vm.loadChapter(index: min(lastIdx, vm.currentChapterIndex + 1))
                 }
             } else {
@@ -1489,6 +1509,9 @@ struct BookReaderEngine: View {
                 if vm.currentChapterIndex >= lastIdx {
                     attemptBookSeriesContinuation()
                 } else {
+                    scrollToLastPageOnLoad = false
+                    initialScrollFraction = 0.0
+                    chapterPage = 0
                     vm.loadChapter(index: min(lastIdx, vm.currentChapterIndex + 1))
                 }
             } else {
@@ -1509,6 +1532,8 @@ struct BookReaderEngine: View {
             if currentOffset <= 4 {
                 if vm.currentChapterIndex > 0 {
                     scrollToLastPageOnLoad = true
+                    initialScrollFraction = 1.0
+                    chapterPage = 99999
                     vm.loadChapter(index: vm.currentChapterIndex - 1)
                 }
             } else {
@@ -1522,6 +1547,9 @@ struct BookReaderEngine: View {
 
             if currentOffset <= 4 {
                 if vm.currentChapterIndex > 0 {
+                    scrollToLastPageOnLoad = true
+                    initialScrollFraction = 1.0
+                    chapterPage = 99999
                     vm.loadChapter(index: vm.currentChapterIndex - 1)
                 }
             } else {

@@ -689,6 +689,7 @@ struct EBookReaderView: View {
         }
         isGoingForward = true
         chapterPage = 0
+        chapterScrollFraction = 0.0
         withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { currentIndex += 1 }
         saveProgress()
         trackEBookProgress()
@@ -728,6 +729,7 @@ struct EBookReaderView: View {
         guard currentIndex > 0 else { return }
         isGoingForward = false
         chapterPage = 99999 // Signal JS to jump to END of the previous chapter
+        chapterScrollFraction = 1.0
         withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { currentIndex -= 1 }
         saveProgress()
         trackEBookProgress()

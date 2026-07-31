@@ -102,7 +102,7 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
         }
 
         if let currentVC = uiViewController.viewControllers?.first as? EBookPageContentViewController {
-            if currentVC.pageIndex == targetIndex {
+            if currentVC.pageIndex == targetIndex || context.coordinator.currentPageIndex == targetIndex {
                 return // Target page is ALREADY displayed on screen — do NOT touch setViewControllers!
             }
 
@@ -110,6 +110,7 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
             let isForward = targetIndex >= currentVC.pageIndex
             let direction: UIPageViewController.NavigationDirection = isForward ? .forward : .reverse
             uiViewController.setViewControllers([vc], direction: direction, animated: false, completion: nil)
+            context.coordinator.currentPageIndex = targetIndex
         }
     }
 
@@ -132,7 +133,7 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
         private var chapterBaseURL: URL?
         private var styledCSS: String = ""
         private var computedTotalPages: Int = 1
-        private var currentPageIndex: Int = 0
+        var currentPageIndex: Int = 0
         private var hasLoadedInitialPage: Bool = false
 
         // Primary master WKWebView — used for text layout, metrics & live interactions
