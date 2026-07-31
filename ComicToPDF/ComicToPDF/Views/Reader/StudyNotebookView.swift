@@ -66,7 +66,25 @@ struct StudyNotebookView: View {
     enum InputMode: String {
         case markdown = "Text"
         case handwriting = "Pencil"
+    enum NoteTakingSystem: String, CaseIterable, Identifiable {
+        case zettelkasten = "Zettelkasten"
+        case cornell      = "Cornell"
+        case para         = "PARA"
+        case marginalia   = "Marginalia"
+        
+        var id: String { rawValue }
+        
+        var icon: String {
+            switch self {
+            case .zettelkasten: return "tree.fill"
+            case .cornell:      return "doc.text.fill"
+            case .para:         return "rocket.fill"
+            case .marginalia:   return "scribble.variable"
+            }
+        }
     }
+    
+    @AppStorage("studyNotebookSystem") private var noteSystem: NoteTakingSystem = .zettelkasten
     @AppStorage("studyNotebookInputMode") private var inputMode: InputMode = .markdown
     @State private var paperStyle: PaperStyle = .plain
     @State private var paperSpacing: CGFloat = 24.0

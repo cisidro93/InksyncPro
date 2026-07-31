@@ -59,6 +59,16 @@ struct Annotation: Codable, Identifiable {
     var executiveSummary: String? = nil
     var maturityRaw: String? = "seedling"
 
+    // ✅ Cornell Method (Walter Pauk)
+    var cornellCueText: String? = nil
+    var cornellSummaryText: String? = nil
+
+    // ✅ PARA Method (Tiago Forte)
+    var paraCategoryRaw: String? = nil
+
+    // ✅ Marginalia & Sketchnotes (Mortimer Adler & Mike Rohde)
+    var marginaliaSymbolRaw: String? = nil
+
     enum AnnotationKind: String, Codable {
         case highlight
         case note           // text note attached to a location
@@ -125,6 +135,16 @@ struct Annotation: Codable, Identifiable {
     var executiveSummary: String?
     var maturityRaw: String? = "seedling"
     
+    // ✅ Cornell Method (Walter Pauk)
+    var cornellCueText: String?
+    var cornellSummaryText: String?
+
+    // ✅ PARA Method (Tiago Forte)
+    var paraCategoryRaw: String?
+
+    // ✅ Marginalia & Sketchnotes (Mortimer Adler & Mike Rohde)
+    var marginaliaSymbolRaw: String?
+    
     init(from dto: Annotation) {
         self.id = dto.id
         self.pdfID = dto.pdfID
@@ -154,6 +174,10 @@ struct Annotation: Codable, Identifiable {
         self.linkedAnnotationIDs = dto.linkedAnnotationIDs ?? []
         self.executiveSummary = dto.executiveSummary
         self.maturityRaw = dto.maturityRaw ?? "seedling"
+        self.cornellCueText = dto.cornellCueText
+        self.cornellSummaryText = dto.cornellSummaryText
+        self.paraCategoryRaw = dto.paraCategoryRaw
+        self.marginaliaSymbolRaw = dto.marginaliaSymbolRaw
     }
     
     // ✅ Phase 31 Native Constructor for Readwise Importers
@@ -614,5 +638,78 @@ extension SDAnnotation {
             guard match.numberOfRanges > 1 else { return nil }
             return nsString.substring(with: match.range(at: 1)).trimmingCharacters(in: .whitespacesAndNewlines)
         }
+    }
+}
+
+// MARK: - PARA & Marginalia Extensions
+enum PARACategory: String, CaseIterable, Identifiable {
+    case project  = "project"
+    case area     = "area"
+    case resource = "resource"
+    case archive  = "archive"
+    
+    var id: String { rawValue }
+    
+    var iconName: String {
+        switch self {
+        case .project:  return "rocket.fill"
+        case .area:     return "house.fill"
+        case .resource: return "books.vertical.fill"
+        case .archive:  return "archivebox.fill"
+        }
+    }
+    
+    var displayName: String {
+        switch self {
+        case .project:  return "Project"
+        case .area:     return "Area"
+        case .resource: return "Resource"
+        case .archive:  return "Archive"
+        }
+    }
+}
+
+enum MarginaliaSymbol: String, CaseIterable, Identifiable {
+    case question = "question"
+    case insight  = "insight"
+    case favorite = "favorite"
+    case anchor   = "anchor"
+    
+    var id: String { rawValue }
+    
+    var symbolString: String {
+        switch self {
+        case .question: return "❓"
+        case .insight:  return "❗"
+        case .favorite: return "★"
+        case .anchor:   return "📍"
+        }
+    }
+    
+    var displayName: String {
+        switch self {
+        case .question: return "Question"
+        case .insight:  return "Crucial Insight"
+        case .favorite: return "Favorite Panel"
+        case .anchor:   return "Page Anchor"
+        }
+    }
+}
+
+extension SDAnnotation {
+    var paraCategory: PARACategory? {
+        get {
+            guard let raw = paraCategoryRaw else { return nil }
+            return PARACategory(rawValue: raw)
+        }
+        set { paraCategoryRaw = newValue?.rawValue }
+    }
+    
+    var marginaliaSymbol: MarginaliaSymbol? {
+        get {
+            guard let raw = marginaliaSymbolRaw else { return nil }
+            return MarginaliaSymbol(rawValue: raw)
+        }
+        set { marginaliaSymbolRaw = newValue?.rawValue }
     }
 }
