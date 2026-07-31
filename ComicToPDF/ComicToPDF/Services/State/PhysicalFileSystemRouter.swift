@@ -762,55 +762,11 @@ class PhysicalFileSystemRouter {
     // MARK: - Disclaimer / Warning Image Filter
     
     nonisolated static func isDisclaimerFilename(_ path: String) -> Bool {
-        guard UserDefaults.standard.bool(forKey: "skipDisclaimerPages") else { return false }
-        let filename = (path as NSString).lastPathComponent.lowercased()
-        let keywords = [
-            "credit", "disclaimer", "warning", "scanlation", "copyright",
-            "piracy", "pirate", "notice", "please_read", "pleaseread",
-            "read_first", "readfirst", "illegal"
-        ]
-        for keyword in keywords {
-            if filename.contains(keyword) {
-                return true
-            }
-        }
         return false
     }
     
     nonisolated static func containsDisclaimerText(in image: UIImage) -> Bool {
-        guard UserDefaults.standard.bool(forKey: "skipDisclaimerPages") else { return false }
-        var result = false
-        autoreleasepool {
-            guard let cgImage = image.cgImage else { return }
-            let request = VNRecognizeTextRequest()
-            request.recognitionLevel = .fast
-            request.usesLanguageCorrection = false
-            
-            let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
-            do {
-                try handler.perform([request])
-                guard let observations = request.results else { return }
-                
-                let keywords = [
-                    "pirat", "illegal", "scanlation", "disclaimer", "not for sale",
-                    "free translation", "support the official", "paid for this", "scammed"
-                ]
-                
-                for observation in observations {
-                    guard let topCandidate = observation.topCandidates(1).first else { continue }
-                    let text = topCandidate.string.lowercased()
-                    for keyword in keywords {
-                        if text.contains(keyword) {
-                            result = true
-                            return
-                        }
-                    }
-                }
-            } catch {
-                Logger.shared.log("[Disclaimer Detector] Vision OCR Error: \(error.localizedDescription)", category: "AI", type: .error)
-            }
-        }
-        return result
+        return false
     }
     
     nonisolated static func isSandboxURL(_ url: URL) -> Bool {

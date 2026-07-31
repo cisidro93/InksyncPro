@@ -36,9 +36,9 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
         let pvc = UIPageViewController(
             transitionStyle: .pageCurl,
             navigationOrientation: .horizontal,
-            options: nil
+            options: [.spineLocation: UIPageViewController.SpineLocation.mid.rawValue]
         )
-        pvc.isDoubleSided = false
+        pvc.isDoubleSided = true
         pvc.dataSource = context.coordinator
         pvc.delegate = context.coordinator
 
@@ -110,19 +110,19 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
             let isForward = targetIndex >= currentVC.pageIndex
             let direction: UIPageViewController.NavigationDirection = isForward ? .forward : .reverse
             uiViewController.setViewControllers([vc], direction: direction, animated: false, completion: nil)
-            context.coordinator.currentPageIndex = targetIndex
-        }
     }
 
     static func dismantleUIView(_ uiViewController: UIPageViewController, coordinator: Coordinator) {
         coordinator.cleanup()
     }
+}
 
+extension EBookPageCurlReader {
     // ============================================================
     // MARK: - Coordinator
     // ============================================================
     @MainActor
-    class Coordinator: NSObject, UIPageViewControllerDataSource, UIPageViewControllerDelegate, WKNavigationDelegate, WKScriptMessageHandler {
+    class Coordinator: NSObject, UIPageViewControllerDataSource, UIPageViewControllerDelegate, WKNavigationDelegate, WKScriptMessageHandler, UIGestureRecognizerDelegate {
         var parent: EBookPageCurlReader
         weak var pageViewController: UIPageViewController?
         var isTransitioning: Bool = false
@@ -145,6 +145,10 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
             self.parent = parent
             super.init()
             setupPrimaryWebView()
+        }
+
+        nonisolated func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+            return true
         }
 
         func cleanup() {
@@ -187,6 +191,12 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
             wv.scrollView.showsVerticalScrollIndicator = false
             wv.scrollView.contentInsetAdjustmentBehavior = .never
             wv.scrollView.contentInset = .zero
+
+            let webTap = UITapGestureRecognizer(target: self, action: #selector(handleSingleTap(_:)))
+            webTap.numberOfTapsRequired = 1
+            webTap.cancelsTouchesInView = false
+            webTap.delegate = self
+            wv.addGestureRecognizer(webTap)
 
             self.primaryWebView = wv
             self.parent.webViewRef = wv

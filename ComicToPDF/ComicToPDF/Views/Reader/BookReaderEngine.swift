@@ -1271,10 +1271,6 @@ struct BookReaderEngine: View {
                                 .ignoresSafeArea()
                                 .id("epub_chapter_\(vm.currentChapterIndex)")
                             }
-                            
-                            if prefs.paginationMode == EBookPaginationMode.paged.rawValue && computeColumnCount(for: geo.size) == 2 {
-                                BookSpineCreaseOverlay()
-                            }
                         }
                         .readingFilter(prefs.readingFilter)
                         
