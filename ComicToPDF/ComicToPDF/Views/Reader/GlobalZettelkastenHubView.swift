@@ -304,6 +304,41 @@ struct GlobalZettelkastenHubView: View {
                             .padding(.top, 12)
                         }
 
+                        // ── System Philosophy: Fleeting Notes Processing Banner ──
+                        let seedlings = cachedActiveAnnotations.filter { $0.zettelMaturity == .seedling }
+                        if !seedlings.isEmpty {
+                            Button {
+                                showingDailyReview = true
+                            } label: {
+                                HStack(spacing: 10) {
+                                    Image(systemName: "sparkles")
+                                        .font(.system(size: 14, weight: .bold))
+                                        .foregroundColor(.orange)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("🌱 \(seedlings.count) Fleeting Notes Ready for Synthesis")
+                                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                                            .foregroundColor(.primary)
+                                        Text("Translate reading highlights into permanent atomic Zettels in your own words.")
+                                            .font(.system(size: 10, weight: .medium))
+                                            .foregroundColor(Theme.textSecondary)
+                                    }
+                                    Spacer()
+                                    Text("Synthesize")
+                                        .font(.system(size: 11, weight: .bold))
+                                        .foregroundColor(.white)
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 5)
+                                        .background(Color.orange, in: Capsule())
+                                }
+                                .padding(12)
+                                .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 14))
+                                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.orange.opacity(0.2), lineWidth: 0.8))
+                                .padding(.horizontal)
+                                .padding(.top, 6)
+                            }
+                            .buttonStyle(.plain)
+                        }
+
                         // ── Filter pill strip (user-friendly labels)
                         Group {
                             if hSizeClass == .regular {
