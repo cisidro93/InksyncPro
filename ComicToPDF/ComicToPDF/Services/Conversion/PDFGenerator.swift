@@ -116,9 +116,9 @@ struct PDFGenerator: Sendable {
                         
                         let targetSize: CGSize
                         if isLandscape && !standardIsLandscape {
-                            // Double page spread: scale width proportional to height
+                            // Double page spread: scale width to occupy 2 full pages across the spread (2x width)!
                             let scaleHeight = standardSize.height
-                            let scaleWidth = scaleHeight * (imgSize.width / imgSize.height)
+                            let scaleWidth = max(standardSize.width * 2.0, scaleHeight * (imgSize.width / imgSize.height))
                             targetSize = CGSize(width: scaleWidth, height: scaleHeight)
                         } else if !isLandscape && standardIsLandscape {
                             // Standard is landscape, but page is portrait: scale height proportional to width

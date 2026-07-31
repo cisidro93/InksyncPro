@@ -37,16 +37,15 @@ struct PageCurlReader: UIViewControllerRepresentable {
             return allSpreads
         }
 
-        allSpreads.append([0])
-        var i = 1
+        var i = 0
         while i < totalPages {
-            let isL = landscapeArray[i]
+            let isL = landscapeArray.indices.contains(i) ? landscapeArray[i] : false
             if isL {
                 allSpreads.append([i])
                 i += 1
             } else {
                 if i + 1 < totalPages {
-                    let nextIsL = landscapeArray[i + 1]
+                    let nextIsL = landscapeArray.indices.contains(i + 1) ? landscapeArray[i + 1] : false
                     if nextIsL {
                         allSpreads.append([i])
                         i += 1
