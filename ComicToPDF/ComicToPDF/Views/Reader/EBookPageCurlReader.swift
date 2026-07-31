@@ -36,7 +36,7 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
         let pvc = UIPageViewController(
             transitionStyle: .pageCurl,
             navigationOrientation: .horizontal,
-            options: [.spineLocation: UIPageViewController.SpineLocation.mid.rawValue]
+            options: nil
         )
         pvc.isDoubleSided = true
         pvc.dataSource = context.coordinator

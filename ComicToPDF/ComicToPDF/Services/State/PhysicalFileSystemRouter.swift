@@ -58,6 +58,20 @@ class PhysicalFileSystemRouter {
         }
         if updated { manager.saveLibrary() }
     }
+
+    func purgeLegacyCachedCoversIfNeeded(manager: ConversionManager) {
+        guard !UserDefaults.standard.bool(forKey: "didPurgeWarningCovers_v1") else { return }
+        UserDefaults.standard.set(true, forKey: "didPurgeWarningCovers_v1")
+        
+        let coversDir = Self.getCoversDirectory()
+        if let files = try? FileManager.default.contentsOfDirectory(at: coversDir, includingPropertiesForKeys: nil) {
+            for file in files where file.pathExtension.lowercased() == "jpg" {
+                try? FileManager.default.removeItem(at: file)
+            }
+        }
+        manager.thumbnailCache.removeAllObjects()
+        Logger.shared.log("PhysicalFileSystemRouter: Purged legacy cached covers from disk to enforce true page-0 cover extraction.", category: "Library")
+    }
     
     func migrateFlatFilesToSeriesDirectories(manager: ConversionManager) async {
         let fileManager = FileManager.default

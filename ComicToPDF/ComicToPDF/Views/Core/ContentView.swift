@@ -201,6 +201,7 @@ struct ContentView: View {
                 
                 // Always fetch the latest SwiftData on startup to ensure conversionManager matches the DB.
                 await LibraryService.shared.loadLibrary()
+                PhysicalFileSystemRouter.shared.purgeLegacyCachedCoversIfNeeded(manager: conversionManager)
                 
                 // Run smart grouping asynchronously on background actor context to avoid blocking the Main Actor on launch.
                 await LibraryService.shared.runSmartGrouping()
