@@ -660,16 +660,23 @@ extension SmartMidSpineCurlReader {
         func spreadViewControllers(for pageIndex: Int) -> [UIViewController] {
             let isCover = (pageIndex == 0)
             if isCover {
-                let coverVC = SingleLeafViewController(pageIndex: 0, parent: parent)
+                let coverVC = SingleLeafViewController(pageIndex: 0, parent: parent, alignment: parent.isMangaRTL ? .leading : .trailing)
                 let blankVC = SingleLeafViewController(pageIndex: -1, parent: parent)
                 return parent.isMangaRTL ? [coverVC, blankVC] : [blankVC, coverVC]
             } else {
+                let isL = (pageIndex >= 0 && pageIndex < parent.cache.isLandscapeArray.count) ? parent.cache.isLandscapeArray[pageIndex] : false
+                if isL {
+                    let splashVC = SingleLeafViewController(pageIndex: pageIndex, parent: parent, alignment: .center)
+                    let blankVC = SingleLeafViewController(pageIndex: -1, parent: parent)
+                    return [blankVC, splashVC]
+                }
+                
                 let leftIdx = (pageIndex % 2 == 0) ? (pageIndex - 1) : pageIndex
                 let rightIdx = leftIdx + 1
                 
-                let leftVC = SingleLeafViewController(pageIndex: leftIdx, parent: parent)
+                let leftVC = SingleLeafViewController(pageIndex: leftIdx, parent: parent, alignment: parent.isMangaRTL ? .leading : .trailing)
                 let rightVC = (rightIdx < parent.totalPages)
-                    ? SingleLeafViewController(pageIndex: rightIdx, parent: parent)
+                    ? SingleLeafViewController(pageIndex: rightIdx, parent: parent, alignment: parent.isMangaRTL ? .trailing : .leading)
                     : SingleLeafViewController(pageIndex: -1, parent: parent)
                 
                 return parent.isMangaRTL ? [rightVC, leftVC] : [leftVC, rightVC]
@@ -828,9 +835,12 @@ class SingleLeafViewController: UIViewController {
     let pageIndex: Int
     let activeFilterPreset: ReadingFilterPreset
     
-    init(pageIndex: Int, parent: SmartMidSpineCurlReader) {
+    let alignment: Alignment
+    
+    init(pageIndex: Int, parent: SmartMidSpineCurlReader, alignment: Alignment = .center) {
         self.pageIndex = pageIndex
         self.activeFilterPreset = parent.activeFilterPreset
+        self.alignment = alignment
         super.init(nibName: nil, bundle: nil)
         
         view.backgroundColor = .black
@@ -842,7 +852,7 @@ class SingleLeafViewController: UIViewController {
                     index: pageIndex,
                     cache: parent.cache,
                     activeFilterPreset: parent.activeFilterPreset,
-                    alignment: .center
+                    alignment: alignment
                 )
                 .background(Color.black)
                 .ignoresSafeArea()

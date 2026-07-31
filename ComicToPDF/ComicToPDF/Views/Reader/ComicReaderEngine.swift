@@ -1467,7 +1467,7 @@ struct ComicReaderEngine: View {
         let isDual = prefersTwoUpSpreads || pdfDual
         guard isDual else { return false }
         guard readingMode == .pageHorizontal || readingMode == .mangaRTL || readingMode == .pageSlide || readingMode == .pageFade else { return false }
-        return isLandscape
+        return true
     }
 
     private var isCurrentlyTwoUp: Bool {
@@ -1477,7 +1477,7 @@ struct ComicReaderEngine: View {
             let isDual = prefersTwoUpSpreads || pdfDual
             guard isDual else { return false }
             guard readingMode == .pageHorizontal || readingMode == .mangaRTL || readingMode == .pageSlide || readingMode == .pageFade else { return false }
-            return isLandscape
+            return true
         }
         return false
     }
