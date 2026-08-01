@@ -477,6 +477,19 @@ struct ZettelkastenBoardView: View {
         HapticEngine.success()
 
         switch groupingMode {
+        case .para:
+            if targetColumn.contains("Projects") {
+                ann.paraCategory = .project
+            } else if targetColumn.contains("Areas") {
+                ann.paraCategory = .area
+            } else if targetColumn.contains("Resources") {
+                ann.paraCategory = .resource
+            } else if targetColumn.contains("Archives") {
+                ann.paraCategory = .archive
+            } else if targetColumn.contains("Unassigned") {
+                ann.paraCategory = nil
+            }
+
         case .customOutline:
             // Moving between custom columns
             ann.outlineColumn = targetColumn
