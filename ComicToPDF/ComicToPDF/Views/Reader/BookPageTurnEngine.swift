@@ -702,9 +702,9 @@ extension SmartMidSpineCurlReader {
             } else {
                 let isL = (pageIndex >= 0 && pageIndex < parent.cache.isLandscapeArray.count) ? parent.cache.isLandscapeArray[pageIndex] : false
                 if isL {
-                    let splashVC = SingleLeafViewController(pageIndex: pageIndex, parent: parent, alignment: .center)
-                    let blankVC = SingleLeafViewController(pageIndex: -1, parent: parent)
-                    return [blankVC, splashVC]
+                    let leftVC = SingleLeafViewController(pageIndex: pageIndex, parent: parent, alignment: .trailing, cropHalf: parent.isMangaRTL ? .right : .left)
+                    let rightVC = SingleLeafViewController(pageIndex: pageIndex, parent: parent, alignment: .leading, cropHalf: parent.isMangaRTL ? .left : .right)
+                    return parent.isMangaRTL ? [rightVC, leftVC] : [leftVC, rightVC]
                 }
                 
                 let leftIdx = (pageIndex % 2 == 0) ? (pageIndex - 1) : pageIndex
@@ -865,18 +865,25 @@ extension SmartMidSpineCurlReader {
     }
 }
 
+enum CropHalf {
+    case none
+    case left
+    case right
+}
+
 // MARK: - Single Leaf VC
 @MainActor
 class SingleLeafViewController: UIViewController {
     let pageIndex: Int
     let activeFilterPreset: ReadingFilterPreset
-    
     let alignment: Alignment
+    let cropHalf: CropHalf
     
-    init(pageIndex: Int, parent: SmartMidSpineCurlReader, alignment: Alignment = .center) {
+    init(pageIndex: Int, parent: SmartMidSpineCurlReader, alignment: Alignment = .center, cropHalf: CropHalf = .none) {
         self.pageIndex = pageIndex
         self.activeFilterPreset = parent.activeFilterPreset
         self.alignment = alignment
+        self.cropHalf = cropHalf
         super.init(nibName: nil, bundle: nil)
         
         view.backgroundColor = .black
@@ -888,7 +895,8 @@ class SingleLeafViewController: UIViewController {
                     index: pageIndex,
                     cache: parent.cache,
                     activeFilterPreset: parent.activeFilterPreset,
-                    alignment: alignment
+                    alignment: alignment,
+                    cropHalf: cropHalf
                 )
                 .background(Color.black)
                 .ignoresSafeArea()
@@ -945,6 +953,7 @@ struct TwoUpPageCell: View {
     let cache: ComicImageCache
     let activeFilterPreset: ReadingFilterPreset
     var alignment: Alignment = .center
+    var cropHalf: CropHalf = .none
     
     @State private var image: UIImage? = nil
     
@@ -952,12 +961,25 @@ struct TwoUpPageCell: View {
         ZStack {
             Color.black
             if let image = image {
-                Image(uiImage: image)
-                    .resizable()
-                    .applyFilterPreset(activeFilterPreset)
-                    .aspectRatio(contentMode: .fit)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
+                if cropHalf != .none {
+                    GeometryReader { geo in
+                        Image(uiImage: image)
+                            .resizable()
+                            .applyFilterPreset(activeFilterPreset)
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: geo.size.width * 2, height: geo.size.height, alignment: .topLeading)
+                            .offset(x: cropHalf == .left ? 0 : -geo.size.width)
+                    }
+                    .clipped()
                     .transition(.opacity)
+                } else {
+                    Image(uiImage: image)
+                        .resizable()
+                        .applyFilterPreset(activeFilterPreset)
+                        .aspectRatio(contentMode: .fit)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
+                        .transition(.opacity)
+                }
             } else {
                 ProgressView()
                     .progressViewStyle(CircularProgressViewStyle(tint: .white.opacity(0.5)))

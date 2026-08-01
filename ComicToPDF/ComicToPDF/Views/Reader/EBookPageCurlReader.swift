@@ -270,9 +270,15 @@ extension EBookPageCurlReader {
         // MARK: - Page VC Factory
 
         func makePageViewController(for pageIndex: Int) -> EBookPageContentViewController {
+            let clampedIndex: Int
+            if pageIndex >= computedTotalPages || pageIndex == 99999 {
+                clampedIndex = max(0, computedTotalPages - 1)
+            } else {
+                clampedIndex = max(0, pageIndex)
+            }
             let vc = EBookPageContentViewController(
-                pageIndex: pageIndex,
-                snapshot: pageSnapshots[pageIndex],
+                pageIndex: clampedIndex,
+                snapshot: pageSnapshots[clampedIndex],
                 coordinator: self
             )
             return vc

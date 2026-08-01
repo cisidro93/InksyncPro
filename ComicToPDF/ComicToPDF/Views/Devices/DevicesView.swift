@@ -1,30 +1,6 @@
 import SwiftUI
 import SwiftData
 
-enum DevicesMode: String, CaseIterable {
-    case sync     = "Devices"
-    case settings = "Settings"
-
-    var icon: String {
-        switch self {
-        case .sync:     return "ipad.and.iphone"
-        case .settings: return "gearshape"
-        }
-    }
-    var activeIcon: String {
-        switch self {
-        case .sync:     return "ipad.and.iphone.fill"
-        case .settings: return "gearshape.fill"
-        }
-    }
-    var tint: Color {
-        switch self {
-        case .sync:     return Color.inkBlue
-        case .settings: return Color(hex: "#7B5EA7")
-        }
-    }
-}
-
 struct DevicesView: View {
     @EnvironmentObject var manager: ConversionManager
     @EnvironmentObject var peerManager: PeerManager
@@ -35,61 +11,40 @@ struct DevicesView: View {
     @State private var selectedDeviceID: UUID?
     
     @Query(sort: \SDRegisteredDevice.name) private var savedDevices: [SDRegisteredDevice]
-    
-    @State private var mode: DevicesMode = .sync
 
     var body: some View {
-        VStack(spacing: 0) {
-            // ── Segmented Control ──────────────────────────────
-            devicesSegmentPicker
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
-                .padding(.bottom, 10)
-            
-            Divider()
-                .background(Color.inkBorderVisible)
-            
-            ZStack {
-                if mode == .sync {
-                    if hSizeClass == .regular {
-                        NavigationSplitView {
-                            deviceContent
-                                .navigationTitle("Devices")
-                                .toolbar {
-                                    ToolbarItem(placement: .navigationBarTrailing) {
-                                        Button {
-                                            showAddDevice = true
-                                        } label: {
-                                            Image(systemName: "plus")
-                                        }
-                                        .foregroundColor(.inkBlue)
-                                    }
+        Group {
+            if hSizeClass == .regular {
+                NavigationSplitView {
+                    deviceContent
+                        .navigationTitle("Devices")
+                        .toolbar {
+                            ToolbarItem(placement: .navigationBarTrailing) {
+                                Button {
+                                    showAddDevice = true
+                                } label: {
+                                    Image(systemName: "plus")
                                 }
-                        } detail: {
-                            deviceDetailPanel
+                                .foregroundColor(.inkBlue)
+                            }
                         }
-                    } else {
-                        NavigationStack {
-                            deviceContent
-                                .navigationTitle("Devices")
-                                .toolbar {
-                                    ToolbarItem(placement: .navigationBarTrailing) {
-                                        Button {
-                                            showAddDevice = true
-                                        } label: {
-                                            Image(systemName: "plus")
-                                        }
-                                        .foregroundColor(.inkBlue)
-                                    }
+                } detail: {
+                    deviceDetailPanel
+                }
+            } else {
+                NavigationStack {
+                    deviceContent
+                        .navigationTitle("Devices")
+                        .toolbar {
+                            ToolbarItem(placement: .navigationBarTrailing) {
+                                Button {
+                                    showAddDevice = true
+                                } label: {
+                                    Image(systemName: "plus")
                                 }
+                                .foregroundColor(.inkBlue)
+                            }
                         }
-                    }
-                } else {
-                    NavigationStack {
-                        SettingsView()
-                            .environmentObject(manager)
-                            .environmentObject(AppSettingsManager.shared)
-                    }
                 }
             }
         }
@@ -99,62 +54,6 @@ struct DevicesView: View {
                 .environmentObject(manager)
         }
         .onAppear(perform: handleAppear)
-    }
-
-    private var devicesSegmentPicker: some View {
-        HStack(spacing: 6) {
-            ForEach(DevicesMode.allCases, id: \.self) { segment in
-                segmentPill(segment)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func segmentPill(_ segment: DevicesMode) -> some View {
-        let isActive = mode == segment
-
-        Button {
-            withAnimation(.spring(response: 0.28, dampingFraction: 0.78)) {
-                mode = segment
-            }
-        } label: {
-            HStack(spacing: 7) {
-                Image(systemName: isActive ? segment.activeIcon : segment.icon)
-                    .font(.system(size: 13, weight: .semibold))
-                Text(segment.rawValue)
-                    .font(.system(size: 14, weight: .semibold))
-            }
-            .foregroundStyle(isActive ? .white : Color.inkTextSecondary)
-            .padding(.horizontal, 20)
-            .padding(.vertical, 10)
-            .frame(maxWidth: .infinity)
-            .background(
-                isActive
-                    ? AnyShapeStyle(
-                        LinearGradient(
-                            colors: [segment.tint, segment.tint.opacity(0.75)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                      )
-                    : AnyShapeStyle(.regularMaterial),
-                in: Capsule()
-            )
-            .overlay(
-                Capsule().stroke(
-                    isActive
-                        ? Color.clear
-                        : Color.inkBorderVisible.opacity(0.5),
-                    lineWidth: 0.75
-                )
-            )
-            .shadow(
-                color: isActive ? segment.tint.opacity(0.35) : .clear,
-                radius: 8, y: 3
-            )
-        }
-        .buttonStyle(.plain)
-        .animation(.spring(response: 0.25, dampingFraction: 0.7), value: mode)
     }
 
     @ViewBuilder
