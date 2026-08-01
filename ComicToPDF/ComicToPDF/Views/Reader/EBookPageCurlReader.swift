@@ -93,6 +93,21 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
             return
         }
 
+        // If typography / theme preferences changed, update live styles in WKWebView
+        if oldParent.prefs.fontSize != self.prefs.fontSize ||
+           oldParent.prefs.fontFamily != self.prefs.fontFamily ||
+           oldParent.prefs.activeTheme.id != self.prefs.activeTheme.id ||
+           oldParent.prefs.lineHeight != self.prefs.lineHeight ||
+           oldParent.prefs.letterSpacing != self.prefs.letterSpacing ||
+           oldParent.prefs.wordSpacing != self.prefs.wordSpacing ||
+           oldParent.prefs.textAlign != self.prefs.textAlign ||
+           oldParent.prefs.textMargin != self.prefs.textMargin ||
+           oldParent.prefs.paragraphSpacing != self.prefs.paragraphSpacing ||
+           oldParent.prefs.paragraphIndent != self.prefs.paragraphIndent ||
+           oldParent.prefs.hyphenation != self.prefs.hyphenation {
+            context.coordinator.updateLiveStyles()
+        }
+
         let targetIndex = currentPage
 
         // Clear gesture completion marker if set
@@ -570,6 +585,30 @@ extension EBookPageCurlReader {
             
             // Pre-render column snapshots for current chapter
             generateAllColumnSnapshots()
+        }
+
+        func updateLiveStyles() {
+            guard let wv = primaryWebView else { return }
+            let size = UIScreen.main.bounds.size
+            let newCSS = computeCSS(prefs: parent.prefs, size: size)
+            let safeCSS = newCSS
+                .replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "`", with: "\\`")
+                .replacingOccurrences(of: "\n", with: " ")
+            let js = """
+            (function() {
+                var el = document.getElementById('__inksync_live__');
+                if (el) { el.innerHTML = `\(safeCSS)`; }
+                if (window.computeMetrics) {
+                    var newTotal = computeMetrics();
+                    applyPagePosition();
+                    window.webkit.messageHandlers.metrics.postMessage({ current: _targetPage, total: newTotal });
+                }
+            })();
+            """
+            wv.evaluateJavaScript(js)
+            pageSnapshots.removeAll()
+            takePageSnapshot(for: currentPageIndex)
         }
 
         private func generateAllColumnSnapshots() {

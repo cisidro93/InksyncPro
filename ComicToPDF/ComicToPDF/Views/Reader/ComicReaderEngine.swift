@@ -1703,6 +1703,7 @@ struct ComicReaderEngine: View {
                 readerOnboardingOverlay
             }
         }
+        .overlay { if prefs.showReadingRuler { ReadingRulerOverlay() } }
         .onAppear {
             pageEntryTime = Date()
             if sessionStartTime == nil {
