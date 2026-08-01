@@ -71,8 +71,8 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
 
         context.coordinator.pageViewController = pvc
 
-        let initialVC = context.coordinator.makePageViewController(for: initialPage)
-        pvc.setViewControllers([initialVC], direction: .forward, animated: false)
+        let initialSpread = context.coordinator.spreadViewControllers(for: initialPage)
+        pvc.setViewControllers(initialSpread, direction: .forward, animated: false)
 
         // Start chapter load asynchronously
         context.coordinator.loadChapterAndPresent()
@@ -112,11 +112,13 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
             context.coordinator.currentPageIndex = targetIndex
             context.coordinator.primaryWebView?.evaluateJavaScript("if(window.goToInksyncPage) window.goToInksyncPage(\(targetIndex));")
 
-            let vc = context.coordinator.makePageViewController(for: targetIndex)
+            let vcs = context.coordinator.spreadViewControllers(for: targetIndex)
             let isForward = targetIndex >= currentVC.pageIndex
             let direction: UIPageViewController.NavigationDirection = isForward ? .forward : .reverse
-            uiViewController.setViewControllers([vc], direction: direction, animated: false) { _ in
-                vc.mountPrimaryWebView(context.coordinator.primaryWebView)
+            uiViewController.setViewControllers(vcs, direction: direction, animated: false) { _ in
+                if let targetVC = vcs.first as? EBookPageContentViewController {
+                    targetVC.mountPrimaryWebView(context.coordinator.primaryWebView)
+                }
             }
         }
     }
@@ -267,12 +269,29 @@ extension EBookPageCurlReader {
                 }
 
                 // Present initial page VC
-                let vc = self.makePageViewController(for: self.currentPageIndex)
-                self.pageViewController?.setViewControllers([vc], direction: .forward, animated: false)
+                let vcs = self.spreadViewControllers(for: self.currentPageIndex)
+                self.pageViewController?.setViewControllers(vcs, direction: .forward, animated: false)
             }
         }
 
         // MARK: - Page VC Factory
+
+        func spreadViewControllers(for pageIndex: Int) -> [UIViewController] {
+            let isLandscape = UIScreen.main.bounds.width > UIScreen.main.bounds.height
+            let isPad = UIDevice.current.userInterfaceIdiom == .pad
+            let cols = parent.prefs.columnCount == 0 ? (isLandscape ? (parent.prefs.autoLandscapeDualPage ? 2 : (isPad ? 2 : 1)) : 1) : parent.prefs.columnCount
+
+            if cols > 1 {
+                let leftIndex = pageIndex % 2 == 0 ? pageIndex : pageIndex - 1
+                let rightIndex = leftIndex + 1
+                let leftVC = makePageViewController(for: leftIndex)
+                let rightVC = makePageViewController(for: min(rightIndex, max(0, computedTotalPages - 1)))
+                return [leftVC, rightVC]
+            } else {
+                let vc = makePageViewController(for: pageIndex)
+                return [vc]
+            }
+        }
 
         func makePageViewController(for pageIndex: Int) -> EBookPageContentViewController {
             let clampedIndex: Int
@@ -354,8 +373,17 @@ extension EBookPageCurlReader {
             _ pageViewController: UIPageViewController,
             spineLocationFor orientation: UIInterfaceOrientation
         ) -> UIPageViewController.SpineLocation {
-            pageViewController.isDoubleSided = false
-            return .min
+            let isLandscape = UIScreen.main.bounds.width > UIScreen.main.bounds.height
+            let isPad = UIDevice.current.userInterfaceIdiom == .pad
+            let cols = parent.prefs.columnCount == 0 ? (isLandscape ? (parent.prefs.autoLandscapeDualPage ? 2 : (isPad ? 2 : 1)) : 1) : parent.prefs.columnCount
+
+            if cols > 1 {
+                pageViewController.isDoubleSided = true
+                return .mid
+            } else {
+                pageViewController.isDoubleSided = false
+                return .min
+            }
         }
 
         // MARK: - Gesture Handlers
@@ -384,14 +412,19 @@ extension EBookPageCurlReader {
         private func turnForward(_ pvc: UIPageViewController) {
             guard !isTransitioning else { return }
 
-            let nextIndex = currentPageIndex + 1
+            let isLandscape = UIScreen.main.bounds.width > UIScreen.main.bounds.height
+            let isPad = UIDevice.current.userInterfaceIdiom == .pad
+            let cols = parent.prefs.columnCount == 0 ? (isLandscape ? (parent.prefs.autoLandscapeDualPage ? 2 : (isPad ? 2 : 1)) : 1) : parent.prefs.columnCount
+            let step = cols > 1 ? 2 : 1
+
+            let nextIndex = currentPageIndex + step
             if nextIndex < computedTotalPages {
-                let vc = makePageViewController(for: nextIndex)
+                let vcs = spreadViewControllers(for: nextIndex)
                 HapticEngine.light()
                 isTransitioning = true
                 primaryWebView?.removeFromSuperview()
                 primaryWebView?.evaluateJavaScript("if(window.goToInksyncPage) window.goToInksyncPage(\(nextIndex));")
-                pvc.setViewControllers([vc], direction: .forward, animated: true) { [weak self] completed in
+                pvc.setViewControllers(vcs, direction: .forward, animated: true) { [weak self] completed in
                     self?.isTransitioning = false
                     if completed {
                         DispatchQueue.main.async {
@@ -400,7 +433,9 @@ extension EBookPageCurlReader {
                             self?.parent.currentPage = nextIndex
                             self?.reportScrollFraction()
                             self?.primaryWebView?.evaluateJavaScript("if(window.goToInksyncPage) window.goToInksyncPage(\(nextIndex));")
-                            vc.mountPrimaryWebView(self?.primaryWebView)
+                            if let targetVC = vcs.first as? EBookPageContentViewController {
+                                targetVC.mountPrimaryWebView(self?.primaryWebView)
+                            }
                         }
                     }
                 }
@@ -412,14 +447,19 @@ extension EBookPageCurlReader {
         private func turnBackward(_ pvc: UIPageViewController) {
             guard !isTransitioning else { return }
 
-            let prevIndex = currentPageIndex - 1
+            let isLandscape = UIScreen.main.bounds.width > UIScreen.main.bounds.height
+            let isPad = UIDevice.current.userInterfaceIdiom == .pad
+            let cols = parent.prefs.columnCount == 0 ? (isLandscape ? (parent.prefs.autoLandscapeDualPage ? 2 : (isPad ? 2 : 1)) : 1) : parent.prefs.columnCount
+            let step = cols > 1 ? 2 : 1
+
+            let prevIndex = currentPageIndex - step
             if prevIndex >= 0 {
-                let vc = makePageViewController(for: prevIndex)
+                let vcs = spreadViewControllers(for: prevIndex)
                 HapticEngine.light()
                 isTransitioning = true
                 primaryWebView?.removeFromSuperview()
                 primaryWebView?.evaluateJavaScript("if(window.goToInksyncPage) window.goToInksyncPage(\(prevIndex));")
-                pvc.setViewControllers([vc], direction: .reverse, animated: true) { [weak self] completed in
+                pvc.setViewControllers(vcs, direction: .reverse, animated: true) { [weak self] completed in
                     self?.isTransitioning = false
                     if completed {
                         DispatchQueue.main.async {
@@ -428,7 +468,9 @@ extension EBookPageCurlReader {
                             self?.parent.currentPage = prevIndex
                             self?.reportScrollFraction()
                             self?.primaryWebView?.evaluateJavaScript("if(window.goToInksyncPage) window.goToInksyncPage(\(prevIndex));")
-                            vc.mountPrimaryWebView(self?.primaryWebView)
+                            if let targetVC = vcs.first as? EBookPageContentViewController {
+                                targetVC.mountPrimaryWebView(self?.primaryWebView)
+                            }
                         }
                     }
                 }
