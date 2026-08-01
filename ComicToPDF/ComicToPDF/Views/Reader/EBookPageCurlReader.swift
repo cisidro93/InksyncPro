@@ -105,14 +105,19 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
         }
 
         if let currentVC = uiViewController.viewControllers?.first as? EBookPageContentViewController {
-            if currentVC.pageIndex == targetIndex || context.coordinator.currentPageIndex == targetIndex {
+            if currentVC.pageIndex == targetIndex && context.coordinator.currentPageIndex == targetIndex {
                 return // Target page is ALREADY displayed on screen — do NOT touch setViewControllers!
             }
+
+            context.coordinator.currentPageIndex = targetIndex
+            context.coordinator.primaryWebView?.evaluateJavaScript("if(window.goToInksyncPage) window.goToInksyncPage(\(targetIndex));")
 
             let vc = context.coordinator.makePageViewController(for: targetIndex)
             let isForward = targetIndex >= currentVC.pageIndex
             let direction: UIPageViewController.NavigationDirection = isForward ? .forward : .reverse
-            uiViewController.setViewControllers([vc], direction: direction, animated: false, completion: nil)
+            uiViewController.setViewControllers([vc], direction: direction, animated: false) { _ in
+                vc.mountPrimaryWebView(context.coordinator.primaryWebView)
+            }
         }
     }
 
@@ -385,6 +390,7 @@ extension EBookPageCurlReader {
                 HapticEngine.light()
                 isTransitioning = true
                 primaryWebView?.removeFromSuperview()
+                primaryWebView?.evaluateJavaScript("if(window.goToInksyncPage) window.goToInksyncPage(\(nextIndex));")
                 pvc.setViewControllers([vc], direction: .forward, animated: true) { [weak self] completed in
                     self?.isTransitioning = false
                     if completed {
@@ -412,6 +418,7 @@ extension EBookPageCurlReader {
                 HapticEngine.light()
                 isTransitioning = true
                 primaryWebView?.removeFromSuperview()
+                primaryWebView?.evaluateJavaScript("if(window.goToInksyncPage) window.goToInksyncPage(\(prevIndex));")
                 pvc.setViewControllers([vc], direction: .reverse, animated: true) { [weak self] completed in
                     self?.isTransitioning = false
                     if completed {
@@ -699,14 +706,15 @@ extension EBookPageCurlReader {
                 margin: 0 !important;
                 box-sizing: border-box !important;
                 display: block !important;
-                position: static !important;
+                position: absolute !important;
+                top: 0 !important; left: 0 !important;
                 padding-top: 60px !important;
                 padding-bottom: 60px !important;
                 padding-left: \(paddingLeft)px !important;
                 padding-right: \(paddingRight)px !important;
-                width: auto !important;
                 height: 100% !important;
                 \(pagedCSS)
+                transition: transform 0.05s ease-out;
             }
             body, p, span, li, td, th, div, a { font-family: \(fontFamily) !important; }
             body, p, li, td, th, a { font-size: \(fontSize)px !important; }
@@ -774,8 +782,19 @@ extension EBookPageCurlReader {
             function applyPagePosition() {
                 var pageStep = getPageStep();
                 if (pageStep <= 0) return;
-                var sv = document.scrollingElement || document.documentElement;
-                sv.scrollLeft = _targetPage * pageStep;
+                var shift = _targetPage * pageStep;
+
+                var sv = document.scrollingElement || document.documentElement || document.body;
+                if (sv) {
+                    sv.scrollLeft = shift;
+                }
+                window.scrollTo(shift, 0);
+
+                var vp = document.getElementById('inksync-viewport') || document.body;
+                if (vp) {
+                    vp.style.transform = 'translateX(-' + shift + 'px)';
+                    vp.style.webkitTransform = 'translateX(-' + shift + 'px)';
+                }
             }
 
             applyPagePosition();
