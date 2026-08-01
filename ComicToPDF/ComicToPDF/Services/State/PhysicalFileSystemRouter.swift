@@ -931,7 +931,7 @@ class PhysicalFileSystemRouter {
                 // ── Linear scan with early exit — no full sort needed to find the cover ──
                 // The CBR path already uses prefix(5); we mirror that here. Sorting all
                 // 400 entries of a CBZ just to read the first image was O(N log N) waste.
-                let imageExts: Set<String> = ["jpg", "jpeg", "png", "webp"]
+                let imageExts: Set<String> = ["jpg", "jpeg", "png", "webp", "gif", "jfif"]
                 // Collect and sort ALL image entries first to ensure we get the true first pages
                 var imageEntries: [(String, ZIPFoundation.Entry)] = []
                 for entry in archive {
@@ -943,7 +943,19 @@ class PhysicalFileSystemRouter {
                           !entry.path.hasSuffix(".DS_Store") else { continue }
                     imageEntries.append((entry.path, entry))
                 }
-                imageEntries.sort { $0.0.localizedStandardCompare($1.0) == .orderedAscending }
+                
+                // Prioritize explicit cover images (e.g. cover.jpg, OEBPS/images/cover.jpeg, cover-image.png)
+                let coverMatches = imageEntries.filter { (path, _) in
+                    let filename = (path as NSString).lastPathComponent.lowercased()
+                    return filename.contains("cover")
+                }.sorted { $0.0.localizedStandardCompare($1.0) == .orderedAscending }
+                
+                let nonCoverMatches = imageEntries.filter { (path, _) in
+                    let filename = (path as NSString).lastPathComponent.lowercased()
+                    return !filename.contains("cover")
+                }.sorted { $0.0.localizedStandardCompare($1.0) == .orderedAscending }
+                
+                imageEntries = coverMatches + nonCoverMatches
 
                 var firstSpreadImage: UIImage? = nil
                 for (path, entry) in imageEntries.prefix(6) {

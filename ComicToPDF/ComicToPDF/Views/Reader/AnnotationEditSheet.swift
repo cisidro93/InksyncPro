@@ -16,6 +16,8 @@ struct AnnotationEditSheet: View {
     @State private var draftNote: String = ""
     @State private var draftExecutiveSummary: String = ""
     @State private var draftMaturity: String = "seedling"
+    @State private var draftPARACategory: PARACategory? = nil
+    @State private var draftMarginaliaSymbol: MarginaliaSymbol? = nil
     @State private var draftTags: [String] = []
     @State private var tagInput: String = ""
     @State private var isSaving: Bool = false
@@ -154,6 +156,100 @@ struct AnnotationEditSheet: View {
                                 .background(draftMaturity == "evergreen" ? Color.green : Color(UIColor.secondarySystemGroupedBackground), in: Capsule())
                             }
                             .buttonStyle(.plain)
+                        }
+                    }
+
+                    Divider()
+
+                    // ── PARA Method (Tiago Forte) ──────────────────────────────
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack {
+                            Label("PARA Method", systemImage: "folder.fill.badge.gearshape")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            if let para = draftPARACategory {
+                                Text(para.displayName)
+                                    .font(.caption2.bold())
+                                    .foregroundStyle(Color.orange)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 3)
+                                    .background(Color.orange.opacity(0.12), in: Capsule())
+                            }
+                        }
+
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                Button {
+                                    draftPARACategory = nil
+                                } label: {
+                                    Text("Unassigned")
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(draftPARACategory == nil ? Color.white : Color.primary)
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 8)
+                                        .background(draftPARACategory == nil ? Color.secondary : Color(UIColor.secondarySystemGroupedBackground), in: Capsule())
+                                }
+                                .buttonStyle(.plain)
+
+                                ForEach(PARACategory.allCases) { cat in
+                                    Button {
+                                        draftPARACategory = cat
+                                    } label: {
+                                        HStack(spacing: 5) {
+                                            Image(systemName: cat.iconName)
+                                                .font(.caption)
+                                            Text(cat.displayName)
+                                                .font(.caption.weight(.semibold))
+                                        }
+                                        .foregroundStyle(draftPARACategory == cat ? Color.white : Color.primary)
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 8)
+                                        .background(draftPARACategory == cat ? Color.orange : Color(UIColor.secondarySystemGroupedBackground), in: Capsule())
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        }
+                    }
+
+                    Divider()
+
+                    // ── Marginalia Symbols ──────────────────────────────────
+                    VStack(alignment: .leading, spacing: 10) {
+                        Label("Marginalia Stamp", systemImage: "bookmark.fill")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+
+                        HStack(spacing: 8) {
+                            Button {
+                                draftMarginaliaSymbol = nil
+                            } label: {
+                                Text("None")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(draftMarginaliaSymbol == nil ? Color.white : Color.primary)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 8)
+                                    .background(draftMarginaliaSymbol == nil ? Color.secondary : Color(UIColor.secondarySystemGroupedBackground), in: Capsule())
+                            }
+                            .buttonStyle(.plain)
+
+                            ForEach(MarginaliaSymbol.allCases) { sym in
+                                Button {
+                                    draftMarginaliaSymbol = sym
+                                } label: {
+                                    HStack(spacing: 4) {
+                                        Text(sym.symbolString)
+                                        Text(sym.displayName)
+                                            .font(.caption.weight(.semibold))
+                                    }
+                                    .foregroundStyle(draftMarginaliaSymbol == sym ? Color.white : Color.primary)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 8)
+                                    .background(draftMarginaliaSymbol == sym ? Color.purple : Color(UIColor.secondarySystemGroupedBackground), in: Capsule())
+                                }
+                                .buttonStyle(.plain)
+                            }
                         }
                     }
 
@@ -313,6 +409,8 @@ struct AnnotationEditSheet: View {
         draftNote = annotation.noteText ?? ""
         draftExecutiveSummary = annotation.executiveSummary ?? ""
         draftMaturity = annotation.maturityRaw ?? "seedling"
+        draftPARACategory = annotation.paraCategory
+        draftMarginaliaSymbol = annotation.marginaliaSymbol
         // User tags = tags minus the readwise-sourced ones
         let rwTagSet = Set((annotation.readwiseTags ?? []) + (annotation.readwiseDocumentTags ?? []))
         draftTags = (annotation.tags ?? []).filter { !rwTagSet.contains($0) }
@@ -346,6 +444,8 @@ struct AnnotationEditSheet: View {
             ? nil
             : draftExecutiveSummary.trimmingCharacters(in: .whitespacesAndNewlines)
         annotation.maturityRaw = draftMaturity
+        annotation.paraCategory = draftPARACategory
+        annotation.marginaliaSymbol = draftMarginaliaSymbol
         annotation.modifiedAt = Date()
 
         // Merge user tags back with read-only Readwise tags

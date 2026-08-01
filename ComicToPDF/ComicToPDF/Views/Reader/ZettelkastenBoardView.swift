@@ -20,6 +20,7 @@ struct ZettelkastenBoardView: View {
 
     // Board Grouping Mode
     enum BoardGroupingMode: String, CaseIterable, Identifiable {
+        case para = "PARA Method"
         case customOutline = "Custom Outline"
         case byTag = "By Tag"
         case byBook = "By Book"
@@ -29,6 +30,7 @@ struct ZettelkastenBoardView: View {
         
         var icon: String {
             switch self {
+            case .para: return "folder.fill.badge.gearshape"
             case .customOutline: return "sidebar.left"
             case .byTag: return "tag"
             case .byBook: return "book.closed"
@@ -301,6 +303,29 @@ struct ZettelkastenBoardView: View {
         ScrollView(.horizontal, showsIndicators: true) {
             LazyHStack(alignment: .top, spacing: 16) {
                 switch groupingMode {
+                case .para:
+                    let paraCategories: [(title: String, icon: String, cat: PARACategory?)] = [
+                        ("Projects 🚀", "rocket.fill", .project),
+                        ("Areas 🏡", "house.fill", .area),
+                        ("Resources 📚", "books.vertical.fill", .resource),
+                        ("Archives 📦", "archivebox.fill", .archive),
+                        ("Unassigned", "folder.badge.questionmark", nil)
+                    ]
+                    ForEach(paraCategories, id: \.title) { item in
+                        let cards = annotations.filter { ann in
+                            if let cat = item.cat {
+                                return ann.paraCategory == cat
+                            } else {
+                                return ann.paraCategory == nil
+                            }
+                        }
+                        boardColumn(
+                            title: item.title,
+                            icon: item.icon,
+                            cards: cards,
+                            columnID: item.title
+                        )
+                    }
                 case .customOutline:
                     ForEach(customColumns, id: \.self) { colName in
                         boardColumn(
