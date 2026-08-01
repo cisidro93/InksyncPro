@@ -107,14 +107,33 @@ class EBookPreferences: ObservableObject {
     @AppStorage("pdf_rtlDirection") var pdfRTL: Bool = false
     @AppStorage("autoLandscapeDualPage") var autoLandscapeDualPage: Bool = true
 
-    // MARK: - Image Filters (legacy, kept for compatibility)
-    @AppStorage("ebook_isSmartCropEnabled") var isSmartCropEnabled: Bool = false
-    @AppStorage("ebook_autoContrastLevel")  var autoContrastLevel: Double = 1.0
-    @AppStorage("ebook_saturationLevel")    var saturationLevel: Double = 1.0
-    @AppStorage("ebook_warmthLevel")        var warmthLevel: Double = 0.0
+    // MARK: - Auto-Theme Scheduling
+    @AppStorage("ebook_autoThemeEnabled")   var isAutoThemeEnabled: Bool = false
+    @AppStorage("ebook_dayThemeRaw")         var dayThemeRaw: String       = EBookTheme.paper.rawValue
+    @AppStorage("ebook_nightThemeRaw")       var nightThemeRaw: String     = EBookTheme.night.rawValue
+    @AppStorage("ebook_autoThemeStartHour")  var autoThemeStartHour: Int   = 20 // 8:00 PM
+    @AppStorage("ebook_autoThemeEndHour")    var autoThemeEndHour: Int     = 7  // 7:00 AM
+
+    // MARK: - PDF & Comic White-Margin Auto-Crop Sensitivity
+    @AppStorage("ebook_isSmartCropEnabled")   var isSmartCropEnabled: Bool   = false
+    @AppStorage("ebook_autoCropSensitivity")  var autoCropSensitivity: Double = 0.10 // 10% threshold (0.0 to 0.20)
+    @AppStorage("ebook_autoContrastLevel")    var autoContrastLevel: Double   = 1.0
+    @AppStorage("ebook_saturationLevel")      var saturationLevel: Double     = 1.0
+    @AppStorage("ebook_warmthLevel")          var warmthLevel: Double         = 0.0
 
     // MARK: - Active theme helpers
-    var activeTheme: EBookTheme { EBookTheme(rawValue: themeRaw) ?? .paper }
+    var activeTheme: EBookTheme {
+        if isAutoThemeEnabled {
+            let hour = Calendar.current.component(.hour, from: Date())
+            let isNight = autoThemeStartHour > autoThemeEndHour
+                ? (hour >= autoThemeStartHour || hour < autoThemeEndHour)
+                : (hour >= autoThemeStartHour && hour < autoThemeEndHour)
+            let targetRaw = isNight ? nightThemeRaw : dayThemeRaw
+            return EBookTheme(rawValue: targetRaw) ?? .paper
+        } else {
+            return EBookTheme(rawValue: themeRaw) ?? .paper
+        }
+    }
 
     /// Apply a book's saved theme if it exists, otherwise use the global theme.
     func applyBookTheme(bookID: String) {

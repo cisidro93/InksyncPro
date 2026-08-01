@@ -263,6 +263,63 @@ struct EBookSettingsPanel: View {
                 .padding(.vertical, 10)
             }
 
+            // Auto-Theme Scheduling
+            ReaderSettingsSection(title: "Auto-Theme Schedule", icon: "clock.arrow.2.circlepath") {
+                ReaderSettingsToggleRow(
+                    label: "Day / Night Auto-Switching",
+                    icon: "moon.phase.quarter.moon",
+                    isOn: $prefs.isAutoThemeEnabled
+                )
+
+                if prefs.isAutoThemeEnabled {
+                    Divider().padding(.leading, 44)
+
+                    // Day Theme Picker
+                    HStack(spacing: 12) {
+                        Image(systemName: "sun.max.fill")
+                            .font(.system(size: 15))
+                            .foregroundStyle(Color.orange)
+                            .frame(width: 28)
+                        Text("Daytime Theme")
+                            .font(.system(size: 15))
+                            .foregroundStyle(Color.inkTextPrimary)
+                        Spacer()
+                        Picker("Day Theme", selection: $prefs.dayThemeRaw) {
+                            Text("Paper").tag(EBookTheme.paper.rawValue)
+                            Text("Parchment").tag(EBookTheme.parchment.rawValue)
+                            Text("Sepia").tag(EBookTheme.sepia.rawValue)
+                        }
+                        .pickerStyle(.menu)
+                        .tint(.orange)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+
+                    Divider().padding(.leading, 44)
+
+                    // Night Theme Picker
+                    HStack(spacing: 12) {
+                        Image(systemName: "moon.stars.fill")
+                            .font(.system(size: 15))
+                            .foregroundStyle(Color.purple)
+                            .frame(width: 28)
+                        Text("Nighttime Theme")
+                            .font(.system(size: 15))
+                            .foregroundStyle(Color.inkTextPrimary)
+                        Spacer()
+                        Picker("Night Theme", selection: $prefs.nightThemeRaw) {
+                            Text("Night").tag(EBookTheme.night.rawValue)
+                            Text("OLED").tag(EBookTheme.oled.rawValue)
+                            Text("Slate").tag(EBookTheme.slate.rawValue)
+                        }
+                        .pickerStyle(.menu)
+                        .tint(.orange)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                }
+            }
+
             // Per-book memory
             if let bookID {
                 ReaderSettingsSection(title: "This Book", icon: "book.closed") {
@@ -644,8 +701,25 @@ struct EBookSettingsPanel: View {
                 }
             }
 
-            // Reading Aids
-            ReaderSettingsSection(title: "Reading Aids", icon: "eye") {
+            // Reading Aids & Auto-Crop
+            ReaderSettingsSection(title: "Reading Aids & Auto-Crop", icon: "crop") {
+                ReaderSettingsToggleRow(
+                    label: "White-Margin Auto-Crop",
+                    icon: "crop",
+                    isOn: $prefs.isSmartCropEnabled
+                )
+                if prefs.isSmartCropEnabled {
+                    Divider().padding(.leading, 44)
+                    SliderRow(
+                        label: "Crop Threshold",
+                        icon: "slider.horizontal.3",
+                        value: $prefs.autoCropSensitivity,
+                        range: 0.02...0.25,
+                        step: 0.01,
+                        displayFormat: { String(format: "%.0f%%", $0 * 100) }
+                    )
+                }
+                Divider().padding(.leading, 44)
                 ReaderSettingsToggleRow(
                     label: "Reading Ruler",
                     icon: "minus",
