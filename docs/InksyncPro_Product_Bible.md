@@ -195,6 +195,9 @@ All import operations follow a strict sequence:
 
 - **100% On-Device AI Processing:** All panel detection is run locally using the CoreML Neural Engine, removing dependencies on external AI vendors to preserve absolute user privacy.
 
+- **Instant Live CSS & Typography Synchronization:** Adjustments to font size, font family, line height, letter spacing, word spacing, text alignment, margins, or theme (`Light`, `Sepia`, `Dark`, `Black`, `Nord`, `Solarized`, `Dracula`, `Cyberpunk`) instantly evaluate updated CSS into the live reader DOM via `updateLiveStyles()`, recalculating column metrics without losing your current reading location or reloading the chapter.
+- **Cross-Engine Feature Parity:** 100% uniformity across all reader engines (**EPUB**, **PDF**, **Comic/Manga**, **Webtoon**, and **Document**). Includes edge brightness vertical swipe controls (`EdgeBrightnessGestureZone`), customizable dyslexia/focus reading rulers (`ReadingRulerOverlay`), mid-spine 3D dual-page spreads (`.mid`), and integrated split-screen study notebooks (`StudyNotebookView`).
+
 ---
 
 ### 6. Active Zettelkasten Study & Annotation Suite
