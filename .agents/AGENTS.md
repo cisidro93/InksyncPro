@@ -1,6 +1,7 @@
 # Agent Guidelines & Workflow Rules
 
 ## Three-Developer Review & Defense Protocol
+
 Whenever conducting code reviews, bug fixes, or feature additions (especially across reader engines and core application components):
 
 1. **Phase 1: Senior Backend Developer Review**
@@ -16,6 +17,7 @@ Whenever conducting code reviews, bug fixes, or feature additions (especially ac
    - Validate state synchronization, progress tracking (`ReaderProgressTracker`), iCloud sync (`NSUbiquitousKeyValueStore`), settings persistence (`EBookPreferences`), and cross-module routing.
 
 ## Clean Code Handbook Protocol
+
 Whenever reviewing, refactoring, or authoring code across reader engines, converters, models, or views:
 
 1. **Single Responsibility Principle (SRP)**
@@ -37,5 +39,6 @@ Whenever reviewing, refactoring, or authoring code across reader engines, conver
    - Guarantee teardown of notification observers (`dismantleUIView`, `deinit`) and cancel background tasks to prevent memory leaks and dangling listeners.
 
 ## Engineering Standards
+
 - Always apply **best-in-class iOS/iPadOS development practices** (Swift 6 concurrency, Actor isolation, SwiftData, Metal/CoreAnimation graphics, ProMotion, PencilKit, WebKit, PDFKit, and HapticEngine).
 - Serve as the **last line of defense** to ensure a superior, premium, and flawless product experience for our customers.

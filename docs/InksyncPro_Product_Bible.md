@@ -1,6 +1,6 @@
 # InksyncPro Product Bible
 
-**Last Updated:** July 12, 2026
+**Last Updated:** August 1, 2026
 
 ---
 
@@ -64,6 +64,10 @@ The user experience philosophy: **the app should feel like a beautifully crafted
 - **Premium PDF Paging & Transitions:** The PDF reader dynamically configures its display layout according to the user's `EBookPaginationMode` preference. When `paged` is active, it utilizes a horizontal single-page view controller layout (`pdfView.usePageViewController(true)`) with native horizontal slide/page curl transitions and animated edge taps (`goToNextPage` / `goToPreviousPage`), syncing cleanly with `.PDFViewPageChanged` notifications.
 - **EPUB Chapter Paging & Transition Safety:** The EPUB reader corrects page backward offsets by checking `currentOffset <= 4` (rather than projected offsets) before loading a preceding chapter. On chapter change, it sets `scrollToLastPageOnLoad = true` to cleanly land on the final page of that chapter.
 - **Strict Table of Contents Integrity:** The EPUB metadata parser assigns an empty label (`""`) to any spine section that does not carry an explicit mapping in the book's Table of Contents. Drawer outlines automatically filter out empty labels (or fall back to sequential `"Chapter X"` counters if no TOC exists), while annotation highlights store `nil` titles to trigger safe `"Page X"` fallbacks in the global notebook.
+- **Full-Screen Dual-Page Spread Spanning:** Dual-page 2-up page curl engine (`SmartMidSpineCurlReader`) dynamically detects landscape double-page spreads (`isL`) and crops left 50% (`cropHalf = .left`) for the left leaf and right 50% (`cropHalf = .right`) for the right leaf. Spreads span full-screen across both viewable sections of the median line seamlessly during 3D page curl transitions.
+- **Sentinel Page Index Clamping:** Sentinel page navigation indices (e.g., `99999` passed when jumping backwards between EPUB chapters) are dynamically clamped in `EBookPageCurlReader.makePageViewController(for:)` to `max(0, computedTotalPages - 1)`. Page controllers instantiate strictly within valid chapter bounds, eliminating page-turning stuck/snapping loops.
+- **Highlight Single-Source Persistence & Study Notebook Sheet Access:** `AnnotationStore.shared.add` operates as the single source of truth for SwiftData highlight creation, eliminating duplicate database entries. The reader view integrates `.sheet(isPresented: $showAnnotations)` displaying `StudyNotebookView` listening for `.toggleStudyNotebook` notifications from the HUD menu.
+- **UIPageViewController Lifecycle Crash Defense:** Page curl readers synchronously execute `setViewControllers([initialVC], direction: .forward, animated: false)` before returning hosting view controllers to SwiftUI representable containers, preventing uninitialized Objective-C exceptions (`_viewControllersForPendingSpineLocation:` crash).
 - **EPUB Fixed-Layout Comic Dynamic Routing**: Dynamic routing check inside `UnifiedReaderView.swift` (`isEPUBComic(url:)`). If an EPUB contains fixed-layout, pre-paginated, or image-based digital comic metadata properties inside its OPF manifest, the reader bypasses the flow-text `BookReaderEngine`/`DocumentReaderEngine` and maps the document directly to `ComicReaderEngine`. This ensures that dual-page view (spread layouts), fit modes, reading speed, and landscape layouts work identically to standard `.cbz`/`.cbr` files.
 
 ---
@@ -164,6 +168,8 @@ All import operations follow a strict sequence:
 - **Linked External Drives:** Users can link Dropbox folders or physical external SSDs/folders via iOS security-scoped bookmarks. The DriveMonitor monitors connection and mounting changes.
 
 - **Streaming Architecture:** Remote files require a `resolveLocalURL` gate to safely cache and process without mutating the cloud source.
+
+- **Streamlined Devices Hub (`DevicesView`):** Dedicated device management canvas focusing exclusively on reading device registration (Kindle, Boox, Kobo), Send to Kindle cloud delivery, and Calibre wireless transfer setup. The Settings tab segment picker is omitted from `DevicesView` to provide an uncluttered, single-purpose device synchronization experience.
 
 - **Wi-Fi Server:** A secure, rate-limited local server for wireless, high-speed comic importing via a web browser. Redesigned to match the Inksync Pro dark glassmorphism system, featuring:
   - *Dynamic SVG Vector Logo:* Inline vector SVG branding (pen nib + sync rings) glowing with a blue-to-pink gradient, automatically falling back to solid black monochrome outlines in E-Ink mode.
