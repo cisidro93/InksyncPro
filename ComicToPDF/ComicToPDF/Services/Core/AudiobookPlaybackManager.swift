@@ -24,6 +24,23 @@ final class AudiobookPlaybackManager: NSObject, ObservableObject, AVSpeechSynthe
     @Published var bookTitle: String = ""
     @Published var chapterTitle: String = ""
     @Published var activeBookID: UUID? = nil
+    @Published var selectedVoice: AVSpeechSynthesisVoice? = nil
+
+    /// All available speech voices on device
+    var availableVoices: [AVSpeechSynthesisVoice] {
+        AVSpeechSynthesisVoice.speechVoices()
+    }
+
+    /// User's custom iOS Personal Voices (Settings -> Accessibility -> Personal Voice)
+    var personalVoices: [AVSpeechSynthesisVoice] {
+        if #available(iOS 17.0, *) {
+            return AVSpeechSynthesisVoice.speechVoices().filter {
+                $0.voiceTraits.contains(.isPersonalVoice)
+            }
+        } else {
+            return []
+        }
+    }
 
     // MARK: - Internal Engine State
     private let synthesizer = AVSpeechSynthesizer()
@@ -157,8 +174,12 @@ final class AudiobookPlaybackManager: NSObject, ObservableObject, AVSpeechSynthe
         utterance.pitchMultiplier = 1.0
         utterance.volume = 1.0
 
-        if let voice = AVSpeechSynthesisVoice(language: Locale.current.language.languageCode?.identifier ?? "en-US") {
-            utterance.voice = voice
+        if let selectedVoice {
+            utterance.voice = selectedVoice
+        } else if let personalVoice = personalVoices.first {
+            utterance.voice = personalVoice
+        } else if let defaultVoice = AVSpeechSynthesisVoice(language: Locale.current.language.languageCode?.identifier ?? "en-US") {
+            utterance.voice = defaultVoice
         }
 
         activeUtterance = utterance

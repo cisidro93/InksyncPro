@@ -31,7 +31,7 @@ final class iCloudFileSyncManager: ObservableObject {
     /// Get the active iCloud Documents directory.
     var iCloudDocumentsURL: URL? {
         guard isUbiquityAvailable else { return nil }
-        guard let container = FileManager.default.url(forUbiquityContainerID: nil) else { return nil }
+        guard let container = FileManager.default.url(forUbiquityContainerIdentifier: nil) else { return nil }
         let docs = container.appendingPathComponent("Documents", isDirectory: true)
         if !FileManager.default.fileExists(atPath: docs.path) {
             try? FileManager.default.createDirectory(at: docs, withIntermediateDirectories: true)

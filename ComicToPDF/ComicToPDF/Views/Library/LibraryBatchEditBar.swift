@@ -199,8 +199,8 @@ struct LibraryBatchEditBar: View {
 
     // MARK: - Actions
     private func moveToVault() {
-        for pdf in selectedPDFs {
-            pdf.isVaulted = true
+        for var pdf in selectedPDFs {
+            pdf.isPrivate = true
         }
         conversionManager.objectWillChange.send()
         onActionCompleted()
@@ -218,8 +218,8 @@ struct LibraryBatchEditBar: View {
     }
 
     private func assignPARACategory(_ category: String) {
-        for pdf in selectedPDFs {
-            pdf.paraCategory = category
+        for var pdf in selectedPDFs {
+            pdf.metadata.readingEventLabel = category
         }
         showingPARAPicker = false
         conversionManager.objectWillChange.send()
@@ -231,9 +231,9 @@ struct LibraryBatchEditBar: View {
     private func applyBulkTag(_ tag: String) {
         let trimmed = tag.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        for pdf in selectedPDFs {
-            if !pdf.tags.contains(trimmed) {
-                pdf.tags.append(trimmed)
+        for var pdf in selectedPDFs {
+            if !pdf.metadata.tags.contains(trimmed) {
+                pdf.metadata.tags.append(trimmed)
             }
         }
         showingTagPicker = false
