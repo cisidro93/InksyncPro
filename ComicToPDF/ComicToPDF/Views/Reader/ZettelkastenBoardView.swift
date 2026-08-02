@@ -503,7 +503,17 @@ struct ZettelkastenBoardView: View {
         HapticEngine.success()
 
         switch groupingMode {
+        case .byMaturity:
+            if targetColumn.contains("Fleeting") || targetColumn.lowercased().contains("fleeting") {
+                ann.maturityRaw = "fleeting"
+            } else if targetColumn.contains("Literature") || targetColumn.lowercased().contains("literature") {
+                ann.maturityRaw = "literature"
+            } else if targetColumn.contains("Permanent") || targetColumn.lowercased().contains("permanent") {
+                ann.maturityRaw = "permanent"
+            }
+
         case .para:
+
             if targetColumn.contains("Projects") {
                 ann.paraCategory = .project
             } else if targetColumn.contains("Areas") {
