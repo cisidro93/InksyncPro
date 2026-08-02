@@ -170,6 +170,39 @@ struct GlobalZettelkastenHubView: View {
                 filterSidebarRow(.highlightsOnly, label: "Highlights Only",  icon: "highlighter")
             }
 
+            // ── Note Maturity Breakdown ──────────────────────────────────
+            Section("Zettel Maturity Pipeline") {
+                let fleetingCount = allAnnotations.filter { ($0.maturityRaw ?? "seedling") == "fleeting" || ($0.maturityRaw ?? "seedling") == "seedling" }.count
+                let literatureCount = allAnnotations.filter { $0.maturityRaw == "literature" }.count
+                let permanentCount = allAnnotations.filter { $0.maturityRaw == "permanent" }.count
+
+                HStack {
+                    Label("Fleeting Notes", systemImage: "sparkles")
+                        .foregroundStyle(Color.inkBlue)
+                    Spacer()
+                    Text("\(fleetingCount)")
+                        .font(.caption.bold())
+                        .foregroundStyle(Color.inkTextSecondary)
+                }
+                HStack {
+                    Label("Literature Notes", systemImage: "book.closed.fill")
+                        .foregroundStyle(Color.inkOrange)
+                    Spacer()
+                    Text("\(literatureCount)")
+                        .font(.caption.bold())
+                        .foregroundStyle(Color.inkTextSecondary)
+                }
+                HStack {
+                    Label("Permanent Notes", systemImage: "brain.head.profile")
+                        .foregroundStyle(Color.inkAccentKnowledge)
+                    Spacer()
+                    Text("\(permanentCount)")
+                        .font(.caption.bold())
+                        .foregroundStyle(Color.inkTextSecondary)
+                }
+            }
+
+
             // ── Sort ──────────────────────────────────────────────────────
             Section("Sort By") {
                 ForEach(ZettelSortMode.allCases, id: \.self) { mode in

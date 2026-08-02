@@ -20,6 +20,7 @@ struct ZettelkastenBoardView: View {
 
     // Board Grouping Mode
     enum BoardGroupingMode: String, CaseIterable, Identifiable {
+        case byMaturity = "Note Maturity"
         case para = "PARA Method"
         case customOutline = "Custom Outline"
         case byTag = "By Tag"
@@ -30,6 +31,7 @@ struct ZettelkastenBoardView: View {
         
         var icon: String {
             switch self {
+            case .byMaturity: return "leaf.arrow.triangle.circlepath"
             case .para: return "folder.fill.badge.gearshape"
             case .customOutline: return "sidebar.left"
             case .byTag: return "tag"
@@ -39,7 +41,7 @@ struct ZettelkastenBoardView: View {
         }
     }
 
-    @State private var groupingMode: BoardGroupingMode = .customOutline
+    @State private var groupingMode: BoardGroupingMode = .byMaturity
     @State private var customColumns: [String] = ["Intro", "Section 1", "Section 2"]
     @State private var newColumnName: String = ""
     @State private var showingAddColumn = false
@@ -153,7 +155,7 @@ struct ZettelkastenBoardView: View {
                         inspectorHistory.removeAll()
                     }
                 )
-                .frame(width: 340)
+                .frame(width: 360)
                 .transition(.move(edge: .trailing))
             }
         }
@@ -303,6 +305,29 @@ struct ZettelkastenBoardView: View {
         ScrollView(.horizontal, showsIndicators: true) {
             LazyHStack(alignment: .top, spacing: 16) {
                 switch groupingMode {
+                case .byMaturity:
+                    let maturityCategories: [(title: String, icon: String, raw: String)] = [
+                        ("Fleeting Notes 🌱", "sparkles", "fleeting"),
+                        ("Literature Notes 📖", "book.closed.fill", "literature"),
+                        ("Permanent Notes 🧠", "brain.head.profile", "permanent")
+                    ]
+                    ForEach(maturityCategories, id: \.title) { item in
+                        let cards = annotations.filter { ann in
+                            let mat = ann.maturityRaw ?? "seedling"
+                            if item.raw == "fleeting" {
+                                return mat == "fleeting" || mat == "seedling" || mat.isEmpty
+                            } else {
+                                return mat == item.raw
+                            }
+                        }
+                        boardColumn(
+                            title: item.title,
+                            icon: item.icon,
+                            cards: cards,
+                            columnID: item.raw
+                        )
+                    }
+
                 case .para:
                     let paraCategories: [(title: String, icon: String, cat: PARACategory?)] = [
                         ("Projects 🚀", "rocket.fill", .project),
@@ -326,6 +351,7 @@ struct ZettelkastenBoardView: View {
                             columnID: item.title
                         )
                     }
+
                 case .customOutline:
                     ForEach(customColumns, id: \.self) { colName in
                         boardColumn(
@@ -958,11 +984,32 @@ private struct CardInspectorView: View {
                         .padding(.top, 4)
                     }
 
-                    // Rich notes editor
-                    VStack(alignment: .leading, spacing: 8) {
-                        Label("My Thoughts", systemImage: "pencil.line")
+                    // Maturity Lifecycle Stepper
+                    VStack(alignment: .leading, spacing: 6) {
+                        Label("Zettel Lifecycle Maturity", systemImage: "leaf.arrow.triangle.circlepath")
                             .font(.system(size: 12, weight: .bold, design: .rounded))
                             .foregroundStyle(Theme.textSecondary)
+                        
+                        HStack(spacing: 8) {
+                            maturityButton(label: "Fleeting", icon: "sparkles", raw: "fleeting", color: Color.inkBlue)
+                            maturityButton(label: "Literature", icon: "book.closed.fill", raw: "literature", color: Color.inkOrange)
+                            maturityButton(label: "Permanent", icon: "brain.head.profile", raw: "permanent", color: Color.inkAccentKnowledge)
+                        }
+                    }
+
+                    // Rich notes editor with active synthesis prompt
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Label("Synthesize in Your Own Words", systemImage: "pencil.line")
+                                .font(.system(size: 12, weight: .bold, design: .rounded))
+                                .foregroundStyle(Theme.textSecondary)
+                            Spacer()
+                            if (annotation.noteText?.isEmpty ?? true) {
+                                Text("Required for Literature / Permanent")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle(Theme.orange)
+                            }
+                        }
                         
                         TextEditor(text: Binding(
                             get: { annotation.noteText ?? "" },
@@ -975,12 +1022,60 @@ private struct CardInspectorView: View {
                         .font(.system(size: 13))
                         .scrollContentBackground(.hidden)
                         .background(Color.inkSurface, in: RoundedRectangle(cornerRadius: 10))
-                        .frame(height: 100)
+                        .frame(height: 90)
                         .overlay(
                             RoundedRectangle(cornerRadius: 10)
                                 .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
                         )
                     }
+
+                    // Executive Summary Layer (Progressive Summarization)
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Label("Executive Summary (Layer 4)", systemImage: "bolt.shield.fill")
+                                .font(.system(size: 12, weight: .bold, design: .rounded))
+                                .foregroundStyle(Color.inkBlue)
+                            Spacer()
+                            Button("Distill") {
+                                let note = annotation.noteText ?? annotation.selectedText ?? ""
+                                if !note.isEmpty {
+                                    annotation.executiveSummary = String(note.prefix(80)) + "..."
+                                    try? modelContext.save()
+                                }
+                            }
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(Color.inkBlue)
+                        }
+                        
+                        TextField("Add 1-sentence executive summary...", text: Binding(
+                            get: { annotation.executiveSummary ?? "" },
+                            set: { val in
+                                annotation.executiveSummary = val.isEmpty ? nil : val
+                                annotation.modifiedAt = Date()
+                                try? modelContext.save()
+                            }
+                        ))
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .padding(8)
+                        .background(Color.inkBlue.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.inkBlue.opacity(0.2), lineWidth: 0.8))
+                    }
+
+                    // Adlerian Reading Inspector (Marginalia)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label("Adlerian Reading Reflection", systemImage: "book.pages")
+                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                            .foregroundStyle(Color.inkOrange)
+                        
+                        VStack(alignment: .leading, spacing: 6) {
+                            adlerQuestionRow(number: "1", title: "What is this section about as a whole?", cue: annotation.cornellCueText)
+                            adlerQuestionRow(number: "2", title: "What is being said in detail?", cue: annotation.noteText)
+                            adlerQuestionRow(number: "3", title: "Is this true? (Agreement / Critique)", cue: annotation.executiveSummary)
+                            adlerQuestionRow(number: "4", title: "What of it? (Practical Significance)", cue: annotation.paraCategoryRaw)
+                        }
+                    }
+
+
 
                     // Bidirectional Connection Linker
                     VStack(alignment: .leading, spacing: 10) {
@@ -1171,7 +1266,57 @@ private struct CardInspectorView: View {
         try? modelContext.save()
         HapticEngine.medium()
     }
+
+    @ViewBuilder
+    private func maturityButton(label: String, icon: String, raw: String, color: Color) -> some View {
+        let currentRaw = annotation.maturityRaw ?? "seedling"
+        let isSelected = currentRaw == raw || (raw == "fleeting" && currentRaw == "seedling")
+        Button {
+            annotation.maturityRaw = raw
+            annotation.modifiedAt = Date()
+            try? modelContext.save()
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.system(size: 10, weight: .bold))
+                Text(label)
+                    .font(.system(size: 11, weight: isSelected ? .bold : .medium))
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(isSelected ? color.opacity(0.18) : Color.inkSurface, in: Capsule())
+            .overlay(Capsule().stroke(isSelected ? color : Color.primary.opacity(0.1), lineWidth: isSelected ? 1.2 : 0.5))
+            .foregroundStyle(isSelected ? color : Theme.textSecondary)
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private func adlerQuestionRow(number: String, title: String, cue: String?) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            Text("\(number).")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(Color.inkOrange)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.text)
+                if let val = cue, !val.isEmpty {
+                    Text(val)
+                        .font(.caption2)
+                        .foregroundStyle(Theme.textSecondary)
+                        .lineLimit(1)
+                }
+            }
+        }
+        .padding(6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.inkOrange.opacity(0.04), in: RoundedRectangle(cornerRadius: 6))
+    }
 }
+
+
 
 // MARK: - Dot Grid Background
 struct DotGridBackground: View {

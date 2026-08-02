@@ -95,6 +95,12 @@ struct StudyNotebookView: View {
     @AppStorage("studyNotebookPlacement") private var notebookPlacement: SidebarPlacement = .right
     @State private var canvasView = PKCanvasView()
     
+    // Cornell Method state
+    @State private var cornellCuesText: String = ""
+    @State private var cornellSummaryText: String = ""
+    @State private var isCoveredForRecitation: Bool = false
+
+    
     // Custom drawing tools states
     @State private var activeDrawingTool: DrawingTool = .pen
     @State private var strokeColor: Color = .primary
@@ -651,7 +657,9 @@ struct StudyNotebookView: View {
                     
                     // MARK: Notebook Canvas
                     ZStack(alignment: .trailing) {
-                        if inputMode == .markdown {
+                        if noteSystem == .cornell {
+                            cornell3ZoneView(notebookWidth: notebookGeo.size.width)
+                        } else if inputMode == .markdown {
                             ZStack {
                                 NotebookPaperBackground(style: paperStyle, spacing: paperSpacing, colorScheme: colorScheme)
                                 MarkdownTextEditor(text: $localNotes, isFocused: $isFocused, paperStyle: paperStyle, onLinkTapped: handleLinkTapped)
@@ -673,6 +681,7 @@ struct StudyNotebookView: View {
                             highlightsDrawer(notebookWidth: notebookGeo.size.width)
                         }
                     }
+
                 }
                 
                 if speechManager.isRecording {
@@ -3004,4 +3013,164 @@ struct BookPickerSheet: View {
         }
         .presentationDragIndicator(.visible)
     }
+
+    // MARK: - Cornell 3-Zone Paper View
+    @ViewBuilder
+    private func cornell3ZoneView(notebookWidth: CGFloat) -> some View {
+        VStack(spacing: 0) {
+            // Top Bar Controls for Cornell
+            HStack {
+                Label("Cornell 3-Zone Layout", systemImage: "doc.text.fill")
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .foregroundStyle(Color.inkAccentKnowledge)
+                Spacer()
+                
+                // Cover to Recite Toggle
+                Button {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
+                        isCoveredForRecitation.toggle()
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: isCoveredForRecitation ? "eye.slash.fill" : "eye.fill")
+                        Text(isCoveredForRecitation ? "Reciting (Notes Hidden)" : "Cover to Recite")
+                    }
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(isCoveredForRecitation ? Color.orange : Color.primary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(isCoveredForRecitation ? Color.orange.opacity(0.15) : Color.primary.opacity(0.08), in: Capsule())
+                }
+                .buttonStyle(.plain)
+                
+                // AI Cue Generator
+                Button {
+                    generateCornellCues()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "sparkles")
+                        Text("Auto-Cues")
+                    }
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(Color.purple)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.purple.opacity(0.12), in: Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(Color.primary.opacity(0.03))
+            
+            Divider()
+            
+            // Upper Section: Cue Column (28%) + Notes Area (72%)
+            HStack(spacing: 0) {
+                // Cue Column
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("CUES & RECALL")
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .foregroundStyle(Color.inkTextTertiary)
+                        .padding(.top, 6)
+                        .padding(.leading, 8)
+                    
+                    TextEditor(text: $cornellCuesText)
+                        .font(.system(size: 12, weight: .semibold))
+                        .scrollContentBackground(.hidden)
+                        .padding(6)
+                }
+                .frame(width: max(110, notebookWidth * 0.28))
+                .background(Color.primary.opacity(0.02))
+                
+                Divider()
+                
+                // Notes Column with Recitation Mask
+                ZStack {
+                    if inputMode == .markdown {
+                        NotebookPaperBackground(style: paperStyle, spacing: paperSpacing, colorScheme: colorScheme)
+                        MarkdownTextEditor(text: $localNotes, isFocused: $isFocused, paperStyle: paperStyle, onLinkTapped: handleLinkTapped)
+                    } else {
+                        NotebookPaperBackground(style: paperStyle, spacing: paperSpacing, colorScheme: colorScheme)
+                        StudyCanvasView(canvasView: $canvasView, isSmartShapesEnabled: $isSmartShapesEnabled, onSaved: debounceSave)
+                    }
+                    
+                    if isCoveredForRecitation {
+                        Rectangle()
+                            .fill(.thinMaterial)
+                            .overlay(
+                                VStack(spacing: 8) {
+                                    Image(systemName: "eye.slash")
+                                        .font(.title2)
+                                        .foregroundStyle(Color.orange)
+                                    Text("Recitation Mode Active")
+                                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                                    Text("Test your recall using the Cues column on the left.")
+                                        .font(.caption2)
+                                        .foregroundStyle(Theme.textSecondary)
+                                        .multilineTextAlignment(.center)
+                                }
+                                .padding()
+                            )
+                            .transition(.opacity)
+                    }
+                }
+            }
+            
+            Divider()
+            
+            // Lower Section: Summary Zone (20%)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text("SUMMARY")
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .foregroundStyle(Color.inkAccentKnowledge)
+                    Spacer()
+                    Button("Auto-Summary") {
+                        generateCornellSummary()
+                    }
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(Color.inkBlue)
+                }
+                .padding(.horizontal, 10)
+                .padding(.top, 4)
+                
+                TextEditor(text: $cornellSummaryText)
+                    .font(.system(size: 12, design: .serif))
+                    .scrollContentBackground(.hidden)
+                    .frame(height: 70)
+                    .padding(.horizontal, 6)
+            }
+            .background(Color.inkAccentKnowledge.opacity(0.04))
+        }
+    }
+
+    private func generateCornellCues() {
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        let lines = localNotes.components(separatedBy: .newlines).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        var cues: [String] = []
+        for line in lines.prefix(6) {
+            if line.starts(with: "#") {
+                cues.append("❓ What is " + line.replacingOccurrences(of: "#", with: "").trimmingCharacters(in: .whitespaces) + "?")
+            } else if line.count > 25 {
+                let snippet = String(line.prefix(20))
+                cues.append("• " + snippet + "...")
+            }
+        }
+        if cues.isEmpty {
+            cues = ["❓ Key question 1", "❓ Main thesis", "❓ Critical evidence"]
+        }
+        cornellCuesText = cues.joined(separator: "\n\n")
+    }
+
+    private func generateCornellSummary() {
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        let snippet = localNotes.prefix(150).trimmingCharacters(in: .whitespacesAndNewlines)
+        if !snippet.isEmpty {
+            cornellSummaryText = "Summary: " + snippet + "..."
+        } else {
+            cornellSummaryText = "Summary: Core concepts reviewed and recorded."
+        }
+    }
 }
+

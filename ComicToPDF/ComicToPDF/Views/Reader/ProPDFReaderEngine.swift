@@ -112,8 +112,13 @@ struct ProPDFReaderEngine: View {
                         onCreateZettelkastenCard: { text in
                             createZettelkastenCard(text: text)
                             selectedTextForHUD = nil
+                        },
+                        onAddMarginaliaSymbol: { symbol in
+                            saveMarginalia(text: selectedText, symbol: symbol)
+                            selectedTextForHUD = nil
                         }
                     )
+
                     .padding(.bottom, chromeVisible ? 80 : 30)
                     .padding(.horizontal, 20)
                 }
@@ -352,6 +357,23 @@ struct ProPDFReaderEngine: View {
         )
         AnnotationStore.shared.add(noteAnn)
     }
+
+    private func saveMarginalia(text: String, symbol: String) {
+        var ann = Annotation(
+            pdfID: pdf.id,
+            pageIndex: currentPageIndex,
+            chapterTitle: "Page \(currentPageIndex + 1)",
+            kind: .highlight,
+            createdAt: Date(),
+            modifiedAt: Date(),
+            colorHex: PDFHighlightColor.yellow.rawValue,
+            selectedText: text,
+            noteText: "Marginalia Symbol: \(symbol)"
+        )
+        ann.marginaliaSymbolRaw = symbol
+        AnnotationStore.shared.add(ann)
+    }
+
 
     private func speakText(_ text: String) {
         if speechSynthesizer.isSpeaking {

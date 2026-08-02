@@ -46,6 +46,8 @@ struct DailyReviewView: View {
 
     // Precomputed interval for the current card (shown on detail review)
     @State private var previewIntervals: (again: Double, hard: Double, good: Double, easy: Double) = (1, 2, 4, 7)
+    @State private var currentSuggestedConnection: ZettelkastenConnection? = nil
+
 
     var body: some View {
         NavigationStack {
@@ -380,7 +382,49 @@ struct DailyReviewView: View {
                 }
             }
 
+            // Connection Challenge Box
+            if let suggestion = currentSuggestedConnection {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Label("Connection Challenge", systemImage: "bolt.horizontal.circle.fill")
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                            .foregroundStyle(Color.inkOrange)
+                        Spacer()
+                        Text(suggestion.reason)
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(Color.inkTextSecondary)
+                    }
+                    
+                    if let target = suggestion.targetAnnotation {
+                        Text("\"\(target.selectedText ?? target.noteText ?? "Related Note")\"")
+                            .font(.system(size: 11, design: .serif))
+                            .foregroundStyle(Color.inkTextPrimary)
+                            .lineLimit(2)
+                    }
+                    
+                    Button {
+                        linkSuggestedConnection(suggestion, source: annotation)
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "link.badge.plus")
+                            Text(isAlreadyLinked(suggestion, source: annotation) ? "Linked!" : "Connect Zettels")
+                        }
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(isAlreadyLinked(suggestion, source: annotation) ? Color.inkAccentKnowledge : Color.white)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(isAlreadyLinked(suggestion, source: annotation) ? Color.inkAccentKnowledge.opacity(0.15) : Color.inkOrange, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(10)
+                .background(Color.inkOrange.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.inkOrange.opacity(0.2), lineWidth: 0.8))
+                .onTapGesture { /* consume tap */ }
+            }
+
             Spacer()
+
 
             // Micro adjustments
             VStack(spacing: 8) {
@@ -430,8 +474,39 @@ struct DailyReviewView: View {
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
         withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
             showFront.toggle()
+            if !showFront && currentIndex < reviewQueue.count {
+                let currentCard = reviewQueue[currentIndex]
+                let connections = ZettelkastenAutoLinker.shared.discoverConnections(for: currentCard, in: allHighlights)
+                currentSuggestedConnection = connections.first
+            }
         }
     }
+
+    private func isAlreadyLinked(_ connection: ZettelkastenConnection, source: SDAnnotation) -> Bool {
+        let targetIDStr = connection.targetAnnotationID.uuidString
+        return (source.linkedAnnotationIDs ?? []).contains(targetIDStr)
+    }
+
+    private func linkSuggestedConnection(_ connection: ZettelkastenConnection, source: SDAnnotation) {
+        let targetIDStr = connection.targetAnnotationID.uuidString
+        var listA = source.linkedAnnotationIDs ?? []
+        if !listA.contains(targetIDStr) {
+            listA.append(targetIDStr)
+            source.linkedAnnotationIDs = listA
+        }
+        if let targetSD = allHighlights.first(where: { $0.id == connection.targetAnnotationID }) {
+            var listB = targetSD.linkedAnnotationIDs ?? []
+            if !listB.contains(source.id.uuidString) {
+                listB.append(source.id.uuidString)
+                targetSD.linkedAnnotationIDs = listB
+            }
+            targetSD.modifiedAt = Date()
+        }
+        source.modifiedAt = Date()
+        try? modelContext.save()
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+    }
+
 
     // MARK: - Logic
 
