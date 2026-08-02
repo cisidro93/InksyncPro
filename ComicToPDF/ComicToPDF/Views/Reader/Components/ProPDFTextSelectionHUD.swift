@@ -39,35 +39,80 @@ struct ProPDFTextSelectionHUD: View {
 
     @State private var showingNoteInput = false
     @State private var noteText = ""
+    @State private var hoveredSymbolLabel: String? = nil
+    @State private var showingLegendPopover = false
 
     private let marginaliaSymbols = [
-        (symbol: "?", label: "Question"),
-        (symbol: "!", label: "Important"),
-        (symbol: "★", label: "Core Argument"),
-        (symbol: "≠", label: "Counter-Argument"),
-        (symbol: "Δ", label: "Shift in Logic")
+        (symbol: "?", label: "Question / Needs Clarification", shortLabel: "Question"),
+        (symbol: "!", label: "Important / Key Insight", shortLabel: "Important"),
+        (symbol: "★", label: "Core Thesis / Main Argument", shortLabel: "Core Thesis"),
+        (symbol: "≠", label: "Counter-Argument / Disagreement", shortLabel: "Counter-Argument"),
+        (symbol: "Δ", label: "Shift in Logic / Topic Change", shortLabel: "Logic Shift")
     ]
 
     var body: some View {
         VStack(spacing: 8) {
-            // Marginalia Symbol Bar
-            HStack(spacing: 12) {
-                ForEach(marginaliaSymbols, id: \.symbol) { item in
-                    Button {
-                        HapticEngine.light()
-                        onAddMarginaliaSymbol?(item.symbol)
-                    } label: {
-                        Text(item.symbol)
-                            .font(.system(size: 13, weight: .bold))
-                            .foregroundColor(.white)
-                            .frame(width: 26, height: 26)
-                            .background(Color.white.opacity(0.12), in: Circle())
+            // Marginalia Symbol Bar Header with Active Label
+            VStack(spacing: 4) {
+                HStack {
+                    Text("MARGINALIA (ADLER SHORTHAND)")
+                        .font(.system(size: 9, weight: .bold, design: .rounded))
+                        .foregroundStyle(Color.white.opacity(0.5))
+                        .tracking(0.8)
+                    Spacer()
+                    
+                    if let label = hoveredSymbolLabel {
+                        Text(label)
+                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                            .foregroundStyle(Color.inkOrange)
+                            .transition(.opacity)
+                    } else {
+                        Button {
+                            showingLegendPopover.toggle()
+                        } label: {
+                            Image(systemName: "questionmark.circle.fill")
+                                .font(.system(size: 11))
+                                .foregroundStyle(Color.white.opacity(0.6))
+                        }
+                        .buttonStyle(.plain)
+                        .popover(isPresented: $showingLegendPopover) {
+                            marginaliaLegendPopover
+                        }
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(item.label)
+                }
+                .padding(.horizontal, 14)
+
+                HStack(spacing: 12) {
+                    ForEach(marginaliaSymbols, id: \.symbol) { item in
+                        Button {
+                            HapticEngine.light()
+                            hoveredSymbolLabel = item.shortLabel
+                            onAddMarginaliaSymbol?(item.symbol)
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                                withAnimation { hoveredSymbolLabel = nil }
+                            }
+                        } label: {
+                            VStack(spacing: 2) {
+                                Text(item.symbol)
+                                    .font(.system(size: 13, weight: .bold))
+                                    .foregroundColor(.white)
+                                    .frame(width: 26, height: 26)
+                                    .background(Color.white.opacity(0.12), in: Circle())
+                                
+                                Text(item.shortLabel)
+                                    .font(.system(size: 8, weight: .semibold, design: .rounded))
+                                    .foregroundColor(Color.white.opacity(0.6))
+                                    .lineLimit(1)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(item.label)
+                        .help(item.label)
+                    }
                 }
             }
-            .padding(.top, 6)
+            .padding(.top, 8)
+
 
             if showingNoteInput {
                 HStack(spacing: 8) {
@@ -192,4 +237,39 @@ struct ProPDFTextSelectionHUD: View {
                 .shadow(color: .black.opacity(0.35), radius: 12, y: 6)
         )
     }
+
+    private var marginaliaLegendPopover: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("Adlerian Marginalia Symbols", systemImage: "book.pages")
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundStyle(Color.inkOrange)
+                Spacer()
+            }
+            Divider()
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(marginaliaSymbols, id: \.symbol) { item in
+                    HStack(spacing: 8) {
+                        Text(item.symbol)
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(.white)
+                            .frame(width: 24, height: 24)
+                            .background(Color.white.opacity(0.15), in: Circle())
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(item.shortLabel)
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(.white)
+                            Text(item.label)
+                                .font(.caption2)
+                                .foregroundColor(.white.opacity(0.7))
+                        }
+                    }
+                }
+            }
+        }
+        .padding(14)
+        .frame(width: 260)
+        .background(Color(hex: "#1A1A24"))
+    }
 }
+
