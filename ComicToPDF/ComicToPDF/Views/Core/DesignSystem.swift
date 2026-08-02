@@ -65,8 +65,10 @@ extension Color {
     static let inkBlue   = Color(hex: "#3d6fff")
     static let inkViolet = Color(hex: "#8b5cf6")
     static let inkAmber  = Color(hex: "#f5a623")
+    static let inkOrange = Color(hex: "#ff9f0a")
     static let inkGreen  = Color(hex: "#2dd4a0")
     static let inkRed    = Color(hex: "#ff4d6d")
+
 
     // MARK: - Semantic Role Aliases
     /// Navigation, progress bars, active tab indicator — the "engine running" colour
