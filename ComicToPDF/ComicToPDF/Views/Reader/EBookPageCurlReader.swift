@@ -71,8 +71,8 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
 
         context.coordinator.pageViewController = pvc
 
-        let initialSpread = context.coordinator.spreadViewControllers(for: initialPage)
-        pvc.setViewControllers(initialSpread, direction: .forward, animated: false)
+        let initialVC = context.coordinator.makePageViewController(for: initialPage)
+        pvc.setViewControllers([initialVC], direction: .forward, animated: false)
 
         // Start chapter load asynchronously
         context.coordinator.loadChapterAndPresent()
@@ -393,9 +393,13 @@ extension EBookPageCurlReader {
             let cols = parent.prefs.columnCount == 0 ? (isLandscape ? (parent.prefs.autoLandscapeDualPage ? 2 : (isPad ? 2 : 1)) : 1) : parent.prefs.columnCount
 
             if cols > 1 {
+                let vcs = spreadViewControllers(for: currentPageIndex)
+                pageViewController.setViewControllers(vcs, direction: .forward, animated: false)
                 pageViewController.isDoubleSided = true
                 return .mid
             } else {
+                let vc = makePageViewController(for: currentPageIndex)
+                pageViewController.setViewControllers([vc], direction: .forward, animated: false)
                 pageViewController.isDoubleSided = false
                 return .min
             }
