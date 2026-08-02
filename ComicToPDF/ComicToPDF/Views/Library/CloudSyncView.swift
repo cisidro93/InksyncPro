@@ -17,6 +17,37 @@ struct CloudSyncView: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section(header: Text("iCloud Drive Document Mirroring")) {
+                    Toggle(isOn: Binding(
+                        get: { iCloudFileSyncManager.shared.isSyncEnabled },
+                        set: { iCloudFileSyncManager.shared.isSyncEnabled = $0 }
+                    )) {
+                        HStack {
+                            Image(systemName: "icloud.fill")
+                                .foregroundStyle(.blue)
+                            VStack(alignment: .leading) {
+                                Text("iCloud Drive Mirroring")
+                                    .font(.body)
+                                Text("Mirror `.cbz`, `.epub`, and `.pdf` files across all your Apple ID devices automatically.")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    if iCloudFileSyncManager.shared.isSyncEnabled {
+                        HStack {
+                            Text("Status:")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Text(iCloudFileSyncManager.shared.syncStatusText)
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                                .foregroundStyle(.blue)
+                        }
+                    }
+                }
+
                 Section(header: Text("WebDAV / Cloud Target")) {
                     TextField("Server URL (e.g. https://boox.local:8080)", text: $serverURL)
                         .keyboardType(.URL)
