@@ -292,11 +292,7 @@ extension EBookPageCurlReader {
         // MARK: - Page VC Factory
 
         func spreadViewControllers(for pageIndex: Int) -> [UIViewController] {
-            let isLandscape = UIScreen.main.bounds.width > UIScreen.main.bounds.height
-            let isPad = UIDevice.current.userInterfaceIdiom == .pad
-            let cols = parent.prefs.columnCount == 0 ? (isLandscape ? (parent.prefs.autoLandscapeDualPage ? 2 : (isPad ? 2 : 1)) : 1) : parent.prefs.columnCount
-
-            if cols > 1 {
+            if pageViewController?.spineLocation == .mid {
                 let leftIndex = pageIndex % 2 == 0 ? pageIndex : pageIndex - 1
                 let rightIndex = leftIndex + 1
                 let leftVC = makePageViewController(for: leftIndex)
@@ -378,23 +374,36 @@ extension EBookPageCurlReader {
                 parent.currentPage = currentPageIndex
             }
 
-            // Sync page position to primary master WKWebView and mount on current active page VC
+            // Sync page position to primary master WKWebView and mount on root PVC view
             let targetPage = completed ? newPageIndex : currentPageIndex
             primaryWebView?.evaluateJavaScript("if(window.goToInksyncPage) window.goToInksyncPage(\(targetPage));")
-            currentVC.mountPrimaryWebView(primaryWebView)
+            mountPrimaryWebViewOnRoot()
         }
+
+        func mountPrimaryWebViewOnRoot() {
+            guard let pvc = pageViewController, let wv = primaryWebView else { return }
+            if wv.superview == pvc.view { return }
+            wv.removeFromSuperview()
+            wv.frame = pvc.view.bounds
+            wv.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            pvc.view.addSubview(wv)
+        }
+
 
         func pageViewController(
             _ pageViewController: UIPageViewController,
             spineLocationFor orientation: UIInterfaceOrientation
         ) -> UIPageViewController.SpineLocation {
-            let isLandscape = UIScreen.main.bounds.width > UIScreen.main.bounds.height
+            let isLandscape = orientation.isLandscape || UIScreen.main.bounds.width > UIScreen.main.bounds.height
             let isPad = UIDevice.current.userInterfaceIdiom == .pad
             let cols = parent.prefs.columnCount == 0 ? (isLandscape ? (parent.prefs.autoLandscapeDualPage ? 2 : (isPad ? 2 : 1)) : 1) : parent.prefs.columnCount
 
             if cols > 1 {
-                let vcs = spreadViewControllers(for: currentPageIndex)
-                pageViewController.setViewControllers(vcs, direction: .forward, animated: false)
+                let leftIndex = currentPageIndex % 2 == 0 ? currentPageIndex : currentPageIndex - 1
+                let rightIndex = leftIndex + 1
+                let leftVC = makePageViewController(for: leftIndex)
+                let rightVC = makePageViewController(for: min(rightIndex, max(0, computedTotalPages - 1)))
+                pageViewController.setViewControllers([leftVC, rightVC], direction: .forward, animated: false)
                 pageViewController.isDoubleSided = true
                 return .mid
             } else {
@@ -404,6 +413,7 @@ extension EBookPageCurlReader {
                 return .min
             }
         }
+
 
         // MARK: - Gesture Handlers
 
@@ -582,10 +592,9 @@ extension EBookPageCurlReader {
                 reportScrollFraction()
             }
 
-            // Mount primary WebView on active VC once initial metrics arrive
-            if let currentVC = pageViewController?.viewControllers?.first as? EBookPageContentViewController {
-                currentVC.mountPrimaryWebView(primaryWebView)
-            }
+            // Mount primary WebView on root PVC view once initial metrics arrive
+            mountPrimaryWebViewOnRoot()
+
             
             // Pre-render column snapshots for current chapter
             generateAllColumnSnapshots()
