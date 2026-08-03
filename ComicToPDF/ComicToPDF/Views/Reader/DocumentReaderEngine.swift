@@ -146,6 +146,7 @@ struct DocumentReaderEngine: View {
                 },
                 isPDF: true,
                 isReflowActive: isReflowMode,
+                isAutoCropEnabled: isAutoCropEnabled,
                 onCropToggle: { applySmartCrop() },
                 onReflowToggle: {
                     isReflowMode.toggle()
@@ -342,18 +343,39 @@ struct DocumentReaderEngine: View {
     // Under Swift 6, we avoid capturing non-Sendable PDFDocument across actor boundaries
     // by passing the Sendable resolvedURL, creating a background document, and returning
     // a Sendable [Int: CGRect] dictionary.
+    @State private var isAutoCropEnabled = false
+
     private func applySmartCrop() {
         guard let doc = pdfDocument else { return }
         let url = resolvedURL ?? pdf.url
-        // Temporarily nil-out to signal loading state
-        pdfDocument = nil
+        
+        if isAutoCropEnabled {
+            // Revert Crop to Original MediaBox
+            isAutoCropEnabled = false
+            for i in 0..<doc.pageCount {
+                if let page = doc.page(at: i) {
+                    page.setBounds(page.bounds(for: .mediaBox), for: .cropBox)
+                }
+            }
+            if let pv = pdfViewReference {
+                pv.displayBox = .mediaBox
+                pv.layoutDocumentView()
+                pv.autoScales = true
+            }
+            HapticEngine.medium()
+            return
+        }
+        
+        isAutoCropEnabled = true
+        HapticEngine.medium()
+        
         Task {
             let cropBoxes = await Task.detached(priority: .utility) { () -> [Int: CGRect] in
                 guard let backgroundDoc = PDFDocument(url: url) else { return [:] }
                 var results = [Int: CGRect]()
                 for i in 0..<backgroundDoc.pageCount {
                     guard let page = backgroundDoc.page(at: i) else { continue }
-                    let pageBounds = page.bounds(for: .cropBox)
+                    let mediaBox = page.bounds(for: .mediaBox)
                     var unionBounds = CGRect.null
                     let charCount = page.numberOfCharacters
                     if charCount > 0 {
@@ -366,29 +388,46 @@ struct DocumentReaderEngine: View {
                     }
                     if !unionBounds.isNull {
                         let croppedRect = unionBounds.insetBy(dx: -16, dy: -16)
-                        let finalCrop = croppedRect.intersection(pageBounds)
+                        let finalCrop = croppedRect.intersection(mediaBox)
                         if finalCrop.width > 50 && finalCrop.height > 50 {
                             results[i] = finalCrop
+                        } else {
+                            results[i] = mediaBox.insetBy(dx: mediaBox.width * 0.10, dy: mediaBox.height * 0.12)
                         }
                     } else {
-                        // Preserve full original page bounds — do not chop off headers/margins
-                        results[i] = pageBounds
+                        // Scanned PDF fallback: trim 10% side and 12% top/bottom white borders
+                        results[i] = mediaBox.insetBy(dx: mediaBox.width * 0.10, dy: mediaBox.height * 0.12)
                     }
                 }
                 return results
             }.value
 
-            // Re-apply to doc and restore pdfDocument reference on MainActor
             await MainActor.run {
                 for (i, cropBox) in cropBoxes {
                     if let page = doc.page(at: i) {
                         page.setBounds(cropBox, for: .cropBox)
                     }
                 }
-                self.pdfDocument = doc
+                if let pv = self.pdfViewReference {
+                    pv.displayBox = .cropBox
+                    pv.layoutDocumentView()
+                    
+                    if let currentPage = pv.currentPage {
+                        let isLandscape = pv.bounds.width > pv.bounds.height
+                        let isDual = self.prefs.pdfDualPage || (self.prefs.autoLandscapeDualPage && isLandscape)
+                        let cropBounds = currentPage.bounds(for: .cropBox)
+                        let pageWidthMultiplier: CGFloat = isDual ? 2.0 : 1.0
+                        let totalPageWidth = cropBounds.width * pageWidthMultiplier
+                        let scaleForWidth = pv.bounds.width / max(totalPageWidth, 1.0)
+                        if scaleForWidth > 0 {
+                            pv.scaleFactor = scaleForWidth * 1.02
+                        }
+                    }
+                }
             }
         }
     }
+
 
     // Shared helper — save position to ReaderProgressTracker.
     private func savePosition(pageIndex: Int) {

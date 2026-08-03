@@ -19,6 +19,8 @@ struct ProPDFReaderEngine: View {
     @State private var showingPageManager = false
     @State private var showingSettings = false
     @State private var isPencilMode = false
+    @State private var isCroppedMode = false
+    @State private var isExpandedView = false
 
     // Text Selection & Markup HUD
     @State private var selectedTextForHUD: String? = nil
@@ -45,6 +47,8 @@ struct ProPDFReaderEngine: View {
                         document: doc,
                         currentPageIndex: $currentPageIndex,
                         pdfViewRef: $pdfViewReference,
+                        isCroppedMode: isCroppedMode,
+                        isExpandedView: isExpandedView,
                         onTapCenter: {
                             withAnimation(.easeInOut(duration: 0.2)) {
                                 chromeVisible.toggle()
@@ -57,6 +61,7 @@ struct ProPDFReaderEngine: View {
                         }
                     )
                     .ignoresSafeArea()
+
 
                     // PencilKit Ink Bearing Canvas Layer
                     if isPencilMode {
@@ -219,6 +224,36 @@ struct ProPDFReaderEngine: View {
                         .clipShape(Circle())
                 }
 
+                // Smart White Margin Crop Toggle
+                Button(action: {
+                    HapticEngine.medium()
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        isCroppedMode.toggle()
+                    }
+                }) {
+                    Image(systemName: isCroppedMode ? "crop.square.fill" : "crop.square")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(isCroppedMode ? .inkGreen : .white)
+                        .frame(width: 38, height: 38)
+                        .background(isCroppedMode ? Color.inkGreen.opacity(0.25) : Color.black.opacity(0.45))
+                        .clipShape(Circle())
+                }
+
+                // Expand View Mode Toggle
+                Button(action: {
+                    HapticEngine.medium()
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        isExpandedView.toggle()
+                    }
+                }) {
+                    Image(systemName: isExpandedView ? "arrow.up.left.and.down.right.and.arrow.up.right.and.down.left" : "arrow.up.left.and.down.right.magnifyingglass")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(isExpandedView ? .inkGreen : .white)
+                        .frame(width: 38, height: 38)
+                        .background(isExpandedView ? Color.inkGreen.opacity(0.25) : Color.black.opacity(0.45))
+                        .clipShape(Circle())
+                }
+
                 // Apple Pencil Ink Mode Toggle
                 Button(action: {
                     HapticEngine.medium()
@@ -298,34 +333,17 @@ struct ProPDFReaderEngine: View {
             if let doc = PDFDocument(url: docURL) {
                 await MainActor.run {
                     self.pdfDocument = doc
-                    self.resolvedURL = docURL
-                    // Restore last saved page index
-                    if let saved = ReaderProgressTracker.shared.progress(for: pdf.id)?.currentPageIndex {
-                        self.currentPageIndex = min(saved, doc.pageCount - 1)
-                    }
+                    self.currentPageIndex = min(pdf.currentPage, doc.pageCount - 1)
                 }
             }
         }
     }
 
     private func jumpToPage(_ pageIndex: Int) {
-        guard let pdfView = pdfViewReference, let doc = pdfDocument, pageIndex >= 0 && pageIndex < doc.pageCount else { return }
-        if let targetPage = doc.page(at: pageIndex) {
-            pdfView.go(to: targetPage)
-            currentPageIndex = pageIndex
-            
-            var progress = ReaderProgressTracker.shared.progress(for: pdf.id) ?? ReadingProgress(
-                pdfID: pdf.id,
-                lastOpenedAt: Date(),
-                currentPageIndex: pageIndex,
-                totalPagesRead: doc.pageCount,
-                completionFraction: Double(pageIndex + 1) / Double(doc.pageCount),
-                readingSessionDates: [Date()]
-            )
-            progress.currentPageIndex = pageIndex
-            progress.lastOpenedAt = Date()
-            progress.completionFraction = Double(pageIndex + 1) / Double(doc.pageCount)
-            ReaderProgressTracker.shared.update(progress)
+        let clamped = max(0, min(pageIndex, totalPages - 1))
+        currentPageIndex = clamped
+        if let doc = pdfDocument, let page = doc.page(at: clamped) {
+            pdfViewReference?.go(to: page)
         }
     }
 
@@ -399,6 +417,8 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
     let document: PDFDocument
     @Binding var currentPageIndex: Int
     @Binding var pdfViewRef: PDFView?
+    var isCroppedMode: Bool
+    var isExpandedView: Bool
     var onTapCenter: () -> Void
     var onTextSelectionChanged: (String?) -> Void
 
@@ -447,6 +467,40 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         if uiView.displayMode != targetDisplayMode {
             uiView.displayMode = targetDisplayMode
             uiView.displaysAsBook = isDual
+        }
+
+        // Apply Margin Trimming / Cropping to Document Pages
+        for i in 0..<document.pageCount {
+            guard let page = document.page(at: i) else { continue }
+            let mediaBox = page.bounds(for: .mediaBox)
+            if isCroppedMode {
+                let insetX = mediaBox.width * 0.10
+                let insetY = mediaBox.height * 0.12
+                let croppedRect = mediaBox.insetBy(dx: insetX, dy: insetY)
+                page.setBounds(croppedRect, for: .cropBox)
+            } else {
+                page.setBounds(mediaBox, for: .cropBox)
+            }
+        }
+
+        uiView.displayBox = isCroppedMode ? .cropBox : .mediaBox
+        uiView.layoutDocumentView()
+
+        // Calculate expanded scale factor to fill 100% of the screen width
+        if isExpandedView || isCroppedMode {
+            if let currentPage = uiView.currentPage {
+                let activeBox: PDFDisplayBox = isCroppedMode ? .cropBox : .mediaBox
+                let pageBounds = currentPage.bounds(for: activeBox)
+                let pageWidthMultiplier: CGFloat = isDual ? 2.0 : 1.0
+                let totalPageWidth = pageBounds.width * pageWidthMultiplier
+                let scaleForWidth = uiView.bounds.width / max(totalPageWidth, 1.0)
+                if scaleForWidth > 0 {
+                    let targetScale = scaleForWidth * (isExpandedView ? 1.15 : 1.02)
+                    if abs(uiView.scaleFactor - targetScale) > 0.01 {
+                        uiView.scaleFactor = targetScale
+                    }
+                }
+            }
         }
 
         // ✅ Guarantee PDFView active page always displays the target pageIndex
