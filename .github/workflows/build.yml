@@ -126,22 +126,38 @@ jobs:
     - name: Upload Unsigned IPA to File Host and Post Commit Comment
       run: |
         cd ComicToPDF
-        echo "Uploading to x0.at..."
-        UPLOAD_RESPONSE=$(curl -s -F "file=@InksyncPro_Unsigned_${{ env.SHORT_SHA }}.ipa" https://x0.at/ || true)
-        DOWNLOAD_URL=$(echo "$UPLOAD_RESPONSE" | grep -o -E "https://x0.at/[a-zA-Z0-9./_-]+" || true)
-        
-        if [ -z "$DOWNLOAD_URL" ]; then
-          echo "x0.at failed, trying BashUpload..."
-          UPLOAD_RESPONSE=$(curl -s https://bashupload.com/ -T InksyncPro_Unsigned_${{ env.SHORT_SHA }}.ipa || true)
-          DOWNLOAD_URL=$(echo "$UPLOAD_RESPONSE" | grep -o -E "https://bashupload.com/[a-zA-Z0-9./_-]+" || true)
+        IPA_FILE="InksyncPro_Unsigned_${{ env.SHORT_SHA }}.ipa"
+        DOWNLOAD_URL=""
+
+        echo "Uploading to litterbox.catbox.moe..."
+        CATBOX_RESP=$(curl -s -F "reqtype=fileupload" -F "time=72h" -F "fileToUpload=@$IPA_FILE" https://litterbox.catbox.moe/resources/internals/api.php || true)
+        if [[ "$CATBOX_RESP" =~ ^https://.* ]]; then
+          DOWNLOAD_URL=$(echo "$CATBOX_RESP" | tr -d '\r\n')
         fi
-        
+
         if [ -z "$DOWNLOAD_URL" ]; then
-          echo "BashUpload failed, trying transfer.sh..."
-          UPLOAD_RESPONSE=$(curl -s --upload-file InksyncPro_Unsigned_${{ env.SHORT_SHA }}.ipa https://transfer.sh/InksyncPro_Unsigned_${{ env.SHORT_SHA }}.ipa || true)
-          DOWNLOAD_URL=$(echo "$UPLOAD_RESPONSE" | grep -o -E "https://transfer.sh/[a-zA-Z0-9./_-]+" || true)
+          echo "Catbox failed, trying 0x0.st..."
+          NULL_RESP=$(curl -s -F "file=@$IPA_FILE" https://0x0.st || true)
+          if [[ "$NULL_RESP" =~ ^https://.* ]]; then
+            DOWNLOAD_URL=$(echo "$NULL_RESP" | tr -d '\r\n')
+          fi
         fi
-        
+
+        if [ -z "$DOWNLOAD_URL" ]; then
+          echo "0x0.st failed, trying pixeldrain..."
+          PIXEL_RESP=$(curl -s -u : -F "file=@$IPA_FILE" https://pixeldrain.com/api/file || true)
+          FILE_ID=$(echo "$PIXEL_RESP" | grep -o -E '"id":"[a-zA-Z0-9]+"' | cut -d'"' -f4 || true)
+          if [ -n "$FILE_ID" ]; then
+            DOWNLOAD_URL="https://pixeldrain.com/api/file/$FILE_ID"
+          fi
+        fi
+
+        if [ -z "$DOWNLOAD_URL" ]; then
+          echo "Pixeldrain failed, trying bashupload..."
+          BASH_RESP=$(curl -s https://bashupload.com/ -T "$IPA_FILE" || true)
+          DOWNLOAD_URL=$(echo "$BASH_RESP" | grep -o -E "https://bashupload.com/[a-zA-Z0-9./_-]+" | head -n 1 || true)
+        fi
+
         if [ -n "$DOWNLOAD_URL" ]; then
           echo "Direct download URL: $DOWNLOAD_URL"
           echo "### Unsigned Build Complete 🚀" > comment.txt
@@ -160,6 +176,7 @@ jobs:
         else
           echo "Warning: All upload hosts failed."
         fi
+
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
