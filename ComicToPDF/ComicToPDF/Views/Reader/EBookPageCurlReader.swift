@@ -440,16 +440,17 @@ extension EBookPageCurlReader {
                 let rightIndex = leftIndex + 1
                 let leftVC = makePageViewController(for: leftIndex)
                 let rightVC = makePageViewController(for: min(rightIndex, max(0, computedTotalPages - 1)))
-                safeSetViewControllers([leftVC, rightVC], direction: .forward, animated: false)
+                pageViewController.setViewControllers([leftVC, rightVC], direction: .forward, animated: false)
                 pageViewController.isDoubleSided = true
                 return .mid
             } else {
                 let vc = makePageViewController(for: currentPageIndex)
-                safeSetViewControllers([vc], direction: .forward, animated: false)
+                pageViewController.setViewControllers([vc], direction: .forward, animated: false)
                 pageViewController.isDoubleSided = false
                 return .min
             }
         }
+
 
 
 
