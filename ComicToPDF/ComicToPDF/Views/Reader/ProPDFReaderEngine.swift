@@ -331,13 +331,17 @@ struct ProPDFReaderEngine: View {
         Task.detached(priority: .userInitiated) {
             let docURL = pdf.url
             if let doc = PDFDocument(url: docURL) {
+                let savedIndex = await MainActor.run {
+                    ReaderProgressTracker.shared.progress(for: self.pdf.id)?.currentPageIndex ?? 0
+                }
                 await MainActor.run {
                     self.pdfDocument = doc
-                    self.currentPageIndex = min(pdf.currentPage, doc.pageCount - 1)
+                    self.currentPageIndex = max(0, min(savedIndex, doc.pageCount - 1))
                 }
             }
         }
     }
+
 
     private func jumpToPage(_ pageIndex: Int) {
         let clamped = max(0, min(pageIndex, totalPages - 1))
