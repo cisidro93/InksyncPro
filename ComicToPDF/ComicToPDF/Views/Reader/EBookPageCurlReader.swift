@@ -71,8 +71,8 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
 
         context.coordinator.pageViewController = pvc
 
-        let initialVC = context.coordinator.makePageViewController(for: initialPage)
-        pvc.setViewControllers([initialVC], direction: .forward, animated: false)
+        let initialVCs = context.coordinator.spreadViewControllers(for: initialPage)
+        context.coordinator.safeSetViewControllers(initialVCs, direction: .forward, animated: false)
 
         // Start chapter load asynchronously
         context.coordinator.loadChapterAndPresent()
@@ -130,13 +130,14 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
             let vcs = context.coordinator.spreadViewControllers(for: targetIndex)
             let isForward = targetIndex >= currentVC.pageIndex
             let direction: UIPageViewController.NavigationDirection = isForward ? .forward : .reverse
-            uiViewController.setViewControllers(vcs, direction: direction, animated: false) { _ in
+            context.coordinator.safeSetViewControllers(vcs, direction: direction, animated: false) { _ in
                 if let targetVC = vcs.first as? EBookPageContentViewController {
                     targetVC.mountPrimaryWebView(context.coordinator.primaryWebView)
                 }
             }
         }
     }
+
 
     static func dismantleUIView(_ uiViewController: UIPageViewController, coordinator: Coordinator) {
         coordinator.cleanup()
@@ -285,9 +286,43 @@ extension EBookPageCurlReader {
 
                 // Present initial page VC
                 let vcs = self.spreadViewControllers(for: self.currentPageIndex)
-                self.pageViewController?.setViewControllers(vcs, direction: .forward, animated: false)
+                self.safeSetViewControllers(vcs, direction: .forward, animated: false)
             }
         }
+
+        func safeSetViewControllers(
+            _ vcs: [UIViewController],
+            direction: UIPageViewController.NavigationDirection,
+            animated: Bool,
+            completion: ((Bool) -> Void)? = nil
+        ) {
+            guard let pvc = pageViewController else { return }
+
+            let reqCount: Int
+            switch pvc.spineLocation {
+            case .mid:
+                reqCount = 2
+            case .min:
+                reqCount = 1
+            case .none:
+                reqCount = isDualPageMode ? 2 : 1
+            @unknown default:
+                reqCount = 1
+            }
+
+            let safeVCs: [UIViewController]
+            if reqCount == 1 && vcs.count > 1 {
+                safeVCs = Array(vcs.prefix(1))
+            } else if reqCount == 2 && vcs.count == 1 {
+                let second = makePageViewController(for: min(currentPageIndex + 1, max(0, computedTotalPages - 1)))
+                safeVCs = [vcs.first!, second]
+            } else {
+                safeVCs = vcs
+            }
+
+            pvc.setViewControllers(safeVCs, direction: direction, animated: animated, completion: completion)
+        }
+
 
         var isDualPageMode: Bool {
             let isLandscape = UIScreen.main.bounds.width > UIScreen.main.bounds.height
@@ -405,12 +440,12 @@ extension EBookPageCurlReader {
                 let rightIndex = leftIndex + 1
                 let leftVC = makePageViewController(for: leftIndex)
                 let rightVC = makePageViewController(for: min(rightIndex, max(0, computedTotalPages - 1)))
-                pageViewController.setViewControllers([leftVC, rightVC], direction: .forward, animated: false)
+                safeSetViewControllers([leftVC, rightVC], direction: .forward, animated: false)
                 pageViewController.isDoubleSided = true
                 return .mid
             } else {
                 let vc = makePageViewController(for: currentPageIndex)
-                pageViewController.setViewControllers([vc], direction: .forward, animated: false)
+                safeSetViewControllers([vc], direction: .forward, animated: false)
                 pageViewController.isDoubleSided = false
                 return .min
             }
@@ -456,7 +491,7 @@ extension EBookPageCurlReader {
                 isTransitioning = true
                 primaryWebView?.removeFromSuperview()
                 primaryWebView?.evaluateJavaScript("if(window.goToInksyncPage) window.goToInksyncPage(\(nextIndex));")
-                pvc.setViewControllers(vcs, direction: .forward, animated: true) { [weak self] completed in
+                safeSetViewControllers(vcs, direction: .forward, animated: true) { [weak self] completed in
                     self?.isTransitioning = false
                     if completed {
                         DispatchQueue.main.async {
@@ -491,7 +526,8 @@ extension EBookPageCurlReader {
                 isTransitioning = true
                 primaryWebView?.removeFromSuperview()
                 primaryWebView?.evaluateJavaScript("if(window.goToInksyncPage) window.goToInksyncPage(\(prevIndex));")
-                pvc.setViewControllers(vcs, direction: .reverse, animated: true) { [weak self] completed in
+                safeSetViewControllers(vcs, direction: .reverse, animated: true) { [weak self] completed in
+
                     self?.isTransitioning = false
                     if completed {
                         DispatchQueue.main.async {
