@@ -131,12 +131,11 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
             let isForward = targetIndex >= currentVC.pageIndex
             let direction: UIPageViewController.NavigationDirection = isForward ? .forward : .reverse
             context.coordinator.safeSetViewControllers(vcs, direction: direction, animated: false) { _ in
-                if let targetVC = vcs.first as? EBookPageContentViewController {
-                    targetVC.mountPrimaryWebView(context.coordinator.primaryWebView)
-                }
+                context.coordinator.mountPrimaryWebViewOnRoot()
             }
         }
     }
+
 
 
     static func dismantleUIView(_ uiViewController: UIPageViewController, coordinator: Coordinator) {
@@ -502,9 +501,7 @@ extension EBookPageCurlReader {
                             self?.parent.currentPage = nextIndex
                             self?.reportScrollFraction()
                             self?.primaryWebView?.evaluateJavaScript("if(window.goToInksyncPage) window.goToInksyncPage(\(nextIndex));")
-                            if let targetVC = vcs.first as? EBookPageContentViewController {
-                                targetVC.mountPrimaryWebView(self?.primaryWebView)
-                            }
+                            self?.mountPrimaryWebViewOnRoot()
                         }
                     }
                 }
@@ -538,9 +535,7 @@ extension EBookPageCurlReader {
                             self?.parent.currentPage = prevIndex
                             self?.reportScrollFraction()
                             self?.primaryWebView?.evaluateJavaScript("if(window.goToInksyncPage) window.goToInksyncPage(\(prevIndex));")
-                            if let targetVC = vcs.first as? EBookPageContentViewController {
-                                targetVC.mountPrimaryWebView(self?.primaryWebView)
-                            }
+                            self?.mountPrimaryWebViewOnRoot()
                         }
                     }
                 }

@@ -242,9 +242,7 @@ struct ProPDFReaderEngine: View {
                 // Expand View Mode Toggle
                 Button(action: {
                     HapticEngine.medium()
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        isExpandedView.toggle()
-                    }
+                    isExpandedView.toggle()
                 }) {
                     Image(systemName: isExpandedView ? "arrow.up.left.and.down.right.and.arrow.up.right.and.down.left" : "arrow.up.left.and.down.right.magnifyingglass")
                         .font(.system(size: 16, weight: .semibold))
@@ -253,6 +251,7 @@ struct ProPDFReaderEngine: View {
                         .background(isExpandedView ? Color.inkGreen.opacity(0.25) : Color.black.opacity(0.45))
                         .clipShape(Circle())
                 }
+
 
                 // Apple Pencil Ink Mode Toggle
                 Button(action: {
@@ -495,7 +494,21 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
 
         if uiView.displayBox != targetDisplayBox {
             uiView.displayBox = targetDisplayBox
-            uiView.autoScales = true
+        }
+
+        if isExpandedView {
+            if uiView.autoScales {
+                uiView.autoScales = false
+            }
+            let fitScale = uiView.scaleFactorForSizeToFit
+            let targetScale = max(fitScale * 1.35, 1.25)
+            if abs(uiView.scaleFactor - targetScale) > 0.05 {
+                uiView.scaleFactor = targetScale
+            }
+        } else {
+            if !uiView.autoScales {
+                uiView.autoScales = true
+            }
         }
 
         // Guarantee PDFView active page always displays the target pageIndex
@@ -503,6 +516,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
             uiView.go(to: targetPage)
         }
     }
+
 
 
     func makeCoordinator() -> Coordinator {
