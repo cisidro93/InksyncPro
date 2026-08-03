@@ -80,9 +80,8 @@ struct StudyCanvasView: UIViewRepresentable {
             guard points.count >= 12 else { return nil }
             
             // 1. Detect if held at the end (stationary last 12 points)
-            let lastPoints = points.suffix(12)
-            let firstOfLast = lastPoints.first!
-            let lastOfLast = lastPoints.last!
+            let lastPoints = Array(points.suffix(12))
+            guard let firstOfLast = lastPoints.first, let lastOfLast = lastPoints.last else { return nil }
             
             var minX = firstOfLast.location.x
             var maxX = firstOfLast.location.x
@@ -103,10 +102,8 @@ struct StudyCanvasView: UIViewRepresentable {
             
             // 2. Extract shape points (exclude the holding points at the end)
             let shapePoints = points.dropLast(10).map { $0.location }
-            guard shapePoints.count >= 8 else { return nil }
-            
-            let ptStart = shapePoints.first!
-            let ptEnd = shapePoints.last!
+            guard shapePoints.count >= 8, let ptStart = shapePoints.first, let ptEnd = shapePoints.last else { return nil }
+
             
             // Check if shape is closed (start and end points are near each other)
             let closedThreshold: CGFloat = 35.0

@@ -313,12 +313,13 @@ extension EBookPageCurlReader {
             let safeVCs: [UIViewController]
             if reqCount == 1 && vcs.count > 1 {
                 safeVCs = Array(vcs.prefix(1))
-            } else if reqCount == 2 && vcs.count == 1 {
+            } else if reqCount == 2 && vcs.count == 1, let first = vcs.first {
                 let second = makePageViewController(for: min(currentPageIndex + 1, max(0, computedTotalPages - 1)))
-                safeVCs = [vcs.first!, second]
+                safeVCs = [first, second]
             } else {
                 safeVCs = vcs
             }
+
 
             pvc.setViewControllers(safeVCs, direction: direction, animated: animated, completion: completion)
         }

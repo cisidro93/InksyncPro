@@ -118,8 +118,9 @@ struct GlobalZettelkastenHubView: View {
 
         // --- badge counts (use full unfiltered set) ---
         let due = allAnnotations.filter {
-            $0.kindRaw == "highlight" && ($0.nextReviewDate == nil || $0.nextReviewDate! <= now)
+            $0.kindRaw == "highlight" && (($0.nextReviewDate ?? Date.distantPast) <= now)
         }.count
+
         let bookCount = Set(allAnnotations.map { resolveTitle($0, nameDict) }).count
 
         cachedActiveAnnotations  = filtered

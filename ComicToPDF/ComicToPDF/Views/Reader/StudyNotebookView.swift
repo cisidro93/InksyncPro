@@ -2181,7 +2181,9 @@ extension StudyNotebookView {
     @ViewBuilder
     private var smartPageIndexBar: some View {
         let activePage = activeReaderPageIndex
-        let allPages = Array(referencedPageIndices.union(activePage != nil ? [activePage!] : [])).sorted()
+        let activeSet: Set<Int> = activePage != nil ? [activePage!] : []
+        let allPages = Array(referencedPageIndices.union(activeSet)).sorted()
+
         
         if !allPages.isEmpty || activePage != nil {
             ScrollView(.horizontal, showsIndicators: false) {

@@ -512,9 +512,10 @@ struct DailyReviewView: View {
 
     private func buildQueue() {
         let now = Date()
-        let due = allHighlights.filter { $0.nextReviewDate == nil || $0.nextReviewDate! <= now }
+        let due = allHighlights.filter { ($0.nextReviewDate ?? Date.distantPast) <= now }
         reviewQueue = Array(due.shuffled().prefix(10))
     }
+
 
     private func updateIntervalPreview(for annotation: SDAnnotation) {
         previewIntervals = (
