@@ -289,10 +289,15 @@ extension EBookPageCurlReader {
             }
         }
 
-        // MARK: - Page VC Factory
+        var isDualPageMode: Bool {
+            let isLandscape = UIScreen.main.bounds.width > UIScreen.main.bounds.height
+            let isPad = UIDevice.current.userInterfaceIdiom == .pad
+            let cols = parent.prefs.columnCount == 0 ? (isLandscape ? (parent.prefs.autoLandscapeDualPage ? 2 : (isPad ? 2 : 1)) : 1) : parent.prefs.columnCount
+            return cols > 1
+        }
 
         func spreadViewControllers(for pageIndex: Int) -> [UIViewController] {
-            if pageViewController?.spineLocation == .mid {
+            if isDualPageMode {
                 let leftIndex = pageIndex % 2 == 0 ? pageIndex : pageIndex - 1
                 let rightIndex = leftIndex + 1
                 let leftVC = makePageViewController(for: leftIndex)
@@ -303,6 +308,7 @@ extension EBookPageCurlReader {
                 return [vc]
             }
         }
+
 
         func makePageViewController(for pageIndex: Int) -> EBookPageContentViewController {
             let clampedIndex: Int
@@ -394,11 +400,7 @@ extension EBookPageCurlReader {
             _ pageViewController: UIPageViewController,
             spineLocationFor orientation: UIInterfaceOrientation
         ) -> UIPageViewController.SpineLocation {
-            let isLandscape = orientation.isLandscape || UIScreen.main.bounds.width > UIScreen.main.bounds.height
-            let isPad = UIDevice.current.userInterfaceIdiom == .pad
-            let cols = parent.prefs.columnCount == 0 ? (isLandscape ? (parent.prefs.autoLandscapeDualPage ? 2 : (isPad ? 2 : 1)) : 1) : parent.prefs.columnCount
-
-            if cols > 1 {
+            if isDualPageMode {
                 let leftIndex = currentPageIndex % 2 == 0 ? currentPageIndex : currentPageIndex - 1
                 let rightIndex = leftIndex + 1
                 let leftVC = makePageViewController(for: leftIndex)
@@ -413,6 +415,7 @@ extension EBookPageCurlReader {
                 return .min
             }
         }
+
 
 
         // MARK: - Gesture Handlers
