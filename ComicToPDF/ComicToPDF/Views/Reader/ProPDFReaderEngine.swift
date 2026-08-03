@@ -473,45 +473,37 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
             uiView.displaysAsBook = isDual
         }
 
-        // Apply Margin Trimming / Cropping to Document Pages
-        for i in 0..<document.pageCount {
-            guard let page = document.page(at: i) else { continue }
-            let mediaBox = page.bounds(for: .mediaBox)
-            if isCroppedMode {
-                let insetX = mediaBox.width * 0.10
-                let insetY = mediaBox.height * 0.12
-                let croppedRect = mediaBox.insetBy(dx: insetX, dy: insetY)
-                page.setBounds(croppedRect, for: .cropBox)
-            } else {
-                page.setBounds(mediaBox, for: .cropBox)
-            }
-        }
-
-        uiView.displayBox = isCroppedMode ? .cropBox : .mediaBox
-        uiView.layoutDocumentView()
-
-        // Calculate expanded scale factor to fill 100% of the screen width
-        if isExpandedView || isCroppedMode {
-            if let currentPage = uiView.currentPage {
-                let activeBox: PDFDisplayBox = isCroppedMode ? .cropBox : .mediaBox
-                let pageBounds = currentPage.bounds(for: activeBox)
-                let pageWidthMultiplier: CGFloat = isDual ? 2.0 : 1.0
-                let totalPageWidth = pageBounds.width * pageWidthMultiplier
-                let scaleForWidth = uiView.bounds.width / max(totalPageWidth, 1.0)
-                if scaleForWidth > 0 {
-                    let targetScale = scaleForWidth * (isExpandedView ? 1.15 : 1.02)
-                    if abs(uiView.scaleFactor - targetScale) > 0.01 {
-                        uiView.scaleFactor = targetScale
-                    }
+        let targetDisplayBox: PDFDisplayBox = isCroppedMode ? .cropBox : .mediaBox
+        
+        // Dynamically apply CropBox to current & adjacent visible pages if mode changed or page shifted
+        if let currentPage = uiView.currentPage {
+            let docIndex = document.index(for: currentPage)
+            let start = max(0, docIndex - 3)
+            let end = min(document.pageCount - 1, docIndex + 3)
+            for i in start...end {
+                guard let page = document.page(at: i) else { continue }
+                let mediaBox = page.bounds(for: .mediaBox)
+                if isCroppedMode {
+                    let insetX = mediaBox.width * 0.10
+                    let insetY = mediaBox.height * 0.12
+                    page.setBounds(mediaBox.insetBy(dx: insetX, dy: insetY), for: .cropBox)
+                } else {
+                    page.setBounds(mediaBox, for: .cropBox)
                 }
             }
         }
 
-        // ✅ Guarantee PDFView active page always displays the target pageIndex
+        if uiView.displayBox != targetDisplayBox {
+            uiView.displayBox = targetDisplayBox
+            uiView.autoScales = true
+        }
+
+        // Guarantee PDFView active page always displays the target pageIndex
         if let targetPage = document.page(at: currentPageIndex), uiView.currentPage != targetPage {
             uiView.go(to: targetPage)
         }
     }
+
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
