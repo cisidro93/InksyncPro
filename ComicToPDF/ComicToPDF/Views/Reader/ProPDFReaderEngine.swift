@@ -165,9 +165,10 @@ struct ProPDFReaderEngine: View {
             )
         }
         .sheet(isPresented: $showingSettings) {
-            EBookSettingsPanel()
+            EBookSettingsPanel(bookID: pdf.id, isPDF: true)
         }
     }
+
 
     // MARK: - Top & Bottom Chrome Toolbar
     private var proReaderChrome: some View {
@@ -472,9 +473,10 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
             uiView.displaysAsBook = isDual
         }
 
-        let targetDisplayBox: PDFDisplayBox = isCroppedMode ? .cropBox : .mediaBox
+        let hasCustomMargin = prefs.textMargin > 0
+        let targetDisplayBox: PDFDisplayBox = (isCroppedMode || hasCustomMargin) ? .cropBox : .mediaBox
         
-        // Dynamically apply CropBox to current & adjacent visible pages if mode changed or page shifted
+        // Dynamically apply CropBox / Margins to current & adjacent visible pages
         if let currentPage = uiView.currentPage {
             let docIndex = document.index(for: currentPage)
             let start = max(0, docIndex - 3)
@@ -483,9 +485,17 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
                 guard let page = document.page(at: i) else { continue }
                 let mediaBox = page.bounds(for: .mediaBox)
                 if isCroppedMode {
-                    let insetX = mediaBox.width * 0.10
-                    let insetY = mediaBox.height * 0.12
-                    page.setBounds(mediaBox.insetBy(dx: insetX, dy: insetY), for: .cropBox)
+                    let sensitivity = max(0.05, min(0.25, prefs.autoCropSensitivity))
+                    let marginInset = prefs.textMargin * 0.5
+                    let insetX = (mediaBox.width * sensitivity) + marginInset
+                    let insetY = (mediaBox.height * sensitivity * 1.2) + marginInset
+                    let croppedRect = mediaBox.insetBy(dx: insetX, dy: insetY)
+                    page.setBounds(croppedRect, for: .cropBox)
+                } else if hasCustomMargin {
+                    let marginX = prefs.textMargin
+                    let marginY = prefs.textMargin * 0.75
+                    let marginRect = mediaBox.insetBy(dx: marginX, dy: marginY)
+                    page.setBounds(marginRect, for: .cropBox)
                 } else {
                     page.setBounds(mediaBox, for: .cropBox)
                 }
@@ -495,6 +505,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         if uiView.displayBox != targetDisplayBox {
             uiView.displayBox = targetDisplayBox
         }
+
 
         if isExpandedView {
             if uiView.autoScales {

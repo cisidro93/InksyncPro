@@ -576,130 +576,171 @@ struct EBookSettingsPanel: View {
     // MARK: - Layout Tab
     private var layoutTab: some View {
         VStack(spacing: 20) {
-            // Margins & Paragraph
-            ReaderSettingsSection(title: "Page Layout", icon: "doc.text") {
-                SliderRow(
-                    label: "Page Margins",
-                    icon: "arrow.left.and.right",
-                    value: $prefs.textMargin,
-                    range: 0...60,
-                    step: 4,
-                    displayFormat: { "\(Int($0))pt" }
-                )
-                Divider().padding(.leading, 44)
-                SliderRow(
-                    label: "Paragraph Spacing",
-                    icon: "arrow.up.and.down",
-                    value: $prefs.paragraphSpacing,
-                    range: 0...2.0,
-                    step: 0.1,
-                    displayFormat: { String(format: "%.1fem", $0) }
-                )
-                Divider().padding(.leading, 44)
-                SliderRow(
-                    label: "First-Line Indent",
-                    icon: "increase.indent",
-                    value: $prefs.paragraphIndent,
-                    range: 0...3.0,
-                    step: 0.2,
-                    displayFormat: { String(format: "%.1fem", $0) }
-                )
-            }
-            
-            // Columns
-            ReaderSettingsSection(title: "Columns", icon: "columns") {
-                HStack(spacing: 10) {
-                    ForEach([0, 1, 2], id: \.self) { cols in
-                        Button {
-                            withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
-                                prefs.columnCount = cols
-                            }
-                        } label: {
-                            VStack(spacing: 6) {
-                                Image(systemName: cols == 0 ? "wand.and.stars" : (cols == 1 ? "rectangle.portrait" : "rectangle.split.2x1"))
-                                    .font(.system(size: 18, weight: .medium))
-                                Text(cols == 0 ? "Auto" : (cols == 1 ? "Single" : "Double"))
-                                    .font(.system(size: 12, weight: .medium))
-                            }
-                            .foregroundStyle(prefs.columnCount == cols ? Color.orange : Color.inkTextSecondary)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
-                            .background(
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .fill(prefs.columnCount == cols ? Color.orange.opacity(0.12) : Color.inkSurfaceRaised)
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .stroke(prefs.columnCount == cols ? Color.orange.opacity(0.5) : Color.clear, lineWidth: 1.5)
-                            )
-                        }
-                        .buttonStyle(.plain)
-                        .animation(.spring(response: 0.25, dampingFraction: 0.75), value: prefs.columnCount)
-                    }
+            if isPDF {
+                // PDF Margins & Crop Sensitivity
+                ReaderSettingsSection(title: "PDF Page Margins & Crop", icon: "crop") {
+                    SliderRow(
+                        label: "Page Margins",
+                        icon: "arrow.left.and.right",
+                        value: $prefs.textMargin,
+                        range: 0...60,
+                        step: 4,
+                        displayFormat: { "\(Int($0))pt" }
+                    )
+                    Divider().padding(.leading, 44)
+                    SliderRow(
+                        label: "Auto-Crop Sensitivity",
+                        icon: "crop.square",
+                        value: $prefs.autoCropSensitivity,
+                        range: 0.05...0.25,
+                        step: 0.01,
+                        displayFormat: { String(format: "%.0f%%", $0 * 100) }
+                    )
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-            }
 
-            // Pagination
-            ReaderSettingsSection(title: "Pagination & Spreads", icon: "book.pages") {
-                HStack(spacing: 10) {
-                    ForEach(EBookPaginationMode.allCases) { mode in
-                        Button {
-                            withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
-                                prefs.paginationMode = mode.rawValue
-                            }
-                        } label: {
-                            VStack(spacing: 6) {
-                                Image(systemName: mode.icon)
-                                    .font(.system(size: 18, weight: .medium))
-                                Text(mode.rawValue)
-                                    .font(.system(size: 12, weight: .medium))
-                            }
-                            .foregroundStyle(prefs.paginationMode == mode.rawValue ? Color.orange : Color.inkTextSecondary)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
-                            .background(
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .fill(prefs.paginationMode == mode.rawValue ? Color.orange.opacity(0.12) : Color.inkSurfaceRaised)
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .stroke(prefs.paginationMode == mode.rawValue ? Color.orange.opacity(0.5) : Color.clear, lineWidth: 1.5)
-                            )
-                        }
-                        .buttonStyle(.plain)
-                        .animation(.spring(response: 0.25, dampingFraction: 0.75), value: prefs.paginationMode)
-                    }
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                
-                Divider().padding(.leading, 44)
-                
-                ReaderSettingsToggleRow(
-                    label: "Full-Screen Panoramic Spreads",
-                    icon: "arrow.up.left.and.down.right.and.arrow.up.right.and.down.left",
-                    isOn: $prefs.fullBleedSpreads
-                )
-                
-                Divider().padding(.leading, 44)
-                
-                ReaderSettingsToggleRow(
-                    label: "Show Clock & Status Header",
-                    icon: "clock",
-                    isOn: $prefs.showClockHeader
-                )
-                
-                if prefs.showClockHeader {
+                // PDF Spreads & Orientation
+                ReaderSettingsSection(title: "PDF Spreads", icon: "book.pages") {
+                    ReaderSettingsToggleRow(
+                        label: "Dual-Page Spreads",
+                        icon: "rectangle.split.2x1",
+                        isOn: $prefs.pdfDualPage
+                    )
                     Divider().padding(.leading, 44)
                     ReaderSettingsToggleRow(
-                        label: "Show Battery Percentage",
-                        icon: "battery.100",
-                        isOn: $prefs.showBatteryPercentage
+                        label: "Auto Dual-Page in Landscape",
+                        icon: "rectangle.landscape.rotate",
+                        isOn: $prefs.autoLandscapeDualPage
+                    )
+                }
+            } else {
+                // EPUB Page Layout
+                ReaderSettingsSection(title: "Page Layout", icon: "doc.text") {
+                    SliderRow(
+                        label: "Page Margins",
+                        icon: "arrow.left.and.right",
+                        value: $prefs.textMargin,
+                        range: 0...60,
+                        step: 4,
+                        displayFormat: { "\(Int($0))pt" }
+                    )
+                    Divider().padding(.leading, 44)
+                    SliderRow(
+                        label: "Paragraph Spacing",
+                        icon: "arrow.up.and.down",
+                        value: $prefs.paragraphSpacing,
+                        range: 0...2.0,
+                        step: 0.1,
+                        displayFormat: { String(format: "%.1fem", $0) }
+                    )
+                    Divider().padding(.leading, 44)
+                    SliderRow(
+                        label: "First-Line Indent",
+                        icon: "increase.indent",
+                        value: $prefs.paragraphIndent,
+                        range: 0...3.0,
+                        step: 0.2,
+                        displayFormat: { String(format: "%.1fem", $0) }
                     )
                 }
             }
+
+            if !isPDF {
+                // Columns
+                ReaderSettingsSection(title: "Columns", icon: "columns") {
+                    HStack(spacing: 10) {
+                        ForEach([0, 1, 2], id: \.self) { cols in
+                            Button {
+                                withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
+                                    prefs.columnCount = cols
+                                }
+                            } label: {
+                                VStack(spacing: 6) {
+                                    Image(systemName: cols == 0 ? "wand.and.stars" : (cols == 1 ? "rectangle.portrait" : "rectangle.split.2x1"))
+                                        .font(.system(size: 18, weight: .medium))
+                                    Text(cols == 0 ? "Auto" : (cols == 1 ? "Single" : "Double"))
+                                        .font(.system(size: 12, weight: .medium))
+                                }
+                                .foregroundStyle(prefs.columnCount == cols ? Color.orange : Color.inkTextSecondary)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 14)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .fill(prefs.columnCount == cols ? Color.orange.opacity(0.12) : Color.inkSurfaceRaised)
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .stroke(prefs.columnCount == cols ? Color.orange.opacity(0.5) : Color.clear, lineWidth: 1.5)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                            .animation(.spring(response: 0.25, dampingFraction: 0.75), value: prefs.columnCount)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                }
+
+                // Pagination
+                ReaderSettingsSection(title: "Pagination & Spreads", icon: "book.pages") {
+                    HStack(spacing: 10) {
+                        ForEach(EBookPaginationMode.allCases) { mode in
+                            Button {
+                                withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
+                                    prefs.paginationMode = mode.rawValue
+                                }
+                            } label: {
+                                VStack(spacing: 6) {
+                                    Image(systemName: mode.icon)
+                                        .font(.system(size: 18, weight: .medium))
+                                    Text(mode.rawValue)
+                                        .font(.system(size: 12, weight: .medium))
+                                }
+                                .foregroundStyle(prefs.paginationMode == mode.rawValue ? Color.orange : Color.inkTextSecondary)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 14)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .fill(prefs.paginationMode == mode.rawValue ? Color.orange.opacity(0.12) : Color.inkSurfaceRaised)
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .stroke(prefs.paginationMode == mode.rawValue ? Color.orange.opacity(0.5) : Color.clear, lineWidth: 1.5)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                            .animation(.spring(response: 0.25, dampingFraction: 0.75), value: prefs.paginationMode)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    
+                    Divider().padding(.leading, 44)
+                    
+                    ReaderSettingsToggleRow(
+                        label: "Full-Screen Panoramic Spreads",
+                        icon: "arrow.up.left.and.down.right.and.arrow.up.right.and.down.left",
+                        isOn: $prefs.fullBleedSpreads
+                    )
+                    
+                    Divider().padding(.leading, 44)
+                    
+                    ReaderSettingsToggleRow(
+                        label: "Show Clock & Status Header",
+                        icon: "clock",
+                        isOn: $prefs.showClockHeader
+                    )
+                    
+                    if prefs.showClockHeader {
+                        Divider().padding(.leading, 44)
+                        ReaderSettingsToggleRow(
+                            label: "Show Battery Percentage",
+                            icon: "battery.100",
+                            isOn: $prefs.showBatteryPercentage
+                        )
+                    }
+                }
+            }
+
 
             // Reading Aids & Auto-Crop
             ReaderSettingsSection(title: "Reading Aids & Auto-Crop", icon: "crop") {
