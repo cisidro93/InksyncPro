@@ -165,8 +165,9 @@ struct ProPDFReaderEngine: View {
             )
         }
         .sheet(isPresented: $showingSettings) {
-            EBookSettingsPanel(bookID: pdf.id, isPDF: true)
+            EBookSettingsPanel(bookID: pdf.id.uuidString, isPDF: true)
         }
+
     }
 
 
