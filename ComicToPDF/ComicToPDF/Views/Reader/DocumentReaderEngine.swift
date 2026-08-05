@@ -63,7 +63,8 @@ struct DocumentReaderEngine: View {
                                       currentPageIndex: $currentPageIndex,
                                       chromeVisible: $chromeVisible,
                                       isPencilMode: $isPencilMode,
-                                      pdfViewRef: $pdfViewReference)
+                                      pdfViewRef: $pdfViewReference,
+                                      isAutoCropEnabled: isAutoCropEnabled)
                 .colorInvertIfDark(theme: prefs.activeTheme)
                 
                 if prefs.pdfDualPage && currentPageIndex > 0 {
@@ -111,6 +112,7 @@ struct DocumentReaderEngine: View {
                 .ignoresSafeArea()
             
             documentContentView
+                .ignoresSafeArea()
             
             EdgeBrightnessGestureZone()
             
@@ -333,16 +335,19 @@ struct DocumentReaderEngine: View {
     
     private func updateReflowText() {
         guard let doc = pdfDocument, let page = doc.page(at: currentPageIndex) else { return }
-        let extracted = page.string ?? ""
-        self.reflowText = extracted.isEmpty ? "No extractable text on this page." : extracted
+        let raw = page.string ?? ""
+        guard !raw.isEmpty else {
+            self.reflowText = "No extractable text on this page."
+            return
+        }
+        let paragraphs = raw
+            .components(separatedBy: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n\n")
+        self.reflowText = paragraphs
     }
     
-    // FIX 5: Smart crop now runs entirely on a background thread.
-    // The previous implementation iterated every page on the main actor, causing
-    // multi-second UI freezes on large PDFs (500+ pages).
-    // Under Swift 6, we avoid capturing non-Sendable PDFDocument across actor boundaries
-    // by passing the Sendable resolvedURL, creating a background document, and returning
-    // a Sendable [Int: CGRect] dictionary.
     @State private var isAutoCropEnabled = false
 
     private func applySmartCrop() {
@@ -522,6 +527,7 @@ struct PDFKitRepresentedView: UIViewRepresentable {
     @Binding var chromeVisible: Bool
     @Binding var isPencilMode: Bool
     @Binding var pdfViewRef: PDFView?
+    var isAutoCropEnabled: Bool = false
     
     @ObservedObject private var prefs = EBookPreferences.shared
     
@@ -541,9 +547,7 @@ struct PDFKitRepresentedView: UIViewRepresentable {
         context.coordinator.lastConfiguredPaginationMode = currentMode
         context.coordinator.lastFitToWidth = prefs.pdfFitToWidth
         let isPaged = currentMode == EBookPaginationMode.paged.rawValue
-        let fitToWidth = prefs.pdfFitToWidth
-        let isLandscape = pdfView.bounds.width > pdfView.bounds.height
-        let dualPageMode = prefs.pdfDualPage || (prefs.autoLandscapeDualPage && isLandscape)
+        let dualPageMode = prefs.pdfDualPage || (prefs.autoLandscapeDualPage && (pdfView.bounds.width > pdfView.bounds.height))
         
         let expectedDisplayMode: PDFDisplayMode
         if isPaged {
@@ -582,11 +586,6 @@ struct PDFKitRepresentedView: UIViewRepresentable {
         pdfView.displaysPageBreaks = false
         pdfView.pageBreakMargins = .zero
         pdfView.insetsLayoutMarginsFromSafeArea = false
-        
-        if let scrollView = pdfView.subviews.first(where: { $0 is UIScrollView }) as? UIScrollView {
-            scrollView.contentInset = .zero
-            scrollView.contentInsetAdjustmentBehavior = .never
-        }
         
         configureDisplayMode(pdfView, context: context)
         pdfView.delegate = context.coordinator
@@ -641,9 +640,17 @@ struct PDFKitRepresentedView: UIViewRepresentable {
         context.coordinator.canvasView = canvasView
         
         let container = UIView()
+        container.insetsLayoutMarginsFromSafeArea = false
+        container.clipsToBounds = false
         pdfView.frame = container.bounds
         pdfView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         container.addSubview(pdfView)
+        
+        // Configure scroll view after pdfView is in hierarchy
+        if let scrollView = pdfView.subviews.first(where: { $0 is UIScrollView }) as? UIScrollView {
+            scrollView.contentInset = .zero
+            scrollView.contentInsetAdjustmentBehavior = .never
+        }
         
         canvasView.frame = container.bounds
         canvasView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
@@ -711,22 +718,27 @@ struct PDFKitRepresentedView: UIViewRepresentable {
                 
                 if isPaged {
                     pdfView.displayDirection = .horizontal
-                    let pageViewOptions: [UIPageViewController.OptionsKey: Any] = [
-                        .spineLocation: NSNumber(value: dualPageMode ? UIPageViewController.SpineLocation.mid.rawValue : UIPageViewController.SpineLocation.min.rawValue)
-                    ]
-                    pdfView.usePageViewController(true, withViewOptions: pageViewOptions)
+                    // NOTE: usePageViewController(true, ...) is intentionally NOT called here.
+                    // Calling it from updateUIView while a system gesture (magnification loupe,
+                    // text selection) is in-flight tears down and rebuilds PDFKit's internal
+                    // UIPageViewController mid-gesture, triggering a spine-location VC-count
+                    // assertion → SIGABRT. Configured exactly once in makeUIView via configureDisplayMode.
                 } else {
                     pdfView.usePageViewController(false)
                     pdfView.displayDirection = .vertical
                 }
                 pdfView.displaysRTL = prefs.pdfRTL || pdf.metadata.isManga == true || pdf.contentType == .manga
-                pdfView.autoScales = true
+                // Suppress autoScales reset when smart crop is active — crop manages its own scale.
+                if !isAutoCropEnabled {
+                    pdfView.autoScales = true
+                }
                 pdfView.layoutDocumentView()
             }
             
             // Recalculate scaleFactor ONLY on physical bounds changes (e.g. device rotation),
             // NOT during live page index transitions to eliminate flashing and size glitching.
-            if boundsChanged {
+            // Also skip entirely when auto-crop is active — crop manages its own scaleFactor.
+            if boundsChanged && !isAutoCropEnabled {
                 context.coordinator.lastBoundsSize = currentBoundsSize
                 if let currentPage = pdfView.currentPage {
                     let pageBounds = currentPage.bounds(for: pdfView.displayBox)

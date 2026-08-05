@@ -477,28 +477,36 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         let hasCustomMargin = prefs.textMargin > 0
         let targetDisplayBox: PDFDisplayBox = (isCroppedMode || hasCustomMargin) ? .cropBox : .mediaBox
         
-        // Dynamically apply CropBox / Margins to current & adjacent visible pages
-        if let currentPage = uiView.currentPage {
-            let docIndex = document.index(for: currentPage)
-            let start = max(0, docIndex - 3)
-            let end = min(document.pageCount - 1, docIndex + 3)
-            for i in start...end {
-                guard let page = document.page(at: i) else { continue }
-                let mediaBox = page.bounds(for: .mediaBox)
-                if isCroppedMode {
-                    let sensitivity = max(0.05, min(0.25, prefs.autoCropSensitivity))
-                    let marginInset = prefs.textMargin * 0.5
-                    let insetX = (mediaBox.width * sensitivity) + marginInset
-                    let insetY = (mediaBox.height * sensitivity * 1.2) + marginInset
-                    let croppedRect = mediaBox.insetBy(dx: insetX, dy: insetY)
-                    page.setBounds(croppedRect, for: .cropBox)
-                } else if hasCustomMargin {
-                    let marginX = prefs.textMargin
-                    let marginY = prefs.textMargin * 0.75
-                    let marginRect = mediaBox.insetBy(dx: marginX, dy: marginY)
-                    page.setBounds(marginRect, for: .cropBox)
-                } else {
-                    page.setBounds(mediaBox, for: .cropBox)
+        // Only recompute crop boxes when crop mode or margin actually changed.
+        // Running setBounds on every updateUIView call (including during gestures like the system
+        // magnifier loupe) can corrupt PDFKit's internal render state → crash.
+        let cropStateChanged = isCroppedMode != context.coordinator.lastCropMode ||
+                               prefs.textMargin != context.coordinator.lastTextMargin
+        if cropStateChanged {
+            context.coordinator.lastCropMode = isCroppedMode
+            context.coordinator.lastTextMargin = prefs.textMargin
+            if let currentPage = uiView.currentPage {
+                let docIndex = document.index(for: currentPage)
+                let start = max(0, docIndex - 3)
+                let end = min(document.pageCount - 1, docIndex + 3)
+                for i in start...end {
+                    guard let page = document.page(at: i) else { continue }
+                    let mediaBox = page.bounds(for: .mediaBox)
+                    if isCroppedMode {
+                        let sensitivity = max(0.05, min(0.25, prefs.autoCropSensitivity))
+                        let marginInset = prefs.textMargin * 0.5
+                        let insetX = (mediaBox.width * sensitivity) + marginInset
+                        let insetY = (mediaBox.height * sensitivity * 1.2) + marginInset
+                        let croppedRect = mediaBox.insetBy(dx: insetX, dy: insetY)
+                        page.setBounds(croppedRect, for: .cropBox)
+                    } else if hasCustomMargin {
+                        let marginX = prefs.textMargin
+                        let marginY = prefs.textMargin * 0.75
+                        let marginRect = mediaBox.insetBy(dx: marginX, dy: marginY)
+                        page.setBounds(marginRect, for: .cropBox)
+                    } else {
+                        page.setBounds(mediaBox, for: .cropBox)
+                    }
                 }
             }
         }
@@ -518,7 +526,9 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
                 uiView.scaleFactor = targetScale
             }
         } else {
-            if !uiView.autoScales {
+            // Only restore autoScales when neither expanded nor crop mode is active.
+            // When isCroppedMode is true, the crop-adjusted scaleFactor must not be overridden.
+            if !isCroppedMode && !uiView.autoScales {
                 uiView.autoScales = true
             }
         }
@@ -537,6 +547,11 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
 
     class Coordinator: NSObject {
         var parent: ProPDFViewRepresentable
+        /// Tracks last-applied crop state to prevent redundant setBounds calls during
+        /// gestures (e.g. system magnification loupe). setBounds mid-gesture can trigger
+        /// PDFKit's internal UIPageViewController spine-location assertion → SIGABRT.
+        var lastCropMode: Bool = false
+        var lastTextMargin: CGFloat = -1
 
         init(_ parent: ProPDFViewRepresentable) {
             self.parent = parent

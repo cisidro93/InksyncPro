@@ -50,6 +50,9 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
         }
 
         let view = pvc.view!
+        // Set theme background immediately to prevent white bleed on initial load
+        // and before the primary WKWebView mounts its first content frame.
+        view.backgroundColor = UIColor(hex: prefs.activeTheme.cssBackground) ?? .black
 
         // Double tap
         let doubleTap = UITapGestureRecognizer(
@@ -392,7 +395,11 @@ extension EBookPageCurlReader {
             willTransitionTo pendingViewControllers: [UIViewController]
         ) {
             isTransitioning = true
-            // Detach primary WebView during active 3D curl transition so snapshots curl cleanly
+            // Paint PVC view with theme background BEFORE removing the primary WebView.
+            // Without this, the UIPageViewController's own view shows through as white
+            // during the 3D curl for any page whose snapshot hasn't been captured yet.
+            let bgColor = UIColor(hex: parent.prefs.activeTheme.cssBackground) ?? .black
+            pageViewController.view.backgroundColor = bgColor
             primaryWebView?.removeFromSuperview()
         }
 
@@ -438,18 +445,35 @@ extension EBookPageCurlReader {
             _ pageViewController: UIPageViewController,
             spineLocationFor orientation: UIInterfaceOrientation
         ) -> UIPageViewController.SpineLocation {
-            if isDualPageMode {
+            // CRITICAL CRASH FIX (IPS: _viewControllersForPendingSpineLocation SIGABRT):
+            // Derive dual-page mode from the *incoming orientation parameter*, NOT UIScreen.main.bounds.
+            // UIScreen.main.bounds hasn't rotated yet at this callback point, creating a race where
+            // isDualPageMode can flip between this callback's return value (.mid = 2 VCs) and UIKit's
+            // internal _viewControllersForPendingSpineLocation: validation (expecting 1 VC) → SIGABRT.
+            // Setting isTransitioning = true blocks any concurrent updateUIViewController call via
+            // safeSetViewControllers that could submit a conflicting VC array.
+            isTransitioning = true
+            defer { isTransitioning = false }
+
+            let isLandscape = orientation.isLandscape
+            let isPad = UIDevice.current.userInterfaceIdiom == .pad
+            let cols = parent.prefs.columnCount == 0
+                ? (isLandscape ? (parent.prefs.autoLandscapeDualPage ? 2 : (isPad ? 2 : 1)) : 1)
+                : parent.prefs.columnCount
+            let dual = cols > 1
+
+            if dual {
                 let leftIndex = currentPageIndex % 2 == 0 ? currentPageIndex : currentPageIndex - 1
                 let rightIndex = leftIndex + 1
                 let leftVC = makePageViewController(for: leftIndex)
                 let rightVC = makePageViewController(for: min(rightIndex, max(0, computedTotalPages - 1)))
-                pageViewController.setViewControllers([leftVC, rightVC], direction: .forward, animated: false)
                 pageViewController.isDoubleSided = true
+                pageViewController.setViewControllers([leftVC, rightVC], direction: .forward, animated: false)
                 return .mid
             } else {
                 let vc = makePageViewController(for: currentPageIndex)
-                pageViewController.setViewControllers([vc], direction: .forward, animated: false)
                 pageViewController.isDoubleSided = false
+                pageViewController.setViewControllers([vc], direction: .forward, animated: false)
                 return .min
             }
         }
