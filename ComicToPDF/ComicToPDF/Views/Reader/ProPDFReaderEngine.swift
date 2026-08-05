@@ -34,6 +34,10 @@ struct ProPDFReaderEngine: View {
     @State private var showCropAdjustmentSheet = false
     @State private var activeCropInsets: CodableCropInsets = .zero
 
+    private var totalPages: Int {
+        pdfDocument?.pageCount ?? pdf.pageCount
+    }
+
     private func applyCropInsets(_ insets: CodableCropInsets) {
         guard let doc = pdfDocument else { return }
         self.activeCropInsets = insets
