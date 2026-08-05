@@ -525,8 +525,9 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
             if abs(uiView.scaleFactor - targetScale) > 0.05 {
                 uiView.scaleFactor = targetScale
             }
-        } else if !isCroppedMode {
+        } else {
             // Expand single-page and dual-page spreads to fill 100% of the screen width edge-to-edge
+            // using the active displayBox (.cropBox when smart crop is active, .mediaBox otherwise).
             if let currentPage = uiView.currentPage, uiView.bounds.width > 0 {
                 let pageBounds = currentPage.bounds(for: uiView.displayBox)
                 let pageWidthMultiplier: CGFloat = isDual ? 2.0 : 1.0
@@ -538,6 +539,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
                     }
                     if abs(uiView.scaleFactor - scaleForWidth) > 0.005 {
                         uiView.scaleFactor = scaleForWidth
+                        uiView.layoutDocumentView()
                     }
                 }
             }

@@ -731,20 +731,27 @@ struct PDFKitRepresentedView: UIViewRepresentable {
                 pdfView.layoutDocumentView()
             }
             
+            let targetDisplayBox: PDFDisplayBox = isAutoCropEnabled ? .cropBox : .mediaBox
+            if pdfView.displayBox != targetDisplayBox {
+                pdfView.displayBox = targetDisplayBox
+                pdfView.layoutDocumentView()
+            }
+            
             // Recalculate scaleFactor to expand pages to fill 100% of the screen width edge-to-edge
-            // in both single-page and dual-page spread modes, eliminating empty side margins.
+            // in both single-page and dual-page spread modes, using .cropBox when crop is active.
             if let currentPage = pdfView.currentPage, currentBoundsSize.width > 0 {
                 let pageBounds = currentPage.bounds(for: pdfView.displayBox)
                 let pageWidthMultiplier: CGFloat = dualPageMode ? 2.0 : 1.0
                 let totalPageWidth = pageBounds.width * pageWidthMultiplier
                 let scaleForWidth = currentBoundsSize.width / max(totalPageWidth, 1.0)
                 
-                if scaleForWidth > 0 && !isAutoCropEnabled {
+                if scaleForWidth > 0 {
                     if pdfView.autoScales {
                         pdfView.autoScales = false
                     }
                     if abs(pdfView.scaleFactor - scaleForWidth) > 0.005 {
                         pdfView.scaleFactor = scaleForWidth
+                        pdfView.layoutDocumentView()
                     }
                 }
             }
