@@ -728,30 +728,23 @@ struct PDFKitRepresentedView: UIViewRepresentable {
                     pdfView.displayDirection = .vertical
                 }
                 pdfView.displaysRTL = prefs.pdfRTL || pdf.metadata.isManga == true || pdf.contentType == .manga
-                // Suppress autoScales reset when smart crop is active — crop manages its own scale.
-                if !isAutoCropEnabled {
-                    pdfView.autoScales = true
-                }
                 pdfView.layoutDocumentView()
             }
             
-            // Recalculate scaleFactor ONLY on physical bounds changes (e.g. device rotation),
-            // NOT during live page index transitions to eliminate flashing and size glitching.
-            // Also skip entirely when auto-crop is active — crop manages its own scaleFactor.
-            if boundsChanged && !isAutoCropEnabled {
-                context.coordinator.lastBoundsSize = currentBoundsSize
-                if let currentPage = pdfView.currentPage {
-                    let pageBounds = currentPage.bounds(for: pdfView.displayBox)
-                    let pageWidthMultiplier: CGFloat = dualPageMode ? 2.0 : 1.0
-                    let totalPageWidth = pageBounds.width * pageWidthMultiplier
-                    let totalPageHeight = pageBounds.height
-                    
-                    let scaleForWidth = currentBoundsSize.width / max(totalPageWidth, 1.0)
-                    let scaleForHeight = currentBoundsSize.height / max(totalPageHeight, 1.0)
-                    let targetScale = scaleForWidth > 0 ? scaleForWidth : min(scaleForWidth, scaleForHeight)
-                    
-                    if targetScale > 0 && abs(pdfView.scaleFactor - targetScale) > 0.01 {
-                        pdfView.scaleFactor = targetScale
+            // Recalculate scaleFactor to expand pages to fill 100% of the screen width edge-to-edge
+            // in both single-page and dual-page spread modes, eliminating empty side margins.
+            if let currentPage = pdfView.currentPage, currentBoundsSize.width > 0 {
+                let pageBounds = currentPage.bounds(for: pdfView.displayBox)
+                let pageWidthMultiplier: CGFloat = dualPageMode ? 2.0 : 1.0
+                let totalPageWidth = pageBounds.width * pageWidthMultiplier
+                let scaleForWidth = currentBoundsSize.width / max(totalPageWidth, 1.0)
+                
+                if scaleForWidth > 0 && !isAutoCropEnabled {
+                    if pdfView.autoScales {
+                        pdfView.autoScales = false
+                    }
+                    if abs(pdfView.scaleFactor - scaleForWidth) > 0.005 {
+                        pdfView.scaleFactor = scaleForWidth
                     }
                 }
             }

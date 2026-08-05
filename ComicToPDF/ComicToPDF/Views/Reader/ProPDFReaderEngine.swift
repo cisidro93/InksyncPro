@@ -525,11 +525,21 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
             if abs(uiView.scaleFactor - targetScale) > 0.05 {
                 uiView.scaleFactor = targetScale
             }
-        } else {
-            // Only restore autoScales when neither expanded nor crop mode is active.
-            // When isCroppedMode is true, the crop-adjusted scaleFactor must not be overridden.
-            if !isCroppedMode && !uiView.autoScales {
-                uiView.autoScales = true
+        } else if !isCroppedMode {
+            // Expand single-page and dual-page spreads to fill 100% of the screen width edge-to-edge
+            if let currentPage = uiView.currentPage, uiView.bounds.width > 0 {
+                let pageBounds = currentPage.bounds(for: uiView.displayBox)
+                let pageWidthMultiplier: CGFloat = isDual ? 2.0 : 1.0
+                let totalPageWidth = pageBounds.width * pageWidthMultiplier
+                let scaleForWidth = uiView.bounds.width / max(totalPageWidth, 1.0)
+                if scaleForWidth > 0 {
+                    if uiView.autoScales {
+                        uiView.autoScales = false
+                    }
+                    if abs(uiView.scaleFactor - scaleForWidth) > 0.005 {
+                        uiView.scaleFactor = scaleForWidth
+                    }
+                }
             }
         }
 
