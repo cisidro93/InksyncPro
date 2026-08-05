@@ -274,6 +274,8 @@ struct ProPDFReaderEngine: View {
                         .background(Color.black.opacity(0.45))
                         .clipShape(Circle())
                 }
+                .help("Document Inspector & TOC")
+                .accessibilityLabel("Document Inspector & TOC")
 
                 // Page Manager Grid
                 Button(action: {
@@ -287,6 +289,8 @@ struct ProPDFReaderEngine: View {
                         .background(Color.black.opacity(0.45))
                         .clipShape(Circle())
                 }
+                .help("Page Thumbnail Grid")
+                .accessibilityLabel("Page Thumbnail Grid")
 
                 // Smart White Margin Crop Toggle
                 Button(action: {
@@ -300,6 +304,8 @@ struct ProPDFReaderEngine: View {
                         .background(activeCropInsets.isEnabled ? Color.inkGreen.opacity(0.25) : Color.black.opacity(0.45))
                         .clipShape(Circle())
                 }
+                .help("Crop Margins")
+                .accessibilityLabel("Crop Margins")
 
                 // Expand View Mode Toggle
                 Button(action: {
@@ -313,7 +319,8 @@ struct ProPDFReaderEngine: View {
                         .background(isExpandedView ? Color.inkGreen.opacity(0.25) : Color.black.opacity(0.45))
                         .clipShape(Circle())
                 }
-
+                .help("Expand Full Screen")
+                .accessibilityLabel("Expand Full Screen")
 
                 // Apple Pencil Ink Mode Toggle
                 Button(action: {
@@ -329,6 +336,8 @@ struct ProPDFReaderEngine: View {
                         .background(isPencilMode ? Color.inkGreen.opacity(0.25) : Color.black.opacity(0.45))
                         .clipShape(Circle())
                 }
+                .help("Apple Pencil Drawing Mode")
+                .accessibilityLabel("Apple Pencil Drawing Mode")
 
                 // Settings
                 Button(action: {
@@ -342,6 +351,8 @@ struct ProPDFReaderEngine: View {
                         .background(Color.black.opacity(0.45))
                         .clipShape(Circle())
                 }
+                .help("Reader Settings")
+                .accessibilityLabel("Reader Settings")
             }
             .padding(.horizontal, 16)
             .padding(.top, 12)

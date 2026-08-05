@@ -223,6 +223,7 @@ struct ReaderChrome: View {
                 if let onRoomToggle {
                     chromeButton(
                         icon: isInRoom ? "person.2.wave.2.fill" : "person.2.wave.2",
+                        label: "Reading Room",
                         active: isInRoom,
                         activeColor: Color(hex: "#4ECDC4"),
                         badgeText: (isInRoom && roomPeerCount > 0) ? "\(roomPeerCount)" : nil,
@@ -233,6 +234,7 @@ struct ReaderChrome: View {
                 if onEnhanceToggle != nil {
                     chromeButton(
                         icon: "wand.and.stars",
+                        label: "AI Summary",
                         active: isEnhanced,
                         activeColor: .yellow,
                         action: { onEnhanceToggle?() }
@@ -240,18 +242,29 @@ struct ReaderChrome: View {
                 }
 
                 if isPDF {
-                    chromeButton(icon: "text.alignleft", active: isReflowActive, activeColor: .white) {
+                    chromeButton(
+                        icon: "text.alignleft",
+                        label: "Reflow Text",
+                        active: isReflowActive,
+                        activeColor: .white
+                    ) {
                         onReflowToggle?()
                     }
                 }
 
-                chromeButton(icon: "crop", active: isAutoCropEnabled, activeColor: .white) {
+                chromeButton(
+                    icon: "crop",
+                    label: "Crop Margins",
+                    active: isAutoCropEnabled,
+                    activeColor: .white
+                ) {
                     onCropToggle?()
                 }
 
                 if let onDialogueLens = onDialogueLensToggle {
                     chromeButton(
                         icon: "sparkle.magnifyingglass",
+                        label: "AI Dialogue Lens",
                         active: isDialogueLensEnabled,
                         activeColor: .purple,
                         action: onDialogueLens
@@ -261,6 +274,7 @@ struct ReaderChrome: View {
                 if let onSearch = onSearchToggle {
                     chromeButton(
                         icon: "magnifyingglass",
+                        label: "Search Book",
                         active: false,
                         activeColor: .white,
                         action: onSearch
@@ -269,6 +283,7 @@ struct ReaderChrome: View {
 
                 chromeButton(
                     icon: isSettingsActive ? "slider.horizontal.3" : "ellipsis",
+                    label: "Reader Settings",
                     active: isSettingsActive,
                     activeColor: .white,
                     badgeText: isSettingsActive ? currentModeLabel : nil,
@@ -407,6 +422,7 @@ struct ReaderChrome: View {
                 HStack(spacing: 4) {
                     barButton(
                         icon: onBookmarkActive ? "bookmark.fill" : "bookmark",
+                        label: "Bookmark Page",
                         tint: onBookmarkActive ? Color.yellow : Color.primary
                     ) {
                         Haptics.shared.playImpact(style: .light)
@@ -416,6 +432,7 @@ struct ReaderChrome: View {
                     if hasCopyAction {
                         barButton(
                             icon: "doc.on.doc",
+                            label: "Copy Selection",
                             tint: .primary
                         ) {
                             Haptics.shared.playImpact(style: .light)
@@ -459,19 +476,19 @@ struct ReaderChrome: View {
                 // Right cluster
                 HStack(spacing: 4) {
                     if let onTOC = onTOCToggle {
-                        barButton(icon: "list.bullet", tint: .primary) {
+                        barButton(icon: "list.bullet", label: "Table of Contents", tint: .primary) {
                             Haptics.shared.playImpact(style: .light)
                             onTOC()
                         }
                     }
                     if let onAnnotations = onAnnotationsToggle {
-                        barButton(icon: "pencil.and.outline", tint: .primary) {
+                        barButton(icon: "pencil.and.outline", label: "Pencil & Annotations", tint: .primary) {
                             Haptics.shared.playImpact(style: .light)
                             onAnnotations()
                         }
                     }
                     if let onCharacterMap = onCharacterMapToggle {
-                        barButton(icon: "square.stack.3d.up.badge.a", tint: .primary) {
+                        barButton(icon: "square.stack.3d.up.badge.a", label: "Character Map & Study", tint: .primary) {
                             Haptics.shared.playImpact(style: .light)
                             onCharacterMap()
                         }
@@ -527,6 +544,7 @@ struct ReaderChrome: View {
     @ViewBuilder
     private func chromeButton(
         icon: String,
+        label: String = "",
         active: Bool,
         activeColor: Color,
         badgeText: String? = nil,
@@ -551,11 +569,13 @@ struct ReaderChrome: View {
             .background(active ? activeColor.opacity(0.15) : Color.clear)
             .contentShape(Rectangle())
         }
+        .help(label.isEmpty ? "Action" : label)
+        .accessibilityLabel(label.isEmpty ? "Action" : label)
     }
 
     /// Icon button for the bottom action row
     @ViewBuilder
-    private func barButton(icon: String, tint: Color, action: @escaping () -> Void) -> some View {
+    private func barButton(icon: String, label: String = "", tint: Color, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: icon)
                 .font(.system(size: 17, weight: .medium))
@@ -563,6 +583,8 @@ struct ReaderChrome: View {
                 .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
         }
+        .help(label.isEmpty ? "Action" : label)
+        .accessibilityLabel(label.isEmpty ? "Action" : label)
     }
 }
 
