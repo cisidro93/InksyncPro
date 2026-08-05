@@ -148,8 +148,8 @@ struct DocumentReaderEngine: View {
                 },
                 isPDF: true,
                 isReflowActive: isReflowMode,
-                isAutoCropEnabled: isAutoCropEnabled,
-                onCropToggle: { applySmartCrop() },
+                isAutoCropEnabled: activeCropInsets.isEnabled,
+                onCropToggle: { showCropAdjustmentSheet = true },
                 onReflowToggle: {
                     isReflowMode.toggle()
                     if isReflowMode { updateReflowText() }
@@ -241,8 +241,22 @@ struct DocumentReaderEngine: View {
             if let saved = ReaderProgressTracker.shared.progress(for: pdf.id) {
                 currentPageIndex = saved.currentPageIndex
             }
+            let savedCrop = ReaderProgressTracker.shared.cropInsets(for: pdf.id)
+            let initialCrop = savedCrop ?? (prefs.defaultCropModeRaw == "smartAuto" ? .smartAuto : CodableCropInsets(top: prefs.defaultCropTop, bottom: prefs.defaultCropBottom, left: prefs.defaultCropLeft, right: prefs.defaultCropRight, modeRaw: prefs.defaultCropModeRaw))
+            applyCropInsets(initialCrop)
             if isReflowMode { updateReflowText() }
             isReaderFocused = true
+        }
+        .sheet(isPresented: $showCropAdjustmentSheet) {
+            ProCropAdjustmentSheet(
+                pdfID: pdf.id,
+                pdfDocument: pdfDocument,
+                currentPageIndex: currentPageIndex,
+                onApplyCrop: { insets in
+                    applyCropInsets(insets)
+                },
+                onDismiss: { showCropAdjustmentSheet = false }
+            )
         }
         .onChange(of: currentPageIndex) { _, new in
             if isReflowMode { updateReflowText() }
@@ -349,6 +363,49 @@ struct DocumentReaderEngine: View {
     }
     
     @State private var isAutoCropEnabled = false
+    @State private var showCropAdjustmentSheet = false
+    @State private var activeCropInsets: CodableCropInsets = .zero
+
+    private func applyCropInsets(_ insets: CodableCropInsets) {
+        guard let doc = pdfDocument else { return }
+        self.activeCropInsets = insets
+        
+        if insets.modeRaw == "none" {
+            isAutoCropEnabled = false
+            for i in 0..<doc.pageCount {
+                if let page = doc.page(at: i) {
+                    page.setBounds(page.bounds(for: .mediaBox), for: .cropBox)
+                }
+            }
+            if let pv = pdfViewReference {
+                pv.displayBox = .mediaBox
+                pv.layoutDocumentView()
+            }
+        } else if insets.modeRaw == "smartAuto" {
+            applySmartCrop()
+        } else {
+            // Custom Pro Crop Insets
+            isAutoCropEnabled = true
+            for i in 0..<doc.pageCount {
+                if let page = doc.page(at: i) {
+                    let mediaBox = page.bounds(for: .mediaBox)
+                    let insetX = mediaBox.width * insets.left
+                    let insetY = mediaBox.height * insets.bottom
+                    let croppedRect = CGRect(
+                        x: mediaBox.minX + (mediaBox.width * insets.left),
+                        y: mediaBox.minY + (mediaBox.height * insets.bottom),
+                        width: max(10, mediaBox.width * (1.0 - insets.left - insets.right)),
+                        height: max(10, mediaBox.height * (1.0 - insets.top - insets.bottom))
+                    )
+                    page.setBounds(croppedRect, for: .cropBox)
+                }
+            }
+            if let pv = pdfViewReference {
+                pv.displayBox = .cropBox
+                pv.layoutDocumentView()
+            }
+        }
+    }
 
     private func applySmartCrop() {
         guard let doc = pdfDocument else { return }

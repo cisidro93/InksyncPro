@@ -120,6 +120,11 @@ class EBookPreferences: ObservableObject {
     @AppStorage("ebook_autoContrastLevel")    var autoContrastLevel: Double   = 1.0
     @AppStorage("ebook_saturationLevel")      var saturationLevel: Double     = 1.0
     @AppStorage("ebook_warmthLevel")          var warmthLevel: Double         = 0.0
+    @AppStorage("ebook_defaultCropModeRaw")   var defaultCropModeRaw: String = "smartAuto"
+    @AppStorage("ebook_defaultCropTop")       var defaultCropTop: Double     = 0.0
+    @AppStorage("ebook_defaultCropBottom")    var defaultCropBottom: Double  = 0.0
+    @AppStorage("ebook_defaultCropLeft")      var defaultCropLeft: Double    = 0.0
+    @AppStorage("ebook_defaultCropRight")     var defaultCropRight: Double   = 0.0
 
     // MARK: - Active theme helpers
     var activeTheme: EBookTheme {

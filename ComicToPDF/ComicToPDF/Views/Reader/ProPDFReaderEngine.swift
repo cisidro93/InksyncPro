@@ -31,8 +31,59 @@ struct ProPDFReaderEngine: View {
     @Environment(\.modelContext) private var modelContext
     @FocusState private var isReaderFocused: Bool
 
-    private var totalPages: Int {
-        pdfDocument?.pageCount ?? pdf.pageCount
+    @State private var showCropAdjustmentSheet = false
+    @State private var activeCropInsets: CodableCropInsets = .zero
+
+    private func applyCropInsets(_ insets: CodableCropInsets) {
+        guard let doc = pdfDocument else { return }
+        self.activeCropInsets = insets
+        
+        if insets.modeRaw == "none" {
+            isCroppedMode = false
+            for i in 0..<doc.pageCount {
+                if let page = doc.page(at: i) {
+                    page.setBounds(page.bounds(for: .mediaBox), for: .cropBox)
+                }
+            }
+            if let pv = pdfViewReference {
+                pv.displayBox = .mediaBox
+                pv.layoutDocumentView()
+            }
+        } else if insets.modeRaw == "smartAuto" {
+            isCroppedMode = true
+            let sensitivity = max(0.05, min(0.25, prefs.autoCropSensitivity))
+            for i in 0..<doc.pageCount {
+                if let page = doc.page(at: i) {
+                    let mediaBox = page.bounds(for: .mediaBox)
+                    let insetX = mediaBox.width * sensitivity
+                    let insetY = mediaBox.height * sensitivity * 1.2
+                    page.setBounds(mediaBox.insetBy(dx: insetX, dy: insetY), for: .cropBox)
+                }
+            }
+            if let pv = pdfViewReference {
+                pv.displayBox = .cropBox
+                pv.layoutDocumentView()
+            }
+        } else {
+            // Custom Pro Crop Insets
+            isCroppedMode = true
+            for i in 0..<doc.pageCount {
+                if let page = doc.page(at: i) {
+                    let mediaBox = page.bounds(for: .mediaBox)
+                    let croppedRect = CGRect(
+                        x: mediaBox.minX + (mediaBox.width * insets.left),
+                        y: mediaBox.minY + (mediaBox.height * insets.bottom),
+                        width: max(10, mediaBox.width * (1.0 - insets.left - insets.right)),
+                        height: max(10, mediaBox.height * (1.0 - insets.top - insets.bottom))
+                    )
+                    page.setBounds(croppedRect, for: .cropBox)
+                }
+            }
+            if let pv = pdfViewReference {
+                pv.displayBox = .cropBox
+                pv.layoutDocumentView()
+            }
+        }
     }
 
     var body: some View {
@@ -167,6 +218,17 @@ struct ProPDFReaderEngine: View {
         .sheet(isPresented: $showingSettings) {
             EBookSettingsPanel(bookID: pdf.id.uuidString, isPDF: true)
         }
+        .sheet(isPresented: $showCropAdjustmentSheet) {
+            ProCropAdjustmentSheet(
+                pdfID: pdf.id,
+                pdfDocument: pdfDocument,
+                currentPageIndex: currentPageIndex,
+                onApplyCrop: { insets in
+                    applyCropInsets(insets)
+                },
+                onDismiss: { showCropAdjustmentSheet = false }
+            )
+        }
 
     }
 
@@ -229,15 +291,13 @@ struct ProPDFReaderEngine: View {
                 // Smart White Margin Crop Toggle
                 Button(action: {
                     HapticEngine.medium()
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        isCroppedMode.toggle()
-                    }
+                    showCropAdjustmentSheet = true
                 }) {
-                    Image(systemName: isCroppedMode ? "crop.square.fill" : "crop.square")
+                    Image(systemName: activeCropInsets.isEnabled ? "crop.square.fill" : "crop.square")
                         .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(isCroppedMode ? .inkGreen : .white)
+                        .foregroundColor(activeCropInsets.isEnabled ? .inkGreen : .white)
                         .frame(width: 38, height: 38)
-                        .background(isCroppedMode ? Color.inkGreen.opacity(0.25) : Color.black.opacity(0.45))
+                        .background(activeCropInsets.isEnabled ? Color.inkGreen.opacity(0.25) : Color.black.opacity(0.45))
                         .clipShape(Circle())
                 }
 
@@ -338,6 +398,9 @@ struct ProPDFReaderEngine: View {
                 await MainActor.run {
                     self.pdfDocument = doc
                     self.currentPageIndex = max(0, min(savedIndex, doc.pageCount - 1))
+                    let savedCrop = ReaderProgressTracker.shared.cropInsets(for: self.pdf.id)
+                    let initialCrop = savedCrop ?? (self.prefs.defaultCropModeRaw == "smartAuto" ? .smartAuto : CodableCropInsets(top: self.prefs.defaultCropTop, bottom: self.prefs.defaultCropBottom, left: self.prefs.defaultCropLeft, right: self.prefs.defaultCropRight, modeRaw: self.prefs.defaultCropModeRaw))
+                    self.applyCropInsets(initialCrop)
                 }
             }
         }

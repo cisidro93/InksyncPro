@@ -13,6 +13,21 @@ struct ReadingSessionEvent: Codable {
     }
 }
 
+struct CodableCropInsets: Codable, Equatable, Sendable {
+    var top: Double    // Percentage 0.0 to 0.40 (e.g. 0.10 = 10% trim from top)
+    var bottom: Double // Percentage 0.0 to 0.40
+    var left: Double   // Percentage 0.0 to 0.40
+    var right: Double  // Percentage 0.0 to 0.40
+    var modeRaw: String = "custom" // "none", "smartAuto", "custom"
+    
+    static let zero = CodableCropInsets(top: 0, bottom: 0, left: 0, right: 0, modeRaw: "none")
+    static let smartAuto = CodableCropInsets(top: 0, bottom: 0, left: 0, right: 0, modeRaw: "smartAuto")
+    
+    var isEnabled: Bool {
+        modeRaw != "none"
+    }
+}
+
 struct ReadingProgress: Codable, Identifiable {
     var id: UUID { pdfID }
     var pdfID: UUID
@@ -32,6 +47,8 @@ struct ReadingProgress: Codable, Identifiable {
     // Spread-mode parity — saves canonical lead index so resume restores correct spread
     var lastCanonicalLeadIndex: Int?
     var wasInDualPageMode: Bool?
+    // Per-document custom crop persistence
+    var customCrop: CodableCropInsets?
 }
 
 @MainActor
@@ -40,6 +57,25 @@ class ReaderProgressTracker: ObservableObject {
     
     @Published private var progressMap: [UUID: ReadingProgress] = [:]
     private var saveTasks: [UUID: Task<Void, Never>] = [:]
+    
+    /// Save per-document crop insets permanently to disk & iCloud
+    func saveCropInsets(_ crop: CodableCropInsets, for pdfID: UUID) {
+        var prog = progress(for: pdfID) ?? ReadingProgress(
+            pdfID: pdfID,
+            lastOpenedAt: Date(),
+            currentPageIndex: 0,
+            totalPagesRead: 0,
+            completionFraction: 0.0,
+            readingSessionDates: []
+        )
+        prog.customCrop = crop
+        update(prog)
+    }
+    
+    /// Fetch per-document saved crop insets
+    func cropInsets(for pdfID: UUID) -> CodableCropInsets? {
+        progress(for: pdfID)?.customCrop
+    }
     
     private let queue = DispatchQueue(label: "com.inksync.ProgressTracker", qos: .userInitiated)
 // Removed fileManager properties to avoid actor isolation issues
