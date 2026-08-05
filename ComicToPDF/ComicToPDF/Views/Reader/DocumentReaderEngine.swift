@@ -534,10 +534,24 @@ struct PDFKitRepresentedView: UIViewRepresentable {
     private func makePdfViewTransparent(_ pdfView: PDFView) {
         pdfView.isOpaque = false
         pdfView.backgroundColor = .clear
-        for subview in pdfView.subviews {
-            subview.backgroundColor = .clear
-            if let scrollView = subview as? UIScrollView {
-                scrollView.backgroundColor = .clear
+        pdfView.insetsLayoutMarginsFromSafeArea = false
+        
+        let stripView: (UIView) -> Void = { view in
+            view.backgroundColor = .clear
+            view.insetsLayoutMarginsFromSafeArea = false
+            if let sv = view as? UIScrollView {
+                sv.backgroundColor = .clear
+                sv.contentInset = .zero
+                sv.verticalScrollIndicatorInsets = .zero
+                sv.horizontalScrollIndicatorInsets = .zero
+                sv.contentInsetAdjustmentBehavior = .never
+            }
+        }
+        
+        pdfView.subviews.forEach { subview in
+            stripView(subview)
+            subview.subviews.forEach { inner in
+                stripView(inner)
             }
         }
     }
@@ -737,20 +751,24 @@ struct PDFKitRepresentedView: UIViewRepresentable {
                 pdfView.layoutDocumentView()
             }
             
-            // Recalculate scaleFactor to expand pages to fill 100% of the screen width edge-to-edge
+            // Recalculate scaleFactor to expand pages to fill 100% of the screen width & height edge-to-edge
             // in both single-page and dual-page spread modes, using .cropBox when crop is active.
-            if let currentPage = pdfView.currentPage, currentBoundsSize.width > 0 {
+            if let currentPage = pdfView.currentPage, currentBoundsSize.width > 0 && currentBoundsSize.height > 0 {
                 let pageBounds = currentPage.bounds(for: pdfView.displayBox)
                 let pageWidthMultiplier: CGFloat = dualPageMode ? 2.0 : 1.0
                 let totalPageWidth = pageBounds.width * pageWidthMultiplier
-                let scaleForWidth = currentBoundsSize.width / max(totalPageWidth, 1.0)
+                let totalPageHeight = pageBounds.height
                 
-                if scaleForWidth > 0 {
+                let scaleForWidth = currentBoundsSize.width / max(totalPageWidth, 1.0)
+                let scaleForHeight = currentBoundsSize.height / max(totalPageHeight, 1.0)
+                let targetScale = max(scaleForWidth, scaleForHeight)
+                
+                if targetScale > 0 {
                     if pdfView.autoScales {
                         pdfView.autoScales = false
                     }
-                    if abs(pdfView.scaleFactor - scaleForWidth) > 0.005 {
-                        pdfView.scaleFactor = scaleForWidth
+                    if abs(pdfView.scaleFactor - targetScale) > 0.005 {
+                        pdfView.scaleFactor = targetScale
                         pdfView.layoutDocumentView()
                     }
                 }

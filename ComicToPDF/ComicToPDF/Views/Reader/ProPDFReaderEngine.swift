@@ -526,19 +526,24 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
                 uiView.scaleFactor = targetScale
             }
         } else {
-            // Expand single-page and dual-page spreads to fill 100% of the screen width edge-to-edge
+            // Expand single-page and dual-page spreads to fill 100% of the screen width & height edge-to-edge
             // using the active displayBox (.cropBox when smart crop is active, .mediaBox otherwise).
-            if let currentPage = uiView.currentPage, uiView.bounds.width > 0 {
+            if let currentPage = uiView.currentPage, uiView.bounds.width > 0 && uiView.bounds.height > 0 {
                 let pageBounds = currentPage.bounds(for: uiView.displayBox)
                 let pageWidthMultiplier: CGFloat = isDual ? 2.0 : 1.0
                 let totalPageWidth = pageBounds.width * pageWidthMultiplier
+                let totalPageHeight = pageBounds.height
+                
                 let scaleForWidth = uiView.bounds.width / max(totalPageWidth, 1.0)
-                if scaleForWidth > 0 {
+                let scaleForHeight = uiView.bounds.height / max(totalPageHeight, 1.0)
+                let targetScale = max(scaleForWidth, scaleForHeight)
+                
+                if targetScale > 0 {
                     if uiView.autoScales {
                         uiView.autoScales = false
                     }
-                    if abs(uiView.scaleFactor - scaleForWidth) > 0.005 {
-                        uiView.scaleFactor = scaleForWidth
+                    if abs(uiView.scaleFactor - targetScale) > 0.005 {
+                        uiView.scaleFactor = targetScale
                         uiView.layoutDocumentView()
                     }
                 }
