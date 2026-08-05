@@ -389,8 +389,6 @@ struct DocumentReaderEngine: View {
             for i in 0..<doc.pageCount {
                 if let page = doc.page(at: i) {
                     let mediaBox = page.bounds(for: .mediaBox)
-                    let insetX = mediaBox.width * insets.left
-                    let insetY = mediaBox.height * insets.bottom
                     let croppedRect = CGRect(
                         x: mediaBox.minX + (mediaBox.width * insets.left),
                         y: mediaBox.minY + (mediaBox.height * insets.bottom),
