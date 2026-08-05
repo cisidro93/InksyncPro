@@ -58,6 +58,7 @@ final class PageOCREngine: ObservableObject {
 
     /// Fetch or compute text blocks for a page, caching the result.
     func fetchTextBlocks(for pageIndex: Int) async -> [TextBlock] {
+        guard totalPages > 0, pageIndex >= 0, pageIndex < totalPages else { return [] }
         if let cached = textBlocksCache[pageIndex] {
             return cached
         }
@@ -69,6 +70,7 @@ final class PageOCREngine: ObservableObject {
 
     /// Pre-warm OCR cache for a page.
     func prewarmOCR(for pageIndex: Int) {
+        guard totalPages > 0, pageIndex >= 0, pageIndex < totalPages else { return }
         currentPageIndex = pageIndex
         prefetchOCR(around: pageIndex)
     }
@@ -97,11 +99,7 @@ final class PageOCREngine: ObservableObject {
             let rhsRow = Int((1.0 - rhsBox.midY) / bandHeight)
             if lhsRow != rhsRow { return lhsRow < rhsRow }
             // Same row band — sort by X (RTL for manga, LTR for standard)
-            if isManga {
-                return Task.isCancelled ? false : lhsBox.midX > rhsBox.midX
-            } else {
-                return Task.isCancelled ? false : lhsBox.midX < rhsBox.midX
-            }
+            return isManga ? (lhsBox.midX > rhsBox.midX) : (lhsBox.midX < rhsBox.midX)
         }
 
         let text = sorted.compactMap { $0.text }
@@ -119,7 +117,11 @@ final class PageOCREngine: ObservableObject {
     // MARK: - Prefetch
 
     private func prefetchOCR(around pageIndex: Int) {
-        let window = max(0, pageIndex - 1)...min(totalPages - 1, pageIndex + 2)
+        guard totalPages > 0 else { return }
+        let lower = max(0, pageIndex - 1)
+        let upper = min(totalPages - 1, pageIndex + 2)
+        guard lower <= upper else { return }
+        let window = lower...upper
         
         // Cancel and remove out-of-window prefetch tasks to save CPU cycles
         let outOfWindowKeys = ocrTasks.keys.filter { !window.contains($0) }
