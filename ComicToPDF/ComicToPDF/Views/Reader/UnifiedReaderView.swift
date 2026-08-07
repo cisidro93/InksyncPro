@@ -98,7 +98,7 @@ struct UnifiedReaderView: View {
                                 BookReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
                             }
                         } else {
-                            if pdf.url.pathExtension.lowercased() == "pdf" || pdf.contentType == .pdf || pdf.contentType == .document {
+                            if pdf.url.pathExtension.lowercased() == "pdf" {
                                 DocumentReaderEngine(pdf: pdf, onDismiss: { dismiss() })
                             } else {
                                 ComicReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
