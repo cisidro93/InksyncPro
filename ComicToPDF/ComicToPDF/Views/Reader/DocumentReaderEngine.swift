@@ -717,14 +717,6 @@ struct PDFKitRepresentedView: UIViewRepresentable {
         canvasView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         container.addSubview(canvasView)
         
-        let swipeLeft = UISwipeGestureRecognizer(target: context.coordinator, action: #selector(context.coordinator.handleSwipe(_:)))
-        swipeLeft.direction = .left
-        pdfView.addGestureRecognizer(swipeLeft)
-        
-        let swipeRight = UISwipeGestureRecognizer(target: context.coordinator, action: #selector(context.coordinator.handleSwipe(_:)))
-        swipeRight.direction = .right
-        pdfView.addGestureRecognizer(swipeRight)
-        
         NotificationCenter.default.addObserver(
             context.coordinator,
             selector: #selector(context.coordinator.pageChanged(_:)),
@@ -779,11 +771,6 @@ struct PDFKitRepresentedView: UIViewRepresentable {
                 
                 if isPaged {
                     pdfView.displayDirection = .horizontal
-                    // NOTE: usePageViewController(true, ...) is intentionally NOT called here.
-                    // Calling it from updateUIView while a system gesture (magnification loupe,
-                    // text selection) is in-flight tears down and rebuilds PDFKit's internal
-                    // UIPageViewController mid-gesture, triggering a spine-location VC-count
-                    // assertion → SIGABRT. Configured exactly once in makeUIView via configureDisplayMode.
                 } else {
                     pdfView.usePageViewController(false)
                     pdfView.displayDirection = .vertical
@@ -798,19 +785,17 @@ struct PDFKitRepresentedView: UIViewRepresentable {
                 pdfView.layoutDocumentView()
             }
             
-            // Recalculate scaleFactor to expand pages to fill 100% of the screen width & height edge-to-edge
-            // in both single-page and dual-page spread modes, using .cropBox when crop is active.
+            let fitScale = pdfView.scaleFactorForSizeToFit
+            let isZoomed = abs(pdfView.scaleFactor - fitScale) > 0.05
             let pageOrBoundsChanged = (context.coordinator.lastPageIndex != currentPageIndex) ||
-                                      (context.coordinator.lastBoundsSize != currentBoundsSize)
+                                       (context.coordinator.lastBoundsSize != currentBoundsSize)
 
-            if pageOrBoundsChanged, let currentPage = pdfView.currentPage, currentBoundsSize.width > 0 && currentBoundsSize.height > 0 {
+            if pageOrBoundsChanged && !isZoomed, let currentPage = pdfView.currentPage, currentBoundsSize.width > 0 && currentBoundsSize.height > 0 {
                 let pageBounds = currentPage.bounds(for: pdfView.displayBox)
                 let pageWidthMultiplier: CGFloat = dualPageMode ? 2.0 : 1.0
                 let totalPageWidth = pageBounds.width * pageWidthMultiplier
                 let totalPageHeight = pageBounds.height
 
-                // Use min (fit) so the entire page is always visible edge-to-edge.
-                // max (fill) zooms past content boundaries causing clipped text.
                 let scaleForWidth = currentBoundsSize.width / max(totalPageWidth, 1.0)
                 let scaleForHeight = currentBoundsSize.height / max(totalPageHeight, 1.0)
                 let targetScale = min(scaleForWidth, scaleForHeight)

@@ -274,24 +274,9 @@ extension EBookPageCurlReader {
                 self.chapterHTML = html
                 self.styledCSS = self.buildFullCSS()
 
-                // Load HTML into primary master WKWebView
+                // Load HTML into primary master WKWebView directly in-memory
                 let fullHTML = self.buildPageHTML(for: self.currentPageIndex)
-                if let base = self.chapterBaseURL {
-                    let tempName = "__inksync_curl_\(abs(fullHTML.hashValue)).html"
-                    let fileURL = base.appendingPathComponent(tempName)
-                    do {
-                        try fullHTML.write(to: fileURL, atomically: true, encoding: .utf8)
-                        self.primaryWebView?.loadFileURL(fileURL, allowingReadAccessTo: base.deletingLastPathComponent())
-                        // Delete immediately — WKWebView copies the content synchronously.
-                        // Without this, each chapter reload writes a new orphaned file into
-                        // the unzip cache directory.
-                        try? FileManager.default.removeItem(at: fileURL)
-                    } catch {
-                        self.primaryWebView?.loadHTMLString(fullHTML, baseURL: base)
-                    }
-                } else {
-                    self.primaryWebView?.loadHTMLString(fullHTML, baseURL: nil)
-                }
+                self.primaryWebView?.loadHTMLString(fullHTML, baseURL: self.chapterBaseURL)
 
                 // Present initial page VC
                 let vcs = self.spreadViewControllers(for: self.currentPageIndex)
@@ -1134,13 +1119,20 @@ extension EBookPageCurlReader {
             let bodyTagRange = Range(match.range, in: result)!
             let insertionIndex = bodyTagRange.upperBound
             result.insert(contentsOf: "<div id=\"inksync-viewport\">", at: insertionIndex)
-        } else {
-            if let bodyIndex = result.range(of: "<body>", options: .caseInsensitive)?.upperBound {
-                result.insert(contentsOf: "<div id=\"inksync-viewport\">", at: bodyIndex)
+            if let closeBodyRange = result.range(of: "</body>", options: .caseInsensitive) {
+                result.insert(contentsOf: "</div>", at: closeBodyRange.lowerBound)
+            } else {
+                result += "</div>"
             }
-        }
-        if let closeBodyRange = result.range(of: "</body>", options: .caseInsensitive) {
-            result.insert(contentsOf: "</div>", at: closeBodyRange.lowerBound)
+        } else if let bodyIndex = result.range(of: "<body>", options: .caseInsensitive)?.upperBound {
+            result.insert(contentsOf: "<div id=\"inksync-viewport\">", at: bodyIndex)
+            if let closeBodyRange = result.range(of: "</body>", options: .caseInsensitive) {
+                result.insert(contentsOf: "</div>", at: closeBodyRange.lowerBound)
+            } else {
+                result += "</div>"
+            }
+        } else {
+            result = "<body><div id=\"inksync-viewport\">" + result + "</div></body>"
         }
         return result
     }
