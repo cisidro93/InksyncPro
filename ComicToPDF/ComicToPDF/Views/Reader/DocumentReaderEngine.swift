@@ -785,37 +785,13 @@ struct PDFKitRepresentedView: UIViewRepresentable {
                 pdfView.layoutDocumentView()
             }
             
-            let fitScale = pdfView.scaleFactorForSizeToFit
-            let isZoomed = abs(pdfView.scaleFactor - fitScale) > 0.05
-            let pageOrBoundsChanged = (context.coordinator.lastPageIndex != currentPageIndex) ||
-                                       (context.coordinator.lastBoundsSize != currentBoundsSize)
-
-            if pageOrBoundsChanged && !isZoomed, let currentPage = pdfView.currentPage, currentBoundsSize.width > 0 && currentBoundsSize.height > 0 {
-                let pageBounds = currentPage.bounds(for: pdfView.displayBox)
-                let pageWidthMultiplier: CGFloat = dualPageMode ? 2.0 : 1.0
-                let totalPageWidth = pageBounds.width * pageWidthMultiplier
-                let totalPageHeight = pageBounds.height
-
-                let scaleForWidth = currentBoundsSize.width / max(totalPageWidth, 1.0)
-                let scaleForHeight = currentBoundsSize.height / max(totalPageHeight, 1.0)
-                let targetScale = min(scaleForWidth, scaleForHeight)
-
-                if targetScale > 0 {
-                    if pdfView.autoScales {
-                        pdfView.autoScales = false
-                    }
-                    if abs(pdfView.scaleFactor - targetScale) > 0.005 {
-                        pdfView.scaleFactor = targetScale
-                        pdfView.layoutDocumentView()
-                    }
-                }
+            if !pdfView.autoScales {
+                pdfView.autoScales = true
             }
-            context.coordinator.lastPageIndex = currentPageIndex
-            context.coordinator.lastBoundsSize = currentBoundsSize
             
             makePdfViewTransparent(pdfView)
             
-            // Sync outer page change to the PDFView without triggering tile-destroying scale mutations
+            // Sync outer page change to the PDFView
             if let document = pdfView.document,
                let currentPage = pdfView.currentPage {
                 let viewPageIndex = document.index(for: currentPage)
