@@ -50,6 +50,8 @@ struct ReadingProgress: Codable, Identifiable {
     var wasInDualPageMode: Bool?
     // Per-document custom crop persistence
     var customCrop: CodableCropInsets?
+    // EPUB Canonical Fragment Identifier (CFI) location sync
+    var currentCFI: String?
 }
 
 @MainActor
