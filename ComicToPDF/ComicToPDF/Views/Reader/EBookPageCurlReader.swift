@@ -264,9 +264,12 @@ extension EBookPageCurlReader {
                            ?? ""
                 }
 
-                // Clean via SwiftReadability
+                // Clean via SwiftReadability with rawHTML fallback safeguard
                 let cleanArticle = SwiftReadability.parse(html: rawHTML)
-                var html = cleanArticle.content
+                var html = cleanArticle.content.trimmingCharacters(in: .whitespacesAndNewlines)
+                if html.isEmpty || html.count < 20 {
+                    html = rawHTML
+                }
 
                 // Wrap with viewport div
                 html = EBookPageCurlReader.wrapHTMLBodyWithViewport(html)
