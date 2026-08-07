@@ -115,6 +115,10 @@ public struct WebView: UIViewRepresentable {
                 do {
                     try html.write(to: fileURL, atomically: true, encoding: .utf8)
                     uiView.loadFileURL(fileURL, allowingReadAccessTo: baseURL.deletingLastPathComponent())
+                    // Delete temp file immediately — WKWebView copies the content synchronously
+                    // before loadFileURL returns. Without this cleanup, every typography
+                    // or theme change writes a new orphaned file into the EPUB unzip directory.
+                    try? FileManager.default.removeItem(at: fileURL)
                 } catch {
                     uiView.loadHTMLString(html, baseURL: baseURL)
                 }

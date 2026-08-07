@@ -211,7 +211,7 @@ struct EBookReaderView: View {
                             totalPages: totalChapters,
                             chapterPage: chapterPage,
                             chapterTotalPages: chapterTotalPages,
-                            estimatedMinutesLeft: ReaderProgressTracker.shared.progress(for: pdf?.id ?? UUID())?.estimatedMinutesRemaining
+                            estimatedMinutesLeft: pdf.flatMap { ReaderProgressTracker.shared.progress(for: $0.id)?.estimatedMinutesRemaining }
                         )
                     }
                 }
@@ -729,9 +729,10 @@ struct EBookReaderView: View {
         guard let currentPDF = pdf,
               let seriesName = currentPDF.metadata.series, !seriesName.isEmpty else { return }
 
-        // Robust sort: numeric-first, localizedStandardCompare fallback for "HC", "TPB", "#0" etc.
+        // Include ALL books in the series (including the current) so we can find the
+        // current book's position and step to the next. Excluding it breaks firstIndex.
         let siblings = allBooks
-            .filter { $0.metadata.series == seriesName && $0.id != currentPDF.id }
+            .filter { $0.metadata.series == seriesName }
             .sorted { lhs, rhs in
                 let lhsNum = Double(lhs.metadata.issueNumber ?? lhs.metadata.volume ?? "")
                 let rhsNum = Double(rhs.metadata.issueNumber ?? rhs.metadata.volume ?? "")
@@ -741,13 +742,7 @@ struct EBookReaderView: View {
                 return lKey.localizedStandardCompare(rKey) == .orderedAscending
             }
 
-        let selfKey = currentPDF.metadata.issueNumber ?? currentPDF.metadata.volume ?? currentPDF.name
-        guard let currentIdx = siblings.firstIndex(where: { b in
-            (b.metadata.issueNumber ?? b.metadata.volume ?? b.name) == selfKey
-        }) else {
-            if let first = siblings.first { NotificationCenter.default.post(name: .openMergedBook, object: first) }
-            return
-        }
+        guard let currentIdx = siblings.firstIndex(where: { $0.id == currentPDF.id }) else { return }
         let nextIdx = siblings.index(after: currentIdx)
         guard siblings.indices.contains(nextIdx) else { return }
         NotificationCenter.default.post(name: .openMergedBook, object: siblings[nextIdx])
@@ -863,13 +858,15 @@ struct EBookReaderView: View {
             let fraction = totalChapters > 1 ? Double(currentIndex) / Double(totalChapters - 1) : 0
             var progress = ReaderProgressTracker.shared.progress(for: p.id) ?? ReadingProgress(
                 pdfID: p.id, lastOpenedAt: Date(), currentPageIndex: currentIndex,
-                totalPagesRead: 1, completionFraction: fraction, readingSessionDates: []
+                totalPagesRead: 0, completionFraction: fraction, readingSessionDates: []
             )
             progress.lastOpenedAt = Date()
             progress.currentPageIndex = currentIndex
             progress.currentChapterIndex = currentIndex
             progress.currentChapterOffset = chapterScrollFraction
             progress.completionFraction = fraction
+            // Advance totalPagesRead to reflect chapters visited
+            progress.totalPagesRead = max(progress.totalPagesRead, currentIndex + 1)
             ReaderProgressTracker.shared.update(progress)
         }
     }
@@ -985,12 +982,19 @@ struct EBookWebReader: View {
                     
                     // Fallback scroll positioning
                     let navJS = """
-                    var el = document.getElementById('\(fragment)') || document.getElementsByName('\(fragment)')[0];
-                    if (el) {
-                        var pageStep = window.innerWidth;
-                        var targetPage = Math.floor(el.getBoundingClientRect().left / pageStep) + _currentPage;
-                        goToPage(Math.max(0, targetPage));
-                    }
+                    (function() {
+                        var el = document.getElementById('\(fragment)') || document.getElementsByName('\(fragment)')[0];
+                        if (!el) return;
+                        var pageStep = window.innerWidth || 1;
+                        var rawPage = Math.floor(el.getBoundingClientRect().left / pageStep);
+                        var currentP = (typeof _currentPage !== 'undefined') ? _currentPage : 0;
+                        var targetPage = rawPage + currentP;
+                        if (typeof goToPage === 'function') {
+                            goToPage(Math.max(0, targetPage));
+                        } else {
+                            el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        }
+                    })();
                     """
                     webView.evaluateJavaScript(navJS, completionHandler: nil)
                     return false

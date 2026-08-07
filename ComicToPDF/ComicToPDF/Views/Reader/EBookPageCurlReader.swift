@@ -141,7 +141,10 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
 
 
 
-    static func dismantleUIView(_ uiViewController: UIPageViewController, coordinator: Coordinator) {
+    /// Called by SwiftUI when the EPUB curl reader is removed from the hierarchy.
+    /// MUST use UIViewControllerRepresentable's dismantleUIViewController — dismantleUIView
+    /// is for UIViewRepresentable and is never called here.
+    static func dismantleUIViewController(_ uiViewController: UIPageViewController, coordinator: Coordinator) {
         coordinator.cleanup()
     }
 }
@@ -279,6 +282,10 @@ extension EBookPageCurlReader {
                     do {
                         try fullHTML.write(to: fileURL, atomically: true, encoding: .utf8)
                         self.primaryWebView?.loadFileURL(fileURL, allowingReadAccessTo: base.deletingLastPathComponent())
+                        // Delete immediately — WKWebView copies the content synchronously.
+                        // Without this, each chapter reload writes a new orphaned file into
+                        // the unzip cache directory.
+                        try? FileManager.default.removeItem(at: fileURL)
                     } catch {
                         self.primaryWebView?.loadHTMLString(fullHTML, baseURL: base)
                     }
@@ -497,7 +504,9 @@ extension EBookPageCurlReader {
         @objc func handleDoubleTap(_ gesture: UITapGestureRecognizer) {}
 
         private var tapZoneStyle: TapZoneStyle {
-            TapZoneStyle(rawValue: UserDefaults.standard.string(forKey: "tapZoneStyle") ?? "") ?? .classic
+            // Read from shared prefs so live setting changes in EBookSettingsPanel
+            // are immediately reflected without requiring a reader dismiss/reopen.
+            parent.prefs.tapZoneStyle
         }
 
         @objc func handleSingleTap(_ gesture: UITapGestureRecognizer) {

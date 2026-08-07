@@ -66,12 +66,11 @@ public actor PagePrefetchCoordinator {
     private func triggerPrefetch(around index: Int, direction: Int, targetSize: CGSize) {
         prefetchTask?.cancel()
         
-        prefetchTask = Task { [weak self] in
-            guard let self = self else { return }
+        prefetchTask = Task {
+            // Actors are reference types with their own isolation domain.
+            // [weak self] inside an actor Task is unnecessary — the Task inherits
+            // the actor's isolation and self is always valid within it.
             
-            // Define prefetch window based on reading direction
-            // If moving forward (+1): prefetch index+1, index+2, index+3, and also hold index-1.
-            // If moving backward (-1): prefetch index-1, index-2, index-3, and also hold index+1.
             var prefetchIndices: [Int] = []
             if direction >= 0 {
                 prefetchIndices = [index + 1, index + 2, index + 3, index - 1]
@@ -79,20 +78,19 @@ public actor PagePrefetchCoordinator {
                 prefetchIndices = [index - 1, index - 2, index - 3, index + 1]
             }
             
-            // Filter invalid or already cached indices
-            let indicesToLoad = await self.filterIndicesToLoad(prefetchIndices)
+            let indicesToLoad = self.filterIndicesToLoad(prefetchIndices)
             
             for idx in indicesToLoad {
                 if Task.isCancelled { break }
                 
                 let image = await self.renderPage(at: idx, targetSize: targetSize)
                 if let img = image, !Task.isCancelled {
-                    await self.cachePage(idx, image: img)
+                    self.cachePage(idx, image: img)
                 }
             }
             
             if !Task.isCancelled {
-                await self.limitCacheSize(keepAround: index)
+                self.limitCacheSize(keepAround: index)
             }
         }
     }

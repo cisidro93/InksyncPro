@@ -15,11 +15,13 @@ actor ReaderImageFilterEngine {
     private let cacheLimit: Int = {
         switch ProcessInfo.processInfo.performanceClass {
         case .low:
-            return 2  // Reduced from 4
+            return 2
         case .medium:
-            return 4  // Reduced from 12
+            return 4
         case .high:
-            return 8  // Reduced from 24
+            return 8
+        @unknown default:
+            return 4
         }
     }()
     
@@ -110,7 +112,10 @@ actor ReaderImageFilterEngine {
             bitsPerComponent: 8,
             bytesPerRow: width * 4,
             space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
+            // premultipliedFirst + byteOrder32Little is the native GPU format on all
+            // Apple Silicon and A-series chips. The previous byteOrder32Big required
+            // a pixel-format conversion on every call, blocking the GPU fast path.
+            bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
         ) else { return image }
         
         context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))

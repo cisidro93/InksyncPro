@@ -145,6 +145,16 @@ struct PKCanvasRepresentation: UIViewRepresentable {
         Coordinator()
     }
     
+    static func dismantleUIView(_ uiView: PKCanvasView, coordinator: Coordinator) {
+        // Ensure the ToolPicker stops observing and the canvas resigns first responder.
+        // Without this, the PKCanvasView holds a dangling PKToolPicker observation
+        // after the overlay is removed from the hierarchy (e.g. page change or reader exit).
+        coordinator.toolPicker?.setVisible(false, forFirstResponder: uiView)
+        coordinator.toolPicker?.removeObserver(uiView)
+        uiView.resignFirstResponder()
+        coordinator.toolPicker = nil
+    }
+    
     class Coordinator: NSObject {
         var toolPicker: PKToolPicker?
     }
