@@ -135,7 +135,13 @@ struct ReaderView: View {
                     )
                 } else if fileURL.pathExtension.lowercased() == "pdf" {
                     DocumentReaderEngine(
-                        pdf: pdf ?? ConvertedPDF(url: fileURL),
+                        pdf: pdf ?? ConvertedPDF(
+                            name: fileURL.deletingPathExtension().lastPathComponent,
+                            url: fileURL,
+                            pageCount: 1,
+                            fileSize: 0,
+                            metadata: PDFMetadata(title: fileURL.deletingPathExtension().lastPathComponent)
+                        ),
                         onDismiss: { (onExit ?? { dismiss() })() }
                     )
                 } else {
