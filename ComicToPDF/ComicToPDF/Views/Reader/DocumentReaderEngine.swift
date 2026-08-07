@@ -641,13 +641,24 @@ struct PDFKitRepresentedView: UIViewRepresentable {
         DispatchQueue.main.async {
             self.pdfViewRef = pdfView
         }
-        pdfView.document = document
         pdfView.autoScales = true
-        pdfView.minScaleFactor = 0.25
-        pdfView.maxScaleFactor = 10.0
+        let fitScale = pdfView.scaleFactorForSizeToFit
+        pdfView.minScaleFactor = fitScale > 0 ? fitScale : 0.5
+        pdfView.maxScaleFactor = (fitScale > 0 ? fitScale : 1.0) * 3.5
         pdfView.displaysPageBreaks = false
         pdfView.pageBreakMargins = .zero
         pdfView.insetsLayoutMarginsFromSafeArea = false
+        
+        // Single and Double Tap Gesture Safeguards
+        let tapGesture = UITapGestureRecognizer(target: context.coordinator, action: #selector(context.coordinator.handleTap(_:)))
+        tapGesture.cancelsTouchesInView = false
+        pdfView.addGestureRecognizer(tapGesture)
+        
+        let doubleTap = UITapGestureRecognizer(target: context.coordinator, action: #selector(context.coordinator.handleDoubleTap(_:)))
+        doubleTap.numberOfTapsRequired = 2
+        doubleTap.cancelsTouchesInView = false
+        pdfView.addGestureRecognizer(doubleTap)
+        tapGesture.require(toFail: doubleTap)
         
         configureDisplayMode(pdfView, context: context)
         pdfView.delegate = context.coordinator
@@ -840,7 +851,23 @@ struct PDFKitRepresentedView: UIViewRepresentable {
             super.init()
             toolPicker.addObserver(self)
         }
-              @objc func handleTap(_ gesture: UITapGestureRecognizer) {
+
+        @objc func handleDoubleTap(_ gesture: UITapGestureRecognizer) {
+            guard let pv = pdfView else { return }
+            let fitScale = pv.scaleFactorForSizeToFit
+            let isZoomed = abs(pv.scaleFactor - fitScale) > 0.05
+            
+            UIView.animate(withDuration: 0.25, delay: 0, options: .curveEaseInOut) {
+                if isZoomed {
+                    pv.scaleFactor = fitScale
+                } else {
+                    pv.scaleFactor = fitScale * 2.2
+                }
+            }
+            Haptics.shared.playImpact(style: .light)
+        }
+
+        @objc func handleTap(_ gesture: UITapGestureRecognizer) {
             guard !parent.isPencilMode else { return }
             
             let location = gesture.location(in: gesture.view)
