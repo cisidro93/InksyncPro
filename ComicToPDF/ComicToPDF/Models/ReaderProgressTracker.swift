@@ -21,6 +21,7 @@ struct CodableCropInsets: Codable, Equatable, Sendable {
     var modeRaw: String = "custom" // "none", "smartAuto", "custom"
     
     static let zero = CodableCropInsets(top: 0, bottom: 0, left: 0, right: 0, modeRaw: "none")
+    static let none = CodableCropInsets(top: 0, bottom: 0, left: 0, right: 0, modeRaw: "none")
     static let smartAuto = CodableCropInsets(top: 0, bottom: 0, left: 0, right: 0, modeRaw: "smartAuto")
     
     var isEnabled: Bool {

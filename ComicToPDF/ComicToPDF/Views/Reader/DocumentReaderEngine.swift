@@ -683,9 +683,8 @@ struct PDFKitRepresentedView: UIViewRepresentable {
             // PDFAnnotation is added to the in-memory PDFPage above in customHighlightAction,
             // but without this write, the highlight is lost when the app is relaunched.
             let writeURL = pdf.url
-            let doc = document
-            DispatchQueue.global(qos: .background).async {
-                doc.write(to: writeURL)
+            Task { @MainActor in
+                document.write(to: writeURL)
             }
         }
         
