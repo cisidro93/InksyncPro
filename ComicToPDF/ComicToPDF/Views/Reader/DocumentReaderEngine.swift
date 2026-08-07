@@ -641,12 +641,8 @@ struct PDFKitRepresentedView: UIViewRepresentable {
         DispatchQueue.main.async {
             self.pdfViewRef = pdfView
         }
+        pdfView.document = document
         pdfView.autoScales = true
-        let fitScale = pdfView.scaleFactorForSizeToFit
-        pdfView.minScaleFactor = fitScale > 0 ? fitScale : 0.5
-        pdfView.maxScaleFactor = (fitScale > 0 ? fitScale : 1.0) * 3.5
-        pdfView.displaysPageBreaks = false
-        pdfView.pageBreakMargins = .zero
         pdfView.insetsLayoutMarginsFromSafeArea = false
         
         // Single and Double Tap Gesture Safeguards
