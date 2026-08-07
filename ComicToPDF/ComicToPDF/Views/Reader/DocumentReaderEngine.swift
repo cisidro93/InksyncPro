@@ -542,15 +542,23 @@ class HighlightablePDFView: PDFView {
     }
     
     @objc func customHighlightAction(_ sender: Any?) {
-        guard let selection = self.currentSelection, let page = selection.pages.first else { return }
+        guard let selection = self.currentSelection else { return }
         let text = selection.string ?? ""
-        let bounds = selection.bounds(for: page)
+        let pages = selection.pages
         
-        // Natively draw the highlight on the PDF document
-        let annotation = PDFAnnotation(bounds: bounds, forType: .highlight, withProperties: nil)
-        annotation.color = .systemYellow.withAlphaComponent(0.5)
-        page.addAnnotation(annotation)
+        for page in pages {
+            let lineSelections = selection.selectionsByLine()
+            let targetLines = lineSelections.isEmpty ? [selection] : lineSelections
+            for lineSel in targetLines {
+                let lineBounds = lineSel.bounds(for: page)
+                guard lineBounds != .zero && lineBounds.width > 2 && lineBounds.height > 2 else { continue }
+                let annotation = PDFAnnotation(bounds: lineBounds, forType: .highlight, withProperties: nil)
+                annotation.color = UIColor.systemYellow.withAlphaComponent(0.45)
+                page.addAnnotation(annotation)
+            }
+        }
         
+        let bounds = selection.bounds(for: selection.pages.first ?? PDFPage())
         self.clearSelection()
         onHighlightCreated?(text, bounds)
     }

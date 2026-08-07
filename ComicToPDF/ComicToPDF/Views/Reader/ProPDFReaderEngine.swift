@@ -431,6 +431,21 @@ struct ProPDFReaderEngine: View {
     }
 
     private func saveHighlight(text: String, color: PDFHighlightColor) {
+        if let pdfView = pdfViewReference, let selection = pdfView.currentSelection {
+            for page in selection.pages {
+                let lineSelections = selection.selectionsByLine()
+                let targetLines = lineSelections.isEmpty ? [selection] : lineSelections
+                for lineSel in targetLines {
+                    let lineBounds = lineSel.bounds(for: page)
+                    guard lineBounds != .zero && lineBounds.width > 2 && lineBounds.height > 2 else { continue }
+                    let annotation = PDFAnnotation(bounds: lineBounds, forType: .highlight, withProperties: nil)
+                    annotation.color = color.uiColor.withAlphaComponent(0.45)
+                    page.addAnnotation(annotation)
+                }
+            }
+            pdfView.clearSelection()
+        }
+
         let highlight = Annotation(
             pdfID: pdf.id,
             pageIndex: currentPageIndex,

@@ -1364,6 +1364,10 @@ struct PDFKitView: UIViewRepresentable {
     func makeUIView(context: Context) -> PDFView {
         let pdfView = PDFHighlightableView()
         pdfView.autoScales = true
+        pdfView.minScaleFactor = 0.25
+        pdfView.maxScaleFactor = 10.0
+        pdfView.insetsLayoutMarginsFromSafeArea = false
+        pdfView.pageBreakMargins = .zero
         pdfView.displayMode = isDoublePageMode ? .twoUpContinuous : .singlePage
         pdfView.displayDirection = isVerticalScroll ? .vertical : .horizontal
         pdfView.displaysPageBreaks = false
@@ -1520,11 +1524,15 @@ struct PDFKitView: UIViewRepresentable {
             // PDFSelection can span multiple pages — iterate each
             let pages = selection.pages
             for page in pages {
-                let bounds = selection.bounds(for: page)
-                guard bounds != .zero else { continue }
-                let annotation = PDFAnnotation(bounds: bounds, forType: .highlight, withProperties: nil)
-                annotation.color = UIColor.systemYellow.withAlphaComponent(0.5)
-                page.addAnnotation(annotation)
+                let lineSelections = selection.selectionsByLine()
+                let targetLines = lineSelections.isEmpty ? [selection] : lineSelections
+                for lineSel in targetLines {
+                    let lineBounds = lineSel.bounds(for: page)
+                    guard lineBounds != .zero && lineBounds.width > 2 && lineBounds.height > 2 else { continue }
+                    let annotation = PDFAnnotation(bounds: lineBounds, forType: .highlight, withProperties: nil)
+                    annotation.color = UIColor.systemYellow.withAlphaComponent(0.45)
+                    page.addAnnotation(annotation)
+                }
             }
 
             pdfView.clearSelection()
