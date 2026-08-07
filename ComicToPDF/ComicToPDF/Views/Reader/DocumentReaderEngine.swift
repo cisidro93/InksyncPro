@@ -995,16 +995,7 @@ struct PDFKitRepresentedView: UIViewRepresentable {
         }
         
         private func updatePageIndex(_ index: Int, in view: PDFView, page: PDFPage) {
-            let pageChanged = self.parent.currentPageIndex != index
             self.parent.currentPageIndex = index
-            
-            if EBookPreferences.shared.pdfFitToWidth {
-                let pageBounds = page.bounds(for: view.displayBox)
-                let scale = view.bounds.width / pageBounds.width
-                if view.scaleFactor != scale && scale > 0 {
-                    view.scaleFactor = scale
-                }
-            }
         }
         
         func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
