@@ -390,16 +390,26 @@ extension EBookPageCurlReader {
 
         // MARK: - UIPageViewControllerDelegate
 
+        func captureSnapshot(for vc: EBookPageContentViewController) {
+            guard let wv = primaryWebView, wv.bounds.width > 0, wv.bounds.height > 0 else { return }
+            let config = WKSnapshotConfiguration()
+            config.rect = wv.bounds
+            wv.takeSnapshot(with: config) { [weak vc] image, error in
+                guard let image = image, let vc = vc else { return }
+                vc.updateSnapshot(image)
+            }
+        }
+
         func pageViewController(
             _ pageViewController: UIPageViewController,
             willTransitionTo pendingViewControllers: [UIViewController]
         ) {
             isTransitioning = true
-            // Paint PVC view with theme background BEFORE removing the primary WebView.
-            // Without this, the UIPageViewController's own view shows through as white
-            // during the 3D curl for any page whose snapshot hasn't been captured yet.
             let bgColor = UIColor(hex: parent.prefs.activeTheme.cssBackground) ?? .black
             pageViewController.view.backgroundColor = bgColor
+            if let currentVC = pageViewController.viewControllers?.first as? EBookPageContentViewController {
+                captureSnapshot(for: currentVC)
+            }
             primaryWebView?.removeFromSuperview()
         }
 
@@ -421,18 +431,21 @@ extension EBookPageCurlReader {
                 parent.currentPage = newPageIndex
                 reportScrollFraction()
             } else {
-                // Snap-back guard: user cancelled swipe gesture midway
                 parent.currentPage = currentPageIndex
             }
 
-            // Sync page position to primary master WKWebView and mount on root PVC view
             let targetPage = completed ? newPageIndex : currentPageIndex
             primaryWebView?.evaluateJavaScript("if(window.goToInksyncPage) window.goToInksyncPage(\(targetPage));")
             mountPrimaryWebViewOnRoot()
+            captureSnapshot(for: currentVC)
         }
 
         func mountPrimaryWebViewOnRoot() {
             guard let pvc = pageViewController, let wv = primaryWebView else { return }
+            let bgColor = UIColor(hex: parent.prefs.activeTheme.cssBackground) ?? .black
+            pvc.view.backgroundColor = bgColor
+            wv.backgroundColor = .clear
+            wv.scrollView.backgroundColor = .clear
             if wv.superview == pvc.view { return }
             wv.removeFromSuperview()
             wv.frame = pvc.view.bounds
@@ -445,13 +458,6 @@ extension EBookPageCurlReader {
             _ pageViewController: UIPageViewController,
             spineLocationFor orientation: UIInterfaceOrientation
         ) -> UIPageViewController.SpineLocation {
-            // CRITICAL CRASH FIX (IPS: _viewControllersForPendingSpineLocation SIGABRT):
-            // Derive dual-page mode from the *incoming orientation parameter*, NOT UIScreen.main.bounds.
-            // UIScreen.main.bounds hasn't rotated yet at this callback point, creating a race where
-            // isDualPageMode can flip between this callback's return value (.mid = 2 VCs) and UIKit's
-            // internal _viewControllersForPendingSpineLocation: validation (expecting 1 VC) → SIGABRT.
-            // Setting isTransitioning = true blocks any concurrent updateUIViewController call via
-            // safeSetViewControllers that could submit a conflicting VC array.
             isTransitioning = true
             defer { isTransitioning = false }
 
@@ -514,6 +520,9 @@ extension EBookPageCurlReader {
 
             let nextIndex = currentPageIndex + step
             if nextIndex < computedTotalPages {
+                if let currentVC = pvc.viewControllers?.first as? EBookPageContentViewController {
+                    captureSnapshot(for: currentVC)
+                }
                 let vcs = spreadViewControllers(for: nextIndex)
                 HapticEngine.light()
                 isTransitioning = true
@@ -529,6 +538,9 @@ extension EBookPageCurlReader {
                             self?.reportScrollFraction()
                             self?.primaryWebView?.evaluateJavaScript("if(window.goToInksyncPage) window.goToInksyncPage(\(nextIndex));")
                             self?.mountPrimaryWebViewOnRoot()
+                            if let activeVC = pvc.viewControllers?.first as? EBookPageContentViewController {
+                                self?.captureSnapshot(for: activeVC)
+                            }
                         }
                     }
                 }
@@ -547,6 +559,9 @@ extension EBookPageCurlReader {
 
             let prevIndex = currentPageIndex - step
             if prevIndex >= 0 {
+                if let currentVC = pvc.viewControllers?.first as? EBookPageContentViewController {
+                    captureSnapshot(for: currentVC)
+                }
                 let vcs = spreadViewControllers(for: prevIndex)
                 HapticEngine.light()
                 isTransitioning = true
@@ -563,6 +578,9 @@ extension EBookPageCurlReader {
                             self?.reportScrollFraction()
                             self?.primaryWebView?.evaluateJavaScript("if(window.goToInksyncPage) window.goToInksyncPage(\(prevIndex));")
                             self?.mountPrimaryWebViewOnRoot()
+                            if let activeVC = pvc.viewControllers?.first as? EBookPageContentViewController {
+                                self?.captureSnapshot(for: activeVC)
+                            }
                         }
                     }
                 }
@@ -986,9 +1004,11 @@ extension EBookPageCurlReader {
 
             document.addEventListener('DOMContentLoaded', function() {
                 applyPagePosition();
-                document.querySelectorAll('[style]').forEach(function(el) {
-                    el.style.removeProperty('background-color');
-                    el.style.removeProperty('color');
+                document.querySelectorAll('*').forEach(function(el) {
+                    if (el.tagName !== 'MARK' && !el.classList.contains('inksync-highlight')) {
+                        el.style.removeProperty('background-color');
+                        el.style.removeProperty('background');
+                    }
                 });
                 var liveStyle = document.getElementById('__inksync_live__');
                 if (liveStyle) { document.head.appendChild(liveStyle); }
@@ -1143,6 +1163,11 @@ class EBookPageContentViewController: UIViewController {
         fatalError("init(coder:) has not been implemented")
     }
 
+    func updateSnapshot(_ image: UIImage) {
+        self.snapshot = image
+        self.imageView?.image = image
+    }
+
     override func viewDidLoad() {
         super.viewDidLoad()
 
@@ -1167,6 +1192,13 @@ class EBookPageContentViewController: UIViewController {
         ])
 
         self.imageView = iv
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        if let wv = coordinator?.primaryWebView, wv.superview == view {
+            wv.frame = view.bounds
+        }
     }
 
     /// Mounts the primary master WKWebView onto this page VC when active
