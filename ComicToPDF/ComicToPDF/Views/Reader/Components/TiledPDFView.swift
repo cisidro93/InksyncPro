@@ -8,6 +8,7 @@
 //
 
 import UIKit
+import SwiftUI
 import PDFKit
 import CoreGraphics
 import QuartzCore
@@ -121,11 +122,13 @@ final class TiledPDFView: UIView {
 }
 
 // MARK: - TiledPDFViewRepresentable (SwiftUI Wrapper)
+@MainActor
 struct TiledPDFViewRepresentable: UIViewRepresentable {
     let pdfPage: PDFPage?
     let displayBox: PDFDisplayBox
     let scale: CGFloat
     
+    @MainActor
     func makeUIView(context: Context) -> TiledPDFView {
         let view = TiledPDFView(frame: .zero)
         view.pdfPage = pdfPage?.pageRef
@@ -134,6 +137,7 @@ struct TiledPDFViewRepresentable: UIViewRepresentable {
         return view
     }
     
+    @MainActor
     func updateUIView(_ uiView: TiledPDFView, context: Context) {
         if uiView.pdfPage != pdfPage?.pageRef {
             uiView.pdfPage = pdfPage?.pageRef
