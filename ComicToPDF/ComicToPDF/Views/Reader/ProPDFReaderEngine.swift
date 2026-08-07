@@ -528,7 +528,11 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         pdfView.maxScaleFactor = 10.0
         pdfView.displayMode = .singlePage
         pdfView.displayDirection = .horizontal
-        pdfView.backgroundColor = .systemBackground
+        // Must be .clear — .systemBackground causes a white page background that bleeds
+        // through during page turns and when the theme is dark/sepia.
+        pdfView.backgroundColor = .clear
+        pdfView.isOpaque = false
+        pdfView.insetsLayoutMarginsFromSafeArea = false
 
         if let scrollView = pdfView.subviews.first(where: { $0 is UIScrollView }) as? UIScrollView {
             scrollView.maximumZoomScale = 10.0
@@ -639,11 +643,13 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
                 let pageWidthMultiplier: CGFloat = isDual ? 2.0 : 1.0
                 let totalPageWidth = pageBounds.width * pageWidthMultiplier
                 let totalPageHeight = pageBounds.height
-                
+
+                // Use min (fit) so the entire page is always visible.
+                // max (fill) causes clipped text by zooming past the visible area.
                 let scaleForWidth = uiView.bounds.width / max(totalPageWidth, 1.0)
                 let scaleForHeight = uiView.bounds.height / max(totalPageHeight, 1.0)
-                let targetScale = max(scaleForWidth, scaleForHeight)
-                
+                let targetScale = min(scaleForWidth, scaleForHeight)
+
                 if targetScale > 0 {
                     if uiView.autoScales {
                         uiView.autoScales = false
@@ -667,6 +673,13 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
+    }
+
+    /// Remove observers to prevent memory leaks from accumulated registrations
+    /// each time the ProPDF reader is opened.
+    static func dismantleUIView(_ uiView: PDFView, coordinator: Coordinator) {
+        NotificationCenter.default.removeObserver(coordinator, name: .PDFViewPageChanged, object: uiView)
+        NotificationCenter.default.removeObserver(coordinator, name: .PDFViewSelectionChanged, object: uiView)
     }
 
     class Coordinator: NSObject {

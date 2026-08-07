@@ -391,10 +391,15 @@ extension EBookPageCurlReader {
         // MARK: - UIPageViewControllerDelegate
 
         func captureSnapshot(for vc: EBookPageContentViewController) {
-            guard let wv = primaryWebView, wv.bounds.width > 0, wv.bounds.height > 0 else { return }
+            // Snapshot must be taken while the WebView is still in the view hierarchy and has valid bounds.
+            // takeSnapshot is async — capture frame reference before any removeFromSuperview call.
+            guard let wv = primaryWebView else { return }
+            let snapshotFrame = wv.bounds
+            guard snapshotFrame.width > 1, snapshotFrame.height > 1 else { return }
             let config = WKSnapshotConfiguration()
-            config.rect = wv.bounds
-            wv.takeSnapshot(with: config) { [weak vc] image, error in
+            config.rect = snapshotFrame
+            config.afterScreenUpdates = false
+            wv.takeSnapshot(with: config) { [weak vc] image, _ in
                 guard let image = image, let vc = vc else { return }
                 vc.updateSnapshot(image)
             }
@@ -734,9 +739,12 @@ extension EBookPageCurlReader {
         }
 
         private func generateAllColumnSnapshots() {
-            guard let wv = primaryWebView else { return }
+            guard let wv = primaryWebView, wv.bounds.width > 1, wv.bounds.height > 1 else { return }
             let activePage = currentPageIndex
-            wv.takeSnapshot(with: nil) { [weak self] image, _ in
+            let config = WKSnapshotConfiguration()
+            config.rect = wv.bounds
+            config.afterScreenUpdates = true
+            wv.takeSnapshot(with: config) { [weak self] image, _ in
                 if let img = image {
                     self?.pageSnapshots[activePage] = img
                 }
@@ -1177,7 +1185,9 @@ class EBookPageContentViewController: UIViewController {
 
         // Setup snapshot image view (0ms instant page rendering for 3D curl)
         let iv = UIImageView(frame: view.bounds)
-        iv.contentMode = .scaleAspectFill
+        // scaleAspectFit preserves page aspect ratio — avoids distorting text during 3D curl.
+        // The parent view already fills the screen, so the image fills edge-to-edge cleanly.
+        iv.contentMode = .scaleAspectFit
         iv.clipsToBounds = true
         iv.image = snapshot
         iv.backgroundColor = bgColor

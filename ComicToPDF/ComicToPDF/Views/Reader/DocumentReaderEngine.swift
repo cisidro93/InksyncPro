@@ -826,11 +826,13 @@ struct PDFKitRepresentedView: UIViewRepresentable {
                 let pageWidthMultiplier: CGFloat = dualPageMode ? 2.0 : 1.0
                 let totalPageWidth = pageBounds.width * pageWidthMultiplier
                 let totalPageHeight = pageBounds.height
-                
+
+                // Use min (fit) so the entire page is always visible edge-to-edge.
+                // max (fill) zooms past content boundaries causing clipped text.
                 let scaleForWidth = currentBoundsSize.width / max(totalPageWidth, 1.0)
                 let scaleForHeight = currentBoundsSize.height / max(totalPageHeight, 1.0)
-                let targetScale = max(scaleForWidth, scaleForHeight)
-                
+                let targetScale = min(scaleForWidth, scaleForHeight)
+
                 if targetScale > 0 {
                     if pdfView.autoScales {
                         pdfView.autoScales = false
