@@ -849,6 +849,7 @@ struct EBookReaderView: View {
     }
     
         private func saveProgress() {
+        guard chapterPage < 99900 else { return }
         UserDefaults.standard.set(currentIndex, forKey: progressKey)
         UserDefaults.standard.set(chapterPage, forKey: pageKey)
         // FIX 4: Also persist the fractional scroll offset for within-chapter precision

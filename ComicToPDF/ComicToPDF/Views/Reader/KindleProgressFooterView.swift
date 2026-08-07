@@ -17,8 +17,15 @@ struct InksyncProgressFooterView: View {
         Int((Double(currentPage) / Double(max(1, totalPages))) * 100)
     }
     
+    private var sanitizedChapterPage: Int {
+        if chapterPage >= 99900 {
+            return max(0, chapterTotalPages - 1)
+        }
+        return min(max(0, chapterPage), max(0, chapterTotalPages - 1))
+    }
+    
     private var pagesLeftInChapter: Int {
-        max(0, chapterTotalPages - (chapterPage + 1))
+        max(0, chapterTotalPages - (sanitizedChapterPage + 1))
     }
     
     private var primaryText: String {
@@ -37,7 +44,7 @@ struct InksyncProgressFooterView: View {
         default:
             // Chapter sub-page & chapter index
             if chapterTotalPages > 1 {
-                return "Page \(chapterPage + 1) of \(chapterTotalPages)  ·  Ch. \(currentPage) of \(totalPages)"
+                return "Page \(sanitizedChapterPage + 1) of \(chapterTotalPages)  ·  Ch. \(currentPage) of \(totalPages)"
             } else {
                 return "Page \(currentPage) of \(totalPages)"
             }

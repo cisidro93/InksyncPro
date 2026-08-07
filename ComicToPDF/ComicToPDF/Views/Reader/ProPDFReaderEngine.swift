@@ -541,11 +541,13 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
 
         // Single Tap gesture setup
         let tapGesture = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
+        tapGesture.cancelsTouchesInView = false
         pdfView.addGestureRecognizer(tapGesture)
 
         // Double Tap Zoom setup
         let doubleTap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleDoubleTap(_:)))
         doubleTap.numberOfTapsRequired = 2
+        doubleTap.cancelsTouchesInView = false
         pdfView.addGestureRecognizer(doubleTap)
         tapGesture.require(toFail: doubleTap)
 

@@ -74,16 +74,10 @@ struct DocumentReaderEngine: View {
                 if !isPencilMode && !isReflowMode {
                     KindleTapZoneOverlay(
                         onPrevPage: {
-                            if currentPageIndex > 0 {
-                                currentPageIndex -= 1
-                                HapticEngine.light()
-                            }
+                            pageBackward()
                         },
                         onNextPage: {
-                            if currentPageIndex < totalPages - 1 {
-                                currentPageIndex += 1
-                                HapticEngine.light()
-                            }
+                            pageForward()
                         },
                         onCenterTap: {
                             withAnimation(.spring(response: 0.38, dampingFraction: 0.85)) {
@@ -91,6 +85,7 @@ struct DocumentReaderEngine: View {
                             }
                         }
                     )
+                    .allowsHitTesting((pdfViewReference?.scaleFactor ?? 1.0) <= ((pdfViewReference?.scaleFactorForSizeToFit ?? 1.0) * 1.05))
                 }
                 
                 if !chromeVisible && !isPencilMode {
@@ -149,7 +144,7 @@ struct DocumentReaderEngine: View {
                 isPDF: true,
                 isReflowActive: isReflowMode,
                 isAutoCropEnabled: activeCropInsets.isEnabled,
-                onCropToggle: { showCropAdjustmentSheet = true },
+                onCropToggle: { toggleSmartCrop() },
                 onReflowToggle: {
                     isReflowMode.toggle()
                     if isReflowMode { updateReflowText() }
@@ -382,7 +377,7 @@ struct DocumentReaderEngine: View {
                 pv.layoutDocumentView()
             }
         } else if insets.modeRaw == "smartAuto" {
-            applySmartCrop()
+            performSmartCrop()
         } else {
             // Custom Pro Crop Insets
             isAutoCropEnabled = true
@@ -405,28 +400,22 @@ struct DocumentReaderEngine: View {
         }
     }
 
-    private func applySmartCrop() {
+    private func toggleSmartCrop() {
+        if activeCropInsets.isEnabled {
+            applyCropInsets(.none)
+        } else {
+            performSmartCrop()
+        }
+    }
+
+    private func performSmartCrop() {
         guard let doc = pdfDocument else { return }
         let url = resolvedURL ?? pdf.url
         
-        if isAutoCropEnabled {
-            // Revert Crop to Original MediaBox
-            isAutoCropEnabled = false
-            for i in 0..<doc.pageCount {
-                if let page = doc.page(at: i) {
-                    page.setBounds(page.bounds(for: .mediaBox), for: .cropBox)
-                }
-            }
-            if let pv = pdfViewReference {
-                pv.displayBox = .mediaBox
-                pv.layoutDocumentView()
-                pv.autoScales = true
-            }
-            HapticEngine.medium()
-            return
-        }
-        
         isAutoCropEnabled = true
+        let insets = CodableCropInsets(top: 0.10, bottom: 0.12, left: 0.10, right: 0.10, modeRaw: "smartAuto")
+        self.activeCropInsets = insets
+        ReaderProgressTracker.shared.saveCropInsets(insets, for: pdf.id)
         HapticEngine.medium()
         
         Task {
@@ -455,7 +444,6 @@ struct DocumentReaderEngine: View {
                             results[i] = mediaBox.insetBy(dx: mediaBox.width * 0.10, dy: mediaBox.height * 0.12)
                         }
                     } else {
-                        // Scanned PDF fallback: trim 10% side and 12% top/bottom white borders
                         results[i] = mediaBox.insetBy(dx: mediaBox.width * 0.10, dy: mediaBox.height * 0.12)
                     }
                 }
@@ -639,12 +627,7 @@ struct PDFKitRepresentedView: UIViewRepresentable {
         if isPaged {
             pdfView.displayDirection = .horizontal
             pdfView.displaysAsBook = true
-            let spineLoc: UIPageViewController.SpineLocation = dualPageMode ? .mid : .min
-            let options: [UIPageViewController.OptionsKey: Any] = [
-                .spineLocation: NSNumber(value: spineLoc.rawValue),
-                .interPageSpacing: 16.0
-            ]
-            pdfView.usePageViewController(true, withViewOptions: options)
+            pdfView.usePageViewController(false)
         } else {
             pdfView.usePageViewController(false)
             pdfView.displayDirection = .vertical

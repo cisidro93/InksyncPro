@@ -1004,12 +1004,6 @@ extension EBookPageCurlReader {
                 if (pageStep <= 0) return;
                 var shift = _targetPage * pageStep;
 
-                var sv = document.scrollingElement || document.documentElement || document.body;
-                if (sv) {
-                    sv.scrollLeft = shift;
-                }
-                window.scrollTo(shift, 0);
-
                 var vp = document.getElementById('inksync-viewport') || document.body;
                 if (vp) {
                     vp.style.transform = 'translateX(-' + shift + 'px)';
@@ -1034,10 +1028,11 @@ extension EBookPageCurlReader {
             });
 
             function computeMetrics() {
-                var sv = document.scrollingElement || document.documentElement;
                 var pageStep = getPageStep();
                 if (pageStep <= 0) return 1;
-                var scrollW = Math.max(sv.scrollWidth, document.body.scrollWidth);
+                var vp = document.getElementById('inksync-viewport');
+                var sv = document.scrollingElement || document.documentElement;
+                var scrollW = vp ? vp.scrollWidth : Math.max(sv.scrollWidth, document.body.scrollWidth);
                 var total = Math.floor((scrollW + 5) / pageStep);
                 var remainder = (scrollW + 5) % pageStep;
                 if (remainder > 35) {
