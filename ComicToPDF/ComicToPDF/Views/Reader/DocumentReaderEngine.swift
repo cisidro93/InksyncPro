@@ -621,12 +621,12 @@ struct PDFKitRepresentedView: UIViewRepresentable {
             expectedDisplayMode = dualPageMode ? .twoUpContinuous : .singlePageContinuous
         }
         pdfView.displayMode = expectedDisplayMode
-        pdfView.displaysAsBook = !dualPageMode
+        pdfView.displaysAsBook = false
         
         pdfView.displaysRTL = prefs.pdfRTL || pdf.metadata.isManga == true || pdf.contentType == .manga
         if isPaged {
             pdfView.displayDirection = .horizontal
-            pdfView.displaysAsBook = true
+            pdfView.displaysAsBook = false
             pdfView.usePageViewController(false)
         } else {
             pdfView.usePageViewController(false)
@@ -776,7 +776,7 @@ struct PDFKitRepresentedView: UIViewRepresentable {
                 context.coordinator.lastFitToWidth != fitToWidth {
                 
                 pdfView.displayMode = expectedDisplayMode
-                pdfView.displaysAsBook = !dualPageMode
+                pdfView.displaysAsBook = false
                 context.coordinator.lastConfiguredPaginationMode = currentMode
                 context.coordinator.lastFitToWidth = fitToWidth
                 

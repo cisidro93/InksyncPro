@@ -583,7 +583,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         let targetDisplayMode: PDFDisplayMode = isDual ? .twoUp : .singlePage
         if uiView.displayMode != targetDisplayMode {
             uiView.displayMode = targetDisplayMode
-            uiView.displaysAsBook = isDual
+            uiView.displaysAsBook = false
         }
 
         let hasCustomMargin = prefs.textMargin > 0
