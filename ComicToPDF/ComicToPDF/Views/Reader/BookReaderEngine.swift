@@ -1635,6 +1635,7 @@ struct BookReaderEngine: View {
     }
 
     private func saveProgress() {
+        guard chapterPage < 99900 else { return }
         ReaderProgressTracker.shared.update(ReadingProgress(
             pdfID: pdf.id, lastOpenedAt: Date(), currentPageIndex: vm.currentChapterIndex,
             currentChapterIndex: vm.currentChapterIndex, currentChapterOffset: chapterScrollFraction,

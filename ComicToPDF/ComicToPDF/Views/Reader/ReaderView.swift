@@ -133,6 +133,11 @@ struct ReaderView: View {
                         pdf: pdf,
                         onExit: onExit ?? { dismiss() }
                     )
+                } else if fileURL.pathExtension.lowercased() == "pdf" || contentType == .pdf || contentType == .document {
+                    DocumentReaderEngine(
+                        pdf: pdf ?? ConvertedPDF(url: fileURL),
+                        onDismiss: { (onExit ?? { dismiss() })() }
+                    )
                 } else {
                     comicReaderBody(in: geo)
                 }
