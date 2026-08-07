@@ -38,8 +38,12 @@ struct ZoomableScrollView<Content: View>: UIViewRepresentable {
             hostingController.view.heightAnchor.constraint(equalTo: scrollView.frameLayoutGuide.heightAnchor)
         ])
 
-        // Hold a weak reference inside the coordinator to break the retain cycle.
+        // Store the scroll view reference immediately in makeUIView so it is always
+        // available when handleOrientationChange fires — even before the first zoom gesture.
+        // The previous pattern stored it as a side-effect inside viewForZooming, which
+        // meant the reference could be nil the first time an orientation event fired.
         context.coordinator.hostingController = hostingController
+        context.coordinator.scrollView = scrollView
 
         // Double-Tap to Zoom
         let doubleTap = UITapGestureRecognizer(
@@ -81,7 +85,6 @@ struct ZoomableScrollView<Content: View>: UIViewRepresentable {
         weak var scrollView: UIScrollView?
 
         func viewForZooming(in scrollView: UIScrollView) -> UIView? {
-            self.scrollView = scrollView
             return hostingController?.view
         }
 

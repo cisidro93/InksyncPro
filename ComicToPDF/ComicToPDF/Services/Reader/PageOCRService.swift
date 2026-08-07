@@ -24,9 +24,21 @@ final class PageOCRService: Sendable {
         guard let cgImage = image.cgImage else { return [] }
         
         return await withCheckedContinuation { continuation in
+            // resumed flag ensures the continuation is only ever called once.
+            // VNImageRequestHandler.perform() is synchronous: it either calls the
+            // completion handler then returns normally, OR throws without calling it.
+            // The flag guards against any edge-case double-resume that would otherwise
+            // cause a "Fatal error: SWIFT TASK CONTINUATION MISUSE" crash.
+            var resumed = false
+            func finish(_ result: [String]) {
+                guard !resumed else { return }
+                resumed = true
+                continuation.resume(returning: result)
+            }
+            
             let request = VNRecognizeTextRequest { request, error in
                 guard error == nil, let observations = request.results as? [VNRecognizedTextObservation] else {
-                    continuation.resume(returning: [])
+                    finish([])
                     return
                 }
                 
@@ -51,7 +63,7 @@ final class PageOCRService: Sendable {
                     }
                 }
                 
-                continuation.resume(returning: matched)
+                finish(matched)
             }
             
             request.recognitionLevel = .accurate
@@ -61,7 +73,9 @@ final class PageOCRService: Sendable {
             do {
                 try handler.perform([request])
             } catch {
-                continuation.resume(returning: [])
+                // perform() only throws when it cannot start the request — the
+                // completion block will NOT have been called yet in this path.
+                finish([])
             }
         }
     }
@@ -72,9 +86,16 @@ final class PageOCRService: Sendable {
         guard !Task.isCancelled else { return [] }
         
         return await withCheckedContinuation { continuation in
+            var resumed = false
+            func finish(_ result: [TextBlock]) {
+                guard !resumed else { return }
+                resumed = true
+                continuation.resume(returning: result)
+            }
+            
             let request = VNRecognizeTextRequest { request, error in
                 guard error == nil, let observations = request.results as? [VNRecognizedTextObservation] else {
-                    continuation.resume(returning: [])
+                    finish([])
                     return
                 }
                 
@@ -87,7 +108,7 @@ final class PageOCRService: Sendable {
                     )
                     blocks.append(block)
                 }
-                continuation.resume(returning: blocks)
+                finish(blocks)
             }
             
             request.recognitionLevel = .accurate
@@ -98,7 +119,7 @@ final class PageOCRService: Sendable {
             do {
                 try handler.perform([request])
             } catch {
-                continuation.resume(returning: [])
+                finish([])
             }
         }
     }
