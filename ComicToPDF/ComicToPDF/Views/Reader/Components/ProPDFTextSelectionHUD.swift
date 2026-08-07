@@ -15,6 +15,10 @@ enum PDFHighlightColor: String, CaseIterable, Identifiable {
         Color(hex: rawValue)
     }
 
+    var uiColor: UIColor {
+        UIColor(Color(hex: rawValue))
+    }
+
     var displayName: String {
         switch self {
         case .yellow: return "Solar Yellow"
