@@ -209,6 +209,8 @@ struct EBookReaderView: View {
                         KindleProgressFooterView(
                             currentPage: currentIndex + 1,
                             totalPages: totalChapters,
+                            chapterPage: chapterPage,
+                            chapterTotalPages: chapterTotalPages,
                             estimatedMinutesLeft: ReaderProgressTracker.shared.progress(for: pdf?.id ?? UUID())?.estimatedMinutesRemaining
                         )
                     }
@@ -361,6 +363,32 @@ struct EBookReaderView: View {
                     currentIndex = pageIndex
                     chapterPage = 0
                     saveProgress()
+                }
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("Reader_JumpToChapterHref"))) { notification in
+            if let href = notification.userInfo?["href"] as? String, !href.isEmpty, let meta = metadata {
+                let cleanTarget = href.lowercased()
+                if let targetIdx = meta.spineItems.firstIndex(where: { $0.href.lowercased().hasSuffix(cleanTarget) }) {
+                    if targetIdx != currentIndex {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                            isGoingForward = targetIdx >= currentIndex
+                            currentIndex = targetIdx
+                            chapterPage = 0
+                            saveProgress()
+                        }
+                    }
+                    if let fragment = notification.userInfo?["fragment"] as? String, !fragment.isEmpty {
+                        Task {
+                            try? await Task.sleep(nanoseconds: 500_000_000)
+                            await MainActor.run {
+                                if let wv = webViewReference {
+                                    let js = "document.getElementById('\(fragment)')?.scrollIntoView({ behavior: 'smooth', block: 'start' });"
+                                    wv.evaluateJavaScript(js)
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

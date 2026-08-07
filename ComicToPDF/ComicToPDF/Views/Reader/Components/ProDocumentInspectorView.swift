@@ -102,7 +102,7 @@ struct ProDocumentInspectorView: View {
         Group {
             if let outlineRoot = pdfDocument?.outlineRoot, outlineRoot.numberOfChildren > 0 {
                 List {
-                    OutlineNodeRow(node: outlineRoot, onSelect: { pageIdx in
+                    OutlineNodeRow(node: outlineRoot, pdfDocument: pdfDocument, onSelect: { pageIdx in
                         onJumpToPage(pageIdx)
                         onDismiss()
                     })
@@ -314,19 +314,30 @@ struct ProDocumentInspectorView: View {
 /// Recursive Outline Node Row Component for nested PDF Table of Contents
 private struct OutlineNodeRow: View {
     let node: PDFOutline
+    let pdfDocument: PDFDocument?
     var onSelect: (Int) -> Void
+
+    private func targetPageIndex(for child: PDFOutline) -> Int? {
+        let dest = child.destination ?? (child.action as? PDFActionGoTo)?.destination
+        guard let page = dest?.page else { return nil }
+        if let doc = pdfDocument ?? page.document {
+            let idx = doc.index(for: page)
+            return idx != NSNotFound ? idx : nil
+        }
+        return nil
+    }
 
     var body: some View {
         ForEach(0..<node.numberOfChildren, id: \.self) { index in
             if let child = node.child(at: index) {
+                let resolvedPageIndex = targetPageIndex(for: child)
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
                         Text(child.label ?? "Untitled Section")
                             .font(.system(size: 14, weight: .medium))
                             .foregroundColor(Theme.text)
                         Spacer()
-                        if let destination = child.destination, let page = destination.page, let doc = page.document {
-                            let pageIndex = doc.index(for: page)
+                        if let pageIndex = resolvedPageIndex {
                             Text("\(pageIndex + 1)")
                                 .font(.system(size: 12, weight: .bold, design: .rounded))
                                 .foregroundColor(Theme.textTertiary)
@@ -334,14 +345,13 @@ private struct OutlineNodeRow: View {
                     }
                     .contentShape(Rectangle())
                     .onTapGesture {
-                        if let destination = child.destination, let page = destination.page, let doc = page.document {
-                            let pageIndex = doc.index(for: page)
+                        if let pageIndex = resolvedPageIndex {
                             onSelect(pageIndex)
                         }
                     }
 
                     if child.numberOfChildren > 0 {
-                        OutlineNodeRow(node: child, onSelect: onSelect)
+                        OutlineNodeRow(node: child, pdfDocument: pdfDocument, onSelect: onSelect)
                             .padding(.leading, 12)
                     }
                 }

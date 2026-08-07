@@ -509,13 +509,26 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         let pdfView = PDFView()
         pdfView.document = document
         pdfView.autoScales = true
+        pdfView.minScaleFactor = 0.25
+        pdfView.maxScaleFactor = 10.0
         pdfView.displayMode = .singlePage
         pdfView.displayDirection = .horizontal
         pdfView.backgroundColor = .systemBackground
 
-        // Double Tap Zoom & Single Tap gesture setup
+        if let scrollView = pdfView.subviews.first(where: { $0 is UIScrollView }) as? UIScrollView {
+            scrollView.maximumZoomScale = 10.0
+            scrollView.minimumZoomScale = 0.25
+        }
+
+        // Single Tap gesture setup
         let tapGesture = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
         pdfView.addGestureRecognizer(tapGesture)
+
+        // Double Tap Zoom setup
+        let doubleTap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleDoubleTap(_:)))
+        doubleTap.numberOfTapsRequired = 2
+        pdfView.addGestureRecognizer(doubleTap)
+        tapGesture.require(toFail: doubleTap)
 
         NotificationCenter.default.addObserver(
             context.coordinator,
@@ -555,9 +568,6 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         let hasCustomMargin = prefs.textMargin > 0
         let targetDisplayBox: PDFDisplayBox = (isCroppedMode || hasCustomMargin) ? .cropBox : .mediaBox
         
-        // Only recompute crop boxes when crop mode or margin actually changed.
-        // Running setBounds on every updateUIView call (including during gestures like the system
-        // magnifier loupe) can corrupt PDFKit's internal render state → crash.
         let cropStateChanged = isCroppedMode != context.coordinator.lastCropMode ||
                                prefs.textMargin != context.coordinator.lastTextMargin
         if cropStateChanged {
@@ -593,20 +603,23 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
             uiView.displayBox = targetDisplayBox
         }
 
+        let pageOrBoundsChanged = (context.coordinator.lastPageIndex != currentPageIndex) ||
+                                  (context.coordinator.lastBoundsSize != uiView.bounds.size) ||
+                                  cropStateChanged
 
         if isExpandedView {
-            if uiView.autoScales {
-                uiView.autoScales = false
-            }
-            let fitScale = uiView.scaleFactorForSizeToFit
-            let targetScale = max(fitScale * 1.35, 1.25)
-            if abs(uiView.scaleFactor - targetScale) > 0.05 {
-                uiView.scaleFactor = targetScale
+            if pageOrBoundsChanged {
+                if uiView.autoScales {
+                    uiView.autoScales = false
+                }
+                let fitScale = uiView.scaleFactorForSizeToFit
+                let targetScale = max(fitScale * 1.35, 1.25)
+                if abs(uiView.scaleFactor - targetScale) > 0.05 {
+                    uiView.scaleFactor = targetScale
+                }
             }
         } else {
-            // Expand single-page and dual-page spreads to fill 100% of the screen width & height edge-to-edge
-            // using the active displayBox (.cropBox when smart crop is active, .mediaBox otherwise).
-            if let currentPage = uiView.currentPage, uiView.bounds.width > 0 && uiView.bounds.height > 0 {
+            if pageOrBoundsChanged, let currentPage = uiView.currentPage, uiView.bounds.width > 0 && uiView.bounds.height > 0 {
                 let pageBounds = currentPage.bounds(for: uiView.displayBox)
                 let pageWidthMultiplier: CGFloat = isDual ? 2.0 : 1.0
                 let totalPageWidth = pageBounds.width * pageWidthMultiplier
@@ -628,13 +641,14 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
             }
         }
 
+        context.coordinator.lastPageIndex = currentPageIndex
+        context.coordinator.lastBoundsSize = uiView.bounds.size
+
         // Guarantee PDFView active page always displays the target pageIndex
         if let targetPage = document.page(at: currentPageIndex), uiView.currentPage != targetPage {
             uiView.go(to: targetPage)
         }
     }
-
-
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -642,11 +656,10 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
 
     class Coordinator: NSObject {
         var parent: ProPDFViewRepresentable
-        /// Tracks last-applied crop state to prevent redundant setBounds calls during
-        /// gestures (e.g. system magnification loupe). setBounds mid-gesture can trigger
-        /// PDFKit's internal UIPageViewController spine-location assertion → SIGABRT.
         var lastCropMode: Bool = false
         var lastTextMargin: CGFloat = -1
+        var lastPageIndex: Int = -1
+        var lastBoundsSize: CGSize = .zero
 
         init(_ parent: ProPDFViewRepresentable) {
             self.parent = parent
@@ -654,6 +667,18 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
 
         @MainActor @objc func handleTap(_ gesture: UITapGestureRecognizer) {
             parent.onTapCenter()
+        }
+
+        @MainActor @objc func handleDoubleTap(_ gesture: UITapGestureRecognizer) {
+            guard let pdfView = gesture.view as? PDFView else { return }
+            let currentScale = pdfView.scaleFactor
+            let fitScale = pdfView.scaleFactorForSizeToFit
+            let zoomTarget = fitScale * 2.5
+            if currentScale > fitScale * 1.5 {
+                pdfView.scaleFactor = fitScale
+            } else {
+                pdfView.scaleFactor = zoomTarget
+            }
         }
 
         @MainActor @objc func pageChanged(_ notification: Notification) {

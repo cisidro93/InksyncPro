@@ -652,6 +652,8 @@ struct PDFKitRepresentedView: UIViewRepresentable {
         }
         pdfView.document = document
         pdfView.autoScales = true
+        pdfView.minScaleFactor = 0.25
+        pdfView.maxScaleFactor = 10.0
         pdfView.displaysPageBreaks = false
         pdfView.pageBreakMargins = .zero
         pdfView.insetsLayoutMarginsFromSafeArea = false
@@ -808,7 +810,10 @@ struct PDFKitRepresentedView: UIViewRepresentable {
             
             // Recalculate scaleFactor to expand pages to fill 100% of the screen width & height edge-to-edge
             // in both single-page and dual-page spread modes, using .cropBox when crop is active.
-            if let currentPage = pdfView.currentPage, currentBoundsSize.width > 0 && currentBoundsSize.height > 0 {
+            let pageOrBoundsChanged = (context.coordinator.lastPageIndex != currentPageIndex) ||
+                                      (context.coordinator.lastBoundsSize != currentBoundsSize)
+
+            if pageOrBoundsChanged, let currentPage = pdfView.currentPage, currentBoundsSize.width > 0 && currentBoundsSize.height > 0 {
                 let pageBounds = currentPage.bounds(for: pdfView.displayBox)
                 let pageWidthMultiplier: CGFloat = dualPageMode ? 2.0 : 1.0
                 let totalPageWidth = pageBounds.width * pageWidthMultiplier
@@ -828,6 +833,8 @@ struct PDFKitRepresentedView: UIViewRepresentable {
                     }
                 }
             }
+            context.coordinator.lastPageIndex = currentPageIndex
+            context.coordinator.lastBoundsSize = currentBoundsSize
             
             makePdfViewTransparent(pdfView)
             
@@ -873,6 +880,7 @@ struct PDFKitRepresentedView: UIViewRepresentable {
         var lastConfiguredPaginationMode: String?
         var lastFitToWidth: Bool?
         var lastBoundsSize: CGSize = .zero
+        var lastPageIndex: Int = -1
         
         init(_ parent: PDFKitRepresentedView) {
             self.parent = parent
@@ -955,6 +963,10 @@ struct PDFKitRepresentedView: UIViewRepresentable {
         
         @objc func handleSwipe(_ gesture: UISwipeGestureRecognizer) {
             guard !parent.isPencilMode else { return }
+            if let pv = pdfView, pv.scaleFactor > (pv.scaleFactorForSizeToFit * 1.15) {
+                // User is zoomed in: allow panning inside page without triggering page turns
+                return
+            }
             
             let isRTL = EBookPreferences.shared.pdfRTL
             let swipeLeft = gesture.direction == .left

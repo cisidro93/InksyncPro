@@ -671,13 +671,24 @@ struct ReaderView: View {
             return CBZTableOfContents(chapters: [])
         }
         var chapters: [(title: String, pageIndex: Int)] = []
-        for i in 0..<root.numberOfChildren {
-            guard let node = root.child(at: i),
-                  let dest = node.destination,
-                  let page = dest.page,
-                  let label = node.label, !label.isEmpty else { continue }
-            chapters.append((title: label, pageIndex: doc.index(for: page)))
+
+        func traverse(_ node: PDFOutline) {
+            for i in 0..<node.numberOfChildren {
+                guard let child = node.child(at: i) else { continue }
+                let dest = child.destination ?? (child.action as? PDFActionGoTo)?.destination
+                if let page = dest?.page {
+                    let pageIdx = doc.index(for: page)
+                    if pageIdx != NSNotFound, let label = child.label, !label.isEmpty {
+                        chapters.append((title: label, pageIndex: pageIdx))
+                    }
+                }
+                if child.numberOfChildren > 0 {
+                    traverse(child)
+                }
+            }
         }
+        traverse(root)
+
         guard !chapters.isEmpty else { return CBZTableOfContents(chapters: []) }
         let total = doc.pageCount
         let built = chapters.enumerated().map { idx, ch -> CBZTableOfContents.Chapter in

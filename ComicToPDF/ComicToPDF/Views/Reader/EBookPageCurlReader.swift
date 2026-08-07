@@ -598,19 +598,39 @@ extension EBookPageCurlReader {
                 return
             }
 
-            if let fragment = url.fragment {
-                let js = """
-                (function() {
-                    var el = document.getElementById('\(fragment)') || document.getElementsByName('\(fragment)')[0];
-                    if (el) {
-                        var text = el.innerText || el.textContent;
-                        if (text && text.trim().length > 0 && text.trim().length < 1000) {
-                            window.webkit.messageHandlers.footnote.postMessage({ "id": '\(fragment)', "text": text.trim() });
+            let fileName = url.lastPathComponent
+            let fragment = url.fragment ?? ""
+
+            if navigationAction.navigationType == .linkActivated || !fileName.isEmpty {
+                // Post navigation event to EBookReaderView
+                NotificationCenter.default.post(
+                    name: NSNotification.Name("Reader_JumpToChapterHref"),
+                    object: nil,
+                    userInfo: ["href": fileName, "fragment": fragment]
+                )
+
+                // Check if fragment targets a footnote vs a section heading anchor
+                if !fragment.isEmpty {
+                    let js = """
+                    (function() {
+                        var el = document.getElementById('\(fragment)') || document.getElementsByName('\(fragment)')[0];
+                        if (el) {
+                            var tag = el.tagName.toLowerCase();
+                            var isFN = el.classList.contains('footnote') || el.getAttribute('epub:type') === 'noteref' || el.getAttribute('rel') === 'footnote' || el.id.toLowerCase().indexOf('fn') === 0;
+                            if (isFN) {
+                                var text = el.innerText || el.textContent;
+                                if (text && text.trim().length > 0 && text.trim().length < 1000) {
+                                    window.webkit.messageHandlers.footnote.postMessage({ "id": '\(fragment)', "text": text.trim() });
+                                    return;
+                                }
+                            }
+                            el.scrollIntoView({ behavior: 'smooth', block: 'start' });
                         }
-                    }
-                })();
-                """
-                webView.evaluateJavaScript(js, completionHandler: nil)
+                    })();
+                    """
+                    webView.evaluateJavaScript(js, completionHandler: nil)
+                }
+
                 decisionHandler(.cancel)
                 return
             }
@@ -621,7 +641,8 @@ extension EBookPageCurlReader {
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
             if message.name == "metrics", let body = message.body as? [String: Int] {
                 let total = body["total"] ?? 1
-                didReceiveMetrics(totalPages: total, fromPageIndex: currentPageIndex)
+                let current = body["current"] ?? 0
+                didReceiveMetrics(current: current, totalPages: total, fromPageIndex: currentPageIndex)
             } else if message.name == "highlight", let text = message.body as? String, !text.isEmpty {
                 parent.onHighlightCreated?(text)
             } else if message.name == "footnote", let body = message.body as? [String: String], let text = body["text"] {
@@ -629,33 +650,40 @@ extension EBookPageCurlReader {
             }
         }
 
-        func didReceiveMetrics(totalPages: Int, fromPageIndex: Int) {
-            let clamped = max(1, totalPages)
-            if computedTotalPages != clamped {
-                computedTotalPages = clamped
-                parent.totalPages = clamped
+        func didReceiveMetrics(current: Int, totalPages: Int, fromPageIndex: Int) {
+            let clampedTotal = max(1, totalPages)
+            let clampedCurrent = max(0, min(current, clampedTotal - 1))
+
+            if computedTotalPages != clampedTotal {
+                computedTotalPages = clampedTotal
+                parent.totalPages = clampedTotal
             }
 
             if !hasLoadedInitialPage {
                 hasLoadedInitialPage = true
 
-                var targetPage = parent.initialPage
-                if targetPage == 0 && parent.initialScrollFraction > 0.01 && clamped > 1 {
-                    targetPage = Int((parent.initialScrollFraction * Double(clamped - 1)).rounded())
+                var targetPage = clampedCurrent
+                if parent.initialPage == 0 && parent.initialScrollFraction > 0.01 && clampedTotal > 1 {
+                    targetPage = Int((parent.initialScrollFraction * Double(clampedTotal - 1)).rounded())
+                } else if parent.initialPage >= 99999 {
+                    targetPage = clampedTotal - 1
+                } else if parent.initialPage > 0 && parent.initialPage < clampedTotal {
+                    targetPage = parent.initialPage
                 }
-                if targetPage >= clamped { targetPage = clamped - 1 }
 
-                if targetPage != fromPageIndex && targetPage > 0 {
-                    currentPageIndex = targetPage
-                    parent.currentPage = targetPage
-                    primaryWebView?.evaluateJavaScript("if(window.goToInksyncPage) window.goToInksyncPage(\(targetPage));")
-                    let vcs = spreadViewControllers(for: targetPage)
-                    pageViewController?.setViewControllers(vcs, direction: .forward, animated: false)
-                }
+                currentPageIndex = targetPage
+                parent.currentPage = targetPage
+                primaryWebView?.evaluateJavaScript("if(window.goToInksyncPage) window.goToInksyncPage(\(targetPage));")
+                let vcs = spreadViewControllers(for: targetPage)
+                pageViewController?.setViewControllers(vcs, direction: .forward, animated: false)
                 reportScrollFraction()
+            } else {
+                currentPageIndex = clampedCurrent
+                if parent.currentPage != clampedCurrent {
+                    parent.currentPage = clampedCurrent
+                }
             }
 
-            // Mount primary WebView on root PVC view once initial metrics arrive
             mountPrimaryWebViewOnRoot()
 
             
@@ -747,7 +775,7 @@ extension EBookPageCurlReader {
             let colorScheme = parent.colorScheme
             let size = UIScreen.main.bounds.size
             let cssContent = computeCSS(prefs: prefs, size: size)
-            let pageScript = buildPageScript()
+            let pageScript = buildPageScript(initialPage: parent.initialPage)
 
             return """
             <meta charset="utf-8">
@@ -920,14 +948,14 @@ extension EBookPageCurlReader {
             """
         }
 
-        func buildPageScript() -> String {
+        func buildPageScript(initialPage: Int = 0) -> String {
             let isLandscape = UIScreen.main.bounds.width > UIScreen.main.bounds.height
             let isPad = UIDevice.current.userInterfaceIdiom == .pad
             let cols = parent.prefs.columnCount == 0 ? (isLandscape ? (parent.prefs.autoLandscapeDualPage ? 2 : (isPad ? 2 : 1)) : 1) : parent.prefs.columnCount
             let isMultiCol = cols > 1
 
             return """
-            var _targetPage = 0;
+            var _targetPage = \(initialPage >= 99999 ? 99999 : max(0, initialPage));
             var _totalPages = 1;
             var _isMultiCol = \(isMultiCol ? "true" : "false");
 
@@ -979,6 +1007,9 @@ extension EBookPageCurlReader {
                     total += 1;
                 }
                 _totalPages = Math.max(1, total);
+                if (_targetPage >= 99999 || _targetPage >= _totalPages) {
+                    _targetPage = Math.max(0, _totalPages - 1);
+                }
                 return _totalPages;
             }
 
@@ -993,6 +1024,14 @@ extension EBookPageCurlReader {
                 applyPagePosition();
                 window.webkit.messageHandlers.metrics.postMessage({ current: _targetPage, total: _totalPages });
             };
+
+            if (document.fonts && document.fonts.ready) {
+                document.fonts.ready.then(function() {
+                    computeMetrics();
+                    applyPagePosition();
+                    window.webkit.messageHandlers.metrics.postMessage({ current: _targetPage, total: _totalPages });
+                });
+            }
 
             window.addEventListener('resize', function() {
                 computeMetrics();

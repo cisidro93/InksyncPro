@@ -338,15 +338,33 @@ struct EPUBWebView: View {
                 if url.scheme == "http" || url.scheme == "https" {
                     UIApplication.shared.open(url)
                     return false
-                } else if let fragment = url.fragment {
+                }
+
+                let fileName = url.lastPathComponent
+                let fragment = url.fragment ?? ""
+
+                if !fileName.isEmpty {
+                    NotificationCenter.default.post(
+                        name: NSNotification.Name("Reader_JumpToChapterHref"),
+                        object: nil,
+                        userInfo: ["href": fileName, "fragment": fragment]
+                    )
+                }
+
+                if !fragment.isEmpty {
                     let js = """
                     (function() {
                         var el = document.getElementById('\(fragment)') || document.getElementsByName('\(fragment)')[0];
                         if (el) {
-                            var text = el.innerText || el.textContent;
-                            if (text && text.trim().length > 0) {
-                                window.webkit.messageHandlers.footnote.postMessage({ "id": '\(fragment)', "text": text.trim() });
+                            var isFN = el.classList.contains('footnote') || el.getAttribute('epub:type') === 'noteref' || el.getAttribute('rel') === 'footnote' || el.id.toLowerCase().indexOf('fn') === 0;
+                            if (isFN) {
+                                var text = el.innerText || el.textContent;
+                                if (text && text.trim().length > 0) {
+                                    window.webkit.messageHandlers.footnote.postMessage({ "id": '\(fragment)', "text": text.trim() });
+                                    return;
+                                }
                             }
+                            el.scrollIntoView({ behavior: 'smooth', block: 'start' });
                         }
                     })();
                     """
@@ -885,8 +903,8 @@ struct EPUBWebView: View {
                 _totalPages = Math.max(1, Math.round(sv.scrollWidth / pageStep));
                 if (_firstRun) {
                     _firstRun = false;
-                    if (_currentPage === 99999) {
-                        _currentPage = _totalPages - 1;
+                    if (_currentPage >= 99999) {
+                        _currentPage = Math.max(0, _totalPages - 1);
                     }
                     goToPage(_currentPage, false);
                 } else {
@@ -897,6 +915,9 @@ struct EPUBWebView: View {
                 _totalPages = Math.max(1, Math.round(sv.scrollHeight / pageHeight));
                 if (_firstRun) {
                     _firstRun = false;
+                    if (_currentPage >= 99999) {
+                        _currentPage = Math.max(0, _totalPages - 1);
+                    }
                     goToPage(_currentPage, false);
                 } else {
                     _currentPage = Math.max(0, Math.min(Math.round(sv.scrollTop / pageHeight), _totalPages - 1));
@@ -941,6 +962,12 @@ struct EPUBWebView: View {
             setTimeout(updateMetrics, 500);
             setTimeout(updateMetrics, 1500);
         };
+
+        if (document.fonts && document.fonts.ready) {
+            document.fonts.ready.then(function() {
+                updateMetrics();
+            });
+        }
         window.addEventListener('resize', function() { updateMetrics(); goToPage(_currentPage, false); });
 
         document.addEventListener('click', function(e) {
