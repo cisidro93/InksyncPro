@@ -53,3 +53,21 @@ Whenever conducting code reviews, bug fixes, or feature additions:
 3. **No Magic Numbers or Cryptic Names:** Store metrics in named enum spaces with intent-revealing names.
 4. **Comments Explain "Why":** Reserve comments for non-obvious architecture rationale or OS workarounds.
 5. **Resource Cleanliness:** Guarantee teardown of observers and background tasks.
+
+---
+
+## Integration & Feature Defense Matrix Protocol
+
+To prevent key functions or safeguards from being overlooked or improperly integrated:
+
+1. **Instantiation & Routing Audit**:
+   - Trace the complete invocation chain from view entry (`UnifiedReaderView`, `ReaderView`) down to child engine components (`DocumentReaderEngine`, `EBookPageCurlReader`) before editing code.
+   - Verify that conditional branches (e.g. `.pdf` vs `.epub` vs `.cbz`) explicitly route to the intended vector or paged engines.
+
+2. **Viewport & Zoom Safeguard Checklist**:
+   - **Scale Clamping**: `minScaleFactor` MUST equal `fitScale` (never < 0.5) and `maxScaleFactor` MUST be capped at `fitScale * 3.5`.
+   - **Gesture Isolation**: Disambiguate single-tap, double-tap, and pan gestures using `.require(toFail:)` and `.cancelsTouchesInView = false`.
+   - **In-Memory Loading**: Never write and immediately delete temporary disk files during asynchronous WKWebView or PDFKit loading. Always use in-memory buffers or persistent directory handles.
+
+3. **Multi-State Edge-Case Verification**:
+   - Verify feature behavior across 4 primary runtime states: (1) Initial Load, (2) Zoomed State (1.0x - 3.5x), (3) Orientation Rotation (Portrait ↔ Landscape), and (4) Low Memory Purge.
