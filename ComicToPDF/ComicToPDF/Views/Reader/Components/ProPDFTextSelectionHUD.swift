@@ -195,6 +195,15 @@ struct ProPDFTextSelectionHUD: View {
 
                         Button(action: {
                             HapticEngine.light()
+                            SystemDictionaryPresenter.shared.presentDefinition(for: selectedText)
+                        }) {
+                            Label("Define", systemImage: "book.closed")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(.white)
+                        }
+
+                        Button(action: {
+                            HapticEngine.light()
                             UIPasteboard.general.string = selectedText
                             onCopy()
                         }) {

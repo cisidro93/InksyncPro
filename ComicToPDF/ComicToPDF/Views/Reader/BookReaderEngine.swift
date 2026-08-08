@@ -1398,6 +1398,8 @@ private func computeColumnCount(for size: CGSize) -> Int {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                     .zIndex(100)
             }
+
+            ReadingJumpToastOverlay()
         }
         .sheet(isPresented: $showReadingStatsHUD) {
             ReadingStatsHUDView(

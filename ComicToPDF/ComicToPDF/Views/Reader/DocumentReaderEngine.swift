@@ -155,6 +155,8 @@ struct DocumentReaderEngine: View {
                 }
                 .transition(.opacity)
             }
+
+            ReadingJumpToastOverlay()
         }
         .overlay { if prefs.showReadingRuler { ReadingRulerOverlay() } }
         .sheet(isPresented: $showReadingStatsHUD) {

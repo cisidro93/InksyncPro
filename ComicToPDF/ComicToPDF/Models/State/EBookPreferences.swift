@@ -38,6 +38,9 @@ class EBookPreferences: ObservableObject {
 
     // MARK: - Typography
     @AppStorage("ebook_fontFamily")     var fontFamily: String  = EBookFontFamily.newYork.rawValue
+    @AppStorage("ebook_isBionicReadingEnabled") var isBionicReadingEnabled: Bool = false {
+        didSet { objectWillChange.send() }
+    }
     @AppStorage("ebook_fontSize")       var fontSize: Double    = 18
     @AppStorage("ebook_lineHeight")     var lineHeight: Double  = 1.6
     @AppStorage("ebook_letterSpacing")  var letterSpacing: Double = 0.0   // em

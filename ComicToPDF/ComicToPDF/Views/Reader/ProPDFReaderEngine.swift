@@ -214,6 +214,8 @@ struct ProPDFReaderEngine: View {
                 )
                 .transition(.opacity)
             }
+
+            ReadingJumpToastOverlay()
         }
         .task {
             loadPDFDocument()
