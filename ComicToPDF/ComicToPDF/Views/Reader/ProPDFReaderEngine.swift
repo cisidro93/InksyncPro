@@ -104,7 +104,14 @@ struct ProPDFReaderEngine: View {
             Color.inkBackground
                 .ignoresSafeArea()
 
-            if let doc = pdfDocument {
+            if isReflowMode {
+                ProPDFReflowReaderView(
+                    pdf: pdf,
+                    pdfDocument: pdfDocument,
+                    currentPageIndex: $currentPageIndex,
+                    onDismiss: onDismiss
+                )
+            } else if let doc = pdfDocument {
                 // PDF Core Canvas View
                 ZStack {
                     ProPDFViewRepresentable(

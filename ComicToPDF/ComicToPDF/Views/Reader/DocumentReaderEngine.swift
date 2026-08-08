@@ -37,25 +37,11 @@ struct DocumentReaderEngine: View {
     
     @ViewBuilder private var documentContentView: some View {
         if isReflowMode {
-            ReflowTextView(
-                text: reflowText,
-                onCenterTap: {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        chromeVisible.toggle()
-                    }
-                },
-                onPrevPage: {
-                    if currentPageIndex > 0 {
-                        currentPageIndex -= 1
-                        HapticEngine.light()
-                    }
-                },
-                onNextPage: {
-                    if currentPageIndex < totalPages - 1 {
-                        currentPageIndex += 1
-                        HapticEngine.light()
-                    }
-                }
+            ProPDFReflowReaderView(
+                pdf: pdf,
+                pdfDocument: pdfDocument,
+                currentPageIndex: $currentPageIndex,
+                onDismiss: onDismiss
             )
         } else if let doc = pdfDocument {
             ZStack {
