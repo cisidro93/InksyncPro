@@ -1142,13 +1142,27 @@ struct BookReaderEngine: View {
     
     var isMangaMode: Bool { pdf.metadata.isManga == true || pdf.contentType == .manga }
 
-    private func computeColumnCount(for size: CGSize) -> Int {
+private func computeColumnCount(for size: CGSize) -> Int {
         let renderWidth = size.width > 0 ? size.width : UIScreen.main.bounds.width
         let renderHeight = size.height > 0 ? size.height : UIScreen.main.bounds.height
         let isPad = UIDevice.current.userInterfaceIdiom == .pad
         let isLandscape = renderWidth > renderHeight
         let defaultColumns = (isPad && isLandscape) ? 2 : 1
         return prefs.columnCount == 0 ? defaultColumns : prefs.columnCount
+    }
+
+    private var currentProgressBinding: Binding<Double> {
+        Binding(
+            get: {
+                let count = max(1, vm.chapterHtmlFiles.count - 1)
+                return Double(vm.currentChapterIndex) / Double(count)
+            },
+            set: { newVal in
+                let count = max(1, vm.chapterHtmlFiles.count - 1)
+                let target = Int(newVal * Double(count))
+                vm.loadChapter(index: target)
+            }
+        )
     }
 
     var body: some View {

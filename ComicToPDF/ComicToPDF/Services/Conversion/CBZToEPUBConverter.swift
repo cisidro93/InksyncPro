@@ -305,7 +305,7 @@ struct CBZToEPUBConverter: Sendable {
         //    entering the heavy image-processing loop. This avoids the crash that
         //    occurs when MainActor.run is called mid-conversion while the owning
         //    view may be deallocating.
-        let (bookUUID, metadataInfo): (String, (seriesID: String?, seriesName: String?, issueNum: Int?)) = await MainActor.run {
+        let (bookUUID, _): (String, (seriesID: String?, seriesName: String?, issueNum: Int?)) = await MainActor.run {
             let context = InksyncProApp.sharedModelContainer.mainContext
             let urlStr = sourceURL.absoluteString
             let nameStr = sourceURL.lastPathComponent
