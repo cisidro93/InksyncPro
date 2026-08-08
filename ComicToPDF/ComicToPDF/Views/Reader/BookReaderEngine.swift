@@ -1335,6 +1335,7 @@ struct BookReaderEngine: View {
                     withAnimation { showTypographyHUD = true }
                 },
                 onTOCToggle: { showTOC = true },
+                onSearchToggle: { showTOC = true },
                 onAnnotationsToggle: { NotificationCenter.default.post(name: .toggleStudyNotebook, object: nil) },
                 currentProgress: Binding(
                     get: { Double(vm.currentChapterIndex) / Double(max(1, vm.chapterHtmlFiles.count - 1)) },
