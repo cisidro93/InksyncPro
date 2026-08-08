@@ -1355,16 +1355,7 @@ private func computeColumnCount(for size: CGSize) -> Int {
                 onTOCToggle: { showTOC = true },
                 onAnnotationsToggle: { NotificationCenter.default.post(name: .toggleStudyNotebook, object: nil) },
                 onSearchToggle: { showTOC = true },
-                currentProgress: Binding(
-                    get: { Double(vm.currentChapterIndex) / Double(max(1, vm.chapterHtmlFiles.count - 1)) },
-                    set: { newVal in
-                        // loadChapter() updates currentChapterHTML which drives EPUBWebView.updateUIView.
-                        // A direct assignment to currentChapterIndex alone doesn't trigger a reload
-                        // because updateUIView hashes currentChapterHTML, not the index.
-                        let target = Int(newVal * Double(max(1, vm.chapterHtmlFiles.count - 1)))
-                        vm.loadChapter(index: target)
-                    }
-                ),
+                currentProgress: currentProgressBinding,
                 totalPages: vm.chapterHtmlFiles.count,
                 onJumpToPage: {
                     jumpToPageText = ""
