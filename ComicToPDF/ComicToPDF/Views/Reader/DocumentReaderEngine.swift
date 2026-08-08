@@ -389,6 +389,9 @@ struct DocumentReaderEngine: View {
             }
             if let pv = pdfViewReference {
                 pv.displayBox = .mediaBox
+                pv.autoScales = false
+                pv.autoScales = true
+                pv.scaleFactor = pv.scaleFactorForSizeToFit
                 pv.layoutDocumentView()
             }
         } else if insets.modeRaw == "smartAuto" {
@@ -410,7 +413,9 @@ struct DocumentReaderEngine: View {
             }
             if let pv = pdfViewReference {
                 pv.displayBox = .cropBox
+                pv.autoScales = false
                 pv.autoScales = true
+                pv.scaleFactor = pv.scaleFactorForSizeToFit
                 pv.layoutDocumentView()
             }
         }
@@ -474,7 +479,9 @@ struct DocumentReaderEngine: View {
                 }
                 if let pv = self.pdfViewReference {
                     pv.displayBox = .cropBox
+                    pv.autoScales = false
                     pv.autoScales = true
+                    pv.scaleFactor = pv.scaleFactorForSizeToFit
                     pv.layoutDocumentView()
                 }
             }
@@ -799,6 +806,9 @@ struct PDFKitRepresentedView: UIViewRepresentable {
             let targetDisplayBox: PDFDisplayBox = isAutoCropEnabled ? .cropBox : .mediaBox
             if pdfView.displayBox != targetDisplayBox {
                 pdfView.displayBox = targetDisplayBox
+                pdfView.autoScales = false
+                pdfView.autoScales = true
+                pdfView.scaleFactor = pdfView.scaleFactorForSizeToFit
                 pdfView.layoutDocumentView()
             }
             

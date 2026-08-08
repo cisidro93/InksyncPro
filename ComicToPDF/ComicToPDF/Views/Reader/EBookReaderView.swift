@@ -1408,7 +1408,8 @@ struct EBookWebReader: View {
             padding-bottom: 60px !important;
             padding-left: \(paddingLeft)px !important;
             padding-right: \(paddingRight)px !important;
-            width: auto !important;
+            width: 100% !important;
+            max-width: 100% !important;
             height: 100% !important;
             \(pagedCSS)
             """ : """
@@ -1433,8 +1434,11 @@ struct EBookWebReader: View {
         h4 { font-size: \(Double(fontSize) * 1.05)px !important; font-family: \(fontFamily) !important; }
         h5, h6 { font-size: \(Double(fontSize) * 1.0)px !important; font-family: \(fontFamily) !important; }
         /* Prevent nested overflow and positioning containers from breaking horizontal column flow */
-        body * {
+        #inksync-viewport *, body * {
             max-width: 100% !important;
+            box-sizing: border-box !important;
+            word-break: break-word !important;
+            overflow-wrap: break-word !important;
         }
         /* Force container backgrounds to be transparent so the ambient paper texture is visible */
         #inksync-viewport, #inksync-viewport *:not(mark):not(.inksync-highlight):not(pre):not(code):not(table):not(tr):not(td):not(th) {

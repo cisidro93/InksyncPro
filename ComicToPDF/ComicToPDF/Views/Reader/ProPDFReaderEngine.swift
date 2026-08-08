@@ -51,6 +51,9 @@ struct ProPDFReaderEngine: View {
             }
             if let pv = pdfViewReference {
                 pv.displayBox = .mediaBox
+                pv.autoScales = false
+                pv.autoScales = true
+                pv.scaleFactor = pv.scaleFactorForSizeToFit
                 pv.layoutDocumentView()
             }
         } else if insets.modeRaw == "smartAuto" {
@@ -66,6 +69,9 @@ struct ProPDFReaderEngine: View {
             }
             if let pv = pdfViewReference {
                 pv.displayBox = .cropBox
+                pv.autoScales = false
+                pv.autoScales = true
+                pv.scaleFactor = pv.scaleFactorForSizeToFit
                 pv.layoutDocumentView()
             }
         } else {
@@ -85,6 +91,9 @@ struct ProPDFReaderEngine: View {
             }
             if let pv = pdfViewReference {
                 pv.displayBox = .cropBox
+                pv.autoScales = false
+                pv.autoScales = true
+                pv.scaleFactor = pv.scaleFactorForSizeToFit
                 pv.layoutDocumentView()
             }
         }
@@ -633,6 +642,10 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
 
         if uiView.displayBox != targetDisplayBox {
             uiView.displayBox = targetDisplayBox
+            uiView.autoScales = false
+            uiView.autoScales = true
+            uiView.scaleFactor = uiView.scaleFactorForSizeToFit
+            uiView.layoutDocumentView()
         }
 
         let pageOrBoundsChanged = (context.coordinator.lastPageIndex != currentPageIndex) ||

@@ -929,9 +929,18 @@ extension EBookPageCurlReader {
                 padding-bottom: 60px !important;
                 padding-left: \(paddingLeft)px !important;
                 padding-right: \(paddingRight)px !important;
+                width: 100% !important;
                 height: 100% !important;
+                max-width: 100% !important;
+                overflow: visible !important;
                 \(pagedCSS)
                 /* No CSS transition — column jumps are instantaneous; animation belongs to UIPageViewController curl. */
+            }
+            #inksync-viewport *, body * {
+                max-width: 100% !important;
+                box-sizing: border-box !important;
+                word-break: break-word !important;
+                overflow-wrap: break-word !important;
             }
             body, p, span, li, td, th, div, a { font-family: \(fontFamily) !important; }
             body, p, li, td, th, a { font-size: \(fontSize)px !important; }
