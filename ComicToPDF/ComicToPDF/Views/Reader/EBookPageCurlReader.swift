@@ -436,12 +436,15 @@ extension EBookPageCurlReader {
 
             let targetPage = completed ? newPageIndex : currentPageIndex
             primaryWebView?.isHidden = true
-            primaryWebView?.evaluateJavaScript("if(window.goToInksyncPage) window.goToInksyncPage(\(targetPage));")
             mountPrimaryWebViewOnRoot()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { [weak self, weak currentVC] in
-                self?.primaryWebView?.isHidden = false
-                if let currentVC = currentVC {
-                    self?.captureSnapshot(for: currentVC)
+            // Reveal the WebView only after the JS column-position commit completes,
+            // preventing any momentary flash of the wrong column position.
+            primaryWebView?.evaluateJavaScript("if(window.goToInksyncPage) window.goToInksyncPage(\(targetPage));") { [weak self, weak currentVC] _, _ in
+                DispatchQueue.main.async {
+                    self?.primaryWebView?.isHidden = false
+                    if let currentVC = currentVC {
+                        self?.captureSnapshot(for: currentVC)
+                    }
                 }
             }
         }
@@ -928,7 +931,7 @@ extension EBookPageCurlReader {
                 padding-right: \(paddingRight)px !important;
                 height: 100% !important;
                 \(pagedCSS)
-                transition: transform 0.05s ease-out;
+                /* No CSS transition — column jumps are instantaneous; animation belongs to UIPageViewController curl. */
             }
             body, p, span, li, td, th, div, a { font-family: \(fontFamily) !important; }
             body, p, li, td, th, a { font-size: \(fontSize)px !important; }

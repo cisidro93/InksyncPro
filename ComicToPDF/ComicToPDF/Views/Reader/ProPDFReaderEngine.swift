@@ -522,6 +522,9 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
 
     func makeUIView(context: Context) -> PDFView {
         let pdfView = PDFView()
+        // Start invisible — auto-scales causes a momentary zoom jolt on first layout.
+        // We reveal the view only after layoutDocumentView() has settled.
+        pdfView.alpha = 0
         pdfView.document = document
         pdfView.autoScales = true
         pdfView.minScaleFactor = 0.25
@@ -564,6 +567,14 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
             name: .PDFViewSelectionChanged,
             object: pdfView
         )
+
+        // Allow one run-loop cycle for auto-scale layout, then fade in.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            pdfView.layoutDocumentView()
+            UIView.animate(withDuration: 0.18) {
+                pdfView.alpha = 1.0
+            }
+        }
 
         DispatchQueue.main.async {
             self.pdfViewRef = pdfView
