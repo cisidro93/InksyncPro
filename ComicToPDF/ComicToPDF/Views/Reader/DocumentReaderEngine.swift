@@ -391,6 +391,7 @@ struct DocumentReaderEngine: View {
             }
             if let pv = pdfViewReference {
                 pv.displayBox = .cropBox
+                pv.autoScales = true
                 pv.layoutDocumentView()
             }
         }
@@ -454,19 +455,8 @@ struct DocumentReaderEngine: View {
                 }
                 if let pv = self.pdfViewReference {
                     pv.displayBox = .cropBox
+                    pv.autoScales = true
                     pv.layoutDocumentView()
-                    
-                    if let currentPage = pv.currentPage {
-                        let isLandscape = pv.bounds.width > pv.bounds.height
-                        let isDual = self.prefs.pdfDualPage || (self.prefs.autoLandscapeDualPage && isLandscape)
-                        let cropBounds = currentPage.bounds(for: .cropBox)
-                        let pageWidthMultiplier: CGFloat = isDual ? 2.0 : 1.0
-                        let totalPageWidth = cropBounds.width * pageWidthMultiplier
-                        let scaleForWidth = pv.bounds.width / max(totalPageWidth, 1.0)
-                        if scaleForWidth > 0 {
-                            pv.scaleFactor = scaleForWidth * 1.02
-                        }
-                    }
                 }
             }
         }
