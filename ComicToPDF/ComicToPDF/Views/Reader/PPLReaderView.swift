@@ -40,7 +40,7 @@ struct PPLReaderView: View {
     @AppStorage("autoSplitPortraitSpreads") private var autoSplitPortraitSpreads = true
     @AppStorage("tapZoneStyle")           private var tapZoneStyleRaw     = TapZoneStyle.classic.rawValue
     @AppStorage("pageTurnStyle")          private var pageTurnStyleRaw    = PageTurnStyle.flip3D.rawValue
-    @AppStorage("showSpreadSeam")         private var showSpreadSeam      = true
+    @AppStorage("showSpreadSeam")         private var showSpreadSeam      = false
     @AppStorage("isAutoCropEnabled")      private var isAutoCropEnabled   = false
     @AppStorage("isZoomLockEnabled")      private var isZoomLockEnabled   = false
 

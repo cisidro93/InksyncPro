@@ -603,8 +603,8 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         let targetDisplayMode: PDFDisplayMode = isDual ? .twoUp : .singlePage
         if uiView.displayMode != targetDisplayMode {
             uiView.displayMode = targetDisplayMode
-            uiView.displaysAsBook = false
         }
+        uiView.displaysAsBook = false
 
         let hasCustomMargin = prefs.textMargin > 0
         let targetDisplayBox: PDFDisplayBox = (isCroppedMode || hasCustomMargin) ? .cropBox : .mediaBox

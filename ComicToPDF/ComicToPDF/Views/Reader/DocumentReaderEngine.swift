@@ -815,7 +815,7 @@ struct PDFKitRepresentedView: UIViewRepresentable {
             if !pdfView.autoScales {
                 pdfView.autoScales = true
             }
-            
+            pdfView.displaysAsBook = false
             makePdfViewTransparent(pdfView)
             
             // Sync outer page change to the PDFView

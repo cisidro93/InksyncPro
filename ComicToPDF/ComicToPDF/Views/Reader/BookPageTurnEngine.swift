@@ -447,8 +447,6 @@ class PageContentViewController: UIViewController {
                             TwoUpPageCell(index: pages[0], cache: parent.cache, activeFilterPreset: parent.activeFilterPreset, alignment: .leading)
                                 .frame(width: geo.size.width / 2, height: geo.size.height)
                         }
-                        LinearGradient(colors: [.black.opacity(0.35), .clear, .black.opacity(0.35)], startPoint: .leading, endPoint: .trailing)
-                            .frame(width: 14, height: geo.size.height)
                     }
                 } else {
                     // Physical Comic Spreads (Left-to-Right): Page 1 (Left), Page 2 (Right)
@@ -464,8 +462,6 @@ class PageContentViewController: UIViewController {
                                     .frame(width: geo.size.width / 2, height: geo.size.height)
                             }
                         }
-                        LinearGradient(colors: [.black.opacity(0.35), .clear, .black.opacity(0.35)], startPoint: .leading, endPoint: .trailing)
-                            .frame(width: 14, height: geo.size.height)
                     }
                 }
             }
