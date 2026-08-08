@@ -1202,9 +1202,8 @@ class EBookPageContentViewController: UIViewController {
 
         // Setup snapshot image view (0ms instant page rendering for 3D curl)
         let iv = UIImageView(frame: view.bounds)
-        // scaleAspectFit preserves page aspect ratio — avoids distorting text during 3D curl.
-        // The parent view already fills the screen, so the image fills edge-to-edge cleanly.
-        iv.contentMode = .scaleAspectFit
+        // scaleToFill maps snapshot pixels 1:1 to view bounds — avoids shrinking/expanding text during 3D page curl.
+        iv.contentMode = .scaleToFill
         iv.clipsToBounds = true
         iv.image = snapshot
         iv.backgroundColor = bgColor
