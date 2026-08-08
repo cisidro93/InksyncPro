@@ -526,6 +526,7 @@ final class ComicImageCache: ObservableObject {
             
             await MainActor.run { [weak self] in
                 guard let self = self else { return }
+                self.objectWillChange.send()
                 self.isLandscapeArray = array
                 NotificationCenter.default.post(
                     name: NSNotification.Name("ComicImageCache.OrientationsScanned"),

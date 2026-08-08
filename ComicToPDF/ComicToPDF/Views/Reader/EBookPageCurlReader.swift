@@ -435,9 +435,15 @@ extension EBookPageCurlReader {
             }
 
             let targetPage = completed ? newPageIndex : currentPageIndex
+            primaryWebView?.isHidden = true
             primaryWebView?.evaluateJavaScript("if(window.goToInksyncPage) window.goToInksyncPage(\(targetPage));")
             mountPrimaryWebViewOnRoot()
-            captureSnapshot(for: currentVC)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { [weak self, weak currentVC] in
+                self?.primaryWebView?.isHidden = false
+                if let currentVC = currentVC {
+                    self?.captureSnapshot(for: currentVC)
+                }
+            }
         }
 
         func mountPrimaryWebViewOnRoot() {

@@ -639,6 +639,7 @@ struct PDFKitRepresentedView: UIViewRepresentable {
 
     func makeUIView(context: Context) -> UIView {
         let pdfView = HighlightablePDFView()
+        pdfView.alpha = 0
         context.coordinator.pdfView = pdfView
         DispatchQueue.main.async {
             self.pdfViewRef = pdfView
@@ -646,6 +647,13 @@ struct PDFKitRepresentedView: UIViewRepresentable {
         pdfView.document = document
         pdfView.autoScales = true
         pdfView.insetsLayoutMarginsFromSafeArea = false
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            pdfView.layoutDocumentView()
+            UIView.animate(withDuration: 0.18) {
+                pdfView.alpha = 1.0
+            }
+        }
         
         // Single and Double Tap Gesture Safeguards
         let tapGesture = UITapGestureRecognizer(target: context.coordinator, action: #selector(context.coordinator.handleTap(_:)))
