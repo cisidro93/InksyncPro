@@ -255,26 +255,28 @@ struct ReaderChrome: View {
                     }
                 }
 
-                Menu {
-                    Button(action: { onCropToggle?() }) {
-                        Label(
-                            isAutoCropEnabled ? "Disable Auto-Crop" : "Smart Auto-Crop",
-                            systemImage: isAutoCropEnabled ? "crop.slash" : "wand.and.stars"
-                        )
-                    }
-                    
-                    if let onManual = onManualCropToggle {
-                        Button(action: onManual) {
-                            Label("Manual Crop Sliders...", systemImage: "slider.horizontal.3")
+                if isPDF {
+                    Menu {
+                        Button(action: { onCropToggle?() }) {
+                            Label(
+                                isAutoCropEnabled ? "Disable Auto-Crop" : "Smart Auto-Crop",
+                                systemImage: isAutoCropEnabled ? "crop.slash" : "wand.and.stars"
+                            )
                         }
+                        
+                        if let onManual = onManualCropToggle {
+                            Button(action: onManual) {
+                                Label("Manual Crop Sliders...", systemImage: "slider.horizontal.3")
+                            }
+                        }
+                    } label: {
+                        chromeButton(
+                            icon: "crop",
+                            label: "Crop Margins",
+                            active: isAutoCropEnabled,
+                            activeColor: .white
+                        ) {}
                     }
-                } label: {
-                    chromeButton(
-                        icon: "crop",
-                        label: "Crop Margins",
-                        active: isAutoCropEnabled,
-                        activeColor: .white
-                    ) {}
                 }
 
                 if let onDialogueLens = onDialogueLensToggle {
