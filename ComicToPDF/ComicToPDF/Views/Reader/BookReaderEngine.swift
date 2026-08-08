@@ -1378,8 +1378,8 @@ private func computeColumnCount(for size: CGSize) -> Int {
                 KindleProgressFooterView(
                     currentPage: vm.currentChapterIndex + 1,
                     totalPages: max(1, vm.chapterHtmlFiles.count),
-                    chapterPage: vm.currentChapterSubPageIndex,
-                    chapterTotalPages: max(1, vm.currentChapterTotalSubPages),
+                    chapterPage: chapterPage,
+                    chapterTotalPages: max(1, chapterTotalPages),
                     estimatedMinutesLeft: ReaderProgressTracker.shared.progress(for: pdf.id)?.estimatedMinutesRemaining
                 )
                 .transition(.opacity)

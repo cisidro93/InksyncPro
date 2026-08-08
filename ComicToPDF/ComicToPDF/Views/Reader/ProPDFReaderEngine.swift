@@ -21,6 +21,7 @@ struct ProPDFReaderEngine: View {
     @State private var isPencilMode = false
     @State private var isCroppedMode = false
     @State private var isExpandedView = false
+    @State private var isReflowMode = false
 
     // Text Selection & Markup HUD
     @State private var selectedTextForHUD: String? = nil

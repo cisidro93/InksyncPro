@@ -80,7 +80,8 @@ public actor PDFSpatialParser {
 
             if let selections = page.selection(for: bounds)?.selectionsByLine() {
                 for sel in selections {
-                    if let font = sel.attributes.first?[NSAttributedString.Key.font] as? UIFont {
+                    if let attrStr = sel.attributedString, attrStr.length > 0,
+                       let font = attrStr.attribute(.font, at: 0, effectiveRange: nil) as? UIFont {
                         fontSizes.append(font.pointSize)
                     }
                 }
@@ -128,14 +129,13 @@ public actor PDFSpatialParser {
             var isBold = false
             var isItalic = false
 
-            if let attrs = lineSel.attributes.first {
-                if let font = attrs[NSAttributedString.Key.font] as? UIFont {
-                    fontSize = font.pointSize
-                    fontName = font.fontName
-                    let traits = font.fontDescriptor.symbolicTraits
-                    isBold = traits.contains(.traitBold) || fontName.localizedCaseInsensitiveContains("bold")
-                    isItalic = traits.contains(.traitItalic) || fontName.localizedCaseInsensitiveContains("italic")
-                }
+            if let attrStr = lineSel.attributedString, attrStr.length > 0,
+               let font = attrStr.attribute(.font, at: 0, effectiveRange: nil) as? UIFont {
+                fontSize = font.pointSize
+                fontName = font.fontName
+                let traits = font.fontDescriptor.symbolicTraits
+                isBold = traits.contains(.traitBold) || fontName.localizedCaseInsensitiveContains("bold")
+                isItalic = traits.contains(.traitItalic) || fontName.localizedCaseInsensitiveContains("italic")
             }
 
             lines.append(LineInfo(rect: lineBounds, text: text, fontSize: fontSize, fontName: fontName, isBold: isBold, isItalic: isItalic))

@@ -10,6 +10,7 @@ struct ProPDFReflowReaderView: View {
 
     @State private var reflowHTMLURL: URL? = nil
     @State private var isCompilingReflow = true
+    @State private var webViewRef: WKWebView? = nil
     @State private var chapterPage: Int = 0
     @State private var chapterTotalPages: Int = 1
     @ObservedObject private var prefs = EBookPreferences.shared
@@ -52,7 +53,8 @@ struct ProPDFReflowReaderView: View {
                             let target = Int((fraction * Double(chapterTotalPages - 1)).rounded())
                             currentPageIndex = max(0, min(target, (pdfDocument?.pageCount ?? 1) - 1))
                         }
-                    }
+                    },
+                    webViewRef: $webViewRef
                 )
             } else {
                 VStack(spacing: 12) {
