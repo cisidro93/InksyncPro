@@ -1122,14 +1122,14 @@ extension EBookPageCurlReader {
             let bodyTagRange = Range(match.range, in: result)!
             let insertionIndex = bodyTagRange.upperBound
             result.insert(contentsOf: "<div id=\"inksync-viewport\">", at: insertionIndex)
-            if let closeBodyRange = result.range(of: "</body>", options: .caseInsensitive) {
+            if let closeBodyRange = result.range(of: "</body>", options: [.caseInsensitive, .backwards]) {
                 result.insert(contentsOf: "</div>", at: closeBodyRange.lowerBound)
             } else {
                 result += "</div>"
             }
         } else if let bodyIndex = result.range(of: "<body>", options: .caseInsensitive)?.upperBound {
             result.insert(contentsOf: "<div id=\"inksync-viewport\">", at: bodyIndex)
-            if let closeBodyRange = result.range(of: "</body>", options: .caseInsensitive) {
+            if let closeBodyRange = result.range(of: "</body>", options: [.caseInsensitive, .backwards]) {
                 result.insert(contentsOf: "</div>", at: closeBodyRange.lowerBound)
             } else {
                 result += "</div>"

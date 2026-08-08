@@ -67,10 +67,6 @@ struct DocumentReaderEngine: View {
                                       isAutoCropEnabled: isAutoCropEnabled)
                 .colorInvertIfDark(theme: prefs.activeTheme)
                 
-                if prefs.pdfDualPage && currentPageIndex > 0 {
-                    BookSpineCreaseOverlay()
-                }
-                
                 if !isPencilMode && !isReflowMode {
                     KindleTapZoneOverlay(
                         onPrevPage: {
@@ -585,17 +581,14 @@ struct PDFKitRepresentedView: UIViewRepresentable {
     private func makePdfViewTransparent(_ pdfView: PDFView) {
         pdfView.isOpaque = false
         pdfView.backgroundColor = .clear
-        pdfView.insetsLayoutMarginsFromSafeArea = false
         
         let stripView: (UIView) -> Void = { view in
             view.backgroundColor = .clear
-            view.insetsLayoutMarginsFromSafeArea = false
             if let sv = view as? UIScrollView {
                 sv.backgroundColor = .clear
                 sv.contentInset = .zero
                 sv.verticalScrollIndicatorInsets = .zero
                 sv.horizontalScrollIndicatorInsets = .zero
-                sv.contentInsetAdjustmentBehavior = .never
             }
         }
         
