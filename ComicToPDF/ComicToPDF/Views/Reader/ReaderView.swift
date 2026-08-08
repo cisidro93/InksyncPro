@@ -1443,7 +1443,7 @@ struct PDFKitView: UIViewRepresentable {
     func updateUIView(_ pdfView: PDFView, context: Context) {
         pdfView.displayDirection = isVerticalScroll ? .vertical : .horizontal
         pdfView.displayMode = isDoublePageMode ? .twoUpContinuous : .singlePage
-        pdfView.displaysAsBook = isDoublePageMode
+        pdfView.displaysAsBook = false
         pdfView.displaysRTL = isMangaMode
         
         if let doc = pdfView.document,
