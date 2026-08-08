@@ -44,6 +44,11 @@ Whenever conducting code reviews, bug fixes, or feature additions:
    - End-to-end integration audit checking the harmony between backend actors/models and frontend views.
    - Validate state synchronization, progress tracking (`ReaderProgressTracker`), iCloud sync (`NSUbiquitousKeyValueStore`), settings persistence (`EBookPreferences`), and cross-module routing.
 
+4. **Phase 4: Skeptical Verification Protocol (Zero-Assumption Audit)**
+   - **Never Assume Integration**: Never claim a feature, tool, or UI control is fully functional just because a component file, state property, or action closure exists.
+   - **Line-by-Line Callback Verification**: For every toolbar button, menu option, or gesture handler, explicitly trace the call chain: UI Button → Action Callback → `@State` Boolean Toggle → Modal Sheet / Feature Engine.
+   - **Sheet & Action Binding Audit**: Verify that every modal sheet (`.sheet`, `.popover`, `.alert`) has a working presenter boolean and non-nil content view before declaring completion.
+
 ---
 
 ## Clean Code Handbook Protocol
