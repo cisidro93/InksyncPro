@@ -21,6 +21,7 @@ struct DocumentReaderEngine: View {
     @State private var reflowText: String = "Extracting text..."
     @State private var showingSettings = false
     @State private var showSearch = false
+    @State private var showInspector = false
     @State private var showJumpToPage = false
     @State private var jumpToPageText = ""
     @State private var pdfViewReference: PDFView? = nil
@@ -120,7 +121,7 @@ struct DocumentReaderEngine: View {
                     AnnotationStore.shared.add(bookmark)
                 },
                 onSettingsToggle: { showingSettings = true },
-                onTOCToggle: { NotificationCenter.default.post(name: .toggleStudyNotebook, object: nil) },
+                onTOCToggle: { showInspector = true },
                 onAnnotationsToggle: { isPencilMode.toggle() },
                 onSearchToggle: { showSearch = true },
                 currentProgress: Binding(
@@ -204,6 +205,23 @@ struct DocumentReaderEngine: View {
         .sheet(isPresented: $showingSettings) {
             EBookSettingsPanel(bookID: pdf.id.uuidString, isPDF: true)
                 .presentationDetents([.medium, .large])
+        }
+        .sheet(isPresented: $showInspector) {
+            ProDocumentInspectorView(
+                pdf: pdf,
+                pdfDocument: pdfDocument,
+                currentPageIndex: currentPageIndex,
+                onJumpToPage: { pageIdx in
+                    currentPageIndex = pageIdx
+                    if let targetPage = pdfDocument?.page(at: pageIdx) {
+                        pdfViewReference?.go(to: targetPage)
+                    }
+                    showInspector = false
+                },
+                onDismiss: { showInspector = false }
+            )
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showSearch) {
             if let doc = pdfDocument, let pdfV = pdfViewReference {
