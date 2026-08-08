@@ -198,6 +198,13 @@ struct ProPDFReaderEngine: View {
             if chromeVisible {
                 proReaderChrome
                     .transition(.move(edge: .top).combined(with: .opacity))
+            } else if selectedTextForHUD == nil {
+                KindleProgressFooterView(
+                    currentPage: currentPageIndex + 1,
+                    totalPages: max(1, totalPages),
+                    estimatedMinutesLeft: ReaderProgressTracker.shared.progress(for: pdf.id)?.estimatedMinutesRemaining
+                )
+                .transition(.opacity)
             }
         }
         .task {

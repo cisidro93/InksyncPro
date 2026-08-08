@@ -1624,6 +1624,15 @@ struct ComicReaderEngine: View {
             settingsHUDView
             achievementToastView
             
+            if !chromeVisible {
+                KindleProgressFooterView(
+                    currentPage: currentIndex + 1,
+                    totalPages: max(1, cache.pageCount),
+                    estimatedMinutesLeft: ReaderProgressTracker.shared.progress(for: pdf.id)?.estimatedMinutesRemaining
+                )
+                .transition(.opacity)
+            }
+            
             // Dialogue Lens HUD and Loading indicators
             dialogueHUDView
             

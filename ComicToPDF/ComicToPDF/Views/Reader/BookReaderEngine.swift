@@ -1368,6 +1368,17 @@ struct BookReaderEngine: View {
                 },
                 sessionStartTime: sessionStartTime
             )
+
+            if !chromeVisible {
+                KindleProgressFooterView(
+                    currentPage: vm.currentChapterIndex + 1,
+                    totalPages: max(1, vm.chapterHtmlFiles.count),
+                    chapterPage: vm.currentChapterSubPageIndex,
+                    chapterTotalPages: max(1, vm.currentChapterTotalSubPages),
+                    estimatedMinutesLeft: ReaderProgressTracker.shared.progress(for: pdf.id)?.estimatedMinutesRemaining
+                )
+                .transition(.opacity)
+            }
             
             if showToast {
                 Text(toastMessage)
