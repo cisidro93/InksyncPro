@@ -14,40 +14,31 @@ struct PageCurlReader: UIViewControllerRepresentable {
     var onChromeTap: () -> Void
     var onFlipPastEnd: (() -> Void)?
 
+    private func isPageLandscape(_ idx: Int, landscapeArray: [Bool]) -> Bool {
+        if idx >= 0 && idx < landscapeArray.count && landscapeArray[idx] {
+            return true
+        }
+        if let size = cache.peekImageSize(at: idx), size.width > size.height * 1.01 {
+            return true
+        }
+        return false
+    }
+
     func computeSpreads() -> [[Int]] {
         var allSpreads: [[Int]] = []
         let landscapeArray = cache.isLandscapeArray
-
-        guard landscapeArray.count == totalPages else {
-            if totalPages > 1 {
-                allSpreads.append([0])
-                var i = 1
-                while i < totalPages {
-                    if i + 1 < totalPages {
-                        allSpreads.append([i, i + 1])
-                        i += 2
-                    } else {
-                        allSpreads.append([i])
-                        i += 1
-                    }
-                }
-            } else {
-                allSpreads.append([0])
-            }
-            return allSpreads
-        }
 
         // Page 0 is the physical front cover — displayed standalone on spread [0]
         allSpreads.append([0])
         var i = 1
         while i < totalPages {
-            let isL = landscapeArray.indices.contains(i) ? landscapeArray[i] : false
+            let isL = isPageLandscape(i, landscapeArray: landscapeArray)
             if isL {
                 allSpreads.append([i])
                 i += 1
             } else {
                 if i + 1 < totalPages {
-                    let nextIsL = landscapeArray.indices.contains(i + 1) ? landscapeArray[i + 1] : false
+                    let nextIsL = isPageLandscape(i + 1, landscapeArray: landscapeArray)
                     if nextIsL {
                         allSpreads.append([i])
                         i += 1
@@ -700,7 +691,15 @@ extension SmartMidSpineCurlReader {
                 let blankVC = SingleLeafViewController(pageIndex: -1, parent: parent)
                 return parent.isMangaRTL ? [coverVC, blankVC] : [blankVC, coverVC]
             } else {
-                let isL = (pageIndex >= 0 && pageIndex < parent.cache.isLandscapeArray.count) ? parent.cache.isLandscapeArray[pageIndex] : false
+                let isL: Bool = {
+                    if pageIndex >= 0 && pageIndex < parent.cache.isLandscapeArray.count && parent.cache.isLandscapeArray[pageIndex] {
+                        return true
+                    }
+                    if let size = parent.cache.peekImageSize(at: pageIndex), size.width > size.height * 1.01 {
+                        return true
+                    }
+                    return false
+                }()
                 if isL {
                     let leftVC = SingleLeafViewController(pageIndex: pageIndex, parent: parent, alignment: .trailing, cropHalf: parent.isMangaRTL ? .right : .left)
                     let rightVC = SingleLeafViewController(pageIndex: pageIndex, parent: parent, alignment: .leading, cropHalf: parent.isMangaRTL ? .left : .right)

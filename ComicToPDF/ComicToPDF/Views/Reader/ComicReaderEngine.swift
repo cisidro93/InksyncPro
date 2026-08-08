@@ -415,7 +415,7 @@ final class ComicImageCache: ObservableObject {
                     for i in 0..<min(total, doc.pageCount) {
                         if let page = doc.page(at: i) {
                             let bounds = page.bounds(for: .mediaBox)
-                            array[i] = bounds.width > bounds.height * 1.15
+                            array[i] = bounds.width > bounds.height * 1.01
                         }
                     }
                 }
@@ -430,7 +430,7 @@ final class ComicImageCache: ObservableObject {
                                 let hVal = properties[kCGImagePropertyPixelHeight] as? NSNumber
                                 let w = CGFloat(wVal?.doubleValue ?? 0)
                                 let h = CGFloat(hVal?.doubleValue ?? 0)
-                                return (i, w > h * 1.15)
+                                return (i, w > h * 1.01)
                             }
                             return (i, false)
                         }
@@ -464,7 +464,7 @@ final class ComicImageCache: ObservableObject {
                                 if let doc = PDFDocument(url: fileURL), pageInfo.localIndex < doc.pageCount,
                                    let page = doc.page(at: pageInfo.localIndex) {
                                     let bounds = page.bounds(for: .mediaBox)
-                                    return (i, bounds.width > bounds.height * 1.15)
+                                    return (i, bounds.width > bounds.height * 1.01)
                                 }
                             } else {
                                 if let sortedPaths = try? await ArchiveManager.shared.getSortedImagePaths(for: fileURL) {
@@ -477,7 +477,7 @@ final class ComicImageCache: ObservableObject {
                                             let hVal = properties[kCGImagePropertyPixelHeight] as? NSNumber
                                             let w = CGFloat(wVal?.doubleValue ?? 0)
                                             let h = CGFloat(hVal?.doubleValue ?? 0)
-                                            return (i, w > h * 1.15)
+                                            return (i, w > h * 1.01)
                                         }
                                     }
                                 }
@@ -512,7 +512,7 @@ final class ComicImageCache: ObservableObject {
                                     let hVal = properties[kCGImagePropertyPixelHeight] as? NSNumber
                                     let w = CGFloat(wVal?.doubleValue ?? 0)
                                     let h = CGFloat(hVal?.doubleValue ?? 0)
-                                    return (i, w > h * 1.15)
+                                    return (i, w > h * 1.01)
                                 }
                             } catch {}
                             return (i, false)
@@ -1023,6 +1023,7 @@ final class ComicImageCache: ObservableObject {
                     let bitsPerPixel = img.cgImage?.bitsPerPixel ?? 32
                     let cost = Int(img.size.width * img.size.height * CGFloat(bitsPerPixel) / 8)
                     self.cache.setObject(img, forKey: NSNumber(value: index), cost: cost)
+                    self.registerLoadedImageOrientation(at: index, size: img.size)
                     self.stopFetching(index)
                     self.updateLRUOnMain(index)
                     self.removePrefetchTask(index)
@@ -1082,6 +1083,7 @@ final class ComicImageCache: ObservableObject {
                     let bitsPerPixel = img.cgImage?.bitsPerPixel ?? 32
                     let cost = Int(img.size.width * img.size.height * CGFloat(bitsPerPixel) / 8)
                     self.cache.setObject(img, forKey: NSNumber(value: index), cost: cost)
+                    self.registerLoadedImageOrientation(at: index, size: img.size)
                     self.stopFetching(index)
                     self.updateLRUOnMain(index)
                     self.removePrefetchTask(index)
@@ -1176,55 +1178,56 @@ final class ComicImageCache: ObservableObject {
         }
     }
     
-    func computeSpreads() -> [[Int]] {
-        var allSpreads: [[Int]] = []
-        let landscapeArray = self.isLandscapeArray
-        let totalPages = self.pageCount
+        func registerLoadedImageOrientation(at index: Int, size: CGSize) {
+            let isL = size.width > size.height * 1.01
+            if index >= 0 && index < isLandscapeArray.count {
+                if isLandscapeArray[index] != isL {
+                    objectWillChange.send()
+                    isLandscapeArray[index] = isL
+                }
+            }
+        }
 
-        guard landscapeArray.count == totalPages else {
-            if totalPages > 1 {
-                allSpreads.append([0])
-                var i = 1
-                while i < totalPages {
+        private func isPageLandscape(_ idx: Int, landscapeArray: [Bool]) -> Bool {
+            if idx >= 0 && idx < landscapeArray.count && landscapeArray[idx] {
+                return true
+            }
+            if let size = peekImageSize(at: idx), size.width > size.height * 1.01 {
+                return true
+            }
+            return false
+        }
+
+        func computeSpreads() -> [[Int]] {
+            var allSpreads: [[Int]] = []
+            let landscapeArray = self.isLandscapeArray
+            let totalPages = self.pageCount
+
+            allSpreads.append([0])
+            var i = 1
+            while i < totalPages {
+                let isL = isPageLandscape(i, landscapeArray: landscapeArray)
+                if isL {
+                    allSpreads.append([i])
+                    i += 1
+                } else {
                     if i + 1 < totalPages {
-                        allSpreads.append([i, i + 1])
-                        i += 2
+                        let nextIsL = isPageLandscape(i + 1, landscapeArray: landscapeArray)
+                        if nextIsL {
+                            allSpreads.append([i])
+                            i += 1
+                        } else {
+                            allSpreads.append([i, i + 1])
+                            i += 2
+                        }
                     } else {
                         allSpreads.append([i])
                         i += 1
                     }
                 }
-            } else {
-                allSpreads.append([0])
             }
             return allSpreads
         }
-
-        allSpreads.append([0])
-        var i = 1
-        while i < totalPages {
-            let isL = landscapeArray[i]
-            if isL {
-                allSpreads.append([i])
-                i += 1
-            } else {
-                if i + 1 < totalPages {
-                    let nextIsL = landscapeArray[i + 1]
-                    if nextIsL {
-                        allSpreads.append([i])
-                        i += 1
-                    } else {
-                        allSpreads.append([i, i + 1])
-                        i += 2
-                    }
-                } else {
-                    allSpreads.append([i])
-                    i += 1
-                }
-            }
-        }
-        return allSpreads
-    }
     
     private func getSiblingIndex(for index: Int) -> Int? {
         guard index >= 0 && index < pageCount else { return nil }
@@ -1483,40 +1486,31 @@ struct ComicReaderEngine: View {
         return false
     }
 
+    private func isPageLandscape(_ idx: Int, landscapeArray: [Bool]) -> Bool {
+        if idx >= 0 && idx < landscapeArray.count && landscapeArray[idx] {
+            return true
+        }
+        if let size = cache.peekImageSize(at: idx), size.width > size.height * 1.01 {
+            return true
+        }
+        return false
+    }
+
     private func computeSpreads() -> [[Int]] {
         var allSpreads: [[Int]] = []
         let landscapeArray = cache.isLandscapeArray
-
-        guard landscapeArray.count == cache.pageCount else {
-            // Fallback while scanning is in progress
-            if cache.pageCount > 1 {
-                allSpreads.append([0]) // Page 0 is the cover, keep it solo
-                var i = 1
-                while i < cache.pageCount {
-                    if i + 1 < cache.pageCount {
-                        allSpreads.append([i, i + 1])
-                        i += 2
-                    } else {
-                        allSpreads.append([i])
-                        i += 1
-                    }
-                }
-            } else {
-                allSpreads.append([0])
-            }
-            return allSpreads
-        }
+        let pageCount = cache.pageCount
 
         allSpreads.append([0]) // Page 0 is the cover, keep it solo
         var i = 1
-        while i < cache.pageCount {
-            let isL = landscapeArray[i]
+        while i < pageCount {
+            let isL = isPageLandscape(i, landscapeArray: landscapeArray)
             if isL {
                 allSpreads.append([i])
                 i += 1
             } else {
-                if i + 1 < cache.pageCount {
-                    let nextIsL = landscapeArray[i + 1]
+                if i + 1 < pageCount {
+                    let nextIsL = isPageLandscape(i + 1, landscapeArray: landscapeArray)
                     if nextIsL {
                         allSpreads.append([i])
                         i += 1
