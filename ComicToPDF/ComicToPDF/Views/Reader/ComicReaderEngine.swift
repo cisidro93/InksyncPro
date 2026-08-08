@@ -2192,9 +2192,6 @@ struct ComicReaderEngine: View {
                 }
                 HapticEngine.light()
             },
-            onManualCropToggle: {
-                showCropAdjustmentSheet = true
-            },
             isEnhanced: activeFilterPreset != .original,
             onEnhanceToggle: { withAnimation(.easeInOut) { showingFilterHUD.toggle() } },
             isSettingsActive: readingMode != .pageHorizontal,
