@@ -141,6 +141,7 @@ struct DocumentReaderEngine: View {
                 isReflowActive: isReflowMode,
                 isAutoCropEnabled: activeCropInsets.isEnabled,
                 onCropToggle: { toggleSmartCrop() },
+                onManualCropToggle: { showCropAdjustmentSheet = true },
                 onReflowToggle: {
                     isReflowMode.toggle()
                     if isReflowMode { updateReflowText() }

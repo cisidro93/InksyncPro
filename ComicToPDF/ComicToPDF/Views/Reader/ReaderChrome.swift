@@ -51,6 +51,7 @@ struct ReaderChrome: View {
     var isReflowActive: Bool = false
     var isAutoCropEnabled: Bool = false
     var onCropToggle: (() -> Void)? = nil
+    var onManualCropToggle: (() -> Void)? = nil
     var onReflowToggle: (() -> Void)? = nil
 
     // Enhancement
@@ -105,6 +106,7 @@ struct ReaderChrome: View {
         isReflowActive: Bool = false,
         isAutoCropEnabled: Bool = false,
         onCropToggle: (() -> Void)? = nil,
+        onManualCropToggle: (() -> Void)? = nil,
         onReflowToggle: (() -> Void)? = nil,
         isEnhanced: Bool = false,
         onEnhanceToggle: (() -> Void)? = nil,
@@ -143,6 +145,7 @@ struct ReaderChrome: View {
         self.isReflowActive = isReflowActive
         self.isAutoCropEnabled = isAutoCropEnabled
         self.onCropToggle = onCropToggle
+        self.onManualCropToggle = onManualCropToggle
         self.onReflowToggle = onReflowToggle
         self.isEnhanced = isEnhanced
         self.onEnhanceToggle = onEnhanceToggle
@@ -252,13 +255,26 @@ struct ReaderChrome: View {
                     }
                 }
 
-                chromeButton(
-                    icon: "crop",
-                    label: "Crop Margins",
-                    active: isAutoCropEnabled,
-                    activeColor: .white
-                ) {
-                    onCropToggle?()
+                Menu {
+                    Button(action: { onCropToggle?() }) {
+                        Label(
+                            isAutoCropEnabled ? "Disable Auto-Crop" : "Smart Auto-Crop",
+                            systemImage: isAutoCropEnabled ? "crop.slash" : "wand.and.stars"
+                        )
+                    }
+                    
+                    if let onManual = onManualCropToggle {
+                        Button(action: onManual) {
+                            Label("Manual Crop Sliders...", systemImage: "slider.horizontal.3")
+                        }
+                    }
+                } label: {
+                    chromeButton(
+                        icon: "crop",
+                        label: "Crop Margins",
+                        active: isAutoCropEnabled,
+                        activeColor: .white
+                    ) {}
                 }
 
                 if let onDialogueLens = onDialogueLensToggle {
