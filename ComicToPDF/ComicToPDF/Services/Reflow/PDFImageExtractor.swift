@@ -16,12 +16,13 @@ public struct ExtractedPDFImage: Identifiable, Sendable {
     }
 }
 
-public final class PDFImageExtractor: @unchecked Sendable {
+@MainActor
+public final class PDFImageExtractor: Sendable {
     public static let shared = PDFImageExtractor()
     private init() {}
 
     /// Extracts embedded image graphics from PDF document pages and writes them to local cache folder.
-    public func extractImages(from document: PDFDocument, pdfUUID: String) async -> [ExtractedPDFImage] {
+    public func extractImages(from document: PDFDocument, pdfUUID: String) -> [ExtractedPDFImage] {
         let fileManager = FileManager.default
         guard let cacheDir = fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first else { return [] }
         let targetDir = cacheDir.appendingPathComponent("ReflowPDF/\(pdfUUID)/images", isDirectory: true)

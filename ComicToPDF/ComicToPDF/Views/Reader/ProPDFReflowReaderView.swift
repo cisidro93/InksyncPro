@@ -92,8 +92,8 @@ struct ProPDFReflowReaderView: View {
             }
         }
 
-        let blocks = await PDFSpatialParser.shared.parseDocument(doc)
-        let images = await PDFImageExtractor.shared.extractImages(from: doc, pdfUUID: pdfUUID)
+        let blocks = PDFSpatialParser.shared.parseDocument(doc)
+        let images = PDFImageExtractor.shared.extractImages(from: doc, pdfUUID: pdfUUID)
 
         let compiledURL = await ReflowDOMSynthesizer.shared.synthesizeHTML(
             pdfUUID: pdfUUID,
@@ -102,9 +102,7 @@ struct ProPDFReflowReaderView: View {
             images: images
         )
 
-        await MainActor.run {
-            self.reflowHTMLURL = compiledURL
-            self.isCompilingReflow = false
-        }
+        self.reflowHTMLURL = compiledURL
+        self.isCompilingReflow = false
     }
 }

@@ -48,16 +48,17 @@ public struct SpatialTextBlock: Identifiable, Sendable {
     }
 }
 
-public actor PDFSpatialParser {
+@MainActor
+public final class PDFSpatialParser: Sendable {
     public static let shared = PDFSpatialParser()
     private init() {}
 
     /// Parses a PDFDocument page-by-page into spatial text blocks ordered by column reading flow.
-    public func parseDocument(_ document: PDFDocument) async -> [SpatialTextBlock] {
+    public func parseDocument(_ document: PDFDocument) -> [SpatialTextBlock] {
         var blocks: [SpatialTextBlock] = []
         let pageCount = document.pageCount
 
-        let medianFontSize = await calculateMedianFontSize(document: document)
+        let medianFontSize = calculateMedianFontSize(document: document)
 
         for i in 0..<pageCount {
             guard let page = document.page(at: i) else { continue }
@@ -68,7 +69,7 @@ public actor PDFSpatialParser {
         return blocks
     }
 
-    private func calculateMedianFontSize(document: PDFDocument) async -> CGFloat {
+    private func calculateMedianFontSize(document: PDFDocument) -> CGFloat {
         var fontSizes: [CGFloat] = []
         let samplePages = min(document.pageCount, 10)
 
