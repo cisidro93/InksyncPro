@@ -385,18 +385,43 @@ extension EBookPageCurlReader {
 
         // MARK: - UIPageViewControllerDelegate
 
-        func captureSnapshot(for vc: EBookPageContentViewController) {
-            // Snapshot must be taken while the WebView is still in the view hierarchy and has valid bounds.
-            // takeSnapshot is async — capture frame reference before any removeFromSuperview call.
+        func captureSnapshot(for vcs: [UIViewController]) {
             guard let wv = primaryWebView else { return }
             let snapshotFrame = wv.bounds
             guard snapshotFrame.width > 1, snapshotFrame.height > 1 else { return }
             let config = WKSnapshotConfiguration()
             config.rect = snapshotFrame
             config.afterScreenUpdates = false
-            wv.takeSnapshot(with: config) { [weak vc] image, _ in
-                guard let image = image, let vc = vc else { return }
-                vc.updateSnapshot(image)
+            wv.takeSnapshot(with: config) { [weak self] image, _ in
+                guard let image = image, let self = self else { return }
+                if self.isDualPageMode && vcs.count == 2,
+                   let cgImg = image.cgImage {
+                    let scale = image.scale
+                    let width = CGFloat(cgImg.width)
+                    let height = CGFloat(cgImg.height)
+                    let halfWidth = width / 2.0
+
+                    let leftRect = CGRect(x: 0, y: 0, width: halfWidth, height: height)
+                    let rightRect = CGRect(x: halfWidth, y: 0, width: halfWidth, height: height)
+
+                    if let leftCg = cgImg.cropping(to: leftRect),
+                       let rightCg = cgImg.cropping(to: rightRect) {
+                        let leftImg = UIImage(cgImage: leftCg, scale: scale, orientation: image.imageOrientation)
+                        let rightImg = UIImage(cgImage: rightCg, scale: scale, orientation: image.imageOrientation)
+
+                        if let leftVC = vcs[0] as? EBookPageContentViewController {
+                            leftVC.updateSnapshot(leftImg)
+                        }
+                        if let rightVC = vcs[1] as? EBookPageContentViewController {
+                            rightVC.updateSnapshot(rightImg)
+                        }
+                        return
+                    }
+                }
+
+                if let singleVC = vcs.first as? EBookPageContentViewController {
+                    singleVC.updateSnapshot(image)
+                }
             }
         }
 
@@ -407,8 +432,8 @@ extension EBookPageCurlReader {
             isTransitioning = true
             let bgColor = UIColor(hex: parent.prefs.activeTheme.cssBackground) ?? .black
             pageViewController.view.backgroundColor = bgColor
-            if let currentVC = pageViewController.viewControllers?.first as? EBookPageContentViewController {
-                captureSnapshot(for: currentVC)
+            if let vcs = pageViewController.viewControllers {
+                captureSnapshot(for: vcs)
             }
             primaryWebView?.removeFromSuperview()
         }
@@ -439,11 +464,11 @@ extension EBookPageCurlReader {
             mountPrimaryWebViewOnRoot()
             // Reveal the WebView only after the JS column-position commit completes,
             // preventing any momentary flash of the wrong column position.
-            primaryWebView?.evaluateJavaScript("if(window.goToInksyncPage) window.goToInksyncPage(\(targetPage));") { [weak self, weak currentVC] _, _ in
+            primaryWebView?.evaluateJavaScript("if(window.goToInksyncPage) window.goToInksyncPage(\(targetPage));") { [weak self, weak pageViewController] _, _ in
                 DispatchQueue.main.async {
                     self?.primaryWebView?.isHidden = false
-                    if let currentVC = currentVC {
-                        self?.captureSnapshot(for: currentVC)
+                    if let activeVCs = pageViewController?.viewControllers {
+                        self?.captureSnapshot(for: activeVCs)
                     }
                 }
             }
@@ -531,15 +556,15 @@ extension EBookPageCurlReader {
 
             let nextIndex = currentPageIndex + step
             if nextIndex < computedTotalPages {
-                if let currentVC = pvc.viewControllers?.first as? EBookPageContentViewController {
-                    captureSnapshot(for: currentVC)
+                if let vcs = pvc.viewControllers {
+                    captureSnapshot(for: vcs)
                 }
                 let vcs = spreadViewControllers(for: nextIndex)
                 HapticEngine.light()
                 isTransitioning = true
                 primaryWebView?.removeFromSuperview()
                 primaryWebView?.evaluateJavaScript("if(window.goToInksyncPage) window.goToInksyncPage(\(nextIndex));")
-                safeSetViewControllers(vcs, direction: .forward, animated: true) { [weak self] completed in
+                safeSetViewControllers(vcs, direction: .forward, animated: true) { [weak self, weak pvc] completed in
                     self?.isTransitioning = false
                     if completed {
                         DispatchQueue.main.async {
@@ -549,8 +574,8 @@ extension EBookPageCurlReader {
                             self?.reportScrollFraction()
                             self?.primaryWebView?.evaluateJavaScript("if(window.goToInksyncPage) window.goToInksyncPage(\(nextIndex));")
                             self?.mountPrimaryWebViewOnRoot()
-                            if let activeVC = pvc.viewControllers?.first as? EBookPageContentViewController {
-                                self?.captureSnapshot(for: activeVC)
+                            if let activeVCs = pvc?.viewControllers {
+                                self?.captureSnapshot(for: activeVCs)
                             }
                         }
                     }
@@ -570,15 +595,15 @@ extension EBookPageCurlReader {
 
             let prevIndex = currentPageIndex - step
             if prevIndex >= 0 {
-                if let currentVC = pvc.viewControllers?.first as? EBookPageContentViewController {
-                    captureSnapshot(for: currentVC)
+                if let vcs = pvc.viewControllers {
+                    captureSnapshot(for: vcs)
                 }
                 let vcs = spreadViewControllers(for: prevIndex)
                 HapticEngine.light()
                 isTransitioning = true
                 primaryWebView?.removeFromSuperview()
                 primaryWebView?.evaluateJavaScript("if(window.goToInksyncPage) window.goToInksyncPage(\(prevIndex));")
-                safeSetViewControllers(vcs, direction: .reverse, animated: true) { [weak self] completed in
+                safeSetViewControllers(vcs, direction: .reverse, animated: true) { [weak self, weak pvc] completed in
 
                     self?.isTransitioning = false
                     if completed {
@@ -589,8 +614,8 @@ extension EBookPageCurlReader {
                             self?.reportScrollFraction()
                             self?.primaryWebView?.evaluateJavaScript("if(window.goToInksyncPage) window.goToInksyncPage(\(prevIndex));")
                             self?.mountPrimaryWebViewOnRoot()
-                            if let activeVC = pvc.viewControllers?.first as? EBookPageContentViewController {
-                                self?.captureSnapshot(for: activeVC)
+                            if let activeVCs = pvc?.viewControllers {
+                                self?.captureSnapshot(for: activeVCs)
                             }
                         }
                     }
@@ -1008,7 +1033,8 @@ extension EBookPageCurlReader {
             function applyPagePosition() {
                 var pageStep = getPageStep();
                 if (pageStep <= 0) return;
-                var shift = _targetPage * pageStep;
+                var spreadIndex = _isMultiCol ? Math.floor(_targetPage / 2) : _targetPage;
+                var shift = spreadIndex * pageStep;
 
                 var vp = document.getElementById('inksync-viewport') || document.body;
                 if (vp) {
@@ -1039,8 +1065,9 @@ extension EBookPageCurlReader {
                 var vp = document.getElementById('inksync-viewport');
                 var sv = document.scrollingElement || document.documentElement;
                 var scrollW = vp ? vp.scrollWidth : Math.max(sv.scrollWidth, document.body.scrollWidth);
-                var total = Math.floor((scrollW + 5) / pageStep);
-                var remainder = (scrollW + 5) % pageStep;
+                var colWidth = _isMultiCol ? (pageStep / 2) : pageStep;
+                var total = Math.floor((scrollW + 5) / colWidth);
+                var remainder = (scrollW + 5) % colWidth;
                 if (remainder > 35) {
                     total += 1;
                 }

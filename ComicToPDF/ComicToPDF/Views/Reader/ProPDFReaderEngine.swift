@@ -34,6 +34,9 @@ struct ProPDFReaderEngine: View {
 
     @State private var showCropAdjustmentSheet = false
     @State private var activeCropInsets: CodableCropInsets = .zero
+    @State private var activeZoomScale: CGFloat = 1.0
+    @State private var showZoomPill = false
+    @State private var zoomPillTask: Task<Void, Never>? = nil
 
     private var totalPages: Int {
         pdfDocument?.pageCount ?? pdf.pageCount
@@ -130,6 +133,22 @@ struct ProPDFReaderEngine: View {
                             withAnimation(.easeInOut(duration: 0.18)) {
                                 selectedTextForHUD = text
                             }
+                        },
+                        onScaleChanged: { scale in
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                activeZoomScale = scale
+                                showZoomPill = true
+                            }
+                            zoomPillTask?.cancel()
+                            zoomPillTask = Task {
+                                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                                guard !Task.isCancelled else { return }
+                                await MainActor.run {
+                                    withAnimation(.easeInOut(duration: 0.3)) {
+                                        showZoomPill = false
+                                    }
+                                }
+                            }
                         }
                     )
                     .ignoresSafeArea()
@@ -164,6 +183,28 @@ struct ProPDFReaderEngine: View {
                 Spacer()
             }
             .ignoresSafeArea(edges: .bottom)
+
+            // Zoom Scale Percentage Pill HUD
+            if showZoomPill {
+                VStack {
+                    HStack(spacing: 6) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 11, weight: .bold))
+                        Text("\(Int(round(activeZoomScale * 100)))%")
+                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 7)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .overlay(Capsule().stroke(Color.white.opacity(0.2), lineWidth: 0.5))
+                    .shadow(color: .black.opacity(0.25), radius: 8, y: 3)
+                    .padding(.top, chromeVisible ? 70 : 50)
+                    Spacer()
+                }
+                .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                .zIndex(10)
+            }
 
             // Contextual Text Selection Markup HUD
             if let selectedText = selectedTextForHUD, !selectedText.isEmpty {
@@ -545,6 +586,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
     var isExpandedView: Bool
     var onTapCenter: () -> Void
     var onTextSelectionChanged: (String?) -> Void
+    var onScaleChanged: ((CGFloat) -> Void)? = nil
 
     func makeUIView(context: Context) -> PDFView {
         let pdfView = PDFView()
@@ -591,6 +633,13 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
             context.coordinator,
             selector: #selector(Coordinator.selectionChanged(_:)),
             name: .PDFViewSelectionChanged,
+            object: pdfView
+        )
+
+        NotificationCenter.default.addObserver(
+            context.coordinator,
+            selector: #selector(Coordinator.scaleChanged(_:)),
+            name: .PDFViewScaleChanged,
             object: pdfView
         )
 
@@ -723,6 +772,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
     static func dismantleUIView(_ uiView: PDFView, coordinator: Coordinator) {
         NotificationCenter.default.removeObserver(coordinator, name: .PDFViewPageChanged, object: uiView)
         NotificationCenter.default.removeObserver(coordinator, name: .PDFViewSelectionChanged, object: uiView)
+        NotificationCenter.default.removeObserver(coordinator, name: .PDFViewScaleChanged, object: uiView)
     }
 
     class Coordinator: NSObject {
@@ -750,6 +800,15 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
             } else {
                 pdfView.scaleFactor = zoomTarget
             }
+            let effectiveScale = pdfView.scaleFactor / max(0.01, fitScale)
+            parent.onScaleChanged?(effectiveScale)
+        }
+
+        @MainActor @objc func scaleChanged(_ notification: Notification) {
+            guard let pdfView = notification.object as? PDFView else { return }
+            let fitScale = pdfView.scaleFactorForSizeToFit
+            let effectiveScale = pdfView.scaleFactor / max(0.01, fitScale)
+            parent.onScaleChanged?(effectiveScale)
         }
 
         @MainActor @objc func pageChanged(_ notification: Notification) {

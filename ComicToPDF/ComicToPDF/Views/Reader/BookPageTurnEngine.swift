@@ -591,6 +591,45 @@ struct SmartMidSpineCurlReader: UIViewControllerRepresentable {
     var onChromeTap: () -> Void
     var onFlipPastEnd: (() -> Void)? = nil
 
+    func computeSpreads() -> [[Int]] {
+        var allSpreads: [[Int]] = []
+        let landscapeArray = cache.isLandscapeArray
+        let pageCount = cache.pageCount
+
+        allSpreads.append([0])
+        var i = 1
+        while i < pageCount {
+            let isL: Bool = {
+                if i >= 0 && i < landscapeArray.count && landscapeArray[i] { return true }
+                if let size = cache.peekImageSize(at: i), size.width > size.height * 1.01 { return true }
+                return false
+            }()
+            if isL {
+                allSpreads.append([i])
+                i += 1
+            } else {
+                if i + 1 < pageCount {
+                    let nextIsL: Bool = {
+                        if (i + 1) >= 0 && (i + 1) < landscapeArray.count && landscapeArray[i + 1] { return true }
+                        if let size = cache.peekImageSize(at: i + 1), size.width > size.height * 1.01 { return true }
+                        return false
+                    }()
+                    if nextIsL {
+                        allSpreads.append([i])
+                        i += 1
+                    } else {
+                        allSpreads.append([i, i + 1])
+                        i += 2
+                    }
+                } else {
+                    allSpreads.append([i])
+                    i += 1
+                }
+            }
+        }
+        return allSpreads
+    }
+
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
     }
@@ -674,10 +713,24 @@ extension SmartMidSpineCurlReader {
                 name: .readerZoomStateChanged,
                 object: nil
             )
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(handleOrientationsScanned(_:)),
+                name: NSNotification.Name("ComicImageCache.OrientationsScanned"),
+                object: nil
+            )
         }
 
         deinit {
             NotificationCenter.default.removeObserver(self)
+        }
+
+        @objc func handleOrientationsScanned(_ notification: Notification) {
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self, let pvc = self.pageViewController else { return }
+                let currentSpread = self.spreadViewControllers(for: self.parent.currentIndex)
+                pvc.setViewControllers(currentSpread, direction: .forward, animated: false)
+            }
         }
 
         func spreadViewControllers(for pageIndex: Int) -> [UIViewController] {
@@ -810,38 +863,46 @@ extension SmartMidSpineCurlReader {
 
         private func turnForward(_ pvc: UIPageViewController) {
             guard !isTransitioning else { return }
-            let nextIndex = min(parent.totalPages - 1, parent.currentIndex + 2)
-            if nextIndex != parent.currentIndex {
-                let targetSpread = spreadViewControllers(for: nextIndex)
-                HapticEngine.light()
-                let direction: UIPageViewController.NavigationDirection = parent.isMangaRTL ? .reverse : .forward
-                isTransitioning = true // 🔴 Lock transitions during tap page flip
-                pvc.setViewControllers(targetSpread, direction: direction, animated: true) { [weak self] completed in
-                    self?.isTransitioning = false // 🔓 Unlock transition
-                    if completed {
-                        DispatchQueue.main.async {
-                            self?.parent.currentIndex = nextIndex
+            let spreads = parent.computeSpreads()
+            if let currentSpreadIdx = spreads.firstIndex(where: { $0.contains(parent.currentIndex) }) {
+                let nextSpreadIdx = currentSpreadIdx + 1
+                if nextSpreadIdx < spreads.count {
+                    let nextIndex = spreads[nextSpreadIdx].first ?? parent.currentIndex
+                    let targetSpread = spreadViewControllers(for: nextIndex)
+                    HapticEngine.light()
+                    let direction: UIPageViewController.NavigationDirection = parent.isMangaRTL ? .reverse : .forward
+                    isTransitioning = true // 🔴 Lock transitions during tap page flip
+                    pvc.setViewControllers(targetSpread, direction: direction, animated: true) { [weak self] completed in
+                        self?.isTransitioning = false // 🔓 Unlock transition
+                        if completed {
+                            DispatchQueue.main.async {
+                                self?.parent.currentIndex = nextIndex
+                            }
                         }
                     }
+                    return
                 }
-            } else {
-                parent.onFlipPastEnd?()
             }
+            parent.onFlipPastEnd?()
         }
 
         private func turnBackward(_ pvc: UIPageViewController) {
             guard !isTransitioning else { return }
-            let prevIndex = max(0, parent.currentIndex - 2)
-            if prevIndex != parent.currentIndex {
-                let targetSpread = spreadViewControllers(for: prevIndex)
-                HapticEngine.light()
-                let direction: UIPageViewController.NavigationDirection = parent.isMangaRTL ? .forward : .reverse
-                isTransitioning = true // 🔴 Lock transitions during tap page flip
-                pvc.setViewControllers(targetSpread, direction: direction, animated: true) { [weak self] completed in
-                    self?.isTransitioning = false // 🔓 Unlock transition
-                    if completed {
-                        DispatchQueue.main.async {
-                            self?.parent.currentIndex = prevIndex
+            let spreads = parent.computeSpreads()
+            if let currentSpreadIdx = spreads.firstIndex(where: { $0.contains(parent.currentIndex) }) {
+                let prevSpreadIdx = currentSpreadIdx - 1
+                if prevSpreadIdx >= 0 {
+                    let prevIndex = spreads[prevSpreadIdx].first ?? parent.currentIndex
+                    let targetSpread = spreadViewControllers(for: prevIndex)
+                    HapticEngine.light()
+                    let direction: UIPageViewController.NavigationDirection = parent.isMangaRTL ? .forward : .reverse
+                    isTransitioning = true // 🔴 Lock transitions during tap page flip
+                    pvc.setViewControllers(targetSpread, direction: direction, animated: true) { [weak self] completed in
+                        self?.isTransitioning = false // 🔓 Unlock transition
+                        if completed {
+                            DispatchQueue.main.async {
+                                self?.parent.currentIndex = prevIndex
+                            }
                         }
                     }
                 }
@@ -961,8 +1022,8 @@ struct TwoUpPageCell: View {
                         Image(uiImage: image)
                             .resizable()
                             .applyFilterPreset(activeFilterPreset)
-                            .aspectRatio(contentMode: .fill)
-                            .frame(width: geo.size.width * 2, height: geo.size.height, alignment: .topLeading)
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: geo.size.width * 2, height: geo.size.height, alignment: .center)
                             .offset(x: cropHalf == .left ? 0 : -geo.size.width)
                     }
                     .clipped()
