@@ -598,6 +598,15 @@ struct EBookSettingsPanel: View {
                     )
                 }
 
+                // PDF Reading & Reflow Mode
+                ReaderSettingsSection(title: "PDF Display & Reflow", icon: "doc.plaintext") {
+                    ReaderSettingsToggleRow(
+                        label: "Pro Text Reflow Mode",
+                        icon: "doc.text.magnifyingglass",
+                        isOn: $prefs.pdfReflowMode
+                    )
+                }
+
                 // PDF Spreads & Orientation
                 ReaderSettingsSection(title: "PDF Spreads", icon: "book.pages") {
                     ReaderSettingsToggleRow(

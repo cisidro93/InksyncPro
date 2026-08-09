@@ -113,7 +113,13 @@ struct ProPDFReaderEngine: View {
                     pdf: pdf,
                     pdfDocument: pdfDocument,
                     currentPageIndex: $currentPageIndex,
-                    onDismiss: onDismiss
+                    onDismiss: onDismiss,
+                    onToggleReflow: {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                            isReflowMode = false
+                            prefs.pdfReflowMode = false
+                        }
+                    }
                 )
             } else if let doc = pdfDocument {
                 // PDF Core Canvas View
@@ -409,6 +415,24 @@ struct ProPDFReaderEngine: View {
                 }
                 .help("Apple Pencil Drawing Mode")
                 .accessibilityLabel("Apple Pencil Drawing Mode")
+
+                // Pro Text Reflow Mode Toggle
+                Button(action: {
+                    HapticEngine.medium()
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                        isReflowMode.toggle()
+                        prefs.pdfReflowMode = isReflowMode
+                    }
+                }) {
+                    Image(systemName: isReflowMode ? "doc.plaintext.fill" : "doc.plaintext")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(isReflowMode ? .inkGreen : .white)
+                        .frame(width: 38, height: 38)
+                        .background(isReflowMode ? Color.inkGreen.opacity(0.25) : Color.black.opacity(0.45))
+                        .clipShape(Circle())
+                }
+                .help("Pro Text Reflow Mode")
+                .accessibilityLabel("Pro Text Reflow Mode")
 
                 // Settings
                 Button(action: {

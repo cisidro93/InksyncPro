@@ -7,6 +7,7 @@ struct ProPDFReflowReaderView: View {
     let pdfDocument: PDFDocument?
     @Binding var currentPageIndex: Int
     var onDismiss: () -> Void
+    var onToggleReflow: (() -> Void)? = nil
 
     @State private var reflowHTMLURL: URL? = nil
     @State private var isCompilingReflow = true
@@ -17,7 +18,7 @@ struct ProPDFReflowReaderView: View {
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        ZStack {
+        ZStack(alignment: .topLeading) {
             AmbientReaderBackground(theme: prefs.activeTheme)
                 .ignoresSafeArea()
 
@@ -30,6 +31,7 @@ struct ProPDFReflowReaderView: View {
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(prefs.activeTheme.foreground(colorScheme: colorScheme).opacity(0.8))
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let htmlURL = reflowHTMLURL {
                 EBookPageCurlReader(
                     spineItem: EBookMetadata.SpineItem(
@@ -67,6 +69,32 @@ struct ProPDFReflowReaderView: View {
                         .font(.system(size: 13))
                         .foregroundStyle(Theme.textSecondary)
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+
+            // Top Floating Mode Toggle Pill
+            if let toggle = onToggleReflow {
+                Button(action: {
+                    HapticEngine.light()
+                    toggle()
+                }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.left")
+                            .font(.system(size: 12, weight: .bold))
+                        Text("Vector View")
+                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .background(Color.black.opacity(0.65))
+                    .clipShape(Capsule())
+                    .overlay(Capsule().stroke(Color.white.opacity(0.2), lineWidth: 0.5))
+                    .shadow(color: .black.opacity(0.3), radius: 8, y: 3)
+                }
+                .padding(.leading, 16)
+                .padding(.top, 14)
+                .zIndex(20)
             }
         }
         .task {

@@ -75,6 +75,11 @@ class EBookPreferences: ObservableObject {
     @AppStorage("ebook_showBatteryPercentage") var showBatteryPercentage: Bool = true
     @AppStorage("ebook_fullBleedSpreads") var fullBleedSpreads: Bool = true
 
+    // MARK: - PDF Settings
+    @AppStorage("pdf_reflowMode")       var pdfReflowMode: Bool     = false {
+        didSet { objectWillChange.send() }
+    }
+
     // Progress display mode (cycles on tap)
     @AppStorage("ebook_progressMode")   var progressMode: Int = 0  // 0=page, 1=chapter, 2=timeLeft
 
