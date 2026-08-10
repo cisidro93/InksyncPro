@@ -573,17 +573,17 @@ extension EBookPageCurlReader {
                 primaryWebView?.evaluateJavaScript("if(window.goToInksyncPage) window.goToInksyncPage(\(nextIndex));")
                 safeSetViewControllers(vcs, direction: .forward, animated: true) { [weak self, weak pvc] completed in
                     self?.isTransitioning = false
-                    if completed {
-                        DispatchQueue.main.async {
-                            self?.lastCompletedControllerIndex = nextIndex
-                            self?.currentPageIndex = nextIndex
-                            self?.parent.currentPage = nextIndex
-                            self?.reportScrollFraction()
-                            self?.primaryWebView?.evaluateJavaScript("if(window.goToInksyncPage) window.goToInksyncPage(\(nextIndex));")
-                            self?.mountPrimaryWebViewOnRoot()
-                            if let activeVCs = pvc?.viewControllers {
-                                self?.captureSnapshot(for: activeVCs)
-                            }
+                    DispatchQueue.main.async {
+                        guard let self = self else { return }
+                        let targetIndex = completed ? nextIndex : self.currentPageIndex
+                        self.lastCompletedControllerIndex = targetIndex
+                        self.currentPageIndex = targetIndex
+                        self.parent.currentPage = targetIndex
+                        self.reportScrollFraction()
+                        self.primaryWebView?.evaluateJavaScript("if(window.goToInksyncPage) window.goToInksyncPage(\(targetIndex));")
+                        self.mountPrimaryWebViewOnRoot()
+                        if let activeVCs = pvc?.viewControllers {
+                            self.captureSnapshot(for: activeVCs)
                         }
                     }
                 }
@@ -611,19 +611,18 @@ extension EBookPageCurlReader {
                 primaryWebView?.removeFromSuperview()
                 primaryWebView?.evaluateJavaScript("if(window.goToInksyncPage) window.goToInksyncPage(\(prevIndex));")
                 safeSetViewControllers(vcs, direction: .reverse, animated: true) { [weak self, weak pvc] completed in
-
                     self?.isTransitioning = false
-                    if completed {
-                        DispatchQueue.main.async {
-                            self?.lastCompletedControllerIndex = prevIndex
-                            self?.currentPageIndex = prevIndex
-                            self?.parent.currentPage = prevIndex
-                            self?.reportScrollFraction()
-                            self?.primaryWebView?.evaluateJavaScript("if(window.goToInksyncPage) window.goToInksyncPage(\(prevIndex));")
-                            self?.mountPrimaryWebViewOnRoot()
-                            if let activeVCs = pvc?.viewControllers {
-                                self?.captureSnapshot(for: activeVCs)
-                            }
+                    DispatchQueue.main.async {
+                        guard let self = self else { return }
+                        let targetIndex = completed ? prevIndex : self.currentPageIndex
+                        self.lastCompletedControllerIndex = targetIndex
+                        self.currentPageIndex = targetIndex
+                        self.parent.currentPage = targetIndex
+                        self.reportScrollFraction()
+                        self.primaryWebView?.evaluateJavaScript("if(window.goToInksyncPage) window.goToInksyncPage(\(targetIndex));")
+                        self.mountPrimaryWebViewOnRoot()
+                        if let activeVCs = pvc?.viewControllers {
+                            self.captureSnapshot(for: activeVCs)
                         }
                     }
                 }
