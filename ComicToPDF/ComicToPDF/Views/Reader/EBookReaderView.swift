@@ -615,7 +615,12 @@ struct EBookReaderView: View {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(visibleChapters, id: \.index) { item in
                             Button {
-                                withAnimation(.spring()) { currentIndex = item.index; showChapterList = false }
+                                withAnimation(.spring()) {
+                                    currentIndex = item.index
+                                    chapterPage = 0
+                                    chapterScrollFraction = 0.0
+                                    showChapterList = false
+                                }
                                 saveProgress()
                             } label: {
                                 HStack(spacing: 12) {

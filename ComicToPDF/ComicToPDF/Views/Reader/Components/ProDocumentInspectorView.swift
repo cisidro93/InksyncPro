@@ -318,11 +318,23 @@ private struct OutlineNodeRow: View {
     var onSelect: (Int) -> Void
 
     private func targetPageIndex(for child: PDFOutline) -> Int? {
-        let dest = child.destination ?? (child.action as? PDFActionGoTo)?.destination
-        guard let page = dest?.page else { return nil }
-        if let doc = pdfDocument ?? page.document {
-            let idx = doc.index(for: page)
-            return idx != NSNotFound ? idx : nil
+        if let dest = child.destination {
+            if let page = dest.page, let doc = pdfDocument ?? page.document {
+                let idx = doc.index(for: page)
+                if idx != NSNotFound { return idx }
+            }
+        }
+        if let action = child.action as? PDFActionGoTo, let dest = action.destination {
+            if let page = dest.page, let doc = pdfDocument ?? page.document {
+                let idx = doc.index(for: page)
+                if idx != NSNotFound { return idx }
+            }
+        }
+        if let label = child.label {
+            let components = label.components(separatedBy: CharacterSet.decimalDigits.inverted).filter { !$0.isEmpty }
+            if let lastNum = components.last, let pageNum = Int(lastNum), pageNum > 0, pageNum <= (pdfDocument?.pageCount ?? 0) {
+                return pageNum - 1
+            }
         }
         return nil
     }

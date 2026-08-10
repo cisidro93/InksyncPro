@@ -785,7 +785,7 @@ extension SmartMidSpineCurlReader {
                 if let size = parent.cache.peekImageSize(at: targetPage), size.width > size.height * 1.01 { return true }
                 return false
             }()
-            let cropHalf: SingleLeafViewController.CropHalf = isL ? (parent.isMangaRTL ? .left : .right) : .none
+            let cropHalf: CropHalf = isL ? (parent.isMangaRTL ? .left : .right) : .none
             return SingleLeafViewController(pageIndex: targetPage, parent: parent, alignment: parent.isMangaRTL ? .leading : .trailing, cropHalf: cropHalf)
         }
 
@@ -806,7 +806,7 @@ extension SmartMidSpineCurlReader {
                 if let size = parent.cache.peekImageSize(at: targetPage), size.width > size.height * 1.01 { return true }
                 return false
             }()
-            let cropHalf: SingleLeafViewController.CropHalf = isL ? (parent.isMangaRTL ? .right : .left) : .none
+            let cropHalf: CropHalf = isL ? (parent.isMangaRTL ? .right : .left) : .none
             return SingleLeafViewController(pageIndex: targetPage, parent: parent, alignment: parent.isMangaRTL ? .trailing : .leading, cropHalf: cropHalf)
         }
 
