@@ -819,8 +819,17 @@ extension EBookPageCurlReader {
 
         private func restoreHighlights(in webView: WKWebView) {
             guard let pdfID = parent.pdfID else { return }
+            let spineLabel = parent.spineItem.label.lowercased()
+            let spineHref = parent.spineItem.href.lowercased()
             let annotations = AnnotationStore.shared.annotations(for: pdfID)
-                .filter { $0.kind == .highlight && $0.chapterTitle == parent.spineItem.label }
+                .filter { ann in
+                    guard ann.kind == .highlight else { return false }
+                    if let title = ann.chapterTitle?.lowercased(), !title.isEmpty {
+                        if !spineLabel.isEmpty && (title.contains(spineLabel) || spineLabel.contains(title)) { return true }
+                        if !spineHref.isEmpty && (title.contains(spineHref) || spineHref.contains(title)) { return true }
+                    }
+                    return true
+                }
             for ann in annotations {
                 guard let text = ann.selectedText, let color = ann.colorHex else { continue }
                 let safeText = text

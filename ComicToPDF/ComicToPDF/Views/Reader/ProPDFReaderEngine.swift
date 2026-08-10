@@ -535,6 +535,8 @@ struct ProPDFReaderEngine: View {
                 }
             }
             pdfView.clearSelection()
+            pdfView.setNeedsDisplay()
+            HapticEngine.selection()
         }
 
         let highlight = Annotation(
