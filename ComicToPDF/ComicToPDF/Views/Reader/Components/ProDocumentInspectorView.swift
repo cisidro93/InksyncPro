@@ -324,7 +324,8 @@ private struct OutlineNodeRow: View {
                 if idx != NSNotFound { return idx }
             }
         }
-        if let action = child.action as? PDFActionGoTo, let dest = action.destination {
+        if let action = child.action as? PDFActionGoTo {
+            let dest = action.destination
             if let page = dest.page, let doc = pdfDocument ?? page.document {
                 let idx = doc.index(for: page)
                 if idx != NSNotFound { return idx }
