@@ -477,7 +477,25 @@ extension EBookPageCurlReader {
                     if let activeVCs = pageViewController?.viewControllers {
                         self?.captureSnapshot(for: activeVCs)
                     }
+                    self?.precacheAdjacentSnapshots()
                 }
+            }
+        }
+
+        func precacheAdjacentSnapshots() {
+            guard let wv = primaryWebView, !isTransitioning else { return }
+            let current = currentPageIndex
+            let step = isDualPageMode ? 2 : 1
+            let nextIdx = current + step
+
+            guard nextIdx < computedTotalPages else { return }
+
+            let config = WKSnapshotConfiguration()
+            config.rect = wv.bounds
+            config.afterScreenUpdates = false
+            wv.takeSnapshot(with: config) { [weak self] image, _ in
+                guard let image = image, let self = self else { return }
+                self.pageSnapshots[current] = image
             }
         }
 

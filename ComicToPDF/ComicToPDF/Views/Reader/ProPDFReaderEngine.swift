@@ -790,6 +790,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         var lastTextMargin: CGFloat = -1
         var lastPageIndex: Int = -1
         var lastBoundsSize: CGSize = .zero
+        var userCustomZoomScale: CGFloat? = nil
 
         init(_ parent: ProPDFViewRepresentable) {
             self.parent = parent
@@ -806,8 +807,10 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
             let zoomTarget = fitScale * 2.5
             if currentScale > fitScale * 1.5 {
                 pdfView.scaleFactor = fitScale
+                userCustomZoomScale = nil
             } else {
                 pdfView.scaleFactor = zoomTarget
+                userCustomZoomScale = zoomTarget
             }
             let effectiveScale = pdfView.scaleFactor / max(0.01, fitScale)
             parent.onScaleChanged?(effectiveScale)
@@ -817,6 +820,9 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
             guard let pdfView = notification.object as? PDFView else { return }
             let fitScale = pdfView.scaleFactorForSizeToFit
             let effectiveScale = pdfView.scaleFactor / max(0.01, fitScale)
+            if abs(pdfView.scaleFactor - fitScale) > 0.05 {
+                userCustomZoomScale = pdfView.scaleFactor
+            }
             parent.onScaleChanged?(effectiveScale)
         }
 
