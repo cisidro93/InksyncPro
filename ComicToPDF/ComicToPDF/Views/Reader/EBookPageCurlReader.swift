@@ -87,14 +87,15 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
         let oldParent = context.coordinator.parent
         context.coordinator.parent = self
 
-        // Guard against re-entrant updates during interactive curl gestures
-        if context.coordinator.isTransitioning { return }
-
-        // If spine item (chapter) changed, reload everything
+        // If spine item (chapter) changed, reset transitioning lock and reload everything
         if oldParent.spineItem.href != self.spineItem.href {
+            context.coordinator.isTransitioning = false
             context.coordinator.loadChapterAndPresent()
             return
         }
+
+        // Guard against re-entrant updates during interactive curl gestures
+        if context.coordinator.isTransitioning { return }
 
         // If typography / theme preferences changed, update live styles in WKWebView
         if oldParent.prefs.fontSize != self.prefs.fontSize ||
@@ -264,11 +265,16 @@ extension EBookPageCurlReader {
                            ?? ""
                 }
 
-                // Clean via SwiftReadability with rawHTML fallback safeguard
-                let cleanArticle = SwiftReadability.parse(html: rawHTML)
-                var html = cleanArticle.content.trimmingCharacters(in: .whitespacesAndNewlines)
-                if html.isEmpty || html.count < 20 {
+                // Clean via SwiftReadability (bypassed for synthesized reflow HTML)
+                var html: String
+                if rawHTML.contains("pdf-page-marker") || self.parent.spineItem.href.hasSuffix("reflow.html") {
                     html = rawHTML
+                } else {
+                    let cleanArticle = SwiftReadability.parse(html: rawHTML)
+                    html = cleanArticle.content.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if html.isEmpty || html.count < 20 {
+                        html = rawHTML
+                    }
                 }
 
                 // Wrap with viewport div
@@ -435,6 +441,7 @@ extension EBookPageCurlReader {
             if let vcs = pageViewController.viewControllers {
                 captureSnapshot(for: vcs)
             }
+            captureSnapshot(for: pendingViewControllers)
             primaryWebView?.removeFromSuperview()
         }
 

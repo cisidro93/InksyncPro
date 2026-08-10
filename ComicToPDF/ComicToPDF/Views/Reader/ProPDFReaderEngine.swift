@@ -732,48 +732,29 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
 
         if uiView.displayBox != targetDisplayBox {
             uiView.displayBox = targetDisplayBox
-            uiView.autoScales = false
-            uiView.autoScales = true
-            uiView.scaleFactor = uiView.scaleFactorForSizeToFit
-            uiView.layoutDocumentView()
         }
 
-        let pageOrBoundsChanged = (context.coordinator.lastPageIndex != currentPageIndex) ||
-                                  (context.coordinator.lastBoundsSize != uiView.bounds.size) ||
-                                  cropStateChanged
+        let boundsChanged = context.coordinator.lastBoundsSize != uiView.bounds.size
 
-        if isExpandedView {
-            if pageOrBoundsChanged {
-                if uiView.autoScales {
-                    uiView.autoScales = false
-                }
+        if boundsChanged || cropStateChanged {
+            if isExpandedView {
                 let fitScale = uiView.scaleFactorForSizeToFit
                 let targetScale = max(fitScale * 1.35, 1.25)
                 if abs(uiView.scaleFactor - targetScale) > 0.05 {
                     uiView.scaleFactor = targetScale
                 }
-            }
-        } else {
-            if pageOrBoundsChanged, let currentPage = uiView.currentPage, uiView.bounds.width > 0 && uiView.bounds.height > 0 {
+            } else if let currentPage = uiView.currentPage, uiView.bounds.width > 0 && uiView.bounds.height > 0 {
                 let pageBounds = currentPage.bounds(for: uiView.displayBox)
                 let pageWidthMultiplier: CGFloat = isDual ? 2.0 : 1.0
                 let totalPageWidth = pageBounds.width * pageWidthMultiplier
                 let totalPageHeight = pageBounds.height
 
-                // Use min (fit) so the entire page is always visible.
-                // max (fill) causes clipped text by zooming past the visible area.
                 let scaleForWidth = uiView.bounds.width / max(totalPageWidth, 1.0)
                 let scaleForHeight = uiView.bounds.height / max(totalPageHeight, 1.0)
                 let targetScale = min(scaleForWidth, scaleForHeight)
 
-                if targetScale > 0 {
-                    if uiView.autoScales {
-                        uiView.autoScales = false
-                    }
-                    if abs(uiView.scaleFactor - targetScale) > 0.005 {
-                        uiView.scaleFactor = targetScale
-                        uiView.layoutDocumentView()
-                    }
+                if targetScale > 0 && abs(uiView.scaleFactor - targetScale) > 0.005 {
+                    uiView.scaleFactor = targetScale
                 }
             }
         }
@@ -781,9 +762,11 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         context.coordinator.lastPageIndex = currentPageIndex
         context.coordinator.lastBoundsSize = uiView.bounds.size
 
-        // Guarantee PDFView active page always displays the target pageIndex
+        // Guarantee PDFView active page always displays the target pageIndex smoothly without flashing
         if let targetPage = document.page(at: currentPageIndex), uiView.currentPage != targetPage {
-            uiView.go(to: targetPage)
+            UIView.animate(withDuration: 0.15, delay: 0, options: [.allowUserInteraction, .beginFromCurrentState]) {
+                uiView.go(to: targetPage)
+            }
         }
     }
 

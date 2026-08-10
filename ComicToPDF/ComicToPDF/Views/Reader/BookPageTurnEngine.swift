@@ -734,35 +734,34 @@ extension SmartMidSpineCurlReader {
         }
 
         func spreadViewControllers(for pageIndex: Int) -> [UIViewController] {
-            let isCover = (pageIndex == 0)
-            if isCover {
+            let spreads = parent.computeSpreads()
+            let targetSpread = spreads.first(where: { $0.contains(pageIndex) }) ?? [max(0, pageIndex)]
+            
+            if targetSpread == [0] {
                 let coverVC = SingleLeafViewController(pageIndex: 0, parent: parent, alignment: parent.isMangaRTL ? .leading : .trailing)
                 let blankVC = SingleLeafViewController(pageIndex: -1, parent: parent)
                 return parent.isMangaRTL ? [coverVC, blankVC] : [blankVC, coverVC]
-            } else {
+            } else if targetSpread.count == 1 {
+                let singleIdx = targetSpread[0]
                 let isL: Bool = {
-                    if pageIndex >= 0 && pageIndex < parent.cache.isLandscapeArray.count && parent.cache.isLandscapeArray[pageIndex] {
-                        return true
-                    }
-                    if let size = parent.cache.peekImageSize(at: pageIndex), size.width > size.height * 1.01 {
-                        return true
-                    }
+                    if singleIdx >= 0 && singleIdx < parent.cache.isLandscapeArray.count && parent.cache.isLandscapeArray[singleIdx] { return true }
+                    if let size = parent.cache.peekImageSize(at: singleIdx), size.width > size.height * 1.01 { return true }
                     return false
                 }()
                 if isL {
-                    let leftVC = SingleLeafViewController(pageIndex: pageIndex, parent: parent, alignment: .trailing, cropHalf: parent.isMangaRTL ? .right : .left)
-                    let rightVC = SingleLeafViewController(pageIndex: pageIndex, parent: parent, alignment: .leading, cropHalf: parent.isMangaRTL ? .left : .right)
+                    let leftVC = SingleLeafViewController(pageIndex: singleIdx, parent: parent, alignment: .trailing, cropHalf: parent.isMangaRTL ? .right : .left)
+                    let rightVC = SingleLeafViewController(pageIndex: singleIdx, parent: parent, alignment: .leading, cropHalf: parent.isMangaRTL ? .left : .right)
                     return parent.isMangaRTL ? [rightVC, leftVC] : [leftVC, rightVC]
+                } else {
+                    let pageVC = SingleLeafViewController(pageIndex: singleIdx, parent: parent, alignment: parent.isMangaRTL ? .leading : .trailing)
+                    let blankVC = SingleLeafViewController(pageIndex: -1, parent: parent)
+                    return parent.isMangaRTL ? [pageVC, blankVC] : [blankVC, pageVC]
                 }
-                
-                let leftIdx = (pageIndex % 2 == 0) ? (pageIndex - 1) : pageIndex
-                let rightIdx = leftIdx + 1
-                
+            } else {
+                let leftIdx = targetSpread[0]
+                let rightIdx = targetSpread[1]
                 let leftVC = SingleLeafViewController(pageIndex: leftIdx, parent: parent, alignment: parent.isMangaRTL ? .leading : .trailing)
-                let rightVC = (rightIdx < parent.totalPages)
-                    ? SingleLeafViewController(pageIndex: rightIdx, parent: parent, alignment: parent.isMangaRTL ? .trailing : .leading)
-                    : SingleLeafViewController(pageIndex: -1, parent: parent)
-                
+                let rightVC = SingleLeafViewController(pageIndex: rightIdx, parent: parent, alignment: parent.isMangaRTL ? .trailing : .leading)
                 return parent.isMangaRTL ? [rightVC, leftVC] : [leftVC, rightVC]
             }
         }
@@ -774,10 +773,20 @@ extension SmartMidSpineCurlReader {
             viewControllerBefore viewController: UIViewController
         ) -> UIViewController? {
             guard let leafVC = viewController as? SingleLeafViewController else { return nil }
-            let currentLeafIndex = leafVC.pageIndex
-            let targetIndex: Int = parent.isMangaRTL ? (currentLeafIndex + 1) : (currentLeafIndex - 1)
-            guard targetIndex >= -1 && targetIndex < parent.totalPages else { return nil }
-            return SingleLeafViewController(pageIndex: targetIndex, parent: parent)
+            let spreads = parent.computeSpreads()
+            guard let currentSpreadIdx = spreads.firstIndex(where: { $0.contains(leafVC.pageIndex) }) else { return nil }
+            let targetSpreadIdx = parent.isMangaRTL ? (currentSpreadIdx + 1) : (currentSpreadIdx - 1)
+            guard targetSpreadIdx >= 0 && targetSpreadIdx < spreads.count else { return nil }
+            let targetPages = spreads[targetSpreadIdx]
+            let targetPage = targetPages.first ?? -1
+            
+            let isL: Bool = {
+                if targetPage >= 0 && targetPage < parent.cache.isLandscapeArray.count && parent.cache.isLandscapeArray[targetPage] { return true }
+                if let size = parent.cache.peekImageSize(at: targetPage), size.width > size.height * 1.01 { return true }
+                return false
+            }()
+            let cropHalf: SingleLeafViewController.CropHalf = isL ? (parent.isMangaRTL ? .left : .right) : .none
+            return SingleLeafViewController(pageIndex: targetPage, parent: parent, alignment: parent.isMangaRTL ? .leading : .trailing, cropHalf: cropHalf)
         }
 
         func pageViewController(
@@ -785,10 +794,20 @@ extension SmartMidSpineCurlReader {
             viewControllerAfter viewController: UIViewController
         ) -> UIViewController? {
             guard let leafVC = viewController as? SingleLeafViewController else { return nil }
-            let currentLeafIndex = leafVC.pageIndex
-            let targetIndex: Int = parent.isMangaRTL ? (currentLeafIndex - 1) : (currentLeafIndex + 1)
-            guard targetIndex >= -1 && targetIndex < parent.totalPages else { return nil }
-            return SingleLeafViewController(pageIndex: targetIndex, parent: parent)
+            let spreads = parent.computeSpreads()
+            guard let currentSpreadIdx = spreads.firstIndex(where: { $0.contains(leafVC.pageIndex) }) else { return nil }
+            let targetSpreadIdx = parent.isMangaRTL ? (currentSpreadIdx - 1) : (currentSpreadIdx + 1)
+            guard targetSpreadIdx >= 0 && targetSpreadIdx < spreads.count else { return nil }
+            let targetPages = spreads[targetSpreadIdx]
+            let targetPage = targetPages.first ?? -1
+            
+            let isL: Bool = {
+                if targetPage >= 0 && targetPage < parent.cache.isLandscapeArray.count && parent.cache.isLandscapeArray[targetPage] { return true }
+                if let size = parent.cache.peekImageSize(at: targetPage), size.width > size.height * 1.01 { return true }
+                return false
+            }()
+            let cropHalf: SingleLeafViewController.CropHalf = isL ? (parent.isMangaRTL ? .right : .left) : .none
+            return SingleLeafViewController(pageIndex: targetPage, parent: parent, alignment: parent.isMangaRTL ? .trailing : .leading, cropHalf: cropHalf)
         }
 
         // MARK: - UIPageViewControllerDelegate
