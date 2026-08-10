@@ -40,7 +40,7 @@ struct StudyNotebookView: View {
         NotificationCenter.default.post(
             name: NSNotification.Name("Reader_JumpToPage"),
             object: nil,
-            userInfo: ["page": pageIndex]
+            userInfo: ["pageIndex": pageIndex, "page": pageIndex]
         )
         Logger.shared.log("Smart Notebook: Jumped open reader to page \(pageIndex + 1)", category: "Notebook", type: .info)
     }
