@@ -454,40 +454,42 @@ struct ProPDFReaderEngine: View {
 
             Spacer()
 
-            // Bottom Slider Bar
-            HStack(spacing: 12) {
-                Text("\(currentPageIndex + 1)")
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
-                    .foregroundColor(.white)
-                    .frame(width: 28)
+            // Bottom Slider Bar with Glassmorphic HUD
+            VStack(spacing: 6) {
+                HStack {
+                    Text("Page \(currentPageIndex + 1) of \(totalPages)")
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .foregroundColor(.white)
+                    Spacer()
+                    let pct = totalPages > 1 ? Int(round(Double(currentPageIndex) / Double(totalPages - 1) * 100)) : 100
+                    Text("\(pct)%")
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .foregroundColor(.inkGreen)
+                }
+                .padding(.horizontal, 4)
 
-                Slider(
-                    value: Binding(
-                        get: { Double(currentPageIndex) },
-                        set: { newPage in
-                            jumpToPage(Int(newPage))
-                        }
-                    ),
-                    in: 0...Double(max(0, totalPages - 1)),
-                    step: 1
-                )
-                .accentColor(.inkGreen)
-
-                Text("\(totalPages)")
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
-                    .foregroundColor(.white.opacity(0.7))
-                    .frame(width: 28)
-            }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 12)
-            .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(Color.black.opacity(0.65))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .stroke(Color.white.opacity(0.15), lineWidth: 1)
+                HStack(spacing: 12) {
+                    Slider(
+                        value: Binding(
+                            get: { Double(currentPageIndex) },
+                            set: { newPage in
+                                jumpToPage(Int(newPage))
+                            }
+                        ),
+                        in: 0...Double(max(0, totalPages - 1)),
+                        step: 1
                     )
+                    .accentColor(.inkGreen)
+                }
+            }
+            .padding(.horizontal, 18)
+            .padding(.vertical, 10)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .stroke(Color.white.opacity(0.18), lineWidth: 0.75)
             )
+            .shadow(color: Color.black.opacity(0.35), radius: 10, y: 4)
             .padding(.horizontal, 16)
             .padding(.bottom, 16)
         }

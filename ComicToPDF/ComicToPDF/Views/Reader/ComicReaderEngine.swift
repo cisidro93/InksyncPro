@@ -1268,24 +1268,20 @@ final class ComicImageCache: ObservableObject {
         
         var prefetchIndices: Set<Int> = []
         if direction >= 0 {
-            // Forward movement
-            for i in 1...targetAhead {
+            // Forward movement: prefetch 4 pages ahead, 3 pages behind
+            for i in 1...max(4, targetAhead) {
                 prefetchIndices.insert(index + i)
             }
-            if targetBehind > 0 {
-                for i in 1...targetBehind {
-                    prefetchIndices.insert(index - i)
-                }
+            for i in 1...3 {
+                if index - i >= 0 { prefetchIndices.insert(index - i) }
             }
         } else {
-            // Backward movement
-            for i in 1...targetAhead {
-                prefetchIndices.insert(index - i)
+            // Backward movement: prefetch 5 pages behind (reverse), 2 pages ahead
+            for i in 1...5 {
+                if index - i >= 0 { prefetchIndices.insert(index - i) }
             }
-            if targetBehind > 0 {
-                for i in 1...targetBehind {
-                    prefetchIndices.insert(index + i)
-                }
+            for i in 1...2 {
+                if index + i < pageCount { prefetchIndices.insert(index + i) }
             }
         }
         
