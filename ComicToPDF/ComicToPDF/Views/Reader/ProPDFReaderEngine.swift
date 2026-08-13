@@ -31,6 +31,7 @@ struct ProPDFReaderEngine: View {
     @ObservedObject private var prefs = EBookPreferences.shared
     @Environment(\.modelContext) private var modelContext
     @FocusState private var isReaderFocused: Bool
+    @StateObject private var velocityEngine = ReaderVelocityEngine()
 
     @State private var showCropAdjustmentSheet = false
     @State private var activeCropInsets: CodableCropInsets = .zero
@@ -181,6 +182,8 @@ struct ProPDFReaderEngine: View {
                         .foregroundColor(Theme.textSecondary)
                 }
             }
+
+            EdgeBrightnessGestureZone()
 
             // Floating Time & Battery Header
             VStack {
@@ -517,6 +520,9 @@ struct ProPDFReaderEngine: View {
 
     private func jumpToPage(_ pageIndex: Int) {
         let clamped = max(0, min(pageIndex, totalPages - 1))
+        if clamped != currentPageIndex {
+            velocityEngine.recordPageTurn()
+        }
         currentPageIndex = clamped
         if let doc = pdfDocument, let page = doc.page(at: clamped) {
             pdfViewReference?.go(to: page)

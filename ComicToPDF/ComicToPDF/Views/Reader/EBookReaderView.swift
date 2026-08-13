@@ -49,6 +49,7 @@ struct EBookReaderView: View {
     // Page state matching current chapter
     @State private var chapterPage: Int = 0
     @State private var chapterTotalPages: Int = 1
+    @StateObject private var velocityEngine = ReaderVelocityEngine()
 
     /// Direction of last chapter navigation — used to drive the push transition.
     @State private var isGoingForward: Bool = true
@@ -354,7 +355,8 @@ struct EBookReaderView: View {
                         }
                     }
                 )
-            }
+        .onChange(of: chapterPage) { _, newPage in
+            velocityEngine.recordPageTurn()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("Reader_JumpToPage"))) { notification in
             if let pageIndex = notification.userInfo?["pageIndex"] as? Int, pageIndex >= 0, pageIndex < totalChapters {
