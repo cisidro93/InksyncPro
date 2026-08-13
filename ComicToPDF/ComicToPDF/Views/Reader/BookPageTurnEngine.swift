@@ -520,7 +520,7 @@ struct BookPager: View {
     var body: some View {
         switch readingMode {
         case .pageSlide:
-            curlPager
+            slidePager
         case .pageFade:
             fadePager
         default:
@@ -539,6 +539,45 @@ struct BookPager: View {
             activeFilterPreset: activeFilterPreset,
             onChromeTap: onChromeTap,
             onFlipPastEnd: onFlipPastEnd
+        )
+    }
+
+    // ── Slide Transition Pager ─────────────────────────────────────────
+    @ViewBuilder
+    private var slidePager: some View {
+        let isRTL = isMangaRTL || readingMode == .mangaRTL
+        ZStack {
+            ComicPageView(
+                index: currentIndex,
+                cache: cache
+            )
+            .applyFilterPreset(activeFilterPreset)
+            .id(currentIndex)
+            .transition(.asymmetric(
+                insertion: .move(edge: isRTL ? .leading : .trailing),
+                removal: .move(edge: isRTL ? .trailing : .leading)
+            ))
+            .animation(.spring(response: 0.35, dampingFraction: 0.85), value: currentIndex)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { onChromeTap() }
+        .gesture(
+            DragGesture(minimumDistance: 30)
+                .onEnded { val in
+                    let isNextSwipe = isRTL ? (val.translation.width > 30) : (val.translation.width < -30)
+                    let isPrevSwipe = isRTL ? (val.translation.width < -30) : (val.translation.width > 30)
+                    if isNextSwipe {
+                        if currentIndex < totalPages - 1 {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { currentIndex += 1 }
+                        } else {
+                            onFlipPastEnd?()
+                        }
+                    } else if isPrevSwipe {
+                        if currentIndex > 0 {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { currentIndex -= 1 }
+                        }
+                    }
+                }
         )
     }
 

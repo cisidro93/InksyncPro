@@ -1907,7 +1907,14 @@ struct ComicReaderEngine: View {
                         index: index,
                         cache: cache,
                         activeFilterPreset: activeFilterPreset,
-                        onAppearAction: { currentIndex = index }
+                        onAppearAction: {
+                            currentIndex = index
+                            if chromeVisible {
+                                withAnimation(.easeOut(duration: 0.25)) {
+                                    chromeVisible = false
+                                }
+                            }
+                        }
                     )
                 }
                 
@@ -1927,6 +1934,15 @@ struct ComicReaderEngine: View {
                     .cornerRadius(12)
                 }
                 .padding(.vertical, 40)
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                chromeVisible.toggle()
+            }
+            if chromeVisible {
+                startChromeIdleTimer()
             }
         }
     }
