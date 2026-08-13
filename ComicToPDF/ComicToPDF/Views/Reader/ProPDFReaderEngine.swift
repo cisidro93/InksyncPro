@@ -131,6 +131,12 @@ struct ProPDFReaderEngine: View {
                         pdfViewRef: $pdfViewReference,
                         isCroppedMode: isCroppedMode,
                         isExpandedView: isExpandedView,
+                        onPrevPage: {
+                            jumpToPage(currentPageIndex - 1)
+                        },
+                        onNextPage: {
+                            jumpToPage(currentPageIndex + 1)
+                        },
                         onTapCenter: {
                             withAnimation(.easeInOut(duration: 0.2)) {
                                 chromeVisible.toggle()
@@ -269,6 +275,9 @@ struct ProPDFReaderEngine: View {
         }
         .task {
             loadPDFDocument()
+        }
+        .onChange(of: currentPageIndex) { _, _ in
+            saveReadingProgress()
         }
         .sheet(isPresented: $showingInspector) {
             ProDocumentInspectorView(
@@ -518,6 +527,22 @@ struct ProPDFReaderEngine: View {
     }
 
 
+    private func saveReadingProgress() {
+        var progress = ReaderProgressTracker.shared.progress(for: pdf.id) ?? ReadingProgress(
+            pdfID: pdf.id,
+            lastOpenedAt: Date(),
+            currentPageIndex: currentPageIndex,
+            totalPagesRead: 1,
+            completionFraction: 0,
+            readingSessionDates: []
+        )
+        progress.lastOpenedAt = Date()
+        progress.currentPageIndex = currentPageIndex
+        let total = max(1, totalPages)
+        progress.completionFraction = Double(currentPageIndex + 1) / Double(total)
+        ReaderProgressTracker.shared.update(progress)
+    }
+
     private func jumpToPage(_ pageIndex: Int) {
         let clamped = max(0, min(pageIndex, totalPages - 1))
         if clamped != currentPageIndex {
@@ -527,6 +552,7 @@ struct ProPDFReaderEngine: View {
         if let doc = pdfDocument, let page = doc.page(at: clamped) {
             pdfViewReference?.go(to: page)
         }
+        saveReadingProgress()
     }
 
     private func saveHighlight(text: String, color: PDFHighlightColor) {
@@ -618,6 +644,8 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
     @Binding var pdfViewRef: PDFView?
     var isCroppedMode: Bool
     var isExpandedView: Bool
+    var onPrevPage: () -> Void
+    var onNextPage: () -> Void
     var onTapCenter: () -> Void
     var onTextSelectionChanged: (String?) -> Void
     var onScaleChanged: ((CGFloat) -> Void)? = nil
@@ -638,6 +666,16 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         pdfView.backgroundColor = .clear
         pdfView.isOpaque = false
         pdfView.insetsLayoutMarginsFromSafeArea = false
+
+        let prefs = EBookPreferences.shared
+        let isLandscape = UIScreen.main.bounds.width > UIScreen.main.bounds.height
+        let isDual = prefs.pdfDualPage || (prefs.autoLandscapeDualPage && isLandscape)
+        let spineLoc: UIPageViewController.SpineLocation = isDual ? .mid : .min
+        let options: [UIPageViewController.OptionsKey: Any] = [
+            .spineLocation: NSNumber(value: spineLoc.rawValue),
+            .interPageSpacing: 16.0
+        ]
+        pdfView.usePageViewController(true, withViewOptions: options)
 
         if let scrollView = pdfView.subviews.first(where: { $0 is UIScrollView }) as? UIScrollView {
             scrollView.maximumZoomScale = 10.0
@@ -805,7 +843,19 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         }
 
         @MainActor @objc func handleTap(_ gesture: UITapGestureRecognizer) {
-            parent.onTapCenter()
+            guard let view = gesture.view as? PDFView else { return }
+            let location = gesture.location(in: view)
+            let width = view.bounds.width
+            let prefs = EBookPreferences.shared
+            let zones = prefs.tapZoneStyle.zones
+
+            if location.x < width * zones.leftEdge {
+                parent.onPrevPage()
+            } else if location.x > width * zones.rightEdge {
+                parent.onNextPage()
+            } else {
+                parent.onTapCenter()
+            }
         }
 
         @MainActor @objc func handleDoubleTap(_ gesture: UITapGestureRecognizer) {
