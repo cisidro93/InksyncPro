@@ -5,43 +5,57 @@ import Combine
 /// Employs Kindle-like outlier filtering (ignoring quick flips < 2s and long pauses > 3 mins).
 class ReaderVelocityEngine: ObservableObject {
     @Published var estimatedTimeRemaining: String = "Learning speed..."
-    
+
     var averageDuration: Double? {
         guard pageDurations.count >= minRequiredSamples else { return nil }
         let sum = pageDurations.reduce(0.0, +)
         return sum / Double(pageDurations.count)
     }
-    
+
     private var pageDurations: [Double] = []
     private let maxSamples = 15
     private let minValidDuration: Double = 2.0   // Ignore page-flips < 2s
     private let maxValidDuration: Double = 180.0 // Ignore idle periods > 3 mins (180s)
     private let minRequiredSamples = 3
-    
+
+    // Timestamp of when the current page was entered — used by recordPageTurn()
+    private var lastPageTimestamp: Date? = nil
+
+    /// Convenience method: records the time spent on the previous page automatically.
+    /// Call this each time the reader navigates to a new page.
+    func recordPageTurn(remainingPages: Int = 100) {
+        let now = Date()
+        if let last = lastPageTimestamp {
+            let elapsed = now.timeIntervalSince(last)
+            recordPageDuration(elapsed, remainingPages: remainingPages)
+        }
+        lastPageTimestamp = now
+    }
+
     func recordPageDuration(_ duration: Double, remainingPages: Int) {
         // Filter outliers
         guard duration >= minValidDuration && duration <= maxValidDuration else { return }
-        
+
         pageDurations.append(duration)
         if pageDurations.count > maxSamples {
             pageDurations.removeFirst()
         }
-        
+
         recalculateEstimate(remainingPages: remainingPages)
     }
-    
+
     private func recalculateEstimate(remainingPages: Int) {
         guard pageDurations.count >= minRequiredSamples else {
             estimatedTimeRemaining = "Learning speed..."
             return
         }
-        
+
         let sum = pageDurations.reduce(0.0, +)
         let averageDuration = sum / Double(pageDurations.count)
-        
+
         let remainingSeconds = Double(remainingPages) * averageDuration
         let remainingMinutes = Int(ceil(remainingSeconds / 60.0))
-        
+
         if remainingMinutes <= 0 {
             estimatedTimeRemaining = "Less than a min left"
         } else if remainingMinutes < 60 {
