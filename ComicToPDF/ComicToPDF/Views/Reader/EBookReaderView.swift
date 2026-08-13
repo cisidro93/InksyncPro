@@ -416,11 +416,11 @@ struct EBookReaderView: View {
                         wv.evaluateJavaScript(js)
                     }
                     pendingSearchMatch = nil
-                }
             }
         }
     }
-    
+}
+
     // MARK: - Top Bar (Glass HUD)
     @ViewBuilder private var topBar: some View {
         HStack(spacing: 10) {
