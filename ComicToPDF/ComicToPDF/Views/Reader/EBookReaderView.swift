@@ -355,7 +355,9 @@ struct EBookReaderView: View {
                         }
                     }
                 )
-        .onChange(of: chapterPage) { _, newPage in
+            }
+        }
+        .onChange(of: chapterPage) { _, _ in
             velocityEngine.recordPageTurn()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("Reader_JumpToPage"))) { notification in
@@ -397,7 +399,6 @@ struct EBookReaderView: View {
         // Gap B: After chapter navigation, inject window.find() into the live WebView
         .onChange(of: currentIndex) { _, _ in
             guard let match = pendingSearchMatch, !match.isEmpty else { return }
-            // Small delay to allow the chapter to finish loading before find()
             Task {
                 try? await Task.sleep(nanoseconds: 600_000_000) // 0.6s
                 await MainActor.run {
@@ -405,7 +406,6 @@ struct EBookReaderView: View {
                         let safe = match
                             .replacingOccurrences(of: "\\", with: "\\\\")
                             .replacingOccurrences(of: "'", with: "\\'")
-                        // window.find: scroll to first match and select it
                         let js = """
                         (function() {
                             window.getSelection()?.removeAllRanges();
@@ -420,7 +420,6 @@ struct EBookReaderView: View {
             }
         }
     }
-}
 
     // MARK: - Top Bar (Glass HUD)
     @ViewBuilder private var topBar: some View {
