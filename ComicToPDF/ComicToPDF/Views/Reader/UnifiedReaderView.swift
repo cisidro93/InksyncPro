@@ -99,7 +99,7 @@ struct UnifiedReaderView: View {
                             }
                         } else {
                             if pdf.url.pathExtension.lowercased() == "pdf" {
-                                DocumentReaderEngine(pdf: pdf, onDismiss: { dismiss() })
+                                ProPDFReaderEngine(pdf: pdf, onDismiss: { dismiss() })
                             } else {
                                 ComicReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
                             }
