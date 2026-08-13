@@ -416,6 +416,7 @@ struct EBookReaderView: View {
                         wv.evaluateJavaScript(js)
                     }
                     pendingSearchMatch = nil
+                }
             }
         }
     }
