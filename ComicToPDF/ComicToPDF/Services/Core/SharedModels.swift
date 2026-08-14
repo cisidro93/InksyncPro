@@ -940,10 +940,10 @@ enum CompressionPreset: String, CaseIterable, Codable, Identifiable {
     var value: CGFloat {
         switch self {
         case .ultra: return 1.0
-        case .high: return 0.95
-        case .balanced: return 0.85
+        case .high: return 0.88
+        case .balanced: return 0.82
         case .compact: return 0.70
-        case .customTarget: return 0.85
+        case .customTarget: return 0.82
         }
     }
     

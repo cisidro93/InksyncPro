@@ -570,7 +570,7 @@ struct EPUBMerger: Sendable {
 
     private func copyAndPrepareImage(from srcURL: URL, to destURL: URL, settings: ConversionSettings) throws {
         // Validate that the image file is not corrupt (e.g. an HTML error page)
-        guard let _ = UIImage(contentsOfFile: srcURL.path) else {
+        guard let originalImage = UIImage(contentsOfFile: srcURL.path) else {
             throw NSError(domain: "ImageProcessor", code: 404, userInfo: [
                 NSLocalizedDescriptionKey: "Invalid or corrupted image file '\(srcURL.lastPathComponent)' in source archive. This often happens when a downloader saves an HTML error page instead of the image. Please verify your source file."
             ])
@@ -580,22 +580,19 @@ struct EPUBMerger: Sendable {
         let isWideColor = ImageProcessor.isWideColor(url: srcURL)
         let isUltraLossless = settings.compressionQuality == .ultra
         
-        // Determine if we need to re-process the image through a renderer:
-        // - Wide-color (P3/Adobe RGB) images must be converted to sRGB — Kindle e-ink screens
-        //   cannot handle wide-gamut color profiles and will display washed-out colors.
-        // - WebP is not a valid EPUB image format and must be transcoded to JPEG.
-        // - PNG sources in non-ultra mode are converted to JPEG: PNG is lossless and 5–10× larger
-        //   than JPEG at equivalent visual quality, producing bloated EPUBs unnecessarily.
-        let needsRender = isWideColor || ext == "webp" || (ext == "png" && !isUltraLossless)
+        // For all non-ultra presets, re-encode to enforce configured quality (e.g. 88% JPEG for High Quality).
+        // This prevents 1.5MB/page bloated JPEGs from being copied verbatim into omnibus EPUBs.
+        let needsRender = !isUltraLossless || isWideColor || ext == "webp"
         
-        if needsRender, let image = UIImage(contentsOfFile: srcURL.path) {
+        if needsRender {
+            let processedImage = ImageProcessor.process(image: originalImage, settings: settings) ?? originalImage
+            
             let format = UIGraphicsImageRendererFormat()
             format.scale = 1.0
             format.preferredRange = .standard // Forces standard sRGB color space
-            let renderer = UIGraphicsImageRenderer(size: image.size, format: format)
-            let srgbImage = renderer.image { _ in image.draw(at: .zero) }
+            let renderer = UIGraphicsImageRenderer(size: processedImage.size, format: format)
+            let srgbImage = renderer.image { _ in processedImage.draw(at: .zero) }
             
-            // Ultra lossless: keep PNG as PNG. All other presets: convert to JPEG.
             let data: Data?
             if ext == "png" && isUltraLossless {
                 data = srgbImage.pngData()
@@ -610,7 +607,7 @@ struct EPUBMerger: Sendable {
             }
         }
         
-        // Ultra lossless path or if render failed: pass raw bytes through as-is
+        // Ultra lossless path with raw passthrough:
         let data = try Data(contentsOf: srcURL)
         try data.write(to: destURL)
     }

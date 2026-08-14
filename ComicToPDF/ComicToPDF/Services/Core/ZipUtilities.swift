@@ -71,7 +71,7 @@ struct ZipUtilities {
                                     }
                                     let pageName = String(format: "%04d.jpg", i)
                                     let fileURL = tempDir.appendingPathComponent(pageName)
-                                    if let data = image.jpegData(compressionQuality: 0.9) {
+                                    if let data = image.jpegData(compressionQuality: 0.85) {
                                         try data.write(to: fileURL)
                                         extractedFiles.append(fileURL)
                                     }
