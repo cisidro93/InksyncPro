@@ -33,12 +33,14 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
     }
 
     func makeUIViewController(context: Context) -> UIPageViewController {
+        let isSlide = (prefs.pageTurnStyle == .slide)
+        let transitionStyle: UIPageViewController.TransitionStyle = isSlide ? .scroll : .pageCurl
         let pvc = UIPageViewController(
-            transitionStyle: .pageCurl,
+            transitionStyle: transitionStyle,
             navigationOrientation: .horizontal,
             options: nil
         )
-        pvc.isDoubleSided = true
+        pvc.isDoubleSided = !isSlide
         pvc.dataSource = context.coordinator
         pvc.delegate = context.coordinator
 

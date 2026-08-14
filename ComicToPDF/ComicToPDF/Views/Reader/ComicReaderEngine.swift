@@ -1986,6 +1986,7 @@ struct ComicReaderEngine: View {
             currentIndex: $currentIndex,
             cache: cache,
             activeFilterPreset: activeFilterPreset,
+            readingMode: readingMode,
             isMangaRTL: isMangaComic || readingMode == .mangaRTL,
             onChromeTap: { chromeVisible.toggle() },
             onFlipPastEnd: { attemptComicSeriesContinuation() }

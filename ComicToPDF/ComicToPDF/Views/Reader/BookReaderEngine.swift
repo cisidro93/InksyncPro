@@ -1247,6 +1247,7 @@ private func computeColumnCount(for size: CGSize) -> Int {
                                         activeFootnoteText = text
                                     }
                                 )
+                                .id("book_curl_\(prefs.pageTurnStyle.rawValue)_\(vm.currentChapterIndex)")
                             } else {
                                 // Scroll mode: EPUBWebView continuous vertical scroll
                                 EPUBWebView(

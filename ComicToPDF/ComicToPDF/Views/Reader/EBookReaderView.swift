@@ -163,6 +163,7 @@ struct EBookReaderView: View {
                                         activeFootnoteText = text
                                     }
                                 )
+                                .id("ebook_\(prefs.pageTurnStyle.rawValue)_\(currentIndex)")
                             } else {
                                 // ── Scroll Mode (continuous vertical) ──────────────────
                                 EBookWebReader(

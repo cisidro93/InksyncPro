@@ -11,6 +11,7 @@ struct PageCurlReader: UIViewControllerRepresentable {
     let isTwoUp: Bool
     let isMangaRTL: Bool
     let activeFilterPreset: ReadingFilterPreset
+    var transitionStyle: UIPageViewController.TransitionStyle = .pageCurl
     var onChromeTap: () -> Void
     var onFlipPastEnd: (() -> Void)?
 
@@ -61,7 +62,7 @@ struct PageCurlReader: UIViewControllerRepresentable {
 
     func makeUIViewController(context: Context) -> UIPageViewController {
         let pageViewController = UIPageViewController(
-            transitionStyle: .pageCurl,
+            transitionStyle: transitionStyle,
             navigationOrientation: .horizontal,
             options: nil
         )
@@ -528,7 +529,23 @@ struct BookPager: View {
         }
     }
 
-    // ── 3D Curl (UIPageViewController) ─────────────────────────
+    // ── Slide (UIPageViewController .scroll) ───────────────────────────
+    private var slidePager: some View {
+        PageCurlReader(
+            currentIndex: $currentIndex,
+            totalPages: totalPages,
+            cache: cache,
+            isTwoUp: false,
+            isMangaRTL: isMangaRTL || readingMode == .mangaRTL,
+            activeFilterPreset: activeFilterPreset,
+            transitionStyle: .scroll,
+            onChromeTap: onChromeTap,
+            onFlipPastEnd: onFlipPastEnd
+        )
+        .id("comic_slide_\(readingMode.rawValue)")
+    }
+
+    // ── 3D Curl (UIPageViewController .pageCurl) ─────────────────────────
     private var curlPager: some View {
         PageCurlReader(
             currentIndex: $currentIndex,
@@ -537,48 +554,11 @@ struct BookPager: View {
             isTwoUp: false,
             isMangaRTL: isMangaRTL || readingMode == .mangaRTL,
             activeFilterPreset: activeFilterPreset,
+            transitionStyle: .pageCurl,
             onChromeTap: onChromeTap,
             onFlipPastEnd: onFlipPastEnd
         )
-    }
-
-    // ── Slide Transition Pager ─────────────────────────────────────────
-    @ViewBuilder
-    private var slidePager: some View {
-        let isRTL = isMangaRTL || readingMode == .mangaRTL
-        ZStack {
-            ComicPageView(
-                index: currentIndex,
-                cache: cache
-            )
-            .applyFilterPreset(activeFilterPreset)
-            .id(currentIndex)
-            .transition(.asymmetric(
-                insertion: .move(edge: isRTL ? .leading : .trailing),
-                removal: .move(edge: isRTL ? .trailing : .leading)
-            ))
-            .animation(.spring(response: 0.35, dampingFraction: 0.85), value: currentIndex)
-        }
-        .contentShape(Rectangle())
-        .onTapGesture { onChromeTap() }
-        .gesture(
-            DragGesture(minimumDistance: 30)
-                .onEnded { val in
-                    let isNextSwipe = isRTL ? (val.translation.width > 30) : (val.translation.width < -30)
-                    let isPrevSwipe = isRTL ? (val.translation.width < -30) : (val.translation.width > 30)
-                    if isNextSwipe {
-                        if currentIndex < totalPages - 1 {
-                            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { currentIndex += 1 }
-                        } else {
-                            onFlipPastEnd?()
-                        }
-                    } else if isPrevSwipe {
-                        if currentIndex > 0 {
-                            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { currentIndex -= 1 }
-                        }
-                    }
-                }
-        )
+        .id("comic_curl_\(readingMode.rawValue)")
     }
 
     // ── Fade Crossfade ─────────────────────────────────────────────────
@@ -591,7 +571,7 @@ struct BookPager: View {
                 cache: cache
             )
             .applyFilterPreset(activeFilterPreset)
-            .id(currentIndex)
+            .id("comic_fade_\(currentIndex)")
             .transition(.opacity)
             .animation(.easeInOut(duration: 0.28), value: currentIndex)
         }
@@ -627,6 +607,7 @@ struct SmartMidSpineCurlReader: UIViewControllerRepresentable {
     let cache: ComicImageCache
     let isMangaRTL: Bool
     let activeFilterPreset: ReadingFilterPreset
+    var transitionStyle: UIPageViewController.TransitionStyle = .pageCurl
     var onChromeTap: () -> Void
     var onFlipPastEnd: (() -> Void)? = nil
 
@@ -674,12 +655,14 @@ struct SmartMidSpineCurlReader: UIViewControllerRepresentable {
     }
 
     func makeUIViewController(context: Context) -> UIPageViewController {
+        let isSlide = (transitionStyle == .scroll)
+        let options: [UIPageViewController.OptionsKey: Any]? = isSlide ? nil : [.spineLocation: UIPageViewController.SpineLocation.mid.rawValue]
         let pageViewController = UIPageViewController(
-            transitionStyle: .pageCurl,
+            transitionStyle: transitionStyle,
             navigationOrientation: .horizontal,
-            options: [.spineLocation: UIPageViewController.SpineLocation.mid.rawValue]
+            options: options
         )
-        pageViewController.isDoubleSided = true
+        pageViewController.isDoubleSided = !isSlide
         pageViewController.dataSource = context.coordinator
         pageViewController.delegate = context.coordinator
 
@@ -1045,6 +1028,7 @@ struct TwoUpBookPager: View {
     @Binding var currentIndex: Int
     let cache: ComicImageCache
     let activeFilterPreset: ReadingFilterPreset
+    var readingMode: ComicReadingMode = .pageHorizontal
     let isMangaRTL: Bool
     var onChromeTap: () -> Void
     var onFlipPastEnd: (() -> Void)? = nil
@@ -1056,9 +1040,11 @@ struct TwoUpBookPager: View {
             cache: cache,
             isMangaRTL: isMangaRTL,
             activeFilterPreset: activeFilterPreset,
+            transitionStyle: (readingMode == .pageSlide) ? .scroll : .pageCurl,
             onChromeTap: onChromeTap,
             onFlipPastEnd: onFlipPastEnd
         )
+        .id("twoup_\(readingMode.rawValue)")
     }
 }
 

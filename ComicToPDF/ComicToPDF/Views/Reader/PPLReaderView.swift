@@ -132,18 +132,22 @@ struct PPLReaderView: View {
     @ViewBuilder
     private func pageContent(geo: GeometryProxy, currentDual: Bool) -> some View {
         let w = geo.size.width
+        let isFade = (pageTurnStyle == .fade)
+        let fadeFraction = min(1.0, abs(swipeDragX) / max(w * 0.5, 1))
 
         ZStack(alignment: .center) {
             // ── Back layer: adjacent spread peeking ──────────────────────────
             if pageTurnStyle != .instant {
                 if swipeDragX > 8 {
                     adjacentSpread(isNext: false, currentDual: currentDual, geo: geo)
-                        .offset(x: swipeDragX - w)
+                        .offset(x: isFade ? 0 : (swipeDragX - w))
+                        .opacity(isFade ? Double(fadeFraction) : 1.0)
                         .allowsHitTesting(false)
                 }
                 if swipeDragX < -8 {
                     adjacentSpread(isNext: true, currentDual: currentDual, geo: geo)
-                        .offset(x: swipeDragX + w)
+                        .offset(x: isFade ? 0 : (swipeDragX + w))
+                        .opacity(isFade ? Double(fadeFraction) : 1.0)
                         .allowsHitTesting(false)
                 }
             }
@@ -155,8 +159,9 @@ struct PPLReaderView: View {
                 // ✅ Phase 4: In-Line Handwriting
                 PageCanvasOverlay(pdfID: pdfID, pageIndex: currentPageIndex, isMarkupEnabled: isDrawingMode)
             }
-            .offset(x: scale > 1.0 ? 0 : swipeDragX,
+            .offset(x: (scale > 1.0 || isFade) ? 0 : swipeDragX,
                     y: 0)
+            .opacity(isFade ? Double(1.0 - fadeFraction * 0.8) : 1.0)
             .rotation3DEffect(
                 flip3DAngle(geo: geo),
                 axis: (x: 0, y: 1, z: 0),
