@@ -50,7 +50,10 @@ struct EPUBMerger: Sendable {
         manifestItems.append("<item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/>")
         
         var globalPageIndex = 1
-        var globalPageCounter = (activeCoverData != nil) ? 2 : 1
+        // Content pages always start at counter 1. The cover's spread position is set
+        // independently via coverSpreadTag — it does not consume a globalPageCounter slot.
+        var globalPageCounter = 1
+        var hasLandscapeSpreads = false
         
         // 2.5 Inject Override Cover if Present
         if let coverData = activeCoverData {
@@ -101,12 +104,27 @@ struct EPUBMerger: Sendable {
                     // Copy and convert WebP to JPEG if needed
                     try copyAndPrepareImage(from: imgURL, to: destURL, settings: settings)
                     
-                    // Manifest & HTML
+                    // Detect actual image orientation for correct viewport and spread assignment.
+                    var imgW = 1980; var imgH = 2640; var isLandscape = false
+                    if let src = CGImageSourceCreateWithURL(destURL as CFURL, nil),
+                       let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any] {
+                        var w = (props[kCGImagePropertyPixelWidth] as? Int) ?? 1980
+                        var h = (props[kCGImagePropertyPixelHeight] as? Int) ?? 2640
+                        if let ori = props[kCGImagePropertyOrientation] as? UInt32, [5,6,7,8].contains(ori) { swap(&w, &h) }
+                        if w > 0 && h > 0 && Double(w) > Double(h) * 1.1 {
+                            isLandscape = true; hasLandscapeSpreads = true
+                            imgW = 2640; imgH = 1980
+                        }
+                    }
+                    
+                    // Manifest & HTML — use actual dimensions so landscape SVG viewport is correct
                     let htmlName = String(format: "page_%05d.xhtml", globalPageIndex)
                     let htmlContent = EPUBManifestBuilder.buildChunkXHTML(
                         chunkIndex: globalPageIndex,
                         images: [newName],
-                        title: "Page \(globalPageIndex)"
+                        title: "Page \(globalPageIndex)",
+                        pageWidth: imgW,
+                        pageHeight: imgH
                     )
                     try? htmlContent.write(to: textDir.appendingPathComponent(htmlName), atomically: true, encoding: .utf8)
                     
@@ -114,15 +132,18 @@ struct EPUBMerger: Sendable {
                     // The cover image (img_1) must carry properties="cover-image" so that the
                     // OPF <meta name="cover" content="img_1"/> is consistent — Kindle's ingestor
                     // checks that the item referenced by <meta name="cover"> has this property and
-                    // fails with E999 if it does not. The duplicate-cover problem is suppressed by
-                    // page_1.xhtml being the FIRST spine item wrapping img_1.
+                    // fails with E999 if it does not.
                     let coverImageProp = isFirstPageCover ? " properties=\"cover-image\"" : ""
                     manifestItems.append("<item id=\"page_\(globalPageIndex)\" href=\"text/\(htmlName)\" media-type=\"application/xhtml+xml\"/>")
                     manifestItems.append("<item id=\"img_\(globalPageIndex)\" href=\"images/\(newName)\" media-type=\"image/\(safeExt)\"\(coverImageProp)/>")
                     
-                    // Apply Dynamic Landscape Spreads Tagging (RTL vs LTR)
+                    // Landscape images span the full display and must not be assigned a left/right
+                    // spread position — use rendition:page-spread-center so Kindle renders them
+                    // full-bleed without trying to pair them with an adjacent page.
                     let spreadTag: String
-                    if settings.linkCoverAsSpread {
+                    if isLandscape {
+                        spreadTag = " properties=\"rendition:page-spread-center\""
+                    } else if settings.linkCoverAsSpread {
                         if settings.mangaMode {
                             spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
                         } else {
@@ -140,7 +161,9 @@ struct EPUBMerger: Sendable {
                     spineItems.append("<itemref idref=\"page_\(globalPageIndex)\"\(spreadTag)/>")
                     
                     globalPageIndex += 1
-                    globalPageCounter += 1
+                    // Only advance the spread counter for portrait pages. Landscape pages
+                    // are centered and must not disturb the left/right pairing sequence.
+                    if !isLandscape { globalPageCounter += 1 }
                 }
             }
         }
@@ -160,6 +183,7 @@ struct EPUBMerger: Sendable {
             spineItems: spineItems,
             isManga: settings.mangaMode,
             firstPageHref: firstPageHref,
+            hasLandscapeSpreads: hasLandscapeSpreads,
             author: sourceMetadata?.writer ?? sourceMetadata?.author
         )
         try opfContent.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8)
@@ -241,7 +265,10 @@ struct EPUBMerger: Sendable {
         // Setup initial Working Dir
         var currentEpubDir = try initializeBlankEPUBDir(volumeOffset: currentVolumeIndex)
         var globalPageIndex = 1
-        var globalPageCounter = (activeCoverData != nil) ? 2 : 1
+        // Content pages always start at counter 1. The cover's spread position is set
+        // independently via coverSpreadTag — it does not consume a globalPageCounter slot.
+        var globalPageCounter = 1
+        var hasLandscapeSpreads = false
         var manifestItems: [String] = []
         manifestItems.append("<item id=\"css\" href=\"css/comic.css\" media-type=\"text/css\"/>")
         manifestItems.append("<item id=\"ncx\" href=\"toc.ncx\" media-type=\"application/x-dtbncx+xml\"/>")
@@ -249,10 +276,9 @@ struct EPUBMerger: Sendable {
         var spineItems: [String] = []
         
         // Base closure to "Seal" a volume
-        let sealCurrentEPUB = { (dirURL: URL, volIdx: Int, mItems: [String], sItems: [String]) throws -> URL in
+        let sealCurrentEPUB = { [self] (dirURL: URL, volIdx: Int, mItems: [String], sItems: [String], volumeHasLandscape: Bool) throws -> URL in
             let oebps = dirURL.appendingPathComponent("OEBPS")
             
-
             let bookUUID = UUID().uuidString
             let coverMeta: String? = (activeCoverData != nil) ? "cover_img" : "img_1"
             let firstPageHref = (activeCoverData != nil) ? "text/cover.xhtml" : "text/page_00001.xhtml"
@@ -266,6 +292,7 @@ struct EPUBMerger: Sendable {
                 spineItems: sItems,
                 isManga: settings.mangaMode,
                 firstPageHref: firstPageHref,
+                hasLandscapeSpreads: volumeHasLandscape,
                 author: nil
             )
             try opf.write(to: oebps.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8)
@@ -354,13 +381,14 @@ struct EPUBMerger: Sendable {
             }
             
             if currentBundleBytes + issueMB > thresholdBytes && currentBundleBytes > 0 {
-                let builtEPUBURL = try sealCurrentEPUB(currentEpubDir, currentVolumeIndex, manifestItems, spineItems)
+                let builtEPUBURL = try sealCurrentEPUB(currentEpubDir, currentVolumeIndex, manifestItems, spineItems, hasLandscapeSpreads)
                 outputFiles.append(builtEPUBURL)
                 
                 currentVolumeIndex += 1
                 currentBundleBytes = 0
                 globalPageIndex = 1
-                globalPageCounter = (activeCoverData != nil) ? 2 : 1
+                globalPageCounter = 1
+                hasLandscapeSpreads = false
                 currentEpubDir = try initializeBlankEPUBDir(volumeOffset: currentVolumeIndex)
                 manifestItems = []
                 manifestItems.append("<item id=\"css\" href=\"css/comic.css\" media-type=\"text/css\"/>")
@@ -388,11 +416,26 @@ struct EPUBMerger: Sendable {
                     let destURL = activeImages.appendingPathComponent(newName)
                     try copyAndPrepareImage(from: img, to: destURL, settings: settings)
                     
+                    // Detect actual image orientation for correct viewport and spread assignment.
+                    var imgW = 1980; var imgH = 2640; var isLandscape = false
+                    if let src = CGImageSourceCreateWithURL(destURL as CFURL, nil),
+                       let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any] {
+                        var w = (props[kCGImagePropertyPixelWidth] as? Int) ?? 1980
+                        var h = (props[kCGImagePropertyPixelHeight] as? Int) ?? 2640
+                        if let ori = props[kCGImagePropertyOrientation] as? UInt32, [5,6,7,8].contains(ori) { swap(&w, &h) }
+                        if w > 0 && h > 0 && Double(w) > Double(h) * 1.1 {
+                            isLandscape = true; hasLandscapeSpreads = true
+                            imgW = 2640; imgH = 1980
+                        }
+                    }
+                    
                     let htmlName = String(format: "page_%05d.xhtml", globalPageIndex)
                     let htmlContent = EPUBManifestBuilder.buildChunkXHTML(
                         chunkIndex: globalPageIndex,
                         images: [newName],
-                        title: "Page \(globalPageIndex)"
+                        title: "Page \(globalPageIndex)",
+                        pageWidth: imgW,
+                        pageHeight: imgH
                     )
                     try? htmlContent.write(to: activeText.appendingPathComponent(htmlName), atomically: true, encoding: .utf8)
                     
@@ -406,9 +449,13 @@ struct EPUBMerger: Sendable {
                     manifestItems.append("<item id=\"page_\(globalPageIndex)\" href=\"text/\(htmlName)\" media-type=\"application/xhtml+xml\"/>")
                     manifestItems.append("<item id=\"img_\(globalPageIndex)\" href=\"images/\(newName)\" media-type=\"image/\(safeExt)\"\(coverImageProp)/>")
                     
-                    // Apply Dynamic Landscape Spreads Tagging (RTL vs LTR)
+                    // Landscape images span the full display and must not be assigned a left/right
+                    // spread position — use rendition:page-spread-center so Kindle renders them
+                    // full-bleed without trying to pair them with an adjacent page.
                     let spreadTag: String
-                    if settings.linkCoverAsSpread {
+                    if isLandscape {
+                        spreadTag = " properties=\"rendition:page-spread-center\""
+                    } else if settings.linkCoverAsSpread {
                         if settings.mangaMode {
                             spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
                         } else {
@@ -426,7 +473,9 @@ struct EPUBMerger: Sendable {
                     spineItems.append("<itemref idref=\"page_\(globalPageIndex)\"\(spreadTag)/>")
                     
                     globalPageIndex += 1
-                    globalPageCounter += 1
+                    // Only advance the spread counter for portrait pages. Landscape pages
+                    // are centered and must not disturb the left/right pairing sequence.
+                    if !isLandscape { globalPageCounter += 1 }
                 }
             }
             
@@ -436,7 +485,7 @@ struct EPUBMerger: Sendable {
         }
         
         if currentBundleBytes > 0 {
-            let builtEPUBURL = try sealCurrentEPUB(currentEpubDir, currentVolumeIndex, manifestItems, spineItems)
+            let builtEPUBURL = try sealCurrentEPUB(currentEpubDir, currentVolumeIndex, manifestItems, spineItems, hasLandscapeSpreads)
             outputFiles.append(builtEPUBURL)
         }
         

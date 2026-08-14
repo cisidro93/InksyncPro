@@ -356,9 +356,10 @@ struct CBZToEPUBConverter: Sendable {
         var chunkIndex = 0
         var hasAnyLandscapeSpreads = false
         
-        // Multi-batch: cover.xhtml occupies spine slot 1, so content pages start at 2.
-        // Single-volume: img_1 IS page 1, content pages start at 1.
-        var globalPageCounter = hasBadgedCover ? 2 : 1
+        // Content pages always start at counter 1 regardless of whether a cover exists.
+        // The cover's own spread position is set explicitly via coverSpreadTag above —
+        // it does not consume a globalPageCounter slot.
+        var globalPageCounter = 1
         
         for (localIndex, item) in batch.enumerated() {
             let isFirstImageOfBook = (localIndex == 0 && batchIndex == 0)
@@ -375,18 +376,31 @@ struct CBZToEPUBConverter: Sendable {
                 try? fileManager.copyItem(at: item.processedDiskURL, to: destURL)
             }
             
-            // img_1 (the first image of the first batch) carries properties="cover-image"
-            // so the OPF <meta name="cover" content="img_1"/> is consistent and Kindle can
-            // extract a thumbnail. img_1 also appears as page_0001.xhtml in the spine —
-            // the manifest property and the spine XHTML are independent roles and do not
-            // conflict. NOTE: this causes Kindle to show a duplicate cover page (auto-injected
-            // thumbnail + page_0001 both show the cover image). That is a known cosmetic
-            // limitation separate from the E999 structural validation error.
-            let properties = isFirstImageOfBook ? "properties=\"cover-image\"" : ""
-            let propString = properties.isEmpty ? "" : " \(properties)"
-            manifestItems.append("<item id=\"img_\(localIndex+1)\" href=\"images/\(newImageName)\" media-type=\"image/\(safeExt)\"\(propString)/>")
+            // img_1 carries properties="cover-image" so the OPF <meta name="cover" content="img_1"/>
+            // is consistent and Kindle can extract a thumbnail.
+            let coverImageProp = isFirstImageOfBook ? " properties=\"cover-image\"" : ""
+            manifestItems.append("<item id=\"img_\(localIndex+1)\" href=\"images/\(newImageName)\" media-type=\"image/\(safeExt)\"\(coverImageProp)/>")
+            
+            // Single-volume cover deduplication: generate a dedicated cover.xhtml wrapping img_1.
+            // Kindle auto-injects a duplicate cover thumbnail ONLY when the cover-image manifest item
+            // has no wrapping XHTML in the spine. By providing cover.xhtml (epub:type="cover") as the
+            // first spine item, we suppress the auto-injection — matching the multi-batch behavior.
+            if isFirstImageOfBook && !hasBadgedCover {
+                let coverXHTML = EPUBManifestBuilder.buildCoverXHTML(coverFilename: newImageName, isManga: isManga)
+                try coverXHTML.write(to: textDir.appendingPathComponent("cover.xhtml"), atomically: true, encoding: .utf8)
+                manifestItems.append("<item id=\"cover-page\" href=\"text/cover.xhtml\" media-type=\"application/xhtml+xml\"/>")
+                let coverSpreadTag = settings.linkCoverAsSpread
+                    ? (isManga ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\"")
+                    : ""
+                spineItems.append("<itemref idref=\"cover-page\"\(coverSpreadTag)/>")
+                // Mark cover as handled — firstPageHref and coverMetaID logic below reads hasBadgedCover.
+                hasBadgedCover = true
+                // Do NOT generate a regular page XHTML for the cover image here — cover.xhtml is the spine entry.
+                continue
+            }
             
             currentChunkImages.append(newImageName)
+
             
             // Determine image dimensions and aspect ratio for dynamic viewport
             var imgW = 1980
@@ -431,7 +445,9 @@ struct CBZToEPUBConverter: Sendable {
             // Universally Apply Advanced Landscape Spread Tagging (RTL vs LTR)
             let spreadTag: String
             if isLandscapeImage {
-                spreadTag = " properties=\"rendition:page-spread-center page-spread-center\""
+                // Landscape images span the full display — always center regardless of reading direction.
+                // KF8/EPUB 3 fixed-layout uses "rendition:page-spread-center" (single canonical form).
+                spreadTag = " properties=\"rendition:page-spread-center\""
             } else if settings.linkCoverAsSpread {
                 if isManga {
                     // RTL Manga Sequence: Cover (page 1) is Right, Page 2 is Left, Page 3 is Right
