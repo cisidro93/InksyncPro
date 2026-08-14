@@ -1033,7 +1033,7 @@ struct TwoUpBookPager: View {
             cache: cache,
             isMangaRTL: isMangaRTL,
             activeFilterPreset: activeFilterPreset,
-            transitionStyle: (readingMode == .pageSlide) ? .scroll : .pageCurl,
+            transitionStyle: .pageCurl,
             onChromeTap: onChromeTap,
             onFlipPastEnd: onFlipPastEnd
         )

@@ -132,7 +132,7 @@ struct PPLReaderView: View {
     @ViewBuilder
     private func pageContent(geo: GeometryProxy, currentDual: Bool) -> some View {
         let w = geo.size.width
-        let isFade = (pageTurnStyle == .fade)
+        let isFade = false
         let fadeFraction = min(1.0, abs(swipeDragX) / max(w * 0.5, 1))
 
         ZStack(alignment: .center) {
