@@ -329,6 +329,7 @@ struct ProPDFReaderEngine: View {
         .onKeyPress(.space) {
             jumpToPage(currentPageIndex + 1)
             return .handled
+        }
         .task {
             loadPDFDocument()
         }
