@@ -681,7 +681,7 @@ extension EBookPageCurlReader {
             let fileName = url.lastPathComponent
             let fragment = url.fragment ?? ""
 
-            if navigationAction.navigationType == .linkActivated || !fileName.isEmpty {
+            if navigationAction.navigationType == .linkActivated || !fragment.isEmpty {
                 // Post navigation event to EBookReaderView
                 NotificationCenter.default.post(
                     name: NSNotification.Name("Reader_JumpToChapterHref"),
