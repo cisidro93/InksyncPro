@@ -35,9 +35,8 @@ struct ProPDFReaderEngine: View {
 
     @State private var showCropAdjustmentSheet = false
     @State private var activeCropInsets: CodableCropInsets = .zero
-    @State private var activeZoomScale: CGFloat = 1.0
-    @State private var showZoomPill = false
-    @State private var zoomPillTask: Task<Void, Never>? = nil
+    // Hyperlink Destination Preview HUD State
+    @State private var pendingLinkPreview: (pageIndex: Int, targetPage: PDFPage)? = nil
 
     private var totalPages: Int {
         pdfDocument?.pageCount ?? pdf.pageCount
@@ -132,10 +131,12 @@ struct ProPDFReaderEngine: View {
                         isCroppedMode: isCroppedMode,
                         isExpandedView: isExpandedView,
                         onPrevPage: {
-                            jumpToPage(currentPageIndex - 1)
+                            let isManga = prefs.isMangaMode
+                            jumpToPage(isManga ? currentPageIndex + 1 : currentPageIndex - 1)
                         },
                         onNextPage: {
-                            jumpToPage(currentPageIndex + 1)
+                            let isManga = prefs.isMangaMode
+                            jumpToPage(isManga ? currentPageIndex - 1 : currentPageIndex + 1)
                         },
                         onTapCenter: {
                             withAnimation(.easeInOut(duration: 0.2)) {
@@ -162,8 +163,14 @@ struct ProPDFReaderEngine: View {
                                     }
                                 }
                             }
+                        },
+                        onHyperlinkSelected: { destIndex, destPage in
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+                                self.pendingLinkPreview = (destIndex, destPage)
+                            }
                         }
                     )
+                    .applyFilterPreset(prefs.readingFilter)
                     .ignoresSafeArea()
 
 
@@ -221,6 +228,38 @@ struct ProPDFReaderEngine: View {
                 .zIndex(10)
             }
 
+            // Hyperlink Destination Preview HUD Modal Overlay
+            if let preview = pendingLinkPreview {
+                ZStack {
+                    Color.black.opacity(0.45)
+                        .ignoresSafeArea()
+                        .onTapGesture {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                self.pendingLinkPreview = nil
+                            }
+                        }
+                    
+                    HyperlinkPreviewHUD(
+                        targetPageIndex: preview.pageIndex,
+                        targetPage: preview.targetPage,
+                        onConfirmJump: {
+                            let targetIdx = preview.pageIndex
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                self.pendingLinkPreview = nil
+                            }
+                            jumpToPage(targetIdx)
+                        },
+                        onDismiss: {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                self.pendingLinkPreview = nil
+                            }
+                        }
+                    )
+                    .transition(.scale(scale: 0.92).combined(with: .opacity))
+                }
+                .zIndex(25)
+            }
+
             // Contextual Text Selection Markup HUD
             if let selectedText = selectedTextForHUD, !selectedText.isEmpty {
                 VStack {
@@ -272,6 +311,22 @@ struct ProPDFReaderEngine: View {
             }
 
             ReadingJumpToastOverlay()
+        }
+        .focusable()
+        .focusEffectDisabled()
+        .onKeyPress(.leftArrow) {
+            let isManga = prefs.isMangaMode
+            jumpToPage(isManga ? currentPageIndex + 1 : currentPageIndex - 1)
+            return .handled
+        }
+        .onKeyPress(.rightArrow) {
+            let isManga = prefs.isMangaMode
+            jumpToPage(isManga ? currentPageIndex - 1 : currentPageIndex + 1)
+            return .handled
+        }
+        .onKeyPress(.space) {
+            jumpToPage(currentPageIndex + 1)
+            return .handled
         }
         .task {
             loadPDFDocument()
@@ -325,27 +380,27 @@ struct ProPDFReaderEngine: View {
     // MARK: - Top & Bottom Chrome Toolbar
     private var proReaderChrome: some View {
         VStack {
-            // Top Bar
-            HStack(spacing: 16) {
+            // Top Floating Glass Bar
+            HStack(spacing: 12) {
                 Button(action: {
                     HapticEngine.light()
                     onDismiss()
                 }) {
                     Image(systemName: "chevron.left")
-                        .font(.system(size: 18, weight: .bold))
+                        .font(.system(size: 16, weight: .bold))
                         .foregroundColor(.white)
-                        .frame(width: 38, height: 38)
-                        .background(Color.black.opacity(0.45))
+                        .frame(width: 36, height: 36)
+                        .background(Color.white.opacity(0.12))
                         .clipShape(Circle())
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(pdf.name)
-                        .font(.system(size: 14, weight: .bold))
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
                         .foregroundColor(.white)
                         .lineLimit(1)
                     Text("Page \(currentPageIndex + 1) of \(totalPages)")
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
                         .foregroundColor(.white.opacity(0.7))
                 }
 
@@ -357,10 +412,10 @@ struct ProPDFReaderEngine: View {
                     showingInspector = true
                 }) {
                     Image(systemName: "sidebar.left")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.system(size: 15, weight: .semibold))
                         .foregroundColor(.white)
-                        .frame(width: 38, height: 38)
-                        .background(Color.black.opacity(0.45))
+                        .frame(width: 36, height: 36)
+                        .background(Color.white.opacity(0.12))
                         .clipShape(Circle())
                 }
                 .help("Document Inspector & TOC")
@@ -372,10 +427,10 @@ struct ProPDFReaderEngine: View {
                     showingPageManager = true
                 }) {
                     Image(systemName: "square.grid.2x2")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.system(size: 15, weight: .semibold))
                         .foregroundColor(.white)
-                        .frame(width: 38, height: 38)
-                        .background(Color.black.opacity(0.45))
+                        .frame(width: 36, height: 36)
+                        .background(Color.white.opacity(0.12))
                         .clipShape(Circle())
                 }
                 .help("Page Thumbnail Grid")
@@ -387,29 +442,14 @@ struct ProPDFReaderEngine: View {
                     showCropAdjustmentSheet = true
                 }) {
                     Image(systemName: activeCropInsets.isEnabled ? "crop.square.fill" : "crop.square")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.system(size: 15, weight: .semibold))
                         .foregroundColor(activeCropInsets.isEnabled ? .inkGreen : .white)
-                        .frame(width: 38, height: 38)
-                        .background(activeCropInsets.isEnabled ? Color.inkGreen.opacity(0.25) : Color.black.opacity(0.45))
+                        .frame(width: 36, height: 36)
+                        .background(activeCropInsets.isEnabled ? Color.inkGreen.opacity(0.25) : Color.white.opacity(0.12))
                         .clipShape(Circle())
                 }
                 .help("Crop Margins")
                 .accessibilityLabel("Crop Margins")
-
-                // Expand View Mode Toggle
-                Button(action: {
-                    HapticEngine.medium()
-                    isExpandedView.toggle()
-                }) {
-                    Image(systemName: isExpandedView ? "arrow.up.left.and.down.right.and.arrow.up.right.and.down.left" : "arrow.up.left.and.down.right.magnifyingglass")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(isExpandedView ? .inkGreen : .white)
-                        .frame(width: 38, height: 38)
-                        .background(isExpandedView ? Color.inkGreen.opacity(0.25) : Color.black.opacity(0.45))
-                        .clipShape(Circle())
-                }
-                .help("Expand Full Screen")
-                .accessibilityLabel("Expand Full Screen")
 
                 // Apple Pencil Ink Mode Toggle
                 Button(action: {
@@ -419,10 +459,10 @@ struct ProPDFReaderEngine: View {
                     }
                 }) {
                     Image(systemName: "pencil.tip.crop.circle")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.system(size: 15, weight: .semibold))
                         .foregroundColor(isPencilMode ? .inkGreen : .white)
-                        .frame(width: 38, height: 38)
-                        .background(isPencilMode ? Color.inkGreen.opacity(0.25) : Color.black.opacity(0.45))
+                        .frame(width: 36, height: 36)
+                        .background(isPencilMode ? Color.inkGreen.opacity(0.25) : Color.white.opacity(0.12))
                         .clipShape(Circle())
                 }
                 .help("Apple Pencil Drawing Mode")
@@ -437,50 +477,54 @@ struct ProPDFReaderEngine: View {
                     }
                 }) {
                     Image(systemName: isReflowMode ? "doc.plaintext.fill" : "doc.plaintext")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.system(size: 15, weight: .semibold))
                         .foregroundColor(isReflowMode ? .inkGreen : .white)
-                        .frame(width: 38, height: 38)
-                        .background(isReflowMode ? Color.inkGreen.opacity(0.25) : Color.black.opacity(0.45))
+                        .frame(width: 36, height: 36)
+                        .background(isReflowMode ? Color.inkGreen.opacity(0.25) : Color.white.opacity(0.12))
                         .clipShape(Circle())
                 }
                 .help("Pro Text Reflow Mode")
                 .accessibilityLabel("Pro Text Reflow Mode")
 
-                // Settings
+                // Master Reader Settings
                 Button(action: {
                     HapticEngine.light()
                     showingSettings = true
                 }) {
-                    Image(systemName: "gearshape")
-                        .font(.system(size: 16, weight: .semibold))
+                    Image(systemName: "slider.horizontal.3")
+                        .font(.system(size: 15, weight: .semibold))
                         .foregroundColor(.white)
-                        .frame(width: 38, height: 38)
-                        .background(Color.black.opacity(0.45))
+                        .frame(width: 36, height: 36)
+                        .background(Color.white.opacity(0.12))
                         .clipShape(Circle())
                 }
                 .help("Reader Settings")
                 .accessibilityLabel("Reader Settings")
             }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .fill(.ultraThinMaterial)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 22, style: .continuous)
+                            .stroke(Color.white.opacity(0.18), lineWidth: 0.5)
+                    )
+                    .shadow(color: Color.black.opacity(0.25), radius: 10, x: 0, y: 4)
+            )
             .padding(.horizontal, 16)
             .padding(.top, 12)
 
             Spacer()
 
-            // Bottom Slider Bar with Glassmorphic HUD
-            VStack(spacing: 6) {
-                HStack {
-                    Text("Page \(currentPageIndex + 1) of \(totalPages)")
-                        .font(.system(size: 11, weight: .bold, design: .rounded))
-                        .foregroundColor(.white)
-                    Spacer()
-                    let pct = totalPages > 1 ? Int(round(Double(currentPageIndex) / Double(totalPages - 1) * 100)) : 100
-                    Text("\(pct)%")
-                        .font(.system(size: 11, weight: .bold, design: .rounded))
-                        .foregroundColor(.inkGreen)
-                }
-                .padding(.horizontal, 4)
-
+            // Bottom Floating Glass Capsule
+            VStack(spacing: 10) {
                 HStack(spacing: 12) {
+                    Text("\(currentPageIndex + 1)")
+                        .font(.system(size: 13, weight: .bold, design: .monospaced))
+                        .foregroundColor(.white)
+                        .frame(width: 36, alignment: .trailing)
+
                     Slider(
                         value: Binding(
                             get: { Double(currentPageIndex) },
@@ -492,16 +536,61 @@ struct ProPDFReaderEngine: View {
                         step: 1
                     )
                     .accentColor(.inkGreen)
+
+                    Text("\(totalPages)")
+                        .font(.system(size: 13, weight: .bold, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.7))
+                        .frame(width: 36, alignment: .leading)
+                }
+
+                Divider()
+                    .background(Color.white.opacity(0.12))
+
+                HStack {
+                    Button(action: {
+                        HapticEngine.medium()
+                        NotificationCenter.default.post(name: .toggleStudyNotebook, object: nil)
+                    }) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "note.text")
+                                .font(.system(size: 14, weight: .semibold))
+                            Text("Notebook")
+                                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(Color.white.opacity(0.12))
+                        .clipShape(Capsule())
+                    }
+
+                    Spacer()
+
+                    let pct = totalPages > 1 ? Int(round(Double(currentPageIndex) / Double(totalPages - 1) * 100)) : 100
+                    HStack(spacing: 4) {
+                        Image(systemName: "doc.text.fill")
+                            .font(.system(size: 12, weight: .bold))
+                        Text("Vector PDF • \(pct)%")
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                    }
+                    .foregroundColor(.inkGreen)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(Color.inkGreen.opacity(0.15))
+                    .clipShape(Capsule())
                 }
             }
-            .padding(.horizontal, 18)
-            .padding(.vertical, 10)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .stroke(Color.white.opacity(0.18), lineWidth: 0.75)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .fill(.ultraThinMaterial)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 24, style: .continuous)
+                            .stroke(Color.white.opacity(0.18), lineWidth: 0.5)
+                    )
+                    .shadow(color: Color.black.opacity(0.3), radius: 12, x: 0, y: 6)
             )
-            .shadow(color: Color.black.opacity(0.35), radius: 10, y: 4)
             .padding(.horizontal, 16)
             .padding(.bottom, 16)
         }
@@ -546,10 +635,16 @@ struct ProPDFReaderEngine: View {
     private func jumpToPage(_ pageIndex: Int) {
         let clamped = max(0, min(pageIndex, totalPages - 1))
         if clamped != currentPageIndex {
+            let fromPage = currentPageIndex
+            if abs(clamped - fromPage) > 1 {
+                ReadingJumpTracker.shared.recordJump(fromPage: fromPage, toPage: clamped) {
+                    self.jumpToPage(fromPage)
+                }
+            }
             velocityEngine.recordPageTurn()
         }
         currentPageIndex = clamped
-        if let doc = pdfDocument, let page = doc.page(at: clamped) {
+        if let doc = pdfDocument, let page = doc.page(at: clamped), pdfViewReference?.currentPage != page {
             pdfViewReference?.go(to: page)
         }
         saveReadingProgress()
@@ -649,9 +744,11 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
     var onTapCenter: () -> Void
     var onTextSelectionChanged: (String?) -> Void
     var onScaleChanged: ((CGFloat) -> Void)? = nil
+    var onHyperlinkSelected: ((Int, PDFPage) -> Void)? = nil
 
     func makeUIView(context: Context) -> PDFView {
         let pdfView = PDFView()
+        pdfView.delegate = context.coordinator
         // Start invisible — auto-scales causes a momentary zoom jolt on first layout.
         // We reveal the view only after layoutDocumentView() has settled.
         pdfView.alpha = 0
@@ -791,30 +888,24 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
                 if abs(uiView.scaleFactor - targetScale) > 0.05 {
                     uiView.scaleFactor = targetScale
                 }
-            } else if let currentPage = uiView.currentPage, uiView.bounds.width > 0 && uiView.bounds.height > 0 {
-                let pageBounds = currentPage.bounds(for: uiView.displayBox)
-                let pageWidthMultiplier: CGFloat = isDual ? 2.0 : 1.0
-                let totalPageWidth = pageBounds.width * pageWidthMultiplier
-                let totalPageHeight = pageBounds.height
-
-                let scaleForWidth = uiView.bounds.width / max(totalPageWidth, 1.0)
-                let scaleForHeight = uiView.bounds.height / max(totalPageHeight, 1.0)
-                let targetScale = min(scaleForWidth, scaleForHeight)
-
-                if targetScale > 0 && abs(uiView.scaleFactor - targetScale) > 0.005 {
-                    uiView.scaleFactor = targetScale
+            } else if context.coordinator.userCustomZoomScale == nil {
+                let fitScale = uiView.scaleFactorForSizeToFit
+                if fitScale > 0 && abs(uiView.scaleFactor - fitScale) > 0.01 {
+                    uiView.scaleFactor = fitScale
                 }
             }
         }
 
-        context.coordinator.lastPageIndex = currentPageIndex
         context.coordinator.lastBoundsSize = uiView.bounds.size
 
-        // Guarantee PDFView active page always displays the target pageIndex smoothly without flashing
+        // Guarantee PDFView active page displays target pageIndex cleanly without re-entrant animation corruption
         if let targetPage = document.page(at: currentPageIndex), uiView.currentPage != targetPage {
-            UIView.animate(withDuration: 0.15, delay: 0, options: [.allowUserInteraction, .beginFromCurrentState]) {
+            if context.coordinator.lastTargetPageIndex != currentPageIndex {
+                context.coordinator.lastTargetPageIndex = currentPageIndex
                 uiView.go(to: targetPage)
             }
+        } else {
+            context.coordinator.lastTargetPageIndex = currentPageIndex
         }
     }
 
@@ -830,16 +921,30 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         NotificationCenter.default.removeObserver(coordinator, name: .PDFViewScaleChanged, object: uiView)
     }
 
-    class Coordinator: NSObject {
+    class Coordinator: NSObject, PDFViewDelegate {
         var parent: ProPDFViewRepresentable
         var lastCropMode: Bool = false
         var lastTextMargin: CGFloat = -1
         var lastPageIndex: Int = -1
+        var lastTargetPageIndex: Int = -1
         var lastBoundsSize: CGSize = .zero
         var userCustomZoomScale: CGFloat? = nil
 
         init(_ parent: ProPDFViewRepresentable) {
             self.parent = parent
+        }
+
+        // MARK: - PDFViewDelegate Link Interception
+        @MainActor @objc func pdfView(_ sender: PDFView, willPerform action: PDFAction) {
+            if let actionGoTo = action as? PDFActionGoTo,
+               let destPage = actionGoTo.destination.page,
+               let doc = sender.document {
+                let idx = doc.index(for: destPage)
+                if idx >= 0 && idx < doc.pageCount {
+                    HapticEngine.selection()
+                    parent.onHyperlinkSelected?(idx, destPage)
+                }
+            }
         }
 
         @MainActor @objc func handleTap(_ gesture: UITapGestureRecognizer) {
@@ -848,11 +953,20 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
             let width = view.bounds.width
             let prefs = EBookPreferences.shared
             let zones = prefs.tapZoneStyle.zones
+            let isManga = prefs.isMangaMode
 
             if location.x < width * zones.leftEdge {
-                parent.onPrevPage()
+                if isManga {
+                    parent.onNextPage()
+                } else {
+                    parent.onPrevPage()
+                }
             } else if location.x > width * zones.rightEdge {
-                parent.onNextPage()
+                if isManga {
+                    parent.onPrevPage()
+                } else {
+                    parent.onNextPage()
+                }
             } else {
                 parent.onTapCenter()
             }
@@ -889,7 +1003,10 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
                   let page = pdfView.currentPage,
                   let doc = pdfView.document else { return }
             let idx = doc.index(for: page)
-            self.parent.currentPageIndex = idx
+            if self.parent.currentPageIndex != idx {
+                self.lastTargetPageIndex = idx
+                self.parent.currentPageIndex = idx
+            }
         }
 
         @MainActor @objc func selectionChanged(_ notification: Notification) {

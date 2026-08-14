@@ -1702,6 +1702,8 @@ struct ComicReaderEngine: View {
             if !hasSeenReaderOnboarding {
                 readerOnboardingOverlay
             }
+
+            ReadingJumpToastOverlay()
         }
         .overlay { if prefs.showReadingRuler { ReadingRulerOverlay() } }
         .onAppear {
