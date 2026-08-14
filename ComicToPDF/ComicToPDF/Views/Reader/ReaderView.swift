@@ -427,7 +427,7 @@ struct ReaderView: View {
                         pages: pages
                     )
                 ),
-                timeRemainingText: prefs.progressMode == 2 ? trText : (prefs.progressMode == 1 ? "Chapter \(currentPageIndex + 1)" : nil),
+                timeRemainingText: prefs.progressMode == 2 ? trText : (prefs.progressMode == 1 ? "\(max(0, pages.count - currentPageIndex - 1)) pages left" : nil),
                 onProgressModeToggle: { showReadingStatsHUD = true },
                 isPDF: fileURL.pathExtension.lowercased() == "pdf",
                 isEnhanced: autoContrastLevel > 1.0 || smartSharpen,

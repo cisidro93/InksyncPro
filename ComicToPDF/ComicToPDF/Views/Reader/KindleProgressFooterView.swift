@@ -16,7 +16,14 @@ struct InksyncProgressFooterView: View {
     @Environment(\.colorScheme) private var colorScheme
     
     private var progressPercentage: Int {
-        Int((Double(currentPage) / Double(max(1, totalPages))) * 100)
+        if isBookSection && chapterTotalPages > 1 && totalPages > 0 {
+            let sectionFraction = Double(max(0, currentPage - 1)) / Double(totalPages)
+            let pageFraction = (Double(sanitizedChapterPage) / Double(max(1, chapterTotalPages))) / Double(totalPages)
+            let total = min(1.0, max(0.0, sectionFraction + pageFraction))
+            return Int(total * 100)
+        } else {
+            return Int((Double(min(totalPages, max(1, currentPage))) / Double(max(1, totalPages))) * 100)
+        }
     }
     
     private var sanitizedChapterPage: Int {
@@ -30,29 +37,41 @@ struct InksyncProgressFooterView: View {
         max(0, chapterTotalPages - (sanitizedChapterPage + 1))
     }
     
+    private var pagesLeftInBook: Int {
+        max(0, totalPages - currentPage)
+    }
+    
     private var primaryText: String {
         let trimmedTitle = chapterTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let hasNamedTitle = (trimmedTitle != nil && !trimmedTitle!.isEmpty)
         
         switch prefs.progressMode {
         case 1:
-            // Pages left in chapter / section
-            let label = pagesLeftInChapter == 1 ? "1 page left in chapter" : "\(pagesLeftInChapter) pages left in chapter"
-            return label
+            // Mode 1: Pages left
+            if isBookSection && chapterTotalPages > 1 {
+                let left = pagesLeftInChapter
+                if let title = trimmedTitle, !title.isEmpty {
+                    return left == 1 ? "1 page left in \(title)" : "\(left) pages left in \(title)"
+                } else {
+                    return left == 1 ? "1 page left in chapter" : "\(left) pages left in chapter"
+                }
+            } else {
+                let left = pagesLeftInBook
+                return left == 1 ? "1 page left in book" : "\(left) pages left in book"
+            }
         case 2:
-            // Estimated time remaining
+            // Mode 2: Estimated time remaining
             if let mins = estimatedMinutesLeft, mins > 0 {
                 return "~\(mins) min\(mins == 1 ? "" : "s") left in book"
             } else {
                 return "\(progressPercentage)% completed"
             }
         default:
-            // Semantic Chapter Title & Page Indicator
+            // Mode 0: Semantic Chapter Title & Page Indicator
             if let title = trimmedTitle, !title.isEmpty {
                 if chapterTotalPages > 1 {
                     return "Page \(sanitizedChapterPage + 1) of \(chapterTotalPages)  ·  \(title)"
                 } else {
-                    return "\(title)"
+                    return "\(title)  ·  Page \(currentPage) of \(totalPages)"
                 }
             } else if chapterTotalPages > 1 {
                 if isBookSection {
