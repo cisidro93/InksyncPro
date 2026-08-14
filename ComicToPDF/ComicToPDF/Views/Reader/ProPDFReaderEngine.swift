@@ -35,6 +35,10 @@ struct ProPDFReaderEngine: View {
 
     @State private var showCropAdjustmentSheet = false
     @State private var activeCropInsets: CodableCropInsets = .zero
+    @AppStorage("isMangaMode") private var isMangaMode = false
+    @State private var activeZoomScale: CGFloat = 1.0
+    @State private var showZoomPill = false
+    @State private var zoomPillTask: Task<Void, Never>? = nil
     // Hyperlink Destination Preview HUD State
     @State private var pendingLinkPreview: (pageIndex: Int, targetPage: PDFPage)? = nil
 
@@ -131,12 +135,10 @@ struct ProPDFReaderEngine: View {
                         isCroppedMode: isCroppedMode,
                         isExpandedView: isExpandedView,
                         onPrevPage: {
-                            let isManga = prefs.isMangaMode
-                            jumpToPage(isManga ? currentPageIndex + 1 : currentPageIndex - 1)
+                            jumpToPage(isMangaMode ? currentPageIndex + 1 : currentPageIndex - 1)
                         },
                         onNextPage: {
-                            let isManga = prefs.isMangaMode
-                            jumpToPage(isManga ? currentPageIndex - 1 : currentPageIndex + 1)
+                            jumpToPage(isMangaMode ? currentPageIndex - 1 : currentPageIndex + 1)
                         },
                         onTapCenter: {
                             withAnimation(.easeInOut(duration: 0.2)) {
@@ -170,7 +172,7 @@ struct ProPDFReaderEngine: View {
                             }
                         }
                     )
-                    .applyFilterPreset(prefs.readingFilter)
+                    .readingFilter(prefs.readingFilter)
                     .ignoresSafeArea()
 
 
@@ -315,13 +317,11 @@ struct ProPDFReaderEngine: View {
         .focusable()
         .focusEffectDisabled()
         .onKeyPress(.leftArrow) {
-            let isManga = prefs.isMangaMode
-            jumpToPage(isManga ? currentPageIndex + 1 : currentPageIndex - 1)
+            jumpToPage(isMangaMode ? currentPageIndex + 1 : currentPageIndex - 1)
             return .handled
         }
         .onKeyPress(.rightArrow) {
-            let isManga = prefs.isMangaMode
-            jumpToPage(isManga ? currentPageIndex - 1 : currentPageIndex + 1)
+            jumpToPage(isMangaMode ? currentPageIndex - 1 : currentPageIndex + 1)
             return .handled
         }
         .onKeyPress(.space) {
@@ -953,7 +953,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
             let width = view.bounds.width
             let prefs = EBookPreferences.shared
             let zones = prefs.tapZoneStyle.zones
-            let isManga = prefs.isMangaMode
+            let isManga = prefs.pdfRTL || UserDefaults.standard.bool(forKey: "isMangaMode")
 
             if location.x < width * zones.leftEdge {
                 if isManga {
