@@ -7,6 +7,8 @@ struct InksyncProgressFooterView: View {
     let totalPages: Int             // total chapters or total book pages
     var chapterPage: Int = 0        // 0-indexed page inside current chapter
     var chapterTotalPages: Int = 1  // total pages in current chapter
+    var chapterTitle: String? = nil // Optional semantic chapter or TOC title (e.g. "Introduction", "Chapter 1")
+    var isBookSection: Bool = false // True if dividing an EPUB spine
     let estimatedMinutesLeft: Int?
     var accentColor: Color = Color(hex: "#7B5EA7")
     
@@ -29,9 +31,12 @@ struct InksyncProgressFooterView: View {
     }
     
     private var primaryText: String {
+        let trimmedTitle = chapterTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let hasNamedTitle = (trimmedTitle != nil && !trimmedTitle!.isEmpty)
+        
         switch prefs.progressMode {
         case 1:
-            // Pages left in chapter
+            // Pages left in chapter / section
             let label = pagesLeftInChapter == 1 ? "1 page left in chapter" : "\(pagesLeftInChapter) pages left in chapter"
             return label
         case 2:
@@ -42,9 +47,19 @@ struct InksyncProgressFooterView: View {
                 return "\(progressPercentage)% completed"
             }
         default:
-            // Chapter sub-page & chapter index
-            if chapterTotalPages > 1 {
-                return "Page \(sanitizedChapterPage + 1) of \(chapterTotalPages)  ·  Ch. \(currentPage) of \(totalPages)"
+            // Semantic Chapter Title & Page Indicator
+            if let title = trimmedTitle, !title.isEmpty {
+                if chapterTotalPages > 1 {
+                    return "Page \(sanitizedChapterPage + 1) of \(chapterTotalPages)  ·  \(title)"
+                } else {
+                    return "\(title)"
+                }
+            } else if chapterTotalPages > 1 {
+                if isBookSection {
+                    return "Page \(sanitizedChapterPage + 1) of \(chapterTotalPages)  ·  Section \(currentPage) of \(totalPages)"
+                } else {
+                    return "Page \(sanitizedChapterPage + 1) of \(chapterTotalPages)"
+                }
             } else {
                 return "Page \(currentPage) of \(totalPages)"
             }

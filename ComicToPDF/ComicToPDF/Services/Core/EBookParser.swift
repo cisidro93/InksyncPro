@@ -21,6 +21,35 @@ struct EBookMetadata {
         var label: String     // display name (from NCX/nav or derived from href)
         var tocTitle: String? // actual matched title from TOC
     }
+    
+    /// Derive a human-readable semantic label from a spine file href (e.g. "intro.xhtml" -> "Introduction")
+    static func deriveSemanticLabel(fromHref href: String, fallbackIndex: Int) -> String {
+        let filename = (href as NSString).lastPathComponent
+        let base = (filename as NSString).deletingPathExtension.lowercased()
+        
+        if base.contains("cover") { return "Cover" }
+        if base.contains("title") { return "Title Page" }
+        if base.contains("copyright") || base.contains("copy") { return "Copyright" }
+        if base.contains("dedicat") { return "Dedication" }
+        if base.contains("foreword") { return "Foreword" }
+        if base.contains("preface") { return "Preface" }
+        if base.contains("prologue") { return "Prologue" }
+        if base.contains("intro") { return "Introduction" }
+        if base.contains("toc") || base.contains("contents") { return "Contents" }
+        if base.contains("epilogue") { return "Epilogue" }
+        if base.contains("afterword") { return "Afterword" }
+        if base.contains("appendix") { return "Appendix" }
+        if base.contains("about") { return "About the Author" }
+        if base.contains("ack") { return "Acknowledgments" }
+        
+        // Extract numbers if chapter e.g. "chapter_01" -> "Chapter 1", "ch02" -> "Chapter 2"
+        let digits = base.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
+        if (base.contains("chap") || base.contains("ch_") || base.contains("ch-") || base.hasPrefix("ch")), let num = Int(digits) {
+            return "Chapter \(num)"
+        }
+        
+        return "Section \(fallbackIndex + 1)"
+    }
 }
 
 // MARK: - EBookParser
@@ -177,7 +206,7 @@ actor EBookParser {
         // Spine items from <spine> → <itemref idref="...">
         let spineIds = parser.spineItemRefs()
         var items: [EBookMetadata.SpineItem] = []
-        for idref in spineIds {
+        for (idx, idref) in spineIds.enumerated() {
             guard let fullHref = parser.manifestHref(forId: idref, opfDir: opfDir) else { continue }
             
             // Match the TOC href strictly locally as found in the OPF
@@ -185,9 +214,10 @@ actor EBookParser {
             let baseHref = localHref.components(separatedBy: "#").first ?? localHref
             let normalizedBase = baseHref.replacingOccurrences(of: "\\", with: "/").components(separatedBy: "/").filter { $0 != "." && !$0.isEmpty }.joined(separator: "/")
             let filename = (normalizedBase as NSString).lastPathComponent
+            let fullFilename = (fullHref as NSString).lastPathComponent
             
-            let tocTitle = tocMap[normalizedBase] ?? tocMap[filename]
-            let label = tocTitle ?? ""
+            let tocTitle = tocMap[normalizedBase] ?? tocMap[filename] ?? tocMap[fullHref] ?? tocMap[fullFilename]
+            let label = tocTitle ?? EBookMetadata.deriveSemanticLabel(fromHref: fullHref, fallbackIndex: idx)
             
             items.append(EBookMetadata.SpineItem(id: idref, href: fullHref, label: label, tocTitle: tocTitle))
         }

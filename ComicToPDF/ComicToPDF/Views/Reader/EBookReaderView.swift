@@ -73,10 +73,16 @@ struct EBookReaderView: View {
     // Key for persisting the scroll fraction alongside the chapter index
     private var fractionKey: String { "ebook_fraction_\(fileURL.lastPathComponent.hashValue)" }
 
+    private var currentChapterTitle: String? {
+        guard let spine = metadata?.spineItems, spine.indices.contains(currentIndex) else { return nil }
+        let label = spine[currentIndex].label.trimmingCharacters(in: .whitespacesAndNewlines)
+        return label.isEmpty ? nil : label
+    }
+    
     private var totalChapters: Int { metadata?.spineItems.count ?? 1 }
     private var visibleChapters: [(index: Int, label: String)] {
         guard let spine = metadata?.spineItems else { return [] }
-        return spine.enumerated().map { (index: $0.offset, label: !$0.element.label.isEmpty ? $0.element.label : "Chapter \($0.offset + 1)") }
+        return spine.enumerated().map { (index: $0.offset, label: !$0.element.label.isEmpty ? $0.element.label : "Section \($0.offset + 1)") }
     }
     private var progressFraction: Double {
         guard totalChapters > 1 else { return 0 }
@@ -101,6 +107,7 @@ struct EBookReaderView: View {
                     }
                 }
                 .frame(height: 2)
+                .padding(.top, 44)
                 
                 // ── Main Reader ───────────────────────────────────────────
                 Group {
@@ -212,6 +219,8 @@ struct EBookReaderView: View {
                             totalPages: totalChapters,
                             chapterPage: chapterPage,
                             chapterTotalPages: chapterTotalPages,
+                            chapterTitle: currentChapterTitle,
+                            isBookSection: true,
                             estimatedMinutesLeft: pdf.flatMap { ReaderProgressTracker.shared.progress(for: $0.id)?.estimatedMinutesRemaining }
                         )
                     }
@@ -585,8 +594,13 @@ struct EBookReaderView: View {
                     Text("Page \(chapterPage + 1) of \(chapterTotalPages)")
                         .font(.system(size: 13, weight: .semibold, design: .rounded))
                         .foregroundStyle(.white)
-                    if totalChapters > 1 {
-                        Text("Chapter \(currentIndex + 1) / \(totalChapters)")
+                    if let title = currentChapterTitle {
+                        Text(title)
+                            .font(.system(size: 11, weight: .medium, design: .rounded))
+                            .foregroundStyle(.white.opacity(0.75))
+                            .lineLimit(1)
+                    } else if totalChapters > 1 {
+                        Text("Section \(currentIndex + 1) / \(totalChapters)")
                             .font(.system(size: 11, weight: .medium, design: .rounded))
                             .foregroundStyle(.white.opacity(0.6))
                     }

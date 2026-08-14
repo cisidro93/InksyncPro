@@ -129,13 +129,18 @@ class BookReaderViewModel: NSObject, ObservableObject, WKNavigationDelegate {
         // Ensure every item has a non-empty fallback label if unlabelled
         var finalItems = spineItems
         for i in 0..<finalItems.count {
-            if finalItems[i].label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let existingLabel = finalItems[i].label.trimmingCharacters(in: .whitespacesAndNewlines)
+            if existingLabel.isEmpty || (existingLabel.hasPrefix("Chapter ") && finalItems[i].tocTitle == nil) {
                 let url = htmlFiles[safe: i]
                 var heading: String? = nil
                 if let url = url, let content = try? String(contentsOf: url) {
                     heading = self.extractFirstHeading(from: content)
                 }
-                finalItems[i].label = heading ?? "Chapter \(i + 1)"
+                if let h = heading, !h.isEmpty {
+                    finalItems[i].label = h
+                } else if existingLabel.isEmpty {
+                    finalItems[i].label = EBookMetadata.deriveSemanticLabel(fromHref: finalItems[i].href, fallbackIndex: i)
+                }
             }
         }
         self.tocItems = finalItems
@@ -1340,7 +1345,11 @@ private func computeColumnCount(for size: CGSize) -> Int {
             
             ReaderChrome(
                 title: pdf.name,
-                pageText: "Page \(chapterPage + 1) of \(chapterTotalPages)  •  " + (vm.tocItems.indices.contains(vm.currentChapterIndex) && !vm.tocItems[vm.currentChapterIndex].label.isEmpty ? vm.tocItems[vm.currentChapterIndex].label : "Ch. \(vm.currentChapterIndex + 1) / \(max(1, vm.chapterHtmlFiles.count))"),
+                pageText: {
+                    let label = vm.tocItems[safe: vm.currentChapterIndex]?.label.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                    let displayLabel = !label.isEmpty ? label : "Section \(vm.currentChapterIndex + 1)"
+                    return "Page \(chapterPage + 1) of \(max(1, chapterTotalPages))  •  \(displayLabel)"
+                }(),
                 isVisible: $chromeVisible,
                 onBack: onDismiss,
                 onBookmark: {
@@ -1380,6 +1389,8 @@ private func computeColumnCount(for size: CGSize) -> Int {
                     totalPages: max(1, vm.chapterHtmlFiles.count),
                     chapterPage: chapterPage,
                     chapterTotalPages: max(1, chapterTotalPages),
+                    chapterTitle: vm.tocItems[safe: vm.currentChapterIndex]?.label,
+                    isBookSection: true,
                     estimatedMinutesLeft: ReaderProgressTracker.shared.progress(for: pdf.id)?.estimatedMinutesRemaining
                 )
                 .transition(.opacity)
