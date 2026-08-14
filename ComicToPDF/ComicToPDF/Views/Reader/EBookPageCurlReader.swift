@@ -33,14 +33,14 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
     }
 
     func makeUIViewController(context: Context) -> UIPageViewController {
-        let isSlide = (prefs.pageTurnStyle == .slide)
-        let transitionStyle: UIPageViewController.TransitionStyle = isSlide ? .scroll : .pageCurl
+        let isInstant = (prefs.pageTurnStyle == .instant)
+        let transitionStyle: UIPageViewController.TransitionStyle = isInstant ? .scroll : .pageCurl
         let pvc = UIPageViewController(
             transitionStyle: transitionStyle,
             navigationOrientation: .horizontal,
             options: nil
         )
-        pvc.isDoubleSided = !isSlide
+        pvc.isDoubleSided = !isInstant
         pvc.dataSource = context.coordinator
         pvc.delegate = context.coordinator
 
@@ -1068,6 +1068,7 @@ extension EBookPageCurlReader {
             function applyPagePosition() {
                 var pageStep = getPageStep();
                 if (pageStep <= 0) return;
+                if (_targetPage >= 99999) return; // Wait for computeMetrics to resolve true total pages!
                 var spreadIndex = _isMultiCol ? Math.floor(_targetPage / 2) : _targetPage;
                 var shift = spreadIndex * pageStep;
 
@@ -1110,6 +1111,7 @@ extension EBookPageCurlReader {
                 if (_targetPage >= 99999 || _targetPage >= _totalPages) {
                     _targetPage = Math.max(0, _totalPages - 1);
                 }
+                applyPagePosition();
                 return _totalPages;
             }
 

@@ -65,8 +65,6 @@ enum ComicReadingMode: String, CaseIterable, Codable {
     case panelNavigation  // Panel-by-panel using pageModels Vision data
     case webtoonScroll    // Continuous vertical scroll
     case mangaRTL         // Single page, horizontal swipe, right-to-left
-    case pageSlide        // Flat horizontal slide transition
-    case pageFade         // Crossfade between pages
 }
 
 @MainActor
@@ -1481,7 +1479,7 @@ struct ComicReaderEngine: View {
         let pdfDual = EBookPreferences.shared.pdfDualPage || (EBookPreferences.shared.autoLandscapeDualPage && isLandscape)
         let isDual = prefersTwoUpSpreads || pdfDual
         guard isDual else { return false }
-        guard readingMode == .pageHorizontal || readingMode == .mangaRTL || readingMode == .pageSlide || readingMode == .pageFade else { return false }
+        guard readingMode == .pageHorizontal || readingMode == .mangaRTL else { return false }
         return true
     }
 
@@ -1491,7 +1489,7 @@ struct ComicReaderEngine: View {
             let pdfDual = EBookPreferences.shared.pdfDualPage || (EBookPreferences.shared.autoLandscapeDualPage && isLandscape)
             let isDual = prefersTwoUpSpreads || pdfDual
             guard isDual else { return false }
-            guard readingMode == .pageHorizontal || readingMode == .mangaRTL || readingMode == .pageSlide || readingMode == .pageFade else { return false }
+            guard readingMode == .pageHorizontal || readingMode == .mangaRTL else { return false }
             return true
         }
         return false

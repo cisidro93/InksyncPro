@@ -281,8 +281,6 @@ extension ComicReadingMode {
         case .mangaRTL:        return "arrow.left.to.line"
         case .panelNavigation: return "viewfinder"
         case .webtoonScroll:   return "arrow.down.doc"
-        case .pageSlide:       return "rectangle.on.rectangle.slash"
-        case .pageFade:        return "waveform.path.ecg"
         }
     }
 
@@ -292,8 +290,6 @@ extension ComicReadingMode {
         case .mangaRTL:        return "Manga (Right-to-Left)"
         case .panelNavigation: return "Panel Navigation"
         case .webtoonScroll:   return "Webtoon Scroll"
-        case .pageSlide:       return "Slide"
-        case .pageFade:        return "Fade"
         }
     }
 
@@ -303,8 +299,6 @@ extension ComicReadingMode {
         case .mangaRTL:        return "Swipe right to advance pages"
         case .panelNavigation: return "Auto-zoom per panel using Vision"
         case .webtoonScroll:   return "Continuous vertical strip"
-        case .pageSlide:       return "Flat horizontal page slide"
-        case .pageFade:        return "Crossfade between pages"
         }
     }
 }

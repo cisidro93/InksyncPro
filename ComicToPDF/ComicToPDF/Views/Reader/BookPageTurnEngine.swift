@@ -519,14 +519,7 @@ struct BookPager: View {
     var onFlipPastEnd: (() -> Void)? = nil
 
     var body: some View {
-        switch readingMode {
-        case .pageSlide:
-            slidePager
-        case .pageFade:
-            fadePager
-        default:
-            curlPager
-        }
+        curlPager
     }
 
     // ── Slide (UIPageViewController .scroll) ───────────────────────────
