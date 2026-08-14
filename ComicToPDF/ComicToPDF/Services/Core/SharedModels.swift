@@ -7,8 +7,6 @@ import PDFKit
 import UniformTypeIdentifiers
 import PencilKit
 
-extension PKDrawing: @retroactive @unchecked Sendable {}
-
 // MARK: - Shared Image Extension Sets
 // Single source of truth — prevents 6+ duplicate inline definitions across the codebase.
 extension Set where Element == String {

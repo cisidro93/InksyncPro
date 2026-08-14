@@ -440,7 +440,7 @@ struct ProPDFReaderEngine: View {
             onCopyToggle: {
                 if let pdfView = pdfViewReference, let page = pdfView.currentPage, let text = page.string {
                     UIPasteboard.general.string = text
-                    HapticEngine.notification(type: .success)
+                    HapticEngine.success()
                 }
             },
             isPDF: true,
