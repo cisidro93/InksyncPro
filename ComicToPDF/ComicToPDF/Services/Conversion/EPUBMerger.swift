@@ -528,31 +528,40 @@ struct EPUBMerger: Sendable {
         }
         
         let ext = srcURL.pathExtension.lowercased()
-        let needsConversion = ImageProcessor.isWideColor(url: srcURL)
+        let isWideColor = ImageProcessor.isWideColor(url: srcURL)
+        let isUltraLossless = settings.compressionQuality == .ultra
         
-        if needsConversion || ext == "webp" {
-            if let image = UIImage(contentsOfFile: srcURL.path) {
-                let format = UIGraphicsImageRendererFormat()
-                format.scale = 1.0
-                format.preferredRange = .standard // Forces standard sRGB color space
-                let renderer = UIGraphicsImageRenderer(size: image.size, format: format)
-                let srgbImage = renderer.image { _ in image.draw(at: .zero) }
-                
-                let data: Data?
-                if ext == "png" {
-                    data = srgbImage.pngData()
-                } else {
-                    data = srgbImage.jpegData(compressionQuality: settings.compressionQuality.value)
-                }
-                
-                if let finalData = data {
-                    try finalData.write(to: destURL)
-                    return
-                }
+        // Determine if we need to re-process the image through a renderer:
+        // - Wide-color (P3/Adobe RGB) images must be converted to sRGB — Kindle e-ink screens
+        //   cannot handle wide-gamut color profiles and will display washed-out colors.
+        // - WebP is not a valid EPUB image format and must be transcoded to JPEG.
+        // - PNG sources in non-ultra mode are converted to JPEG: PNG is lossless and 5–10× larger
+        //   than JPEG at equivalent visual quality, producing bloated EPUBs unnecessarily.
+        let needsRender = isWideColor || ext == "webp" || (ext == "png" && !isUltraLossless)
+        
+        if needsRender, let image = UIImage(contentsOfFile: srcURL.path) {
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 1.0
+            format.preferredRange = .standard // Forces standard sRGB color space
+            let renderer = UIGraphicsImageRenderer(size: image.size, format: format)
+            let srgbImage = renderer.image { _ in image.draw(at: .zero) }
+            
+            // Ultra lossless: keep PNG as PNG. All other presets: convert to JPEG.
+            let data: Data?
+            if ext == "png" && isUltraLossless {
+                data = srgbImage.pngData()
+            } else {
+                let quality = isUltraLossless ? 1.0 : settings.compressionQuality.value
+                data = srgbImage.jpegData(compressionQuality: quality)
+            }
+            
+            if let finalData = data {
+                try finalData.write(to: destURL)
+                return
             }
         }
         
-        // Fallback or if no conversion is needed
+        // Ultra lossless path or if render failed: pass raw bytes through as-is
         let data = try Data(contentsOf: srcURL)
         try data.write(to: destURL)
     }

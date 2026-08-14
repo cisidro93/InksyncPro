@@ -154,14 +154,27 @@ struct PDFGenerator: Sendable {
                         UIColor.white.setFill()
                         context.fill(pageRect)
                         
-                        // ✅ Fix (KCC Optimization): 
-                        // UIGraphicsPDFRenderer defaults to JPEG wrappers for UIImages which bloats 
-                        // B&W manga from 200MB to 800MB+. We forcefully coerce the image to PNG Data first.
-                        if let pngData = optimizedImage.pngData(), let pngImage = UIImage(data: pngData) {
+                        // Smart encoding: PNG is smaller only for true grayscale/monochrome
+                        // pages (B&W manga). For color comic pages PNG is 5–10× larger than
+                        // JPEG at equivalent visual quality, causing massive PDF bloat.
+                        let colorModel = optimizedImage.cgImage?.colorSpace?.model
+                        let isGrayscale = colorModel == .monochrome || colorModel == .lab
+                        
+                        if isGrayscale,
+                           let pngData = optimizedImage.pngData(),
+                           let pngImage = UIImage(data: pngData) {
+                            // Monochrome/gray page: PNG preserves sharp lines with zero quality loss
                             pngImage.draw(in: CGRect(origin: origin, size: drawnSize))
                         } else {
-                            // Fallback
-                            optimizedImage.draw(in: CGRect(origin: origin, size: drawnSize))
+                            // Color page: JPEG at configured quality — honors the user's compression
+                            // choice and avoids the 5–10× size penalty of lossless PNG embedding.
+                            let quality = settings.compressionQuality == .ultra ? 1.0 : settings.compressionQuality.value
+                            if let jpegData = optimizedImage.jpegData(compressionQuality: quality),
+                               let jpegImage = UIImage(data: jpegData) {
+                                jpegImage.draw(in: CGRect(origin: origin, size: drawnSize))
+                            } else {
+                                optimizedImage.draw(in: CGRect(origin: origin, size: drawnSize))
+                            }
                         }
                         
                         globalPageIndex += 1

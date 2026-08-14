@@ -146,12 +146,18 @@ struct CBZToEPUBConverter: Sendable {
                 
                 // B. Evaluate Processing Needs
                 let ext = srcURL.pathExtension.lowercased()
+                let isUltraLossless = settings.compressionQuality == .ultra
                 let isUnsafeFormat = !["jpg", "jpeg", "png"].contains(ext)
-                let needsCompression = settings.compressionQuality != .high
                 let needsEnhancement = settings.imageEnhancement.grayscale || settings.imageEnhancement.autoContrast || settings.imageEnhancement.invertColors || settings.imageEnhancement.brightness != 0 || settings.imageEnhancement.sharpness != 0 || settings.imageEnhancement.vibrance != 0 || settings.imageEnhancement.gamma != 1.0
                 let isWideColorImage = ImageProcessor.isWideColor(url: srcURL)
+                // PNG sources must be re-encoded to JPEG for all non-ultra presets to prevent
+                // 5–10× file size inflation from lossless PNG blobs in the EPUB.
+                let isPNGNeedingConversion = (ext == "png") && !isUltraLossless
                 
-                let needsProcessing = needsCompression || needsEnhancement || settings.optimizeForDevice || settings.trimMargins || isUnsafeFormat || isWideColorImage
+                // Ultra lossless: only process if enhancement, device-optimize, trim, unsafe format,
+                // or wide-color is required. For all other presets, always re-encode to apply the
+                // configured JPEG quality target — even for .high (95%) preset.
+                let needsProcessing = !isUltraLossless || needsEnhancement || settings.optimizeForDevice || settings.trimMargins || isUnsafeFormat || isWideColorImage || isPNGNeedingConversion
                 
                 let appendToBatch = { (data: Data, indexToUse: Int, itemSourceURL: URL) in
                     let safeData = ImageProcessor.convertToSRGB(data: data)
@@ -191,8 +197,12 @@ struct CBZToEPUBConverter: Sendable {
                         autoreleasepool {
                             if needsProcessing {
                                 let processedImage = ImageProcessor.process(image: slice, settings: settings, isOddPage: globalImageIndex % 2 == 0) ?? slice
-                                finalData = processedImage.jpegData(compressionQuality: settings.compressionQuality.value) ?? Data()
+                                // Ultra lossless slices always encode at 1.0; all other presets use
+                                // the configured quality value to honor the user's compression choice.
+                                let quality = isUltraLossless ? 1.0 : settings.compressionQuality.value
+                                finalData = processedImage.jpegData(compressionQuality: quality) ?? Data()
                             } else {
+                                // Ultra lossless + no processing needed: pass through at full quality
                                 finalData = slice.jpegData(compressionQuality: 1.0) ?? Data()
                             }
                         } // UIImage + CIImage pipeline freed here before next slice
@@ -203,19 +213,21 @@ struct CBZToEPUBConverter: Sendable {
                         appendToBatch(finalData, globalImageIndex, sliceSourceURL)
                     }
                 } else {
-                    // Fix 2: For the non-sliced path, scope processedImage inside
-                    // its own block so it is released before finalData escapes.
+                    // Non-sliced path: scope processedImage inside its own block so it is
+                    // released before finalData escapes, preventing RAM accumulation.
                     var finalData = Data()
                     autoreleasepool {
                         if needsProcessing {
                             if let processedImage = ImageProcessor.process(imageURL: srcURL, settings: settings, isOddPage: originalIndex % 2 == 0) {
-                                let quality = settings.compressionQuality.value
+                                let quality = isUltraLossless ? 1.0 : settings.compressionQuality.value
                                 finalData = processedImage.jpegData(compressionQuality: quality) ?? Data()
                             }
                             if finalData.isEmpty {
+                                // Fallback: read raw bytes (handles rare decode failures)
                                 finalData = (try? Data(contentsOf: srcURL)) ?? Data()
                             }
                         } else {
+                            // Ultra lossless + no processing needed: raw bytes pass through as-is
                             finalData = (try? Data(contentsOf: srcURL)) ?? Data()
                         }
                     } // processedImage UIImage freed here; only compressed Data escapes

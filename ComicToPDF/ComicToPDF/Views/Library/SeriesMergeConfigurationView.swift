@@ -440,19 +440,32 @@ struct SeriesMergeConfigurationView: View {
         let format = settingsManager.conversionSettings.outputFormat
         let optimize = settingsManager.conversionSettings.optimizeForDevice
         
+        // EPUB adds ~8% overhead for ZIP container + XML/XHTML scaffolding.
+        // PDF adds ~5% overhead for cross-reference tables and page descriptors.
+        // These factors account for the EPUB container cost on top of image data.
+        let containerOverhead: Double = format == .epub ? 1.08 : 1.05
+        
         switch preset {
         case .ultra:
-            return 1.0
+            // Ultra lossless: raw bytes pass through. No compression applied — output
+            // size equals input size plus container overhead.
+            return 1.0 * containerOverhead
         case .customTarget:
             let targetMB = settingsManager.conversionSettings.targetFileSizeMB
             let totalMB = Double(totalInputSize) / 1024 / 1024
             return totalMB > 0 ? min(1.0, max(0.05, targetMB / totalMB)) : 0.70
         case .high:
-            return optimize ? (format == .pdf ? 0.90 : 0.75) : 0.95
+            // High (95% JPEG): re-encodes all images. Source files are typically
+            // already compressed JPEGs at 85–95%, so re-encoding produces a file
+            // roughly 90–100% of the source size. Device optimization downscales
+            // images to the target device resolution for additional savings.
+            return optimize ? (format == .pdf ? 0.85 : 0.78) : (0.95 * containerOverhead)
         case .balanced:
-            return optimize ? (format == .pdf ? 0.75 : 0.55) : 0.80
+            // Balanced (85% JPEG): meaningful compression vs high quality.
+            return optimize ? (format == .pdf ? 0.65 : 0.50) : (0.72 * containerOverhead)
         case .compact:
-            return optimize ? (format == .pdf ? 0.55 : 0.35) : 0.60
+            // Compact (70% JPEG + 1920px max): significant compression and downscaling.
+            return optimize ? (format == .pdf ? 0.40 : 0.30) : (0.50 * containerOverhead)
         }
     }
 

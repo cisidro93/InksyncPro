@@ -823,9 +823,7 @@ class PanelViewEPUBConverter {
 
     private func processImage(srcURL: URL, settings: ConversionSettings, isOddPage: Bool) -> Data {
         let ext = srcURL.pathExtension.lowercased()
-        let kindleSafe = ["jpg", "jpeg"] // PNG is NOT safe per KF8 spec
-
-        let needsCompression = settings.compressionQuality != .high
+        let isUltraLossless = settings.compressionQuality == .ultra
         let needsEnhancement = settings.imageEnhancement.grayscale || settings.imageEnhancement.autoContrast || settings.imageEnhancement.invertColors || settings.imageEnhancement.brightness != 0 || settings.imageEnhancement.sharpness != 0 || settings.imageEnhancement.vibrance != 0 || settings.imageEnhancement.gamma != 1.0
         let needsOptimization = settings.optimizeForDevice || settings.trimMargins || needsEnhancement
 
@@ -841,17 +839,24 @@ class PanelViewEPUBConverter {
                 customTargetSize: customSize
             )
             
-            let quality = settings.compressionQuality.value
+            let quality = isUltraLossless ? 1.0 : settings.compressionQuality.value
             return workingImage.jpegData(compressionQuality: quality) ?? (try? Data(contentsOf: srcURL)) ?? Data()
         }
 
-        if needsCompression, let image = UIImage(contentsOfFile: srcURL.path) {
+        // For all non-ultra presets: always re-encode to apply the configured quality target.
+        // Previously .high was treated as "no compression needed" which bypassed JPEG
+        // quality reduction and passed raw source bytes through unchanged.
+        if !isUltraLossless, let image = UIImage(contentsOfFile: srcURL.path) {
             return image.jpegData(compressionQuality: settings.compressionQuality.value) ?? Data()
         }
+        
+        // Ultra lossless: pass native JPEG bytes through with zero re-encoding overhead.
+        let kindleSafe = ["jpg", "jpeg"]
         if kindleSafe.contains(ext), let data = try? Data(contentsOf: srcURL) {
             return data
         }
-        // Force JPEG for PNG, WebP, HEIC, AVIF, etc.
+        // Force JPEG for PNG, WebP, HEIC, AVIF, etc. even in ultra lossless mode — these
+        // formats are not valid per the KF8/EPUB spec and must be transcoded.
         if let image = UIImage(contentsOfFile: srcURL.path),
            let jpeg = image.jpegData(compressionQuality: 0.92) {
             return jpeg
