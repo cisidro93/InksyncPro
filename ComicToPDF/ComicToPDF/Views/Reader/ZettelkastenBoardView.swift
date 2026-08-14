@@ -980,7 +980,7 @@ private struct CardInspectorView: View {
                                     AppRouter.shared.presentFullScreen(.read(matchedPDF.toDTO()))
                                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                                         NotificationCenter.default.post(
-                                            name: NSNotification.Name("Reader_JumpToPage"),
+                                            name: .readerJumpToPage,
                                             object: nil,
                                             userInfo: ["pageIndex": annotation.pageIndex]
                                         )

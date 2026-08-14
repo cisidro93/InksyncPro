@@ -54,7 +54,7 @@ struct HyperlinkPreviewHUD: View {
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .frame(maxHeight: 270)
-                        .cornerRadius(8)
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                         .shadow(color: .black.opacity(0.5), radius: 10, y: 4)
                         .transition(.opacity.combined(with: .scale(scale: 0.95)))
                 } else {
@@ -118,15 +118,10 @@ struct HyperlinkPreviewHUD: View {
     }
     
     private func renderThumbnail() {
-        let page = targetPage
-        Task.detached(priority: .userInitiated) {
-            let size = CGSize(width: 300, height: 400)
-            let thumb = page.thumbnail(of: size, for: .cropBox)
-            await MainActor.run {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                    self.pageThumbnail = thumb
-                }
-            }
+        let size = CGSize(width: 300, height: 400)
+        let thumb = targetPage.thumbnail(of: size, for: .cropBox)
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+            self.pageThumbnail = thumb
         }
     }
 }

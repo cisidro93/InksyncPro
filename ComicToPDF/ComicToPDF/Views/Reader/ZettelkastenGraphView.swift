@@ -1089,7 +1089,7 @@ struct ZettelkastenGraphView: View {
                                     AppRouter.shared.presentFullScreen(.read(matchedPDF))
                                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
                                         NotificationCenter.default.post(
-                                            name: NSNotification.Name("Reader_JumpToPage"),
+                                            name: .readerJumpToPage,
                                             object: nil,
                                             userInfo: ["pageIndex": ann?.pageIndex ?? 0]
                                         )

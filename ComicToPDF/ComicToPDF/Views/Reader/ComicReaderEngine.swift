@@ -81,6 +81,8 @@ final class ComicImageCache: ObservableObject {
     private var readingDirection: Int = 1 // 1 for forward, -1 for backward
     private var inFlightPrefetchTasks: [Int: Task<Void, Never>] = [:]
     private var averageSecondsPerPage: Double = 8.0
+    private var isPrefetching = false
+    private var notificationObservers: [NSObjectProtocol] = []
     
     private func storePrefetchTask(_ task: Task<Void, Never>, for index: Int) {
         inFlightPrefetchTasks[index] = task
@@ -184,7 +186,7 @@ final class ComicImageCache: ObservableObject {
             self.virtualCoordinator = nil
         }
         
-        NotificationCenter.default.addObserver(
+        let memObs = NotificationCenter.default.addObserver(
             forName: UIApplication.didReceiveMemoryWarningNotification,
             object: nil,
             queue: .main
@@ -194,8 +196,9 @@ final class ComicImageCache: ObservableObject {
                 Logger.shared.log("ComicImageCache: Memory warning received. Cleared image cache.", category: "Memory", type: .warning)
             }
         }
+        self.notificationObservers.append(memObs)
         
-        NotificationCenter.default.addObserver(
+        let renameObs = NotificationCenter.default.addObserver(
             forName: NSNotification.Name("InksyncPro.fileDidRename"),
             object: nil,
             queue: .main
@@ -233,6 +236,7 @@ final class ComicImageCache: ObservableObject {
                 }
             }
         }
+        self.notificationObservers.append(renameObs)
         
         if scheme == "virtual-omnibus" {
             // Already initialized, no background archive extraction needed!
@@ -367,9 +371,12 @@ final class ComicImageCache: ObservableObject {
     }
     
     deinit {
+        for obs in notificationObservers {
+            NotificationCenter.default.removeObserver(obs)
+        }
         activelyAccessedURL?.stopAccessingSecurityScopedResource()
         if isPDF {
-            Task { await PDFRenderActor.shared.clear() }
+            Task.detached(priority: .background) { await PDFRenderActor.shared.clear() }
         }
         if let tempDir = extractedTempDir {
             try? FileManager.default.removeItem(at: tempDir)
@@ -378,7 +385,7 @@ final class ComicImageCache: ObservableObject {
             try? FileManager.default.removeItem(at: vTempDir)
         }
         if !isPDF && !isStream && !isPreExtracted {
-            Task { await ArchiveManager.shared.clearCache() }
+            Task.detached(priority: .background) { await ArchiveManager.shared.clearCache() }
         }
     }
     
@@ -1245,6 +1252,11 @@ final class ComicImageCache: ObservableObject {
     }
     
     private func prefetchSurrounding(index: Int) {
+        guard !isPrefetching else { return }
+        guard pageCount > 0 else { return }
+        isPrefetching = true
+        defer { isPrefetching = false }
+
         let direction = readingDirection
         let cacheCap = maxCacheSize
         
@@ -1264,19 +1276,22 @@ final class ComicImageCache: ObservableObject {
         
         // Final bounds clamped safely
         let targetAhead = max(2, min(8, baseAhead + velocityAheadFactor))
-        let targetBehind = baseBehind
+        let targetBehind = max(0, baseBehind)
         
         var prefetchIndices: Set<Int> = []
         if direction >= 0 {
-            // Forward movement: prefetch 4 pages ahead, 3 pages behind
-            for i in 1...max(4, targetAhead) {
+            // Forward movement: prefetch pages ahead, pages behind
+            let aheadCount = max(1, targetAhead)
+            for i in 1...aheadCount {
                 prefetchIndices.insert(index + i)
             }
-            for i in 1...3 {
-                if index - i >= 0 { prefetchIndices.insert(index - i) }
+            if targetBehind > 0 {
+                for i in 1...targetBehind {
+                    if index - i >= 0 { prefetchIndices.insert(index - i) }
+                }
             }
         } else {
-            // Backward movement: prefetch 5 pages behind (reverse), 2 pages ahead
+            // Backward movement: prefetch pages behind (reverse), pages ahead
             for i in 1...5 {
                 if index - i >= 0 { prefetchIndices.insert(index - i) }
             }
@@ -1814,8 +1829,16 @@ struct ComicReaderEngine: View {
         .onDisappear {
             BackTapManager.shared.isEnabled = false
         }
-        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("Reader_JumpToPage"))) { notification in
+        .onReceive(NotificationCenter.default.publisher(for: .readerJumpToPage)) { notification in
             if let pageIndex = notification.userInfo?["pageIndex"] as? Int, pageIndex >= 0, pageIndex < cache.pageCount {
+                let fromPage = currentIndex
+                if abs(pageIndex - fromPage) > 1 {
+                    ReadingJumpTracker.shared.recordJump(fromPage: fromPage, toPage: pageIndex) {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                            currentIndex = fromPage
+                        }
+                    }
+                }
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
                     currentIndex = pageIndex
                 }
@@ -1846,8 +1869,17 @@ struct ComicReaderEngine: View {
             Button("Cancel", role: .cancel) { }
             Button("Go") {
                 if let pageNum = Int(jumpToPageText), pageNum >= 1 && pageNum <= cache.pageCount {
+                    let targetIdx = pageNum - 1
+                    let fromPage = currentIndex
+                    if abs(targetIdx - fromPage) > 1 {
+                        ReadingJumpTracker.shared.recordJump(fromPage: fromPage, toPage: targetIdx) {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                                currentIndex = fromPage
+                            }
+                        }
+                    }
                     withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                        currentIndex = pageNum - 1
+                        currentIndex = targetIdx
                     }
                 }
             }

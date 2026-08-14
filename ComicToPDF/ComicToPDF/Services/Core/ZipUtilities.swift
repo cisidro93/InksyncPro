@@ -259,7 +259,7 @@ struct ZipUtilities {
                         try fileManager.removeItem(at: destinationURL)
                     }
                     
-                    archive = try ZIPFoundation.Archive(url: destinationURL, accessMode: .create)
+                    archive = ZIPFoundation.Archive(url: destinationURL, accessMode: .create)
                     guard let activeArchive = archive else {
                         throw NSError(domain: "ZipError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to create archive"])
                     }

@@ -360,8 +360,19 @@ struct EBookReaderView: View {
         .onChange(of: chapterPage) { _, _ in
             velocityEngine.recordPageTurn()
         }
-        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("Reader_JumpToPage"))) { notification in
+        .onReceive(NotificationCenter.default.publisher(for: .readerJumpToPage)) { notification in
             if let pageIndex = notification.userInfo?["pageIndex"] as? Int, pageIndex >= 0, pageIndex < totalChapters {
+                let fromIndex = currentIndex
+                if abs(pageIndex - fromIndex) > 0 {
+                    ReadingJumpTracker.shared.recordJump(fromPage: fromIndex, toPage: pageIndex) {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                            isGoingForward = fromIndex >= currentIndex
+                            currentIndex = fromIndex
+                            chapterPage = 0
+                            saveProgress()
+                        }
+                    }
+                }
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
                     isGoingForward = pageIndex >= currentIndex
                     currentIndex = pageIndex

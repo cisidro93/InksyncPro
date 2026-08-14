@@ -49,58 +49,62 @@ public struct ReadingJumpToastOverlay: View {
 
     public var body: some View {
         if let jump = tracker.activeJump {
-            HStack(spacing: 12) {
-                Image(systemName: "arrow.uturn.backward.circle.fill")
-                    .font(.system(size: 18))
-                    .foregroundStyle(Color.orange)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Jumped to Page \(jump.toPage + 1)")
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
-                    Text("Tap to return to Page \(jump.fromPage + 1)")
-                        .font(.system(size: 11, design: .rounded))
-                        .foregroundStyle(.white.opacity(0.8))
-                }
-
+            VStack {
                 Spacer()
+                HStack(spacing: 12) {
+                    Image(systemName: "arrow.uturn.backward.circle.fill")
+                        .font(.system(size: 18))
+                        .foregroundStyle(Color.orange)
 
-                Button {
-                    HapticEngine.medium()
-                    tracker.performUndo()
-                } label: {
-                    Text("Return")
-                        .font(.system(size: 12, weight: .bold, design: .rounded))
-                        .foregroundStyle(.black)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(Color.white, in: Capsule())
-                }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Jumped to Page \(jump.toPage + 1)")
+                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                            .foregroundStyle(.white)
+                        Text("Tap to return to Page \(jump.fromPage + 1)")
+                            .font(.system(size: 11, design: .rounded))
+                            .foregroundStyle(.white.opacity(0.8))
+                    }
 
-                Button {
-                    tracker.dismissJump()
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.6))
-                        .padding(4)
+                    Spacer()
+
+                    Button {
+                        HapticEngine.medium()
+                        tracker.performUndo()
+                    } label: {
+                        Text("Return")
+                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                            .foregroundStyle(.black)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Color.white, in: Capsule())
+                    }
+
+                    Button {
+                        tracker.dismissJump()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.white.opacity(0.6))
+                            .padding(4)
+                    }
                 }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(
+                    Capsule()
+                        .fill(Color.black.opacity(0.85))
+                        .background(.ultraThinMaterial, in: Capsule())
+                )
+                .overlay(
+                    Capsule()
+                        .stroke(Color.white.opacity(0.15), lineWidth: 0.5)
+                )
+                .shadow(color: .black.opacity(0.25), radius: 12, x: 0, y: 4)
+                .padding(.horizontal, 20)
+                .padding(.bottom, 64)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .background(
-                Capsule()
-                    .fill(Color.black.opacity(0.85))
-                    .background(.ultraThinMaterial, in: Capsule())
-            )
-            .overlay(
-                Capsule()
-                    .stroke(Color.white.opacity(0.15), lineWidth: 0.5)
-            )
-            .shadow(color: .black.opacity(0.25), radius: 12, x: 0, y: 4)
-            .padding(.horizontal, 20)
-            .padding(.bottom, 60)
             .transition(.move(edge: .bottom).combined(with: .opacity))
+            .zIndex(150)
         }
     }
 }

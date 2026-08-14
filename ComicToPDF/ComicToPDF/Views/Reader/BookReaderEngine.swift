@@ -1431,8 +1431,16 @@ private func computeColumnCount(for size: CGSize) -> Int {
         .onChange(of: sleepTimer.didFire) { _, fired in
             if fired { onDismiss() }
         }
-        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("Reader_JumpToPage"))) { notification in
+        .onReceive(NotificationCenter.default.publisher(for: .readerJumpToPage)) { notification in
             if let pageIndex = notification.userInfo?["pageIndex"] as? Int, pageIndex >= 0, pageIndex < vm.chapterHtmlFiles.count {
+                let fromChapter = vm.currentChapterIndex
+                if abs(pageIndex - fromChapter) > 0 {
+                    ReadingJumpTracker.shared.recordJump(fromPage: fromChapter, toPage: pageIndex) {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                            vm.loadChapter(index: fromChapter)
+                        }
+                    }
+                }
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
                     vm.loadChapter(index: pageIndex)
                 }
@@ -1510,8 +1518,17 @@ private func computeColumnCount(for size: CGSize) -> Int {
             Button("Cancel", role: .cancel) { }
             Button("Go") {
                 if let chapterNum = Int(jumpToPageText), chapterNum >= 1 && chapterNum <= vm.chapterHtmlFiles.count {
+                    let targetIdx = chapterNum - 1
+                    let fromChapter = vm.currentChapterIndex
+                    if abs(targetIdx - fromChapter) > 0 {
+                        ReadingJumpTracker.shared.recordJump(fromPage: fromChapter, toPage: targetIdx) {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                                vm.loadChapter(index: fromChapter)
+                            }
+                        }
+                    }
                     withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                        vm.loadChapter(index: chapterNum - 1)
+                        vm.loadChapter(index: targetIdx)
                     }
                 }
             }

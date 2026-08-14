@@ -978,7 +978,7 @@ struct GlobalHighlightRow: View {
                 // Post notification to jump to page index after presentation completes
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
                     NotificationCenter.default.post(
-                        name: NSNotification.Name("Reader_JumpToPage"),
+                        name: .readerJumpToPage,
                         object: nil,
                         userInfo: ["pageIndex": annotation.pageIndex]
                     )
@@ -1252,7 +1252,7 @@ struct GlobalHighlightRow: View {
                     // After reader opens, post a notification to jump to the page
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                         NotificationCenter.default.post(
-                            name: NSNotification.Name("Reader_JumpToPage"),
+                            name: .readerJumpToPage,
                             object: nil,
                             userInfo: ["pageIndex": annotation.pageIndex]
                         )

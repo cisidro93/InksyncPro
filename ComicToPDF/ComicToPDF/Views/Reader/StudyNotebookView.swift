@@ -38,7 +38,7 @@ struct StudyNotebookView: View {
     private func jumpToPage(_ pageIndex: Int) {
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         NotificationCenter.default.post(
-            name: NSNotification.Name("Reader_JumpToPage"),
+            name: .readerJumpToPage,
             object: nil,
             userInfo: ["pageIndex": pageIndex, "page": pageIndex]
         )
@@ -1185,7 +1185,7 @@ struct StudyNotebookView: View {
                             previewImage = nil
                         }
                         NotificationCenter.default.post(
-                            name: NSNotification.Name("Reader_JumpToPage"),
+                            name: .readerJumpToPage,
                             object: nil,
                             userInfo: ["pageIndex": pageIndex]
                         )

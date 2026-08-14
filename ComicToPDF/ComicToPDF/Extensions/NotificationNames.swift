@@ -31,6 +31,8 @@ extension Notification.Name {
     static let inksyncOpenShelf       = Notification.Name("InksyncOpenShelf")
     /// Fired by the "Open Book" App Intent to deep-link to a title by name.
     static let inksyncOpenBook        = Notification.Name("InksyncOpenBook")
+    /// Fired to programmatically jump the active reader to a specific 0-based page index.
+    static let readerJumpToPage       = Notification.Name("Reader_JumpToPage")
 
     // MARK: UI Interactions
     /// Fired when the Library tab icon is double-tapped — triggers scroll-to-top.

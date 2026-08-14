@@ -39,6 +39,8 @@ struct ProPDFReaderEngine: View {
     @State private var activeZoomScale: CGFloat = 1.0
     @State private var showZoomPill = false
     @State private var zoomPillTask: Task<Void, Never>? = nil
+    @State private var loadTask: Task<Void, Never>? = nil
+    @State private var accessedSecurityScopedURL: URL? = nil
     // Hyperlink Destination Preview HUD State
     @State private var pendingLinkPreview: (pageIndex: Int, targetPage: PDFPage)? = nil
 
@@ -327,9 +329,19 @@ struct ProPDFReaderEngine: View {
         .onKeyPress(.space) {
             jumpToPage(currentPageIndex + 1)
             return .handled
-        }
         .task {
             loadPDFDocument()
+        }
+        .onDisappear {
+            loadTask?.cancel()
+            zoomPillTask?.cancel()
+            accessedSecurityScopedURL?.stopAccessingSecurityScopedResource()
+            accessedSecurityScopedURL = nil
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .readerJumpToPage)) { notification in
+            if let pageIndex = notification.userInfo?["pageIndex"] as? Int, pageIndex >= 0, pageIndex < totalPages {
+                jumpToPage(pageIndex)
+            }
         }
         .onChange(of: currentPageIndex) { _, _ in
             saveReadingProgress()
@@ -598,19 +610,37 @@ struct ProPDFReaderEngine: View {
 
     // MARK: - Actions & Persistence
     private func loadPDFDocument() {
-        Task.detached(priority: .userInitiated) {
-            let docURL = pdf.url
-            if let doc = PDFDocument(url: docURL) {
+        loadTask?.cancel()
+        loadTask = Task.detached(priority: .userInitiated) {
+            let sourcePDF = self.pdf
+            let resolvedURL: URL
+            var accessedURL: URL? = nil
+            
+            if case .linked(let bm) = sourcePDF.sourceMode,
+               let url = try? BookmarkResolver.shared.resolve(bm) {
+                let didAccess = url.startAccessingSecurityScopedResource()
+                resolvedURL = url
+                if didAccess { accessedURL = url }
+            } else {
+                resolvedURL = LibraryFileRecord.resolveSandboxURL(sourcePDF.url.absoluteString)
+            }
+            
+            if let doc = PDFDocument(url: resolvedURL) {
                 let savedIndex = await MainActor.run {
-                    ReaderProgressTracker.shared.progress(for: self.pdf.id)?.currentPageIndex ?? 0
+                    ReaderProgressTracker.shared.progress(for: sourcePDF.id)?.currentPageIndex ?? 0
                 }
                 await MainActor.run {
+                    if let accessed = accessedURL {
+                        self.accessedSecurityScopedURL = accessed
+                    }
                     self.pdfDocument = doc
                     self.currentPageIndex = max(0, min(savedIndex, doc.pageCount - 1))
-                    let savedCrop = ReaderProgressTracker.shared.cropInsets(for: self.pdf.id)
+                    let savedCrop = ReaderProgressTracker.shared.cropInsets(for: sourcePDF.id)
                     let initialCrop = savedCrop ?? (self.prefs.defaultCropModeRaw == "smartAuto" ? .smartAuto : CodableCropInsets(top: self.prefs.defaultCropTop, bottom: self.prefs.defaultCropBottom, left: self.prefs.defaultCropLeft, right: self.prefs.defaultCropRight, modeRaw: self.prefs.defaultCropModeRaw))
                     self.applyCropInsets(initialCrop)
                 }
+            } else {
+                accessedURL?.stopAccessingSecurityScopedResource()
             }
         }
     }
