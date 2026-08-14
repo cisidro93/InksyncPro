@@ -301,11 +301,10 @@ struct ProPDFReaderEngine: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
 
-            // Top & Bottom Navigation Chrome
-            if chromeVisible {
-                proReaderChrome
-                    .transition(.move(edge: .top).combined(with: .opacity))
-            } else if selectedTextForHUD == nil {
+            // Master Unified Reader Chrome
+            readerChromeView
+
+            if !chromeVisible && selectedTextForHUD == nil {
                 KindleProgressFooterView(
                     currentPage: currentPageIndex + 1,
                     totalPages: max(1, totalPages),
@@ -390,223 +389,88 @@ struct ProPDFReaderEngine: View {
     }
 
 
-    // MARK: - Top & Bottom Chrome Toolbar
-    private var proReaderChrome: some View {
-        VStack {
-            // Top Floating Glass Bar
-            HStack(spacing: 12) {
-                Button(action: {
-                    HapticEngine.light()
-                    onDismiss()
-                }) {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundColor(.white)
-                        .frame(width: 36, height: 36)
-                        .background(Color.white.opacity(0.12))
-                        .clipShape(Circle())
-                }
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(pdf.name)
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
-                        .foregroundColor(.white)
-                        .lineLimit(1)
-                    Text("Page \(currentPageIndex + 1) of \(totalPages)")
-                        .font(.system(size: 11, weight: .medium, design: .rounded))
-                        .foregroundColor(.white.opacity(0.7))
-                }
-
-                Spacer()
-
-                // Inspector (TOC / Search / Annotations)
-                Button(action: {
-                    HapticEngine.light()
-                    showingInspector = true
-                }) {
-                    Image(systemName: "sidebar.left")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundColor(.white)
-                        .frame(width: 36, height: 36)
-                        .background(Color.white.opacity(0.12))
-                        .clipShape(Circle())
-                }
-                .help("Document Inspector & TOC")
-                .accessibilityLabel("Document Inspector & TOC")
-
-                // Page Manager Grid
-                Button(action: {
-                    HapticEngine.light()
-                    showingPageManager = true
-                }) {
-                    Image(systemName: "square.grid.2x2")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundColor(.white)
-                        .frame(width: 36, height: 36)
-                        .background(Color.white.opacity(0.12))
-                        .clipShape(Circle())
-                }
-                .help("Page Thumbnail Grid")
-                .accessibilityLabel("Page Thumbnail Grid")
-
-                // Smart White Margin Crop Toggle
-                Button(action: {
-                    HapticEngine.medium()
-                    showCropAdjustmentSheet = true
-                }) {
-                    Image(systemName: activeCropInsets.isEnabled ? "crop.square.fill" : "crop.square")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundColor(activeCropInsets.isEnabled ? .inkGreen : .white)
-                        .frame(width: 36, height: 36)
-                        .background(activeCropInsets.isEnabled ? Color.inkGreen.opacity(0.25) : Color.white.opacity(0.12))
-                        .clipShape(Circle())
-                }
-                .help("Crop Margins")
-                .accessibilityLabel("Crop Margins")
-
-                // Apple Pencil Ink Mode Toggle
-                Button(action: {
-                    HapticEngine.medium()
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        isPencilMode.toggle()
-                    }
-                }) {
-                    Image(systemName: "pencil.tip.crop.circle")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundColor(isPencilMode ? .inkGreen : .white)
-                        .frame(width: 36, height: 36)
-                        .background(isPencilMode ? Color.inkGreen.opacity(0.25) : Color.white.opacity(0.12))
-                        .clipShape(Circle())
-                }
-                .help("Apple Pencil Drawing Mode")
-                .accessibilityLabel("Apple Pencil Drawing Mode")
-
-                // Pro Text Reflow Mode Toggle
-                Button(action: {
-                    HapticEngine.medium()
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                        isReflowMode.toggle()
-                        prefs.pdfReflowMode = isReflowMode
-                    }
-                }) {
-                    Image(systemName: isReflowMode ? "doc.plaintext.fill" : "doc.plaintext")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundColor(isReflowMode ? .inkGreen : .white)
-                        .frame(width: 36, height: 36)
-                        .background(isReflowMode ? Color.inkGreen.opacity(0.25) : Color.white.opacity(0.12))
-                        .clipShape(Circle())
-                }
-                .help("Pro Text Reflow Mode")
-                .accessibilityLabel("Pro Text Reflow Mode")
-
-                // Master Reader Settings
-                Button(action: {
-                    HapticEngine.light()
+    // MARK: - Master Unified Reader Chrome
+    @ViewBuilder private var readerChromeView: some View {
+        ReaderChrome(
+            title: pdf.name,
+            pageText: "Page \(currentPageIndex + 1) of \(max(1, totalPages))",
+            isVisible: $chromeVisible,
+            onBack: onDismiss,
+            onBookmark: {
+                let bookmark = Annotation(
+                    pdfID: pdf.id,
+                    pageIndex: currentPageIndex,
+                    chapterTitle: "Page \(currentPageIndex + 1)",
+                    kind: .bookmark,
+                    createdAt: Date(),
+                    modifiedAt: Date()
+                )
+                AnnotationStore.shared.add(bookmark)
+                HapticEngine.medium()
+            },
+            onBookmarkActive: AnnotationStore.shared.annotations(for: pdf.id).contains(where: { $0.pageIndex == currentPageIndex && $0.kind == .bookmark }),
+            onSettingsToggle: {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                     showingSettings = true
-                }) {
-                    Image(systemName: "slider.horizontal.3")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundColor(.white)
-                        .frame(width: 36, height: 36)
-                        .background(Color.white.opacity(0.12))
-                        .clipShape(Circle())
                 }
-                .help("Reader Settings")
-                .accessibilityLabel("Reader Settings")
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .background(
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .fill(.ultraThinMaterial)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 22, style: .continuous)
-                            .stroke(Color.white.opacity(0.18), lineWidth: 0.5)
-                    )
-                    .shadow(color: Color.black.opacity(0.25), radius: 10, x: 0, y: 4)
-            )
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
-
-            Spacer()
-
-            // Bottom Floating Glass Capsule
-            VStack(spacing: 10) {
-                HStack(spacing: 12) {
-                    Text("\(currentPageIndex + 1)")
-                        .font(.system(size: 13, weight: .bold, design: .monospaced))
-                        .foregroundColor(.white)
-                        .frame(width: 36, alignment: .trailing)
-
-                    Slider(
-                        value: Binding(
-                            get: { Double(currentPageIndex) },
-                            set: { newPage in
-                                jumpToPage(Int(newPage))
-                            }
-                        ),
-                        in: 0...Double(max(0, totalPages - 1)),
-                        step: 1
-                    )
-                    .accentColor(.inkGreen)
-
-                    Text("\(totalPages)")
-                        .font(.system(size: 13, weight: .bold, design: .monospaced))
-                        .foregroundColor(.white.opacity(0.7))
-                        .frame(width: 36, alignment: .leading)
+            },
+            onTOCToggle: {
+                showingInspector = true
+            },
+            onAnnotationsToggle: {
+                NotificationCenter.default.post(name: .toggleStudyNotebook, object: nil)
+            },
+            onSearchToggle: {
+                showingInspector = true
+            },
+            currentProgress: Binding(
+                get: { Double(currentPageIndex) / Double(max(1, totalPages - 1)) },
+                set: { jumpToPage(Int(round($0 * Double(max(1, totalPages - 1))))) }
+            ),
+            totalPages: max(1, totalPages),
+            getPageThumbnail: { index in
+                guard let doc = pdfDocument, let page = doc.page(at: index) else { return nil }
+                return page.thumbnail(of: CGSize(width: 140, height: 190), for: .cropBox)
+            },
+            timeRemainingText: velocityEngine.estimatedTimeRemaining,
+            onJumpToPage: {
+                showingPageManager = true
+            },
+            hasCopyAction: true,
+            onCopyToggle: {
+                if let pdfView = pdfViewReference, let page = pdfView.currentPage, let text = page.string {
+                    UIPasteboard.general.string = text
+                    HapticEngine.notification(type: .success)
                 }
-
-                Divider()
-                    .background(Color.white.opacity(0.12))
-
-                HStack {
-                    Button(action: {
-                        HapticEngine.medium()
-                        NotificationCenter.default.post(name: .toggleStudyNotebook, object: nil)
-                    }) {
-                        HStack(spacing: 6) {
-                            Image(systemName: "note.text")
-                                .font(.system(size: 14, weight: .semibold))
-                            Text("Notebook")
-                                .font(.system(size: 12, weight: .semibold, design: .rounded))
-                        }
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(Color.white.opacity(0.12))
-                        .clipShape(Capsule())
+            },
+            isPDF: true,
+            isReflowActive: isReflowMode,
+            isAutoCropEnabled: activeCropInsets.isEnabled,
+            onCropToggle: {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                    if activeCropInsets.isEnabled {
+                        applyCropInsets(.none)
+                    } else {
+                        applyCropInsets(.smartAuto)
                     }
-
-                    Spacer()
-
-                    let pct = totalPages > 1 ? Int(round(Double(currentPageIndex) / Double(totalPages - 1) * 100)) : 100
-                    HStack(spacing: 4) {
-                        Image(systemName: "doc.text.fill")
-                            .font(.system(size: 12, weight: .bold))
-                        Text("Vector PDF • \(pct)%")
-                            .font(.system(size: 11, weight: .bold, design: .rounded))
-                    }
-                    .foregroundColor(.inkGreen)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(Color.inkGreen.opacity(0.15))
-                    .clipShape(Capsule())
                 }
+                HapticEngine.medium()
+            },
+            onManualCropToggle: {
+                showCropAdjustmentSheet = true
+            },
+            onReflowToggle: {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                    isReflowMode.toggle()
+                    prefs.pdfReflowMode = isReflowMode
+                }
+                HapticEngine.medium()
+            },
+            isSettingsActive: showingSettings,
+            onSwipeDown: {
+                onDismiss()
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-            .background(
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(.ultraThinMaterial)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 24, style: .continuous)
-                            .stroke(Color.white.opacity(0.18), lineWidth: 0.5)
-                    )
-                    .shadow(color: Color.black.opacity(0.3), radius: 12, x: 0, y: 6)
-            )
-            .padding(.horizontal, 16)
-            .padding(.bottom, 16)
-        }
+        )
     }
 
     // MARK: - Actions & Persistence
