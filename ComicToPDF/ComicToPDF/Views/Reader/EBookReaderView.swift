@@ -122,7 +122,7 @@ struct EBookReaderView: View {
                                 // Uses UIPageViewController(.pageCurl) — the same native
                                 // iOS page curl used by the comic and PDF readers.
                                 EBookPageCurlReader(
-                                    spineItem:   meta.spineItems[currentIndex],
+                                    spineItem:   meta.spineItems[safe: currentIndex] ?? meta.spineItems[0],
                                     unzipDir:    unzipDir,
                                     prefs:       prefs,
                                     colorScheme: colorScheme,
@@ -167,7 +167,7 @@ struct EBookReaderView: View {
                             } else {
                                 // ── Scroll Mode (continuous vertical) ──────────────────
                                 EBookWebReader(
-                                    spineItem:   meta.spineItems[currentIndex],
+                                    spineItem:   meta.spineItems[safe: currentIndex] ?? meta.spineItems[0],
                                     unzipDir:    unzipDir,
                                     prefs:       prefs,
                                     colorScheme: colorScheme,

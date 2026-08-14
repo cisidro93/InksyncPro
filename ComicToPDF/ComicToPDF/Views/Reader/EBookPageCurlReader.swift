@@ -497,7 +497,7 @@ extension EBookPageCurlReader {
             config.afterScreenUpdates = false
             wv.takeSnapshot(with: config) { [weak self] image, _ in
                 guard let image = image, let self = self else { return }
-                self.pageSnapshots[current] = image
+                self.pageSnapshots[nextIdx] = image
             }
         }
 
