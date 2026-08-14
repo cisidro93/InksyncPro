@@ -82,7 +82,7 @@ final class ComicImageCache: ObservableObject {
     private var inFlightPrefetchTasks: [Int: Task<Void, Never>] = [:]
     private var averageSecondsPerPage: Double = 8.0
     private var isPrefetching = false
-    private var notificationObservers: [NSObjectProtocol] = []
+    private nonisolated(unsafe) var notificationObservers: [NSObjectProtocol] = []
     
     private func storePrefetchTask(_ task: Task<Void, Never>, for index: Int) {
         inFlightPrefetchTasks[index] = task

@@ -99,12 +99,8 @@ struct ZipUtilities {
                         //             O(all images) — eliminates the iOS memory pressure crash.
 
                         // ── Phase 1: Enumerate qualifying entry paths (no I/O, metadata only) ──
-                        enumerationArchive = ZIPFoundation.Archive(url: sourceURL, accessMode: .read)
-                        guard let activeEnumerationArchive = enumerationArchive else {
-                            throw NSError(domain: "ZipError", code: 1,
-                                          userInfo: [NSLocalizedDescriptionKey:
-                                            "Could not open CBZ archive '\(sourceURL.lastPathComponent)'"])
-                        }
+                        let activeEnumerationArchive = try ZIPFoundation.Archive(url: sourceURL, accessMode: .read, pathEncoding: .utf8)
+                        enumerationArchive = activeEnumerationArchive
 
                         let imageExtensions: Set<String> = ["jpg", "jpeg", "png", "webp", "gif", "heic"]
                         var qualifiedPaths: [String] = []
@@ -216,10 +212,8 @@ struct ZipUtilities {
                     let secure = sourceURL.startAccessingSecurityScopedResource()
                     defer { if secure { sourceURL.stopAccessingSecurityScopedResource() } }
                     
-                    archive = ZIPFoundation.Archive(url: sourceURL, accessMode: .read)
-                    guard let activeArchive = archive else {
-                        throw NSError(domain: "ZipError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to read archive"])
-                    }
+                    let activeArchive = try ZIPFoundation.Archive(url: sourceURL, accessMode: .read, pathEncoding: .utf8)
+                    archive = activeArchive
                     let entries = activeArchive.filter { entry in
                         let name = entry.path
                         let ext = URL(fileURLWithPath: name).pathExtension.lowercased()
@@ -259,10 +253,8 @@ struct ZipUtilities {
                         try fileManager.removeItem(at: destinationURL)
                     }
                     
-                    archive = ZIPFoundation.Archive(url: destinationURL, accessMode: .create)
-                    guard let activeArchive = archive else {
-                        throw NSError(domain: "ZipError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to create archive"])
-                    }
+                    let activeArchive = try ZIPFoundation.Archive(url: destinationURL, accessMode: .create, pathEncoding: .utf8)
+                    archive = activeArchive
                     
                     // Get all files in source directory
                     let fileURLs = try fileManager.contentsOfDirectory(at: sourceURL, includingPropertiesForKeys: nil)
