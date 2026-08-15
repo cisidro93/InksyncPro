@@ -146,8 +146,8 @@ public struct EPUBManifestBuilder {
     public static func buildChunkXHTML(chunkIndex: Int, images: [String], title: String, bookUUID: String? = nil, pageIndex: Int? = nil, isManga: Bool = false, pageWidth: Int = 1980, pageHeight: Int = 2640) -> String {
         let svgElements = images.enumerated().map { _, imageName in
             """
-                    <svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="100%" height="100%" viewBox="0 0 \(pageWidth) \(pageHeight)" preserveAspectRatio="xMidYMid meet">
-                        <image width="\(pageWidth)" height="\(pageHeight)" href="../images/\(imageName)"/>
+                    <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" width="100%" height="100%" viewBox="0 0 \(pageWidth) \(pageHeight)" preserveAspectRatio="xMidYMid meet">
+                        <image width="\(pageWidth)" height="\(pageHeight)" href="../images/\(imageName)" xlink:href="../images/\(imageName)"/>
                     </svg>
             """
         }.joined(separator: "\n")
