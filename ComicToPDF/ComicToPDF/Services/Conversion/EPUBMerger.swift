@@ -580,49 +580,35 @@ struct EPUBMerger: Sendable {
     }
 
     private func copyAndPrepareImage(from srcURL: URL, to destURL: URL, settings: ConversionSettings) throws {
-        // Validate that the image file is not corrupt (e.g. an HTML error page)
+        // Validate that the image file is decodable as a UIImage
         guard let originalImage = UIImage(contentsOfFile: srcURL.path) else {
             throw NSError(domain: "ImageProcessor", code: 404, userInfo: [
-                NSLocalizedDescriptionKey: "Invalid or corrupted image file '\(srcURL.lastPathComponent)' in source archive. This often happens when a downloader saves an HTML error page instead of the image. Please verify your source file."
+                NSLocalizedDescriptionKey: "Invalid or corrupted image file '\(srcURL.lastPathComponent)' in source archive. Please verify your source file."
             ])
         }
         
         let ext = srcURL.pathExtension.lowercased()
-        let isWideColor = ImageProcessor.isWideColor(url: srcURL)
         let isUltraLossless = settings.compressionQuality == .ultra
         
-        // For all non-ultra presets, re-encode to enforce configured quality (e.g. 88% JPEG for High Quality).
-        // This prevents 1.5MB/page bloated JPEGs from being copied verbatim into omnibus EPUBs.
-        let needsRender = !isUltraLossless || isWideColor || ext == "webp"
+        // Always run image through the processing pipeline (downscaling, sRGB color conversion, contrast)
+        let processedImage = ImageProcessor.process(image: originalImage, settings: settings) ?? originalImage
         
-        if needsRender {
-            let processedImage = ImageProcessor.process(image: originalImage, settings: settings) ?? originalImage
-            
-            let quality = isUltraLossless ? 1.0 : settings.compressionQuality.value
-            let data: Data?
-            if ext == "png" && isUltraLossless {
-                data = processedImage.pngData()
-            } else {
-                data = processedImage.jpegData(compressionQuality: quality)
-            }
-            
-            if let finalData = data {
-                let srcBytes = (try? FileManager.default.attributesOfItem(atPath: srcURL.path)[.size] as? Int64) ?? Int64.max
-                let isNoFilter = !settings.imageEnhancement.grayscale && !settings.imageEnhancement.autoContrast && !settings.trimMargins
-                // If re-encoding expanded the file size and no enhancement filters were requested, keep original to prevent bloat!
-                if finalData.count < srcBytes || !isNoFilter || ext != "jpg" {
-                    try finalData.write(to: destURL)
-                } else {
-                    let rawData = try Data(contentsOf: srcURL)
-                    try rawData.write(to: destURL)
-                }
-                return
-            }
+        let quality = isUltraLossless ? 1.0 : settings.compressionQuality.value
+        let data: Data?
+        if ext == "png" && isUltraLossless {
+            data = processedImage.pngData()
+        } else {
+            // Encode as standard Baseline sRGB JPEG for 100% Kindle compatibility
+            data = processedImage.jpegData(compressionQuality: quality)
         }
         
-        // Ultra lossless path with raw passthrough:
-        let data = try Data(contentsOf: srcURL)
-        try data.write(to: destURL)
+        guard let finalData = data, !finalData.isEmpty else {
+            throw NSError(domain: "ImageProcessor", code: 500, userInfo: [
+                NSLocalizedDescriptionKey: "Failed to encode Kindle-compliant JPEG data for '\(srcURL.lastPathComponent)'."
+            ])
+        }
+        
+        try finalData.write(to: destURL)
     }
 
     private func findImages(in directory: URL) throws -> [URL] {

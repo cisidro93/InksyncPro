@@ -225,25 +225,16 @@ struct CBZToEPUBConverter: Sendable {
                     // Non-sliced path: scope processedImage inside its own block so it is
                     // released before finalData escapes, preventing RAM accumulation.
                     var finalData = Data()
-                    let srcBytes = (try? FileManager.default.attributesOfItem(atPath: srcURL.path)[.size] as? Int64) ?? Int64.max
-                    let isNoFilter = !settings.imageEnhancement.grayscale && !settings.imageEnhancement.autoContrast && !settings.trimMargins
                     autoreleasepool {
-                        if needsProcessing {
-                            if let processedImage = ImageProcessor.process(imageURL: srcURL, settings: settings, isOddPage: originalIndex % 2 == 0) {
-                                let quality = isUltraLossless ? 1.0 : settings.compressionQuality.value
-                                let encodedData = processedImage.jpegData(compressionQuality: quality) ?? Data()
-                                if encodedData.count < srcBytes || !isNoFilter || ext != "jpg" {
-                                    finalData = encodedData
-                                } else {
-                                    // Original JPEG was smaller — keep original to prevent bloat!
-                                    finalData = (try? Data(contentsOf: srcURL)) ?? encodedData
-                                }
+                        let processedImage = ImageProcessor.process(imageURL: srcURL, settings: settings, isOddPage: originalIndex % 2 == 0) ?? UIImage(contentsOfFile: srcURL.path)
+                        if let img = processedImage {
+                            let quality = isUltraLossless ? 1.0 : settings.compressionQuality.value
+                            if ext == "png" && isUltraLossless {
+                                finalData = img.pngData() ?? Data()
+                            } else {
+                                // Encode as standard Baseline sRGB JPEG for 100% Kindle compatibility
+                                finalData = img.jpegData(compressionQuality: quality) ?? Data()
                             }
-                            if finalData.isEmpty {
-                                finalData = (try? Data(contentsOf: srcURL)) ?? Data()
-                            }
-                        } else {
-                            finalData = (try? Data(contentsOf: srcURL)) ?? Data()
                         }
                     } // processedImage UIImage freed here; only compressed Data escapes
                     guard !finalData.isEmpty else {
