@@ -5,7 +5,12 @@ import Foundation
 public struct EPUBManifestBuilder {
 
     public static let containerXML = """
-    <?xml version="1.0"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>
+    <?xml version="1.0" encoding="UTF-8"?>
+    <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+        <rootfiles>
+            <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+        </rootfiles>
+    </container>
     """
 
     public static let cssContent = """
@@ -95,15 +100,12 @@ public struct EPUBManifestBuilder {
         } else {
             authorName = "Unknown Author"
         }
-        
         let coverMetaTag: String
         if let cid = coverMetaID {
             coverMetaTag = "\n                <meta name=\"cover\" content=\"\(cid)\"/>"
         } else {
             coverMetaTag = ""
         }
-        
-        let resolutionMeta = hasLandscapeSpreads ? "" : "\n                <meta name=\"original-resolution\" content=\"1980x2640\"/>"
         
         return """
         <?xml version="1.0" encoding="UTF-8"?>
@@ -118,7 +120,8 @@ public struct EPUBManifestBuilder {
                 <meta property="rendition:layout">pre-paginated</meta>
                 <meta property="rendition:orientation">auto</meta>
                 <meta property="rendition:spread">auto</meta>
-                <meta name="fixed-layout" content="true"/>\(resolutionMeta)\(coverMetaTag)
+                <meta name="fixed-layout" content="true"/>
+                <meta name="original-resolution" content="1980x2640"/>\(coverMetaTag)
             </metadata>
             <manifest>
                 \(manifestItems.joined(separator: "\n        "))
