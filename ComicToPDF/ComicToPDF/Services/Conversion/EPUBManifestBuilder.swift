@@ -119,15 +119,6 @@ public struct EPUBManifestBuilder {
                 <meta property="rendition:orientation">auto</meta>
                 <meta property="rendition:spread">auto</meta>
                 <meta name="fixed-layout" content="true"/>\(resolutionMeta)\(coverMetaTag)
-                <meta name="cdetype" content="pdoc"/>
-                <meta name="amzn:kindle:book-type" content="image-based"/>
-                <meta name="show-system-controls" content="true"/>
-                <meta name="amzn-top-status-bar" content="show"/>
-                <meta name="zero-gutter" content="true"/>
-                <meta name="zero-margin" content="true"/>
-                <meta name="ke-border-color" content="#000000"/>
-                <meta name="ke-border-width" content="0"/>
-                <meta name="primary-writing-mode" content="\(isManga ? "horizontal-rl" : "horizontal-lr")"/>
             </metadata>
             <manifest>
                 \(manifestItems.joined(separator: "\n        "))
@@ -144,11 +135,11 @@ public struct EPUBManifestBuilder {
     }
 
     public static func buildChunkXHTML(chunkIndex: Int, images: [String], title: String, bookUUID: String? = nil, pageIndex: Int? = nil, isManga: Bool = false, pageWidth: Int = 1980, pageHeight: Int = 2640) -> String {
-        let svgElements = images.enumerated().map { _, imageName in
+        let imageElements = images.enumerated().map { _, imageName in
             """
-                    <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" width="100%" height="100%" viewBox="0 0 \(pageWidth) \(pageHeight)" preserveAspectRatio="xMidYMid meet">
-                        <image width="\(pageWidth)" height="\(pageHeight)" href="../images/\(imageName)" xlink:href="../images/\(imageName)"/>
-                    </svg>
+                <div class="page">
+                    <img src="../images/\(imageName)" class="page-image" alt="Page Image"/>
+                </div>
             """
         }.joined(separator: "\n")
 
@@ -159,17 +150,16 @@ public struct EPUBManifestBuilder {
             <meta charset="UTF-8"/>
             <meta name="viewport" content="width=\(pageWidth), height=\(pageHeight)"/>
             <title>\(title)</title>
-            <link rel="stylesheet" type="text/css" href="../css/comic.css"/>
             <style type="text/css">
-                @page { margin: 0; padding: 0; }
-                html, body { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #000000; overflow: hidden; }
+                html, body { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #000000; }
                 .chunk-container { width: 100%; height: 100%; margin: 0; padding: 0; }
-                svg { width: 100%; height: 100%; display: block; margin: 0; padding: 0; }
+                .page { width: 100%; height: 100%; margin: 0; padding: 0; }
+                .page-image { display: block; width: 100%; height: 100%; }
             </style>
         </head>
         <body>
             <div class="chunk-container">
-        \(svgElements)
+            \(imageElements)
             </div>
         </body>
         </html>
