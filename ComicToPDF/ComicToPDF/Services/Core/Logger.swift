@@ -5,6 +5,7 @@ import SwiftUI
 // ✅ NEW: structured Log Levels
 enum LogType: String, CaseIterable, Codable {
     case info = "INFO"
+    case debug = "DEBUG"
     case warning = "WARNING"
     case error = "ERROR"
     case success = "SUCCESS"
@@ -13,6 +14,7 @@ enum LogType: String, CaseIterable, Codable {
     var color: Color {
         switch self {
         case .info: return .primary
+        case .debug: return .secondary
         case .warning: return .orange
         case .error: return .red
         case .success: return .green
@@ -23,6 +25,7 @@ enum LogType: String, CaseIterable, Codable {
     var icon: String {
         switch self {
         case .info: return "info.circle"
+        case .debug: return "ant.fill"
         case .warning: return "exclamationmark.triangle"
         case .error: return "xmark.octagon.fill"
         case .success: return "checkmark.circle"
