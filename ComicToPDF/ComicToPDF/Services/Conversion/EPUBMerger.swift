@@ -218,19 +218,21 @@ struct EPUBMerger: Sendable {
         
         // 8. Recursive Payload Addition of OEBPS folder contents
         let keys: [URLResourceKey] = [.nameKey, .isDirectoryKey]
-        if let enumerator = fileManager.enumerator(at: oebpsDir, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) {
+        let stdOEBPS = oebpsDir.standardizedFileURL.path
+        if let enumerator = fileManager.enumerator(at: oebpsDir.standardizedFileURL, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) {
             while let fileURL = enumerator.nextObject() as? URL {
                 try autoreleasepool {
+                    let stdFile = fileURL.standardizedFileURL
                     var isDirectory: ObjCBool = false
-                    fileManager.fileExists(atPath: fileURL.path, isDirectory: &isDirectory)
+                    fileManager.fileExists(atPath: stdFile.path, isDirectory: &isDirectory)
                     if isDirectory.boolValue { return }
                     
-                    let normalizedFile = fileURL.path.replacingOccurrences(of: "\\", with: "/")
-                    let normalizedBase = epubDir.path.replacingOccurrences(of: "\\", with: "/")
-                    let prefix = normalizedBase.hasSuffix("/") ? normalizedBase : normalizedBase + "/"
-                    let relativePath = normalizedFile.replacingOccurrences(of: prefix, with: "")
+                    let filePath = stdFile.path
+                    guard filePath.hasPrefix(stdOEBPS) else { return }
+                    let subPath = String(filePath.dropFirst(stdOEBPS.count))
+                    let relativePath = "OEBPS" + (subPath.hasPrefix("/") ? subPath : "/" + subPath)
                     
-                    try archive.addEntry(with: relativePath, fileURL: fileURL, compressionMethod: .deflate)
+                    try archive.addEntry(with: relativePath, fileURL: stdFile, compressionMethod: .deflate)
                 }
             }
         }
@@ -323,18 +325,20 @@ struct EPUBMerger: Sendable {
             
             let oebpsDir = dirURL.appendingPathComponent("OEBPS")
             let keys: [URLResourceKey] = [.nameKey, .isDirectoryKey]
-            if let enumerator = fileManager.enumerator(at: oebpsDir, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) {
+            let stdOEBPS = oebpsDir.standardizedFileURL.path
+            if let enumerator = fileManager.enumerator(at: oebpsDir.standardizedFileURL, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) {
                 while let fileURL = enumerator.nextObject() as? URL {
                     try autoreleasepool {
+                        let stdFile = fileURL.standardizedFileURL
                         var isDirectory: ObjCBool = false
-                        fileManager.fileExists(atPath: fileURL.path, isDirectory: &isDirectory)
+                        fileManager.fileExists(atPath: stdFile.path, isDirectory: &isDirectory)
                         if isDirectory.boolValue { return }
                         
-                        let normalizedFile = fileURL.path.replacingOccurrences(of: "\\", with: "/")
-                        let normalizedBase = dirURL.path.replacingOccurrences(of: "\\", with: "/")
-                        let prefix = normalizedBase.hasSuffix("/") ? normalizedBase : normalizedBase + "/"
-                        let relativePath = normalizedFile.replacingOccurrences(of: prefix, with: "")
-                        try archive.addEntry(with: relativePath, fileURL: fileURL, compressionMethod: .deflate)
+                        let filePath = stdFile.path
+                        guard filePath.hasPrefix(stdOEBPS) else { return }
+                        let subPath = String(filePath.dropFirst(stdOEBPS.count))
+                        let relativePath = "OEBPS" + (subPath.hasPrefix("/") ? subPath : "/" + subPath)
+                        try archive.addEntry(with: relativePath, fileURL: stdFile, compressionMethod: .deflate)
                     }
                 }
             }

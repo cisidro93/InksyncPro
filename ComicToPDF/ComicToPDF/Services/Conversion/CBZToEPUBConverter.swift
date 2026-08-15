@@ -570,15 +570,18 @@ struct CBZToEPUBConverter: Sendable {
                     try activeArchive.addEntry(with: "META-INF/container.xml", fileURL: containerPath, compressionMethod: .none)
 
                     let oebpsDir = capturedBatchDir.appendingPathComponent("OEBPS")
-                    if let enumerator = FileManager.default.enumerator(at: oebpsDir, includingPropertiesForKeys: nil) {
+                    let stdOEBPS = oebpsDir.standardizedFileURL.path
+                    if let enumerator = FileManager.default.enumerator(at: oebpsDir.standardizedFileURL, includingPropertiesForKeys: nil) {
                         while let fileURL = enumerator.nextObject() as? URL {
-                            let resourceValues = try fileURL.resourceValues(forKeys: [.isDirectoryKey])
+                            let stdFile = fileURL.standardizedFileURL
+                            let resourceValues = try stdFile.resourceValues(forKeys: [.isDirectoryKey])
                             if resourceValues.isDirectory == true { continue }
-                            let normalizedFile = fileURL.path.replacingOccurrences(of: "\\", with: "/")
-                            let normalizedBase = capturedBatchDir.path.replacingOccurrences(of: "\\", with: "/")
-                            let prefix = normalizedBase.hasSuffix("/") ? normalizedBase : normalizedBase + "/"
-                            let relativePath = normalizedFile.replacingOccurrences(of: prefix, with: "")
-                            try activeArchive.addEntry(with: relativePath, fileURL: fileURL, compressionMethod: .deflate)
+                            
+                            let filePath = stdFile.path
+                            guard filePath.hasPrefix(stdOEBPS) else { continue }
+                            let subPath = String(filePath.dropFirst(stdOEBPS.count))
+                            let relativePath = "OEBPS" + (subPath.hasPrefix("/") ? subPath : "/" + subPath)
+                            try activeArchive.addEntry(with: relativePath, fileURL: stdFile, compressionMethod: .deflate)
                         }
                     }
                     archive = nil
