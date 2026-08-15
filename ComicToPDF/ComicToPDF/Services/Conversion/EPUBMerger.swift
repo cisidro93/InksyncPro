@@ -54,6 +54,10 @@ struct EPUBMerger: Sendable {
         // the first content page must occupy the alternating slot (page 2) to prevent two consecutive identical spreads.
         var globalPageCounter = (activeCoverData != nil && settings.linkCoverAsSpread) ? 2 : 1
         var hasLandscapeSpreads = false
+        // Tracks the actual pixel dimensions of the first content page so we can
+        // emit a truthful original-resolution OPF meta for the Amazon ingestor.
+        var firstContentW = 1980
+        var firstContentH = 2640
         
         // 2.5 Inject Override Cover if Present
         if let coverData = activeCoverData {
@@ -117,6 +121,8 @@ struct EPUBMerger: Sendable {
                             isLandscape = true; hasLandscapeSpreads = true
                         }
                     }
+                    // Capture first content page resolution for OPF original-resolution meta
+                    if globalPageIndex == 1 { firstContentW = imgW; firstContentH = imgH }
                     
                     // Manifest & HTML — use actual dimensions so landscape SVG viewport is correct
                     let htmlName = String(format: "page_%05d.xhtml", globalPageIndex)
@@ -184,7 +190,8 @@ struct EPUBMerger: Sendable {
             isManga: settings.mangaMode,
             firstPageHref: firstPageHref,
             hasLandscapeSpreads: hasLandscapeSpreads,
-            author: sourceMetadata?.writer ?? sourceMetadata?.author
+            author: sourceMetadata?.writer ?? sourceMetadata?.author,
+            originalResolution: "\(firstContentW)x\(firstContentH)"
         )
         try opfContent.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8)
         
@@ -276,6 +283,10 @@ struct EPUBMerger: Sendable {
         // independently via coverSpreadTag — it does not consume a globalPageCounter slot.
         var globalPageCounter = 1
         var hasLandscapeSpreads = false
+        // Tracks the actual pixel dimensions of the first content page in the current volume
+        // so we can emit a truthful original-resolution OPF meta for the Amazon ingestor.
+        var firstContentW = 1980
+        var firstContentH = 2640
         var manifestItems: [String] = []
         manifestItems.append("<item id=\"css\" href=\"css/comic.css\" media-type=\"text/css\"/>")
         manifestItems.append("<item id=\"ncx\" href=\"toc.ncx\" media-type=\"application/x-dtbncx+xml\"/>")
@@ -283,7 +294,7 @@ struct EPUBMerger: Sendable {
         var spineItems: [String] = []
         
         // Base closure to "Seal" a volume
-        let sealCurrentEPUB = { [self] (dirURL: URL, volIdx: Int, mItems: [String], sItems: [String], volumeHasLandscape: Bool) throws -> URL in
+        let sealCurrentEPUB = { [self] (dirURL: URL, volIdx: Int, mItems: [String], sItems: [String], volumeHasLandscape: Bool, firstW: Int, firstH: Int) throws -> URL in
             let oebps = dirURL.appendingPathComponent("OEBPS")
             
             let bookUUID = UUID().uuidString
@@ -300,7 +311,8 @@ struct EPUBMerger: Sendable {
                 isManga: settings.mangaMode,
                 firstPageHref: firstPageHref,
                 hasLandscapeSpreads: volumeHasLandscape,
-                author: nil
+                author: nil,
+                originalResolution: "\(firstW)x\(firstH)"
             )
             try opf.write(to: oebps.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8)
             
@@ -390,7 +402,7 @@ struct EPUBMerger: Sendable {
             }
             
             if currentBundleBytes + issueMB > thresholdBytes && currentBundleBytes > 0 {
-                let builtEPUBURL = try sealCurrentEPUB(currentEpubDir, currentVolumeIndex, manifestItems, spineItems, hasLandscapeSpreads)
+                let builtEPUBURL = try sealCurrentEPUB(currentEpubDir, currentVolumeIndex, manifestItems, spineItems, hasLandscapeSpreads, firstContentW, firstContentH)
                 outputFiles.append(builtEPUBURL)
                 
                 currentVolumeIndex += 1
@@ -398,6 +410,7 @@ struct EPUBMerger: Sendable {
                 globalPageIndex = 1
                 globalPageCounter = (activeCoverData != nil && settings.linkCoverAsSpread) ? 2 : 1
                 hasLandscapeSpreads = false
+                firstContentW = 1980; firstContentH = 2640  // Reset for new volume
                 currentEpubDir = try initializeBlankEPUBDir(volumeOffset: currentVolumeIndex)
                 manifestItems = []
                 manifestItems.append("<item id=\"css\" href=\"css/comic.css\" media-type=\"text/css\"/>")
@@ -438,6 +451,8 @@ struct EPUBMerger: Sendable {
                             isLandscape = true; hasLandscapeSpreads = true
                         }
                     }
+                    // Capture first content page resolution for OPF original-resolution meta
+                    if globalPageIndex == 1 { firstContentW = imgW; firstContentH = imgH }
                     
                     let htmlName = String(format: "page_%05d.xhtml", globalPageIndex)
                     let htmlContent = EPUBManifestBuilder.buildChunkXHTML(
@@ -494,7 +509,7 @@ struct EPUBMerger: Sendable {
         }
         
         if currentBundleBytes > 0 {
-            let builtEPUBURL = try sealCurrentEPUB(currentEpubDir, currentVolumeIndex, manifestItems, spineItems, hasLandscapeSpreads)
+            let builtEPUBURL = try sealCurrentEPUB(currentEpubDir, currentVolumeIndex, manifestItems, spineItems, hasLandscapeSpreads, firstContentW, firstContentH)
             outputFiles.append(builtEPUBURL)
         }
         

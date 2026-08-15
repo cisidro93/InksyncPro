@@ -89,7 +89,8 @@ public struct EPUBManifestBuilder {
         isManga: Bool,
         firstPageHref: String = "text/page_0001.xhtml",
         hasLandscapeSpreads: Bool = false,
-        author: String? = nil
+        author: String? = nil,
+        originalResolution: String = "1980x2640"
     ) -> String {
         let modified = ISO8601DateFormatter().string(from: Date())
         let direction = isManga ? "rtl" : "ltr"
@@ -120,7 +121,8 @@ public struct EPUBManifestBuilder {
                 <meta property="rendition:layout">pre-paginated</meta>
                 <meta property="rendition:orientation">auto</meta>
                 <meta property="rendition:spread">auto</meta>
-                <meta name="fixed-layout" content="true"/>\(coverMetaTag)
+                <meta name="fixed-layout" content="true"/>
+                <meta name="original-resolution" content="\(originalResolution)"/>\(coverMetaTag)
             </metadata>
             <manifest>
                 \(manifestItems.joined(separator: "\n        "))

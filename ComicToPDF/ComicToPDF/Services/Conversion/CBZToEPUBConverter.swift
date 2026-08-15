@@ -345,6 +345,9 @@ struct CBZToEPUBConverter: Sendable {
         var currentChunkImages: [String] = []
         var chunkIndex = 0
         var hasAnyLandscapeSpreads = false
+        // Tracks first content-page pixel dims for OPF original-resolution meta
+        var firstContentW = 1980
+        var firstContentH = 2640
         
         // Content pages always start at counter 1 regardless of whether a cover exists.
         // The cover's own spread position is set explicitly via coverSpreadTag above —
@@ -418,6 +421,8 @@ struct CBZToEPUBConverter: Sendable {
             
             // Generate DOM Page
             chunkIndex += 1
+            // Capture first content page resolution for OPF original-resolution meta
+            if chunkIndex == 1 { firstContentW = imgW; firstContentH = imgH }
             let chunkXHTML = CBZToEPUBConverter.generateChunkXHTML(
                 chunkIndex: chunkIndex,
                 images: currentChunkImages,
@@ -487,7 +492,8 @@ struct CBZToEPUBConverter: Sendable {
             spineItems: spineItems,
             isManga: settings.mangaMode,
             firstPageHref: firstPageHref,
-            hasLandscapeSpreads: hasAnyLandscapeSpreads
+            hasLandscapeSpreads: hasAnyLandscapeSpreads,
+            originalResolution: "\(firstContentW)x\(firstContentH)"
         )
         try opfContent.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8)
 

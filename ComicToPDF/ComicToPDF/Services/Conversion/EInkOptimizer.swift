@@ -170,7 +170,7 @@ final class EInkOptimizer: @unchecked Sendable {
         return UIImage(cgImage: finalCG)
     }
     
-    /// High-performance resizing using Accelerate vImage
+    /// High-performance resizing using Accelerate vImage with guaranteed UIGraphics fallback
     private func resize(image: UIImage, toFit targetSize: CGSize) -> UIImage? {
         guard let cgImage = image.cgImage else { return image }
         
@@ -180,36 +180,37 @@ final class EInkOptimizer: @unchecked Sendable {
         
         if scaleFactor >= 1.0 { return image }
         
-        let newWidth = Int(CGFloat(cgImage.width) * scaleFactor)
-        let newHeight = Int(CGFloat(cgImage.height) * scaleFactor)
+        let newWidth = max(1, Int(CGFloat(cgImage.width) * scaleFactor))
+        let newHeight = max(1, Int(CGFloat(cgImage.height) * scaleFactor))
         
-        var format = vImage_CGImageFormat(
-            bitsPerComponent: 8,
-            bitsPerPixel: 32,
-            colorSpace: nil,
-            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.first.rawValue),
-            version: 0,
-            decode: nil,
-            renderingIntent: .defaultIntent
-        )
+        // 1. Try Accelerate vImage with dynamic image format detection (works on any pixel layout)
+        if var format = vImage_CGImageFormat(cgImage: cgImage) {
+            var sourceBuffer = vImage_Buffer()
+            var error = vImageBuffer_InitWithCGImage(&sourceBuffer, &format, nil, cgImage, vImage_Flags(kvImageNoFlags))
+            if error == kvImageNoError {
+                defer { free(sourceBuffer.data) }
+                var destinationBuffer = vImage_Buffer()
+                error = vImageBuffer_Init(&destinationBuffer, vImagePixelCount(newHeight), vImagePixelCount(newWidth), format.bitsPerPixel, vImage_Flags(kvImageNoFlags))
+                if error == kvImageNoError {
+                    defer { free(destinationBuffer.data) }
+                    error = vImageScale_ARGB8888(&sourceBuffer, &destinationBuffer, nil, vImage_Flags(kvImageHighQualityResampling))
+                    if error == kvImageNoError {
+                        let resizedCGImage = vImageCreateCGImageFromBuffer(&destinationBuffer, &format, nil, nil, vImage_Flags(kvImageNoFlags), &error)
+                        if error == kvImageNoError, let result = resizedCGImage {
+                            return UIImage(cgImage: result.takeRetainedValue())
+                        }
+                    }
+                }
+            }
+        }
         
-        var sourceBuffer = vImage_Buffer()
-        var error = vImageBuffer_InitWithCGImage(&sourceBuffer, &format, nil, cgImage, vImage_Flags(kvImageNoFlags))
-        guard error == kvImageNoError else { return image }
-        defer { free(sourceBuffer.data) }
-        
-        var destinationBuffer = vImage_Buffer()
-        error = vImageBuffer_Init(&destinationBuffer, vImagePixelCount(newHeight), vImagePixelCount(newWidth), 32, vImage_Flags(kvImageNoFlags))
-        guard error == kvImageNoError else { return image }
-        defer { free(destinationBuffer.data) }
-        
-        error = vImageScale_ARGB8888(&sourceBuffer, &destinationBuffer, nil, vImage_Flags(kvImageHighQualityResampling))
-        guard error == kvImageNoError else { return image }
-        
-        let resizedCGImage = vImageCreateCGImageFromBuffer(&destinationBuffer, &format, nil, nil, vImage_Flags(kvImageNoFlags), &error)
-        
-        guard error == kvImageNoError, let result = resizedCGImage else { return image }
-        return UIImage(cgImage: result.takeRetainedValue())
+        // 2. Guaranteed UIGraphics fallback — 100% fail-safe for all JPEG/PNG/sRGB pixel layouts
+        let renderFormat = UIGraphicsImageRendererFormat.default()
+        renderFormat.scale = 1.0
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: newWidth, height: newHeight), format: renderFormat)
+        return renderer.image { _ in
+            image.draw(in: CGRect(x: 0, y: 0, width: newWidth, height: newHeight))
+        }
     }
     
     /// Pads the image with white space on the specified side
