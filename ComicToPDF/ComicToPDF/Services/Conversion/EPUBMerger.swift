@@ -104,16 +104,17 @@ struct EPUBMerger: Sendable {
                     // Copy and convert WebP to JPEG if needed
                     try copyAndPrepareImage(from: imgURL, to: destURL, settings: settings)
                     
-                    // Detect actual image orientation for correct viewport and spread assignment.
+                    // Detect actual image pixel dimensions for 1:1 viewport matching and spread assignment.
                     var imgW = 1980; var imgH = 2640; var isLandscape = false
                     if let src = CGImageSourceCreateWithURL(destURL as CFURL, nil),
                        let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any] {
                         var w = (props[kCGImagePropertyPixelWidth] as? Int) ?? 1980
                         var h = (props[kCGImagePropertyPixelHeight] as? Int) ?? 2640
                         if let ori = props[kCGImagePropertyOrientation] as? UInt32, [5,6,7,8].contains(ori) { swap(&w, &h) }
+                        imgW = w
+                        imgH = h
                         if w > 0 && h > 0 && Double(w) > Double(h) * 1.1 {
                             isLandscape = true; hasLandscapeSpreads = true
-                            imgW = 2640; imgH = 1980
                         }
                     }
                     
@@ -424,16 +425,17 @@ struct EPUBMerger: Sendable {
                     let destURL = activeImages.appendingPathComponent(newName)
                     try copyAndPrepareImage(from: img, to: destURL, settings: settings)
                     
-                    // Detect actual image orientation for correct viewport and spread assignment.
+                    // Detect actual image pixel dimensions for 1:1 viewport matching and spread assignment.
                     var imgW = 1980; var imgH = 2640; var isLandscape = false
                     if let src = CGImageSourceCreateWithURL(destURL as CFURL, nil),
                        let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any] {
                         var w = (props[kCGImagePropertyPixelWidth] as? Int) ?? 1980
                         var h = (props[kCGImagePropertyPixelHeight] as? Int) ?? 2640
                         if let ori = props[kCGImagePropertyOrientation] as? UInt32, [5,6,7,8].contains(ori) { swap(&w, &h) }
+                        imgW = w
+                        imgH = h
                         if w > 0 && h > 0 && Double(w) > Double(h) * 1.1 {
                             isLandscape = true; hasLandscapeSpreads = true
-                            imgW = 2640; imgH = 1980
                         }
                     }
                     

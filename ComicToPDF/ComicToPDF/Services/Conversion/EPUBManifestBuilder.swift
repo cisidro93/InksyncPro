@@ -120,8 +120,7 @@ public struct EPUBManifestBuilder {
                 <meta property="rendition:layout">pre-paginated</meta>
                 <meta property="rendition:orientation">auto</meta>
                 <meta property="rendition:spread">auto</meta>
-                <meta name="fixed-layout" content="true"/>
-                <meta name="original-resolution" content="1980x2640"/>\(coverMetaTag)
+                <meta name="fixed-layout" content="true"/>\(coverMetaTag)
             </metadata>
             <manifest>
                 \(manifestItems.joined(separator: "\n        "))
