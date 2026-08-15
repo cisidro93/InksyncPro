@@ -64,7 +64,7 @@ public struct EPUBManifestBuilder {
         <?xml version="1.0" encoding="UTF-8"?>
         <ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
             <head><meta name="dtb:uid" content="urn:uuid:\(bookUUID)"/></head>
-            <docTitle><text>\(baseFilename)</text></docTitle>
+            <docTitle><text>\(baseFilename.xmlEscaped())</text></docTitle>
             <navMap>
                 <navPoint id="navPoint-1" playOrder="1">
                     <navLabel><text>Start</text></navLabel>
