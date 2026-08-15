@@ -123,5 +123,72 @@ struct ConversionDiagnosticLogger {
         """
         
         Logger.shared.log(summaryMsg, category: "Conversion", type: logType)
+        
+        if outputURL.pathExtension.lowercased() == "epub" {
+            auditEPUBStructure(at: outputURL)
+        }
+    }
+    
+    /// Forensically inspects and logs the internal structure of a generated EPUB archive.
+    private static func auditEPUBStructure(at url: URL) {
+        guard let archive = try? Archive(url: url, accessMode: .read) else {
+            Logger.shared.log("❌ [EPUB AUDIT] Could not open generated archive at \(url.lastPathComponent)", category: "Conversion", type: .error)
+            return
+        }
+        
+        var entryList: [String] = []
+        var opfText = ""
+        var ncxText = ""
+        var navText = ""
+        var coverText = ""
+        
+        for entry in archive {
+            let methodStr = entry.type == .file ? (entry.checksum == 0 ? "Stored (.none)" : "Deflated") : "Directory"
+            entryList.append("   [\(entry.path)] (\(methodStr), \(entry.uncompressedSize) bytes)")
+            
+            if entry.path.hasSuffix("content.opf") {
+                var data = Data()
+                _ = try? archive.extract(entry) { data.append($0) }
+                opfText = String(data: data, encoding: .utf8) ?? ""
+            } else if entry.path.hasSuffix("toc.ncx") {
+                var data = Data()
+                _ = try? archive.extract(entry) { data.append($0) }
+                ncxText = String(data: data, encoding: .utf8) ?? ""
+            } else if entry.path.hasSuffix("nav.xhtml") {
+                var data = Data()
+                _ = try? archive.extract(entry) { data.append($0) }
+                navText = String(data: data, encoding: .utf8) ?? ""
+            } else if entry.path.hasSuffix("cover.xhtml") {
+                var data = Data()
+                _ = try? archive.extract(entry) { data.append($0) }
+                coverText = String(data: data, encoding: .utf8) ?? ""
+            }
+        }
+        
+        let firstEntries = entryList.prefix(8).joined(separator: "\n")
+        let totalEntries = entryList.count
+        
+        let auditMsg = """
+        ============================================================
+        🔍 [EPUB FORENSIC STRUCTURE AUDIT]
+        📦 Total Archive Entries: \(totalEntries)
+        📁 First Archive Entries (Verification of root mimetype/container):
+        \(firstEntries)
+        ------------------------------------------------------------
+        📑 [OEBPS/content.opf]:
+        \(opfText)
+        ------------------------------------------------------------
+        📑 [OEBPS/toc.ncx]:
+        \(ncxText)
+        ------------------------------------------------------------
+        📑 [OEBPS/nav.xhtml]:
+        \(navText)
+        ------------------------------------------------------------
+        📑 [OEBPS/text/cover.xhtml]:
+        \(coverText)
+        ============================================================
+        """
+        
+        Logger.shared.log(auditMsg, category: "Conversion", type: .info)
     }
 }
