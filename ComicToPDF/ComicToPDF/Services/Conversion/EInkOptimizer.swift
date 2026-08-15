@@ -70,11 +70,12 @@ final class EInkOptimizer: @unchecked Sendable {
         
         // 4. High-Performance aspect-fit scaling using Accelerate vImage
         if let targetSize = targetSizeToUse {
-            let originalSize = workingImage.size
-            if customTargetSize != nil || originalSize.width > targetSize.width || originalSize.height > targetSize.height {
+            let pixelWidth = CGFloat(workingImage.cgImage?.width ?? Int(workingImage.size.width))
+            let pixelHeight = CGFloat(workingImage.cgImage?.height ?? Int(workingImage.size.height))
+            if customTargetSize != nil || pixelWidth > targetSize.width || pixelHeight > targetSize.height {
                 var safeTargetSize = targetSize
                 // Dynamic Orientation-Aware Scaling
-                if customTargetSize == nil && originalSize.width > originalSize.height {
+                if customTargetSize == nil && pixelWidth > pixelHeight {
                     safeTargetSize = CGSize(width: max(targetSize.width, targetSize.height), height: min(targetSize.width, targetSize.height))
                 }
                 if let scaled = resize(image: workingImage, toFit: safeTargetSize) {

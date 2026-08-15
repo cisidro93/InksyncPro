@@ -931,8 +931,8 @@ enum CompressionPreset: String, CaseIterable, Codable, Identifiable {
         switch self {
         case .ultra: return "Ultra (Lossless Original)"
         case .high: return "High Quality (88% JPEG, 2.5K)"
-        case .balanced: return "Standard (82% JPEG, 2K)"
-        case .compact: return "Compact (70% JPEG, 1600px HD)"
+        case .balanced: return "Standard (80% JPEG, 1920px FHD)"
+        case .compact: return "Compact (65% JPEG, 1448px HD)"
         case .customTarget: return "Custom Target Size (MB)"
         }
     }
@@ -941,9 +941,9 @@ enum CompressionPreset: String, CaseIterable, Codable, Identifiable {
         switch self {
         case .ultra: return 1.0
         case .high: return 0.88
-        case .balanced: return 0.82
-        case .compact: return 0.70
-        case .customTarget: return 0.82
+        case .balanced: return 0.80
+        case .compact: return 0.65
+        case .customTarget: return 0.80
         }
     }
     
@@ -951,8 +951,8 @@ enum CompressionPreset: String, CaseIterable, Codable, Identifiable {
         switch self {
         case .ultra: return nil
         case .high: return 2560.0
-        case .balanced: return 2048.0
-        case .compact: return 1600.0
+        case .balanced: return 1920.0
+        case .compact: return 1448.0
         case .customTarget: return nil
         }
     }
