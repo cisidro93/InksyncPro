@@ -24,7 +24,7 @@ struct PDFGenerator: Sendable {
     ///   - chapters: Optional list of chapters for Table of Contents generation
     ///   - progress: Progress callback
     static func generate(from images: [URL], to outputURL: URL, mangaMode: Bool = false, chapters: [Chapter]? = nil, settings: ConversionSettings, coverOverrideData: Data? = nil, progress: (@Sendable (Double) -> Void)? = nil) throws {
-        var diagMetrics = ConversionDiagnosticLogger.logStart(
+        let diagMetrics = ConversionDiagnosticLogger.logStart(
             jobTitle: "PDF Generation (\(outputURL.lastPathComponent))",
             settings: settings,
             sourceFiles: images

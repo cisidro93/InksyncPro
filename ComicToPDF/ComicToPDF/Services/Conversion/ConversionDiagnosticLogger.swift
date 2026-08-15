@@ -29,7 +29,7 @@ struct ConversionDiagnosticLogger {
     /// Call at the start of any conversion process (single file, convert & merge, omnibus, etc.)
     static func logStart(jobTitle: String, settings: ConversionSettings, sourceFiles: [URL]) -> ConversionMetrics {
         let preset = settings.compressionQuality
-        let totalInputBytes = sourceFiles.reduce(0) { sum, url in
+        let totalInputBytes = sourceFiles.reduce(Int64(0)) { sum, url in
             let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? UInt64) ?? 0
             return sum + Int64(size)
         }

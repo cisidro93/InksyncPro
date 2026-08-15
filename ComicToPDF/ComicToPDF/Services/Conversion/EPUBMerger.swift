@@ -238,7 +238,7 @@ struct EPUBMerger: Sendable {
     
     // MARK: - Smart Omnibus Parsing
     func mergeWithSmartSplit(sourceURLs: [URL], baseOutputName: String, targetDir: URL, settings: ConversionSettings, overrideCoverData: Data? = nil, progressCallback: @escaping @Sendable (Double) -> Void) async throws -> [URL] {
-        var diagMetrics = ConversionDiagnosticLogger.logStart(
+        let diagMetrics = ConversionDiagnosticLogger.logStart(
             jobTitle: "EPUB Convert & Merge (\(baseOutputName))",
             settings: settings,
             sourceFiles: sourceURLs
