@@ -1,5 +1,6 @@
 import Foundation
 import UIKit
+import ZIPFoundation
 
 /// Enterprise Conversion Diagnostic Logger.
 /// Tracks per-file and per-page byte sizes, preset dimensions, quality parameters,
