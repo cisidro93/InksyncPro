@@ -444,9 +444,8 @@ struct CBZToEPUBConverter: Sendable {
             // Universally Apply Advanced Landscape Spread Tagging (RTL vs LTR)
             let spreadTag: String
             if isLandscapeImage {
-                // Landscape images span the full display — always center regardless of reading direction.
-                // KF8/EPUB 3 fixed-layout uses "rendition:page-spread-center" (single canonical form).
-                spreadTag = " properties=\"rendition:page-spread-center\""
+                // Landscape images span the full display — omit spread properties so Kindle renders full-bleed.
+                spreadTag = ""
             } else if settings.linkCoverAsSpread {
                 if isManga {
                     // RTL Manga Sequence: Cover (page 1) is Right, Page 2 is Left, Page 3 is Right

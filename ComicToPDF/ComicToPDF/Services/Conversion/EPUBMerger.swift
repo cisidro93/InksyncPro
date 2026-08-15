@@ -50,9 +50,9 @@ struct EPUBMerger: Sendable {
         manifestItems.append("<item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/>")
         
         var globalPageIndex = 1
-        // Content pages always start at counter 1. The cover's spread position is set
-        // independently via coverSpreadTag — it does not consume a globalPageCounter slot.
-        var globalPageCounter = 1
+        // When cover is injected into the spine and linked as a spread (page-spread-left/right),
+        // the first content page must occupy the alternating slot (page 2) to prevent two consecutive identical spreads.
+        var globalPageCounter = (activeCoverData != nil && settings.linkCoverAsSpread) ? 2 : 1
         var hasLandscapeSpreads = false
         
         // 2.5 Inject Override Cover if Present
@@ -137,12 +137,11 @@ struct EPUBMerger: Sendable {
                     manifestItems.append("<item id=\"page_\(globalPageIndex)\" href=\"text/\(htmlName)\" media-type=\"application/xhtml+xml\"/>")
                     manifestItems.append("<item id=\"img_\(globalPageIndex)\" href=\"images/\(newName)\" media-type=\"image/\(safeExt)\"\(coverImageProp)/>")
                     
-                    // Landscape images span the full display and must not be assigned a left/right
-                    // spread position — use rendition:page-spread-center so Kindle renders them
-                    // full-bleed without trying to pair them with an adjacent page.
+                    // Landscape images span the full display — omit spread properties so Kindle
+                    // renders them full-bleed without trying to pair them with an adjacent page.
                     let spreadTag: String
                     if isLandscape {
-                        spreadTag = " properties=\"rendition:page-spread-center\""
+                        spreadTag = ""
                     } else if settings.linkCoverAsSpread {
                         if settings.mangaMode {
                             spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
@@ -396,7 +395,7 @@ struct EPUBMerger: Sendable {
                 currentVolumeIndex += 1
                 currentBundleBytes = 0
                 globalPageIndex = 1
-                globalPageCounter = 1
+                globalPageCounter = (activeCoverData != nil && settings.linkCoverAsSpread) ? 2 : 1
                 hasLandscapeSpreads = false
                 currentEpubDir = try initializeBlankEPUBDir(volumeOffset: currentVolumeIndex)
                 manifestItems = []
@@ -458,12 +457,11 @@ struct EPUBMerger: Sendable {
                     manifestItems.append("<item id=\"page_\(globalPageIndex)\" href=\"text/\(htmlName)\" media-type=\"application/xhtml+xml\"/>")
                     manifestItems.append("<item id=\"img_\(globalPageIndex)\" href=\"images/\(newName)\" media-type=\"image/\(safeExt)\"\(coverImageProp)/>")
                     
-                    // Landscape images span the full display and must not be assigned a left/right
-                    // spread position — use rendition:page-spread-center so Kindle renders them
-                    // full-bleed without trying to pair them with an adjacent page.
+                    // Landscape images span the full display — omit spread properties so Kindle
+                    // renders them full-bleed without trying to pair them with an adjacent page.
                     let spreadTag: String
                     if isLandscape {
-                        spreadTag = " properties=\"rendition:page-spread-center\""
+                        spreadTag = ""
                     } else if settings.linkCoverAsSpread {
                         if settings.mangaMode {
                             spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
