@@ -414,7 +414,9 @@ final class PDFToEPUBConverter: Sendable {
         
         // Add standard files
         manifestItems += """
-<item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/>
+<item id="css" href="style.css" media-type="text/css"/>
+<item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
+<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
 """
         
         var spineItems = coverSpine
@@ -555,7 +557,6 @@ final class PDFToEPUBConverter: Sendable {
         let lang = "en"
         return """
         <?xml version="1.0" encoding="UTF-8"?>
-        <!DOCTYPE html>
         <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="\(lang)" xml:lang="\(lang)">
         <head>
             <title>\(escapeXML(title))</title>
@@ -590,24 +591,26 @@ final class PDFToEPUBConverter: Sendable {
         
         // 2. Add remaining files
         let resourceKeys: [URLResourceKey] = [.isDirectoryKey, .fileSizeKey]
-        guard let enumerator = FileManager.default.enumerator(at: tempDir, includingPropertiesForKeys: resourceKeys) else {
+        let stdTemp = tempDir.standardizedFileURL.path
+        guard let enumerator = FileManager.default.enumerator(at: tempDir.standardizedFileURL, includingPropertiesForKeys: resourceKeys) else {
             throw ConversionError.fileWriteFailed
         }
         
         for case let fileURL as URL in enumerator {
-            let resourceValues = try fileURL.resourceValues(forKeys: Set(resourceKeys))
+            let stdFile = fileURL.standardizedFileURL
+            let resourceValues = try stdFile.resourceValues(forKeys: Set(resourceKeys))
             let isDirectory = resourceValues.isDirectory ?? false
-            let normalizedFile = fileURL.path.replacingOccurrences(of: "\\", with: "/")
-            let normalizedBase = tempDir.path.replacingOccurrences(of: "\\", with: "/")
-            let prefix = normalizedBase.hasSuffix("/") ? normalizedBase : normalizedBase + "/"
-            let path = normalizedFile.replacingOccurrences(of: prefix, with: "")
+            let filePath = stdFile.path
+            guard filePath.hasPrefix(stdTemp) else { continue }
+            let subPath = String(filePath.dropFirst(stdTemp.count))
+            let path = subPath.hasPrefix("/") ? String(subPath.dropFirst()) : subPath
             
             if path == "mimetype" || path.isEmpty { continue }
             
             if !isDirectory {
                 let fileSize = UInt32(resourceValues.fileSize ?? 0)
                 try archive.addEntry(with: path, type: .file, uncompressedSize: Int64(fileSize), compressionMethod: .deflate) { position, size in
-                    return try Data(contentsOf: fileURL).subdata(in: 0..<Int(size))
+                    return try Data(contentsOf: stdFile).subdata(in: 0..<Int(size))
                 }
             } else {
                  try archive.addEntry(with: path + "/", type: .directory, uncompressedSize: Int64(0), compressionMethod: .none) { _, _ in Data() }
