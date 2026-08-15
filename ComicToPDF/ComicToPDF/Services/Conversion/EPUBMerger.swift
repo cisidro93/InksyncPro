@@ -605,7 +605,15 @@ struct EPUBMerger: Sendable {
             }
             
             if let finalData = data {
-                try finalData.write(to: destURL)
+                let srcBytes = (try? FileManager.default.attributesOfItem(atPath: srcURL.path)[.size] as? Int64) ?? Int64.max
+                let isNoFilter = !settings.imageEnhancement.grayscale && !settings.imageEnhancement.autoContrast && !settings.trimMargins
+                // If re-encoding expanded the file size and no enhancement filters were requested, keep original to prevent bloat!
+                if finalData.count < srcBytes || !isNoFilter || ext != "jpg" {
+                    try finalData.write(to: destURL)
+                } else {
+                    let rawData = try Data(contentsOf: srcURL)
+                    try rawData.write(to: destURL)
+                }
                 return
             }
         }

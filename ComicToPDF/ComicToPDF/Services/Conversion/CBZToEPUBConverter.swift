@@ -225,18 +225,24 @@ struct CBZToEPUBConverter: Sendable {
                     // Non-sliced path: scope processedImage inside its own block so it is
                     // released before finalData escapes, preventing RAM accumulation.
                     var finalData = Data()
+                    let srcBytes = (try? FileManager.default.attributesOfItem(atPath: srcURL.path)[.size] as? Int64) ?? Int64.max
+                    let isNoFilter = !settings.imageEnhancement.grayscale && !settings.imageEnhancement.autoContrast && !settings.trimMargins
                     autoreleasepool {
                         if needsProcessing {
                             if let processedImage = ImageProcessor.process(imageURL: srcURL, settings: settings, isOddPage: originalIndex % 2 == 0) {
                                 let quality = isUltraLossless ? 1.0 : settings.compressionQuality.value
-                                finalData = processedImage.jpegData(compressionQuality: quality) ?? Data()
+                                let encodedData = processedImage.jpegData(compressionQuality: quality) ?? Data()
+                                if encodedData.count < srcBytes || !isNoFilter || ext != "jpg" {
+                                    finalData = encodedData
+                                } else {
+                                    // Original JPEG was smaller — keep original to prevent bloat!
+                                    finalData = (try? Data(contentsOf: srcURL)) ?? encodedData
+                                }
                             }
                             if finalData.isEmpty {
-                                // Fallback: read raw bytes (handles rare decode failures)
                                 finalData = (try? Data(contentsOf: srcURL)) ?? Data()
                             }
                         } else {
-                            // Ultra lossless + no processing needed: raw bytes pass through as-is
                             finalData = (try? Data(contentsOf: srcURL)) ?? Data()
                         }
                     } // processedImage UIImage freed here; only compressed Data escapes

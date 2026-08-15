@@ -930,9 +930,9 @@ enum CompressionPreset: String, CaseIterable, Codable, Identifiable {
     var displayName: String {
         switch self {
         case .ultra: return "Ultra (Lossless Original)"
-        case .high: return "High Quality (95% JPEG, 4K)"
-        case .balanced: return "Standard (85% JPEG, 2.5K)"
-        case .compact: return "Compact (70% JPEG, Full HD)"
+        case .high: return "High Quality (88% JPEG, 2.5K)"
+        case .balanced: return "Standard (82% JPEG, 2K)"
+        case .compact: return "Compact (70% JPEG, 1600px HD)"
         case .customTarget: return "Custom Target Size (MB)"
         }
     }
@@ -950,9 +950,9 @@ enum CompressionPreset: String, CaseIterable, Codable, Identifiable {
     var maxDimension: CGFloat? {
         switch self {
         case .ultra: return nil
-        case .high: return 3840.0
-        case .balanced: return 2560.0
-        case .compact: return 1920.0
+        case .high: return 2560.0
+        case .balanced: return 2048.0
+        case .compact: return 1600.0
         case .customTarget: return nil
         }
     }

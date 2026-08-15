@@ -23,7 +23,7 @@ final class EInkOptimizer: @unchecked Sendable {
         customTargetSize: CGSize? = nil
     ) -> UIImage {
         let effectiveMaxDim = settings.compressionQuality.maxDimension
-        let presetTargetSize = settings.targetDeviceProfile.resolution ?? (effectiveMaxDim.map { CGSize(width: $0, height: $0) })
+        let presetTargetSize = (effectiveMaxDim.map { CGSize(width: $0, height: $0) }) ?? settings.targetDeviceProfile.resolution
         let targetSizeToUse = customTargetSize ?? presetTargetSize
 
         // Fast-path: return original image if no processing is requested
