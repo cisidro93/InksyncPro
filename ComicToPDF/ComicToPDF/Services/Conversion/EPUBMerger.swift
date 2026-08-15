@@ -238,6 +238,11 @@ struct EPUBMerger: Sendable {
     
     // MARK: - Smart Omnibus Parsing
     func mergeWithSmartSplit(sourceURLs: [URL], baseOutputName: String, targetDir: URL, settings: ConversionSettings, overrideCoverData: Data? = nil, progressCallback: @escaping @Sendable (Double) -> Void) async throws -> [URL] {
+        var diagMetrics = ConversionDiagnosticLogger.logStart(
+            jobTitle: "EPUB Convert & Merge (\(baseOutputName))",
+            settings: settings,
+            sourceFiles: sourceURLs
+        )
         let fileManager = FileManager.default
         var outputFiles: [URL] = []
         var currentVolumeIndex = 1
@@ -489,6 +494,10 @@ struct EPUBMerger: Sendable {
             outputFiles.append(builtEPUBURL)
         }
         
+        for file in outputFiles {
+            ConversionDiagnosticLogger.logCompletion(metrics: diagMetrics, outputURL: file)
+        }
+        
         progressCallback(1.0)
         return outputFiles
     }
@@ -587,18 +596,12 @@ struct EPUBMerger: Sendable {
         if needsRender {
             let processedImage = ImageProcessor.process(image: originalImage, settings: settings) ?? originalImage
             
-            let format = UIGraphicsImageRendererFormat()
-            format.scale = 1.0
-            format.preferredRange = .standard // Forces standard sRGB color space
-            let renderer = UIGraphicsImageRenderer(size: processedImage.size, format: format)
-            let srgbImage = renderer.image { _ in processedImage.draw(at: .zero) }
-            
+            let quality = isUltraLossless ? 1.0 : settings.compressionQuality.value
             let data: Data?
             if ext == "png" && isUltraLossless {
-                data = srgbImage.pngData()
+                data = processedImage.pngData()
             } else {
-                let quality = isUltraLossless ? 1.0 : settings.compressionQuality.value
-                data = srgbImage.jpegData(compressionQuality: quality)
+                data = processedImage.jpegData(compressionQuality: quality)
             }
             
             if let finalData = data {

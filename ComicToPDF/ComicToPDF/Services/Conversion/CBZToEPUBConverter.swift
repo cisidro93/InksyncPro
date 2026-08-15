@@ -7,6 +7,11 @@ struct CBZToEPUBConverter: Sendable {
     
     func convert(sourceURL: URL, settings: ConversionSettings, manualManifest: [Int: [PanelExtractor.Panel]]?, sourceIsMangaPDF: Bool = false, coverOverrideData: Data? = nil, customOutputName: String? = nil, seriesName: String? = nil, progress: @escaping @Sendable (Double) -> Void) async throws -> [URL] {
         Logger.shared.log("Starting Enterprise Conversion (No TOC). Manual Manifest: \(manualManifest?.count ?? 0) pages", category: "Converter")
+        var diagMetrics = ConversionDiagnosticLogger.logStart(
+            jobTitle: "CBZ -> EPUB (\(sourceURL.lastPathComponent))",
+            settings: settings,
+            sourceFiles: [sourceURL]
+        )
         
         let fileManager = FileManager.default
         
@@ -62,6 +67,10 @@ struct CBZToEPUBConverter: Sendable {
             generatedFiles.append(outputURL)
             
             progress(0.5 + (0.5 * Double(batchIndex + 1) / Double(totalBatches)))
+        }
+        
+        for generatedFile in generatedFiles {
+            ConversionDiagnosticLogger.logCompletion(metrics: diagMetrics, outputURL: generatedFile)
         }
         
         progress(1.0)

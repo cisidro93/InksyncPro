@@ -24,6 +24,11 @@ struct PDFGenerator: Sendable {
     ///   - chapters: Optional list of chapters for Table of Contents generation
     ///   - progress: Progress callback
     static func generate(from images: [URL], to outputURL: URL, mangaMode: Bool = false, chapters: [Chapter]? = nil, settings: ConversionSettings, coverOverrideData: Data? = nil, progress: (@Sendable (Double) -> Void)? = nil) throws {
+        var diagMetrics = ConversionDiagnosticLogger.logStart(
+            jobTitle: "PDF Generation (\(outputURL.lastPathComponent))",
+            settings: settings,
+            sourceFiles: images
+        )
         let total = Double(images.count)
         var current = 0.0
         
@@ -306,5 +311,6 @@ struct PDFGenerator: Sendable {
         } // Close outer `if hasValidChapters`
         
         Logger.shared.log("Generated Optimized PDF at \(outputURL.path)", category: "PDF", type: .success)
+        ConversionDiagnosticLogger.logCompletion(metrics: diagMetrics, outputURL: outputURL)
     }
 }
