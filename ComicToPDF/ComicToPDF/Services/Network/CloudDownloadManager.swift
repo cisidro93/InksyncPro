@@ -225,9 +225,14 @@ class CloudDownloadManager: NSObject, ObservableObject, URLSessionDownloadDelega
         if let cached = cachedEntry,
            cached.expires > Date(),
            FileManager.default.fileExists(atPath: cached.url.path) {
+            let bytes = (try? FileManager.default.attributesOfItem(atPath: cached.url.path)[.size] as? Int64) ?? 0
+            CloudSyncDiagnosticLogger.logTransferCompletion(fileName: pdf.name, bytes: bytes, durationSeconds: 0.01, success: true)
             Logger.shared.log("CloudStream: Cache hit for '\(pdf.name)' — skipping re-download", category: "Cloud")
             return cached.url
         }
+        
+        let startTime = Date()
+        CloudSyncDiagnosticLogger.logTransferStart(fileName: pdf.name, bytes: 0, direction: .download)
 
         // ── Step 1: Resolve authenticated download URL ──────────────────────────
         let downloadURL: URL
@@ -308,6 +313,10 @@ class CloudDownloadManager: NSObject, ObservableObject, URLSessionDownloadDelega
         }
         _ = await MainActor.run { self.streamProgress.removeValue(forKey: remoteID) }
 
+        let duration = Date().timeIntervalSince(startTime)
+        let fileSize = (try? FileManager.default.attributesOfItem(atPath: finalTemp.path)[.size] as? Int64) ?? 0
+        CloudSyncDiagnosticLogger.logTransferCompletion(fileName: pdf.name, bytes: fileSize, durationSeconds: duration, success: true)
+        
         Logger.shared.log(
             "CloudStream: '\(pdf.name)' ready at temp [\(uniqueID)] — cached until \(expiry)",
             category: "Cloud", type: .success

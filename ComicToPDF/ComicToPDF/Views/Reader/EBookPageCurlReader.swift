@@ -358,9 +358,13 @@ extension EBookPageCurlReader {
             } else {
                 clampedIndex = max(0, pageIndex)
             }
+            let snapshot = pageSnapshots[clampedIndex]
+            let hit = snapshot != nil
+            ReaderEngineDiagnosticLogger.logPrecache(hit: hit, pageIndex: clampedIndex, cachedPagesCount: pageSnapshots.count)
+            
             let vc = EBookPageContentViewController(
                 pageIndex: clampedIndex,
-                snapshot: pageSnapshots[clampedIndex],
+                snapshot: snapshot,
                 coordinator: self
             )
             return vc
