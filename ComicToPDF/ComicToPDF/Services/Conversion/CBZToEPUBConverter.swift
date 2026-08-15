@@ -351,22 +351,6 @@ struct CBZToEPUBConverter: Sendable {
         manifestItems.append("<item id=\"ncx\" href=\"toc.ncx\" media-type=\"application/x-dtbncx+xml\"/>")
         manifestItems.append("<item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/>")
         
-        // Determine firstPageHref for nav.xhtml BEFORE writing it.
-        // Multi-batch: badged cover.xhtml is the first spine item → point here.
-        // Single-volume: page_0001.xhtml (containing img_1 / the cover image) is
-        // the entry-point. Kindle extracts the thumbnail from the properties="cover-image"
-        // manifest attribute on img_1; no separate cover.xhtml is needed.
-        let firstPageHref = hasBadgedCover ? "text/cover.xhtml" : "text/page_0001.xhtml"
-        let navContent = EPUBManifestBuilder.buildNavContent(firstPageHref: firstPageHref, isManga: isManga)
-        try navContent.write(to: oebpsDir.appendingPathComponent("nav.xhtml"), atomically: true, encoding: .utf8)
-
-        let ncxContent = EPUBManifestBuilder.buildNCXContent(
-            bookUUID: bookUUID,
-            baseFilename: baseFilename,
-            firstPageHref: firstPageHref
-        )
-        try ncxContent.write(to: oebpsDir.appendingPathComponent("toc.ncx"), atomically: true, encoding: String.Encoding.utf8)
-        
         var currentChunkImages: [String] = []
         var chunkIndex = 0
         var hasAnyLandscapeSpreads = false
@@ -489,6 +473,17 @@ struct CBZToEPUBConverter: Sendable {
             currentChunkImages.removeAll()
         }
         
+
+        let firstPageHref = hasBadgedCover ? "text/cover.xhtml" : "text/page_0001.xhtml"
+        let navContent = EPUBManifestBuilder.buildNavContent(firstPageHref: firstPageHref, isManga: isManga)
+        try navContent.write(to: oebpsDir.appendingPathComponent("nav.xhtml"), atomically: true, encoding: .utf8)
+
+        let ncxContent = EPUBManifestBuilder.buildNCXContent(
+            bookUUID: bookUUID,
+            baseFilename: baseFilename,
+            firstPageHref: firstPageHref
+        )
+        try ncxContent.write(to: oebpsDir.appendingPathComponent("toc.ncx"), atomically: true, encoding: String.Encoding.utf8)
 
         // For single-volume: cover image is img_1 (with properties="cover-image").
         // For multi-batch: the badged cover written above is "cover-image".
