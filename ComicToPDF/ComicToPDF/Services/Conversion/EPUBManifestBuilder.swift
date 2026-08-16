@@ -16,9 +16,9 @@ public struct EPUBManifestBuilder {
     public static let cssContent = """
     @page { margin: 0; padding: 0; }
     html, body { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #000000; }
-    .chunk-container { width: 100%; height: 100%; margin: 0; padding: 0; }
+    .chunk-container { width: 100%; height: 100%; margin: 0; padding: 0; text-align: center; }
     .page { width: 100%; height: 100%; margin: 0; padding: 0; }
-    .page-image { display: block; width: 100%; height: 100%; }
+    .page-image { display: block; margin: 0 auto; }
     """
 
     public static func buildCoverXHTML(coverFilename: String, isManga: Bool = false) -> String {
@@ -163,9 +163,9 @@ public struct EPUBManifestBuilder {
             <style type="text/css">
                 @page { margin: 0; padding: 0; }
                 html, body { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #000000; }
-                .chunk-container { width: 100%; height: 100%; margin: 0; padding: 0; }
+                .chunk-container { width: 100%; height: 100%; margin: 0; padding: 0; text-align: center; }
                 .page { width: 100%; height: 100%; margin: 0; padding: 0; }
-                .page-image { display: block; width: 100%; height: 100%; margin: 0 auto; }
+                .page-image { display: block; margin: 0 auto; }
             </style>
         </head>
         <body>
