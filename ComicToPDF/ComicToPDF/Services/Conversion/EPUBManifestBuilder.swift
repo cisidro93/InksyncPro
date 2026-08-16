@@ -120,7 +120,7 @@ public struct EPUBManifestBuilder {
                 <meta property="dcterms:modified">\(modified)</meta>
                 <meta property="rendition:layout">pre-paginated</meta>
                 <meta property="rendition:orientation">auto</meta>
-                <meta property="rendition:spread">auto</meta>
+                <meta property="rendition:spread">landscape</meta>
                 <meta name="fixed-layout" content="true"/>
                 <meta name="original-resolution" content="\(originalResolution)"/>
                 <meta name="book-type" content="comic"/>
@@ -148,7 +148,7 @@ public struct EPUBManifestBuilder {
         let imageElements = images.enumerated().map { _, imageName in
             """
                 <div class="page">
-                    <img src="../images/\(imageName)" class="page-image" alt="Page Image"/>
+                    <img width="\(pageWidth)" height="\(pageHeight)" src="../images/\(imageName)" class="page-image" alt="Page Image"/>
                 </div>
             """
         }.joined(separator: "\n")
@@ -161,10 +161,11 @@ public struct EPUBManifestBuilder {
             <meta name="viewport" content="width=\(pageWidth), height=\(pageHeight)"/>
             <title>\(title)</title>
             <style type="text/css">
+                @page { margin: 0; padding: 0; }
                 html, body { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #000000; }
                 .chunk-container { width: 100%; height: 100%; margin: 0; padding: 0; }
                 .page { width: 100%; height: 100%; margin: 0; padding: 0; }
-                .page-image { display: block; width: 100%; height: 100%; }
+                .page-image { display: block; width: 100%; height: 100%; margin: 0 auto; }
             </style>
         </head>
         <body>
