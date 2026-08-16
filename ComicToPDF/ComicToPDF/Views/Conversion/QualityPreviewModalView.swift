@@ -192,15 +192,22 @@ struct QualityPreviewModalView: View {
     }
     
     private var estimatedOutputSizeBytes: Int64 {
-        let total = Double(totalInputSize)
+        let pages = max(1, totalPageCount)
         switch settings.compressionQuality {
-        case .ultra: return totalInputSize
-        case .high: return Int64(total * 0.75)
-        case .balanced: return Int64(total * 0.55)
-        case .compact: return Int64(total * 0.35)
+        case .ultra:
+            return Int64(Double(totalInputSize) * (settings.outputFormat == .epub ? 1.08 : 1.05))
         case .customTarget:
             let targetBytes = Int64(settings.targetFileSizeMB * 1024 * 1024)
             return min(totalInputSize, targetBytes)
+        case .high:
+            let base = Int64(pages) * 500_000
+            return settings.outputFormat == .epub ? base + 2_000_000 : base
+        case .balanced:
+            let base = Int64(pages) * 320_000
+            return settings.outputFormat == .epub ? base + 2_000_000 : base
+        case .compact:
+            let base = Int64(pages) * 190_000
+            return settings.outputFormat == .epub ? base + 2_000_000 : base
         }
     }
     
