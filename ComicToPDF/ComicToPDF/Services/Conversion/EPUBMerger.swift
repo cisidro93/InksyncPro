@@ -144,11 +144,10 @@ struct EPUBMerger: Sendable {
                     manifestItems.append("<item id=\"page_\(globalPageIndex)\" href=\"text/\(htmlName)\" media-type=\"application/xhtml+xml\"/>")
                     manifestItems.append("<item id=\"img_\(globalPageIndex)\" href=\"images/\(newName)\" media-type=\"image/\(safeExt)\"\(coverImageProp)/>")
                     
-                    // Landscape images span the full display — omit spread properties so Kindle
-                    // renders them full-bleed without trying to pair them with an adjacent page.
+                    // Landscape images span the full display — declare page-spread-center so Kindle renders them full-bleed.
                     let spreadTag: String
                     if isLandscape {
-                        spreadTag = ""
+                        spreadTag = " properties=\"page-spread-center rendition:page-spread-center rendition:spread-none\""
                     } else if settings.linkCoverAsSpread {
                         if settings.mangaMode {
                             spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
@@ -474,11 +473,10 @@ struct EPUBMerger: Sendable {
                     manifestItems.append("<item id=\"page_\(globalPageIndex)\" href=\"text/\(htmlName)\" media-type=\"application/xhtml+xml\"/>")
                     manifestItems.append("<item id=\"img_\(globalPageIndex)\" href=\"images/\(newName)\" media-type=\"image/\(safeExt)\"\(coverImageProp)/>")
                     
-                    // Landscape images span the full display — omit spread properties so Kindle
-                    // renders them full-bleed without trying to pair them with an adjacent page.
+                    // Landscape images span the full display — declare page-spread-center so Kindle renders them full-bleed.
                     let spreadTag: String
                     if isLandscape {
-                        spreadTag = ""
+                        spreadTag = " properties=\"page-spread-center rendition:page-spread-center rendition:spread-none\""
                     } else if settings.linkCoverAsSpread {
                         if settings.mangaMode {
                             spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
