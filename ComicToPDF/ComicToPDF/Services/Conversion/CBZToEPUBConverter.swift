@@ -451,7 +451,7 @@ struct CBZToEPUBConverter: Sendable {
                     spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-left\"" : " properties=\"page-spread-right\""
                 }
             } else {
-                if globalPageCounter == 1 {
+                if globalPageCounter == 1 && !hasBadgedCover {
                     spreadTag = "" // Cover stands alone centered
                 } else if isManga {
                     // RTL Manga Sequence: Page 2 is Right, Page 3 is Left

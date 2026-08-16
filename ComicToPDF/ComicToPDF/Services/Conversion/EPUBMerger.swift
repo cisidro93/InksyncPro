@@ -156,7 +156,7 @@ struct EPUBMerger: Sendable {
                             spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-left\"" : " properties=\"page-spread-right\""
                         }
                     } else {
-                        if globalPageCounter == 1 {
+                        if globalPageCounter == 1 && activeCoverData == nil {
                             spreadTag = "" // Cover stands alone centered
                         } else if settings.mangaMode {
                             spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-left\"" : " properties=\"page-spread-right\""
@@ -486,7 +486,7 @@ struct EPUBMerger: Sendable {
                             spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-left\"" : " properties=\"page-spread-right\""
                         }
                     } else {
-                        if globalPageCounter == 1 {
+                        if globalPageCounter == 1 && activeCoverData == nil {
                             spreadTag = "" // Cover stands alone centered
                         } else if settings.mangaMode {
                             spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-left\"" : " properties=\"page-spread-right\""
