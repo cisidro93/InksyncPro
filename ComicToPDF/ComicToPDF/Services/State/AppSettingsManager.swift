@@ -94,6 +94,14 @@ class AppSettingsManager: ObservableObject {
               let config = try? JSONDecoder().decode(EncodedAppConfiguration.self, from: data) else { return }
         
         self.conversionSettings = config.settings
+        
+        // One-time migration: Ensure linkCoverAsSpread is enabled by default for all users
+        if !UserDefaults.standard.bool(forKey: "didMigrateLinkCoverAsSpreadV1") {
+            self.conversionSettings.linkCoverAsSpread = true
+            UserDefaults.standard.set(true, forKey: "didMigrateLinkCoverAsSpreadV1")
+            save()
+        }
+        
         UserDefaults.standard.set(config.settings.skipDisclaimerPages, forKey: "skipDisclaimerPages")
         self.conversionPresets = config.presets
         self.kindleDevices = config.devices
