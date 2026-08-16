@@ -607,7 +607,7 @@ struct ConversionSettings: Codable, Equatable, Sendable {
     var splitWebtoon: Bool = false // âœ… Added for Smart Slicing
     var splitSpreads: Bool = false // âœ… NEW: Landscape Double-Page Split for E-Ink
     var trimMargins: Bool = false
-    var linkCoverAsSpread: Bool = false // ✅ NEW: Pair Cover Page with Page 2 as a spread
+    var linkCoverAsSpread: Bool = true // ✅ NEW: Pair Cover Page with Page 2 as a spread
     var customAliases: [String: String] = [:]
     var pencilOnlyDrawing: Bool = false
     var skipDisclaimerPages: Bool = false
@@ -783,7 +783,7 @@ struct ConversionSettings: Codable, Equatable, Sendable {
         splitWebtoon = try container.decodeIfPresent(Bool.self, forKey: .splitWebtoon) ?? false
         splitSpreads = try container.decodeIfPresent(Bool.self, forKey: .splitSpreads) ?? false
         trimMargins = try container.decodeIfPresent(Bool.self, forKey: .trimMargins) ?? false
-        linkCoverAsSpread = try container.decodeIfPresent(Bool.self, forKey: .linkCoverAsSpread) ?? false
+        linkCoverAsSpread = try container.decodeIfPresent(Bool.self, forKey: .linkCoverAsSpread) ?? true
         splitMode = try container.decode(FileSizeSplitMode.self, forKey: .splitMode)
         enableBackgroundQueue = try container.decodeIfPresent(Bool.self, forKey: .enableBackgroundQueue) ?? true
         epubSettings = try container.decode(EPUBSettings.self, forKey: .epubSettings)
