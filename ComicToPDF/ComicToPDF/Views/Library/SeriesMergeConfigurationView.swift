@@ -452,17 +452,17 @@ struct SeriesMergeConfigurationView: View {
             let targetBytes = Int64(settingsManager.conversionSettings.targetFileSizeMB * 1024 * 1024)
             return min(totalInputSize, targetBytes)
         case .high:
-            // 2560px 88% JPEG: ~500 KB per page + container scaffolding
-            let base = Int64(pages) * 500_000
-            return format == .epub ? base + 2_000_000 : base
+            // High Quality: ~580 KB per page + container scaffolding
+            let base = Int64(pages) * 580_000
+            return format == .epub ? base + 2_500_000 : base
         case .balanced:
-            // 1920px 80% JPEG: ~320 KB per page + container scaffolding
-            let base = Int64(pages) * 320_000
-            return format == .epub ? base + 2_000_000 : base
+            // Standard: ~420 KB per page + container scaffolding
+            let base = Int64(pages) * 420_000
+            return format == .epub ? base + 2_500_000 : base
         case .compact:
-            // 1448px 65% JPEG: ~190 KB per page + container scaffolding
-            let base = Int64(pages) * 190_000
-            return format == .epub ? base + 2_000_000 : base
+            // Compact: ~275 KB per page + container scaffolding (calibrated to ~92MB on 325-page omnibus)
+            let base = Int64(pages) * 275_000
+            return format == .epub ? base + 2_500_000 : base
         }
     }
 
