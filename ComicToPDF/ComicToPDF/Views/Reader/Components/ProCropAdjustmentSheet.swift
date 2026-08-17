@@ -272,26 +272,22 @@ struct ProCropAdjustmentSheet: View {
 
         // Render low-res preview of current page
         guard let page = pdfDocument?.page(at: currentPageIndex) else { return }
-        Task.detached(priority: .userInitiated) {
-            let rect = page.bounds(for: .mediaBox)
-            let format = UIGraphicsImageRendererFormat()
-            format.scale = 1.0
-            let targetSize = CGSize(width: 300, height: 300 * (rect.height / max(1, rect.width)))
-            let renderer = UIGraphicsImageRenderer(size: targetSize, format: format)
-            let img = renderer.image { ctx in
-                UIColor.white.set()
-                ctx.fill(CGRect(origin: .zero, size: targetSize))
-                ctx.cgContext.saveGState()
-                ctx.cgContext.translateBy(x: 0, y: targetSize.height)
-                ctx.cgContext.scaleBy(x: targetSize.width / rect.width, y: -targetSize.height / rect.height)
-                page.draw(with: .mediaBox, to: ctx.cgContext)
-                ctx.cgContext.restoreGState()
-            }
-            await MainActor.run {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                    self.previewImage = img
-                }
-            }
+        let rect = page.bounds(for: .mediaBox)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1.0
+        let targetSize = CGSize(width: 300, height: 300 * (rect.height / max(1, rect.width)))
+        let renderer = UIGraphicsImageRenderer(size: targetSize, format: format)
+        let img = renderer.image { ctx in
+            UIColor.white.set()
+            ctx.fill(CGRect(origin: .zero, size: targetSize))
+            ctx.cgContext.saveGState()
+            ctx.cgContext.translateBy(x: 0, y: targetSize.height)
+            ctx.cgContext.scaleBy(x: targetSize.width / rect.width, y: -targetSize.height / rect.height)
+            page.draw(with: .mediaBox, to: ctx.cgContext)
+            ctx.cgContext.restoreGState()
+        }
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+            self.previewImage = img
         }
     }
 

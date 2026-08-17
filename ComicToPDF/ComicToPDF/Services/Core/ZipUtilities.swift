@@ -244,7 +244,6 @@ struct ZipUtilities {
     static func zipDirectory(_ sourceURL: URL, to destinationURL: URL) async throws {
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
-                var archive: ZIPFoundation.Archive? = nil
                 do {
                     let fileManager = FileManager.default
                     
@@ -253,8 +252,7 @@ struct ZipUtilities {
                         try fileManager.removeItem(at: destinationURL)
                     }
                     
-                    let activeArchive = try ZIPFoundation.Archive(url: destinationURL, accessMode: .create, pathEncoding: .utf8)
-                    archive = activeArchive
+                    let archive = try ZIPFoundation.Archive(url: destinationURL, accessMode: .create, pathEncoding: .utf8)
                     
                     // Get all files in source directory
                     let fileURLs = try fileManager.contentsOfDirectory(at: sourceURL, includingPropertiesForKeys: nil)
@@ -264,15 +262,13 @@ struct ZipUtilities {
                         // Skip hidden system files
                         if fileName.hasPrefix("._") || fileName == ".DS_Store" || fileName == "__MACOSX" { continue }
                         
-                        try activeArchive.addEntry(with: fileName, relativeTo: sourceURL)
+                        try archive.addEntry(with: fileName, relativeTo: sourceURL)
                     }
                     
-                    archive = nil
                     Logger.shared.log("Successfully zipped to \(destinationURL.lastPathComponent)", category: "System", type: .success)
                     continuation.resume()
                     
                 } catch {
-                    archive = nil
                     Logger.shared.log("Zipping failed: \(error.localizedDescription)", category: "System", type: .error)
                     continuation.resume(throwing: error)
                 }
