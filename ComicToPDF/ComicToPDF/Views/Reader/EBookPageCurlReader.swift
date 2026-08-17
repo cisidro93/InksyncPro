@@ -528,6 +528,7 @@ extension EBookPageCurlReader {
             pvc.view.backgroundColor = bgColor
             wv.backgroundColor = .clear
             wv.scrollView.backgroundColor = .clear
+            wv.isHidden = false
             if wv.superview == pvc.view { return }
             wv.removeFromSuperview()
             wv.frame = pvc.view.bounds
