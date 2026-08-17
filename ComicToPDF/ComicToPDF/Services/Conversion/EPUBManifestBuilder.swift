@@ -165,13 +165,52 @@ public struct EPUBManifestBuilder {
                 html, body { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #000000; }
                 .chunk-container { width: 100%; height: 100%; margin: 0; padding: 0; text-align: center; }
                 .page { width: 100%; height: 100%; margin: 0; padding: 0; }
-                .page-image { display: block; margin: 0 auto; }
+                .page-image { display: block; width: 100%; height: 100%; }
             </style>
         </head>
         <body>
             <div class="chunk-container">
             \(imageElements)
             </div>
+        </body>
+        </html>
+        """
+    }
+
+    /// Generates a full-bleed landscape XHTML page using an SVG viewBox container.
+    /// This is the professional Kindle-compliant approach for landscape pages that must
+    /// fill the full screen width without slicing.
+    ///
+    /// How it works:
+    /// - The viewport matches the image's actual landscape dimensions exactly.
+    /// - An SVG with a matching viewBox maps its coordinate space 1:1 to the viewport.
+    /// - Kindle's WebKit renderer scales the SVG to fill 100% of the screen.
+    /// - No CSS height ambiguity from the global portrait canvas can cause black bars.
+    /// - The spine item uses `rendition:page-spread-center` (no spread-none) so Kindle
+    ///   expands the single page across both columns in landscape orientation.
+    public static func buildLandscapeXHTML(imageName: String, pageWidth: Int, pageHeight: Int, title: String) -> String {
+        return """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="en" xml:lang="en">
+        <head>
+            <meta charset="UTF-8"/>
+            <meta name="viewport" content="width=\(pageWidth), height=\(pageHeight)"/>
+            <title>\(title)</title>
+            <style type="text/css">
+                @page { margin: 0; padding: 0; }
+                html, body { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #000000; overflow: hidden; }
+                svg { display: block; width: 100%; height: 100%; }
+            </style>
+        </head>
+        <body>
+            <svg xmlns="http://www.w3.org/2000/svg"
+                 xmlns:xlink="http://www.w3.org/1999/xlink"
+                 width="100%" height="100%"
+                 viewBox="0 0 \(pageWidth) \(pageHeight)"
+                 preserveAspectRatio="xMidYMid meet">
+                <image width="\(pageWidth)" height="\(pageHeight)"
+                       xlink:href="../images/\(imageName)"/>
+            </svg>
         </body>
         </html>
         """

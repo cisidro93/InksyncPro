@@ -95,12 +95,12 @@ class AppSettingsManager: ObservableObject {
         
         self.conversionSettings = config.settings
         
-        // One-time migration: Ensure splitSpreads is enabled and linkCoverAsSpread is false
-        // so that Cover stands alone and double-page story spreads pair naturally (1+2, 3+4).
-        if !UserDefaults.standard.bool(forKey: "didMigrateLinkCoverAsSpreadV3") {
+        // V4 migration: The EPUBMerger now uses SVG viewBox for landscape pages instead of
+        // slice-based spreading, so splitSpreads no longer needs to be forced on for the
+        // merger pipeline. linkCoverAsSpread should remain false so the cover stands alone.
+        if !UserDefaults.standard.bool(forKey: "didMigrateLinkCoverAsSpreadV4") {
             self.conversionSettings.linkCoverAsSpread = false
-            self.conversionSettings.splitSpreads = true
-            UserDefaults.standard.set(true, forKey: "didMigrateLinkCoverAsSpreadV3")
+            UserDefaults.standard.set(true, forKey: "didMigrateLinkCoverAsSpreadV4")
             save()
         }
         

@@ -423,16 +423,28 @@ struct CBZToEPUBConverter: Sendable {
             chunkIndex += 1
             // Capture first content page resolution for OPF original-resolution meta
             if chunkIndex == 1 { firstContentW = imgW; firstContentH = imgH }
-            let chunkXHTML = CBZToEPUBConverter.generateChunkXHTML(
-                chunkIndex: chunkIndex,
-                images: currentChunkImages,
-                title: "Page \(chunkIndex)",
-                width: imgW,
-                height: imgH,
-                bookUUID: bookUUID,
-                pageIndex: item.index,
-                isManga: isManga
-            )
+            let chunkXHTML: String
+            if isLandscapeImage {
+                // SVG viewBox XHTML: maps the landscape coordinate space 1:1 to the
+                // viewport so Kindle fills 100% of the screen with zero CSS ambiguity.
+                chunkXHTML = EPUBManifestBuilder.buildLandscapeXHTML(
+                    imageName: currentChunkImages.first ?? "",
+                    pageWidth: imgW,
+                    pageHeight: imgH,
+                    title: "Page \(chunkIndex)"
+                )
+            } else {
+                chunkXHTML = CBZToEPUBConverter.generateChunkXHTML(
+                    chunkIndex: chunkIndex,
+                    images: currentChunkImages,
+                    title: "Page \(chunkIndex)",
+                    width: imgW,
+                    height: imgH,
+                    bookUUID: bookUUID,
+                    pageIndex: item.index,
+                    isManga: isManga
+                )
+            }
             let chunkName = String(format: "page_%04d.xhtml", chunkIndex)
             try chunkXHTML.write(to: textDir.appendingPathComponent(chunkName), atomically: true, encoding: .utf8)
             manifestItems.append("<item id=\"page_\(chunkIndex)\" href=\"text/\(chunkName)\" media-type=\"application/xhtml+xml\"/>")
@@ -440,8 +452,10 @@ struct CBZToEPUBConverter: Sendable {
             // Universally Apply Advanced Landscape Spread Tagging (RTL vs LTR)
             let spreadTag: String
             if isLandscapeImage {
-                // Landscape images span the full display — declare page-spread-center so Kindle expands them full-bleed.
-                spreadTag = " properties=\"page-spread-center rendition:page-spread-center rendition:spread-none\""
+                // rendition:page-spread-center tells Kindle to expand this single landscape
+                // page across both columns in landscape orientation. spread-none was previously
+                // used here but it directly cancels the spread expansion — removed.
+                spreadTag = " properties=\"rendition:page-spread-center\""
             } else if settings.linkCoverAsSpread {
                 if isManga {
                     // RTL Manga Sequence: Cover (page 1) is Right, Page 2 is Left, Page 3 is Right

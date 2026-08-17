@@ -100,140 +100,77 @@ struct EPUBMerger: Sendable {
                 }
                 
                 try autoreleasepool {
-                    var slicesToProcess: [UIImage] = []
-                    if let rawImage = UIImage(contentsOfFile: imgURL.path),
-                       settings.splitSpreads && rawImage.size.width > rawImage.size.height * 1.1 {
-                        let slices = ImageProcessor.sliceSpread(image: rawImage, isManga: settings.mangaMode)
-                        if slices.count > 1 {
-                            slicesToProcess = slices
+                    let trueExt = (imgURL.pathExtension.lowercased() == "png") ? "png" : "jpg"
+                    let safeExt = (trueExt == "jpg") ? "jpeg" : trueExt
+                    let newName = String(format: "image_%05d.%@", globalPageIndex, trueExt)
+                    let destURL = imagesDir.appendingPathComponent(newName)
+                    
+                    try copyAndPrepareImage(from: imgURL, to: destURL, settings: settings)
+                    
+                    // Detect actual image pixel dimensions for 1:1 viewport and spread classification.
+                    var imgW = 1980; var imgH = 2640; var isLandscape = false
+                    if let src = CGImageSourceCreateWithURL(destURL as CFURL, nil),
+                       let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any] {
+                        var w = (props[kCGImagePropertyPixelWidth] as? Int) ?? 1980
+                        var h = (props[kCGImagePropertyPixelHeight] as? Int) ?? 2640
+                        if let ori = props[kCGImagePropertyOrientation] as? UInt32, [5,6,7,8].contains(ori) { swap(&w, &h) }
+                        imgW = w; imgH = h
+                        if w > 0 && h > 0 && Double(w) > Double(h) * 1.1 {
+                            isLandscape = true; hasLandscapeSpreads = true
                         }
                     }
+                    if globalPageIndex == 1 { firstContentW = imgW; firstContentH = imgH }
                     
-                    if !slicesToProcess.isEmpty {
-                        for slice in slicesToProcess {
-                            let trueExt = "jpg"
-                            let safeExt = "jpeg"
-                            let newName = String(format: "image_%05d.%@", globalPageIndex, trueExt)
-                            let destURL = imagesDir.appendingPathComponent(newName)
-                            
-                            try saveAndPrepareSlice(image: slice, to: destURL, settings: settings)
-                            
-                            var imgW = Int(slice.size.width)
-                            var imgH = Int(slice.size.height)
-                            if let src = CGImageSourceCreateWithURL(destURL as CFURL, nil),
-                               let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any] {
-                                imgW = (props[kCGImagePropertyPixelWidth] as? Int) ?? imgW
-                                imgH = (props[kCGImagePropertyPixelHeight] as? Int) ?? imgH
-                            }
-                            if globalPageIndex == 1 { firstContentW = imgW; firstContentH = imgH }
-                            
-                            let htmlName = String(format: "page_%05d.xhtml", globalPageIndex)
-                            let htmlContent = EPUBManifestBuilder.buildChunkXHTML(
-                                chunkIndex: globalPageIndex,
-                                images: [newName],
-                                title: "Page \(globalPageIndex)",
-                                pageWidth: imgW,
-                                pageHeight: imgH
-                            )
-                            try? htmlContent.write(to: textDir.appendingPathComponent(htmlName), atomically: true, encoding: .utf8)
-                            
-                            let isFirstPageCover = (globalPageIndex == 1 && activeCoverData == nil)
-                            let coverImageProp = isFirstPageCover ? " properties=\"cover-image\"" : ""
-                            manifestItems.append("<item id=\"page_\(globalPageIndex)\" href=\"text/\(htmlName)\" media-type=\"application/xhtml+xml\"/>")
-                            manifestItems.append("<item id=\"img_\(globalPageIndex)\" href=\"images/\(newName)\" media-type=\"image/\(safeExt)\"\(coverImageProp)/>")
-                            
-                            let spreadTag: String
-                            if settings.linkCoverAsSpread {
-                                if settings.mangaMode {
-                                    spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
-                                } else {
-                                    spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-left\"" : " properties=\"page-spread-right\""
-                                }
-                            } else {
-                                if globalPageCounter == 1 && activeCoverData == nil {
-                                    spreadTag = ""
-                                } else if settings.mangaMode {
-                                    spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-left\"" : " properties=\"page-spread-right\""
-                                } else {
-                                    spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
-                                }
-                            }
-                            spineItems.append("<itemref idref=\"page_\(globalPageIndex)\"\(spreadTag)/>")
-                            
-                            globalPageIndex += 1
-                            globalPageCounter += 1
-                        }
+                    let htmlName = String(format: "page_%05d.xhtml", globalPageIndex)
+                    let htmlContent: String
+                    if isLandscape {
+                        // SVG viewBox XHTML: maps the landscape coordinate space 1:1 to the
+                        // viewport so Kindle fills 100% of the screen with zero CSS ambiguity.
+                        htmlContent = EPUBManifestBuilder.buildLandscapeXHTML(
+                            imageName: newName,
+                            pageWidth: imgW,
+                            pageHeight: imgH,
+                            title: "Page \(globalPageIndex)"
+                        )
                     } else {
-                        let trueExt = (imgURL.pathExtension.lowercased() == "png") ? "png" : "jpg"
-                        let safeExt = (trueExt == "jpg") ? "jpeg" : trueExt
-                        let newName = String(format: "image_%05d.%@", globalPageIndex, trueExt)
-                        let destURL = imagesDir.appendingPathComponent(newName)
-                        
-                        // Copy and convert WebP to JPEG if needed
-                        try copyAndPrepareImage(from: imgURL, to: destURL, settings: settings)
-                        
-                        // Detect actual image pixel dimensions for 1:1 viewport matching and spread assignment.
-                        var imgW = 1980; var imgH = 2640; var isLandscape = false
-                        if let src = CGImageSourceCreateWithURL(destURL as CFURL, nil),
-                           let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any] {
-                            var w = (props[kCGImagePropertyPixelWidth] as? Int) ?? 1980
-                            var h = (props[kCGImagePropertyPixelHeight] as? Int) ?? 2640
-                            if let ori = props[kCGImagePropertyOrientation] as? UInt32, [5,6,7,8].contains(ori) { swap(&w, &h) }
-                            imgW = w
-                            imgH = h
-                            if w > 0 && h > 0 && Double(w) > Double(h) * 1.1 {
-                                isLandscape = true; hasLandscapeSpreads = true
-                            }
-                        }
-                        // Capture first content page resolution for OPF original-resolution meta
-                        if globalPageIndex == 1 { firstContentW = imgW; firstContentH = imgH }
-                        
-                        // Manifest & HTML — use actual dimensions so landscape SVG viewport is correct
-                        let htmlName = String(format: "page_%05d.xhtml", globalPageIndex)
-                        let htmlContent = EPUBManifestBuilder.buildChunkXHTML(
+                        htmlContent = EPUBManifestBuilder.buildChunkXHTML(
                             chunkIndex: globalPageIndex,
                             images: [newName],
                             title: "Page \(globalPageIndex)",
                             pageWidth: imgW,
                             pageHeight: imgH
                         )
-                        try? htmlContent.write(to: textDir.appendingPathComponent(htmlName), atomically: true, encoding: .utf8)
-                        
-                        let isFirstPageCover = (globalPageIndex == 1 && activeCoverData == nil)
-                        // The cover image (img_1) must carry properties="cover-image" so that the
-                        // OPF <meta name="cover" content="img_1"/> is consistent — Kindle's ingestor
-                        // checks that the item referenced by <meta name="cover"> has this property and
-                        // fails with E999 if it does not.
-                        let coverImageProp = isFirstPageCover ? " properties=\"cover-image\"" : ""
-                        manifestItems.append("<item id=\"page_\(globalPageIndex)\" href=\"text/\(htmlName)\" media-type=\"application/xhtml+xml\"/>")
-                        manifestItems.append("<item id=\"img_\(globalPageIndex)\" href=\"images/\(newName)\" media-type=\"image/\(safeExt)\"\(coverImageProp)/>")
-                        
-                        // Landscape images span the full display — declare page-spread-center so Kindle renders them full-bleed.
-                        let spreadTag: String
-                        if isLandscape {
-                            spreadTag = " properties=\"page-spread-center rendition:page-spread-center rendition:spread-none\""
-                        } else if settings.linkCoverAsSpread {
-                            if settings.mangaMode {
-                                spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
-                            } else {
-                                spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-left\"" : " properties=\"page-spread-right\""
-                            }
-                        } else {
-                            if globalPageCounter == 1 && activeCoverData == nil {
-                                spreadTag = "" // Cover stands alone centered
-                            } else if settings.mangaMode {
-                                spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-left\"" : " properties=\"page-spread-right\""
-                            } else {
-                                spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
-                            }
-                        }
-                        spineItems.append("<itemref idref=\"page_\(globalPageIndex)\"\(spreadTag)/>")
-                        
-                        globalPageIndex += 1
-                        // Only advance the spread counter for portrait pages. Landscape pages
-                        // are centered and must not disturb the left/right pairing sequence.
-                        if !isLandscape { globalPageCounter += 1 }
                     }
+                    try? htmlContent.write(to: textDir.appendingPathComponent(htmlName), atomically: true, encoding: .utf8)
+                    
+                    let isFirstPageCover = (globalPageIndex == 1 && activeCoverData == nil)
+                    let coverImageProp = isFirstPageCover ? " properties=\"cover-image\"" : ""
+                    manifestItems.append("<item id=\"page_\(globalPageIndex)\" href=\"text/\(htmlName)\" media-type=\"application/xhtml+xml\"/>")
+                    manifestItems.append("<item id=\"img_\(globalPageIndex)\" href=\"images/\(newName)\" media-type=\"image/\(safeExt)\"\(coverImageProp)/>")
+                    
+                    // rendition:page-spread-center tells Kindle to expand this single landscape
+                    // page across both columns in landscape orientation — no spread-none, which
+                    // would cancel the expansion.
+                    let spreadTag: String
+                    if isLandscape {
+                        spreadTag = " properties=\"rendition:page-spread-center\""
+                    } else if settings.linkCoverAsSpread {
+                        spreadTag = settings.mangaMode
+                            ? (globalPageCounter % 2 == 1 ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\"")
+                            : (globalPageCounter % 2 == 1 ? " properties=\"page-spread-left\"" : " properties=\"page-spread-right\"")
+                    } else {
+                        if globalPageCounter == 1 && activeCoverData == nil {
+                            spreadTag = ""
+                        } else {
+                            spreadTag = settings.mangaMode
+                                ? (globalPageCounter % 2 == 1 ? " properties=\"page-spread-left\"" : " properties=\"page-spread-right\"")
+                                : (globalPageCounter % 2 == 1 ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\"")
+                        }
+                    }
+                    spineItems.append("<itemref idref=\"page_\(globalPageIndex)\"\(spreadTag)/>")
+                    
+                    globalPageIndex += 1
+                    if !isLandscape { globalPageCounter += 1 }
                 }
             }
         }
@@ -492,142 +429,79 @@ struct EPUBMerger: Sendable {
             for (imgIdx, img) in images.enumerated() {
                 try autoreleasepool {
                     // Skip the first image of the first EPUB if cover override is active (Part 1 cover page)
-                    if idx == 0 && imgIdx == 0 && activeCoverData != nil {
-                        return
-                    }
+                    if idx == 0 && imgIdx == 0 && activeCoverData != nil { return }
+
+                    let trueExt = (img.pathExtension.lowercased() == "png") ? "png" : "jpg"
+                    let safeExt = (trueExt == "jpg") ? "jpeg" : trueExt
+                    let newName = String(format: "image_%05d.%@", globalPageIndex, trueExt)
+                    let destURL = activeImages.appendingPathComponent(newName)
+                    try copyAndPrepareImage(from: img, to: destURL, settings: settings)
+
                     
-                    var slicesToProcess: [UIImage] = []
-                    if let rawImage = UIImage(contentsOfFile: img.path),
-                       settings.splitSpreads && rawImage.size.width > rawImage.size.height * 1.1 {
-                        let slices = ImageProcessor.sliceSpread(image: rawImage, isManga: settings.mangaMode)
-                        if slices.count > 1 {
-                            slicesToProcess = slices
+                    // Detect actual image pixel dimensions for 1:1 viewport and spread classification.
+                    var imgW = 1980; var imgH = 2640; var isLandscape = false
+                    if let src = CGImageSourceCreateWithURL(destURL as CFURL, nil),
+                       let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any] {
+                        var w = (props[kCGImagePropertyPixelWidth] as? Int) ?? 1980
+                        var h = (props[kCGImagePropertyPixelHeight] as? Int) ?? 2640
+                        if let ori = props[kCGImagePropertyOrientation] as? UInt32, [5,6,7,8].contains(ori) { swap(&w, &h) }
+                        imgW = w; imgH = h
+                        if w > 0 && h > 0 && Double(w) > Double(h) * 1.1 {
+                            isLandscape = true; hasLandscapeSpreads = true
                         }
                     }
+                    if globalPageIndex == 1 { firstContentW = imgW; firstContentH = imgH }
                     
-                    if !slicesToProcess.isEmpty {
-                        for slice in slicesToProcess {
-                            let trueExt = "jpg"
-                            let safeExt = "jpeg"
-                            let newName = String(format: "image_%05d.%@", globalPageIndex, trueExt)
-                            let destURL = activeImages.appendingPathComponent(newName)
-                            
-                            try saveAndPrepareSlice(image: slice, to: destURL, settings: settings)
-                            
-                            var imgW = Int(slice.size.width)
-                            var imgH = Int(slice.size.height)
-                            if let src = CGImageSourceCreateWithURL(destURL as CFURL, nil),
-                               let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any] {
-                                imgW = (props[kCGImagePropertyPixelWidth] as? Int) ?? imgW
-                                imgH = (props[kCGImagePropertyPixelHeight] as? Int) ?? imgH
-                            }
-                            if globalPageIndex == 1 { firstContentW = imgW; firstContentH = imgH }
-                            
-                            let htmlName = String(format: "page_%05d.xhtml", globalPageIndex)
-                            let htmlContent = EPUBManifestBuilder.buildChunkXHTML(
-                                chunkIndex: globalPageIndex,
-                                images: [newName],
-                                title: "Page \(globalPageIndex)",
-                                pageWidth: imgW,
-                                pageHeight: imgH
-                            )
-                            try? htmlContent.write(to: activeText.appendingPathComponent(htmlName), atomically: true, encoding: .utf8)
-                            
-                            let isFirstPageCover = (globalPageIndex == 1 && activeCoverData == nil)
-                            let coverImageProp = isFirstPageCover ? " properties=\"cover-image\"" : ""
-                            manifestItems.append("<item id=\"page_\(globalPageIndex)\" href=\"text/\(htmlName)\" media-type=\"application/xhtml+xml\"/>")
-                            manifestItems.append("<item id=\"img_\(globalPageIndex)\" href=\"images/\(newName)\" media-type=\"image/\(safeExt)\"\(coverImageProp)/>")
-                            
-                            let spreadTag: String
-                            if settings.linkCoverAsSpread {
-                                if settings.mangaMode {
-                                    spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
-                                } else {
-                                    spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-left\"" : " properties=\"page-spread-right\""
-                                }
-                            } else {
-                                if globalPageCounter == 1 && activeCoverData == nil {
-                                    spreadTag = ""
-                                } else if settings.mangaMode {
-                                    spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-left\"" : " properties=\"page-spread-right\""
-                                } else {
-                                    spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
-                                }
-                            }
-                            spineItems.append("<itemref idref=\"page_\(globalPageIndex)\"\(spreadTag)/>")
-                            
-                            globalPageIndex += 1
-                            globalPageCounter += 1
-                        }
+                    let htmlName = String(format: "page_%05d.xhtml", globalPageIndex)
+                    let htmlContent: String
+                    if isLandscape {
+                        // SVG viewBox XHTML: maps the landscape coordinate space 1:1 to the
+                        // viewport so Kindle fills 100% of the screen with zero CSS ambiguity.
+                        htmlContent = EPUBManifestBuilder.buildLandscapeXHTML(
+                            imageName: newName,
+                            pageWidth: imgW,
+                            pageHeight: imgH,
+                            title: "Page \(globalPageIndex)"
+                        )
                     } else {
-                        let trueExt = (img.pathExtension.lowercased() == "png") ? "png" : "jpg"
-                        let safeExt = (trueExt == "jpg") ? "jpeg" : trueExt
-                        let newName = String(format: "image_%05d.%@", globalPageIndex, trueExt)
-                        let destURL = activeImages.appendingPathComponent(newName)
-                        try copyAndPrepareImage(from: img, to: destURL, settings: settings)
-                        
-                        // Detect actual image pixel dimensions for 1:1 viewport matching and spread assignment.
-                        var imgW = 1980; var imgH = 2640; var isLandscape = false
-                        if let src = CGImageSourceCreateWithURL(destURL as CFURL, nil),
-                           let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any] {
-                            var w = (props[kCGImagePropertyPixelWidth] as? Int) ?? 1980
-                            var h = (props[kCGImagePropertyPixelHeight] as? Int) ?? 2640
-                            if let ori = props[kCGImagePropertyOrientation] as? UInt32, [5,6,7,8].contains(ori) { swap(&w, &h) }
-                            imgW = w
-                            imgH = h
-                            if w > 0 && h > 0 && Double(w) > Double(h) * 1.1 {
-                                isLandscape = true; hasLandscapeSpreads = true
-                            }
-                        }
-                        // Capture first content page resolution for OPF original-resolution meta
-                        if globalPageIndex == 1 { firstContentW = imgW; firstContentH = imgH }
-                        
-                        let htmlName = String(format: "page_%05d.xhtml", globalPageIndex)
-                        let htmlContent = EPUBManifestBuilder.buildChunkXHTML(
+                        htmlContent = EPUBManifestBuilder.buildChunkXHTML(
                             chunkIndex: globalPageIndex,
                             images: [newName],
                             title: "Page \(globalPageIndex)",
                             pageWidth: imgW,
                             pageHeight: imgH
                         )
-                        try? htmlContent.write(to: activeText.appendingPathComponent(htmlName), atomically: true, encoding: .utf8)
-                        
-                        let isFirstPageCover = (globalPageIndex == 1 && activeCoverData == nil)
-                        // The cover image (img_1) must carry properties="cover-image" so that the
-                        // OPF <meta name="cover" content="img_1"/> is consistent — Kindle's ingestor
-                        // checks that the item referenced by <meta name="cover"> has this property and
-                        // fails with E999 if it does not. The duplicate-cover problem is suppressed by
-                        // page_1.xhtml being the FIRST spine item wrapping img_1.
-                        let coverImageProp = isFirstPageCover ? " properties=\"cover-image\"" : ""
-                        manifestItems.append("<item id=\"page_\(globalPageIndex)\" href=\"text/\(htmlName)\" media-type=\"application/xhtml+xml\"/>")
-                        manifestItems.append("<item id=\"img_\(globalPageIndex)\" href=\"images/\(newName)\" media-type=\"image/\(safeExt)\"\(coverImageProp)/>")
-                        
-                        // Landscape images span the full display — declare page-spread-center so Kindle renders them full-bleed.
-                        let spreadTag: String
-                        if isLandscape {
-                            spreadTag = " properties=\"page-spread-center rendition:page-spread-center rendition:spread-none\""
-                        } else if settings.linkCoverAsSpread {
-                            if settings.mangaMode {
-                                spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
-                            } else {
-                                spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-left\"" : " properties=\"page-spread-right\""
-                            }
-                        } else {
-                            if globalPageCounter == 1 && activeCoverData == nil {
-                                spreadTag = "" // Cover stands alone centered
-                            } else if settings.mangaMode {
-                                spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-left\"" : " properties=\"page-spread-right\""
-                            } else {
-                                spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
-                            }
-                        }
-                        spineItems.append("<itemref idref=\"page_\(globalPageIndex)\"\(spreadTag)/>")
-                        
-                        globalPageIndex += 1
-                        // Only advance the spread counter for portrait pages. Landscape pages
-                        // are centered and must not disturb the left/right pairing sequence.
-                        if !isLandscape { globalPageCounter += 1 }
                     }
+                    try? htmlContent.write(to: activeText.appendingPathComponent(htmlName), atomically: true, encoding: .utf8)
+                    
+                    let isFirstPageCover = (globalPageIndex == 1 && activeCoverData == nil)
+                    let coverImageProp = isFirstPageCover ? " properties=\"cover-image\"" : ""
+                    manifestItems.append("<item id=\"page_\(globalPageIndex)\" href=\"text/\(htmlName)\" media-type=\"application/xhtml+xml\"/>")
+                    manifestItems.append("<item id=\"img_\(globalPageIndex)\" href=\"images/\(newName)\" media-type=\"image/\(safeExt)\"\(coverImageProp)/>")
+                    
+                    // rendition:page-spread-center tells Kindle to expand this single landscape
+                    // page across both columns in landscape orientation — no spread-none, which
+                    // would cancel the expansion.
+                    let spreadTag: String
+                    if isLandscape {
+                        spreadTag = " properties=\"rendition:page-spread-center\""
+                    } else if settings.linkCoverAsSpread {
+                        spreadTag = settings.mangaMode
+                            ? (globalPageCounter % 2 == 1 ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\"")
+                            : (globalPageCounter % 2 == 1 ? " properties=\"page-spread-left\"" : " properties=\"page-spread-right\"")
+                    } else {
+                        if globalPageCounter == 1 && activeCoverData == nil {
+                            spreadTag = ""
+                        } else {
+                            spreadTag = settings.mangaMode
+                                ? (globalPageCounter % 2 == 1 ? " properties=\"page-spread-left\"" : " properties=\"page-spread-right\"")
+                                : (globalPageCounter % 2 == 1 ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\"")
+                        }
+                    }
+                    spineItems.append("<itemref idref=\"page_\(globalPageIndex)\"\(spreadTag)/>")
+                    
+                    globalPageIndex += 1
+                    if !isLandscape { globalPageCounter += 1 }
                 }
             }
             
@@ -724,17 +598,6 @@ struct EPUBMerger: Sendable {
         return finalImage.jpegData(compressionQuality: 0.9)
     }
 
-    private func saveAndPrepareSlice(image: UIImage, to destURL: URL, settings: ConversionSettings) throws {
-        let isUltraLossless = settings.compressionQuality == .ultra
-        let processedImage = ImageProcessor.process(image: image, settings: settings) ?? image
-        let quality = isUltraLossless ? 1.0 : settings.compressionQuality.value
-        guard let finalData = processedImage.jpegData(compressionQuality: quality), !finalData.isEmpty else {
-            throw NSError(domain: "ImageProcessor", code: 500, userInfo: [
-                NSLocalizedDescriptionKey: "Failed to encode Kindle-compliant JPEG data for spread slice."
-            ])
-        }
-        try finalData.write(to: destURL)
-    }
 
     private func copyAndPrepareImage(from srcURL: URL, to destURL: URL, settings: ConversionSettings) throws {
         // Validate that the image file is decodable as a UIImage
