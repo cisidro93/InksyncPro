@@ -28,11 +28,22 @@ public final class ReflowDOMSynthesizer: @unchecked Sendable {
         var bodyHTML = ""
         var currentPage = -1
 
+        var embeddedImageURLs = Set<URL>()
+
         for block in blocks {
             if block.pageIndex != currentPage {
                 currentPage = block.pageIndex
                 bodyHTML += "\n<section class=\"pdf-page-marker\" id=\"page-\(currentPage + 1)\" data-page=\"\(currentPage + 1)\">\n"
                 bodyHTML += "  <div class=\"page-number-divider\">Page \(currentPage + 1)</div>\n"
+                
+                // Embed images belonging to this page
+                let pageImages = images.filter { $0.pageIndex == currentPage }
+                for img in pageImages {
+                    embeddedImageURLs.insert(img.fileURL)
+                    let relPath = img.fileURL.lastPathComponent
+                    bodyHTML += "  <figure class=\"pdf-figure\"><img src=\"\(relPath)\" alt=\"Figure Page \(currentPage + 1)\" loading=\"lazy\" /></figure>\n"
+                }
+                
                 bodyHTML += "</section>\n"
             }
 
@@ -59,6 +70,15 @@ public final class ReflowDOMSynthesizer: @unchecked Sendable {
             case .paragraph:
                 bodyHTML += "<p data-pdf-page=\"\(currentPage + 1)\" data-pdf-rect=\"\(rectAttr)\">\(escapedText)</p>\n"
             }
+        }
+
+        // Catch any orphan images on pages without text blocks
+        for img in images where !embeddedImageURLs.contains(img.fileURL) {
+            let relPath = img.fileURL.lastPathComponent
+            bodyHTML += "\n<section class=\"pdf-page-marker\" id=\"page-\(img.pageIndex + 1)\" data-page=\"\(img.pageIndex + 1)\">\n"
+            bodyHTML += "  <div class=\"page-number-divider\">Page \(img.pageIndex + 1)</div>\n"
+            bodyHTML += "  <figure class=\"pdf-figure\"><img src=\"\(relPath)\" alt=\"Figure Page \(img.pageIndex + 1)\" loading=\"lazy\" /></figure>\n"
+            bodyHTML += "</section>\n"
         }
 
         let htmlDocument = """

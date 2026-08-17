@@ -53,7 +53,7 @@ actor JITComicCacheEngine {
     
     private func extractPageImage(archiveURL: URL, pageIndex: Int) -> UIImage? {
         guard archiveURL.pathExtension.lowercased() == "cbz",
-              let archive = try? Archive(url: archiveURL, accessMode: .read) else { return nil }
+              let archive = try? Archive(url: archiveURL, accessMode: .read, pathEncoding: .utf8) else { return nil }
         
         let entries = archive.filter { $0.type != .directory && isImageEntry($0.path) }
                              .sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }

@@ -129,6 +129,27 @@ struct LibraryGridView: View {
         .animation(.spring(response: 0.25, dampingFraction: 0.7), value: highlightedItemID)
     }
 
+    @ViewBuilder
+    private func cellContainer(item: LibraryListItem) -> some View {
+        cellFor(item)
+            .id(item.id)
+            .frame(maxWidth: .infinity)
+            .background(batchCellTracker(for: item.id))
+    }
+
+    @ViewBuilder
+    private func batchCellTracker(for itemID: String) -> some View {
+        if isBatchMode {
+            GeometryReader { geo in
+                Color.clear
+                    .preference(
+                        key: LibraryCellFramePreferenceKey.self,
+                        value: [itemID: geo.frame(in: .named("libraryScroll"))]
+                    )
+            }
+        }
+    }
+
     var body: some View {
         Group {
             if conversionManager.visiblePDFs.isEmpty {
@@ -172,22 +193,7 @@ struct LibraryGridView: View {
                                         VStack(spacing: 8) {
                                             HStack(alignment: .bottom, spacing: colSpacing) {
                                                 ForEach(row.items) { item in
-                                                    cellFor(item)
-                                                        .id(item.id)
-                                                        .frame(maxWidth: .infinity)
-                                                        .background(
-                                                            Group {
-                                                                if isBatchMode {
-                                                                    GeometryReader { geo in
-                                                                        Color.clear
-                                                                            .preference(
-                                                                                key: LibraryCellFramePreferenceKey.self,
-                                                                                value: [item.id: geo.frame(in: .named("libraryScroll"))]
-                                                                            )
-                                                                    }
-                                                                }
-                                                            }
-                                                        )
+                                                    cellContainer(item: item)
                                                 }
                                                 
                                                 if row.items.count < activeCols {

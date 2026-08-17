@@ -135,7 +135,7 @@ final class PageOCREngine: ObservableObject {
             let task = Task.detached(priority: .background) { [weak self] in
                 guard let self else { return }
                 _ = await self.performOCRAndCache(pageIndex: i)
-                await MainActor.run { [weak self] in
+                _ = await MainActor.run { [weak self] in
                     self?.ocrTasks.removeValue(forKey: i)
                 }
             }

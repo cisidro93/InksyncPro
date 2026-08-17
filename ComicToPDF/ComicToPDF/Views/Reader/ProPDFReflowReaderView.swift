@@ -120,7 +120,7 @@ struct ProPDFReflowReaderView: View {
             }
         }
 
-        let blocks = PDFSpatialParser.shared.parseDocument(doc)
+        let blocks = await PDFSpatialParser.shared.parseDocument(doc)
         let images = PDFImageExtractor.shared.extractImages(from: doc, pdfUUID: pdfUUID)
 
         let compiledURL = await ReflowDOMSynthesizer.shared.synthesizeHTML(

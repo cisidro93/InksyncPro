@@ -1,6 +1,7 @@
 import Foundation
 import PDFKit
 import UIKit
+import Vision
 
 public struct SpatialTextBlock: Identifiable, Sendable {
     public let id: UUID
@@ -54,7 +55,7 @@ public final class PDFSpatialParser: Sendable {
     private init() {}
 
     /// Parses a PDFDocument page-by-page into spatial text blocks ordered by column reading flow.
-    public func parseDocument(_ document: PDFDocument) -> [SpatialTextBlock] {
+    public func parseDocument(_ document: PDFDocument) async -> [SpatialTextBlock] {
         var blocks: [SpatialTextBlock] = []
         let pageCount = document.pageCount
 
@@ -62,11 +63,84 @@ public final class PDFSpatialParser: Sendable {
 
         for i in 0..<pageCount {
             guard let page = document.page(at: i) else { continue }
-            let pageBlocks = parsePage(page, pageIndex: i, medianFontSize: medianFontSize)
+            var pageBlocks = parsePage(page, pageIndex: i, medianFontSize: medianFontSize)
+            
+            // If page has no extractable digital text (scanned document / book / whitepaper),
+            // seamlessly use Vision OCR to extract text blocks
+            if pageBlocks.isEmpty {
+                pageBlocks = await parsePageWithVisionOCR(page, pageIndex: i, medianFontSize: medianFontSize)
+            }
+            
             blocks.append(contentsOf: pageBlocks)
         }
 
         return blocks
+    }
+
+    private func parsePageWithVisionOCR(_ page: PDFPage, pageIndex: Int, medianFontSize: CGFloat) async -> [SpatialTextBlock] {
+        let pageBounds = page.bounds(for: .mediaBox)
+        guard pageBounds.width > 0 && pageBounds.height > 0 else { return [] }
+        
+        let renderer = UIGraphicsImageRenderer(size: pageBounds.size)
+        let pageImage = renderer.image { ctx in
+            UIColor.white.set()
+            ctx.fill(pageBounds)
+            ctx.cgContext.translateBy(x: 0.0, y: pageBounds.size.height)
+            ctx.cgContext.scaleBy(x: 1.0, y: -1.0)
+            page.draw(with: .mediaBox, to: ctx.cgContext)
+        }
+        
+        guard let cgImage = pageImage.cgImage else { return [] }
+        
+        return await withCheckedContinuation { continuation in
+            let request = VNRecognizeTextRequest { request, error in
+                guard error == nil, let observations = request.results as? [VNRecognizedTextObservation] else {
+                    continuation.resume(returning: [])
+                    return
+                }
+                
+                var ocrBlocks: [SpatialTextBlock] = []
+                for obs in observations {
+                    guard let candidate = obs.topCandidates(1).first, !candidate.string.isEmpty else { continue }
+                    
+                    let boundingBox = obs.boundingBox
+                    let rect = CGRect(
+                        x: boundingBox.origin.x * pageBounds.width,
+                        y: (1.0 - boundingBox.origin.y - boundingBox.height) * pageBounds.height,
+                        width: boundingBox.width * pageBounds.width,
+                        height: boundingBox.height * pageBounds.height
+                    )
+                    
+                    let text = candidate.string.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !text.isEmpty else { continue }
+                    
+                    let isTitle = rect.height > medianFontSize * 1.5 || (text.count < 60 && text.allSatisfy { $0.isUppercase || $0.isWhitespace || $0.isPunctuation })
+                    let kind: SpatialTextBlock.BlockKind = isTitle ? .heading2 : .paragraph
+                    
+                    ocrBlocks.append(SpatialTextBlock(
+                        pageIndex: pageIndex,
+                        rect: rect,
+                        text: text,
+                        kind: kind,
+                        fontName: "System",
+                        fontSize: rect.height,
+                        isBold: isTitle,
+                        isItalic: false
+                    ))
+                }
+                continuation.resume(returning: ocrBlocks)
+            }
+            
+            request.recognitionLevel = .accurate
+            request.usesLanguageCorrection = true
+            
+            let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+            do {
+                try handler.perform([request])
+            } catch {
+                continuation.resume(returning: [])
+            }
+        }
     }
 
     private func calculateMedianFontSize(document: PDFDocument) -> CGFloat {
