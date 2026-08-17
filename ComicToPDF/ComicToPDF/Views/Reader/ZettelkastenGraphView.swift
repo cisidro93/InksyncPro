@@ -424,6 +424,7 @@ struct ZettelkastenGraphView: View {
     @EnvironmentObject private var conversionManager: ConversionManager
     @StateObject private var engine = ZettelkastenGraphEngine()
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.horizontalSizeClass) private var hSizeClass
 
     // Filters and search
     @State private var showBooks = true
@@ -787,6 +788,31 @@ struct ZettelkastenGraphView: View {
                 editingNoteText = ""
             }
         }
+        .sheet(item: Binding(
+            get: {
+                if hSizeClass == .compact, let id = selectedNodeID, let node = engine.nodes.first(where: { $0.id == id }) {
+                    return node
+                }
+                return nil
+            },
+            set: { selectedNodeID = $0?.id }
+        )) { node in
+            NavigationStack {
+                sidebarInspector(for: node)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 16)
+                    .background(Color.inkSurfaceRaised)
+                    .navigationTitle(node.nodeType == .note ? "Zettel Note" : (node.nodeType == .book ? "Book Source" : "Tag Group"))
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Done") { selectedNodeID = nil }
+                        }
+                    }
+            }
+            .presentationDetents([.medium, .fraction(0.85)])
+            .presentationDragIndicator(.visible)
+        }
     }
 
     // MARK: - Floating Control Deck
@@ -944,7 +970,8 @@ struct ZettelkastenGraphView: View {
     private var sidebarLayer: some View {
         Group {
             if let selectedID = selectedNodeID,
-               let node = engine.nodes.first(where: { $0.id == selectedID }) {
+               let node = engine.nodes.first(where: { $0.id == selectedID }),
+               hSizeClass == .regular {
                 HStack(spacing: 0) {
                     Spacer()
                     sidebarInspector(for: node)

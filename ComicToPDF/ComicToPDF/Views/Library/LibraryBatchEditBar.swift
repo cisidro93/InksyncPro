@@ -17,21 +17,21 @@ struct LibraryBatchEditBar: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 12) {
+            HStack(spacing: 8) {
                 // Selected item count badge
-                HStack(spacing: 6) {
+                HStack(spacing: 5) {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 15, weight: .bold))
+                        .font(.system(size: 14, weight: .bold))
                         .foregroundStyle(Color.orange)
-                    Text("\(selectedPDFs.count) Selected")
-                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                    Text("\(selectedPDFs.count)")
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
                         .foregroundStyle(Color.inkTextPrimary)
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
                 .background(Color.orange.opacity(0.12), in: Capsule())
 
-                Spacer()
+                Spacer(minLength: 4)
 
                 // 🏷️ Bulk Tag Button
                 Button {
@@ -39,12 +39,12 @@ struct LibraryBatchEditBar: View {
                 } label: {
                     VStack(spacing: 2) {
                         Image(systemName: "tag.fill")
-                            .font(.system(size: 16))
+                            .font(.system(size: 15))
                         Text("Tag")
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(.system(size: 9, weight: .semibold))
                     }
                     .foregroundStyle(Color.orange)
-                    .frame(width: 44, height: 40)
+                    .frame(width: 38, height: 38)
                 }
 
                 // 🚀 PARA Category Button
@@ -53,12 +53,12 @@ struct LibraryBatchEditBar: View {
                 } label: {
                     VStack(spacing: 2) {
                         Image(systemName: "folder.fill.badge.plus")
-                            .font(.system(size: 16))
+                            .font(.system(size: 15))
                         Text("PARA")
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(.system(size: 9, weight: .semibold))
                     }
                     .foregroundStyle(Color.blue)
-                    .frame(width: 44, height: 40)
+                    .frame(width: 38, height: 38)
                 }
 
                 // 🔒 Move to Vault
@@ -67,12 +67,12 @@ struct LibraryBatchEditBar: View {
                 } label: {
                     VStack(spacing: 2) {
                         Image(systemName: "lock.fill")
-                            .font(.system(size: 16))
+                            .font(.system(size: 15))
                         Text("Vault")
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(.system(size: 9, weight: .semibold))
                     }
                     .foregroundStyle(Color.purple)
-                    .frame(width: 44, height: 40)
+                    .frame(width: 38, height: 38)
                 }
 
                 // 🗑️ Bulk Delete
@@ -81,12 +81,12 @@ struct LibraryBatchEditBar: View {
                 } label: {
                     VStack(spacing: 2) {
                         Image(systemName: "trash.fill")
-                            .font(.system(size: 16))
+                            .font(.system(size: 15))
                         Text("Delete")
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(.system(size: 9, weight: .semibold))
                     }
                     .foregroundStyle(Color.red)
-                    .frame(width: 44, height: 40)
+                    .frame(width: 38, height: 38)
                 }
 
                 // ✖️ Cancel Selection
@@ -94,12 +94,13 @@ struct LibraryBatchEditBar: View {
                     onClearSelection()
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 20))
+                        .font(.system(size: 19))
                         .foregroundStyle(Color.inkTextTertiary)
+                        .padding(.leading, 2)
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)

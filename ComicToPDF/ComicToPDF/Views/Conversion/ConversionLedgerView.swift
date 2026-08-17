@@ -42,7 +42,7 @@ struct ConversionLedgerView: View {
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     let jobs = ledger.allJobs()
                     if jobs.contains(where: { $0.status == .failed || $0.status == .abandoned }) {
-                        Button("Retry All Failed") {
+                        Button("Retry All") {
                             ledger.retryFailed(manager: conversionManager)
                         }
                         .font(.subheadline.weight(.semibold))

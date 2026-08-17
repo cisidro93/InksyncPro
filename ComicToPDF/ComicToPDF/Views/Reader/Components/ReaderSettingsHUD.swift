@@ -14,56 +14,59 @@ struct ReaderSettingsHUD: View {
     @AppStorage("isAutoCropEnabled") private var isAutoCropEnabled = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            // ── Drag pill ───────────────────────────────────────────────────────
-            Capsule()
-                .fill(Color.white.opacity(0.25))
-                .frame(width: 36, height: 4)
-                .padding(.top, 12)
-                .padding(.bottom, 18)
+        ScrollView(showsIndicators: false) {
+            VStack(spacing: 0) {
+                // ── Drag pill ───────────────────────────────────────────────────────
+                Capsule()
+                    .fill(Color.white.opacity(0.25))
+                    .frame(width: 36, height: 4)
+                    .padding(.top, 12)
+                    .padding(.bottom, 18)
 
-            // ── Reading Mode ────────────────────────────────────────────────────
-            sectionHeader("Reading Mode")
+                // ── Reading Mode ────────────────────────────────────────────────────
+                sectionHeader("Reading Mode")
 
-            VStack(spacing: 3) {
-                ForEach(ComicReadingMode.allCases, id: \.self) { mode in
-                    modeRow(mode)
+                VStack(spacing: 3) {
+                    ForEach(ComicReadingMode.allCases, id: \.self) { mode in
+                        modeRow(mode)
+                    }
                 }
-            }
-            .padding(.horizontal, 14)
-            .padding(.bottom, 20)
+                .padding(.horizontal, 14)
+                .padding(.bottom, 20)
 
-            // ── Color Filter ────────────────────────────────────────────────────
-            sectionHeader("Color Filter")
+                // ── Color Filter ────────────────────────────────────────────────────
+                sectionHeader("Color Filter")
 
-            VStack(spacing: 3) {
-                ForEach(ReadingFilterPreset.allCases, id: \.self) { preset in
-                    filterRow(preset)
+                VStack(spacing: 3) {
+                    ForEach(ReadingFilterPreset.allCases, id: \.self) { preset in
+                        filterRow(preset)
+                    }
                 }
+                .padding(.horizontal, 14)
+                .padding(.bottom, 20)
+                
+                // ── Page Options ────────────────────────────────────────────────────
+                sectionHeader("Page Options")
+                
+                VStack(spacing: 12) {
+                    toggleRow(
+                        title: "Smart Margin Crop",
+                        description: "Auto-removes white borders from scanned pages",
+                        icon: "crop",
+                        isOn: $isAutoCropEnabled
+                    )
+                    toggleRow(
+                        title: "Two-Page Spread",
+                        description: "Displays side-by-side pages in landscape layout",
+                        icon: "rectangle.split.2x1",
+                        isOn: $prefersTwoUpSpreads
+                    )
+                }
+                .padding(.horizontal, 14)
+                .padding(.bottom, 28)
             }
-            .padding(.horizontal, 14)
-            .padding(.bottom, 20)
-            
-            // ── Page Options ────────────────────────────────────────────────────
-            sectionHeader("Page Options")
-            
-            VStack(spacing: 12) {
-                toggleRow(
-                    title: "Smart Margin Crop",
-                    description: "Auto-removes white borders from scanned pages",
-                    icon: "crop",
-                    isOn: $isAutoCropEnabled
-                )
-                toggleRow(
-                    title: "Two-Page Spread",
-                    description: "Displays side-by-side pages in landscape layout",
-                    icon: "rectangle.split.2x1",
-                    isOn: $prefersTwoUpSpreads
-                )
-            }
-            .padding(.horizontal, 14)
-            .padding(.bottom, 36)
         }
+        .frame(maxHeight: min(540, UIScreen.main.bounds.height * 0.75))
         .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
         .overlay(

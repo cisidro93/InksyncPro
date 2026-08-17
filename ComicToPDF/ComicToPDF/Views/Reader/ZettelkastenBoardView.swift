@@ -113,10 +113,12 @@ struct ZettelkastenBoardView: View {
         }
     }
 
+    @Environment(\.horizontalSizeClass) private var hSizeClass
+
     var body: some View {
         HStack(spacing: 0) {
-            // ── Left Side: Collapsible Highlight Inbox Drawer ────────────────
-            if isShowingInbox {
+            // ── Left Side: Collapsible Highlight Inbox Drawer (iPad / Regular only) ────────────────
+            if isShowingInbox && hSizeClass == .regular {
                 inboxDrawer
                     .frame(width: 300)
                     .transition(.move(edge: .leading))
@@ -135,8 +137,8 @@ struct ZettelkastenBoardView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             
-            // ── Right Side: Card Inspector & Linker ──────────────────────────
-            if let selected = selectedAnnotation {
+            // ── Right Side: Card Inspector & Linker (iPad / Regular only) ──────────────────────────
+            if let selected = selectedAnnotation, hSizeClass == .regular {
                 Divider()
                 CardInspectorView(
                     annotation: Binding(
@@ -172,6 +174,58 @@ struct ZettelkastenBoardView: View {
             set: { renamingColumn = $0?.value }
         )) { item in
             columnRenameSheet(for: item.value)
+        }
+        // iPhone Highlight Inbox Sheet
+        .sheet(isPresented: Binding(
+            get: { isShowingInbox && hSizeClass == .compact },
+            set: { isShowingInbox = $0 }
+        )) {
+            NavigationStack {
+                inboxDrawer
+                    .navigationTitle("Highlight Inbox")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Done") { isShowingInbox = false }
+                        }
+                    }
+            }
+            .presentationDetents([.medium, .fraction(0.85)])
+            .presentationDragIndicator(.visible)
+        }
+        // iPhone Card Inspector Sheet
+        .sheet(item: Binding(
+            get: { (hSizeClass == .compact) ? selectedAnnotation : nil },
+            set: { selectedAnnotation = $0 }
+        )) { ann in
+            NavigationStack {
+                CardInspectorView(
+                    annotation: Binding(
+                        get: { selectedAnnotation ?? ann },
+                        set: { selectedAnnotation = $0 }
+                    ),
+                    allAnnotations: annotations,
+                    pdfs: pdfs,
+                    history: $inspectorHistory,
+                    onNavigate: { nextAnn in
+                        inspectorHistory.append(ann)
+                        selectedAnnotation = nextAnn
+                    },
+                    onClose: {
+                        selectedAnnotation = nil
+                        inspectorHistory.removeAll()
+                    }
+                )
+                .navigationTitle("Card Inspector")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Done") { selectedAnnotation = nil }
+                    }
+                }
+            }
+            .presentationDetents([.medium, .fraction(0.9)])
+            .presentationDragIndicator(.visible)
         }
         .navigationDestination(isPresented: Binding(
             get: { compiledProject != nil },

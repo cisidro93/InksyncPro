@@ -318,6 +318,7 @@ struct MediaDetailSheet: View {
                     .font(.system(size: 11, weight: .medium))
                     .multilineTextAlignment(.center)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
             .frame(maxWidth: .infinity)
             .frame(height: 70)

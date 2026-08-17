@@ -617,15 +617,17 @@ struct GlobalZettelkastenHubView: View {
         Button {
             withAnimation(.spring(response: 0.28, dampingFraction: 0.78)) { viewMode = mode }
         } label: {
-            HStack(spacing: 5) {
+            HStack(spacing: 4) {
                 Image(systemName: icon)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: 11, weight: .semibold))
                 Text(label)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
             }
             .foregroundStyle(viewMode == mode ? Color.white : Theme.textSecondary)
-            .padding(.horizontal, 18)
-            .padding(.vertical, 9)
+            .padding(.horizontal, hSizeClass == .regular ? 18 : 6)
+            .padding(.vertical, 8)
             .frame(maxWidth: .infinity)
             .background(
                 viewMode == mode
