@@ -95,10 +95,11 @@ class AppSettingsManager: ObservableObject {
         
         self.conversionSettings = config.settings
         
-        // One-time migration: Ensure linkCoverAsSpread is enabled by default for all users
-        if !UserDefaults.standard.bool(forKey: "didMigrateLinkCoverAsSpreadV1") {
+        // One-time migration: Ensure linkCoverAsSpread and splitSpreads are enabled by default for all users
+        if !UserDefaults.standard.bool(forKey: "didMigrateLinkCoverAsSpreadV2") {
             self.conversionSettings.linkCoverAsSpread = true
-            UserDefaults.standard.set(true, forKey: "didMigrateLinkCoverAsSpreadV1")
+            self.conversionSettings.splitSpreads = true
+            UserDefaults.standard.set(true, forKey: "didMigrateLinkCoverAsSpreadV2")
             save()
         }
         

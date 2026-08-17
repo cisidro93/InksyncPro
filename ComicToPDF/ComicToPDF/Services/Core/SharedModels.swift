@@ -605,7 +605,7 @@ struct ConversionSettings: Codable, Equatable, Sendable {
     var mangaMode: Bool = false
     var enablePanelSplit: Bool = false
     var splitWebtoon: Bool = false // âœ… Added for Smart Slicing
-    var splitSpreads: Bool = false // âœ… NEW: Landscape Double-Page Split for E-Ink
+    var splitSpreads: Bool = true // ✅ NEW: Landscape Double-Page Split for E-Ink
     var trimMargins: Bool = false
     var linkCoverAsSpread: Bool = true // ✅ NEW: Pair Cover Page with Page 2 as a spread
     var customAliases: [String: String] = [:]
@@ -781,7 +781,7 @@ struct ConversionSettings: Codable, Equatable, Sendable {
         mangaMode = try container.decode(Bool.self, forKey: .mangaMode)
         enablePanelSplit = try container.decode(Bool.self, forKey: .enablePanelSplit)
         splitWebtoon = try container.decodeIfPresent(Bool.self, forKey: .splitWebtoon) ?? false
-        splitSpreads = try container.decodeIfPresent(Bool.self, forKey: .splitSpreads) ?? false
+        splitSpreads = try container.decodeIfPresent(Bool.self, forKey: .splitSpreads) ?? true
         trimMargins = try container.decodeIfPresent(Bool.self, forKey: .trimMargins) ?? false
         linkCoverAsSpread = try container.decodeIfPresent(Bool.self, forKey: .linkCoverAsSpread) ?? true
         splitMode = try container.decode(FileSizeSplitMode.self, forKey: .splitMode)
