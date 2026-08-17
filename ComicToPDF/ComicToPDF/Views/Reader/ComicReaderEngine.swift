@@ -1679,6 +1679,7 @@ struct ComicReaderEngine: View {
                     .padding(.top, 70)
                     Spacer()
                 }
+                .allowsHitTesting(false)
                 .transition(.opacity)
                 .zIndex(18)
             }

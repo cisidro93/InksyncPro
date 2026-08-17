@@ -143,6 +143,7 @@ struct EdgeBrightnessGestureZone: View {
             Color.clear
                 .contentShape(Rectangle())
                 .frame(width: ReaderLayoutConstants.brightnessZoneWidth)
+                .allowsHitTesting(true)
                 .gesture(
                     DragGesture()
                         .onChanged { value in
@@ -159,5 +160,6 @@ struct EdgeBrightnessGestureZone: View {
                 )
             Spacer()
         }
+        .allowsHitTesting(false)
     }
 }

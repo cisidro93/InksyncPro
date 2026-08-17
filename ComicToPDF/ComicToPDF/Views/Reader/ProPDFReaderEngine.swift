@@ -208,6 +208,7 @@ struct ProPDFReaderEngine: View {
                     .padding(.top, 8)
                 Spacer()
             }
+            .allowsHitTesting(false)
             .ignoresSafeArea(edges: .bottom)
 
             // Zoom Scale Percentage Pill HUD
@@ -228,6 +229,7 @@ struct ProPDFReaderEngine: View {
                     .padding(.top, chromeVisible ? 70 : 50)
                     Spacer()
                 }
+                .allowsHitTesting(false)
                 .transition(.opacity.combined(with: .scale(scale: 0.9)))
                 .zIndex(10)
             }
