@@ -307,7 +307,7 @@ extension EBookPageCurlReader {
             switch pvc.spineLocation {
             case .mid:
                 reqCount = 2
-            case .min:
+            case .min, .max:
                 reqCount = 1
             case .none:
                 reqCount = isDualPageMode ? 2 : 1
@@ -881,7 +881,6 @@ extension EBookPageCurlReader {
 
         func buildFullCSS() -> String {
             let prefs = parent.prefs
-            let colorScheme = parent.colorScheme
             let size = UIScreen.main.bounds.size
             let cssContent = computeCSS(prefs: prefs, size: size)
             let pageScript = buildPageScript(initialPage: parent.initialPage)

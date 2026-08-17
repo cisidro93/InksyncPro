@@ -74,6 +74,7 @@ class EBookPreferences: ObservableObject {
     @AppStorage("ebook_showClockHeader") var showClockHeader: Bool = true
     @AppStorage("ebook_showBatteryPercentage") var showBatteryPercentage: Bool = true
     @AppStorage("ebook_fullBleedSpreads") var fullBleedSpreads: Bool = true
+    @AppStorage("ebook_linkCoverAsSpread") var linkCoverAsSpread: Bool = false
 
     // MARK: - PDF Settings
     @AppStorage("pdf_reflowMode")       var pdfReflowMode: Bool     = false {
