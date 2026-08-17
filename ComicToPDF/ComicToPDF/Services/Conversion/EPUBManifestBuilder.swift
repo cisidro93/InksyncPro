@@ -15,7 +15,7 @@ public struct EPUBManifestBuilder {
 
     public static let cssContent = """
     @page { margin: 0; padding: 0; }
-    html, body { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #000000; }
+    html, body { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #FFFFFF; }
     .chunk-container { width: 100%; height: 100%; margin: 0; padding: 0; text-align: center; }
     .page { width: 100%; height: 100%; margin: 0; padding: 0; }
     .page-image { display: block; margin: 0 auto; }
@@ -34,7 +34,7 @@ public struct EPUBManifestBuilder {
             <meta name="viewport" content="width=1980, height=2640"/>
             <title>Cover</title>
             <style type="text/css">
-            html, body { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #000000; }
+            html, body { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #FFFFFF; }
             img { display: block; width: 100%; height: 100%; }
             </style>
         </head>
@@ -126,7 +126,7 @@ public struct EPUBManifestBuilder {
                 <meta name="book-type" content="comic"/>
                 <meta name="zero-gutter" content="true"/>
                 <meta name="zero-margin" content="true"/>
-                <meta name="ke-border-color" content="#000000"/>
+                <meta name="ke-border-color" content="#FFFFFF"/>
                 <meta name="ke-border-width" content="0"/>
                 <meta name="orientation-lock" content="none"/>\(coverMetaTag)
             </metadata>
@@ -162,7 +162,7 @@ public struct EPUBManifestBuilder {
             <title>\(title)</title>
             <style type="text/css">
                 @page { margin: 0; padding: 0; }
-                html, body { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #000000; }
+                html, body { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #FFFFFF; }
                 .chunk-container { width: 100%; height: 100%; margin: 0; padding: 0; text-align: center; }
                 .page { width: 100%; height: 100%; margin: 0; padding: 0; }
                 .page-image { display: block; width: 100%; height: 100%; }
@@ -198,7 +198,7 @@ public struct EPUBManifestBuilder {
             <title>\(title)</title>
             <style type="text/css">
                 @page { margin: 0; padding: 0; }
-                html, body { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #000000; overflow: hidden; }
+                html, body { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #FFFFFF; overflow: hidden; }
                 svg { display: block; width: 100%; height: 100%; }
             </style>
         </head>

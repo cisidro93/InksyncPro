@@ -212,22 +212,46 @@ class PageBufferManager: ObservableObject {
         let total = pageURLs.count
         guard total > 0 else { return [] }
         var spreads: [ReaderSpread] = []
+        let linkCover = EBookPreferences.shared.linkCoverAsSpread
         
-        // Page 0 is cover
-        spreads.append(.single(pageIndex: 0, isLandscape: false))
-        
-        var i = 1
-        while i < total {
-            if i + 1 < total {
-                if isMangaMode {
-                    spreads.append(.dual(leftIndex: i + 1, rightIndex: i))
+        if linkCover {
+            var i = 0
+            while i < total {
+                if i + 1 < total {
+                    if isMangaMode {
+                        spreads.append(.dual(leftIndex: i + 1, rightIndex: i))
+                    } else {
+                        spreads.append(.dual(leftIndex: i, rightIndex: i + 1))
+                    }
+                    i += 2
                 } else {
-                    spreads.append(.dual(leftIndex: i, rightIndex: i + 1))
+                    spreads.append(.single(pageIndex: i, isLandscape: false))
+                    i += 1
                 }
-                i += 2
-            } else {
-                spreads.append(.single(pageIndex: i, isLandscape: false))
-                i += 1
+            }
+        } else {
+            // Page 0: Standalone Cover
+            spreads.append(.single(pageIndex: 0, isLandscape: false))
+            
+            // Page 1: Standalone Page 1 (Right page in Western, Left in Manga)
+            if total > 1 {
+                spreads.append(.single(pageIndex: 1, isLandscape: false))
+            }
+            
+            // Natural (2+3, 4+5) spread sequence
+            var i = 2
+            while i < total {
+                if i + 1 < total {
+                    if isMangaMode {
+                        spreads.append(.dual(leftIndex: i + 1, rightIndex: i))
+                    } else {
+                        spreads.append(.dual(leftIndex: i, rightIndex: i + 1))
+                    }
+                    i += 2
+                } else {
+                    spreads.append(.single(pageIndex: i, isLandscape: false))
+                    i += 1
+                }
             }
         }
         return spreads
@@ -258,18 +282,16 @@ class PageBufferManager: ObservableObject {
         }
         
         var spreads: [ReaderSpread] = []
-        if total > 0 {
-            spreads.append(.single(pageIndex: 0, isLandscape: isLandscapeArray[0]))
-        }
+        let linkCover = EBookPreferences.shared.linkCoverAsSpread
         
-        var i = 1
-        while i < total {
-            let isL = isLandscapeArray[i]
-            if isL {
-                spreads.append(.single(pageIndex: i, isLandscape: true))
-                i += 1
-            } else {
-                if i + 1 < total {
+        if linkCover {
+            var i = 0
+            while i < total {
+                let isL = isLandscapeArray[i]
+                if isL {
+                    spreads.append(.single(pageIndex: i, isLandscape: true))
+                    i += 1
+                } else if i + 1 < total {
                     let nextIsL = isLandscapeArray[i + 1]
                     if nextIsL {
                         spreads.append(.single(pageIndex: i, isLandscape: false))
@@ -285,6 +307,43 @@ class PageBufferManager: ObservableObject {
                 } else {
                     spreads.append(.single(pageIndex: i, isLandscape: false))
                     i += 1
+                }
+            }
+        } else {
+            // Page 0: Standalone Cover
+            if total > 0 {
+                spreads.append(.single(pageIndex: 0, isLandscape: isLandscapeArray[0]))
+            }
+            
+            // Page 1: Standalone Page 1 if not landscape
+            if total > 1 {
+                spreads.append(.single(pageIndex: 1, isLandscape: isLandscapeArray[1]))
+            }
+            
+            var i = 2
+            while i < total {
+                let isL = isLandscapeArray[i]
+                if isL {
+                    spreads.append(.single(pageIndex: i, isLandscape: true))
+                    i += 1
+                } else {
+                    if i + 1 < total {
+                        let nextIsL = isLandscapeArray[i + 1]
+                        if nextIsL {
+                            spreads.append(.single(pageIndex: i, isLandscape: false))
+                            i += 1
+                        } else {
+                            if isMangaMode {
+                                spreads.append(.dual(leftIndex: i + 1, rightIndex: i))
+                            } else {
+                                spreads.append(.dual(leftIndex: i, rightIndex: i + 1))
+                            }
+                            i += 2
+                        }
+                    } else {
+                        spreads.append(.single(pageIndex: i, isLandscape: false))
+                        i += 1
+                    }
                 }
             }
         }

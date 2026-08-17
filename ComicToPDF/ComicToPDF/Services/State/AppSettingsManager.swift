@@ -104,11 +104,10 @@ class AppSettingsManager: ObservableObject {
             save()
         }
         
-        // V5 migration: Default splitSpreads to false to preserve intact master landscape pages
-        // and leverage native full-bleed SVG viewBox / page-spread-center layout for Kindle and Reader.
-        if !UserDefaults.standard.bool(forKey: "didMigrateUnsplitLandscapeV5") {
-            self.conversionSettings.splitSpreads = false
-            UserDefaults.standard.set(true, forKey: "didMigrateUnsplitLandscapeV5")
+        // V6 migration: Default splitSpreads to true for full-bleed display on Kindle & Readers
+        if !UserDefaults.standard.bool(forKey: "didMigrateSplitSpreadsV6") {
+            self.conversionSettings.splitSpreads = true
+            UserDefaults.standard.set(true, forKey: "didMigrateSplitSpreadsV6")
             save()
         }
         
