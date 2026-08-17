@@ -717,15 +717,26 @@ extension EBookPageCurlReader {
                         var el = document.getElementById('\(fragment)') || document.getElementsByName('\(fragment)')[0];
                         if (el) {
                             var tag = el.tagName.toLowerCase();
-                            var isFN = el.classList.contains('footnote') || el.getAttribute('epub:type') === 'noteref' || el.getAttribute('rel') === 'footnote' || el.id.toLowerCase().indexOf('fn') === 0;
+                            var isFN = el.classList.contains('footnote') || el.getAttribute('epub:type') === 'noteref' || el.getAttribute('epub:type') === 'footnote' || el.getAttribute('rel') === 'footnote' || el.id.toLowerCase().indexOf('fn') === 0 || el.id.toLowerCase().indexOf('note') === 0;
                             if (isFN) {
                                 var text = el.innerText || el.textContent;
-                                if (text && text.trim().length > 0 && text.trim().length < 1000) {
+                                if (text && text.trim().length > 0 && text.trim().length < 1200) {
                                     window.webkit.messageHandlers.footnote.postMessage({ "id": '\(fragment)', "text": text.trim() });
                                     return;
                                 }
                             }
-                            el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                            // Calculate column page of anchor element
+                            var rect = el.getBoundingClientRect();
+                            var vp = document.getElementById('inksync-viewport') || document.body;
+                            var vpRect = vp ? vp.getBoundingClientRect() : { left: 0 };
+                            var offsetLeft = (rect.left - vpRect.left);
+                            var pageStep = getPageStep();
+                            var colWidth = _isMultiCol ? (pageStep / 2) : pageStep;
+                            if (colWidth > 0) {
+                                var targetPage = Math.max(0, Math.min(Math.floor(offsetLeft / colWidth), _totalPages - 1));
+                                goToPage(targetPage);
+                                window.webkit.messageHandlers.metrics.postMessage({ current: _targetPage, total: _totalPages });
+                            }
                         }
                     })();
                     """
@@ -787,13 +798,13 @@ extension EBookPageCurlReader {
 
             mountPrimaryWebViewOnRoot()
 
-            
             // Pre-render column snapshots for current chapter
             generateAllColumnSnapshots()
         }
 
         func updateLiveStyles() {
             guard let wv = primaryWebView else { return }
+            let frac = computedTotalPages > 1 ? Double(currentPageIndex) / Double(computedTotalPages - 1) : 0.0
             let size = UIScreen.main.bounds.size
             let newCSS = computeCSS(prefs: parent.prefs, size: size)
             let safeCSS = newCSS
@@ -802,10 +813,14 @@ extension EBookPageCurlReader {
                 .replacingOccurrences(of: "\n", with: " ")
             let js = """
             (function() {
+                var currentFrac = \(frac);
                 var el = document.getElementById('__inksync_live__');
                 if (el) { el.innerHTML = `\(safeCSS)`; }
                 if (window.computeMetrics) {
                     var newTotal = computeMetrics();
+                    if (newTotal > 1 && currentFrac > 0.0) {
+                        _targetPage = Math.max(0, Math.min(Math.round(currentFrac * (newTotal - 1)), newTotal - 1));
+                    }
                     applyPagePosition();
                     window.webkit.messageHandlers.metrics.postMessage({ current: _targetPage, total: newTotal });
                 }

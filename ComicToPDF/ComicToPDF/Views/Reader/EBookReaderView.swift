@@ -266,17 +266,31 @@ struct EBookReaderView: View {
         )) { item in
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("Footnote")
-                        .font(.headline)
-                        .foregroundColor(.gray)
+                    HStack {
+                        Label("Footnote", systemImage: "text.quote")
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button(action: {
+                            HapticEngine.light()
+                            activeFootnoteText = nil
+                        }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 18))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                     Text(item.text)
-                        .font(.body)
-                        .foregroundColor(.primary)
+                        .font(.system(size: 16, weight: .regular))
+                        .foregroundStyle(prefs.activeTheme.foreground(colorScheme: colorScheme))
+                        .lineSpacing(4)
                 }
-                .padding()
+                .padding(20)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color(hex: prefs.activeTheme.cssBackground))
+            .frame(maxWidth: 480)
+            .background(prefs.activeTheme.background(colorScheme: colorScheme))
+            .presentationDetents([.fraction(0.35), .medium])
+            .presentationCompactAdaptation(.popover)
         }
 
         .task { await loadBook() }
