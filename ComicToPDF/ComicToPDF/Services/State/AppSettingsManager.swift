@@ -95,11 +95,12 @@ class AppSettingsManager: ObservableObject {
         
         self.conversionSettings = config.settings
         
-        // One-time migration: Ensure linkCoverAsSpread and splitSpreads are enabled by default for all users
-        if !UserDefaults.standard.bool(forKey: "didMigrateLinkCoverAsSpreadV2") {
-            self.conversionSettings.linkCoverAsSpread = true
+        // One-time migration: Ensure splitSpreads is enabled and linkCoverAsSpread is false
+        // so that Cover stands alone and double-page story spreads pair naturally (1+2, 3+4).
+        if !UserDefaults.standard.bool(forKey: "didMigrateLinkCoverAsSpreadV3") {
+            self.conversionSettings.linkCoverAsSpread = false
             self.conversionSettings.splitSpreads = true
-            UserDefaults.standard.set(true, forKey: "didMigrateLinkCoverAsSpreadV2")
+            UserDefaults.standard.set(true, forKey: "didMigrateLinkCoverAsSpreadV3")
             save()
         }
         
