@@ -9,9 +9,29 @@ class TaskEngine: ObservableObject {
     @Published var isConverting = false
     @Published var conversionProgress: Double = 0.0
     @Published var processingStatus = ""
-    @Published var statusMessage: String?
     @Published var appAlert: AppAlert?
     @Published var activeTasks: [AppBackgroundTask] = []
+    
+    private var autoDismissTask: Task<Void, Never>? = nil
+
+    @Published var statusMessage: String? {
+        didSet {
+            autoDismissTask?.cancel()
+            if let msg = statusMessage, !msg.isEmpty {
+                if msg.contains("Complete") || msg.contains("Ready") || msg.starts(with: "✅") {
+                    autoDismissTask = Task {
+                        try? await Task.sleep(nanoseconds: 3_500_000_000) // 3.5 seconds
+                        guard !Task.isCancelled else { return }
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            self.statusMessage = nil
+                            self.processingStatus = ""
+                            self.conversionProgress = 0.0
+                        }
+                    }
+                }
+            }
+        }
+    }
     
     func updateTaskProgress(id: UUID, progress: Double) {
         if let idx = activeTasks.firstIndex(where: { $0.id == id }) {

@@ -478,7 +478,18 @@ struct CBZToEPUBConverter: Sendable {
             
             spineItems.append("<itemref idref=\"page_\(chunkIndex)\"\(spreadTag)/>")
             
-            globalPageCounter += 1
+            if isLandscapeImage {
+                // A full-bleed landscape spread spans both columns on Kindle.
+                // Synchronize globalPageCounter so the next portrait page begins on the
+                // natural leading side (page-spread-left in LTR, page-spread-right in RTL).
+                if settings.linkCoverAsSpread {
+                    globalPageCounter += (globalPageCounter % 2 == 0) ? 1 : 2
+                } else {
+                    globalPageCounter += (globalPageCounter % 2 != 0) ? 1 : 2
+                }
+            } else {
+                globalPageCounter += 1
+            }
             currentChunkImages.removeAll()
         }
         

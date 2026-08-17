@@ -19,7 +19,7 @@ struct PageCurlReader: UIViewControllerRepresentable {
         if idx >= 0 && idx < landscapeArray.count && landscapeArray[idx] {
             return true
         }
-        if let size = cache.peekImageSize(at: idx), size.width > size.height * 1.01 {
+        if let size = cache.peekImageSize(at: idx), size.width > size.height * 1.1 {
             return true
         }
         return false
@@ -614,7 +614,7 @@ struct SmartMidSpineCurlReader: UIViewControllerRepresentable {
         while i < pageCount {
             let isL: Bool = {
                 if i >= 0 && i < landscapeArray.count && landscapeArray[i] { return true }
-                if let size = cache.peekImageSize(at: i), size.width > size.height * 1.01 { return true }
+                if let size = cache.peekImageSize(at: i), size.width > size.height * 1.1 { return true }
                 return false
             }()
             if isL {
@@ -624,7 +624,7 @@ struct SmartMidSpineCurlReader: UIViewControllerRepresentable {
                 if i + 1 < pageCount {
                     let nextIsL: Bool = {
                         if (i + 1) >= 0 && (i + 1) < landscapeArray.count && landscapeArray[i + 1] { return true }
-                        if let size = cache.peekImageSize(at: i + 1), size.width > size.height * 1.01 { return true }
+                        if let size = cache.peekImageSize(at: i + 1), size.width > size.height * 1.1 { return true }
                         return false
                     }()
                     if nextIsL {
@@ -760,7 +760,7 @@ extension SmartMidSpineCurlReader {
                 let singleIdx = targetSpread[0]
                 let isL: Bool = {
                     if singleIdx >= 0 && singleIdx < parent.cache.isLandscapeArray.count && parent.cache.isLandscapeArray[singleIdx] { return true }
-                    if let size = parent.cache.peekImageSize(at: singleIdx), size.width > size.height * 1.01 { return true }
+                    if let size = parent.cache.peekImageSize(at: singleIdx), size.width > size.height * 1.1 { return true }
                     return false
                 }()
                 if isL {
@@ -797,7 +797,7 @@ extension SmartMidSpineCurlReader {
             
             let isL: Bool = {
                 if targetPage >= 0 && targetPage < parent.cache.isLandscapeArray.count && parent.cache.isLandscapeArray[targetPage] { return true }
-                if let size = parent.cache.peekImageSize(at: targetPage), size.width > size.height * 1.01 { return true }
+                if let size = parent.cache.peekImageSize(at: targetPage), size.width > size.height * 1.1 { return true }
                 return false
             }()
             let cropHalf: CropHalf = isL ? (parent.isMangaRTL ? .left : .right) : .none
@@ -818,7 +818,7 @@ extension SmartMidSpineCurlReader {
             
             let isL: Bool = {
                 if targetPage >= 0 && targetPage < parent.cache.isLandscapeArray.count && parent.cache.isLandscapeArray[targetPage] { return true }
-                if let size = parent.cache.peekImageSize(at: targetPage), size.width > size.height * 1.01 { return true }
+                if let size = parent.cache.peekImageSize(at: targetPage), size.width > size.height * 1.1 { return true }
                 return false
             }()
             let cropHalf: CropHalf = isL ? (parent.isMangaRTL ? .right : .left) : .none

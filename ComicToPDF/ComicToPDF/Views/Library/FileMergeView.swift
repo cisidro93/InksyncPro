@@ -84,7 +84,22 @@ struct FileMergeView: View {
                 Section(header: Text("Output Options")) {
                     TextField("Collection Name (e.g., My Omnibus)", text: $viewModel.outputName)
                     Toggle("Manga Mode (Right-to-Left)", isOn: $viewModel.mangaMode)
-                    Toggle("Link Cover Page as Spread", isOn: $settingsManager.conversionSettings.linkCoverAsSpread)
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        Toggle("Pair Front Cover with Page 1", isOn: $settingsManager.conversionSettings.linkCoverAsSpread)
+                        Text("Keep OFF for standalone front cover (recommended)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.vertical, 2)
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        Toggle("Slice Landscape Spreads into 2 Pages", isOn: $settingsManager.conversionSettings.splitSpreads)
+                        Text("Keep OFF for native full-bleed landscape on Kindle & Reader")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.vertical, 2)
                     
                     Picker("Target Device", selection: $settingsManager.conversionSettings.targetDeviceProfile) {
                         ForEach(TargetDeviceProfile.allCases) { device in

@@ -44,6 +44,7 @@ struct ModernLibraryView: View {
     @Environment(\.verticalSizeClass) private var vSizeClass
     @State private var isSearchActive: Bool = false
     @State private var showingMoreActionsDialog: Bool = false
+    @State private var showingBatchDeleteConfirmation: Bool = false
     @State private var highlightedItemID: String? = nil
     @FocusState private var isLibraryFocused: Bool
 
@@ -307,12 +308,27 @@ struct ModernLibraryView: View {
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InkTabBar_DeleteAction"))) { _ in
-                if isBatchMode {
-                    let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
-                    for item in items { conversionManager.deletePDF(item) }
-                    isBatchMode = false
-                    multiSelection.removeAll()
+                if isBatchMode && !multiSelection.isEmpty {
+                    showingBatchDeleteConfirmation = true
                 }
+            }
+            .confirmationDialog(
+                "Delete \(multiSelection.count) Selected Item\(multiSelection.count > 1 ? "s" : "")?",
+                isPresented: $showingBatchDeleteConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Delete Selected Items", role: .destructive) {
+                    let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
+                    conversionManager.deletePDFs(items)
+                    withAnimation {
+                        isBatchMode = false
+                        multiSelection.removeAll()
+                    }
+                    HapticEngine.success()
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("The selected files and their cached data will be permanently removed.")
             }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InkTabBar_MergeAction"))) { _ in
                 if isBatchMode {

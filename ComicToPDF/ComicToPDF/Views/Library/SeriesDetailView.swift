@@ -32,6 +32,7 @@ struct SeriesDetailView: View {
     @State private var metadataSessionID = UUID()
     @State private var showBatchMetadataEditor: Bool = false
     @State private var showingBatchSeriesAssignment: Bool = false
+    @State private var showingBatchDeleteConfirmation: Bool = false
     
     // Drag-to-select Gestures & Coordinate Tracking
     @State private var cellFrames: [UUID: CGRect] = [:]
@@ -1220,9 +1221,28 @@ struct SeriesDetailView: View {
                 mergeConfigSuggestedName = "\(series.title) Omnibus"
                 showingMergeConfig = true
             }
-            .onReceive(NotificationCenter.default.publisher(for: .inkTabGoToLibraryRoot)) { _ in
-                pdfToRead = nil
-                dismiss()
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InkTabBar_DeleteAction"))) { _ in
+                if isSelectionMode && !selection.isEmpty {
+                    showingBatchDeleteConfirmation = true
+                }
+            }
+            .confirmationDialog(
+                "Delete \(selection.count) Selected Item\(selection.count > 1 ? "s" : "")?",
+                isPresented: $showingBatchDeleteConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Delete Selected Items", role: .destructive) {
+                    let items = freshIssues.filter { selection.contains($0.id) }
+                    conversionManager.deletePDFs(items)
+                    withAnimation {
+                        isSelectionMode = false
+                        selection.removeAll()
+                    }
+                    HapticEngine.success()
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("The selected files and their cached data will be permanently removed.")
             }
         
         let viewWithSheets = applySheets(view)
@@ -1234,7 +1254,24 @@ struct SeriesDetailView: View {
 
     @ViewBuilder
     private var bottomActionBar: some View {
-        EmptyView()
+        if isSelectionMode && !selection.isEmpty {
+            LibraryBatchEditBar(
+                selectedPDFs: freshIssues.filter { selection.contains($0.id) },
+                onClearSelection: {
+                    withAnimation {
+                        selection.removeAll()
+                        isSelectionMode = false
+                    }
+                },
+                onActionCompleted: {
+                    withAnimation {
+                        selection.removeAll()
+                        isSelectionMode = false
+                    }
+                }
+            )
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
     }
 
     @ViewBuilder

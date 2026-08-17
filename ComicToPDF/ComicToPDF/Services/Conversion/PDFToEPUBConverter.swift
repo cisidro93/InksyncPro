@@ -430,7 +430,13 @@ final class PDFToEPUBConverter: Sendable {
                     spreadTag = (pageNum % 2 == 1) ? " properties=\"page-spread-left\"" : " properties=\"page-spread-right\""
                 }
             } else {
-                spreadTag = ""
+                if pageNum == 1 && coverSpine.isEmpty {
+                    spreadTag = "" // Cover stands alone centered
+                } else if mangaMode {
+                    spreadTag = (pageNum % 2 == 1) ? " properties=\"page-spread-left\"" : " properties=\"page-spread-right\""
+                } else {
+                    spreadTag = (pageNum % 2 == 1) ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
+                }
             }
             spineItems += "<itemref idref=\"chunk\(pageNum)\"\(spreadTag)/>\n        "
         }

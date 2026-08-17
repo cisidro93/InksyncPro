@@ -170,7 +170,15 @@ struct EPUBMerger: Sendable {
                     spineItems.append("<itemref idref=\"page_\(globalPageIndex)\"\(spreadTag)/>")
                     
                     globalPageIndex += 1
-                    if !isLandscape { globalPageCounter += 1 }
+                    if isLandscape {
+                        if settings.linkCoverAsSpread {
+                            globalPageCounter += (globalPageCounter % 2 == 0) ? 1 : 2
+                        } else {
+                            globalPageCounter += (globalPageCounter % 2 != 0) ? 1 : 2
+                        }
+                    } else {
+                        globalPageCounter += 1
+                    }
                 }
             }
         }
@@ -501,7 +509,15 @@ struct EPUBMerger: Sendable {
                     spineItems.append("<itemref idref=\"page_\(globalPageIndex)\"\(spreadTag)/>")
                     
                     globalPageIndex += 1
-                    if !isLandscape { globalPageCounter += 1 }
+                    if isLandscape {
+                        if settings.linkCoverAsSpread {
+                            globalPageCounter += (globalPageCounter % 2 == 0) ? 1 : 2
+                        } else {
+                            globalPageCounter += (globalPageCounter % 2 != 0) ? 1 : 2
+                        }
+                    } else {
+                        globalPageCounter += 1
+                    }
                 }
             }
             

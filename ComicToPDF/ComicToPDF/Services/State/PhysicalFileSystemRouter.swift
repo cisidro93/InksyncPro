@@ -231,53 +231,63 @@ class PhysicalFileSystemRouter {
     }
     
     func deletePDF(_ pdf: ConvertedPDF, manager: ConversionManager) {
-        // 1. Remove from UI state instantly for perceived zero-latency
-        if let idx = manager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
-            manager.convertedPDFs.remove(at: idx)
-            manager.pruneEmptyCollections()
-            manager.saveLibrary()
-        }
+        deletePDFs([pdf], manager: manager)
+    }
+
+    func deletePDFs(_ pdfs: [ConvertedPDF], manager: ConversionManager) {
+        guard !pdfs.isEmpty else { return }
+        let idsToDelete = Set(pdfs.map { $0.id })
         
-        // 1.5. Preserve source metadata on SQLite annotations so highlights don't become 'Unknown Source'
+        // 1. Remove from UI state atomically in a single pass for zero-latency UI update
+        manager.convertedPDFs.removeAll { idsToDelete.contains($0.id) }
+        manager.pruneEmptyCollections()
+        manager.saveLibrary()
+        
+        // 1.5. Batch preserve source metadata on SQLite annotations so highlights don't become 'Unknown Source'
         let context = InksyncProApp.sharedModelContainer.mainContext
-        let pdfID = pdf.id
-        let pdfName = pdf.name
-        let author = pdf.metadata.author
-        
-        let descriptor = FetchDescriptor<SDAnnotation>(
-            predicate: #Predicate<SDAnnotation> { $0.pdfID == pdfID }
+        let metadataMap: [UUID: (name: String, author: String?)] = Dictionary(
+            uniqueKeysWithValues: pdfs.map { ($0.id, ($0.name, $0.metadata.author)) }
         )
-        if let annotations = try? context.fetch(descriptor) {
-            for ann in annotations {
-                if ann.readwiseBookTitle == nil || ann.readwiseBookTitle?.isEmpty == true {
-                    ann.readwiseBookTitle = pdfName
-                }
-                if ann.readwiseAuthor == nil || ann.readwiseAuthor?.isEmpty == true {
-                    ann.readwiseAuthor = author
+        
+        let descriptor = FetchDescriptor<SDAnnotation>()
+        if let allAnnotations = try? context.fetch(descriptor) {
+            var modified = false
+            for ann in allAnnotations {
+                if let meta = metadataMap[ann.pdfID] {
+                    if ann.readwiseBookTitle == nil || ann.readwiseBookTitle?.isEmpty == true {
+                        ann.readwiseBookTitle = meta.name
+                        modified = true
+                    }
+                    if ann.readwiseAuthor == nil || ann.readwiseAuthor?.isEmpty == true {
+                        ann.readwiseAuthor = meta.author
+                        modified = true
+                    }
                 }
             }
-            try? context.save()
-            Logger.shared.log("Preserved source metadata for \(annotations.count) highlights on book deletion: \(pdfName)", category: "Annotations", type: .info)
-            DatabaseBackupService.shared.scheduleCompaction()
+            if modified {
+                try? context.save()
+                DatabaseBackupService.shared.scheduleCompaction()
+            }
         }
         
-        // 2. Offload the heavy file destruction to a background task
-        let urlTarget = pdf.url
-        let coverTarget = getCoverURL(for: pdf)
-        let docName = pdf.name
+        // 2. Offload heavy file destruction of all targets & covers to background thread
+        let targets: [(fileURL: URL, coverURL: URL?, name: String)] = pdfs.map { pdf in
+            (fileURL: pdf.url, coverURL: getCoverURL(for: pdf), name: pdf.name)
+        }
         
         Task.detached(priority: .background) {
-            do {
-                if FileManager.default.fileExists(atPath: urlTarget.path) {
-                    try FileManager.default.removeItem(at: urlTarget)
+            let fm = FileManager.default
+            var deletedCount = 0
+            for item in targets {
+                if fm.fileExists(atPath: item.fileURL.path) {
+                    try? fm.removeItem(at: item.fileURL)
+                    deletedCount += 1
                 }
-                if let coverTarget = coverTarget, FileManager.default.fileExists(atPath: coverTarget.path) {
-                    try? FileManager.default.removeItem(at: coverTarget)
+                if let coverURL = item.coverURL, fm.fileExists(atPath: coverURL.path) {
+                    try? fm.removeItem(at: coverURL)
                 }
-                Logger.shared.log("Deleted File and Cover in background: \(docName)", category: "Library")
-            } catch {
-                Logger.shared.log("Failed to delete file in background: \(error)", category: "Library", type: .error)
             }
+            Logger.shared.log("Batch deleted \(deletedCount) files & covers in background", category: "Library", type: .info)
         }
     }
     

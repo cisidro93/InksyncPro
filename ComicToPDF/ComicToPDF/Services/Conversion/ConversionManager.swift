@@ -370,8 +370,14 @@ class ConversionManager: ObservableObject {
     }
     
     func deletePDF(_ pdf: ConvertedPDF) {
-        SpotlightIndexer.shared.deindexBook(pdf.id)
-        PhysicalFileSystemRouter.shared.deletePDF(pdf, manager: self)
+        deletePDFs([pdf])
+    }
+
+    func deletePDFs(_ pdfs: [ConvertedPDF]) {
+        for pdf in pdfs {
+            SpotlightIndexer.shared.deindexBook(pdf.id)
+        }
+        PhysicalFileSystemRouter.shared.deletePDFs(pdfs, manager: self)
     }
     
     func removeFromLibrary(_ pdf: ConvertedPDF) { deletePDF(pdf) }

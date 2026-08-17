@@ -359,6 +359,12 @@ struct InkTabBar: View {
             .disabled(count == 0)
             
         case .seriesSelection(let count):
+            // Delete
+            actionButton(title: "Delete", systemImage: "trash", color: count == 0 ? .gray : .red) {
+                NotificationCenter.default.post(name: NSNotification.Name("InkTabBar_DeleteAction"), object: nil)
+            }
+            .disabled(count == 0)
+            
             // Intelligent Metadata
             actionButton(title: "Metadata", systemImage: "sparkles", color: count == 0 ? .gray : .blue) {
                 NotificationCenter.default.post(name: NSNotification.Name("InkTabBar_MetadataAction"), object: nil)

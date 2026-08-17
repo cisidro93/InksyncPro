@@ -47,7 +47,21 @@ struct BatchMergeReorderView: View {
                             
                             Toggle("E-Ink High Contrast Filter", isOn: $settingsManager.conversionSettings.optimizeForDevice)
                             
-                            Toggle("Link Cover Page as Spread", isOn: $settingsManager.conversionSettings.linkCoverAsSpread)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Toggle("Pair Front Cover with Page 1", isOn: $settingsManager.conversionSettings.linkCoverAsSpread)
+                                Text("Keep OFF for standalone front cover (recommended)")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            .padding(.vertical, 2)
+                            
+                            VStack(alignment: .leading, spacing: 2) {
+                                Toggle("Slice Landscape Spreads into 2 Pages", isOn: $settingsManager.conversionSettings.splitSpreads)
+                                Text("Keep OFF for native full-bleed landscape on Kindle & Reader")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            .padding(.vertical, 2)
                             
                             Picker("Image Quality", selection: $settingsManager.conversionSettings.compressionQuality) {
                                 ForEach(CompressionPreset.allCases) { preset in

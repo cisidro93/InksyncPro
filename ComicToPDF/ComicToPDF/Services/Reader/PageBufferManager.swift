@@ -301,7 +301,7 @@ class PageBufferManager: ObservableObject {
                 let hVal = properties[kCGImagePropertyPixelHeight] as? NSNumber
                 let width = CGFloat(wVal?.doubleValue ?? 0)
                 let height = CGFloat(hVal?.doubleValue ?? 0)
-                return width > height * 1.2
+                return width > height * 1.1
             } catch {
                 return false
             }
@@ -312,7 +312,7 @@ class PageBufferManager: ObservableObject {
             let hVal = properties[kCGImagePropertyPixelHeight] as? NSNumber
             let width = CGFloat(wVal?.doubleValue ?? 0)
             let height = CGFloat(hVal?.doubleValue ?? 0)
-            return width > height * 1.2
+            return width > height * 1.1
         }
     }
 
@@ -562,7 +562,7 @@ class PageBufferManager: ObservableObject {
 
             let pageBounds: CGSize? = {
                 if let b = bounds, b.width > 0, b.height > 0 {
-                    return CGSize(width: b.width / 2.0, height: b.height)
+                    return curPair.isLandscape ? b : CGSize(width: b.width / 2.0, height: b.height)
                 }
                 return nil
             }()

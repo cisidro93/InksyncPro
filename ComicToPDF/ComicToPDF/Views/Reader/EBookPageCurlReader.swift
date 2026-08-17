@@ -339,8 +339,21 @@ extension EBookPageCurlReader {
 
         func spreadViewControllers(for pageIndex: Int) -> [UIViewController] {
             if isDualPageMode {
-                let leftIndex = pageIndex % 2 == 0 ? pageIndex : pageIndex - 1
-                let rightIndex = leftIndex + 1
+                let leftIndex: Int
+                let rightIndex: Int
+                if parent.prefs.linkCoverAsSpread {
+                    leftIndex = pageIndex % 2 == 0 ? pageIndex : pageIndex - 1
+                    rightIndex = leftIndex + 1
+                } else {
+                    if pageIndex == 0 {
+                        leftIndex = 0
+                        rightIndex = 1
+                    } else {
+                        let offset = pageIndex - 1
+                        leftIndex = 1 + (offset / 2) * 2
+                        rightIndex = leftIndex + 1
+                    }
+                }
                 let leftVC = makePageViewController(for: leftIndex)
                 let rightVC = makePageViewController(for: min(rightIndex, max(0, computedTotalPages - 1)))
                 return [leftVC, rightVC]

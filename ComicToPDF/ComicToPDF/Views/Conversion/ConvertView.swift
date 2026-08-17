@@ -232,15 +232,31 @@ struct ConvertView: View {
                     Divider().overlay(Color.inkBorderSubtle)
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Link Cover Page as Spread")
+                            Text("Pair Front Cover with Page 1")
                                 .font(.system(size: 14, weight: .medium))
                                 .foregroundColor(.inkTextPrimary)
-                            Text("Pairs Cover Page with Page 2 as a spread")
+                            Text("Keep OFF for standalone front cover (recommended)")
                                 .font(.system(size: 12))
                                 .foregroundColor(.inkTextSecondary)
                         }
                         Spacer()
                         Toggle("", isOn: $settingsManager.conversionSettings.linkCoverAsSpread)
+                            .labelsHidden()
+                            .tint(.inkBlue)
+                            .disabled(conversionManager.isConverting)
+                    }
+                    Divider().overlay(Color.inkBorderSubtle)
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Slice Landscape Spreads into 2 Pages")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundColor(.inkTextPrimary)
+                            Text("Keep OFF for native full-bleed landscape on Kindle & Reader")
+                                .font(.system(size: 12))
+                                .foregroundColor(.inkTextSecondary)
+                        }
+                        Spacer()
+                        Toggle("", isOn: $settingsManager.conversionSettings.splitSpreads)
                             .labelsHidden()
                             .tint(.inkBlue)
                             .disabled(conversionManager.isConverting)

@@ -453,9 +453,32 @@ struct SettingsView: View {
                     .pickerStyle(.menu)
                 }
 
-                HStack {
+                HStack(alignment: .center, spacing: 12) {
                     settingsIcon("book.double.fill", color: .purple)
-                    Toggle("Link Cover Page as Spread", isOn: $settingsManager.conversionSettings.linkCoverAsSpread)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Pair Front Cover with Page 1")
+                            .font(.system(size: 15))
+                        Text("Keep OFF for standalone front cover (recommended)")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    Toggle("", isOn: $settingsManager.conversionSettings.linkCoverAsSpread)
+                        .labelsHidden()
+                }
+                
+                HStack(alignment: .center, spacing: 12) {
+                    settingsIcon("rectangle.split.2x1", color: .blue)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Slice Landscape Spreads into 2 Pages")
+                            .font(.system(size: 15))
+                        Text("Keep OFF for native full-bleed landscape on Kindle & Reader")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    Toggle("", isOn: $settingsManager.conversionSettings.splitSpreads)
+                        .labelsHidden()
                 }
             }
             

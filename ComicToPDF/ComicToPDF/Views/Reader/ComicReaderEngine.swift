@@ -420,7 +420,7 @@ final class ComicImageCache: ObservableObject {
                     for i in 0..<min(total, doc.pageCount) {
                         if let page = doc.page(at: i) {
                             let bounds = page.bounds(for: .mediaBox)
-                            array[i] = bounds.width > bounds.height * 1.01
+                            array[i] = bounds.width > bounds.height * 1.1
                         }
                     }
                 }
@@ -435,7 +435,7 @@ final class ComicImageCache: ObservableObject {
                                 let hVal = properties[kCGImagePropertyPixelHeight] as? NSNumber
                                 let w = CGFloat(wVal?.doubleValue ?? 0)
                                 let h = CGFloat(hVal?.doubleValue ?? 0)
-                                return (i, w > h * 1.01)
+                                return (i, w > h * 1.1)
                             }
                             return (i, false)
                         }
@@ -469,7 +469,7 @@ final class ComicImageCache: ObservableObject {
                                 if let doc = PDFDocument(url: fileURL), pageInfo.localIndex < doc.pageCount,
                                    let page = doc.page(at: pageInfo.localIndex) {
                                     let bounds = page.bounds(for: .mediaBox)
-                                    return (i, bounds.width > bounds.height * 1.01)
+                                    return (i, bounds.width > bounds.height * 1.1)
                                 }
                             } else {
                                 if let sortedPaths = try? await ArchiveManager.shared.getSortedImagePaths(for: fileURL) {
@@ -482,7 +482,7 @@ final class ComicImageCache: ObservableObject {
                                             let hVal = properties[kCGImagePropertyPixelHeight] as? NSNumber
                                             let w = CGFloat(wVal?.doubleValue ?? 0)
                                             let h = CGFloat(hVal?.doubleValue ?? 0)
-                                            return (i, w > h * 1.01)
+                                            return (i, w > h * 1.1)
                                         }
                                     }
                                 }
@@ -517,7 +517,7 @@ final class ComicImageCache: ObservableObject {
                                     let hVal = properties[kCGImagePropertyPixelHeight] as? NSNumber
                                     let w = CGFloat(wVal?.doubleValue ?? 0)
                                     let h = CGFloat(hVal?.doubleValue ?? 0)
-                                    return (i, w > h * 1.01)
+                                    return (i, w > h * 1.1)
                                 }
                             } catch {}
                             return (i, false)
@@ -1184,7 +1184,7 @@ final class ComicImageCache: ObservableObject {
     }
     
         func registerLoadedImageOrientation(at index: Int, size: CGSize) {
-            let isL = size.width > size.height * 1.01
+            let isL = size.width > size.height * 1.1
             if index >= 0 && index < isLandscapeArray.count {
                 if isLandscapeArray[index] != isL {
                     objectWillChange.send()
@@ -1197,7 +1197,7 @@ final class ComicImageCache: ObservableObject {
             if idx >= 0 && idx < landscapeArray.count && landscapeArray[idx] {
                 return true
             }
-            if let size = peekImageSize(at: idx), size.width > size.height * 1.01 {
+            if let size = peekImageSize(at: idx), size.width > size.height * 1.1 {
                 return true
             }
             return false
@@ -1499,7 +1499,7 @@ struct ComicReaderEngine: View {
         if idx >= 0 && idx < landscapeArray.count && landscapeArray[idx] {
             return true
         }
-        if let size = cache.peekImageSize(at: idx), size.width > size.height * 1.01 {
+        if let size = cache.peekImageSize(at: idx), size.width > size.height * 1.1 {
             return true
         }
         return false

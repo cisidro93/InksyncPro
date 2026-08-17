@@ -209,9 +209,7 @@ struct LibraryBatchEditBar: View {
     }
 
     private func bulkDelete() {
-        for pdf in selectedPDFs {
-            conversionManager.deletePDF(pdf)
-        }
+        conversionManager.deletePDFs(selectedPDFs)
         onActionCompleted()
         onClearSelection()
         HapticEngine.success()

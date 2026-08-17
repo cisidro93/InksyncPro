@@ -731,7 +731,7 @@ struct PPLReaderView: View {
     // MARK: - Spread Detection
 
     private func isWideSpread(_ img: CGImage) -> Bool {
-        CGFloat(img.width) > CGFloat(img.height) * 1.2
+        CGFloat(img.width) > CGFloat(img.height) * 1.1
     }
 
     // MARK: - Guided Reading Engine

@@ -77,7 +77,23 @@ struct SeriesMergeConfigurationView: View {
                         Section(header: Text("Output Volume Configuration"), footer: Text("The merged file will automatically be assigned to the current series.")) {
                             TextField("New Volume Name (e.g., Volume 1)", text: $viewModel.outputName)
                             Toggle("Manga Mode (Right-to-Left)", isOn: $viewModel.mangaMode)
-                            Toggle("Link Cover Page as Spread", isOn: $settingsManager.conversionSettings.linkCoverAsSpread)
+                            
+                            VStack(alignment: .leading, spacing: 2) {
+                                Toggle("Pair Front Cover with Page 1", isOn: $settingsManager.conversionSettings.linkCoverAsSpread)
+                                Text("Keep OFF for standalone front cover (recommended)")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            .padding(.vertical, 2)
+                            
+                            VStack(alignment: .leading, spacing: 2) {
+                                Toggle("Slice Landscape Spreads into 2 Pages", isOn: $settingsManager.conversionSettings.splitSpreads)
+                                Text("Keep OFF for native full-bleed landscape on Kindle & Reader")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            .padding(.vertical, 2)
+                            
                             Toggle("Delete original files after merge", isOn: $deleteSourceFilesAfterMerge)
                             
                             Picker("Image Quality", selection: $settingsManager.conversionSettings.compressionQuality) {
