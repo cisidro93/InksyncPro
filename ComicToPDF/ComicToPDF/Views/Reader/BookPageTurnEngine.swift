@@ -28,17 +28,16 @@ struct PageCurlReader: UIViewControllerRepresentable {
     func computeSpreads() -> [[Int]] {
         var allSpreads: [[Int]] = []
         let landscapeArray = cache.isLandscapeArray
+        let linkCover = EBookPreferences.shared.linkCoverAsSpread
 
-        // Page 0 is the physical front cover — displayed standalone on spread [0]
-        allSpreads.append([0])
-        var i = 1
-        while i < totalPages {
-            let isL = isPageLandscape(i, landscapeArray: landscapeArray)
-            if isL {
-                allSpreads.append([i])
-                i += 1
-            } else {
-                if i + 1 < totalPages {
+        if linkCover {
+            var i = 0
+            while i < totalPages {
+                let isL = isPageLandscape(i, landscapeArray: landscapeArray)
+                if isL {
+                    allSpreads.append([i])
+                    i += 1
+                } else if i + 1 < totalPages {
                     let nextIsL = isPageLandscape(i + 1, landscapeArray: landscapeArray)
                     if nextIsL {
                         allSpreads.append([i])
@@ -50,6 +49,38 @@ struct PageCurlReader: UIViewControllerRepresentable {
                 } else {
                     allSpreads.append([i])
                     i += 1
+                }
+            }
+        } else {
+            // Page 0: Standalone Cover
+            allSpreads.append([0])
+            
+            // Page 1: Standalone Page 1 (Right in Western, Left in Manga)
+            if totalPages > 1 {
+                allSpreads.append([1])
+            }
+            
+            // Natural (2+3, 4+5) facing spread pairing
+            var i = 2
+            while i < totalPages {
+                let isL = isPageLandscape(i, landscapeArray: landscapeArray)
+                if isL {
+                    allSpreads.append([i])
+                    i += 1
+                } else {
+                    if i + 1 < totalPages {
+                        let nextIsL = isPageLandscape(i + 1, landscapeArray: landscapeArray)
+                        if nextIsL {
+                            allSpreads.append([i])
+                            i += 1
+                        } else {
+                            allSpreads.append([i, i + 1])
+                            i += 2
+                        }
+                    } else {
+                        allSpreads.append([i])
+                        i += 1
+                    }
                 }
             }
         }
@@ -608,26 +639,22 @@ struct SmartMidSpineCurlReader: UIViewControllerRepresentable {
         var allSpreads: [[Int]] = []
         let landscapeArray = cache.isLandscapeArray
         let pageCount = cache.pageCount
+        let linkCover = EBookPreferences.shared.linkCoverAsSpread
 
-        allSpreads.append([0])
-        var i = 1
-        while i < pageCount {
-            let isL: Bool = {
-                if i >= 0 && i < landscapeArray.count && landscapeArray[i] { return true }
-                if let size = cache.peekImageSize(at: i), size.width > size.height * 1.1 { return true }
-                return false
-            }()
-            if isL {
-                allSpreads.append([i])
-                i += 1
-            } else {
-                if i + 1 < pageCount {
-                    let nextIsL: Bool = {
-                        if (i + 1) >= 0 && (i + 1) < landscapeArray.count && landscapeArray[i + 1] { return true }
-                        if let size = cache.peekImageSize(at: i + 1), size.width > size.height * 1.1 { return true }
-                        return false
-                    }()
-                    if nextIsL {
+        let isPageL: (Int) -> Bool = { idx in
+            if idx >= 0 && idx < landscapeArray.count && landscapeArray[idx] { return true }
+            if let size = cache.peekImageSize(at: idx), size.width > size.height * 1.1 { return true }
+            return false
+        }
+
+        if linkCover {
+            var i = 0
+            while i < pageCount {
+                if isPageL(i) {
+                    allSpreads.append([i])
+                    i += 1
+                } else if i + 1 < pageCount {
+                    if isPageL(i + 1) {
                         allSpreads.append([i])
                         i += 1
                     } else {
@@ -637,6 +664,36 @@ struct SmartMidSpineCurlReader: UIViewControllerRepresentable {
                 } else {
                     allSpreads.append([i])
                     i += 1
+                }
+            }
+        } else {
+            // Page 0: Standalone Cover
+            allSpreads.append([0])
+            
+            // Page 1: Standalone Page 1
+            if pageCount > 1 {
+                allSpreads.append([1])
+            }
+            
+            // Natural (2+3, 4+5) facing spread pairing
+            var i = 2
+            while i < pageCount {
+                if isPageL(i) {
+                    allSpreads.append([i])
+                    i += 1
+                } else {
+                    if i + 1 < pageCount {
+                        if isPageL(i + 1) {
+                            allSpreads.append([i])
+                            i += 1
+                        } else {
+                            allSpreads.append([i, i + 1])
+                            i += 2
+                        }
+                    } else {
+                        allSpreads.append([i])
+                        i += 1
+                    }
                 }
             }
         }

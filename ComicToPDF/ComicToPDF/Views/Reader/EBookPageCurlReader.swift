@@ -344,19 +344,23 @@ extension EBookPageCurlReader {
                 if parent.prefs.linkCoverAsSpread {
                     leftIndex = pageIndex % 2 == 0 ? pageIndex : pageIndex - 1
                     rightIndex = leftIndex + 1
+                    let leftVC = makePageViewController(for: leftIndex)
+                    let rightVC = makePageViewController(for: min(rightIndex, max(0, computedTotalPages - 1)))
+                    return [leftVC, rightVC]
                 } else {
                     if pageIndex == 0 {
-                        leftIndex = 0
-                        rightIndex = 1
+                        return [makePageViewController(for: 0)]
+                    } else if pageIndex == 1 {
+                        return [makePageViewController(for: 1)]
                     } else {
-                        let offset = pageIndex - 1
-                        leftIndex = 1 + (offset / 2) * 2
+                        let offset = pageIndex - 2
+                        leftIndex = 2 + (offset / 2) * 2
                         rightIndex = leftIndex + 1
+                        let leftVC = makePageViewController(for: leftIndex)
+                        let rightVC = makePageViewController(for: min(rightIndex, max(0, computedTotalPages - 1)))
+                        return [leftVC, rightVC]
                     }
                 }
-                let leftVC = makePageViewController(for: leftIndex)
-                let rightVC = makePageViewController(for: min(rightIndex, max(0, computedTotalPages - 1)))
-                return [leftVC, rightVC]
             } else {
                 let vc = makePageViewController(for: pageIndex)
                 return [vc]
