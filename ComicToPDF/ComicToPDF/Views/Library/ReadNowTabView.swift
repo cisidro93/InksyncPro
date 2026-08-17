@@ -5,6 +5,7 @@ struct ReadNowTabView: View {
     @ObservedObject private var tracker = ReaderProgressTracker.shared
     @StateObject private var velocityVM = VelocityViewModel()
 
+    @Environment(\.horizontalSizeClass) private var hSizeClass
     @State private var pdfToRead: ConvertedPDF?
 
     // MARK: - O(N) derived state
@@ -69,12 +70,13 @@ struct ReadNowTabView: View {
                                      icon: "checkmark.seal.fill",
                                      color: Theme.green)
                         }
+                        .frame(maxWidth: hSizeClass == .regular ? 800 : .infinity)
                         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                         .overlay(
                             RoundedRectangle(cornerRadius: 16, style: .continuous)
                                 .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
                         )
-                        .padding(.horizontal, 16)
+                        .padding(.horizontal, hSizeClass == .regular ? 32 : 16)
                         .padding(.top, 8)
 
                         // ── Continue Reading shelf ──────────────────────────────────

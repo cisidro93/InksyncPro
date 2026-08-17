@@ -113,8 +113,11 @@ final class ComicImageCache: ObservableObject {
     }
     
     private var maxCacheSize: Int {
+        let isPad = UIDevice.current.userInterfaceIdiom == .pad
         let usage = MemoryMonitor.reportMemoryUsage()
-        return usage > 400.0 ? 6 : 12 // Minimum 6 pages cap for dual-spread stability
+        if usage > 600.0 { return 8 }
+        if usage > 400.0 { return isPad ? 12 : 6 }
+        return isPad ? 20 : 12 // Rich page buffer for iPad Pro dual spreads & 120Hz scrubbing
     }
     private let prefetchLimit: Int // Configurable read-ahead page buffer
     

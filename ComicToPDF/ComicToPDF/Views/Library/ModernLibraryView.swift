@@ -52,8 +52,8 @@ struct ModernLibraryView: View {
     /// Derived header collapse state.
     /// Priority: landscape (always collapsed) → pin lock → scroll threshold.
     private var isHeaderCollapsed: Bool {
-        // iPhone landscape uses vSizeClass == .compact; iPad landscape is detected via isLandscape
-        if vSizeClass == .compact || isLandscape { return true }
+        // iPhone landscape uses vSizeClass == .compact (save vertical space)
+        if vSizeClass == .compact { return true }
         switch HeaderPinMode(rawValue: headerPinModeRaw) ?? .auto {
         case .auto:            return isScrolledPastHeader
         case .pinnedExpanded:  return false

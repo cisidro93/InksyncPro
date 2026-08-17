@@ -56,8 +56,41 @@ struct LibraryGridView: View {
     @State private var lastDragLocation: CGPoint = .zero
     @State private var autoScrollTask: Task<Void, Never>? = nil
     @State private var showingQuickJump = false
-    private var computedRows: [GridRowItem] {
-        let chunked = chunkedItems(items)
+    private func colCount(for width: CGFloat) -> Int {
+        if width >= 1200 { return 7 }
+        if width >= 950  { return 6 }
+        if width >= 720  { return 5 }
+        if width >= 500  { return 4 }
+        return 3
+    }
+
+    private var colSpacing: CGFloat {
+        hSizeClass == .regular ? 16 : 10
+    }
+
+    private func hPad(for width: CGFloat) -> CGFloat {
+        width >= 1000 ? 28 : (width >= 700 ? 20 : 10)
+    }
+
+    private func chunkedItems(_ source: [LibraryListItem], cols: Int) -> [[LibraryListItem]] {
+        var chunks: [[LibraryListItem]] = []
+        var currentChunk: [LibraryListItem] = []
+        for item in source {
+            currentChunk.append(item)
+            if currentChunk.count == cols {
+                chunks.append(currentChunk)
+                currentChunk = []
+            }
+        }
+        if !currentChunk.isEmpty {
+            chunks.append(currentChunk)
+        }
+        return chunks
+    }
+
+    private func computedRows(for width: CGFloat) -> [GridRowItem] {
+        let cols = colCount(for: width)
+        let chunked = chunkedItems(items, cols: cols)
         return chunked.map { chunk in
             let combinedID = chunk.map(\.id).joined(separator: "_")
             return GridRowItem(id: combinedID, items: chunk)
@@ -72,31 +105,6 @@ struct LibraryGridView: View {
             }
             return nil
         }
-    }
-
-    private var colCount: Int {
-        hSizeClass == .regular ? 5 : 3
-    }
-
-    private var colSpacing: CGFloat {
-        hSizeClass == .regular ? 16 : 10
-    }
-
-    private func chunkedItems(_ source: [LibraryListItem]) -> [[LibraryListItem]] {
-        var chunks: [[LibraryListItem]] = []
-        var currentChunk: [LibraryListItem] = []
-        let limit = colCount
-        for item in source {
-            currentChunk.append(item)
-            if currentChunk.count == limit {
-                chunks.append(currentChunk)
-                currentChunk = []
-            }
-        }
-        if !currentChunk.isEmpty {
-            chunks.append(currentChunk)
-        }
-        return chunks
     }
 
     @ViewBuilder
@@ -119,10 +127,6 @@ struct LibraryGridView: View {
                 .stroke(Color.inkBlue.opacity(isHighlighted ? 1.0 : 0), lineWidth: 3)
         )
         .animation(.spring(response: 0.25, dampingFraction: 0.7), value: highlightedItemID)
-    }
-
-    private var hPad: CGFloat {
-        hSizeClass == .regular ? 16 : 10
     }
 
     var body: some View {
@@ -160,9 +164,9 @@ struct LibraryGridView: View {
                                     .environmentObject(conversionManager)
                                 }
 
-
-
-                                let rowItems = computedRows
+                                let activeCols = colCount(for: viewportGeo.size.width)
+                                let currentHPad = hPad(for: viewportGeo.size.width)
+                                let rowItems = computedRows(for: viewportGeo.size.width)
                                 LazyVStack(spacing: 24) {
                                     ForEach(rowItems) { row in
                                         VStack(spacing: 8) {
@@ -186,17 +190,17 @@ struct LibraryGridView: View {
                                                         )
                                                 }
                                                 
-                                                if row.items.count < colCount {
-                                                    ForEach(0..<(colCount - row.items.count), id: \.self) { _ in
+                                                if row.items.count < activeCols {
+                                                    ForEach(0..<(activeCols - row.items.count), id: \.self) { _ in
                                                         Spacer()
                                                             .frame(maxWidth: .infinity)
                                                     }
                                                 }
                                             }
-                                            .padding(.horizontal, hPad)
+                                            .padding(.horizontal, currentHPad)
                                             
                                             ShelfLineView(accentColor: contentShelf.accentColor)
-                                                .padding(.horizontal, hPad / 2)
+                                                .padding(.horizontal, currentHPad / 2)
                                         }
                                         .id(row.id)
                                     }

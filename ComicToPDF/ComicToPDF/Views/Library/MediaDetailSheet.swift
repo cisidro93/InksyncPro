@@ -6,6 +6,7 @@ struct MediaDetailSheet: View {
     @EnvironmentObject var conversionManager: ConversionManager
     let onAction: (LibraryRowAction) -> Void
     
+    @Environment(\.horizontalSizeClass) private var hSizeClass
     @State private var coverImage: UIImage?
     @Environment(\.dismiss) var dismiss
     
@@ -252,8 +253,10 @@ struct MediaDetailSheet: View {
                     .padding(.top, 8)
                 }
                 .padding(.horizontal)
+                .frame(maxWidth: 680)
                 
             }
+            .frame(maxWidth: .infinity)
             .padding(.bottom, 40)
         }
         .background(

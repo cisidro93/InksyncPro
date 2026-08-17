@@ -190,6 +190,7 @@ struct DualExportView: View {
                 Spacer()
                 
                 }
+                .frame(maxWidth: 580)
                 .padding()
 
                 // Success toast for Save to Files

@@ -381,7 +381,7 @@ struct SeriesDetailView: View {
             ScrollViewReader { scrollProxy in
                 Group {
                     if viewStyle == .grid {
-                        gridView(scrollProxy: scrollProxy, viewportHeight: viewportGeo.size.height)
+                        gridView(scrollProxy: scrollProxy, viewportHeight: viewportGeo.size.height, viewportWidth: viewportGeo.size.width)
                     } else {
                         listView(scrollProxy: scrollProxy, viewportHeight: viewportGeo.size.height)
                     }
@@ -874,7 +874,7 @@ struct SeriesDetailView: View {
         }
     }
 
-    private func gridView(scrollProxy: ScrollViewProxy, viewportHeight: CGFloat) -> some View {
+    private func gridView(scrollProxy: ScrollViewProxy, viewportHeight: CGFloat, viewportWidth: CGFloat) -> some View {
         ScrollView {
             LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
                 headerView
@@ -950,9 +950,15 @@ struct SeriesDetailView: View {
                 volumeFilterBar
                     .padding(.bottom, 8)
 
-                let hPad: CGFloat = hSizeClass == .regular ? 24 : 12
+                let hPad: CGFloat = viewportWidth >= 1000 ? 32 : (viewportWidth >= 700 ? 20 : 12)
                 let colSpacing: CGFloat = hSizeClass == .regular ? 20 : 10
-                let colCount = hSizeClass == .regular ? 5 : 3
+                let colCount: Int = {
+                    if viewportWidth >= 1200 { return 7 }
+                    if viewportWidth >= 950  { return 6 }
+                    if viewportWidth >= 720  { return 5 }
+                    if viewportWidth >= 500  { return 4 }
+                    return 3
+                }()
                 let columns = Array(repeating: GridItem(.flexible(), spacing: colSpacing), count: colCount)
 
                 if showVolumeGrouping && hasVolumeData {
