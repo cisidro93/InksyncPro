@@ -111,29 +111,31 @@ struct ReadNowTabView: View {
 
                                 // ── Velocity stats footer ──────────────────────
                                 if let report = velocityVM.report, report.global.pagesPerDay > 0 {
-                                    HStack(spacing: 20) {
-                                        velocityPill(
-                                            icon: "gauge.medium",
-                                            value: String(format: "%.0f", report.global.pagesPerDay),
-                                            label: "pages/day",
-                                            color: Theme.blue
-                                        )
-                                        if let days = report.global.projectedLibraryFinishDays, days > 0 {
+                                    ScrollView(.horizontal, showsIndicators: false) {
+                                        HStack(spacing: 10) {
                                             velocityPill(
-                                                icon: "calendar.badge.clock",
-                                                value: days < 365 ? "\(days)d" : "\(days/365)y",
-                                                label: "to clear queue",
-                                                color: Theme.orange
+                                                icon: "gauge.medium",
+                                                value: String(format: "%.0f", report.global.pagesPerDay),
+                                                label: "pages/day",
+                                                color: Theme.blue
+                                            )
+                                            if let days = report.global.projectedLibraryFinishDays, days > 0 {
+                                                velocityPill(
+                                                    icon: "calendar.badge.clock",
+                                                    value: days < 365 ? "\(days)d" : "\(days/365)y",
+                                                    label: "to clear queue",
+                                                    color: Theme.orange
+                                                )
+                                            }
+                                            velocityPill(
+                                                icon: "bolt.fill",
+                                                value: String(format: "%.0f", report.global.pagesPerSession),
+                                                label: "pages/session",
+                                                color: .purple
                                             )
                                         }
-                                        velocityPill(
-                                            icon: "bolt.fill",
-                                            value: String(format: "%.0f", report.global.pagesPerSession),
-                                            label: "pages/session",
-                                            color: .purple
-                                        )
+                                        .padding(.horizontal, 16)
                                     }
-                                    .padding(.horizontal, 16)
                                     .padding(.top, 4)
                                 }
                             }

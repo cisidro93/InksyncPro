@@ -1640,7 +1640,7 @@ struct SeriesDetailView: View {
             }
             
             // Action Bar
-            HStack(spacing: 12) {
+            HStack(spacing: 8) {
                 // Continue Reading / Play Button
                 Button {
                     if let next = nextUnreadIssue {
@@ -1649,10 +1649,12 @@ struct SeriesDetailView: View {
                         pdfToRead = first
                     }
                 } label: {
-                    HStack(spacing: 6) {
+                    HStack(spacing: 5) {
                         Image(systemName: "play.fill")
                         Text(nextUnreadIssue != nil ? "CONTINUE" : "READ AGAIN")
                             .fontWeight(.bold)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
                     }
                     .font(.system(size: 12))
                     .foregroundColor(.white)
@@ -1675,10 +1677,12 @@ struct SeriesDetailView: View {
                     mergeConfigSuggestedName = "\(series.title) Omnibus"
                     showingMergeConfig = true
                 } label: {
-                    HStack(spacing: 6) {
+                    HStack(spacing: 5) {
                         Image(systemName: "arrow.triangle.2.circlepath.doc")
                         Text("BUILD OMNIBUS")
                             .fontWeight(.semibold)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
                     }
                     .font(.system(size: 11))
                     .foregroundColor(Theme.text)
@@ -1702,7 +1706,7 @@ struct SeriesDetailView: View {
                         .font(.system(size: 12))
                         .foregroundColor(Theme.text)
                         .padding(.vertical, 10)
-                        .padding(.horizontal, 14)
+                        .padding(.horizontal, 12)
                         .background(Color.white.opacity(0.08))
                         .cornerRadius(10)
                         .overlay(
