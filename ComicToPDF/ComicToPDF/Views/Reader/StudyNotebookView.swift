@@ -1964,6 +1964,21 @@ struct MarkdownTextEditor: UIViewRepresentable {
             }
         }
 
+        #if compiler(>=5.9)
+        @available(iOS 17.0, *)
+        func textView(_ textView: UITextView, primaryActionFor textItem: UITextItem, defaultAction: UIAction) -> UIAction? {
+            if case .link(let url) = textItem.content {
+                if url.scheme == "inksync" || url.scheme == "page" {
+                    return UIAction { [weak self] _ in
+                        self?.parent.onLinkTapped?(url)
+                    }
+                }
+            }
+            return defaultAction
+        }
+        #endif
+
+        @available(iOS, deprecated: 17.0)
         func textView(_ textView: UITextView, shouldInteractWith URL: URL, in characterRange: NSRange, interaction: UITextItemInteraction) -> Bool {
             if URL.scheme == "inksync" || URL.scheme == "page" {
                 parent.onLinkTapped?(URL)

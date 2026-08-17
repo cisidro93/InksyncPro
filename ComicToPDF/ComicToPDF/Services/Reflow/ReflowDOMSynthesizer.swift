@@ -28,7 +28,7 @@ public final class ReflowDOMSynthesizer: @unchecked Sendable {
         var bodyHTML = ""
         var currentPage = -1
 
-        var embeddedImageURLs = Set<URL>()
+        var embeddedImagePaths = Set<String>()
 
         for block in blocks {
             if block.pageIndex != currentPage {
@@ -39,9 +39,9 @@ public final class ReflowDOMSynthesizer: @unchecked Sendable {
                 // Embed images belonging to this page
                 let pageImages = images.filter { $0.pageIndex == currentPage }
                 for img in pageImages {
-                    embeddedImageURLs.insert(img.fileURL)
-                    let relPath = img.fileURL.lastPathComponent
-                    bodyHTML += "  <figure class=\"pdf-figure\"><img src=\"\(relPath)\" alt=\"Figure Page \(currentPage + 1)\" loading=\"lazy\" /></figure>\n"
+                    embeddedImagePaths.insert(img.imagePath)
+                    let relPath = (img.imagePath as NSString).lastPathComponent
+                    bodyHTML += "  <figure class=\"pdf-figure\"><img src=\"images/\(relPath)\" alt=\"Figure Page \(currentPage + 1)\" loading=\"lazy\" /></figure>\n"
                 }
                 
                 bodyHTML += "</section>\n"
@@ -73,11 +73,11 @@ public final class ReflowDOMSynthesizer: @unchecked Sendable {
         }
 
         // Catch any orphan images on pages without text blocks
-        for img in images where !embeddedImageURLs.contains(img.fileURL) {
-            let relPath = img.fileURL.lastPathComponent
+        for img in images where !embeddedImagePaths.contains(img.imagePath) {
+            let relPath = (img.imagePath as NSString).lastPathComponent
             bodyHTML += "\n<section class=\"pdf-page-marker\" id=\"page-\(img.pageIndex + 1)\" data-page=\"\(img.pageIndex + 1)\">\n"
             bodyHTML += "  <div class=\"page-number-divider\">Page \(img.pageIndex + 1)</div>\n"
-            bodyHTML += "  <figure class=\"pdf-figure\"><img src=\"\(relPath)\" alt=\"Figure Page \(img.pageIndex + 1)\" loading=\"lazy\" /></figure>\n"
+            bodyHTML += "  <figure class=\"pdf-figure\"><img src=\"images/\(relPath)\" alt=\"Figure Page \(img.pageIndex + 1)\" loading=\"lazy\" /></figure>\n"
             bodyHTML += "</section>\n"
         }
 

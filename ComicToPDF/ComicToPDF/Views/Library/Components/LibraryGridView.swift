@@ -279,7 +279,7 @@ struct LibraryGridView: View {
                                 availableLetters: availableLetters,
                                 onJump: { letter in
                                     if let targetID = firstItemId(for: letter),
-                                       let targetRow = computedRows.first(where: { $0.items.contains(where: { $0.id == targetID }) }) {
+                                       let targetRow = computedRows(for: viewportGeo.size.width).first(where: { $0.items.contains(where: { $0.id == targetID }) }) {
                                         withAnimation { proxy.scrollTo(targetRow.id, anchor: .top) }
                                     }
                                 }

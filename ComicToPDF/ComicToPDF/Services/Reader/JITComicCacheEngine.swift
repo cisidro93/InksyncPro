@@ -29,8 +29,8 @@ actor JITComicCacheEngine {
             guard memoryCache[key] == nil && activePreloadTasks[key] == nil else { continue }
             
             let task = Task(priority: .utility) {
-                if let image = await self.extractPageImage(archiveURL: archiveURL, pageIndex: index) {
-                    await self.storeImage(image, forKey: key)
+                if let image = self.extractPageImage(archiveURL: archiveURL, pageIndex: index) {
+                    self.storeImage(image, forKey: key)
                 }
             }
             activePreloadTasks[key] = task
