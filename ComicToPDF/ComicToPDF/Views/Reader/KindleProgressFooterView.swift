@@ -100,6 +100,8 @@ struct InksyncProgressFooterView: View {
                         .font(.system(size: 11, weight: .semibold, design: .rounded))
                         .foregroundStyle(prefs.activeTheme.foreground(colorScheme: colorScheme).opacity(0.65))
                         .lineLimit(1)
+                        .truncationMode(.tail)
+                        .frame(maxWidth: 240, alignment: .leading)
                     
                     if prefs.progressMode != 2 {
                         Text("\(progressPercentage)%")
@@ -131,8 +133,7 @@ struct InksyncProgressFooterView: View {
             }
             .padding(.horizontal, 16)
         }
-        .padding(.bottom, 8)
-        .ignoresSafeArea()
+        .padding(.bottom, 6)
     }
 }
 

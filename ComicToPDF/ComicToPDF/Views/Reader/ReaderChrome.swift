@@ -222,91 +222,171 @@ struct ReaderChrome: View {
 
             // ── Action cluster ─────────────────────────────────────────────────
             HStack(spacing: 0) {
-                // Phase 3: Reading Room button — glows teal when active, shows peer badge
-                if let onRoomToggle {
-                    chromeButton(
-                        icon: isInRoom ? "person.2.wave.2.fill" : "person.2.wave.2",
-                        label: "Reading Room",
-                        active: isInRoom,
-                        activeColor: Color(hex: "#4ECDC4"),
-                        badgeText: (isInRoom && roomPeerCount > 0) ? "\(roomPeerCount)" : nil,
-                        action: onRoomToggle
-                    )
-                }
-
-                if onEnhanceToggle != nil {
-                    chromeButton(
-                        icon: "wand.and.stars",
-                        label: "AI Summary",
-                        active: isEnhanced,
-                        activeColor: .yellow,
-                        action: { onEnhanceToggle?() }
-                    )
-                }
-
-                if isPDF {
-                    chromeButton(
-                        icon: "text.alignleft",
-                        label: "Reflow Text",
-                        active: isReflowActive,
-                        activeColor: .white
-                    ) {
-                        onReflowToggle?()
+                if hSizeClass == .compact {
+                    // iPhone compact cluster: Search, Settings (Aa), and More Actions Menu (...)
+                    if let onSearch = onSearchToggle {
+                        chromeButton(
+                            icon: "magnifyingglass",
+                            label: "Search Book",
+                            active: false,
+                            activeColor: .white,
+                            action: onSearch
+                        )
                     }
-                }
 
-                if isPDF {
+                    chromeButton(
+                        icon: isSettingsActive ? "slider.horizontal.3" : "textformat.size",
+                        label: "Appearance & Layout",
+                        active: isSettingsActive,
+                        activeColor: .white,
+                        badgeText: isSettingsActive ? currentModeLabel : nil,
+                        action: onSettingsToggle
+                    )
+
+                    // Overflow Menu
                     Menu {
-                        Button(action: { onCropToggle?() }) {
-                            Label(
-                                isAutoCropEnabled ? "Disable Auto-Crop" : "Smart Auto-Crop",
-                                systemImage: isAutoCropEnabled ? "crop.slash" : "wand.and.stars"
-                            )
+                        if let onRoomToggle {
+                            Button(action: onRoomToggle) {
+                                Label(
+                                    isInRoom ? "Leave Reading Room (\(roomPeerCount))" : "Join Reading Room",
+                                    systemImage: isInRoom ? "person.2.wave.2.fill" : "person.2.wave.2"
+                                )
+                            }
                         }
-                        
-                        if let onManual = onManualCropToggle {
-                            Button(action: onManual) {
-                                Label("Manual Crop Sliders...", systemImage: "slider.horizontal.3")
+
+                        if let onEnhance = onEnhanceToggle {
+                            Button(action: onEnhance) {
+                                Label("AI Summary & Insights", systemImage: "wand.and.stars")
+                            }
+                        }
+
+                        if let onDialogueLens = onDialogueLensToggle {
+                            Button(action: onDialogueLens) {
+                                Label(isDialogueLensEnabled ? "Disable Dialogue Lens" : "AI Dialogue Lens", systemImage: "sparkle.magnifyingglass")
+                            }
+                        }
+
+                        if isPDF {
+                            Divider()
+                            if let onReflow = onReflowToggle {
+                                Button(action: onReflow) {
+                                    Label(isReflowActive ? "Original PDF Layout" : "Reflow Text", systemImage: "text.alignleft")
+                                }
+                            }
+                            if let onCrop = onCropToggle {
+                                Button(action: onCrop) {
+                                    Label(isAutoCropEnabled ? "Disable Auto-Crop" : "Smart Auto-Crop", systemImage: isAutoCropEnabled ? "crop.slash" : "crop")
+                                }
+                            }
+                            if let onManual = onManualCropToggle {
+                                Button(action: onManual) {
+                                    Label("Manual Crop Sliders...", systemImage: "slider.horizontal.3")
+                                }
+                            }
+                        }
+
+                        if let onCharacterMap = onCharacterMapToggle {
+                            Divider()
+                            Button(action: onCharacterMap) {
+                                Label("Character Map & Deep Study", systemImage: "square.stack.3d.up.badge.a")
                             }
                         }
                     } label: {
                         chromeButton(
-                            icon: "crop",
-                            label: "Crop Margins",
-                            active: isAutoCropEnabled,
-                            activeColor: .white
-                        ) {}
+                            icon: "ellipsis.circle",
+                            label: "More Actions",
+                            active: false,
+                            activeColor: .white,
+                            action: {}
+                        )
                     }
-                }
+                } else {
+                    // iPad Regular cluster (full row of quick tools)
+                    if let onRoomToggle {
+                        chromeButton(
+                            icon: isInRoom ? "person.2.wave.2.fill" : "person.2.wave.2",
+                            label: "Reading Room",
+                            active: isInRoom,
+                            activeColor: Color(hex: "#4ECDC4"),
+                            badgeText: (isInRoom && roomPeerCount > 0) ? "\(roomPeerCount)" : nil,
+                            action: onRoomToggle
+                        )
+                    }
 
-                if let onDialogueLens = onDialogueLensToggle {
-                    chromeButton(
-                        icon: "sparkle.magnifyingglass",
-                        label: "AI Dialogue Lens",
-                        active: isDialogueLensEnabled,
-                        activeColor: .purple,
-                        action: onDialogueLens
-                    )
-                }
+                    if onEnhanceToggle != nil {
+                        chromeButton(
+                            icon: "wand.and.stars",
+                            label: "AI Summary",
+                            active: isEnhanced,
+                            activeColor: .yellow,
+                            action: { onEnhanceToggle?() }
+                        )
+                    }
 
-                if let onSearch = onSearchToggle {
+                    if isPDF {
+                        chromeButton(
+                            icon: "text.alignleft",
+                            label: "Reflow Text",
+                            active: isReflowActive,
+                            activeColor: .white
+                        ) {
+                            onReflowToggle?()
+                        }
+                    }
+
+                    if isPDF {
+                        Menu {
+                            Button(action: { onCropToggle?() }) {
+                                Label(
+                                    isAutoCropEnabled ? "Disable Auto-Crop" : "Smart Auto-Crop",
+                                    systemImage: isAutoCropEnabled ? "crop.slash" : "wand.and.stars"
+                                )
+                            }
+                            
+                            if let onManual = onManualCropToggle {
+                                Button(action: onManual) {
+                                    Label("Manual Crop Sliders...", systemImage: "slider.horizontal.3")
+                                }
+                            }
+                        } label: {
+                            chromeButton(
+                                icon: "crop",
+                                label: "Crop Margins",
+                                active: isAutoCropEnabled,
+                                activeColor: .white
+                            ) {}
+                        }
+                    }
+
+                    if let onDialogueLens = onDialogueLensToggle {
+                        chromeButton(
+                            icon: "sparkle.magnifyingglass",
+                            label: "AI Dialogue Lens",
+                            active: isDialogueLensEnabled,
+                            activeColor: .purple,
+                            action: onDialogueLens
+                        )
+                    }
+
+                    if let onSearch = onSearchToggle {
+                        chromeButton(
+                            icon: "magnifyingglass",
+                            label: "Search Book",
+                            active: false,
+                            activeColor: .white,
+                            action: onSearch
+                        )
+                    }
+
                     chromeButton(
-                        icon: "magnifyingglass",
-                        label: "Search Book",
-                        active: false,
+                        icon: isSettingsActive ? "slider.horizontal.3" : "ellipsis",
+                        label: "Reader Settings",
+                        active: isSettingsActive,
                         activeColor: .white,
-                        action: onSearch
+                        badgeText: isSettingsActive ? currentModeLabel : nil,
+                        action: onSettingsToggle
                     )
                 }
-
-                chromeButton(
-                    icon: isSettingsActive ? "slider.horizontal.3" : "ellipsis",
-                    label: "Reader Settings",
-                    active: isSettingsActive,
-                    activeColor: .white,
-                    badgeText: isSettingsActive ? currentModeLabel : nil,
-                    action: onSettingsToggle
-                )
             }
         }
         .frame(height: 48)
@@ -359,11 +439,15 @@ struct ReaderChrome: View {
                             if isScrubbing {
                                 let pageNum = max(1, Int(round(currentProgress * Double(max(totalPages - 1, 1))))) + 1
                                 if getPageThumbnail != nil {
+                                    let isPhone = hSizeClass == .compact
+                                    let thumbW: CGFloat = isPhone ? 58 : 72
+                                    let thumbH: CGFloat = isPhone ? 84 : 104
+                                    let thumbY: CGFloat = isPhone ? -58 : -70
                                     VStack(spacing: 6) {
                                         ZStack {
                                             RoundedRectangle(cornerRadius: 10, style: .continuous)
                                                 .fill(.ultraThinMaterial)
-                                                .frame(width: 72, height: 104)
+                                                .frame(width: thumbW, height: thumbH)
                                             
                                             if let getThumb = getPageThumbnail {
                                                 FloatingThumbnailView(index: pageNum - 1, getPageThumbnail: getThumb)
@@ -385,7 +469,7 @@ struct ReaderChrome: View {
                                     }
                                     .position(
                                         x: 14 + (sliderGeo.size.width - 28) * CGFloat(currentProgress),
-                                        y: -70
+                                        y: thumbY
                                     )
                                     .transition(.scale(scale: 0.8).combined(with: .opacity))
                                 } else {

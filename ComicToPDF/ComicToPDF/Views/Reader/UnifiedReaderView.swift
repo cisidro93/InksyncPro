@@ -184,6 +184,9 @@ struct UnifiedReaderView: View {
                 fileURL: pdf.url,
                 showBackButton: true
             )
+            .presentationDetents([.medium, .fraction(0.88)])
+            .presentationDragIndicator(.visible)
+            .presentationCornerRadius(28)
         }
         .onReceive(NotificationCenter.default.publisher(for: .toggleStudyNotebook)) { _ in
             withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {

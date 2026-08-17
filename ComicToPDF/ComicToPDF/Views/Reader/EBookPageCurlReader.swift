@@ -920,11 +920,12 @@ extension EBookPageCurlReader {
             let renderHeight = size.height > 0 ? size.height : UIScreen.main.bounds.height
 
             let isPad = UIDevice.current.userInterfaceIdiom == .pad
+            let isPhone = UIDevice.current.userInterfaceIdiom == .phone
             let isLandscape = renderWidth > renderHeight
             let defaultColumns = isLandscape ? (prefs.autoLandscapeDualPage ? 2 : (isPad ? 2 : 1)) : 1
-            let cols = prefs.columnCount == 0 ? defaultColumns : prefs.columnCount
+            let cols = (isPhone && !isLandscape) ? 1 : (prefs.columnCount == 0 ? defaultColumns : prefs.columnCount)
 
-            let m = max(20.0, margin)
+            let m = isPhone ? max(12.0, min(margin, 16.0)) : max(20.0, margin)
             let gap = 2 * m
             let colWidth = max(100.0, (renderWidth / CGFloat(cols)) - gap)
 
