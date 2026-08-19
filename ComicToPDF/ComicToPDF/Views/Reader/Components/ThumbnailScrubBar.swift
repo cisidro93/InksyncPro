@@ -1,10 +1,11 @@
 import SwiftUI
 import PDFKit
 
-// MARK: - Low-Memory Thumbnail Cache Actor
+// MARK: - Low-Memory Thumbnail Cache
 
-actor ThumbnailCacheActor {
-    static let shared = ThumbnailCacheActor()
+@MainActor
+final class ThumbnailCache {
+    static let shared = ThumbnailCache()
     
     private let cache = NSCache<NSString, UIImage>()
     
@@ -38,7 +39,7 @@ actor ThumbnailCacheActor {
 
 /// High-speed collapsible thumbnail scrub rail with discrete page haptic feedback,
 /// low-memory cached mipmaps, and a floating page/chapter preview badge.
-public struct ThumbnailScrubBar: View {
+struct ThumbnailScrubBar: View {
     let document: PDFDocument?
     let totalPages: Int
     @Binding var currentPageIndex: Int
@@ -49,9 +50,8 @@ public struct ThumbnailScrubBar: View {
     @State private var scrubIndex: Int = 0
     @State private var scrubProgress: CGFloat = 0.0
     @State private var previewThumbnail: UIImage? = nil
-    @State private var previewTask: Task<Void, Never>? = nil
     
-    public init(
+    init(
         document: PDFDocument?,
         totalPages: Int,
         currentPageIndex: Binding<Int>,
@@ -149,9 +149,6 @@ public struct ThumbnailScrubBar: View {
                 scrubIndex = newIndex
             }
         }
-        .onDisappear {
-            previewTask?.cancel()
-        }
     }
     
     // MARK: - Floating Preview Pill
@@ -191,19 +188,11 @@ public struct ThumbnailScrubBar: View {
     // MARK: - Thumbnail Preloading
     
     private func loadPreviewThumbnail(for index: Int) {
-        previewTask?.cancel()
         guard let doc = document, let page = doc.page(at: index) else { return }
-        
-        previewTask = Task.detached(priority: .userInitiated) {
-            let thumb = await ThumbnailCacheActor.shared.getThumbnail(
-                for: page,
-                index: index,
-                targetSize: CGSize(width: 72, height: 96)
-            )
-            guard !Task.isCancelled else { return }
-            await MainActor.run {
-                self.previewThumbnail = thumb
-            }
-        }
+        self.previewThumbnail = ThumbnailCache.shared.getThumbnail(
+            for: page,
+            index: index,
+            targetSize: CGSize(width: 72, height: 96)
+        )
     }
 }

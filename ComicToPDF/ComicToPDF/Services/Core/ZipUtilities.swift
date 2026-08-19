@@ -207,13 +207,11 @@ struct ZipUtilities {
     static func listComicEntries(from sourceURL: URL) async throws -> [URL] {
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
-                var archive: ZIPFoundation.Archive? = nil
                 do {
                     let secure = sourceURL.startAccessingSecurityScopedResource()
                     defer { if secure { sourceURL.stopAccessingSecurityScopedResource() } }
                     
                     let activeArchive = try ZIPFoundation.Archive(url: sourceURL, accessMode: .read, pathEncoding: .utf8)
-                    archive = activeArchive
                     let entries = activeArchive.filter { entry in
                         let name = entry.path
                         let ext = URL(fileURLWithPath: name).pathExtension.lowercased()

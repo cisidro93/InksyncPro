@@ -163,20 +163,19 @@ final class PDFAnnotationSyncBridge: Sendable {
     // MARK: - Standalone Annotated PDF File Generation
     
     /// Generates a standalone annotated PDF file and writes it to the destination URL.
+    @MainActor
     func generateAnnotatedPDF(
         from document: PDFDocument,
         for pdfID: UUID,
         saveTo destinationURL: URL
-    ) async throws -> URL {
+    ) throws -> URL {
         // Create an in-memory duplicate of the document to avoid mutating the active reader
         guard let data = document.dataRepresentation(),
               let exportedDoc = PDFDocument(data: data) else {
             throw PDFSyncError.documentSerializationFailed
         }
         
-        await MainActor.run {
-            self.exportAnnotations(for: pdfID, to: exportedDoc)
-        }
+        self.exportAnnotations(for: pdfID, to: exportedDoc)
         
         guard exportedDoc.write(to: destinationURL) else {
             throw PDFSyncError.fileWriteFailed

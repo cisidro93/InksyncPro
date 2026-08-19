@@ -916,52 +916,50 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
             let currentScale = pdfView.scaleFactor
             let fitScale = pdfView.scaleFactorForSizeToFit
 
-            Task { @MainActor in
-                let layout = await PDFColumnDetector.shared.detectColumns(in: page, pageIndex: pageIdx)
-                if layout.isMultiColumn, let targetCol = await PDFColumnDetector.shared.findTargetColumn(at: tapLocationInPage, in: layout) {
-                    if currentScale > fitScale * 1.3 {
-                        // Zoom back out
-                        UIView.animate(withDuration: 0.35, delay: 0, usingSpringWithDamping: 0.85, initialSpringVelocity: 0, options: [.curveEaseOut]) {
-                            pdfView.scaleFactor = fitScale
-                            self.userCustomZoomScale = nil
-                        }
-                    } else {
-                        // Zoom to fit column width
-                        let colWidth = targetCol.rect.width
-                        let desiredScale = max(fitScale * 1.2, min(fitScale * 4.0, (pdfView.bounds.width - 24.0) / max(1, colWidth)))
-                        
-                        UIView.animate(withDuration: 0.35, delay: 0, usingSpringWithDamping: 0.85, initialSpringVelocity: 0, options: [.curveEaseOut]) {
-                            pdfView.scaleFactor = desiredScale
-                            self.userCustomZoomScale = desiredScale
-                            
-                            // Center horizontally on column
-                            let colCenter = CGPoint(x: targetCol.rect.midX, y: targetCol.rect.maxY)
-                            let viewPoint = pdfView.convert(colCenter, from: page)
-                            if let scrollView = pdfView.subviews.first(where: { $0 is UIScrollView }) as? UIScrollView {
-                                let targetOffsetX = max(0, viewPoint.x - (pdfView.bounds.width / 2.0))
-                                let targetOffsetY = max(0, viewPoint.y - 20)
-                                scrollView.setContentOffset(CGPoint(x: targetOffsetX, y: targetOffsetY), animated: false)
-                            }
-                        }
-                        HapticEngine.light()
+            let layout = PDFColumnDetector.shared.detectColumns(in: page, pageIndex: pageIdx)
+            if layout.isMultiColumn, let targetCol = PDFColumnDetector.shared.findTargetColumn(at: tapLocationInPage, in: layout) {
+                if currentScale > fitScale * 1.3 {
+                    // Zoom back out
+                    UIView.animate(withDuration: 0.35, delay: 0, usingSpringWithDamping: 0.85, initialSpringVelocity: 0, options: [.curveEaseOut]) {
+                        pdfView.scaleFactor = fitScale
+                        self.userCustomZoomScale = nil
                     }
                 } else {
-                    let zoomTarget = fitScale * 2.5
-                    if currentScale > fitScale * 1.5 {
-                        UIView.animate(withDuration: 0.3) {
-                            pdfView.scaleFactor = fitScale
-                            self.userCustomZoomScale = nil
-                        }
-                    } else {
-                        UIView.animate(withDuration: 0.3) {
-                            pdfView.scaleFactor = zoomTarget
-                            self.userCustomZoomScale = zoomTarget
+                    // Zoom to fit column width
+                    let colWidth = targetCol.rect.width
+                    let desiredScale = max(fitScale * 1.2, min(fitScale * 4.0, (pdfView.bounds.width - 24.0) / max(1, colWidth)))
+                    
+                    UIView.animate(withDuration: 0.35, delay: 0, usingSpringWithDamping: 0.85, initialSpringVelocity: 0, options: [.curveEaseOut]) {
+                        pdfView.scaleFactor = desiredScale
+                        self.userCustomZoomScale = desiredScale
+                        
+                        // Center horizontally on column
+                        let colCenter = CGPoint(x: targetCol.rect.midX, y: targetCol.rect.maxY)
+                        let viewPoint = pdfView.convert(colCenter, from: page)
+                        if let scrollView = pdfView.subviews.first(where: { $0 is UIScrollView }) as? UIScrollView {
+                            let targetOffsetX = max(0, viewPoint.x - (pdfView.bounds.width / 2.0))
+                            let targetOffsetY = max(0, viewPoint.y - 20)
+                            scrollView.setContentOffset(CGPoint(x: targetOffsetX, y: targetOffsetY), animated: false)
                         }
                     }
+                    HapticEngine.light()
                 }
-                let effectiveScale = pdfView.scaleFactor / max(0.01, fitScale)
-                self.parent.onScaleChanged?(effectiveScale)
+            } else {
+                let zoomTarget = fitScale * 2.5
+                if currentScale > fitScale * 1.5 {
+                    UIView.animate(withDuration: 0.3) {
+                        pdfView.scaleFactor = fitScale
+                        self.userCustomZoomScale = nil
+                    }
+                } else {
+                    UIView.animate(withDuration: 0.3) {
+                        pdfView.scaleFactor = zoomTarget
+                        self.userCustomZoomScale = zoomTarget
+                    }
+                }
             }
+            let effectiveScale = pdfView.scaleFactor / max(0.01, fitScale)
+            self.parent.onScaleChanged?(effectiveScale)
         }
 
         @MainActor @objc func scaleChanged(_ notification: Notification) {

@@ -122,18 +122,18 @@ public final class EPUBNarrationEngine: NSObject, ObservableObject, AVSpeechSynt
     // MARK: - AVSpeechSynthesizerDelegate
     
     nonisolated public func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+        let language = utterance.voice?.language ?? "en-US"
         Task { @MainActor [weak self] in
-            self?.handleUtteranceDidFinish(utterance)
+            self?.handleUtteranceDidFinish(voiceLanguage: language)
         }
     }
     
-    private func handleUtteranceDidFinish(_ utterance: AVSpeechUtterance) {
+    private func handleUtteranceDidFinish(voiceLanguage: String) {
         guard isPlaying && !isPaused else { return }
         
         if currentSentenceIndex < sentences.count - 1 {
             currentSentenceIndex += 1
-            let nextLang = utterance.voice?.language ?? "en-US"
-            speakCurrentSentence(language: nextLang)
+            speakCurrentSentence(language: voiceLanguage)
         } else {
             stop()
             onChapterFinished?()

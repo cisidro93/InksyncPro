@@ -34,18 +34,19 @@ public struct PageColumnLayout: Sendable, Equatable {
     }
 }
 
-// MARK: - PDF Column Detector Actor
+// MARK: - PDF Column Detector
 
-/// High-performance background actor analyzing PDF page layouts, detecting continuous vertical gutters,
+/// High-performance service analyzing PDF page layouts, detecting continuous vertical gutters,
 /// and computing exact column bounding boxes for smart double-tap snapping.
-public actor PDFColumnDetector {
+@MainActor
+final class PDFColumnDetector {
     
-    public static let shared = PDFColumnDetector()
+    static let shared = PDFColumnDetector()
     
     // In-memory cache for analyzed page layouts: [CacheKey: PageColumnLayout]
     private var layoutCache: [String: PageColumnLayout] = [:]
     
-    public init() {}
+    init() {}
     
     // MARK: - Public API
     
