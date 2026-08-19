@@ -449,7 +449,7 @@ final class MetadataInjector: Sendable {
         // 2. Check Fixed Layout
         if !opfString.contains("rendition:layout") {
              if let range = opfString.range(of: "</metadata>") {
-                 let tag = "\n    <meta property=\"rendition:layout\">pre-paginated</meta>\n    <meta property=\"rendition:orientation\">auto</meta>\n    <meta property=\"rendition:spread\">auto</meta>\n    <meta name=\"fixed-layout\" content=\"true\"/>"
+                 let tag = "\n    <meta property=\"rendition:layout\">pre-paginated</meta>\n    <meta property=\"rendition:orientation\">auto</meta>\n    <meta property=\"rendition:spread\">landscape</meta>\n    <meta name=\"fixed-layout\" content=\"true\"/>"
                  opfString.insert(contentsOf: tag, at: range.lowerBound)
                  modified = true
              }

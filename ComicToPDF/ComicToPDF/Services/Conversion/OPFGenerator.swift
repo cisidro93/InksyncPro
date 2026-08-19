@@ -24,7 +24,7 @@ class OPFGenerator {
             <meta name="primary-writing-mode" content="\(isManga ? "horizontal-rl" : "horizontal-lr")"/>
             
             <meta property="rendition:layout">pre-paginated</meta>
-            <meta property="rendition:spread">auto</meta>
+            <meta property="rendition:spread">landscape</meta>
             <meta property="rendition:orientation">auto</meta>
         </metadata>
         """

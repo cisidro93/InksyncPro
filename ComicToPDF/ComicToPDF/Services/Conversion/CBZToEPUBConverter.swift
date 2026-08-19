@@ -349,10 +349,8 @@ struct CBZToEPUBConverter: Sendable {
         var firstContentW = 1980
         var firstContentH = 2640
         
-        // Content pages always start at counter 1 regardless of whether a cover exists.
-        // The cover's own spread position is set explicitly via coverSpreadTag above —
-        // it does not consume a globalPageCounter slot.
-        var globalPageCounter = 1
+        // Content pages always start at counter 2 if a cover is present, or 1 if no cover.
+        var globalPageCounter = hasBadgedCover ? 2 : 1
         
         for (localIndex, item) in batch.enumerated() {
             let isFirstImageOfBook = (localIndex == 0 && batchIndex == 0)
@@ -388,6 +386,7 @@ struct CBZToEPUBConverter: Sendable {
                 spineItems.append("<itemref idref=\"cover-page\"\(coverSpreadTag)/>")
                 // Mark cover as handled — firstPageHref and coverMetaID logic below reads hasBadgedCover.
                 hasBadgedCover = true
+                globalPageCounter = 2
                 // Do NOT generate a regular page XHTML for the cover image here — cover.xhtml is the spine entry.
                 continue
             }

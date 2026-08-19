@@ -224,7 +224,7 @@ class PanelViewEPUBConverter {
                     
                     // Resolve actual pixel dimensions per page (may differ from page 1)
                     let pageSz = UIImage(data: imgData)?.size ?? pageSize
-                    
+                    let isLandscape = pageSz.width > pageSz.height * 1.1
                     
                     // Step 3: Build XHTML
                     let xhtml = buildXHTMLPage(
@@ -243,7 +243,8 @@ class PanelViewEPUBConverter {
                         paddedNum: paddedNum,
                         imageName: imageName,
                         xhtmlName: xhtmlName,
-                        panelCount: pagePanels.count
+                        panelCount: pagePanels.count,
+                        isLandscape: isLandscape
                     ))
                     
                     let batchProgress = 0.1 + (0.55 * Double(localIdx) / Double(batch.count))
@@ -455,7 +456,9 @@ class PanelViewEPUBConverter {
         for entry in pageCatalog {
             let idref = "page\(entry.paddedNum)"
             let spreadTag: String
-            if linkCoverAsSpread {
+            if entry.isLandscape {
+                spreadTag = #" properties="rendition:page-spread-center""#
+            } else if linkCoverAsSpread {
                 if isManga {
                     spreadTag = (globalPageCounter % 2 == 1) ? #" properties="page-spread-right""# : #" properties="page-spread-left""#
                 } else {
@@ -471,7 +474,15 @@ class PanelViewEPUBConverter {
                 }
             }
             items.append(#"<itemref idref="\#(idref)"\#(spreadTag)/>"#)
-            globalPageCounter += 1
+            if entry.isLandscape {
+                if linkCoverAsSpread {
+                    globalPageCounter += (globalPageCounter % 2 == 0) ? 1 : 2
+                } else {
+                    globalPageCounter += (globalPageCounter % 2 != 0) ? 1 : 2
+                }
+            } else {
+                globalPageCounter += 1
+            }
         }
 
         if needsBlank {
@@ -799,6 +810,7 @@ class PanelViewEPUBConverter {
         let imageName: String
         let xhtmlName: String
         let panelCount: Int
+        let isLandscape: Bool
     }
 
     private func buildBatches(imageURLs: [URL], settings: ConversionSettings) -> [[(url: URL, index: Int)]] {

@@ -420,25 +420,27 @@ final class PDFToEPUBConverter: Sendable {
 """
         
         var spineItems = coverSpine
+        var globalPageCounter = coverSpine.isEmpty ? 1 : 2
         for (index, _) in xhtmlFiles.enumerated() {
             let pageNum = index + 1
             let spreadTag: String
             if linkCoverAsSpread {
                 if mangaMode {
-                    spreadTag = (pageNum % 2 == 1) ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
+                    spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
                 } else {
-                    spreadTag = (pageNum % 2 == 1) ? " properties=\"page-spread-left\"" : " properties=\"page-spread-right\""
+                    spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-left\"" : " properties=\"page-spread-right\""
                 }
             } else {
-                if pageNum == 1 && coverSpine.isEmpty {
+                if globalPageCounter == 1 {
                     spreadTag = "" // Cover stands alone centered
                 } else if mangaMode {
-                    spreadTag = (pageNum % 2 == 1) ? " properties=\"page-spread-left\"" : " properties=\"page-spread-right\""
+                    spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-left\"" : " properties=\"page-spread-right\""
                 } else {
-                    spreadTag = (pageNum % 2 == 1) ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
+                    spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
                 }
             }
             spineItems += "<itemref idref=\"chunk\(pageNum)\"\(spreadTag)/>\n        "
+            globalPageCounter += 1
         }
         
         let coverMetaTag: String
@@ -473,7 +475,7 @@ final class PDFToEPUBConverter: Sendable {
                 <meta name="primary-writing-mode" content="\(mangaMode ? "horizontal-rl" : "horizontal-lr")"/>
                 
                 <meta property="rendition:layout">pre-paginated</meta>
-                <meta property="rendition:spread">auto</meta>
+                <meta property="rendition:spread">landscape</meta>
                 <meta property="rendition:orientation">auto</meta>
             </metadata>
             <manifest>
