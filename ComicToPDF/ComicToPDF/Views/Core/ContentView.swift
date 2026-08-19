@@ -318,6 +318,16 @@ struct ContentView: View {
             
             if url.scheme == "inksyncpro" {
                 conversionManager.scanLibrary()
+                Task { @MainActor in
+                    withAnimation(.spring()) {
+                        activeToast = ToastMessage(
+                            title: "Library Sync",
+                            message: "Shared files added to library.",
+                            systemImage: "arrow.down.doc.fill",
+                            type: .success
+                        )
+                    }
+                }
                 return
             }
             guard url.isFileURL else { return }
@@ -326,7 +336,10 @@ struct ContentView: View {
             Task.detached(priority: .userInitiated) {
                 defer { if accessing { url.stopAccessingSecurityScopedResource() } }
                 
-                let dest = FileManager.default.temporaryDirectory.appendingPathComponent(url.lastPathComponent)
+                let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
+                let inboxDir = appSupport.appendingPathComponent("InksyncVault/Inbox", isDirectory: true)
+                try? FileManager.default.createDirectory(at: inboxDir, withIntermediateDirectories: true)
+                let dest = inboxDir.appendingPathComponent(url.lastPathComponent)
                 try? FileManager.default.removeItem(at: dest)
                 
                 var coordError: NSError?
@@ -337,6 +350,11 @@ struct ContentView: View {
                         copySuccess = true
                     } catch {
                         Logger.shared.log("onOpenURL: Copy coordinated file failed: \(error.localizedDescription)", category: "Import", type: .error)
+                        // Direct read fallback
+                        if let data = try? Data(contentsOf: safeURL) {
+                            try? data.write(to: dest, options: .atomic)
+                            copySuccess = true
+                        }
                     }
                 }
                 
@@ -346,17 +364,16 @@ struct ContentView: View {
                     Task { @MainActor in
                         withAnimation(.spring()) {
                             activeToast = ToastMessage(
-                                title: "Staged for Import",
-                                message: "\(url.lastPathComponent) has been added to import queue.",
-                                systemImage: "doc.badge.plus",
+                                title: "Added to Library",
+                                message: "\(url.lastPathComponent) added to your library.",
+                                systemImage: "checkmark.circle.fill",
                                 type: .success
                             )
                         }
-                        AppRouter.shared.presentSheet(.importQueue)
                     }
                 }
                 
-                // Perform a complete scan so App Group / shared container files are ingested
+                // Perform a complete scan so all new items are ingested immediately
                 await MainActor.run {
                     conversionManager.scanLibrary()
                 }

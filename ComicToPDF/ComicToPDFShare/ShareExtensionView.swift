@@ -14,13 +14,27 @@ struct ShareExtensionView: View {
     @State private var processedCount = 0
     @State private var errorMessage: String?
     
+    // Supported extensions across all formats
+    private static let supportedExtensions: Set<String> = [
+        "pdf", "epub", "cbz", "cbr", "cb7", "cbt", "zip", "rar", "7z", "tar"
+    ]
+    
     var body: some View {
         NavigationView {
             ZStack {
+                Color(.systemGroupedBackground)
+                    .ignoresSafeArea()
+                
                 VStack(spacing: 0) {
                     if isLoading {
                         Spacer()
-                        ProgressView("Loading files...")
+                        VStack(spacing: 16) {
+                            ProgressView()
+                                .scaleEffect(1.3)
+                            Text("Loading shared files...")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        }
                         Spacer()
                     } else if selectedFiles.isEmpty {
                         Spacer()
@@ -28,11 +42,13 @@ struct ShareExtensionView: View {
                             Image(systemName: "doc.questionmark")
                                 .font(.system(size: 60))
                                 .foregroundColor(.secondary)
-                            Text("No Compatible Files")
+                            Text("No Compatible Files Found")
                                 .font(.headline)
-                            Text("Select CBZ, CBR, PDF, or EPUB files to import")
+                            Text("Share PDF, EPUB, CBZ, CBR, CB7, or ZIP files to import directly into Inksync Pro.")
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, 32)
                         }
                         Spacer()
                     } else {
@@ -41,9 +57,10 @@ struct ShareExtensionView: View {
                             Section {
                                 ForEach(selectedFiles) { file in
                                     HStack(spacing: 12) {
-                                        Image(systemName: "doc.zipper.fill")
+                                        Image(systemName: iconForExtension(file.fileExtension))
                                             .font(.title2)
                                             .foregroundColor(.orange)
+                                            .frame(width: 32)
                                         
                                         VStack(alignment: .leading, spacing: 2) {
                                             Text(file.name)
@@ -53,10 +70,11 @@ struct ShareExtensionView: View {
                                             
                                             Text(file.fileExtension.uppercased())
                                                 .font(.caption2)
-                                                .foregroundColor(.secondary)
+                                                .fontWeight(.semibold)
+                                                .foregroundColor(.orange)
                                                 .padding(.horizontal, 6)
                                                 .padding(.vertical, 2)
-                                                .background(Color.orange.opacity(0.2))
+                                                .background(Color.orange.opacity(0.15))
                                                 .cornerRadius(4)
                                         }
                                         
@@ -70,9 +88,10 @@ struct ShareExtensionView: View {
                                     .padding(.vertical, 4)
                                 }
                             } header: {
-                                Text("\(selectedFiles.count) file\(selectedFiles.count > 1 ? "s" : "") to import")
+                                Text("\(selectedFiles.count) file\(selectedFiles.count > 1 ? "s" : "") ready to import")
                             }
                         }
+                        .listStyle(.insetGrouped)
                         
                         // Import button
                         VStack(spacing: 12) {
@@ -87,26 +106,27 @@ struct ShareExtensionView: View {
                             }
                             
                             Button(action: processFiles) {
-                                HStack {
-                                    Image(systemName: "arrow.triangle.2.circlepath")
-                                    Text("Import to Inksync Pro")
+                                HStack(spacing: 8) {
+                                    Image(systemName: "arrow.down.doc.fill")
+                                    Text("Import to Inksync Pro Library")
                                         .fontWeight(.semibold)
                                 }
                                 .foregroundColor(.white)
                                 .frame(maxWidth: .infinity)
-                                .padding()
+                                .padding(.vertical, 14)
                                 .background(Color.orange)
                                 .cornerRadius(12)
+                                .shadow(color: Color.orange.opacity(0.3), radius: 6, y: 3)
                             }
                         }
                         .padding()
-                        .background(Color(.systemBackground))
+                        .background(Color(.secondarySystemGroupedBackground))
                     }
                 }
                 
                 // Processing overlay
                 if isProcessing {
-                    Color.black.opacity(0.6)
+                    Color.black.opacity(0.5)
                         .ignoresSafeArea()
                     
                     VStack(spacing: 20) {
@@ -114,7 +134,7 @@ struct ShareExtensionView: View {
                             .progressViewStyle(CircularProgressViewStyle(tint: .white))
                             .scaleEffect(1.5)
                         
-                        Text("Importing...")
+                        Text("Importing to Library...")
                             .font(.headline)
                             .foregroundColor(.white)
                         
@@ -127,41 +147,40 @@ struct ShareExtensionView: View {
                             .font(.caption)
                             .foregroundColor(.white.opacity(0.6))
                     }
-                    .padding(40)
-                    .background(Color.black.opacity(0.8))
-                    .cornerRadius(20)
+                    .padding(32)
+                    .background(RoundedRectangle(cornerRadius: 20).fill(Color.black.opacity(0.85)))
                 }
                 
                 // Success overlay
                 if showingSuccess {
-                    Color.black.opacity(0.6)
+                    Color.black.opacity(0.5)
                         .ignoresSafeArea()
                     
                     VStack(spacing: 20) {
                         Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 60))
+                            .font(.system(size: 56))
                             .foregroundColor(.green)
                         
                         Text("Import Complete!")
                             .font(.headline)
                             .foregroundColor(.white)
                         
-                        Text("\(processedCount) file\(processedCount > 1 ? "s" : "") added to library")
+                        Text("\(processedCount) item\(processedCount > 1 ? "s" : "") added to your Library")
                             .font(.subheadline)
                             .foregroundColor(.white.opacity(0.8))
                         
-                        Button("Done") {
+                        Button("Open Inksync Pro") {
                             onDismiss()
                         }
                         .foregroundColor(.white)
-                        .padding(.horizontal, 40)
+                        .fontWeight(.semibold)
+                        .padding(.horizontal, 32)
                         .padding(.vertical, 12)
                         .background(Color.green)
                         .cornerRadius(10)
                     }
-                    .padding(40)
-                    .background(Color.black.opacity(0.8))
-                    .cornerRadius(20)
+                    .padding(32)
+                    .background(RoundedRectangle(cornerRadius: 20).fill(Color.black.opacity(0.85)))
                 }
             }
             .navigationTitle("InkSync Pro")
@@ -179,52 +198,60 @@ struct ShareExtensionView: View {
         }
     }
     
-    // MARK: - Load Shared Files
+    private func iconForExtension(_ ext: String) -> String {
+        switch ext.lowercased() {
+        case "pdf": return "doc.richtext.fill"
+        case "epub": return "book.fill"
+        case "cbz", "cbr", "cb7", "cbt": return "doc.zipper.fill"
+        default: return "doc.fill"
+        }
+    }
     
-    // MARK: - Helpers
+    // MARK: - Format & Extension Detection
 
-    /// Maps a known UTType to the file extension we want to save.
+    /// Maps a known UTType to the canonical file extension.
     private func targetExtension(for type: UTType) -> String? {
         if type.conforms(to: .pdf) { return "pdf" }
+        if type.conforms(to: .epub) { return "epub" }
+        if type.conforms(to: .zip) { return "cbz" }
+        if type.conforms(to: .archive) { return "cbz" }
+        
         let ext = type.preferredFilenameExtension?.lowercased() ?? ""
-        switch ext {
-        case "pdf":  return "pdf"
-        case "epub": return "epub"
-        case "cbz":  return "cbz"
-        case "cbr":  return "cbr"
-        case "zip":  return "cbz"
-        case "rar":  return "cbr"
-        default: break
+        if Self.supportedExtensions.contains(ext) {
+            return ext == "zip" ? "cbz" : (ext == "rar" ? "cbr" : ext)
         }
-        if type.identifier.contains("epub") { return "epub" }
-        if type.identifier.contains("cbz")  { return "cbz" }
-        if type.identifier.contains("cbr")  { return "cbr" }
-        if type.identifier.contains("zip")  { return "cbz" }
-        if type.identifier.contains("rar")  { return "cbr" }
-        if type != .data && type != .item {
-            if let epubUT = UTType("org.idpf.epub-container"), type.conforms(to: epubUT) { return "epub" }
-            if type.conforms(to: .zip)     { return "cbz" }
-            if type.conforms(to: .archive) { return "cbz" }
-        }
+        
+        let id = type.identifier.lowercased()
+        if id.contains("pdf") { return "pdf" }
+        if id.contains("epub") { return "epub" }
+        if id.contains("cbz") || id.contains("comic") { return "cbz" }
+        if id.contains("cbr") { return "cbr" }
+        if id.contains("cb7") || id.contains("7z") { return "cb7" }
+        if id.contains("cbt") || id.contains("tar") { return "cbt" }
+        if id.contains("zip") { return "cbz" }
+        if id.contains("rar") { return "cbr" }
+        
         return nil
     }
 
-    /// Derives a file extension from the `suggestedName` of an NSItemProvider.
+    /// Derives a file extension from a filename or suggested name.
     private func extensionFromSuggestedName(_ name: String?) -> String? {
         guard let name = name else { return nil }
         let raw = (name as NSString).pathExtension.lowercased()
         switch raw {
-        case "pdf":  return "pdf"
+        case "pdf": return "pdf"
         case "epub": return "epub"
-        case "cbz":  return "cbz"
-        case "cbr":  return "cbr"
-        case "zip":  return "cbz"
-        case "rar":  return "cbr"
-        default:     return nil
+        case "cbz": return "cbz"
+        case "cbr": return "cbr"
+        case "cb7", "7z": return "cb7"
+        case "cbt", "tar": return "cbt"
+        case "zip": return "cbz"
+        case "rar": return "cbr"
+        default: return nil
         }
     }
     
-    /// Inspects the first bytes of a file to identify its format.
+    /// Inspects the magic bytes of a file to reliably identify its true format.
     private func detectFileExtension(from url: URL) -> String? {
         let existingExt = url.pathExtension.lowercased()
         
@@ -232,34 +259,55 @@ struct ShareExtensionView: View {
         defer { if accessing { url.stopAccessingSecurityScopedResource() } }
         
         guard let fileHandle = try? FileHandle(forReadingFrom: url),
-              let data = try? fileHandle.read(upToCount: 2000) else {
-            return ["pdf", "epub", "cbz", "cbr"].contains(existingExt) ? existingExt : nil
+              let data = try? fileHandle.read(upToCount: 4096) else {
+            return Self.supportedExtensions.contains(existingExt) ? existingExt : nil
         }
         defer { try? fileHandle.close() }
+        
         guard data.count >= 4 else {
-            return ["pdf", "epub", "cbz", "cbr"].contains(existingExt) ? existingExt : nil
+            return Self.supportedExtensions.contains(existingExt) ? existingExt : nil
         }
 
-        // PDF  (%PDF)
-        if data[0] == 0x25 && data[1] == 0x50 && data[2] == 0x44 && data[3] == 0x46 { return "pdf" }
-        // RAR / CBR  (Rar!)
-        if data[0] == 0x52 && data[1] == 0x61 && data[2] == 0x72 && data[3] == 0x21 { return "cbr" }
+        // PDF (%PDF -> 0x25 0x50 0x44 0x46)
+        if data[0] == 0x25 && data[1] == 0x50 && data[2] == 0x44 && data[3] == 0x46 {
+            return "pdf"
+        }
+        // RAR / CBR (Rar! -> 0x52 0x61 0x72 0x21 or 0x52 0x61 0x72 0x20)
+        if data[0] == 0x52 && data[1] == 0x61 && data[2] == 0x72 && (data[3] == 0x21 || data[3] == 0x20) {
+            return "cbr"
+        }
+        // 7-Zip / CB7 (7z -> 0x37 0x7A 0xBC 0xAF 0x27 0x1C)
+        if data.count >= 6 && data[0] == 0x37 && data[1] == 0x7A && data[2] == 0xBC && data[3] == 0xAF && data[4] == 0x27 && data[5] == 0x1C {
+            return "cb7"
+        }
 
-        // ZIP / CBZ / EPUB  (PK\x03\x04 or PK\x05\x06)
+        // ZIP / CBZ / EPUB (PK\x03\x04 or PK\x05\x06 or PK\x07\x08)
         if (data[0] == 0x50 && data[1] == 0x4B && data[2] == 0x03 && data[3] == 0x04) ||
            (data[0] == 0x50 && data[1] == 0x4B && data[2] == 0x05 && data[3] == 0x06) {
             if existingExt == "epub" { return "epub" }
             if existingExt == "cbz"  { return "cbz" }
             
-            // Peek into the archive: EPUB stores "mimetype" entry
-            let header = String(decoding: data.prefix(500), as: UTF8.self)
+            // Check if archive contains EPUB mimetype
+            let header = String(decoding: data.prefix(1000), as: UTF8.self)
             if header.contains("mimetype") && (header.contains("epub+zip") || header.contains("epub")) {
                 return "epub"
             }
             return "cbz"
         }
 
-        return ["pdf", "epub", "cbz", "cbr"].contains(existingExt) ? existingExt : nil
+        // TAR / CBT (ustar)
+        if data.count >= 265 {
+            let ustarRange = data[257..<262]
+            if let ustarStr = String(data: ustarRange, encoding: .ascii), ustarStr == "ustar" {
+                return "cbt"
+            }
+        }
+
+        if Self.supportedExtensions.contains(existingExt) {
+            return existingExt == "zip" ? "cbz" : (existingExt == "rar" ? "cbr" : existingExt)
+        }
+
+        return nil
     }
 
     // MARK: - Load Shared Files
@@ -279,140 +327,103 @@ struct ShareExtensionView: View {
 
                 for provider in attachments {
                     let registered = provider.registeredTypeIdentifiers
-                    let baseName   = provider.suggestedName ?? "shared_file"
+                    let baseName = provider.suggestedName ?? "SharedDocument_\(UUID().uuidString.prefix(6))"
 
-                    // ──────────────────────────────────────────────────────────────
-                    // STEP 1: Build an ordered list of type identifiers to try.
-                    // We attempt every candidate until one successfully provides a file.
-                    // Priority: specific format types → file-URL types → data types → anything
-                    // ──────────────────────────────────────────────────────────────
-                    var candidates: [(typeId: String, hintExt: String?)] = []
-
-                    // 1a. Specific format UTTypes (epub, pdf, cbz, cbr, zip, rar)
+                    // Build priority list of UTIs to attempt
+                    var candidateTypes: [String] = []
+                    
+                    // 1. Direct file and URL types
+                    candidateTypes.append(UTType.fileURL.identifier)
+                    candidateTypes.append("public.file-url")
+                    candidateTypes.append("com.apple.cocoa.path")
+                    
+                    // 2. Specific format types
                     for typeId in registered {
-                        guard let utType = UTType(typeId) else { continue }
-                        if let ext = targetExtension(for: utType) {
-                            candidates.append((typeId, ext))
+                        if !candidateTypes.contains(typeId) {
+                            candidateTypes.append(typeId)
+                        }
+                    }
+                    
+                    // 3. Fallback generic types
+                    let genericTypes = [UTType.url.identifier, "public.url", UTType.data.identifier, "public.data", UTType.item.identifier, "public.item"]
+                    for typeId in genericTypes {
+                        if !candidateTypes.contains(typeId) {
+                            candidateTypes.append(typeId)
                         }
                     }
 
-                    // 1b. If the suggestedName carries a recognisable extension, pair generic
-                    //     type IDs with it so we know what extension to use post-load.
-                    let nameExt = extensionFromSuggestedName(baseName)
-                    let genericFileURLTypes = [UTType.fileURL.identifier, "public.file-url", "com.apple.cocoa.path"]
-                    let genericDataTypes    = [UTType.data.identifier, "public.data", UTType.item.identifier, "public.item"]
+                    var loadedURL: URL? = nil
+                    var detectedExt: String? = nil
 
-                    for typeId in registered where genericFileURLTypes.contains(typeId) {
-                        candidates.append((typeId, nameExt))   // nameExt may be nil — will rely on magic bytes
-                    }
-                    for typeId in registered where genericDataTypes.contains(typeId) {
-                        candidates.append((typeId, nameExt))
-                    }
-
-                    // 1c. Absolute last resort: try anything that's registered
-                    for typeId in registered {
-                        if !candidates.contains(where: { $0.typeId == typeId }) {
-                            candidates.append((typeId, nameExt))
-                        }
-                    }
-
-                    if candidates.isEmpty {
-                        print("[ShareExt] No candidates for provider: \(registered)")
-                        continue
-                    }
-
-                    // ──────────────────────────────────────────────────────────────
-                    // STEP 2: Attempt to load the file using each candidate in order.
-                    // ──────────────────────────────────────────────────────────────
-                    var loadedURL: URL?   = nil
-                    var resolvedExt: String? = nil
-
-                    for candidate in candidates {
-                        let typeId  = candidate.typeId
-                        let hintExt = candidate.hintExt
-
-                        // Construct a temporary filename. Use the hint if we have one;
-                        // otherwise we'll detect the extension from magic bytes after loading.
+                    for typeId in candidateTypes {
+                        let hintExt = extensionFromSuggestedName(baseName) ?? (UTType(typeId).flatMap { targetExtension(for: $0) })
                         let tempName: String
                         if let h = hintExt {
-                            let cleanBase = (baseName as NSString).deletingPathExtension
-                            tempName = cleanBase + "." + h
+                            let clean = (baseName as NSString).deletingPathExtension
+                            tempName = "\(clean).\(h)"
                         } else {
                             tempName = baseName
                         }
 
-                        // --- Method A: loadInPlaceFileRepresentation (Files app / iCloud Drive) ---
-                        if let url = await tryLoadInPlaceFileRepresentation(provider: provider, typeId: typeId, filename: tempName) {
-                            loadedURL = url
-                            resolvedExt = hintExt ?? detectFileExtension(from: url) ?? url.pathExtension.lowercased().nonEmpty
-                            break
-                        }
-
-                        // --- Method B: loadFileRepresentation ---
-                        if let url = await tryLoadFileRepresentation(provider: provider, typeId: typeId, filename: tempName) {
-                            loadedURL = url
-                            resolvedExt = hintExt ?? detectFileExtension(from: url) ?? url.pathExtension.lowercased().nonEmpty
-                            break
-                        }
-
-                        // --- Method C: loadItem ---
+                        // Method 1: loadItem (handles direct URLs and file-urls)
                         if let url = await tryLoadItem(provider: provider, typeId: typeId, filename: tempName) {
                             loadedURL = url
-                            resolvedExt = hintExt ?? detectFileExtension(from: url) ?? url.pathExtension.lowercased().nonEmpty
+                            detectedExt = detectFileExtension(from: url) ?? hintExt ?? url.pathExtension.lowercased()
                             break
                         }
 
-                        // --- Method D: loadDataRepresentation (Safari / Mail / Data buffers) ---
+                        // Method 2: loadFileRepresentation
+                        if let url = await tryLoadFileRepresentation(provider: provider, typeId: typeId, filename: tempName) {
+                            loadedURL = url
+                            detectedExt = detectFileExtension(from: url) ?? hintExt ?? url.pathExtension.lowercased()
+                            break
+                        }
+
+                        // Method 3: loadInPlaceFileRepresentation
+                        if let url = await tryLoadInPlaceFileRepresentation(provider: provider, typeId: typeId, filename: tempName) {
+                            loadedURL = url
+                            detectedExt = detectFileExtension(from: url) ?? hintExt ?? url.pathExtension.lowercased()
+                            break
+                        }
+
+                        // Method 4: loadDataRepresentation
                         if let url = await tryLoadDataRepresentation(provider: provider, typeId: typeId, filename: tempName) {
                             loadedURL = url
-                            resolvedExt = hintExt ?? detectFileExtension(from: url) ?? url.pathExtension.lowercased().nonEmpty
+                            detectedExt = detectFileExtension(from: url) ?? hintExt ?? url.pathExtension.lowercased()
                             break
                         }
                     }
 
-                    // ──────────────────────────────────────────────────────────────
-                    // STEP 3: Validate extension and add to the import list.
-                    // ──────────────────────────────────────────────────────────────
                     guard var finalURL = loadedURL else {
-                        print("[ShareExt] All candidates failed for \(baseName), registered: \(registered)")
+                        print("[ShareExt] All loader methods failed for item with types: \(registered)")
                         continue
                     }
 
-                    // If we still don't know the extension, try magic bytes one more time
-                    if resolvedExt == nil || resolvedExt?.isEmpty == true {
-                        resolvedExt = detectFileExtension(from: finalURL)
-                    }
-
-                    guard let ext = resolvedExt,
-                          ["pdf", "epub", "cbz", "cbr"].contains(ext.lowercased()) else {
-                        print("[ShareExt] Unrecognised format for \(finalURL.lastPathComponent) – removing.")
+                    // Validate final format
+                    let ext = (detectedExt ?? detectFileExtension(from: finalURL) ?? finalURL.pathExtension.lowercased()).lowercased()
+                    let targetExt = ext == "zip" ? "cbz" : (ext == "rar" ? "cbr" : ext)
+                    
+                    guard Self.supportedExtensions.contains(targetExt) else {
+                        print("[ShareExt] Unsupported format '\(ext)' for file: \(finalURL.lastPathComponent)")
                         try? FileManager.default.removeItem(at: finalURL)
                         continue
                     }
 
-                    // Rename to ensure the correct extension is present
-                    let cleanBase    = (baseName as NSString).deletingPathExtension
-                    let finalName    = cleanBase + "." + ext
-                    let renamedURL   = finalURL.deletingLastPathComponent().appendingPathComponent(finalName)
+                    // Ensure destination file has proper extension
+                    let cleanBase = (baseName as NSString).deletingPathExtension
+                    let properFilename = "\(cleanBase).\(targetExt)"
+                    let targetURL = finalURL.deletingLastPathComponent().appendingPathComponent(properFilename)
 
-                    // Only move if paths differ (avoids error when they're identical)
-                    if renamedURL.path != finalURL.path {
-                        try? FileManager.default.removeItem(at: renamedURL)
-                        do {
-                            try FileManager.default.moveItem(at: finalURL, to: renamedURL)
-                            finalURL = renamedURL
-                        } catch {
-                            print("[ShareExt] Rename failed for \(finalURL.lastPathComponent): \(error)")
-                            // Keep the original path — it's still usable
-                        }
-                    } else {
-                        finalURL = renamedURL
+                    if targetURL.path != finalURL.path {
+                        try? FileManager.default.removeItem(at: targetURL)
+                        try? FileManager.default.moveItem(at: finalURL, to: targetURL)
+                        finalURL = targetURL
                     }
 
                     filesToProcess.append(SharedFile(
                         name: finalURL.lastPathComponent,
                         url: finalURL,
-                        fileExtension: ext
+                        fileExtension: targetExt
                     ))
                 }
             }
@@ -422,17 +433,53 @@ struct ShareExtensionView: View {
         }
     }
 
-    // MARK: - Low-level load helpers
+    // MARK: - Async Item Loaders
 
-    private func tryLoadInPlaceFileRepresentation(provider: NSItemProvider, typeId: String, filename: String) async -> URL? {
+    private func tryLoadItem(provider: NSItemProvider, typeId: String, filename: String) async -> URL? {
         await withCheckedContinuation { continuation in
-            provider.loadInPlaceFileRepresentation(forTypeIdentifier: typeId) { fileURL, isInPlace, error in
-                guard error == nil, let fileURL = fileURL else {
+            provider.loadItem(forTypeIdentifier: typeId, options: nil) { item, error in
+                guard error == nil, let item = item else {
                     continuation.resume(returning: nil)
                     return
                 }
-                let result = self.copyToSharedContainer(fileURL, destFilename: filename)
-                continuation.resume(returning: result)
+
+                if let url = item as? URL {
+                    if url.isFileURL {
+                        let res = self.copyToSharedContainer(url, destFilename: filename)
+                        continuation.resume(returning: res)
+                    } else if url.scheme == "http" || url.scheme == "https" {
+                        // Remote download
+                        Task.detached(priority: .userInitiated) {
+                            if let (data, _) = try? await URLSession.shared.data(from: url) {
+                                let res = self.writeRawDataToSharedContainer(data, destFilename: filename)
+                                continuation.resume(returning: res)
+                            } else {
+                                continuation.resume(returning: nil)
+                            }
+                        }
+                    } else {
+                        continuation.resume(returning: nil)
+                    }
+                } else if let nsURL = item as? NSURL {
+                    let u = nsURL as URL
+                    if u.isFileURL {
+                        let res = self.copyToSharedContainer(u, destFilename: filename)
+                        continuation.resume(returning: res)
+                    } else {
+                        continuation.resume(returning: nil)
+                    }
+                } else if let data = item as? Data {
+                    let res = self.writeRawDataToSharedContainer(data, destFilename: filename)
+                    continuation.resume(returning: res)
+                } else if let nsData = item as? NSData {
+                    let res = self.writeRawDataToSharedContainer(nsData as Data, destFilename: filename)
+                    continuation.resume(returning: res)
+                } else if let str = item as? String, let parsedURL = URL(string: str), parsedURL.isFileURL {
+                    let res = self.copyToSharedContainer(parsedURL, destFilename: filename)
+                    continuation.resume(returning: res)
+                } else {
+                    continuation.resume(returning: nil)
+                }
             }
         }
     }
@@ -450,46 +497,15 @@ struct ShareExtensionView: View {
         }
     }
 
-    private func tryLoadItem(provider: NSItemProvider, typeId: String, filename: String) async -> URL? {
+    private func tryLoadInPlaceFileRepresentation(provider: NSItemProvider, typeId: String, filename: String) async -> URL? {
         await withCheckedContinuation { continuation in
-            provider.loadItem(forTypeIdentifier: typeId, options: nil) { item, error in
-                guard error == nil else { continuation.resume(returning: nil); return }
-                
-                var sourceURL: URL? = nil
-                var isRawData = false
-                var rawData: Data? = nil
-                
-                if let nsURL = item as? NSURL {
-                    sourceURL = nsURL as URL
-                } else if let url = item as? URL {
-                    sourceURL = url
-                } else if let nsData = item as? NSData {
-                    let data = nsData as Data
-                    if let str = String(data: data, encoding: .utf8),
-                       let url = URL(string: str),
-                       url.scheme != nil {
-                        sourceURL = url
-                    } else {
-                        // Raw binary payload
-                        isRawData = true
-                        rawData = data
-                    }
-                } else if let nsString = item as? NSString {
-                    let str = nsString as String
-                    if let url = URL(string: str), url.scheme != nil {
-                        sourceURL = url
-                    }
-                }
-                
-                if let src = sourceURL {
-                    let result = self.copyToSharedContainer(src, destFilename: filename)
-                    continuation.resume(returning: result)
-                } else if isRawData, let data = rawData {
-                    let result = self.writeRawDataToSharedContainer(data, destFilename: filename)
-                    continuation.resume(returning: result)
-                } else {
+            provider.loadInPlaceFileRepresentation(forTypeIdentifier: typeId) { fileURL, _, error in
+                guard error == nil, let fileURL = fileURL else {
                     continuation.resume(returning: nil)
+                    return
                 }
+                let result = self.copyToSharedContainer(fileURL, destFilename: filename)
+                continuation.resume(returning: result)
             }
         }
     }
@@ -506,9 +522,9 @@ struct ShareExtensionView: View {
             }
         }
     }
-    
-    // MARK: - Copy to Shared Container
-    
+
+    // MARK: - App Group File Operations
+
     nonisolated private func copyToSharedContainer(_ sourceURL: URL, destFilename: String) -> URL? {
         guard let containerURL = FileManager.default.containerURL(
             forSecurityApplicationGroupIdentifier: "group.com.antigravity.ComicToPDF"
@@ -517,44 +533,44 @@ struct ShareExtensionView: View {
         let inboxURL = containerURL.appendingPathComponent("Inbox", isDirectory: true)
         try? FileManager.default.createDirectory(at: inboxURL, withIntermediateDirectories: true)
         
-        // Ensure destination filename has the correct file extension from sourceURL
-        let ext = sourceURL.pathExtension.lowercased()
-        let finalDestFilename: String
-        if ext.isEmpty {
-            finalDestFilename = destFilename
-        } else if destFilename.lowercased().hasSuffix("." + ext) {
-            finalDestFilename = destFilename
-        } else {
-            finalDestFilename = destFilename + "." + ext
-        }
-        
-        let destURL = inboxURL.appendingPathComponent(finalDestFilename)
-        
-        // Remove existing file if any
+        // Preserve clean filename with proper extension
+        let cleanDest = destFilename.replacingOccurrences(of: ".tmp", with: "")
+        let destURL = inboxURL.appendingPathComponent(cleanDest)
         try? FileManager.default.removeItem(at: destURL)
         
         let accessing = sourceURL.startAccessingSecurityScopedResource()
         defer { if accessing { sourceURL.stopAccessingSecurityScopedResource() } }
         
-        // Direct copy under active security scope access
-        do {
-            try FileManager.default.copyItem(at: sourceURL, to: destURL)
-            return destURL
-        } catch {
-            print("[ShareExt] Direct copy failed: \(error.localizedDescription)")
-            
-            // Fallback: read data and write atomically (highly robust for small files/data payloads)
+        // Coordinated read + copy
+        var coordError: NSError?
+        var didCopy = false
+        
+        NSFileCoordinator().coordinate(readingItemAt: sourceURL, options: .withoutChanges, error: &coordError) { safeURL in
             do {
-                let data = try Data(contentsOf: sourceURL)
-                try data.write(to: destURL, options: .atomic)
-                return destURL
+                try FileManager.default.copyItem(at: safeURL, to: destURL)
+                didCopy = true
             } catch {
-                print("[ShareExt] Fallback data write failed: \(error.localizedDescription)")
-                return nil
+                // Fallback atomic write
+                if let data = try? Data(contentsOf: safeURL) {
+                    try? data.write(to: destURL, options: .atomic)
+                    didCopy = true
+                }
             }
         }
+        
+        if didCopy {
+            return destURL
+        }
+        
+        // Direct read fallback if coordinator was skipped
+        if let data = try? Data(contentsOf: sourceURL) {
+            try? data.write(to: destURL, options: .atomic)
+            return destURL
+        }
+        
+        return nil
     }
-    
+
     nonisolated private func writeRawDataToSharedContainer(_ data: Data, destFilename: String) -> URL? {
         guard let containerURL = FileManager.default.containerURL(
             forSecurityApplicationGroupIdentifier: "group.com.antigravity.ComicToPDF"
@@ -570,15 +586,13 @@ struct ShareExtensionView: View {
             try data.write(to: destURL, options: .atomic)
             return destURL
         } catch {
-            print("[ShareExt] Failed to write raw binary data: \(error.localizedDescription)")
+            print("[ShareExt] Failed to write raw data: \(error.localizedDescription)")
             return nil
         }
     }
 
+    // MARK: - Process and Mark for Library
 
-    
-    // MARK: - Process Files
-    
     private func processFiles() {
         isProcessing = true
         processingProgress = 0
@@ -593,7 +607,6 @@ struct ShareExtensionView: View {
                 }
                 
                 do {
-                    // Mark file for processing by main app
                     try markForConversion(file)
                     
                     await MainActor.run {
@@ -604,7 +617,7 @@ struct ShareExtensionView: View {
                     }
                 } catch {
                     await MainActor.run {
-                        errorMessage = "Failed to process \(file.name)"
+                        errorMessage = "Failed to stage \(file.name)"
                     }
                 }
             }
@@ -617,8 +630,6 @@ struct ShareExtensionView: View {
         }
     }
     
-    // MARK: - Mark for Conversion
-    
     private func markForConversion(_ file: SharedFile) throws {
         guard let containerURL = FileManager.default.containerURL(
             forSecurityApplicationGroupIdentifier: "group.com.antigravity.ComicToPDF"
@@ -627,9 +638,9 @@ struct ShareExtensionView: View {
         let pendingURL = containerURL.appendingPathComponent("PendingConversions", isDirectory: true)
         try FileManager.default.createDirectory(at: pendingURL, withIntermediateDirectories: true)
         
-        // Create a manifest file for the main app to pick up
+        // Manifest for tracking
         let manifest = ConversionManifest(
-            sourceFile: file.url.lastPathComponent,
+            sourceFile: file.name,
             dateAdded: Date(),
             status: .pending
         )
@@ -638,10 +649,13 @@ struct ShareExtensionView: View {
         let data = try JSONEncoder().encode(manifest)
         try data.write(to: manifestURL)
         
-        // Move file to pending folder
-        let destURL = pendingURL.appendingPathComponent(file.url.lastPathComponent)
+        // Copy file into PendingConversions
+        let destURL = pendingURL.appendingPathComponent(file.name)
         try? FileManager.default.removeItem(at: destURL)
-        try FileManager.default.moveItem(at: file.url, to: destURL)
+        
+        if FileManager.default.fileExists(atPath: file.url.path) {
+            try FileManager.default.copyItem(at: file.url, to: destURL)
+        }
     }
 }
 
@@ -672,10 +686,4 @@ enum ShareError: Error {
     case noContainer
     case copyFailed
     case conversionFailed
-}
-
-// MARK: - String helpers
-private extension String {
-    /// Returns nil if the string is empty, otherwise self. Useful for optional-chaining path extensions.
-    var nonEmpty: String? { isEmpty ? nil : self }
 }
