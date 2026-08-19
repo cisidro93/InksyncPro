@@ -47,11 +47,7 @@ struct AdvancedWorkspaceView: View {
     }
     
     var body: some View {
-        if appUIMode == .go {
-            goModeWarningView
-        } else {
-            workspaceView
-        }
+        workspaceView
     }
     
     @ViewBuilder

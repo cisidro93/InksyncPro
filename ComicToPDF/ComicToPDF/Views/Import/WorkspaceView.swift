@@ -37,11 +37,7 @@ struct WorkspaceView: View {
     @FocusState private var isFocused: Bool
     
     private var availableModes: [WorkspaceMode] {
-        if appUIMode == .pro {
-            return [.active, .inbox, .convert]
-        } else {
-            return [.inbox, .convert]
-        }
+        return [.active, .inbox, .convert]
     }
     
     var body: some View {
