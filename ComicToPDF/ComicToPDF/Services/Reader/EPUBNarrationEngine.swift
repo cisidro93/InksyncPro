@@ -121,7 +121,13 @@ public final class EPUBNarrationEngine: NSObject, ObservableObject, AVSpeechSynt
     
     // MARK: - AVSpeechSynthesizerDelegate
     
-    public func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+    nonisolated public func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+        Task { @MainActor [weak self] in
+            self?.handleUtteranceDidFinish(utterance)
+        }
+    }
+    
+    private func handleUtteranceDidFinish(_ utterance: AVSpeechUtterance) {
         guard isPlaying && !isPaused else { return }
         
         if currentSentenceIndex < sentences.count - 1 {

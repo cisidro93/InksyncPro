@@ -3,6 +3,7 @@ import UIKit
 import ImageIO
 import Compression
 import Darwin
+import ZIPFoundation
 
 // MARK: - Streamed Image Entry Model
 
@@ -274,20 +275,31 @@ public final class LegacyZipEngine: Sendable {
     public init() {}
     
     public func loadPageImage(archiveURL: URL, pageIndex: Int) async throws -> UIImage {
-        return try await withCheckedThrowingContinuation { continuation in
-            Task.detached(priority: .userInitiated) {
-                var extractedImage: UIImage? = nil
-                autoreleasepool {
-                    extractedImage = ZipUtilities.extractPageImage(from: archiveURL, pageIndex: pageIndex)
-                }
-                
-                if let img = extractedImage {
-                    continuation.resume(returning: img)
-                } else {
-                    continuation.resume(throwing: ArchiveStreamError.pageExtractionFailed(pageIndex))
-                }
-            }
+        guard let archive = try? ZIPFoundation.Archive(url: archiveURL, accessMode: .read, pathEncoding: .utf8) else {
+            throw ArchiveStreamError.fileNotFound(archiveURL)
         }
+        
+        let imageExtensions = Set(["jpg", "jpeg", "png", "webp", "gif", "heic", "avif"])
+        let entries = archive
+            .filter { entry in
+                entry.type != .directory && imageExtensions.contains((entry.path as NSString).pathExtension.lowercased())
+            }
+            .sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
+        
+        guard pageIndex >= 0 && pageIndex < entries.count else {
+            throw ArchiveStreamError.pageExtractionFailed(pageIndex)
+        }
+        
+        let targetEntry = entries[pageIndex]
+        var data = Data()
+        _ = try archive.extract(targetEntry) { chunk in
+            data.append(chunk)
+        }
+        
+        guard let image = UIImage(data: data) else {
+            throw ArchiveStreamError.cgImageConversionFailed
+        }
+        return image
     }
     
     public func extractPage(at index: Int, from archiveURL: URL) async throws -> CGImage {

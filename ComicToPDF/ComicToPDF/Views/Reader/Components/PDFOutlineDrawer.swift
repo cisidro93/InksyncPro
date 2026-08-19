@@ -4,13 +4,13 @@ import PDFKit
 // MARK: - Lightweight Swift 6 Outline Tree Model
 
 /// Sendable recursive representation of a PDF outline document item.
-public struct OutlineNode: Identifiable, Sendable, Hashable {
-    public let id = UUID()
-    public let title: String
-    public let destinationPageIndex: Int
-    public let children: [OutlineNode]
+struct OutlineNode: Identifiable, Sendable, Hashable {
+    let id = UUID()
+    let title: String
+    let destinationPageIndex: Int
+    let children: [OutlineNode]
     
-    public init(title: String, destinationPageIndex: Int, children: [OutlineNode] = []) {
+    init(title: String, destinationPageIndex: Int, children: [OutlineNode] = []) {
         self.title = title
         self.destinationPageIndex = destinationPageIndex
         self.children = children
@@ -21,7 +21,7 @@ public struct OutlineNode: Identifiable, Sendable, Hashable {
 
 /// Slide-out glassmorphic document navigation drawer supporting hierarchical PDFOutline trees,
 /// live keyword filtering, active page tracking, and bookmark management.
-public struct PDFOutlineDrawer: View {
+struct PDFOutlineDrawer: View {
     let pdf: ConvertedPDF
     let pdfDocument: PDFDocument?
     let currentPageIndex: Int
@@ -48,7 +48,7 @@ public struct PDFOutlineDrawer: View {
         }
     }
     
-    public init(
+    init(
         pdf: ConvertedPDF,
         pdfDocument: PDFDocument?,
         currentPageIndex: Int,
@@ -62,7 +62,7 @@ public struct PDFOutlineDrawer: View {
         self.onDismiss = onDismiss
     }
     
-    public var body: some View {
+    var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
                 // Search & Filter Header
@@ -260,11 +260,13 @@ public struct PDFOutlineDrawer: View {
                                         .font(.system(size: 14))
                                     
                                     VStack(alignment: .leading, spacing: 2) {
-                                        Text(b.chapterTitle ?? "Page \(b.pageIndex + 1)")
+                                        let titleString = b.chapterTitle ?? "Page \(b.pageIndex + 1)"
+                                        Text(titleString)
                                             .font(.system(size: 14, weight: .semibold, design: .rounded))
                                             .foregroundColor(.inkTextPrimary)
                                         
-                                        Text("Page \(b.pageIndex + 1) • \(b.createdAt.formatted(date: .abbreviated, time: .shortened))")
+                                        let pageDesc = "Page \(b.pageIndex + 1)"
+                                        Text("\(pageDesc) • \(b.createdAt.formatted(date: .abbreviated, time: .shortened))")
                                             .font(.system(size: 11, weight: .medium))
                                             .foregroundColor(.inkTextTertiary)
                                     }
@@ -274,13 +276,13 @@ public struct PDFOutlineDrawer: View {
                                     Image(systemName: "chevron.right")
                                         .font(.system(size: 11, weight: .bold))
                                         .foregroundColor(.inkTextTertiary)
-                                }
+                                 }
                                 .padding(.vertical, 4)
                             }
                             .listRowBackground(Color.inkSurface)
                             .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                                 Button(role: .destructive) {
-                                    AnnotationStore.shared.delete(b.id)
+                                    AnnotationStore.shared.delete(id: b.id, pdfID: pdf.id)
                                     refreshBookmarks()
                                 } label: {
                                     Label("Delete", systemImage: "trash")
@@ -303,7 +305,7 @@ public struct PDFOutlineDrawer: View {
     
     private func toggleCurrentPageBookmark() {
         if let existing = bookmarks.first(where: { $0.pageIndex == currentPageIndex }) {
-            AnnotationStore.shared.delete(existing.id)
+            AnnotationStore.shared.delete(id: existing.id, pdfID: pdf.id)
             HapticEngine.light()
         } else {
             let newBookmark = Annotation(

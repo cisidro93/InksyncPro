@@ -2,13 +2,13 @@ import SwiftUI
 
 // MARK: - Next Sequential Issue Descriptor
 
-public struct NextIssueInfo: Sendable, Identifiable {
-    public let id = UUID()
-    public let fileURL: URL
-    public let issueTitle: String
-    public let issueNumber: String
+struct NextIssueInfo: Sendable, Identifiable {
+    let id = UUID()
+    let fileURL: URL
+    let issueTitle: String
+    let issueNumber: String
     
-    public init(fileURL: URL, issueTitle: String, issueNumber: String) {
+    init(fileURL: URL, issueTitle: String, issueNumber: String) {
         self.fileURL = fileURL
         self.issueTitle = issueTitle
         self.issueNumber = issueNumber
@@ -19,7 +19,7 @@ public struct NextIssueInfo: Sendable, Identifiable {
 
 /// Glassmorphic end-of-volume continuity card presented upon reaching the final page of an issue.
 /// Displays ComicInfo metadata, completion badges, rating prompt, and single-tap next issue transition.
-public struct NextIssueCardView: View {
+struct NextIssueCardView: View {
     let comicInfo: ComicInfoParser.ComicInfo?
     let currentFileName: String
     let nextIssue: NextIssueInfo?
@@ -28,7 +28,7 @@ public struct NextIssueCardView: View {
     
     @State private var userRating: Int = 5
     
-    public init(
+    init(
         comicInfo: ComicInfoParser.ComicInfo?,
         currentFileName: String,
         nextIssue: NextIssueInfo? = nil,
@@ -42,7 +42,7 @@ public struct NextIssueCardView: View {
         self.onReturnToLibrary = onReturnToLibrary
     }
     
-    public var body: some View {
+    var body: some View {
         VStack(spacing: 16) {
             // Header Badge
             HStack(spacing: 8) {

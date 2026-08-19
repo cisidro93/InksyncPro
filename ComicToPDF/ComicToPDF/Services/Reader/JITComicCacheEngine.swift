@@ -63,16 +63,10 @@ public actor JITComicCacheEngine {
     private var isUnderMemoryPressure: Bool = false
     
     public init() {
-        // Listen for OS Memory Pressure Warnings
-        Task { @MainActor in
-            NotificationCenter.default.addObserver(
-                forName: UIApplication.didReceiveMemoryWarningNotification,
-                object: nil,
-                queue: .main
-            ) { _ in
-                Task {
-                    await JITComicCacheEngine.shared.handleMemoryWarning()
-                }
+        // Listen for OS Memory Pressure Warnings via Swift async notifications sequence
+        Task { [weak self] in
+            for await _ in NotificationCenter.default.notifications(named: UIApplication.didReceiveMemoryWarningNotification) {
+                await self?.handleMemoryWarning()
             }
         }
     }

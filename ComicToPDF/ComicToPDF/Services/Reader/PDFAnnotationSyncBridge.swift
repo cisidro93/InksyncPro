@@ -7,17 +7,17 @@ import SwiftUI
 
 /// Bi-directional synchronization service bridging InkSync Pro's `AnnotationStore`
 /// with native standard Adobe/ISO 32000 PDF annotations (`/Ink`, `/Highlight`, `/Text`).
-public final class PDFAnnotationSyncBridge: Sendable {
+final class PDFAnnotationSyncBridge: Sendable {
     
-    public static let shared = PDFAnnotationSyncBridge()
+    static let shared = PDFAnnotationSyncBridge()
     
-    public init() {}
+    init() {}
     
     // MARK: - Export Inksync Annotations to Native PDFDocument
     
     /// Writes all InkSync Pro highlights, Pencil drawings, and Adler notes into the `PDFDocument` as native ISO annotations.
     @MainActor
-    public func exportAnnotations(for pdfID: UUID, to document: PDFDocument) {
+    func exportAnnotations(for pdfID: UUID, to document: PDFDocument) {
         let storeAnnotations = AnnotationStore.shared.annotations(for: pdfID)
         
         for annotation in storeAnnotations {
@@ -68,12 +68,12 @@ public final class PDFAnnotationSyncBridge: Sendable {
                     nativeInk.color = UIColor.systemBlue
                     
                     for stroke in drawing.strokes {
-                        let path = stroke.path.interpolatedPath(by: .distance(2.0))
+                        let count = stroke.path.count
+                        guard count > 1 else { continue }
                         let bezier = UIBezierPath()
                         var first = true
-                        for point in path {
-                            let pt = point.location
-                            // Invert Y coordinate for PDF coordinate space if necessary
+                        for i in 0..<count {
+                            let pt = stroke.path.point(at: i).location
                             let pdfPt = CGPoint(x: pt.x, y: pageBounds.height - pt.y)
                             if first {
                                 bezier.move(to: pdfPt)
@@ -101,7 +101,7 @@ public final class PDFAnnotationSyncBridge: Sendable {
     /// Scans a `PDFDocument` for third-party native annotations (Acrobat, Preview, Edge)
     /// and imports them into InkSync Pro's `AnnotationStore`.
     @MainActor
-    public func importNativeAnnotations(from document: PDFDocument, for pdfID: UUID) -> [Annotation] {
+    func importNativeAnnotations(from document: PDFDocument, for pdfID: UUID) -> [Annotation] {
         var imported: [Annotation] = []
         let existingIDs = Set(AnnotationStore.shared.annotations(for: pdfID).map { $0.id })
         
@@ -134,7 +134,7 @@ public final class PDFAnnotationSyncBridge: Sendable {
                     height: Double(nativeAnn.bounds.height / max(1, pageBounds.height))
                 )
                 
-                let colorHex = nativeAnn.color?.toHexString() ?? "#FFD60A"
+                let colorHex = nativeAnn.color.toHexString()
                 let contentText = nativeAnn.contents ?? ""
                 
                 let newAnnotation = Annotation(
@@ -164,7 +164,7 @@ public final class PDFAnnotationSyncBridge: Sendable {
     // MARK: - Standalone Annotated PDF File Generation
     
     /// Generates a standalone annotated PDF file and writes it to the destination URL.
-    public func generateAnnotatedPDF(
+    func generateAnnotatedPDF(
         from document: PDFDocument,
         for pdfID: UUID,
         saveTo destinationURL: URL

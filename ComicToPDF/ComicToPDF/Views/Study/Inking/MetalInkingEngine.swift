@@ -310,7 +310,7 @@ public struct MetalInkingCanvasView: UIViewRepresentable {
                 return
             }
             
-            var proj = matrix_ortho_left_hand(left: 0, right: width, bottom: height, top: 0, nearZ: -1.0, farZ: 1.0)
+            let proj = matrix_ortho_left_hand(left: 0, right: width, bottom: height, top: 0, nearZ: -1.0, farZ: 1.0)
             var uniforms = GPUInkUniforms(projectionMatrix: proj, globalOffsetY: 0.0)
             
             encoder.setVertexBytes(&uniforms, length: MemoryLayout<GPUInkUniforms>.stride, index: 1)

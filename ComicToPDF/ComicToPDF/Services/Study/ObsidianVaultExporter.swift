@@ -15,9 +15,11 @@ public final class ObsidianVaultExporter: Sendable {
     
     /// Converts a single Cornell Study Note into an Obsidian Markdown file string.
     public func exportNoteToObsidianMarkdown(_ note: StudyNote) -> String {
+        let docID = note.documentID ?? UUID()
+        let pageNum = note.citations.first?.pageNumber ?? 1
         let universalLink = UniversalLinkBridge.shared.generateUniversalLink(
-            documentID: note.pdfID,
-            pageIndex: note.pageIndex
+            documentID: docID,
+            pageIndex: max(0, pageNum - 1)
         )
         
         let tagsYaml = note.tags.map { "  - \($0.replacingOccurrences(of: "#", with: ""))" }.joined(separator: "\n")
@@ -26,7 +28,7 @@ public final class ObsidianVaultExporter: Sendable {
         ---
         title: "\(note.title.replacingOccurrences(of: "\"", with: "\\\""))"
         document: "\(note.documentTitle.replacingOccurrences(of: "\"", with: "\\\""))"
-        page: \(note.pageIndex + 1)
+        page: \(pageNum)
         created: \(note.createdAt.ISO8601Format())
         tags:
         \(tagsYaml.isEmpty ? "  - study-note" : tagsYaml)
@@ -36,7 +38,7 @@ public final class ObsidianVaultExporter: Sendable {
         # \(note.title)
         
         > [!info] Document Reference
-        > **Source:** *\(note.documentTitle)* (Page \(note.pageIndex + 1))  
+        > **Source:** *\(note.documentTitle)* (Page \(pageNum))  
         > [🔗 Open in InkSync Pro](\(universalLink.absoluteString))
         
         """
@@ -106,16 +108,16 @@ public final class ObsidianVaultExporter: Sendable {
             
             for (idx, card) in cards.enumerated() {
                 let cardLink = UniversalLinkBridge.shared.generateUniversalLink(
-                    documentID: card.citation.pdfID,
-                    pageIndex: card.citation.pageIndex
+                    documentID: card.citation.documentID,
+                    pageIndex: max(0, card.citation.pageNumber - 1)
                 )
                 
-                master += """
+                let cardBlock = """
                 ### Flashcard \(idx + 1)
                 \(card.markdownBody)
                 
                 > [!cite] Source Citation
-                > *\(card.citation.documentTitle)* — Page \(card.citation.pageIndex + 1)  
+                > *\(card.citation.documentTitle)* — Page \(card.citation.pageNumber)  
                 > [🔗 Open in InkSync Pro](\(cardLink.absoluteString))
                 
                 **Tags:** \(card.tags.joined(separator: " "))  
@@ -124,6 +126,7 @@ public final class ObsidianVaultExporter: Sendable {
                 ---
                 
                 """
+                master += cardBlock
             }
         }
         

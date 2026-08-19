@@ -3,20 +3,20 @@ import UIKit
 
 // MARK: - EPUB Typography Options
 
-public enum EPUBTextAlignment: String, CaseIterable, Codable, Sendable {
+enum EPUBTextAlignment: String, CaseIterable, Codable, Sendable {
     case left      = "left"
     case justified = "justify"
     case center    = "center"
     
-    public var cssValue: String { rawValue }
+    var cssValue: String { rawValue }
 }
 
-public struct CustomFontDescriptor: Identifiable, Sendable, Hashable {
-    public let id: String
-    public let familyName: String
-    public let fileURL: URL
+struct CustomFontDescriptor: Identifiable, Sendable, Hashable {
+    let id: String
+    let familyName: String
+    let fileURL: URL
     
-    public init(familyName: String, fileURL: URL) {
+    init(familyName: String, fileURL: URL) {
         self.id = familyName
         self.familyName = familyName
         self.fileURL = fileURL
@@ -28,16 +28,16 @@ public struct CustomFontDescriptor: Identifiable, Sendable, Hashable {
 /// Comprehensive CSS and typography generator for the EPUB WKWebView reading engine.
 /// Injects dynamic `@font-face` declarations from `Documents/Fonts/`, text justification,
 /// automatic language-aware hyphenation, and TTS active sentence highlighting rules.
-public final class EPUBStyleSheetBuilder: Sendable {
+final class EPUBStyleSheetBuilder: Sendable {
     
-    public static let shared = EPUBStyleSheetBuilder()
+    static let shared = EPUBStyleSheetBuilder()
     
-    public init() {}
+    init() {}
     
     // MARK: - Custom Font Discovery
     
     /// Discovers user-installed TrueType / OpenType fonts in `Documents/Fonts/`.
-    public func discoverCustomFonts() -> [CustomFontDescriptor] {
+    func discoverCustomFonts() -> [CustomFontDescriptor] {
         let fileManager = FileManager.default
         guard let docsURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else { return [] }
         let fontsDirectory = docsURL.appendingPathComponent("Fonts", isDirectory: true)
@@ -61,7 +61,7 @@ public final class EPUBStyleSheetBuilder: Sendable {
     // MARK: - CSS Generation
     
     /// Generates complete CSS string with font declarations, layout alignment, hyphenation, and themes.
-    public func generateCSS(
+    func generateCSS(
         theme: EPUBThemeInjectionService.ThemeMode,
         font: EPUBThemeInjectionService.TypographyFont,
         customFontFamily: String? = nil,
