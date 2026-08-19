@@ -76,6 +76,11 @@ class EBookPreferences: ObservableObject {
     @AppStorage("ebook_fullBleedSpreads") var fullBleedSpreads: Bool = true
     @AppStorage("ebook_linkCoverAsSpread") var linkCoverAsSpread: Bool = false
 
+    // MARK: - Archive & Streaming Settings
+    @AppStorage("useZeroCopyStreaming") var useZeroCopyStreaming: Bool = true {
+        didSet { objectWillChange.send() }
+    }
+
     // MARK: - PDF Settings
     @AppStorage("pdf_reflowMode")       var pdfReflowMode: Bool     = false {
         didSet { objectWillChange.send() }

@@ -16,12 +16,14 @@ struct ProPDFReaderEngine: View {
 
     // Inspector & Sheet Modals
     @State private var showingInspector = false
+    @State private var showingOutlineDrawer = false
     @State private var showingPageManager = false
     @State private var showingSettings = false
     @State private var isPencilMode = false
     @State private var isCroppedMode = false
     @State private var isExpandedView = false
     @State private var isReflowMode = false
+    @State private var shareAnnotatedPDFURL: URL? = nil
 
     // Text Selection & Markup HUD
     @State private var selectedTextForHUD: String? = nil
@@ -174,6 +176,7 @@ struct ProPDFReaderEngine: View {
                             }
                         }
                     )
+                    .intelligentPDFDarkMode(isEnabled: prefs.themeRaw == EBookTheme.night.rawValue && prefs.readingFilter == .none)
                     .readingFilter(prefs.readingFilter)
                     .ignoresSafeArea()
 
@@ -306,6 +309,24 @@ struct ProPDFReaderEngine: View {
             // Master Unified Reader Chrome
             readerChromeView
 
+            // High-Speed Haptic Thumbnail Scrub Rail
+            if chromeVisible {
+                VStack {
+                    Spacer()
+                    ThumbnailScrubBar(
+                        document: pdfDocument,
+                        totalPages: max(1, totalPages),
+                        currentPageIndex: $currentPageIndex,
+                        onSelectPage: { pageIdx in
+                            jumpToPage(pageIdx)
+                        }
+                    )
+                    .padding(.bottom, 68)
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .zIndex(12)
+            }
+
             if !chromeVisible && selectedTextForHUD == nil {
                 KindleProgressFooterView(
                     currentPage: currentPageIndex + 1,
@@ -347,6 +368,19 @@ struct ProPDFReaderEngine: View {
         }
         .onChange(of: currentPageIndex) { _, _ in
             saveReadingProgress()
+        }
+        .sheet(isPresented: $showingOutlineDrawer) {
+            PDFOutlineDrawer(
+                pdf: pdf,
+                pdfDocument: pdfDocument,
+                currentPageIndex: currentPageIndex,
+                onJumpToPage: { pageIdx in
+                    jumpToPage(pageIdx)
+                },
+                onDismiss: {
+                    showingOutlineDrawer = false
+                }
+            )
         }
         .sheet(isPresented: $showingInspector) {
             ProDocumentInspectorView(
@@ -417,7 +451,7 @@ struct ProPDFReaderEngine: View {
                 }
             },
             onTOCToggle: {
-                showingInspector = true
+                showingOutlineDrawer = true
             },
             onAnnotationsToggle: {
                 NotificationCenter.default.post(name: .toggleStudyNotebook, object: nil)
@@ -505,6 +539,9 @@ struct ProPDFReaderEngine: View {
                     let savedCrop = ReaderProgressTracker.shared.cropInsets(for: sourcePDF.id)
                     let initialCrop = savedCrop ?? (self.prefs.defaultCropModeRaw == "smartAuto" ? .smartAuto : CodableCropInsets(top: self.prefs.defaultCropTop, bottom: self.prefs.defaultCropBottom, left: self.prefs.defaultCropLeft, right: self.prefs.defaultCropRight, modeRaw: self.prefs.defaultCropModeRaw))
                     self.applyCropInsets(initialCrop)
+                    
+                    // Ingest native third-party PDF annotations into AnnotationStore
+                    _ = PDFAnnotationSyncBridge.shared.importNativeAnnotations(from: doc, for: sourcePDF.id)
                 }
             } else {
                 accessedURL?.stopAccessingSecurityScopedResource()
@@ -870,19 +907,61 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         }
 
         @MainActor @objc func handleDoubleTap(_ gesture: UITapGestureRecognizer) {
-            guard let pdfView = gesture.view as? PDFView else { return }
+            guard let pdfView = gesture.view as? PDFView,
+                  let page = pdfView.currentPage,
+                  let doc = pdfView.document else { return }
+            let pageIdx = doc.index(for: page)
+            let tapLocationInView = gesture.location(in: pdfView)
+            let tapLocationInPage = pdfView.convert(tapLocationInView, to: page)
             let currentScale = pdfView.scaleFactor
             let fitScale = pdfView.scaleFactorForSizeToFit
-            let zoomTarget = fitScale * 2.5
-            if currentScale > fitScale * 1.5 {
-                pdfView.scaleFactor = fitScale
-                userCustomZoomScale = nil
-            } else {
-                pdfView.scaleFactor = zoomTarget
-                userCustomZoomScale = zoomTarget
+
+            Task { @MainActor in
+                let layout = await PDFColumnDetector.shared.detectColumns(in: page, pageIndex: pageIdx)
+                if layout.isMultiColumn, let targetCol = await PDFColumnDetector.shared.findTargetColumn(at: tapLocationInPage, in: layout) {
+                    if currentScale > fitScale * 1.3 {
+                        // Zoom back out
+                        UIView.animate(withDuration: 0.35, delay: 0, usingSpringWithDamping: 0.85, initialSpringVelocity: 0, options: [.curveEaseOut]) {
+                            pdfView.scaleFactor = fitScale
+                            self.userCustomZoomScale = nil
+                        }
+                    } else {
+                        // Zoom to fit column width
+                        let colWidth = targetCol.rect.width
+                        let desiredScale = max(fitScale * 1.2, min(fitScale * 4.0, (pdfView.bounds.width - 24.0) / max(1, colWidth)))
+                        
+                        UIView.animate(withDuration: 0.35, delay: 0, usingSpringWithDamping: 0.85, initialSpringVelocity: 0, options: [.curveEaseOut]) {
+                            pdfView.scaleFactor = desiredScale
+                            self.userCustomZoomScale = desiredScale
+                            
+                            // Center horizontally on column
+                            let colCenter = CGPoint(x: targetCol.rect.midX, y: targetCol.rect.maxY)
+                            let viewPoint = pdfView.convert(colCenter, from: page)
+                            if let scrollView = pdfView.subviews.first(where: { $0 is UIScrollView }) as? UIScrollView {
+                                let targetOffsetX = max(0, viewPoint.x - (pdfView.bounds.width / 2.0))
+                                let targetOffsetY = max(0, viewPoint.y - 20)
+                                scrollView.setContentOffset(CGPoint(x: targetOffsetX, y: targetOffsetY), animated: false)
+                            }
+                        }
+                        HapticEngine.light()
+                    }
+                } else {
+                    let zoomTarget = fitScale * 2.5
+                    if currentScale > fitScale * 1.5 {
+                        UIView.animate(withDuration: 0.3) {
+                            pdfView.scaleFactor = fitScale
+                            self.userCustomZoomScale = nil
+                        }
+                    } else {
+                        UIView.animate(withDuration: 0.3) {
+                            pdfView.scaleFactor = zoomTarget
+                            self.userCustomZoomScale = zoomTarget
+                        }
+                    }
+                }
+                let effectiveScale = pdfView.scaleFactor / max(0.01, fitScale)
+                self.parent.onScaleChanged?(effectiveScale)
             }
-            let effectiveScale = pdfView.scaleFactor / max(0.01, fitScale)
-            parent.onScaleChanged?(effectiveScale)
         }
 
         @MainActor @objc func scaleChanged(_ notification: Notification) {

@@ -306,6 +306,16 @@ struct ContentView: View {
         ))
         .onOpenURL { url in
             Logger.shared.log("onOpenURL received: \(url.absoluteString)", category: "Import")
+            
+            // Check for inksync:// universal deep links
+            if let destination = UniversalLinkBridge.shared.parse(url: url) {
+                if let targetPDF = conversionManager.convertedPDFs.first(where: { $0.id == destination.documentID }) {
+                    self.selectedPDF = targetPDF
+                    UniversalLinkBridge.shared.handleDeepLink(destination)
+                }
+                return
+            }
+            
             if url.scheme == "inksyncpro" {
                 conversionManager.scanLibrary()
                 return
