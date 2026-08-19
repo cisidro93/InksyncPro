@@ -787,7 +787,7 @@ extension EBookPageCurlReader {
                 parent.currentPage = targetPage
                 primaryWebView?.evaluateJavaScript("if(window.goToInksyncPage) window.goToInksyncPage(\(targetPage));")
                 let vcs = spreadViewControllers(for: targetPage)
-                pageViewController?.setViewControllers(vcs, direction: .forward, animated: false)
+                safeSetViewControllers(vcs, direction: .forward, animated: false)
                 reportScrollFraction()
             } else {
                 currentPageIndex = clampedCurrent

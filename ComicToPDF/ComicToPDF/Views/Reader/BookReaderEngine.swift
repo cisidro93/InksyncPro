@@ -69,21 +69,31 @@ class BookReaderViewModel: NSObject, ObservableObject, WKNavigationDelegate {
                 pdfURL = url
                 if didAccess { accessedURL = url }
             } else {
-                pdfURL = sourcePDF.url
+                let targetURL = LibraryFileRecord.resolveSandboxURL(sourcePDF.url.absoluteString)
+                let didAccess = targetURL.startAccessingSecurityScopedResource()
+                pdfURL = targetURL
+                if didAccess { accessedURL = targetURL }
             }
 
             if !fm.fileExists(atPath: tempDir.path) {
                 try? fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
-                guard let archive = try? Archive(url: pdfURL, accessMode: .read, pathEncoding: .utf8) else {
+                var archive = try? Archive(url: pdfURL, accessMode: .read, pathEncoding: .utf8)
+                if archive == nil && pdfURL != sourcePDF.url {
+                    let didAccessSource = sourcePDF.url.startAccessingSecurityScopedResource()
+                    if didAccessSource && accessedURL == nil { accessedURL = sourcePDF.url }
+                    archive = try? Archive(url: sourcePDF.url, accessMode: .read, pathEncoding: .utf8)
+                }
+
+                guard let activeArchive = archive else {
                     // Stop scope before early return
                     accessedURL?.stopAccessingSecurityScopedResource()
                     await MainActor.run { self.isLoading = false }
                     return
                 }
-                for entry in archive {
+                for entry in activeArchive {
                     let dest = tempDir.appendingPathComponent(entry.path)
                     try? fm.createDirectory(at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
-                    _ = try? archive.extract(entry, to: dest)
+                    _ = try? activeArchive.extract(entry, to: dest)
                 }
             }
             // Extraction done — stop security scope. parseNCXOrSpine reads from tempDir (sandbox).
