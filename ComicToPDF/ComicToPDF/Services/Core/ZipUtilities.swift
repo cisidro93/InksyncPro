@@ -225,10 +225,8 @@ struct ZipUtilities {
                         $0.path.localizedStandardCompare($1.path) == .orderedAscending
                     }
                     let virtualURLs = entries.map { sourceURL.appendingPathComponent($0.path) }
-                    archive = nil
                     continuation.resume(returning: virtualURLs)
                 } catch {
-                    archive = nil
                     continuation.resume(throwing: error)
                 }
             }
