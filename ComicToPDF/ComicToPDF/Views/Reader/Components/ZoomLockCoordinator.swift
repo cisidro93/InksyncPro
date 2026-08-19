@@ -5,21 +5,21 @@ import SwiftUI
 /// Coordinates persistent zoom level, anchor point, and pan offset across consecutive comic/manga page turns.
 /// When engaged, navigating to subsequent pages preserves the exact viewport crop rather than snapping back to fit-to-screen.
 @MainActor
-public final class ZoomLockCoordinator: ObservableObject {
+final class ZoomLockCoordinator: ObservableObject {
     
-    public static let shared = ZoomLockCoordinator()
+    static let shared = ZoomLockCoordinator()
     
-    @Published public var isZoomLocked: Bool = false
-    @Published public private(set) var lockedScale: CGFloat = 1.0
-    @Published public private(set) var lockedOffset: CGSize = .zero
-    @Published public private(set) var lockedAnchor: UnitPoint = .center
+    @Published var isZoomLocked: Bool = false
+    @Published private(set) var lockedScale: CGFloat = 1.0
+    @Published private(set) var lockedOffset: CGSize = .zero
+    @Published private(set) var lockedAnchor: UnitPoint = .center
     
-    public init() {}
+    init() {}
     
     // MARK: - API
     
     /// Records active viewport zoom scale and pan offset to persist across page turns.
-    public func lockCurrentViewport(scale: CGFloat, offset: CGSize, anchor: UnitPoint = .center) {
+    func lockCurrentViewport(scale: CGFloat, offset: CGSize, anchor: UnitPoint = .center) {
         guard scale > 1.05 else { return }
         self.lockedScale = scale
         self.lockedOffset = offset
@@ -29,7 +29,7 @@ public final class ZoomLockCoordinator: ObservableObject {
     }
     
     /// Releases the persistent zoom lock, reverting page turns to fit-to-screen.
-    public func unlock() {
+    func unlock() {
         self.isZoomLocked = false
         self.lockedScale = 1.0
         self.lockedOffset = .zero
@@ -38,7 +38,7 @@ public final class ZoomLockCoordinator: ObservableObject {
     }
     
     /// Toggles the zoom lock state with current parameters.
-    public func toggleLock(currentScale: CGFloat, currentOffset: CGSize) {
+    func toggleLock(currentScale: CGFloat, currentOffset: CGSize) {
         if isZoomLocked {
             unlock()
         } else {
@@ -50,12 +50,12 @@ public final class ZoomLockCoordinator: ObservableObject {
 // MARK: - Zoom Lock HUD Button
 
 /// Glassmorphic HUD button allowing readers to toggle persistent viewport zoom lock.
-public struct ZoomLockButton: View {
+struct ZoomLockButton: View {
     @ObservedObject var coordinator: ZoomLockCoordinator
     let currentScale: CGFloat
     let currentOffset: CGSize
     
-    public init(
+    init(
         coordinator: ZoomLockCoordinator = .shared,
         currentScale: CGFloat,
         currentOffset: CGSize
@@ -65,7 +65,7 @@ public struct ZoomLockButton: View {
         self.currentOffset = currentOffset
     }
     
-    public var body: some View {
+    var body: some View {
         Button {
             coordinator.toggleLock(currentScale: currentScale, currentOffset: currentOffset)
         } label: {
@@ -78,11 +78,13 @@ public struct ZoomLockButton: View {
             .foregroundColor(coordinator.isZoomLocked ? .inkAmber : .white)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
-            .background(
-                coordinator.isZoomLocked
-                    ? Color.inkAmber.opacity(0.18)
-                    : Color.inkSurface.opacity(0.85).background(.ultraThinMaterial)
-            )
+            .background {
+                if coordinator.isZoomLocked {
+                    Color.inkAmber.opacity(0.18)
+                } else {
+                    Color.inkSurface.opacity(0.85).background(.ultraThinMaterial)
+                }
+            }
             .clipShape(Capsule())
             .overlay(
                 Capsule()

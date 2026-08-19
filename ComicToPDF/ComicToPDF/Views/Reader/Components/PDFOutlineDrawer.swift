@@ -186,7 +186,7 @@ struct PDFOutlineDrawer: View {
                 ScrollView(.vertical, showsIndicators: true) {
                     LazyVStack(alignment: .leading, spacing: 4) {
                         ForEach(filtered) { node in
-                            OutlineNodeRow(
+                            DrawerOutlineNodeRow(
                                 node: node,
                                 currentPageIndex: currentPageIndex,
                                 onJump: { page in
@@ -381,7 +381,7 @@ struct PDFOutlineDrawer: View {
 
 // MARK: - Recursive Outline Node Row
 
-public struct OutlineNodeRow: View {
+private struct DrawerOutlineNodeRow: View {
     let node: OutlineNode
     let currentPageIndex: Int
     var onJump: (Int) -> Void
@@ -393,7 +393,7 @@ public struct OutlineNodeRow: View {
         node.destinationPageIndex == currentPageIndex
     }
     
-    public var body: some View {
+    var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 6) {
                 // Indentation Spacer
@@ -457,7 +457,7 @@ public struct OutlineNodeRow: View {
             // Nested Children
             if isExpanded && !node.children.isEmpty {
                 ForEach(node.children) { child in
-                    OutlineNodeRow(
+                    DrawerOutlineNodeRow(
                         node: child,
                         currentPageIndex: currentPageIndex,
                         onJump: onJump,

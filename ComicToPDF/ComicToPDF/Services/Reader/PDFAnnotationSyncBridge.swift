@@ -68,12 +68,11 @@ final class PDFAnnotationSyncBridge: Sendable {
                     nativeInk.color = UIColor.systemBlue
                     
                     for stroke in drawing.strokes {
-                        let count = stroke.path.count
-                        guard count > 1 else { continue }
                         let bezier = UIBezierPath()
                         var first = true
-                        for i in 0..<count {
-                            let pt = stroke.path.point(at: i).location
+                        for point in stroke.path {
+                            let pt = point.location
+                            // Invert Y coordinate for PDF coordinate space if necessary
                             let pdfPt = CGPoint(x: pt.x, y: pageBounds.height - pt.y)
                             if first {
                                 bezier.move(to: pdfPt)

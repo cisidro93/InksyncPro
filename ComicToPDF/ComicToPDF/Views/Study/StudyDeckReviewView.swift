@@ -116,7 +116,6 @@ public struct StudyDeckReviewView: View {
     // MARK: - Flashcard Stack View
     
     private func flashcardStackView(card: StudyCard) -> some View {
-        let projectedIntervals = scheduler.previewProjectedIntervals(for: card)
         let swipeThreshold: CGFloat = 110.0
         
         return ZStack {
