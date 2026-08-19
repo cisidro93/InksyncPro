@@ -200,6 +200,21 @@ struct ProPDFReaderEngine: View {
                     Text("Loading PDF Document...")
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundColor(Theme.textSecondary)
+                    
+                    Button(action: onDismiss) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "chevron.left")
+                                .font(.system(size: 13, weight: .semibold))
+                            Text("Back to Library")
+                                .font(.system(size: 14, weight: .semibold))
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(Color.inkSurfaceRaised)
+                        .clipShape(Capsule())
+                    }
+                    .padding(.top, 8)
                 }
             }
 
@@ -523,10 +538,20 @@ struct ProPDFReaderEngine: View {
                 resolvedURL = url
                 if didAccess { accessedURL = url }
             } else {
-                resolvedURL = LibraryFileRecord.resolveSandboxURL(sourcePDF.url.absoluteString)
+                let targetURL = LibraryFileRecord.resolveSandboxURL(sourcePDF.url.absoluteString)
+                let didAccess = targetURL.startAccessingSecurityScopedResource()
+                resolvedURL = targetURL
+                if didAccess { accessedURL = targetURL }
             }
             
-            if let doc = PDFDocument(url: resolvedURL) {
+            var doc = PDFDocument(url: resolvedURL)
+            if doc == nil && resolvedURL != sourcePDF.url {
+                let didAccessSource = sourcePDF.url.startAccessingSecurityScopedResource()
+                if didAccessSource && accessedURL == nil { accessedURL = sourcePDF.url }
+                doc = PDFDocument(url: sourcePDF.url)
+            }
+            
+            if let loadedDoc = doc {
                 let savedIndex = await MainActor.run {
                     ReaderProgressTracker.shared.progress(for: sourcePDF.id)?.currentPageIndex ?? 0
                 }
@@ -534,14 +559,14 @@ struct ProPDFReaderEngine: View {
                     if let accessed = accessedURL {
                         self.accessedSecurityScopedURL = accessed
                     }
-                    self.pdfDocument = doc
-                    self.currentPageIndex = max(0, min(savedIndex, doc.pageCount - 1))
+                    self.pdfDocument = loadedDoc
+                    self.currentPageIndex = max(0, min(savedIndex, loadedDoc.pageCount - 1))
                     let savedCrop = ReaderProgressTracker.shared.cropInsets(for: sourcePDF.id)
                     let initialCrop = savedCrop ?? (self.prefs.defaultCropModeRaw == "smartAuto" ? .smartAuto : CodableCropInsets(top: self.prefs.defaultCropTop, bottom: self.prefs.defaultCropBottom, left: self.prefs.defaultCropLeft, right: self.prefs.defaultCropRight, modeRaw: self.prefs.defaultCropModeRaw))
                     self.applyCropInsets(initialCrop)
                     
                     // Ingest native third-party PDF annotations into AnnotationStore
-                    _ = PDFAnnotationSyncBridge.shared.importNativeAnnotations(from: doc, for: sourcePDF.id)
+                    _ = PDFAnnotationSyncBridge.shared.importNativeAnnotations(from: loadedDoc, for: sourcePDF.id)
                 }
             } else {
                 accessedURL?.stopAccessingSecurityScopedResource()
@@ -683,9 +708,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
     func makeUIView(context: Context) -> PDFView {
         let pdfView = PDFView()
         pdfView.delegate = context.coordinator
-        // Start invisible — auto-scales causes a momentary zoom jolt on first layout.
-        // We reveal the view only after layoutDocumentView() has settled.
-        pdfView.alpha = 0
+        pdfView.alpha = 1.0
         pdfView.document = document
         pdfView.autoScales = true
         pdfView.minScaleFactor = 0.25
@@ -716,12 +739,14 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         // Single Tap gesture setup
         let tapGesture = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
         tapGesture.cancelsTouchesInView = false
+        tapGesture.delegate = context.coordinator
         pdfView.addGestureRecognizer(tapGesture)
 
         // Double Tap Zoom setup
         let doubleTap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleDoubleTap(_:)))
         doubleTap.numberOfTapsRequired = 2
         doubleTap.cancelsTouchesInView = false
+        doubleTap.delegate = context.coordinator
         pdfView.addGestureRecognizer(doubleTap)
         tapGesture.require(toFail: doubleTap)
 
@@ -855,7 +880,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         NotificationCenter.default.removeObserver(coordinator, name: .PDFViewScaleChanged, object: uiView)
     }
 
-    class Coordinator: NSObject, PDFViewDelegate {
+    class Coordinator: NSObject, PDFViewDelegate, UIGestureRecognizerDelegate {
         var parent: ProPDFViewRepresentable
         var lastCropMode: Bool = false
         var lastTextMargin: CGFloat = -1
@@ -866,6 +891,13 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
 
         init(_ parent: ProPDFViewRepresentable) {
             self.parent = parent
+        }
+
+        nonisolated func gestureRecognizer(
+            _ gestureRecognizer: UIGestureRecognizer,
+            shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+        ) -> Bool {
+            return true
         }
 
         // MARK: - PDFViewDelegate Link Interception

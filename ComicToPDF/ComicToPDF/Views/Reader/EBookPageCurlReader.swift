@@ -40,7 +40,7 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
             navigationOrientation: .horizontal,
             options: nil
         )
-        pvc.isDoubleSided = !isInstant
+        pvc.isDoubleSided = false
         pvc.dataSource = context.coordinator
         pvc.delegate = context.coordinator
 
@@ -303,28 +303,27 @@ extension EBookPageCurlReader {
         ) {
             guard let pvc = pageViewController else { return }
 
-            let reqCount: Int
-            switch pvc.spineLocation {
-            case .mid:
-                reqCount = 2
-            case .min, .max:
-                reqCount = 1
-            case .none:
-                reqCount = isDualPageMode ? 2 : 1
-            @unknown default:
-                reqCount = 1
-            }
+            let reqCount: Int = (pvc.spineLocation == .mid) ? 2 : 1
 
             let safeVCs: [UIViewController]
-            if reqCount == 1 && vcs.count > 1 {
-                safeVCs = Array(vcs.prefix(1))
-            } else if reqCount == 2 && vcs.count == 1, let first = vcs.first {
-                let second = makePageViewController(for: min(currentPageIndex + 1, max(0, computedTotalPages - 1)))
-                safeVCs = [first, second]
+            if reqCount == 1 {
+                if let first = vcs.first {
+                    safeVCs = [first]
+                } else {
+                    safeVCs = [makePageViewController(for: currentPageIndex)]
+                }
             } else {
-                safeVCs = vcs
+                if vcs.count >= 2 {
+                    safeVCs = Array(vcs.prefix(2))
+                } else if let first = vcs.first {
+                    let second = makePageViewController(for: min(currentPageIndex + 1, max(0, computedTotalPages - 1)))
+                    safeVCs = [first, second]
+                } else {
+                    let first = makePageViewController(for: currentPageIndex)
+                    let second = makePageViewController(for: min(currentPageIndex + 1, max(0, computedTotalPages - 1)))
+                    safeVCs = [first, second]
+                }
             }
-
 
             pvc.setViewControllers(safeVCs, direction: direction, animated: animated, completion: completion)
         }
