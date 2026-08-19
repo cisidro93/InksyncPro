@@ -185,7 +185,7 @@ extension ConversionManager {
     }
 
     // MARK: - Merge & Convert
-    func mergePDFs(_ pdfs: [ConvertedPDF], outputName: String, mangaMode: Bool) async {
+    func mergePDFs(_ pdfs: [ConvertedPDF], outputName: String, mangaMode: Bool = false, customAuthor: String? = nil) async {
         isConverting = true; processingStatus = "Merging..."; statusMessage = "Starting merge..."
         let docRoot = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
         let docDir = docRoot.appendingPathComponent("Merged")
@@ -245,6 +245,10 @@ extension ConversionManager {
             baseMetadata.title = safeName
             baseMetadata.issueNumber = nil
             baseMetadata.volume = nil
+            if let author = customAuthor?.trimmingCharacters(in: .whitespacesAndNewlines), !author.isEmpty {
+                baseMetadata.author = author
+                baseMetadata.writer = author
+            }
             
             var newPDF = ConvertedPDF(
                 id: UUID(),
@@ -279,7 +283,7 @@ extension ConversionManager {
         }
     }
     
-    func convertComic(_ pdf: ConvertedPDF, mangaMode: Bool? = nil, customOutputName: String? = nil) async {
+    func convertComic(_ pdf: ConvertedPDF, mangaMode: Bool? = nil, customOutputName: String? = nil, customAuthor: String? = nil) async {
         if case .cloud = pdf.sourceMode {
             await MainActor.run {
                 self.processingStatus = "Queuing Cloud Download..."
@@ -292,11 +296,18 @@ extension ConversionManager {
                 thenConvert: true,
                 manager: self,
                 mangaMode: mangaMode,
-                customOutputName: customOutputName
+                customOutputName: customOutputName,
+                customAuthor: customAuthor
             )
             return
         }
-        await ConversionOrchestrator.shared.convertComic(pdf, mangaMode: mangaMode, customOutputName: customOutputName, manager: self)
+        await ConversionOrchestrator.shared.convertComic(
+            pdf,
+            mangaMode: mangaMode,
+            customOutputName: customOutputName,
+            customAuthor: customAuthor,
+            manager: self
+        )
     }
     
     func convertQueue(_ pdfs: [ConvertedPDF]) async {
@@ -319,7 +330,7 @@ extension ConversionManager {
     }
     
     @discardableResult
-    func convertAndMerge(sourceFiles: [ConvertedPDF], outputName: String, mangaMode: Bool, overrideSeries: String? = nil) async -> [ConvertedPDF] {
+    func convertAndMerge(sourceFiles: [ConvertedPDF], outputName: String, mangaMode: Bool, overrideSeries: String? = nil, customAuthor: String? = nil) async -> [ConvertedPDF] {
         // Cloud files: download the first cloud file to vault, then re-run convertAndMerge
         // once it's local. A full multi-file parallel download would need queue state.
         if let firstCloud = sourceFiles.first(where: { if case .cloud = $0.sourceMode { return true } else { return false } }) {
@@ -338,10 +349,18 @@ extension ConversionManager {
                 outputName: outputName,
                 mangaMode: mangaMode,
                 overrideSeries: overrideSeries,
+                customAuthor: customAuthor,
                 manager: self
             )
         }
-        return await ConversionOrchestrator.shared.convertAndMerge(sourceFiles: sourceFiles, outputName: outputName, mangaMode: mangaMode, overrideSeries: overrideSeries, manager: self)
+        return await ConversionOrchestrator.shared.convertAndMerge(
+            sourceFiles: sourceFiles,
+            outputName: outputName,
+            mangaMode: mangaMode,
+            overrideSeries: overrideSeries,
+            customAuthor: customAuthor,
+            manager: self
+        )
     }
 
     // MARK: - Stable Extraction

@@ -5,7 +5,7 @@ final class ConversionOrchestrator: Sendable {
     static let shared = ConversionOrchestrator()
     private init() {}
     
-    func convertComic(_ pdf: ConvertedPDF, mangaMode: Bool? = nil, customOutputName: String? = nil, manager: ConversionManager) async {
+    func convertComic(_ pdf: ConvertedPDF, mangaMode: Bool? = nil, customOutputName: String? = nil, customAuthor: String? = nil, manager: ConversionManager) async {
         #if os(iOS)
         let bgTask = await MainActor.run {
             UIApplication.shared.isIdleTimerDisabled = true
@@ -251,7 +251,7 @@ final class ConversionOrchestrator: Sendable {
             
             do {
                 if jobSettings.outputFormat == .pdf {
-                    let pName = pdf.name.replacingOccurrences(of: ".cbz", with: "").replacingOccurrences(of: ".zip", with: "") + "_Converted.pdf"
+                    let pName = (customOutputName?.isEmpty == false ? customOutputName! : pdf.name.replacingOccurrences(of: ".cbz", with: "").replacingOccurrences(of: ".zip", with: "")) + "_Converted.pdf"
                     let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? URL(fileURLWithPath: NSTemporaryDirectory())
                     var outputDir = docDir
                     if let series = pdf.metadata.series, !series.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -276,9 +276,17 @@ final class ConversionOrchestrator: Sendable {
                         Task { @MainActor in manager.conversionProgress = p; manager.processingStatus = "Converting \(currentNum) of \(total) (\(Int(p * 100))%)" }
                     }
                     PhysicalFileSystemRouter.excludeFromBackup(at: outputURL)
-                    await MainActor.run { manager.scanLibrary() }
+                    await MainActor.run {
+                        manager.scanLibrary()
+                        if let author = customAuthor?.trimmingCharacters(in: .whitespacesAndNewlines), !author.isEmpty,
+                           let idx = manager.convertedPDFs.firstIndex(where: { $0.url == outputURL }) {
+                            manager.convertedPDFs[idx].metadata.author = author
+                            manager.convertedPDFs[idx].metadata.writer = author
+                            manager.saveLibrary()
+                        }
+                    }
                 } else if jobSettings.outputFormat == .cbz {
-                    let pName = pdf.name.replacingOccurrences(of: ".cbz", with: "").replacingOccurrences(of: ".pdf", with: "").replacingOccurrences(of: ".zip", with: "") + "_Converted.cbz"
+                    let pName = (customOutputName?.isEmpty == false ? customOutputName! : pdf.name.replacingOccurrences(of: ".cbz", with: "").replacingOccurrences(of: ".pdf", with: "").replacingOccurrences(of: ".zip", with: "")) + "_Converted.cbz"
                     let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? URL(fileURLWithPath: NSTemporaryDirectory())
                     var outputDir = docDir
                     if let series = pdf.metadata.series, !series.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -311,25 +319,41 @@ final class ConversionOrchestrator: Sendable {
                             manager.processingStatus = "Converting \(currentNum) of \(total) (\(Int(p * 100))%)"
                         }
                     }
-                    await MainActor.run { manager.scanLibrary() }
+                    await MainActor.run {
+                        manager.scanLibrary()
+                        if let author = customAuthor?.trimmingCharacters(in: .whitespacesAndNewlines), !author.isEmpty,
+                           let idx = manager.convertedPDFs.firstIndex(where: { $0.url == outputURL }) {
+                            manager.convertedPDFs[idx].metadata.author = author
+                            manager.convertedPDFs[idx].metadata.writer = author
+                            manager.saveLibrary()
+                        }
+                    }
                 } else if jobSettings.outputPipeline == .proPanel {
                     await MainActor.run { manager.processingStatus = "Reading panels for \(pdf.name)..." }
                     let combinedManifest = await manager.getCombinedManifest(for: pdf)
                     let pvConverter = PanelViewEPUBConverter()
-                    let newURLs = try await pvConverter.convert(sourceURL: resolvedSourceURL, settings: jobSettings, panels: combinedManifest, sourceIsMangaPDF: false, coverOverrideData: coverOverrideData, customOutputName: pdf.name, seriesName: pdf.metadata.series) { p in
+                    let newURLs = try await pvConverter.convert(sourceURL: resolvedSourceURL, settings: jobSettings, panels: combinedManifest, sourceIsMangaPDF: false, coverOverrideData: coverOverrideData, customOutputName: customOutputName ?? pdf.name, seriesName: pdf.metadata.series) { p in
                         Task { @MainActor in manager.conversionProgress = p; manager.processingStatus = "Converting \(currentNum) of \(total) (\(Int(p * 100))%)" }
                     }
                     var targetMetadata = pdf.metadata
                     targetMetadata.isManga = jobSettings.mangaMode
+                    if let author = customAuthor?.trimmingCharacters(in: .whitespacesAndNewlines), !author.isEmpty {
+                        targetMetadata.author = author
+                        targetMetadata.writer = author
+                    }
                     for epubURL in newURLs { try? await manager.injectMetadata(into: epubURL, panels: combinedManifest, metadata: targetMetadata) }
                     await MainActor.run { manager.scanLibrary() }
                 } else {
                     let converter = CBZToEPUBConverter()
-                    let newURLs = try await converter.convert(sourceURL: resolvedSourceURL, settings: jobSettings, manualManifest: nil, sourceIsMangaPDF: false, coverOverrideData: coverOverrideData, customOutputName: pdf.name, seriesName: pdf.metadata.series) { p in
+                    let newURLs = try await converter.convert(sourceURL: resolvedSourceURL, settings: jobSettings, manualManifest: nil, sourceIsMangaPDF: false, coverOverrideData: coverOverrideData, customOutputName: customOutputName ?? pdf.name, seriesName: pdf.metadata.series) { p in
                         Task { @MainActor in manager.conversionProgress = p; manager.processingStatus = "Converting \(currentNum) of \(total) (\(Int(p * 100))%)" }
                     }
                     var targetMetadata = pdf.metadata
                     targetMetadata.isManga = jobSettings.mangaMode
+                    if let author = customAuthor?.trimmingCharacters(in: .whitespacesAndNewlines), !author.isEmpty {
+                        targetMetadata.author = author
+                        targetMetadata.writer = author
+                    }
                     for epubURL in newURLs { try? await manager.injectMetadata(into: epubURL, panels: [:], metadata: targetMetadata) }
                     await MainActor.run { manager.scanLibrary() }
                 }
@@ -359,7 +383,7 @@ final class ConversionOrchestrator: Sendable {
     }
     
     @discardableResult
-    func convertAndMerge(sourceFiles: [ConvertedPDF], outputName: String, mangaMode: Bool, overrideSeries: String? = nil, manager: ConversionManager) async -> [ConvertedPDF] {
+    func convertAndMerge(sourceFiles: [ConvertedPDF], outputName: String, mangaMode: Bool, overrideSeries: String? = nil, customAuthor: String? = nil, manager: ConversionManager) async -> [ConvertedPDF] {
         guard !sourceFiles.isEmpty else { return [] }
         
         #if os(iOS)
@@ -509,13 +533,19 @@ final class ConversionOrchestrator: Sendable {
                     
                     let finalFileSize = (try? finalOutputURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
                     let inferredMode = sourceFiles.first?.addedByMode ?? .pro
+                    var meta = PDFMetadata(title: outputFilename, series: overrideSeries, sourceFileIDs: sourceFiles.map { $0.id }, isManga: jobSettings.mangaMode)
+                    let resolvedAuthor = (customAuthor?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap { $0.isEmpty ? nil : $0 } ?? sourceFiles.first?.metadata.author ?? sourceFiles.first?.metadata.writer
+                    if let author = resolvedAuthor {
+                        meta.author = author
+                        meta.writer = author
+                    }
                     let outputPDF = ConvertedPDF(
                         id: UUID(),
                         name: outputFilename,
                         url: finalOutputURL,
                         pageCount: batch.count,
                         fileSize: finalFileSize,
-                        metadata: PDFMetadata(title: outputFilename, series: overrideSeries, sourceFileIDs: sourceFiles.map { $0.id }, isManga: jobSettings.mangaMode),
+                        metadata: meta,
                         collectionId: sourceFiles.first?.collectionId,
                         contentType: sourceFiles.first?.contentType ?? .comic,
                         addedByMode: inferredMode
@@ -629,13 +659,19 @@ final class ConversionOrchestrator: Sendable {
                 let outputURL = finalOutputURL
                 let totalPages = await Task.detached(priority: .background) { return PhysicalFileSystemRouter.getPageCountStatic(from: outputURL) }.value
                 let inferredMode = sourceFiles.first?.addedByMode ?? .pro
+                var meta = PDFMetadata(title: outputFilename, series: overrideSeries, sourceFileIDs: sourceFiles.map { $0.id }, isManga: mangaMode)
+                let resolvedAuthor = (customAuthor?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap { $0.isEmpty ? nil : $0 } ?? sourceFiles.first?.metadata.author ?? sourceFiles.first?.metadata.writer
+                if let author = resolvedAuthor {
+                    meta.author = author
+                    meta.writer = author
+                }
                 let outputPDF = ConvertedPDF(
                     id: UUID(),
                     name: outputFilename,
                     url: finalOutputURL,
                     pageCount: totalPages,
                     fileSize: finalFileSize,
-                    metadata: PDFMetadata(title: outputFilename, series: overrideSeries, sourceFileIDs: sourceFiles.map { $0.id }, isManga: mangaMode),
+                    metadata: meta,
                     collectionId: sourceFiles.first?.collectionId,
                     contentType: mangaMode ? .manga : .comic,
                     addedByMode: inferredMode

@@ -4,6 +4,7 @@ import SwiftUI
 class FileMergeViewModel: ObservableObject {
     @Published var mergeOrder: [ConvertedPDF] = []
     @Published var outputName: String = ""
+    @Published var author: String = ""
     @Published var mangaMode: Bool = false
     @Published var isProcessing: Bool = false
 }
@@ -13,6 +14,7 @@ struct FileMergeView: View {
     @EnvironmentObject var conversionManager: ConversionManager
     @EnvironmentObject var settingsManager: AppSettingsManager
     @StateObject private var viewModel: FileMergeViewModel
+    private let initialSelection: Set<UUID>
     
     private var availableFiles: [ConvertedPDF] {
         let mergeIDs = Set(viewModel.mergeOrder.map { $0.id })
@@ -22,7 +24,7 @@ struct FileMergeView: View {
     }
     
     init(initialSelection: Set<UUID> = []) {
-        // Pre-populate merge order from initial selection
+        self.initialSelection = initialSelection
         _viewModel = StateObject(wrappedValue: FileMergeViewModel())
     }
     
@@ -41,6 +43,7 @@ struct FileMergeView: View {
                             HStack(spacing: 12) {
                                 Image(systemName: "line.3.horizontal")
                                     .foregroundColor(.secondary)
+                                    .font(.caption)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(pdf.name)
                                         .font(.subheadline)
@@ -50,13 +53,13 @@ struct FileMergeView: View {
                                         .foregroundColor(.secondary)
                                 }
                                 Spacer()
-                                Button {
+                                Button(role: .destructive) {
                                     viewModel.mergeOrder.removeAll { $0.id == pdf.id }
                                 } label: {
                                     Image(systemName: "minus.circle.fill")
                                         .foregroundColor(.red)
                                 }
-                                .buttonStyle(.plain)
+                                .buttonStyle(.borderless)
                             }
                         }
                         .onMove { indices, offset in
@@ -68,21 +71,22 @@ struct FileMergeView: View {
                         Text("Merge Order")
                         Spacer()
                         if !viewModel.mergeOrder.isEmpty {
-                            EditButton()
+                            Text("\(viewModel.mergeOrder.count) files")
                                 .font(.caption)
+                                .foregroundColor(.secondary)
                         }
                     }
                 } footer: {
                     if !viewModel.mergeOrder.isEmpty {
-                        Text("Drag \(Image(systemName: "line.3.horizontal")) to reorder. The top file becomes Chapter 1.")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
+                        Text("Drag to reorder chapters. The merged file will follow this exact sequence.")
+                            .font(.caption)
                     }
                 }
                 
                 // MARK: - Output Settings
                 Section(header: Text("Output Options")) {
                     TextField("Collection Name (e.g., My Omnibus)", text: $viewModel.outputName)
+                    TextField("Author / Writer (e.g., Frank Miller)", text: $viewModel.author)
                     Toggle("Manga Mode (Right-to-Left)", isOn: $viewModel.mangaMode)
                     
                     VStack(alignment: .leading, spacing: 2) {
@@ -181,7 +185,12 @@ struct FileMergeView: View {
                             let name = viewModel.outputName.trimmingCharacters(in: .whitespaces).isEmpty ? "Merged Collection" : viewModel.outputName
                             viewModel.isProcessing = true
                             Task {
-                                await conversionManager.mergePDFs(viewModel.mergeOrder, outputName: name, mangaMode: viewModel.mangaMode)
+                                await conversionManager.mergePDFs(
+                                    viewModel.mergeOrder,
+                                    outputName: name,
+                                    mangaMode: viewModel.mangaMode,
+                                    customAuthor: viewModel.author
+                                )
                                 await MainActor.run {
                                     viewModel.isProcessing = false
                                     dismiss()
@@ -190,6 +199,30 @@ struct FileMergeView: View {
                         }
                         .fontWeight(.bold)
                         .disabled(viewModel.mergeOrder.count < 2)
+                    }
+                }
+            }
+            .onAppear {
+                if viewModel.mergeOrder.isEmpty && !initialSelection.isEmpty {
+                    viewModel.mergeOrder = conversionManager.visiblePDFs.filter { initialSelection.contains($0.id) }
+                }
+                if viewModel.author.isEmpty, let first = viewModel.mergeOrder.first {
+                    let existingAuthor = first.metadata.author?.trimmingCharacters(in: .whitespacesAndNewlines) ?? first.metadata.writer?.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if let a = existingAuthor, !a.isEmpty {
+                        viewModel.author = a
+                    } else {
+                        let fileURL = (try? BookmarkResolver.shared.resolveIfLinked(first)) ?? first.url
+                        Task.detached(priority: .userInitiated) {
+                            if let comicInfo = ComicInfoParser.parse(from: fileURL), let writer = comicInfo.writer, !writer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                await MainActor.run {
+                                    viewModel.author = writer
+                                }
+                            } else if let epubMeta = await EBookParser.shared.parse(epub: fileURL), !epubMeta.author.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                await MainActor.run {
+                                    viewModel.author = epubMeta.author
+                                }
+                            }
+                        }
                     }
                 }
             }

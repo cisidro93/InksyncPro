@@ -282,7 +282,12 @@ struct ConvertView: View {
                 Button(action: {
                     Task {
                         viewModel.applyPipeline(viewModel.selectedPipeline, to: &settingsManager.conversionSettings)
-                        await conversionManager.convertComic(pdf, mangaMode: viewModel.isMangaMode, customOutputName: viewModel.targetFilename)
+                        await conversionManager.convertComic(
+                            pdf,
+                            mangaMode: viewModel.isMangaMode,
+                            customOutputName: viewModel.targetFilename,
+                            customAuthor: viewModel.targetAuthor
+                        )
                     }
                 }) {
                     HStack(spacing: 10) {
@@ -340,14 +345,20 @@ struct ConvertView: View {
                 derived = stripped
             }
             viewModel.targetFilename = derived
-            if let author = pdf.metadata.author, !author.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            
+            let existingAuthor = pdf.metadata.author?.trimmingCharacters(in: .whitespacesAndNewlines) ?? pdf.metadata.writer?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let author = existingAuthor, !author.isEmpty {
                 viewModel.targetAuthor = author
             } else {
-                let fileURL = pdf.url
+                let fileURL = (try? BookmarkResolver.shared.resolveIfLinked(pdf)) ?? pdf.url
                 Task.detached(priority: .userInitiated) {
                     if let comicInfo = ComicInfoParser.parse(from: fileURL), let writer = comicInfo.writer, !writer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         await MainActor.run {
                             viewModel.targetAuthor = writer
+                        }
+                    } else if let epubMeta = await EBookParser.shared.parse(epub: fileURL), !epubMeta.author.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        await MainActor.run {
+                            viewModel.targetAuthor = epubMeta.author
                         }
                     }
                 }

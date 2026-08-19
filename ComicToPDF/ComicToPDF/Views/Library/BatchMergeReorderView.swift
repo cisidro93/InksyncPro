@@ -10,6 +10,7 @@ struct BatchMergeReorderView: View {
     @Binding var selectedFiles: [ConvertedPDF]
     
     @State private var mergedName: String = "Merged Collection"
+    @State private var author: String = ""
     @State private var mangaMode: Bool = false
     @State private var isProcessing = false
     @State private var draggedItem: ConvertedPDF?
@@ -31,8 +32,9 @@ struct BatchMergeReorderView: View {
                     Form {
                         Section {
                             TextField("Collection Name", text: $mergedName)
+                            TextField("Author / Writer", text: $author)
                         } header: {
-                            Text("Output Name")
+                            Text("Output Metadata")
                         }
                         
                         Section {
@@ -154,6 +156,27 @@ struct BatchMergeReorderView: View {
                     }
                 }
             }
+            .onAppear {
+                if let first = selectedFiles.first {
+                    let existingAuthor = first.metadata.author?.trimmingCharacters(in: .whitespacesAndNewlines) ?? first.metadata.writer?.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if let a = existingAuthor, !a.isEmpty {
+                        self.author = a
+                    } else {
+                        let fileURL = (try? BookmarkResolver.shared.resolveIfLinked(first)) ?? first.url
+                        Task.detached(priority: .userInitiated) {
+                            if let comicInfo = ComicInfoParser.parse(from: fileURL), let writer = comicInfo.writer, !writer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                await MainActor.run {
+                                    self.author = writer
+                                }
+                            } else if let epubMeta = await EBookParser.shared.parse(epub: fileURL), !epubMeta.author.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                await MainActor.run {
+                                    self.author = epubMeta.author
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
     
@@ -163,7 +186,12 @@ struct BatchMergeReorderView: View {
         
         Task {
             // Call the manager to do the work
-            let merged = await conversionManager.convertAndMerge(sourceFiles: selectedFiles, outputName: mergedName, mangaMode: mangaMode)
+            let merged = await conversionManager.convertAndMerge(
+                sourceFiles: selectedFiles,
+                outputName: mergedName,
+                mangaMode: mangaMode,
+                customAuthor: author
+            )
             
             await MainActor.run {
                 if let newBook = merged.first {
