@@ -379,7 +379,7 @@ struct ConvertView: View {
                 totalInputSizeBytes: pdf.fileSize
             )
         }
-        .onChange(of: conversionManager.isConverting) { isConverting in
+        .onChange(of: conversionManager.isConverting) { oldValue, isConverting in
             if !isConverting {
                 let status = conversionManager.statusMessage ?? ""
                 if !status.contains("Error") {
