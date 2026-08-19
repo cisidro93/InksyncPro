@@ -109,23 +109,11 @@ actor LibraryScanner {
         var newPDFs: [ConvertedPDF] = []
         let keys: [URLResourceKey] = [.nameKey, .isDirectoryKey, .fileSizeKey]
 
-        var (existingRelPaths, existingFilenames, existingCanonicalPaths, existingBaseNames) = await MainActor.run {
+        var (existingRelPaths, existingCanonicalPaths) = await MainActor.run {
             var rels = Set<String>()
-            var names = Set<String>()
             var paths = Set<String>()
-            var bases = Set<String>()
             
             for pdf in manager.convertedPDFs {
-                let normLastComp = normalizeFilename(pdf.url.lastPathComponent)
-                let normName = normalizeFilename(pdf.name)
-                let normBase = (normLastComp as NSString).deletingPathExtension
-                let normNameBase = (normName as NSString).deletingPathExtension
-                
-                names.insert(normLastComp)
-                names.insert(normName)
-                bases.insert(normBase)
-                bases.insert(normNameBase)
-                
                 if pdf.isLinked {
                     paths.insert(pdf.url.path.lowercased())
                 } else {
@@ -133,7 +121,7 @@ actor LibraryScanner {
                 }
                 paths.insert(pdf.url.resolvingSymlinksInPath().path.lowercased())
             }
-            return (rels, names, paths, bases)
+            return (rels, paths)
         }
 
         // Scan both the Documents directory and the Wi-Fi transfer Inbox
@@ -162,16 +150,13 @@ actor LibraryScanner {
                 let filename = normalizeFilename(fileURL.lastPathComponent)
                 let relPath = relativePath(for: fileURL)
                 let canonicalPath = fileURL.resolvingSymlinksInPath().path.lowercased()
-                let baseName = (filename as NSString).deletingPathExtension
                 
-                // 🔴 TRIPLE-GUARD DUPLICATE PROTECTION: Skip if filename, base name, relative path, or canonical path already exists!
-                if existingRelPaths.contains(relPath) || existingFilenames.contains(filename) || existingCanonicalPaths.contains(canonicalPath) || existingBaseNames.contains(baseName) {
+                // Exact path-based duplicate protection: Skip if relative path or canonical path already exists
+                if existingRelPaths.contains(relPath) || existingCanonicalPaths.contains(canonicalPath) {
                     continue
                 }
                 
                 // Track newly discovered file in set so intra-pass duplicates across folders are also prevented:
-                existingFilenames.insert(filename)
-                existingBaseNames.insert(baseName)
                 existingRelPaths.insert(relPath)
                 existingCanonicalPaths.insert(canonicalPath)
                 
