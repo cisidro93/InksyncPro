@@ -190,6 +190,46 @@ struct ProPDFReaderEngine: View {
                         )
                         .ignoresSafeArea()
                     }
+
+                    // 3-Zone Fallback Tap Overlay for 100% Reliable Navigation & Chrome Toggle
+                    if selectedTextForHUD == nil && !isPencilMode && pendingLinkPreview == nil {
+                        GeometryReader { geo in
+                            let width = geo.size.width
+                            let height = geo.size.height
+                            
+                            HStack(spacing: 0) {
+                                // Left 20% Tap Zone (Previous Page)
+                                Color.clear
+                                    .frame(width: width * 0.2, height: height)
+                                    .contentShape(Rectangle())
+                                    .onTapGesture {
+                                        HapticEngine.light()
+                                        jumpToPage(isMangaMode ? currentPageIndex + 1 : currentPageIndex - 1)
+                                    }
+                                
+                                // Center 60% Tap Zone (Toggle Chrome)
+                                Color.clear
+                                    .frame(width: width * 0.6, height: height)
+                                    .contentShape(Rectangle())
+                                    .onTapGesture {
+                                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                            chromeVisible.toggle()
+                                        }
+                                        HapticEngine.selection()
+                                    }
+                                
+                                // Right 20% Tap Zone (Next Page)
+                                Color.clear
+                                    .frame(width: width * 0.2, height: height)
+                                    .contentShape(Rectangle())
+                                    .onTapGesture {
+                                        HapticEngine.light()
+                                        jumpToPage(isMangaMode ? currentPageIndex - 1 : currentPageIndex + 1)
+                                    }
+                            }
+                        }
+                        .ignoresSafeArea()
+                    }
                 }
             } else {
                 // Loading State
@@ -219,6 +259,38 @@ struct ProPDFReaderEngine: View {
             }
 
             EdgeBrightnessGestureZone()
+
+            // Floating Dismiss Chevron when Chrome is Hidden (Guarantees user is never trapped)
+            if !chromeVisible {
+                VStack {
+                    HStack {
+                        Button(action: {
+                            HapticEngine.selection()
+                            onDismiss()
+                        }) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "chevron.left")
+                                    .font(.system(size: 14, weight: .bold))
+                                Text("Library")
+                                    .font(.system(size: 13, weight: .semibold))
+                            }
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .background(.ultraThinMaterial, in: Capsule())
+                            .overlay(Capsule().stroke(Color.white.opacity(0.2), lineWidth: 0.5))
+                            .shadow(color: .black.opacity(0.35), radius: 8, y: 3)
+                        }
+                        .padding(.leading, 16)
+                        .padding(.top, 10)
+                        
+                        Spacer()
+                    }
+                    Spacer()
+                }
+                .transition(.opacity)
+                .zIndex(20)
+            }
 
             // Floating Time & Battery Header
             VStack {
@@ -353,6 +425,15 @@ struct ProPDFReaderEngine: View {
 
             ReadingJumpToastOverlay()
         }
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 35)
+                .onEnded { value in
+                    if value.startLocation.y < 120 && value.translation.height > 60 && abs(value.translation.width) < 120 {
+                        HapticEngine.medium()
+                        onDismiss()
+                    }
+                }
+        )
         .focusable()
         .focusEffectDisabled()
         .onKeyPress(.leftArrow) {
@@ -896,6 +977,13 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         nonisolated func gestureRecognizer(
             _ gestureRecognizer: UIGestureRecognizer,
             shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+        ) -> Bool {
+            return true
+        }
+
+        nonisolated func gestureRecognizer(
+            _ gestureRecognizer: UIGestureRecognizer,
+            shouldReceive touch: UITouch
         ) -> Bool {
             return true
         }

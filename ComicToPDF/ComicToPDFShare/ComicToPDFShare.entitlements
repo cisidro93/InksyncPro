@@ -5,6 +5,7 @@
     <key>com.apple.security.application-groups</key>
     <array>
         <string>group.com.antigravity.ComicToPDF</string>
+        <string>group.com.antigravity.inksync</string>
     </array>
 </dict>
 </plist>

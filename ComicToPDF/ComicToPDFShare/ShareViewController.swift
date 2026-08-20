@@ -11,10 +11,7 @@ class ShareViewController: UIViewController {
         let contentView = ShareExtensionView(
             extensionContext: extensionContext,
             onDismiss: { [weak self] in
-                if let url = URL(string: "inksyncpro://shared-import") {
-                    self?.extensionContext?.open(url, completionHandler: nil)
-                }
-                self?.extensionContext?.completeRequest(returningItems: nil, completionHandler: nil)
+                self?.openHostAppAndComplete()
             }
         )
         
@@ -32,5 +29,33 @@ class ShareViewController: UIViewController {
         ])
         
         hostingController.didMove(toParent: self)
+    }
+    
+    private func openHostAppAndComplete() {
+        if let url = URL(string: "inksyncpro://shared-import") {
+            // Attempt opening via UIResponder selector traversal
+            var responder: UIResponder? = self
+            var didOpen = false
+            while responder != nil {
+                if let application = responder as? UIApplication {
+                    application.open(url, options: [:], completionHandler: nil)
+                    didOpen = true
+                    break
+                }
+                let selector = NSSelectorFromString("openURL:")
+                if responder?.responds(to: selector) == true {
+                    responder?.perform(selector, with: url)
+                    didOpen = true
+                    break
+                }
+                responder = responder?.next
+            }
+            
+            if !didOpen {
+                self.extensionContext?.open(url, completionHandler: nil)
+            }
+        }
+        
+        self.extensionContext?.completeRequest(returningItems: nil, completionHandler: nil)
     }
 }
