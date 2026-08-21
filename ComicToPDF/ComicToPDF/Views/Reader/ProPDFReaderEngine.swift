@@ -1,131 +1,383 @@
 import SwiftUI
 @preconcurrency import PDFKit
-import UIKit
+import PencilKit
+import AVFoundation
 
-/// Ground-Up Rebuilt Pro Native PDF Reader Engine
-/// Pure Apple PDFKit implementation with zero filters, zero overlays,
-/// hardware-accelerated vector rendering, and streamlined glassmorphic chrome.
-@MainActor
+/// Master Pro PDF Reader Engine View for InksyncPro
 struct ProPDFReaderEngine: View {
     let pdf: ConvertedPDF
     var onDismiss: () -> Void
 
-    @State private var pdfDocument: PDFDocument? = nil
+    @State private var chromeVisible = false
     @State private var currentPageIndex: Int = 0
-    @State private var totalPages: Int = 1
-    @State private var isDocumentLoading = true
-    @State private var chromeVisible = true
-    @State private var pdfViewReference: PDFView? = nil
+    @State private var pdfDocument: PDFDocument?
+    @State private var pdfViewReference: PDFView?
+    @State private var resolvedURL: URL?
 
-    // Sheets
-    @State private var showingPageManager = false
+    // Inspector & Sheet Modals
     @State private var showingInspector = false
+    @State private var showingOutlineDrawer = false
+    @State private var showingPageManager = false
+    @State private var showingSettings = false
+    @State private var isPencilMode = false
+    @State private var isCroppedMode = false
+    @State private var isExpandedView = false
+    @State private var isReflowMode = false
+    @State private var shareAnnotatedPDFURL: URL? = nil
 
-    // Security scoped URL tracking
+    // Text Selection & Markup HUD
+    @State private var selectedTextForHUD: String? = nil
+    @State private var speechSynthesizer = AVSpeechSynthesizer()
+
+    // Environment & Preferences
+    @ObservedObject private var prefs = EBookPreferences.shared
+    @Environment(\.modelContext) private var modelContext
+    @FocusState private var isReaderFocused: Bool
+    @StateObject private var velocityEngine = ReaderVelocityEngine()
+
+    @State private var showCropAdjustmentSheet = false
+    @State private var activeCropInsets: CodableCropInsets = .zero
+    @AppStorage("isMangaMode") private var isMangaMode = false
+    @State private var activeZoomScale: CGFloat = 1.0
+    @State private var showZoomPill = false
+    @State private var zoomPillTask: Task<Void, Never>? = nil
+    @State private var loadTask: Task<Void, Never>? = nil
     @State private var accessedSecurityScopedURL: URL? = nil
+    // Hyperlink Destination Preview HUD State
+    @State private var pendingLinkPreview: (pageIndex: Int, targetPage: PDFPage)? = nil
+
+    private var totalPages: Int {
+        pdfDocument?.pageCount ?? pdf.pageCount
+    }
+
+    private func applyCropInsets(_ insets: CodableCropInsets) {
+        guard let doc = pdfDocument else { return }
+        self.activeCropInsets = insets
+        
+        if insets.modeRaw == "none" {
+            isCroppedMode = false
+            for i in 0..<doc.pageCount {
+                if let page = doc.page(at: i) {
+                    page.setBounds(page.bounds(for: .mediaBox), for: .cropBox)
+                }
+            }
+            if let pv = pdfViewReference {
+                pv.displayBox = .mediaBox
+                pv.autoScales = false
+                pv.autoScales = true
+                pv.scaleFactor = pv.scaleFactorForSizeToFit
+                pv.layoutDocumentView()
+            }
+        } else if insets.modeRaw == "smartAuto" {
+            isCroppedMode = true
+            let sensitivity = max(0.05, min(0.25, prefs.autoCropSensitivity))
+            for i in 0..<doc.pageCount {
+                if let page = doc.page(at: i) {
+                    let mediaBox = page.bounds(for: .mediaBox)
+                    let insetX = mediaBox.width * sensitivity
+                    let insetY = mediaBox.height * sensitivity * 1.2
+                    page.setBounds(mediaBox.insetBy(dx: insetX, dy: insetY), for: .cropBox)
+                }
+            }
+            if let pv = pdfViewReference {
+                pv.displayBox = .cropBox
+                pv.autoScales = false
+                pv.autoScales = true
+                pv.scaleFactor = pv.scaleFactorForSizeToFit
+                pv.layoutDocumentView()
+            }
+        } else {
+            // Custom Pro Crop Insets
+            isCroppedMode = true
+            for i in 0..<doc.pageCount {
+                if let page = doc.page(at: i) {
+                    let mediaBox = page.bounds(for: .mediaBox)
+                    let croppedRect = CGRect(
+                        x: mediaBox.minX + (mediaBox.width * insets.left),
+                        y: mediaBox.minY + (mediaBox.height * insets.bottom),
+                        width: max(10, mediaBox.width * (1.0 - insets.left - insets.right)),
+                        height: max(10, mediaBox.height * (1.0 - insets.top - insets.bottom))
+                    )
+                    page.setBounds(croppedRect, for: .cropBox)
+                }
+            }
+            if let pv = pdfViewReference {
+                pv.displayBox = .cropBox
+                pv.autoScales = false
+                pv.autoScales = true
+                pv.scaleFactor = pv.scaleFactorForSizeToFit
+                pv.layoutDocumentView()
+            }
+        }
+    }
 
     var body: some View {
         ZStack {
-            // Ambient Dark Reader Canvas
-            Color(hex: "#0c0d14")
+            Color.inkBackground
                 .ignoresSafeArea()
 
-            if isDocumentLoading {
-                VStack(spacing: 16) {
-                    ProgressView()
-                        .scaleEffect(1.3)
-                        .tint(.inkGreen)
-                    Text("Loading PDF...")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(Color.white.opacity(0.8))
-
-                    Button(action: onDismiss) {
-                        HStack(spacing: 6) {
-                            Image(systemName: "chevron.left")
-                                .font(.system(size: 12, weight: .bold))
-                            Text("Back to Library")
-                                .font(.system(size: 13, weight: .semibold))
-                        }
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 7)
-                        .background(Color.white.opacity(0.12), in: Capsule())
-                    }
-                    .padding(.top, 8)
-                }
-            } else if let doc = pdfDocument {
-                // Native Apple PDF Canvas
-                NativePDFViewRepresentable(
-                    document: doc,
+            if isReflowMode {
+                ProPDFReflowReaderView(
+                    pdf: pdf,
+                    pdfDocument: pdfDocument,
                     currentPageIndex: $currentPageIndex,
-                    pdfViewRef: $pdfViewReference,
-                    onPageChanged: { newIndex in
-                        currentPageIndex = newIndex
-                        saveReadingProgress()
-                    },
-                    onTapCenter: {
-                        withAnimation(.easeInOut(duration: 0.22)) {
-                            chromeVisible.toggle()
+                    onDismiss: onDismiss,
+                    onToggleReflow: {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                            isReflowMode = false
+                            prefs.pdfReflowMode = false
                         }
                     }
                 )
-                .ignoresSafeArea()
+            } else if let doc = pdfDocument {
+                // PDF Core Canvas View
+                ZStack {
+                    ProPDFViewRepresentable(
+                        document: doc,
+                        currentPageIndex: $currentPageIndex,
+                        pdfViewRef: $pdfViewReference,
+                        isCroppedMode: isCroppedMode,
+                        isExpandedView: isExpandedView,
+                        onPrevPage: {
+                            jumpToPage(isMangaMode ? currentPageIndex + 1 : currentPageIndex - 1)
+                        },
+                        onNextPage: {
+                            jumpToPage(isMangaMode ? currentPageIndex - 1 : currentPageIndex + 1)
+                        },
+                        onTapCenter: {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                chromeVisible.toggle()
+                            }
+                        },
+                        onTextSelectionChanged: { text in
+                            withAnimation(.easeInOut(duration: 0.18)) {
+                                selectedTextForHUD = text
+                            }
+                        },
+                        onScaleChanged: { scale in
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                activeZoomScale = scale
+                                showZoomPill = true
+                            }
+                            zoomPillTask?.cancel()
+                            zoomPillTask = Task {
+                                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                                guard !Task.isCancelled else { return }
+                                await MainActor.run {
+                                    withAnimation(.easeInOut(duration: 0.3)) {
+                                        showZoomPill = false
+                                    }
+                                }
+                            }
+                        },
+                        onHyperlinkSelected: { destIndex, destPage in
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+                                self.pendingLinkPreview = (destIndex, destPage)
+                            }
+                        }
+                    )
+                    .intelligentPDFDarkMode(isEnabled: prefs.themeRaw == EBookTheme.night.rawValue && prefs.readingFilter == .none)
+                    .readingFilter(prefs.readingFilter)
+                    .ignoresSafeArea()
 
-                // Top Navigation Chrome
-                if chromeVisible {
-                    VStack {
-                        topNavigationBar
-                            .transition(.move(edge: .top).combined(with: .opacity))
-                        Spacer()
-                    }
-                }
 
-                // Bottom Navigation Scrubber Chrome
-                if chromeVisible {
-                    VStack {
-                        Spacer()
-                        bottomScrubberBar
-                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                    // PencilKit Ink Bearing Canvas Layer
+                    if isPencilMode {
+                        PageCanvasOverlay(
+                            pdfID: pdf.id,
+                            pageIndex: currentPageIndex,
+                            isMarkupEnabled: isPencilMode
+                        )
+                        .ignoresSafeArea()
                     }
                 }
             } else {
-                // Error / Empty State
+                // Loading State
                 VStack(spacing: 16) {
-                    Image(systemName: "exclamationmark.triangle")
-                        .font(.system(size: 40))
-                        .foregroundColor(.yellow)
-                    Text("Unable to open PDF document.")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundColor(.white)
-
-                    Button(action: onDismiss) {
-                        Text("Return to Library")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 8)
-                            .background(Color.inkGreen, in: Capsule())
-                    }
+                    ProgressView()
+                        .scaleEffect(1.2)
+                        .tint(.inkGreen)
+                    Text("Loading PDF Document...")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(Theme.textSecondary)
                 }
             }
+
+            EdgeBrightnessGestureZone()
+
+            // Floating Time & Battery Header
+            VStack {
+                FloatingReaderClockOverlay()
+                    .padding(.top, 8)
+                Spacer()
+            }
+            .allowsHitTesting(false)
+            .ignoresSafeArea(edges: .bottom)
+
+            // Zoom Scale Percentage Pill HUD
+            if showZoomPill {
+                VStack {
+                    HStack(spacing: 6) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 11, weight: .bold))
+                        Text("\(Int(round(activeZoomScale * 100)))%")
+                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 7)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .overlay(Capsule().stroke(Color.white.opacity(0.2), lineWidth: 0.5))
+                    .shadow(color: .black.opacity(0.25), radius: 8, y: 3)
+                    .padding(.top, chromeVisible ? 70 : 50)
+                    Spacer()
+                }
+                .allowsHitTesting(false)
+                .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                .zIndex(10)
+            }
+
+            // Hyperlink Destination Preview HUD Modal Overlay
+            if let preview = pendingLinkPreview {
+                ZStack {
+                    Color.black.opacity(0.45)
+                        .ignoresSafeArea()
+                        .onTapGesture {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                self.pendingLinkPreview = nil
+                            }
+                        }
+                    
+                    HyperlinkPreviewHUD(
+                        targetPageIndex: preview.pageIndex,
+                        targetPage: preview.targetPage,
+                        onConfirmJump: {
+                            let targetIdx = preview.pageIndex
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                self.pendingLinkPreview = nil
+                            }
+                            jumpToPage(targetIdx)
+                        },
+                        onDismiss: {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                self.pendingLinkPreview = nil
+                            }
+                        }
+                    )
+                    .transition(.scale(scale: 0.92).combined(with: .opacity))
+                }
+                .zIndex(25)
+            }
+
+            // Contextual Text Selection Markup HUD
+            if let selectedText = selectedTextForHUD, !selectedText.isEmpty {
+                VStack {
+                    Spacer()
+                    ProPDFTextSelectionHUD(
+                        selectedText: selectedText,
+                        pageIndex: currentPageIndex,
+                        onHighlight: { color in
+                            saveHighlight(text: selectedText, color: color)
+                            selectedTextForHUD = nil
+                        },
+                        onAddNote: { note in
+                            saveNote(text: selectedText, note: note)
+                            selectedTextForHUD = nil
+                        },
+                        onCopy: {
+                            selectedTextForHUD = nil
+                        },
+                        onSpeak: { text in
+                            speakText(text)
+                        },
+                        onCreateZettelkastenCard: { text in
+                            createZettelkastenCard(text: text)
+                            selectedTextForHUD = nil
+                        },
+                        onAddMarginaliaSymbol: { symbol in
+                            saveMarginalia(text: selectedText, symbol: symbol)
+                            selectedTextForHUD = nil
+                        }
+                    )
+                    .padding(.bottom, chromeVisible ? 80 : 30)
+                    .padding(.horizontal, 20)
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+
+            // Master Unified Reader Chrome
+            readerChromeView
+
+            // High-Speed Haptic Thumbnail Scrub Rail
+            if chromeVisible {
+                VStack {
+                    Spacer()
+                    ThumbnailScrubBar(
+                        document: pdfDocument,
+                        totalPages: max(1, totalPages),
+                        currentPageIndex: $currentPageIndex,
+                        onSelectPage: { pageIdx in
+                            jumpToPage(pageIdx)
+                        }
+                    )
+                    .padding(.bottom, 68)
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .zIndex(12)
+            }
+
+            if !chromeVisible && selectedTextForHUD == nil {
+                KindleProgressFooterView(
+                    currentPage: currentPageIndex + 1,
+                    totalPages: max(1, totalPages),
+                    estimatedMinutesLeft: ReaderProgressTracker.shared.progress(for: pdf.id)?.estimatedMinutesRemaining
+                )
+                .transition(.opacity)
+            }
+
+            ReadingJumpToastOverlay()
+        }
+        .focusable()
+        .focusEffectDisabled()
+        .onKeyPress(.leftArrow) {
+            jumpToPage(isMangaMode ? currentPageIndex + 1 : currentPageIndex - 1)
+            return .handled
+        }
+        .onKeyPress(.rightArrow) {
+            jumpToPage(isMangaMode ? currentPageIndex - 1 : currentPageIndex + 1)
+            return .handled
+        }
+        .onKeyPress(.space) {
+            jumpToPage(currentPageIndex + 1)
+            return .handled
         }
         .task {
-            await loadPDFDocument()
+            loadPDFDocument()
         }
         .onDisappear {
-            saveReadingProgress()
+            loadTask?.cancel()
+            zoomPillTask?.cancel()
             accessedSecurityScopedURL?.stopAccessingSecurityScopedResource()
             accessedSecurityScopedURL = nil
         }
-        .sheet(isPresented: $showingPageManager) {
-            PDFPageManagerGridView(
+        .onReceive(NotificationCenter.default.publisher(for: .readerJumpToPage)) { notification in
+            if let pageIndex = notification.userInfo?["pageIndex"] as? Int, pageIndex >= 0, pageIndex < totalPages {
+                jumpToPage(pageIndex)
+            }
+        }
+        .onChange(of: currentPageIndex) { _, _ in
+            saveReadingProgress()
+        }
+        .sheet(isPresented: $showingOutlineDrawer) {
+            PDFOutlineDrawer(
                 pdf: pdf,
                 pdfDocument: pdfDocument,
+                currentPageIndex: currentPageIndex,
                 onJumpToPage: { pageIdx in
                     jumpToPage(pageIdx)
                 },
                 onDismiss: {
-                    showingPageManager = false
+                    showingOutlineDrawer = false
                 }
             )
         }
@@ -142,189 +394,598 @@ struct ProPDFReaderEngine: View {
                 }
             )
         }
-    }
-
-    // MARK: - Top Navigation Bar
-    private var topNavigationBar: some View {
-        HStack(spacing: 12) {
-            Button(action: {
-                HapticEngine.selection()
-                saveReadingProgress()
-                onDismiss()
-            }) {
-                HStack(spacing: 6) {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 14, weight: .bold))
-                    Text("Library")
-                        .font(.system(size: 13, weight: .semibold))
+        .sheet(isPresented: $showingPageManager) {
+            PDFPageManagerGridView(
+                pdf: pdf,
+                pdfDocument: pdfDocument,
+                onJumpToPage: { pageIdx in
+                    jumpToPage(pageIdx)
+                },
+                onDismiss: {
+                    showingPageManager = false
                 }
-                .foregroundColor(.white)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 7)
-                .background(.ultraThinMaterial, in: Capsule())
-                .overlay(Capsule().stroke(Color.white.opacity(0.18), lineWidth: 0.5))
-            }
-
-            Spacer()
-
-            Text(pdf.name)
-                .font(.system(size: 13, weight: .bold))
-                .foregroundColor(.white)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(.ultraThinMaterial, in: Capsule())
-
-            Spacer()
-
-            // Page Manager Grid Button
-            Button(action: {
-                HapticEngine.light()
-                showingPageManager = true
-            }) {
-                Image(systemName: "square.grid.2x2")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.white)
-                    .padding(8)
-                    .background(.ultraThinMaterial, in: Circle())
-            }
-
-            // Document Inspector / Info Button
-            Button(action: {
-                HapticEngine.light()
-                showingInspector = true
-            }) {
-                Image(systemName: "info.circle")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.white)
-                    .padding(8)
-                    .background(.ultraThinMaterial, in: Circle())
-            }
+            )
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 10)
+        .sheet(isPresented: $showingSettings) {
+            EBookSettingsPanel(bookID: pdf.id.uuidString, isPDF: true)
+        }
+        .sheet(isPresented: $showCropAdjustmentSheet) {
+            ProCropAdjustmentSheet(
+                pdfID: pdf.id,
+                pdfDocument: pdfDocument,
+                currentPageIndex: currentPageIndex,
+                onApplyCrop: { insets in
+                    applyCropInsets(insets)
+                },
+                onDismiss: { showCropAdjustmentSheet = false }
+            )
+        }
+
     }
 
-    // MARK: - Bottom Scrubber Bar
-    private var bottomScrubberBar: some View {
-        VStack(spacing: 8) {
-            HStack(spacing: 16) {
-                // Prev Page Button
-                Button(action: {
-                    jumpToPage(currentPageIndex - 1)
-                }) {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundColor(currentPageIndex > 0 ? .white : .white.opacity(0.3))
-                }
-                .disabled(currentPageIndex <= 0)
 
-                // Page Scrubber Slider
-                Slider(
-                    value: Binding<Double>(
-                        get: { Double(currentPageIndex) },
-                        set: { jumpToPage(Int($0)) }
-                    ),
-                    in: 0...Double(max(0, totalPages - 1)),
-                    step: 1.0
+    // MARK: - Master Unified Reader Chrome
+    @ViewBuilder private var readerChromeView: some View {
+        ReaderChrome(
+            title: pdf.name,
+            pageText: "Page \(currentPageIndex + 1) of \(max(1, totalPages))",
+            isVisible: $chromeVisible,
+            onBack: onDismiss,
+            onBookmark: {
+                let bookmark = Annotation(
+                    pdfID: pdf.id,
+                    pageIndex: currentPageIndex,
+                    chapterTitle: "Page \(currentPageIndex + 1)",
+                    kind: .bookmark,
+                    createdAt: Date(),
+                    modifiedAt: Date()
                 )
-                .tint(.inkGreen)
-
-                // Next Page Button
-                Button(action: {
-                    jumpToPage(currentPageIndex + 1)
-                }) {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundColor(currentPageIndex < totalPages - 1 ? .white : .white.opacity(0.3))
+                AnnotationStore.shared.add(bookmark)
+                HapticEngine.medium()
+            },
+            onBookmarkActive: AnnotationStore.shared.annotations(for: pdf.id).contains(where: { $0.pageIndex == currentPageIndex && $0.kind == .bookmark }),
+            onSettingsToggle: {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                    showingSettings = true
                 }
-                .disabled(currentPageIndex >= totalPages - 1)
+            },
+            onTOCToggle: {
+                showingOutlineDrawer = true
+            },
+            onAnnotationsToggle: {
+                NotificationCenter.default.post(name: .toggleStudyNotebook, object: nil)
+            },
+            onSearchToggle: {
+                showingInspector = true
+            },
+            currentProgress: Binding(
+                get: { Double(currentPageIndex) / Double(max(1, totalPages - 1)) },
+                set: { jumpToPage(Int(round($0 * Double(max(1, totalPages - 1))))) }
+            ),
+            totalPages: max(1, totalPages),
+            getPageThumbnail: { index in
+                guard let doc = pdfDocument, let page = doc.page(at: index) else { return nil }
+                return page.thumbnail(of: CGSize(width: 140, height: 190), for: .cropBox)
+            },
+            timeRemainingText: velocityEngine.estimatedTimeRemaining,
+            onJumpToPage: {
+                showingPageManager = true
+            },
+            hasCopyAction: true,
+            onCopyToggle: {
+                if let pdfView = pdfViewReference, let page = pdfView.currentPage, let text = page.string {
+                    UIPasteboard.general.string = text
+                    HapticEngine.success()
+                }
+            },
+            isPDF: true,
+            isReflowActive: isReflowMode,
+            isAutoCropEnabled: activeCropInsets.isEnabled,
+            onCropToggle: {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                    if activeCropInsets.isEnabled {
+                        applyCropInsets(.none)
+                    } else {
+                        applyCropInsets(.smartAuto)
+                    }
+                }
+                HapticEngine.medium()
+            },
+            onManualCropToggle: {
+                showCropAdjustmentSheet = true
+            },
+            onReflowToggle: {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                    isReflowMode.toggle()
+                    prefs.pdfReflowMode = isReflowMode
+                }
+                HapticEngine.medium()
+            },
+            isSettingsActive: showingSettings,
+            onSwipeDown: {
+                onDismiss()
             }
-
-            // Page Counter Pill
-            Text("Page \(currentPageIndex + 1) of \(totalPages)")
-                .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                .foregroundColor(Color.white.opacity(0.85))
-        }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 12)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18))
-        .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.white.opacity(0.15), lineWidth: 0.5))
-        .shadow(color: .black.opacity(0.35), radius: 12, y: 5)
-        .padding(.horizontal, 24)
-        .padding(.bottom, 16)
+        )
     }
 
-    // MARK: - Document Navigation & Persistence
-    private func jumpToPage(_ pageIndex: Int) {
-        guard let doc = pdfDocument else { return }
-        let target = max(0, min(pageIndex, doc.pageCount - 1))
-        if target != currentPageIndex {
-            HapticEngine.selection()
-            currentPageIndex = target
-            if let page = doc.page(at: target) {
-                pdfViewReference?.go(to: page)
+    // MARK: - Actions & Persistence
+    private func loadPDFDocument() {
+        loadTask?.cancel()
+        loadTask = Task.detached(priority: .userInitiated) {
+            let sourcePDF = self.pdf
+            let resolvedURL: URL
+            var accessedURL: URL? = nil
+            
+            if case .linked(let bm) = sourcePDF.sourceMode,
+               let url = try? BookmarkResolver.shared.resolve(bm) {
+                let didAccess = url.startAccessingSecurityScopedResource()
+                resolvedURL = url
+                if didAccess { accessedURL = url }
+            } else {
+                let sandboxURL = LibraryFileRecord.resolveSandboxURL(sourcePDF.url.absoluteString)
+                let didAccess = sandboxURL.startAccessingSecurityScopedResource()
+                resolvedURL = sandboxURL
+                if didAccess { accessedURL = sandboxURL }
             }
-            saveReadingProgress()
+            
+            var loaded = PDFDocument(url: resolvedURL)
+            if loaded == nil && resolvedURL != sourcePDF.url {
+                let didAccessSource = sourcePDF.url.startAccessingSecurityScopedResource()
+                if didAccessSource && accessedURL == nil { accessedURL = sourcePDF.url }
+                loaded = PDFDocument(url: sourcePDF.url)
+            }
+            
+            if let doc = loaded {
+                let savedIndex = await MainActor.run {
+                    ReaderProgressTracker.shared.progress(for: sourcePDF.id)?.currentPageIndex ?? 0
+                }
+                await MainActor.run {
+                    if let accessed = accessedURL {
+                        self.accessedSecurityScopedURL = accessed
+                    }
+                    self.pdfDocument = doc
+                    self.currentPageIndex = max(0, min(savedIndex, doc.pageCount - 1))
+                    let savedCrop = ReaderProgressTracker.shared.cropInsets(for: sourcePDF.id)
+                    let initialCrop = savedCrop ?? (self.prefs.defaultCropModeRaw == "smartAuto" ? .smartAuto : CodableCropInsets(top: self.prefs.defaultCropTop, bottom: self.prefs.defaultCropBottom, left: self.prefs.defaultCropLeft, right: self.prefs.defaultCropRight, modeRaw: self.prefs.defaultCropModeRaw))
+                    self.applyCropInsets(initialCrop)
+                    
+                    // Ingest native third-party PDF annotations into AnnotationStore
+                    _ = PDFAnnotationSyncBridge.shared.importNativeAnnotations(from: doc, for: sourcePDF.id)
+                }
+            } else {
+                accessedURL?.stopAccessingSecurityScopedResource()
+            }
         }
     }
 
     private func saveReadingProgress() {
-        guard totalPages > 0 else { return }
-        let progressFraction = Double(currentPageIndex) / Double(max(1, totalPages - 1))
-        var prog = ReaderProgressTracker.shared.progress(for: pdf.id) ?? ReadingProgress(
+        var progress = ReaderProgressTracker.shared.progress(for: pdf.id) ?? ReadingProgress(
             pdfID: pdf.id,
             lastOpenedAt: Date(),
             currentPageIndex: currentPageIndex,
-            totalPagesRead: totalPages,
-            completionFraction: progressFraction,
-            readingSessionDates: [Date()]
+            totalPagesRead: 1,
+            completionFraction: 0,
+            readingSessionDates: []
         )
-        prog.currentPageIndex = currentPageIndex
-        prog.totalPagesRead = max(prog.totalPagesRead, totalPages)
-        prog.completionFraction = progressFraction
-        prog.lastOpenedAt = Date()
-        ReaderProgressTracker.shared.update(prog)
+        progress.lastOpenedAt = Date()
+        progress.currentPageIndex = currentPageIndex
+        let total = max(1, totalPages)
+        progress.completionFraction = Double(currentPageIndex + 1) / Double(total)
+        ReaderProgressTracker.shared.update(progress)
     }
 
-    // MARK: - Document Loading
-    private func loadPDFDocument() async {
-        let sourcePDF = self.pdf
-        var accessedURL: URL? = nil
-        let targetURL: URL
+    private func jumpToPage(_ pageIndex: Int) {
+        let clamped = max(0, min(pageIndex, totalPages - 1))
+        if clamped != currentPageIndex {
+            let fromPage = currentPageIndex
+            if abs(clamped - fromPage) > 1 {
+                ReadingJumpTracker.shared.recordJump(fromPage: fromPage, toPage: clamped) {
+                    self.jumpToPage(fromPage)
+                }
+            }
+            velocityEngine.recordPageTurn()
+        }
+        currentPageIndex = clamped
+        if let doc = pdfDocument, let page = doc.page(at: clamped), pdfViewReference?.currentPage != page {
+            pdfViewReference?.go(to: page)
+        }
+        saveReadingProgress()
+    }
+
+    private func saveHighlight(text: String, color: PDFHighlightColor) {
+        if let pdfView = pdfViewReference, let selection = pdfView.currentSelection {
+            for page in selection.pages {
+                let lineSelections = selection.selectionsByLine()
+                let targetLines = lineSelections.isEmpty ? [selection] : lineSelections
+                for lineSel in targetLines {
+                    let lineBounds = lineSel.bounds(for: page)
+                    guard lineBounds != .zero && lineBounds.width > 2 && lineBounds.height > 2 else { continue }
+                    let annotation = PDFAnnotation(bounds: lineBounds, forType: .highlight, withProperties: nil)
+                    annotation.color = color.uiColor.withAlphaComponent(0.45)
+                    page.addAnnotation(annotation)
+                }
+            }
+            pdfView.clearSelection()
+            pdfView.setNeedsDisplay()
+            HapticEngine.selection()
+        }
+
+        let highlight = Annotation(
+            pdfID: pdf.id,
+            pageIndex: currentPageIndex,
+            chapterTitle: "Page \(currentPageIndex + 1)",
+            kind: .highlight,
+            createdAt: Date(),
+            modifiedAt: Date(),
+            colorHex: color.rawValue,
+            selectedText: text
+        )
+        AnnotationStore.shared.add(highlight)
+    }
+
+    private func saveNote(text: String, note: String) {
+        let noteAnn = Annotation(
+            pdfID: pdf.id,
+            pageIndex: currentPageIndex,
+            chapterTitle: "Page \(currentPageIndex + 1)",
+            kind: .note,
+            createdAt: Date(),
+            modifiedAt: Date(),
+            colorHex: PDFHighlightColor.yellow.rawValue,
+            selectedText: text,
+            noteText: note
+        )
+        AnnotationStore.shared.add(noteAnn)
+    }
+
+    private func saveMarginalia(text: String, symbol: String) {
+        var ann = Annotation(
+            pdfID: pdf.id,
+            pageIndex: currentPageIndex,
+            chapterTitle: "Page \(currentPageIndex + 1)",
+            kind: .highlight,
+            createdAt: Date(),
+            modifiedAt: Date(),
+            colorHex: PDFHighlightColor.yellow.rawValue,
+            selectedText: text,
+            noteText: "Marginalia Symbol: \(symbol)"
+        )
+        ann.marginaliaSymbolRaw = symbol
+        AnnotationStore.shared.add(ann)
+    }
+
+    private func speakText(_ text: String) {
+        if speechSynthesizer.isSpeaking {
+            speechSynthesizer.stopSpeaking(at: .immediate)
+        }
+        let utterance = AVSpeechUtterance(string: text)
+        utterance.rate = AVSpeechUtteranceDefaultSpeechRate
+        speechSynthesizer.speak(utterance)
+    }
+
+    private func createZettelkastenCard(text: String) {
+        let card = SDNotebook(
+            title: "Quote from \(pdf.name) (Page \(currentPageIndex + 1))",
+            linkedBookID: pdf.id
+        )
+        modelContext.insert(card)
+        try? modelContext.save()
+    }
+}
+
+// MARK: - UIViewRepresentable for Vector PDFKit View
+struct ProPDFViewRepresentable: UIViewRepresentable {
+    let document: PDFDocument
+    @Binding var currentPageIndex: Int
+    @Binding var pdfViewRef: PDFView?
+    var isCroppedMode: Bool
+    var isExpandedView: Bool
+    var onPrevPage: () -> Void
+    var onNextPage: () -> Void
+    var onTapCenter: () -> Void
+    var onTextSelectionChanged: (String?) -> Void
+    var onScaleChanged: ((CGFloat) -> Void)? = nil
+    var onHyperlinkSelected: ((Int, PDFPage) -> Void)? = nil
+
+    func makeUIView(context: Context) -> PDFView {
+        let pdfView = PDFView()
+        pdfView.delegate = context.coordinator
+        pdfView.document = document
+        pdfView.autoScales = true
+        pdfView.minScaleFactor = 0.25
+        pdfView.maxScaleFactor = 10.0
+        pdfView.displayMode = .singlePage
+        pdfView.displayDirection = .horizontal
+        pdfView.backgroundColor = .clear
+        pdfView.isOpaque = false
+        pdfView.insetsLayoutMarginsFromSafeArea = false
+
+        let prefs = EBookPreferences.shared
+        let isLandscape = UIScreen.main.bounds.width > UIScreen.main.bounds.height
+        let isDual = prefs.pdfDualPage || (prefs.autoLandscapeDualPage && isLandscape)
+        let spineLoc: UIPageViewController.SpineLocation = isDual ? .mid : .min
+        let options: [UIPageViewController.OptionsKey: Any] = [
+            .spineLocation: NSNumber(value: spineLoc.rawValue),
+            .interPageSpacing: 16.0
+        ]
+        pdfView.usePageViewController(true, withViewOptions: options)
+
+        if let scrollView = pdfView.subviews.first(where: { $0 is UIScrollView }) as? UIScrollView {
+            scrollView.maximumZoomScale = 10.0
+            scrollView.minimumZoomScale = 0.25
+        }
+
+        // Single Tap gesture setup
+        let tapGesture = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
+        tapGesture.cancelsTouchesInView = false
+        pdfView.addGestureRecognizer(tapGesture)
+
+        // Double Tap Zoom setup
+        let doubleTap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleDoubleTap(_:)))
+        doubleTap.numberOfTapsRequired = 2
+        doubleTap.cancelsTouchesInView = false
+        pdfView.addGestureRecognizer(doubleTap)
+        tapGesture.require(toFail: doubleTap)
+
+        NotificationCenter.default.addObserver(
+            context.coordinator,
+            selector: #selector(Coordinator.pageChanged(_:)),
+            name: .PDFViewPageChanged,
+            object: pdfView
+        )
+
+        NotificationCenter.default.addObserver(
+            context.coordinator,
+            selector: #selector(Coordinator.selectionChanged(_:)),
+            name: .PDFViewSelectionChanged,
+            object: pdfView
+        )
+
+        NotificationCenter.default.addObserver(
+            context.coordinator,
+            selector: #selector(Coordinator.scaleChanged(_:)),
+            name: .PDFViewScaleChanged,
+            object: pdfView
+        )
+
+        pdfView.layoutDocumentView()
+
+        DispatchQueue.main.async {
+            self.pdfViewRef = pdfView
+        }
+
+        return pdfView
+    }
+
+    func updateUIView(_ uiView: PDFView, context: Context) {
+        if uiView.document != document {
+            uiView.document = document
+        }
+
+        let prefs = EBookPreferences.shared
+        let isLandscape = uiView.bounds.width > uiView.bounds.height
+        let isDual = prefs.pdfDualPage || (prefs.autoLandscapeDualPage && isLandscape)
+        let targetDisplayMode: PDFDisplayMode = isDual ? .twoUp : .singlePage
+        if uiView.displayMode != targetDisplayMode {
+            uiView.displayMode = targetDisplayMode
+        }
+        uiView.displaysAsBook = false
+
+        let hasCustomMargin = prefs.textMargin > 0
+        let targetDisplayBox: PDFDisplayBox = (isCroppedMode || hasCustomMargin) ? .cropBox : .mediaBox
         
-        if case .linked(let bm) = sourcePDF.sourceMode,
-           let url = try? BookmarkResolver.shared.resolve(bm) {
-            let didAccess = url.startAccessingSecurityScopedResource()
-            targetURL = url
-            if didAccess { accessedURL = url }
+        let cropStateChanged = isCroppedMode != context.coordinator.lastCropMode ||
+                               prefs.textMargin != context.coordinator.lastTextMargin
+        if cropStateChanged {
+            context.coordinator.lastCropMode = isCroppedMode
+            context.coordinator.lastTextMargin = prefs.textMargin
+            if let currentPage = uiView.currentPage {
+                let docIndex = document.index(for: currentPage)
+                let start = max(0, docIndex - 3)
+                let end = min(document.pageCount - 1, docIndex + 3)
+                for i in start...end {
+                    guard let page = document.page(at: i) else { continue }
+                    let mediaBox = page.bounds(for: .mediaBox)
+                    if isCroppedMode {
+                        let sensitivity = max(0.05, min(0.25, prefs.autoCropSensitivity))
+                        let marginInset = prefs.textMargin * 0.5
+                        let insetX = (mediaBox.width * sensitivity) + marginInset
+                        let insetY = (mediaBox.height * sensitivity * 1.2) + marginInset
+                        let croppedRect = mediaBox.insetBy(dx: insetX, dy: insetY)
+                        page.setBounds(croppedRect, for: .cropBox)
+                    } else if hasCustomMargin {
+                        let marginX = prefs.textMargin
+                        let marginY = prefs.textMargin * 0.75
+                        let marginRect = mediaBox.insetBy(dx: marginX, dy: marginY)
+                        page.setBounds(marginRect, for: .cropBox)
+                    } else {
+                        page.setBounds(mediaBox, for: .cropBox)
+                    }
+                }
+            }
+        }
+
+        if uiView.displayBox != targetDisplayBox {
+            uiView.displayBox = targetDisplayBox
+        }
+
+        let boundsChanged = context.coordinator.lastBoundsSize != uiView.bounds.size
+
+        if boundsChanged || cropStateChanged {
+            if isExpandedView {
+                let fitScale = uiView.scaleFactorForSizeToFit
+                let targetScale = max(fitScale * 1.35, 1.25)
+                if abs(uiView.scaleFactor - targetScale) > 0.05 {
+                    uiView.scaleFactor = targetScale
+                }
+            } else if context.coordinator.userCustomZoomScale == nil {
+                let fitScale = uiView.scaleFactorForSizeToFit
+                if fitScale > 0 && abs(uiView.scaleFactor - fitScale) > 0.01 {
+                    uiView.scaleFactor = fitScale
+                }
+            }
+        }
+
+        context.coordinator.lastBoundsSize = uiView.bounds.size
+
+        // Guarantee PDFView active page displays target pageIndex cleanly without re-entrant animation corruption
+        if let targetPage = document.page(at: currentPageIndex), uiView.currentPage != targetPage {
+            if context.coordinator.lastTargetPageIndex != currentPageIndex {
+                context.coordinator.lastTargetPageIndex = currentPageIndex
+                uiView.go(to: targetPage)
+            }
         } else {
-            let sandboxURL = LibraryFileRecord.resolveSandboxURL(sourcePDF.url.absoluteString)
-            let didAccess = sandboxURL.startAccessingSecurityScopedResource()
-            targetURL = sandboxURL
-            if didAccess { accessedURL = sandboxURL }
+            context.coordinator.lastTargetPageIndex = currentPageIndex
         }
-        
-        var loaded = PDFDocument(url: targetURL)
-        if loaded == nil && targetURL != sourcePDF.url {
-            let didAccessSource = sourcePDF.url.startAccessingSecurityScopedResource()
-            if didAccessSource && accessedURL == nil { accessedURL = sourcePDF.url }
-            loaded = PDFDocument(url: sourcePDF.url)
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    /// Remove observers to prevent memory leaks from accumulated registrations
+    /// each time the ProPDF reader is opened.
+    static func dismantleUIView(_ uiView: PDFView, coordinator: Coordinator) {
+        NotificationCenter.default.removeObserver(coordinator, name: .PDFViewPageChanged, object: uiView)
+        NotificationCenter.default.removeObserver(coordinator, name: .PDFViewSelectionChanged, object: uiView)
+        NotificationCenter.default.removeObserver(coordinator, name: .PDFViewScaleChanged, object: uiView)
+    }
+
+    class Coordinator: NSObject, PDFViewDelegate {
+        var parent: ProPDFViewRepresentable
+        var lastCropMode: Bool = false
+        var lastTextMargin: CGFloat = -1
+        var lastPageIndex: Int = -1
+        var lastTargetPageIndex: Int = -1
+        var lastBoundsSize: CGSize = .zero
+        var userCustomZoomScale: CGFloat? = nil
+
+        init(_ parent: ProPDFViewRepresentable) {
+            self.parent = parent
         }
-        
-        if let accessed = accessedURL {
-            self.accessedSecurityScopedURL = accessed
+
+        // MARK: - PDFViewDelegate Link Interception
+        @MainActor @objc func pdfView(_ sender: PDFView, willPerform action: PDFAction) {
+            if let actionGoTo = action as? PDFActionGoTo,
+               let destPage = actionGoTo.destination.page,
+               let doc = sender.document {
+                let idx = doc.index(for: destPage)
+                if idx >= 0 && idx < doc.pageCount {
+                    HapticEngine.selection()
+                    parent.onHyperlinkSelected?(idx, destPage)
+                }
+            }
         }
-        
-        if let loadedDoc = loaded {
-            self.pdfDocument = loadedDoc
-            self.totalPages = max(1, loadedDoc.pageCount)
-            let savedIndex = ReaderProgressTracker.shared.progress(for: sourcePDF.id)?.currentPageIndex ?? 0
-            self.currentPageIndex = max(0, min(savedIndex, loadedDoc.pageCount - 1))
-            self.isDocumentLoading = false
-        } else {
-            self.isDocumentLoading = false
+
+        @MainActor @objc func handleTap(_ gesture: UITapGestureRecognizer) {
+            guard let view = gesture.view as? PDFView else { return }
+            let location = gesture.location(in: view)
+            let width = view.bounds.width
+            let prefs = EBookPreferences.shared
+            let zones = prefs.tapZoneStyle.zones
+            let isManga = prefs.pdfRTL || UserDefaults.standard.bool(forKey: "isMangaMode")
+
+            if location.x < width * zones.leftEdge {
+                if isManga {
+                    parent.onNextPage()
+                } else {
+                    parent.onPrevPage()
+                }
+            } else if location.x > width * zones.rightEdge {
+                if isManga {
+                    parent.onPrevPage()
+                } else {
+                    parent.onNextPage()
+                }
+            } else {
+                parent.onTapCenter()
+            }
+        }
+
+        @MainActor @objc func handleDoubleTap(_ gesture: UITapGestureRecognizer) {
+            guard let pdfView = gesture.view as? PDFView,
+                  let page = pdfView.currentPage,
+                  let doc = pdfView.document else { return }
+            let pageIdx = doc.index(for: page)
+            let tapLocationInView = gesture.location(in: pdfView)
+            let tapLocationInPage = pdfView.convert(tapLocationInView, to: page)
+            let currentScale = pdfView.scaleFactor
+            let fitScale = pdfView.scaleFactorForSizeToFit
+
+            let layout = PDFColumnDetector.shared.detectColumns(in: page, pageIndex: pageIdx)
+            if layout.isMultiColumn, let targetCol = PDFColumnDetector.shared.findTargetColumn(at: tapLocationInPage, in: layout) {
+                if currentScale > fitScale * 1.3 {
+                    // Zoom back out
+                    UIView.animate(withDuration: 0.35, delay: 0, usingSpringWithDamping: 0.85, initialSpringVelocity: 0, options: [.curveEaseOut]) {
+                        pdfView.scaleFactor = fitScale
+                        self.userCustomZoomScale = nil
+                    }
+                } else {
+                    // Zoom to fit column width
+                    let colWidth = targetCol.rect.width
+                    let desiredScale = max(fitScale * 1.2, min(fitScale * 4.0, (pdfView.bounds.width - 24.0) / max(1, colWidth)))
+                    
+                    UIView.animate(withDuration: 0.35, delay: 0, usingSpringWithDamping: 0.85, initialSpringVelocity: 0, options: [.curveEaseOut]) {
+                        pdfView.scaleFactor = desiredScale
+                        self.userCustomZoomScale = desiredScale
+                        
+                        // Center horizontally on column
+                        let colCenter = CGPoint(x: targetCol.rect.midX, y: targetCol.rect.maxY)
+                        let viewPoint = pdfView.convert(colCenter, from: page)
+                        if let scrollView = pdfView.subviews.first(where: { $0 is UIScrollView }) as? UIScrollView {
+                            let targetOffsetX = max(0, viewPoint.x - (pdfView.bounds.width / 2.0))
+                            let targetOffsetY = max(0, viewPoint.y - 20)
+                            scrollView.setContentOffset(CGPoint(x: targetOffsetX, y: targetOffsetY), animated: false)
+                        }
+                    }
+                    HapticEngine.light()
+                }
+            } else {
+                let zoomTarget = fitScale * 2.5
+                if currentScale > fitScale * 1.5 {
+                    UIView.animate(withDuration: 0.3) {
+                        pdfView.scaleFactor = fitScale
+                        self.userCustomZoomScale = nil
+                    }
+                } else {
+                    UIView.animate(withDuration: 0.3) {
+                        pdfView.scaleFactor = zoomTarget
+                        self.userCustomZoomScale = zoomTarget
+                    }
+                }
+            }
+            let effectiveScale = pdfView.scaleFactor / max(0.01, fitScale)
+            self.parent.onScaleChanged?(effectiveScale)
+        }
+
+        @MainActor @objc func scaleChanged(_ notification: Notification) {
+            guard let pdfView = notification.object as? PDFView else { return }
+            let fitScale = pdfView.scaleFactorForSizeToFit
+            let effectiveScale = pdfView.scaleFactor / max(0.01, fitScale)
+            if abs(pdfView.scaleFactor - fitScale) > 0.05 {
+                userCustomZoomScale = pdfView.scaleFactor
+            }
+            parent.onScaleChanged?(effectiveScale)
+        }
+
+        @MainActor @objc func pageChanged(_ notification: Notification) {
+            guard let pdfView = notification.object as? PDFView,
+                  let page = pdfView.currentPage,
+                  let doc = pdfView.document else { return }
+            let idx = doc.index(for: page)
+            if self.parent.currentPageIndex != idx {
+                self.lastTargetPageIndex = idx
+                self.parent.currentPageIndex = idx
+            }
+        }
+
+        @MainActor @objc func selectionChanged(_ notification: Notification) {
+            guard let pdfView = notification.object as? PDFView else { return }
+            if let selection = pdfView.currentSelection, let text = selection.string, !text.isEmpty {
+                parent.onTextSelectionChanged(text)
+            } else {
+                parent.onTextSelectionChanged(nil)
+            }
         }
     }
 }

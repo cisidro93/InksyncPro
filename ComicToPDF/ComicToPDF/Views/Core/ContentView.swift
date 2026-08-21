@@ -317,8 +317,9 @@ struct ContentView: View {
             }
             
             if url.scheme == "inksyncpro" {
-                conversionManager.scanLibrary()
                 Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 800_000_000) // 0.8s grace period for file writes to finish
+                    conversionManager.scanLibrary()
                     withAnimation(.spring()) {
                         activeToast = ToastMessage(
                             title: "Library Sync",
@@ -327,6 +328,9 @@ struct ContentView: View {
                             type: .success
                         )
                     }
+                    // Second deferred scan pass for large files
+                    try? await Task.sleep(nanoseconds: 2_000_000_000)
+                    conversionManager.scanLibrary()
                 }
                 return
             }

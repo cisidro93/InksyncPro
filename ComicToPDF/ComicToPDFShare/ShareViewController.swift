@@ -32,30 +32,15 @@ class ShareViewController: UIViewController {
     }
     
     private func openHostAppAndComplete() {
-        if let url = URL(string: "inksyncpro://shared-import") {
-            // Attempt opening via UIResponder selector traversal
-            var responder: UIResponder? = self
-            var didOpen = false
-            while responder != nil {
-                if let application = responder as? UIApplication {
-                    application.open(url, options: [:], completionHandler: nil)
-                    didOpen = true
-                    break
-                }
-                let selector = NSSelectorFromString("openURL:")
-                if responder?.responds(to: selector) == true {
-                    responder?.perform(selector, with: url)
-                    didOpen = true
-                    break
-                }
-                responder = responder?.next
-            }
-            
-            if !didOpen {
-                self.extensionContext?.open(url, completionHandler: nil)
-            }
+        guard let url = URL(string: "inksyncpro://shared-import") else {
+            extensionContext?.completeRequest(returningItems: nil, completionHandler: nil)
+            return
         }
-        
-        self.extensionContext?.completeRequest(returningItems: nil, completionHandler: nil)
+        // extensionContext?.open is the ONLY supported API for opening the host app
+        // from an extension process. UIApplication is not reachable from an extension's
+        // responder chain — the UIResponder walk never reaches UIApplication.
+        extensionContext?.open(url) { [weak self] _ in
+            self?.extensionContext?.completeRequest(returningItems: nil, completionHandler: nil)
+        }
     }
 }

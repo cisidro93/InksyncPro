@@ -321,7 +321,12 @@ struct ShareExtensionView: View {
             return
         }
 
-        Task { @MainActor in
+        // Bug 2 fix: Move all file I/O off @MainActor into a background task.
+        // Share extensions have a strict OS memory+CPU budget. Running heavy file
+        // copies on the main actor freezes the UI and risks the OS killing the
+        // extension before any files are fully written to disk.
+        let sessionID = sessionStagingID
+        Task.detached(priority: .userInitiated) { [inputItems] in
             var filesToProcess: [SharedFile] = []
 
             for item in inputItems {
@@ -338,7 +343,7 @@ struct ShareExtensionView: View {
                             candidateTypes.append(typeId)
                         }
                     }
-                    
+
                     let fallbackTypes = [
                         UTType.fileURL.identifier,
                         "public.file-url",
@@ -370,10 +375,10 @@ struct ShareExtensionView: View {
                     var detectedExt: String? = nil
 
                     for typeId in candidateTypes {
-                        // Crucial: Only query NSItemProvider for types it actually conforms to
                         guard provider.hasItemConformingToTypeIdentifier(typeId) else { continue }
 
-                        let hintExt = extensionFromSuggestedName(baseName) ?? (UTType(typeId).flatMap { targetExtension(for: $0) })
+                        let hintExt = await MainActor.run { self.extensionFromSuggestedName(baseName) }
+                            ?? UTType(typeId).flatMap { await MainActor.run { self.targetExtension(for: $0) } }
                         let tempName: String
                         if let h = hintExt {
                             let clean = (baseName as NSString).deletingPathExtension
@@ -382,31 +387,24 @@ struct ShareExtensionView: View {
                             tempName = baseName
                         }
 
-                        // Method 1: loadItem (handles direct URLs and file-urls)
-                        if let url = await tryLoadItem(provider: provider, typeId: typeId, filename: tempName) {
+                        if let url = await self.tryLoadItem(provider: provider, typeId: typeId, filename: tempName) {
                             loadedURL = url
-                            detectedExt = detectFileExtension(from: url) ?? hintExt ?? url.pathExtension.lowercased()
+                            detectedExt = await MainActor.run { self.detectFileExtension(from: url) } ?? hintExt ?? url.pathExtension.lowercased()
                             break
                         }
-
-                        // Method 2: loadFileRepresentation
-                        if let url = await tryLoadFileRepresentation(provider: provider, typeId: typeId, filename: tempName) {
+                        if let url = await self.tryLoadFileRepresentation(provider: provider, typeId: typeId, filename: tempName) {
                             loadedURL = url
-                            detectedExt = detectFileExtension(from: url) ?? hintExt ?? url.pathExtension.lowercased()
+                            detectedExt = await MainActor.run { self.detectFileExtension(from: url) } ?? hintExt ?? url.pathExtension.lowercased()
                             break
                         }
-
-                        // Method 3: loadInPlaceFileRepresentation
-                        if let url = await tryLoadInPlaceFileRepresentation(provider: provider, typeId: typeId, filename: tempName) {
+                        if let url = await self.tryLoadInPlaceFileRepresentation(provider: provider, typeId: typeId, filename: tempName) {
                             loadedURL = url
-                            detectedExt = detectFileExtension(from: url) ?? hintExt ?? url.pathExtension.lowercased()
+                            detectedExt = await MainActor.run { self.detectFileExtension(from: url) } ?? hintExt ?? url.pathExtension.lowercased()
                             break
                         }
-
-                        // Method 4: loadDataRepresentation
-                        if let url = await tryLoadDataRepresentation(provider: provider, typeId: typeId, filename: tempName) {
+                        if let url = await self.tryLoadDataRepresentation(provider: provider, typeId: typeId, filename: tempName) {
                             loadedURL = url
-                            detectedExt = detectFileExtension(from: url) ?? hintExt ?? url.pathExtension.lowercased()
+                            detectedExt = await MainActor.run { self.detectFileExtension(from: url) } ?? hintExt ?? url.pathExtension.lowercased()
                             break
                         }
                     }
@@ -416,8 +414,7 @@ struct ShareExtensionView: View {
                         continue
                     }
 
-                    // Validate final format
-                    let ext = (detectedExt ?? detectFileExtension(from: finalURL) ?? finalURL.pathExtension.lowercased()).lowercased()
+                    let ext = (detectedExt ?? (await MainActor.run { self.detectFileExtension(from: finalURL) }) ?? finalURL.pathExtension.lowercased()).lowercased()
                     let targetExt: String
                     if ext == "zip" {
                         targetExt = "cbz"
@@ -426,14 +423,12 @@ struct ShareExtensionView: View {
                     } else if Self.supportedExtensions.contains(ext) {
                         targetExt = ext
                     } else {
-                        targetExt = detectFileExtension(from: finalURL) ?? (Self.supportedExtensions.contains(ext) ? ext : "pdf")
+                        targetExt = (await MainActor.run { self.detectFileExtension(from: finalURL) }) ?? (Self.supportedExtensions.contains(ext) ? ext : "pdf")
                     }
 
-                    // Ensure destination file has proper extension
                     let cleanBase = (baseName as NSString).deletingPathExtension
                     let properFilename = "\(cleanBase).\(targetExt)"
                     let targetURL = finalURL.deletingLastPathComponent().appendingPathComponent(properFilename)
-
                     if targetURL.path != finalURL.path {
                         try? FileManager.default.removeItem(at: targetURL)
                         try? FileManager.default.moveItem(at: finalURL, to: targetURL)
@@ -447,9 +442,11 @@ struct ShareExtensionView: View {
                     ))
                 }
             }
-
-            self.selectedFiles = filesToProcess
-            self.isLoading = false
+            _ = sessionID // suppress unused warning
+            await MainActor.run {
+                self.selectedFiles = filesToProcess
+                self.isLoading = false
+            }
         }
     }
 
@@ -659,39 +656,40 @@ struct ShareExtensionView: View {
     private func markForConversion(_ file: SharedFile) throws {
         let containers = getAppGroupContainers()
         guard !containers.isEmpty else { throw ShareError.noContainer }
-        
+
+        // Bug 3 fix: Validate source file ONCE before the container loop.
+        // Previously the guard was INSIDE the loop with `continue`, which skips
+        // to the next container rather than throwing. Since file.url points into
+        // the first container's ShareStaging/, the fileExists check always fails
+        // for subsequent containers — silently writing nothing to PendingConversions.
+        guard FileManager.default.fileExists(atPath: file.url.path) else {
+            print("[ShareExt] Error: Source file does not exist at \(file.url.path)")
+            throw ShareError.copyFailed
+        }
+
         for container in containers {
             let pendingURL = container.appendingPathComponent("PendingConversions", isDirectory: true)
             let inboxURL = container.appendingPathComponent("Inbox", isDirectory: true)
             try? FileManager.default.createDirectory(at: pendingURL, withIntermediateDirectories: true)
             try? FileManager.default.createDirectory(at: inboxURL, withIntermediateDirectories: true)
-            
-            // Manifest for tracking
+
             let manifest = ConversionManifest(
                 sourceFile: file.name,
                 dateAdded: Date(),
                 status: .pending
             )
-            
             let manifestURL = pendingURL.appendingPathComponent("\(file.name).manifest.json")
             if let data = try? JSONEncoder().encode(manifest) {
                 try? data.write(to: manifestURL)
             }
-            
-            // Copy file into PendingConversions & Inbox safely without deleting source
+
             let destPending = pendingURL.appendingPathComponent(file.name)
             let destInbox = inboxURL.appendingPathComponent(file.name)
-            
-            guard FileManager.default.fileExists(atPath: file.url.path) else {
-                print("[ShareExt] Error: Source file does not exist at \(file.url.path)")
-                continue
-            }
-            
+
             if file.url.path != destPending.path {
                 try? FileManager.default.removeItem(at: destPending)
                 try FileManager.default.copyItem(at: file.url, to: destPending)
             }
-            
             if file.url.path != destInbox.path {
                 try? FileManager.default.removeItem(at: destInbox)
                 try FileManager.default.copyItem(at: file.url, to: destInbox)
