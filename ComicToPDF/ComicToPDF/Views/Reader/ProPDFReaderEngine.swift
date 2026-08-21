@@ -1191,12 +1191,14 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         pdfView.pageShadowsEnabled = true
         pdfView.backgroundColor = .clear
         pdfView.isOpaque = false
-        pdfView.insetsLayoutMarginsFromSafeArea = false
-        pdfView.usePageViewController(false)
-
         let prefs = EBookPreferences.shared
         let isLandscape = UIScreen.main.bounds.width > UIScreen.main.bounds.height
         let isDual = prefs.pdfDualPage || (prefs.autoLandscapeDualPage && isLandscape)
+
+        let viewOptions: [UIPageViewController.OptionsKey: Any] = [
+            .spineLocation: NSNumber(value: isDual ? UIPageViewController.SpineLocation.mid.rawValue : UIPageViewController.SpineLocation.min.rawValue)
+        ]
+        pdfView.usePageViewController(true, withViewOptions: viewOptions)
         pdfView.displayMode = isDual ? .twoUp : .singlePage
         pdfView.displaysAsBook = isDual
 
