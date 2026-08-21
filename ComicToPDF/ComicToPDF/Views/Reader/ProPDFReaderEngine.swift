@@ -1,10 +1,11 @@
 import SwiftUI
-import PDFKit
+@preconcurrency import PDFKit
 import UIKit
 
 /// Ground-Up Rebuilt Pro Native PDF Reader Engine
 /// Pure Apple PDFKit implementation with zero filters, zero overlays,
 /// hardware-accelerated vector rendering, and streamlined glassmorphic chrome.
+@MainActor
 struct ProPDFReaderEngine: View {
     let pdf: ConvertedPDF
     var onDismiss: () -> Void
@@ -19,7 +20,6 @@ struct ProPDFReaderEngine: View {
     // Sheets
     @State private var showingPageManager = false
     @State private var showingInspector = false
-    @State private var showingOutline = false
 
     // Security scoped URL tracking
     @State private var accessedSecurityScopedURL: URL? = nil
@@ -272,60 +272,59 @@ struct ProPDFReaderEngine: View {
 
     private func saveReadingProgress() {
         guard totalPages > 0 else { return }
-        let progress = Double(currentPageIndex) / Double(max(1, totalPages - 1))
-        Task { @MainActor in
-            ReaderProgressTracker.shared.updateProgress(
-                for: pdf.id,
-                pageIndex: currentPageIndex,
-                totalPages: totalPages,
-                progress: progress
-            )
-        }
+        let progressFraction = Double(currentPageIndex) / Double(max(1, totalPages - 1))
+        var prog = ReaderProgressTracker.shared.progress(for: pdf.id) ?? ReadingProgress(
+            pdfID: pdf.id,
+            lastOpenedAt: Date(),
+            currentPageIndex: currentPageIndex,
+            totalPagesRead: totalPages,
+            completionFraction: progressFraction,
+            readingSessionDates: [Date()]
+        )
+        prog.currentPageIndex = currentPageIndex
+        prog.totalPagesRead = max(prog.totalPagesRead, totalPages)
+        prog.completionFraction = progressFraction
+        prog.lastOpenedAt = Date()
+        ReaderProgressTracker.shared.update(prog)
     }
 
     // MARK: - Document Loading
     private func loadPDFDocument() async {
         let sourcePDF = self.pdf
+        var accessedURL: URL? = nil
+        let targetURL: URL
         
-        let doc = await Task.detached(priority: .userInitiated) { () -> (PDFDocument?, URL?) in
-            var accessedURL: URL? = nil
-            let targetURL: URL
-            
-            if case .linked(let bm) = sourcePDF.sourceMode,
-               let url = try? BookmarkResolver.shared.resolve(bm) {
-                let didAccess = url.startAccessingSecurityScopedResource()
-                targetURL = url
-                if didAccess { accessedURL = url }
-            } else {
-                let sandboxURL = LibraryFileRecord.resolveSandboxURL(sourcePDF.url.absoluteString)
-                let didAccess = sandboxURL.startAccessingSecurityScopedResource()
-                targetURL = sandboxURL
-                if didAccess { accessedURL = sandboxURL }
-            }
-            
-            var loaded = PDFDocument(url: targetURL)
-            if loaded == nil && targetURL != sourcePDF.url {
-                let didAccessSource = sourcePDF.url.startAccessingSecurityScopedResource()
-                if didAccessSource && accessedURL == nil { accessedURL = sourcePDF.url }
-                loaded = PDFDocument(url: sourcePDF.url)
-            }
-            
-            return (loaded, accessedURL)
-        }.value
-
-        await MainActor.run {
-            if let accessed = doc.1 {
-                self.accessedSecurityScopedURL = accessed
-            }
-            if let loadedDoc = doc.0 {
-                self.pdfDocument = loadedDoc
-                self.totalPages = max(1, loadedDoc.pageCount)
-                let savedIndex = ReaderProgressTracker.shared.progress(for: sourcePDF.id)?.currentPageIndex ?? 0
-                self.currentPageIndex = max(0, min(savedIndex, loadedDoc.pageCount - 1))
-                self.isDocumentLoading = false
-            } else {
-                self.isDocumentLoading = false
-            }
+        if case .linked(let bm) = sourcePDF.sourceMode,
+           let url = try? BookmarkResolver.shared.resolve(bm) {
+            let didAccess = url.startAccessingSecurityScopedResource()
+            targetURL = url
+            if didAccess { accessedURL = url }
+        } else {
+            let sandboxURL = LibraryFileRecord.resolveSandboxURL(sourcePDF.url.absoluteString)
+            let didAccess = sandboxURL.startAccessingSecurityScopedResource()
+            targetURL = sandboxURL
+            if didAccess { accessedURL = sandboxURL }
+        }
+        
+        var loaded = PDFDocument(url: targetURL)
+        if loaded == nil && targetURL != sourcePDF.url {
+            let didAccessSource = sourcePDF.url.startAccessingSecurityScopedResource()
+            if didAccessSource && accessedURL == nil { accessedURL = sourcePDF.url }
+            loaded = PDFDocument(url: sourcePDF.url)
+        }
+        
+        if let accessed = accessedURL {
+            self.accessedSecurityScopedURL = accessed
+        }
+        
+        if let loadedDoc = loaded {
+            self.pdfDocument = loadedDoc
+            self.totalPages = max(1, loadedDoc.pageCount)
+            let savedIndex = ReaderProgressTracker.shared.progress(for: sourcePDF.id)?.currentPageIndex ?? 0
+            self.currentPageIndex = max(0, min(savedIndex, loadedDoc.pageCount - 1))
+            self.isDocumentLoading = false
+        } else {
+            self.isDocumentLoading = false
         }
     }
 }
