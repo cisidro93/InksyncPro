@@ -59,6 +59,8 @@ struct ProPDFReaderEngine: View {
     // Toast Notifications
     @State private var toastMessage: String = ""
     @State private var showToast: Bool = false
+    @State private var loadFailed: Bool = false
+    @State private var loadErrorMessage: String = ""
 
     private var totalPages: Int {
         pdfDocument?.pageCount ?? pdf.pageCount
@@ -401,12 +403,32 @@ struct ProPDFReaderEngine: View {
 
     @ViewBuilder private var pdfLoadingView: some View {
         VStack(spacing: 16) {
-            ProgressView()
-                .scaleEffect(1.2)
-                .tint(.inkGreen)
-            Text("Loading PDF Document...")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundColor(Theme.textSecondary)
+            if loadFailed {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 40))
+                    .foregroundColor(.orange)
+                Text(loadErrorMessage.isEmpty ? "Unable to open PDF document." : loadErrorMessage)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.white)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+                Button("Retry Loading") {
+                    loadFailed = false
+                    loadPDFDocument()
+                }
+                .font(.system(size: 13, weight: .bold))
+                .foregroundColor(.white)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 8)
+                .background(Color.inkGreen, in: Capsule())
+            } else {
+                ProgressView()
+                    .scaleEffect(1.2)
+                    .tint(.inkGreen)
+                Text("Loading PDF Document...")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(Theme.textSecondary)
+            }
         }
     }
 
@@ -683,6 +705,40 @@ struct ProPDFReaderEngine: View {
                 loaded = PDFDocument(url: sourcePDF.url)
             }
             
+            // Fail-safe 1: Memory-mapped byte buffer (bypasses direct file-path sandbox resolution lockouts)
+            if loaded == nil {
+                if let data = try? Data(contentsOf: resolvedURL, options: .alwaysMapped) {
+                    loaded = PDFDocument(data: data)
+                } else if let data = try? Data(contentsOf: sourcePDF.url, options: .alwaysMapped) {
+                    loaded = PDFDocument(data: data)
+                }
+            }
+            
+            // Fail-safe 2: Check App Group containers directly if file was staged from Share Extension
+            if loaded == nil {
+                let filename = sourcePDF.url.lastPathComponent
+                for container in ShareExtensionView.getAppGroupContainers() {
+                    for sub in ["Inbox", "PendingConversions", "ShareStaging"] {
+                        let candidate = container.appendingPathComponent(sub).appendingPathComponent(filename)
+                        if FileManager.default.fileExists(atPath: candidate.path) {
+                            if let doc = PDFDocument(url: candidate) {
+                                loaded = doc
+                                break
+                            } else if let data = try? Data(contentsOf: candidate) {
+                                loaded = PDFDocument(data: data)
+                                break
+                            }
+                        }
+                    }
+                    if loaded != nil { break }
+                }
+            }
+            
+            // Automatically unlock encrypted PDFs with empty passwords if locked
+            if let doc = loaded, doc.isLocked {
+                doc.unlock(withPassword: "")
+            }
+            
             if let doc = loaded {
                 let savedIndex = await MainActor.run {
                     ReaderProgressTracker.shared.progress(for: sourcePDF.id)?.currentPageIndex ?? 0
@@ -692,6 +748,7 @@ struct ProPDFReaderEngine: View {
                         self.accessedSecurityScopedURL = accessed
                     }
                     self.pdfDocument = doc
+                    self.loadFailed = false
                     self.currentPageIndex = max(0, min(savedIndex, doc.pageCount - 1))
                     let savedCrop = ReaderProgressTracker.shared.cropInsets(for: sourcePDF.id)
                     let initialCrop = savedCrop ?? (self.prefs.defaultCropModeRaw == "smartAuto" ? .smartAuto : .none)
@@ -703,6 +760,10 @@ struct ProPDFReaderEngine: View {
                 }
             } else {
                 accessedURL?.stopAccessingSecurityScopedResource()
+                await MainActor.run {
+                    self.loadFailed = true
+                    self.loadErrorMessage = "Unable to read PDF file at \(sourcePDF.name)."
+                }
             }
         }
     }
