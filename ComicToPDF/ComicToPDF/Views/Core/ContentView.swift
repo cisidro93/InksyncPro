@@ -326,8 +326,8 @@ struct ContentView: View {
                     // before the first scan — critical for large comics/PDFs on iPad
                     try? await Task.sleep(nanoseconds: 1_500_000_000)
                     conversionManager.scanLibrary()
-                    // Navigate to Library tab so imported file is immediately visible
-                    router.selectedTab = .library
+                    // Navigate to Library tab (index 0) so imported file is immediately visible
+                    router.selectedTab = 0
                     withAnimation(.spring()) {
                         activeToast = ToastMessage(
                             title: "Files Imported",
