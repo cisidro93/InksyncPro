@@ -38,35 +38,48 @@ class ShareViewController: UIViewController {
             return
         }
         
-        var didOpen = false
-        
-        // Strategy 1: Responder chain traversal for UIApplication
-        var responder: UIResponder? = self
-        while responder != nil {
-            if let application = responder as? UIApplication {
-                application.open(url, options: [:], completionHandler: nil)
-                didOpen = true
-                break
+        // Strategy 1: Dynamic UIApplication invocation via Obj-C runtime (Universal iOS Extension pattern)
+        if let appClass = NSClassFromString("UIApplication") as? NSObject.Type,
+           let sharedApp = appClass.perform(NSSelectorFromString("sharedApplication"))?.takeUnretainedValue() as? NSObject {
+            let openSelector = NSSelectorFromString("openURL:options:completionHandler:")
+            if sharedApp.responds(to: openSelector) {
+                typealias OpenURLMethod = @convention(c) (NSObject, Selector, NSURL, NSDictionary, (@convention(block) (Bool) -> Void)?) -> Void
+                let methodIMP = sharedApp.method(for: openSelector)
+                let openFunc = unsafeBitCast(methodIMP, to: OpenURLMethod.self)
+                openFunc(sharedApp, openSelector, url as NSURL, [:] as NSDictionary, { [weak self] _ in
+                    Task { @MainActor [weak self] in
+                        self?.completeShareExtension()
+                    }
+                })
+                return
+            } else {
+                let simpleOpen = NSSelectorFromString("openURL:")
+                if sharedApp.responds(to: simpleOpen) {
+                    _ = sharedApp.perform(simpleOpen, with: url)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                        self?.completeShareExtension()
+                    }
+                    return
+                }
             }
-            responder = responder?.next
         }
         
-        // Strategy 2: Selector reflection on responder chain
-        if !didOpen {
-            let selector = NSSelectorFromString("openURL:")
-            var current: UIResponder? = self
-            while let r = current {
-                if r.responds(to: selector) {
-                    r.perform(selector, with: url)
-                    didOpen = true
-                    break
+        // Strategy 2: Responder chain traversal for openURL:
+        let selector = NSSelectorFromString("openURL:")
+        var current: UIResponder? = self
+        while let r = current {
+            if r.responds(to: selector) {
+                r.perform(selector, with: url)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                    self?.completeShareExtension()
                 }
-                current = r.next
+                return
             }
+            current = r.next
         }
         
         // Strategy 3: NSExtensionContext fallback
-        if !didOpen, let context = self.extensionContext {
+        if let context = self.extensionContext {
             context.open(url) { [weak self] _ in
                 Task { @MainActor [weak self] in
                     self?.completeShareExtension()
@@ -75,9 +88,7 @@ class ShareViewController: UIViewController {
             return
         }
         
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
-            self?.completeShareExtension()
-        }
+        self.completeShareExtension()
     }
 
     @MainActor

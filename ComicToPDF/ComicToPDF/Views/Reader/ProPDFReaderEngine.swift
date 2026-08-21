@@ -717,7 +717,15 @@ struct ProPDFReaderEngine: View {
             // Fail-safe 2: Check App Group containers directly if file was staged from Share Extension
             if loaded == nil {
                 let filename = sourcePDF.url.lastPathComponent
-                for container in ShareExtensionView.getAppGroupContainers() {
+                let groupIDs = [
+                    "group.com.antigravity.ComicToPDF",
+                    "group.com.antigravity.inksync",
+                    "group.com.antigravity.InksyncPro"
+                ]
+                let containers: [URL] = groupIDs.compactMap {
+                    FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: $0)
+                }
+                for container in containers {
                     for sub in ["Inbox", "PendingConversions", "ShareStaging"] {
                         let candidate = container.appendingPathComponent(sub).appendingPathComponent(filename)
                         if FileManager.default.fileExists(atPath: candidate.path) {

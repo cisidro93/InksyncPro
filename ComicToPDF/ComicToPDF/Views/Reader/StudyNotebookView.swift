@@ -1779,7 +1779,7 @@ struct MarkdownTextEditor: UIViewRepresentable {
                 let textToInsert = notification.userInfo?["text"] as? String
                 Task { @MainActor in
                     guard let self = self,
-                          let textView = self.textView,
+                          self.textView != nil,
                           let textToInsert = textToInsert else { return }
                     
                     self.insertText(textToInsert)
