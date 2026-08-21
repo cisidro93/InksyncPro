@@ -238,6 +238,9 @@ struct ProPDFReaderEngine: View {
             return .handled
         }
         .task {
+            // Reset filter to original on every open so a persisted color-invert
+            // filter from a previous session cannot corrupt page rendering appearance.
+            activeFilterPreset = .original
             loadPDFDocument()
         }
         .onDisappear {
@@ -1123,19 +1126,10 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
     func makeUIView(context: Context) -> PDFView {
         let pdfView = PDFView()
         pdfView.delegate = context.coordinator
-        pdfView.document = document
-        pdfView.autoScales = true
-        // minScaleFactor must not be hardcoded — it must be <= scaleFactorForSizeToFit
-        // or PDFKit will render a denied/clipped view on iPad. Always set it AFTER
-        // the document is assigned, using scaleFactorForSizeToFit as the floor.
-        let fitScale = max(0.02, pdfView.scaleFactorForSizeToFit)
-        pdfView.minScaleFactor = fitScale
-        pdfView.maxScaleFactor = fitScale * 7.0
         pdfView.displayDirection = .horizontal
-        pdfView.pageBreakMargins = UIEdgeInsets.zero
         pdfView.pageShadowsEnabled = true
-        // Use opaque black background — .clear / isOpaque=false triggers iPadOS
-        // PDFKit's grey denied-page render path on certain iOS versions.
+        // Opaque black background — transparent background triggers iPadOS PDFKit
+        // grey placeholder render on certain iOS versions under UIKit compositing.
         pdfView.backgroundColor = UIColor.black
         pdfView.isOpaque = true
         pdfView.insetsLayoutMarginsFromSafeArea = false
@@ -1150,10 +1144,18 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         let margin = max(0, prefs.textMargin)
         pdfView.pageBreakMargins = UIEdgeInsets(top: 0, left: margin, bottom: 0, right: margin)
 
-        if let scrollView = pdfView.subviews.first(where: { $0 is UIScrollView }) as? UIScrollView {
-            scrollView.maximumZoomScale = fitScale * 7.0
-            scrollView.minimumZoomScale = fitScale
-        }
+        // Assign document AFTER all display properties are set so PDFKit
+        // does a single coherent first layout pass.
+        pdfView.document = document
+
+        // Let autoScales handle fit-to-width completely. Never set scaleFactor
+        // manually here — the frame is zero at makeUIView time on iPad and any
+        // manual override will race against PDFKit's own layout, causing the
+        // denied/placeholder page render at sub-minimum zoom levels.
+        pdfView.autoScales = true
+        // Wide safety bounds — updateUIView recomputes against real frame.
+        pdfView.minScaleFactor = 0.01
+        pdfView.maxScaleFactor = 8.0
 
         // Single Tap gesture setup
         let tapGesture = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
@@ -1188,24 +1190,6 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
             object: pdfView
         )
 
-        pdfView.layoutDocumentView()
-
-        // Deferred scale correction: run after the SwiftUI layout pass has given
-        // PDFView its final frame size. Without this, scaleFactorForSizeToFit
-        // is computed against a zero rect and the document renders denied/blank.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak pdfView] in
-            guard let pdfView else { return }
-            let correctedFit = max(0.02, pdfView.scaleFactorForSizeToFit)
-            pdfView.minScaleFactor = correctedFit
-            pdfView.maxScaleFactor = correctedFit * 7.0
-            if let sv = pdfView.subviews.first(where: { $0 is UIScrollView }) as? UIScrollView {
-                sv.minimumZoomScale = correctedFit
-                sv.maximumZoomScale = correctedFit * 7.0
-            }
-            pdfView.scaleFactor = correctedFit
-            pdfView.layoutDocumentView()
-        }
-
         DispatchQueue.main.async {
             self.pdfViewRef = pdfView
         }
@@ -1216,17 +1200,9 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
     func updateUIView(_ uiView: PDFView, context: Context) {
         if uiView.document != document {
             uiView.document = document
-            // Recompute fit scale after document swap
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak uiView] in
-                guard let uiView else { return }
-                let correctedFit = max(0.02, uiView.scaleFactorForSizeToFit)
-                uiView.minScaleFactor = correctedFit
-                uiView.maxScaleFactor = correctedFit * 7.0
-                uiView.scaleFactor = correctedFit
-                uiView.layoutDocumentView()
-            }
+            // autoScales will re-compute fit after document swap without manual override.
+            uiView.autoScales = true
         }
-
         let prefs = EBookPreferences.shared
         let isLandscape = uiView.bounds.width > uiView.bounds.height
         let isDual = prefs.pdfDualPage || (prefs.autoLandscapeDualPage && isLandscape)
@@ -1256,18 +1232,27 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
             context.coordinator.lastCropMode = isCroppedMode
             context.coordinator.lastTextMargin = prefs.textMargin
 
-            // Recompute fitScale against actual current frame before applying
-            let fitScale = max(0.02, uiView.scaleFactorForSizeToFit)
-            uiView.minScaleFactor = fitScale
-            uiView.maxScaleFactor = fitScale * 7.0
+            // Recompute fitScale against real current frame; only touch scaleFactor
+            // if autoScales is off (i.e. user has manually zoomed in via gesture).
+            let fitScale = uiView.scaleFactorForSizeToFit
+            if fitScale > 0.001 {
+                uiView.minScaleFactor = fitScale
+                uiView.maxScaleFactor = fitScale * 7.0
+                if let sv = uiView.subviews.first(where: { $0 is UIScrollView }) as? UIScrollView {
+                    sv.minimumZoomScale = fitScale
+                    sv.maximumZoomScale = fitScale * 7.0
+                }
+            }
 
             if isExpandedView {
-                let targetScale = max(fitScale * 1.35, fitScale + 0.1)
+                let targetScale = max((fitScale > 0 ? fitScale : 1.0) * 1.35, 1.0)
                 if abs(uiView.scaleFactor - targetScale) > 0.05 {
                     uiView.scaleFactor = targetScale
                 }
             } else if context.coordinator.userCustomZoomScale == nil {
-                if fitScale > 0 && abs(uiView.scaleFactor - fitScale) > 0.01 {
+                // Defer to autoScales for the baseline fit — only nudge if PDFKit
+                // settled on a value that is clearly wrong (> 5% off actual fit).
+                if fitScale > 0.001 && abs(uiView.scaleFactor - fitScale) > fitScale * 0.05 {
                     uiView.scaleFactor = fitScale
                 }
             }

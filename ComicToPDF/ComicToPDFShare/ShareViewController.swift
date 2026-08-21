@@ -31,21 +31,41 @@ class ShareViewController: UIViewController {
     
     @MainActor
     private func openHostAppAndComplete() {
-        // extensionContext.open is the ONLY valid mechanism to launch the host app
-        // from an iOS Share Extension — the extension runs in a separate sandboxed
-        // process and cannot access UIApplication.shared.
-        guard let url = URL(string: "inksyncpro://shared-import"),
-              let context = self.extensionContext else {
-            self.extensionContext?.completeRequest(returningItems: nil, completionHandler: nil)
+        guard let deepLinkURL = URL(string: "inksyncpro://shared-import") else {
+            extensionContext?.completeRequest(returningItems: nil)
             return
         }
-        
-        context.open(url) { [weak self] success in
-            // Note: the completion handler success value is unreliable on iPadOS —
-            // the system may return false even when the app successfully opens.
-            // Always complete the extension request regardless.
-            Task { @MainActor [weak self] in
-                self?.extensionContext?.completeRequest(returningItems: nil, completionHandler: nil)
+
+        // Write a pending-import flag to App Group UserDefaults BEFORE launching.
+        // ContentView's willEnterForeground handler reads this flag and triggers
+        // a library scan + Library tab navigation even if the URL callback is skipped
+        // on iPadOS multi-window configurations.
+        let groupIDs = [
+            "group.com.antigravity.ComicToPDF",
+            "group.com.antigravity.inksync",
+            "group.com.antigravity.InksyncPro"
+        ]
+        for gid in groupIDs {
+            if let ud = UserDefaults(suiteName: gid) {
+                ud.set(Date().timeIntervalSince1970, forKey: "pendingShareImportTimestamp")
+                ud.synchronize()
+            }
+        }
+
+        // Strategy 1: extensionContext.open — works on iPhone and some iPad configs
+        extensionContext?.open(deepLinkURL) { [weak self] success in
+            if !success {
+                // Strategy 2: iPad-safe fallback — complete with URL item so the system
+                // passes it to the host app's scene(_:openURLContexts:) / AppDelegate.
+                Task { @MainActor [weak self] in
+                    let item = NSExtensionItem()
+                    item.userInfo = ["openURL": deepLinkURL]
+                    self?.extensionContext?.completeRequest(returningItems: [item])
+                }
+            } else {
+                Task { @MainActor [weak self] in
+                    self?.extensionContext?.completeRequest(returningItems: nil)
+                }
             }
         }
     }

@@ -288,9 +288,47 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
             Logger.shared.log("App returned to foreground: trigger auto scan for shared container files", category: "Import")
-            // Give the Share Extension 0.5s to finish any final writes before scanning
             Task { @MainActor in
                 try? await Task.sleep(nanoseconds: 500_000_000)
+                // Check if the Share Extension set a pending-import flag in App Group
+                let groupIDs = ["group.com.antigravity.ComicToPDF", "group.com.antigravity.inksync", "group.com.antigravity.InksyncPro"]
+                let hasPending = groupIDs.contains(where: {
+                    UserDefaults(suiteName: $0)?.double(forKey: "pendingShareImportTimestamp") ?? 0 > 0
+                })
+                conversionManager.scanLibrary()
+                if hasPending {
+                    // Clear flags
+                    groupIDs.forEach { UserDefaults(suiteName: $0)?.removeObject(forKey: "pendingShareImportTimestamp") }
+                    router.selectedTab = 0
+                    withAnimation(.spring()) {
+                        activeToast = ToastMessage(
+                            title: "Files Imported",
+                            message: "Shared files added to your library.",
+                            systemImage: "arrow.down.doc.fill",
+                            type: .success
+                        )
+                    }
+                    try? await Task.sleep(nanoseconds: 2_500_000_000)
+                    conversionManager.scanLibrary()
+                }
+            }
+        }
+        // AppDelegate.application(_:open:options:) posts this on iPadOS when
+        // extensionContext.open() delivers the inksyncpro:// URL via UIKit delegate path
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncPro.ShareImportReceived"))) { _ in
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                conversionManager.scanLibrary()
+                router.selectedTab = 0
+                withAnimation(.spring()) {
+                    activeToast = ToastMessage(
+                        title: "Files Imported",
+                        message: "Shared files added to your library.",
+                        systemImage: "arrow.down.doc.fill",
+                        type: .success
+                    )
+                }
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
                 conversionManager.scanLibrary()
             }
         }

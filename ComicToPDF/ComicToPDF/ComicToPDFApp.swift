@@ -8,6 +8,37 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         return OrientationLockManager.shared.lockedOrientation
     }
 
+    // MARK: - URL Open Handler (Share Extension → Host App on iPadOS)
+    // extensionContext.open() on iPadOS multi-window does not always trigger
+    // SwiftUI's onOpenURL. This UIApplicationDelegate method is the guaranteed
+    // receiver for all custom URL scheme opens, including those from Share Extensions.
+    func application(
+        _ app: UIApplication,
+        open url: URL,
+        options: [UIApplication.OpenURLOptionsKey: Any] = [:]
+    ) -> Bool {
+        guard url.scheme == "inksyncpro" else { return false }
+        // Write a pending-import flag to the shared App Group so ContentView's
+        // willEnterForeground observer picks it up even if onOpenURL doesn't fire.
+        let groupIDs = [
+            "group.com.antigravity.ComicToPDF",
+            "group.com.antigravity.inksync",
+            "group.com.antigravity.InksyncPro"
+        ]
+        for gid in groupIDs {
+            if let ud = UserDefaults(suiteName: gid) {
+                ud.set(Date().timeIntervalSince1970, forKey: "pendingShareImportTimestamp")
+                ud.synchronize()
+            }
+        }
+        // Post directly so ContentView can scan + navigate without waiting for onOpenURL
+        NotificationCenter.default.post(
+            name: NSNotification.Name("InksyncPro.ShareImportReceived"),
+            object: url
+        )
+        return true
+    }
+
     // MARK: - Background URLSession (OPDSDownloadQueue)
     // Required so OPDSDownloadQueue's background download session receives its
     // completion handler when the system wakes the app post-download.
