@@ -445,7 +445,8 @@ struct ShareExtensionView: View {
 
     // MARK: - Async Item Loaders
 
-    nonisolated static func tryLoadItem(provider: NSItemProvider, typeId: String, filename: String) async -> URL? {
+    @MainActor
+    static func tryLoadItem(provider: NSItemProvider, typeId: String, filename: String) async -> URL? {
         await withCheckedContinuation { continuation in
             provider.loadItem(forTypeIdentifier: typeId, options: nil) { item, error in
                 guard error == nil, let item = item else {
@@ -494,7 +495,8 @@ struct ShareExtensionView: View {
         }
     }
 
-    nonisolated static func tryLoadFileRepresentation(provider: NSItemProvider, typeId: String, filename: String) async -> URL? {
+    @MainActor
+    static func tryLoadFileRepresentation(provider: NSItemProvider, typeId: String, filename: String) async -> URL? {
         await withCheckedContinuation { continuation in
             provider.loadFileRepresentation(forTypeIdentifier: typeId) { tempURL, error in
                 guard error == nil, let tempURL = tempURL else {
@@ -507,7 +509,8 @@ struct ShareExtensionView: View {
         }
     }
 
-    nonisolated static func tryLoadInPlaceFileRepresentation(provider: NSItemProvider, typeId: String, filename: String) async -> URL? {
+    @MainActor
+    static func tryLoadInPlaceFileRepresentation(provider: NSItemProvider, typeId: String, filename: String) async -> URL? {
         await withCheckedContinuation { continuation in
             provider.loadInPlaceFileRepresentation(forTypeIdentifier: typeId) { fileURL, _, error in
                 guard error == nil, let fileURL = fileURL else {
@@ -520,7 +523,8 @@ struct ShareExtensionView: View {
         }
     }
 
-    nonisolated static func tryLoadDataRepresentation(provider: NSItemProvider, typeId: String, filename: String) async -> URL? {
+    @MainActor
+    static func tryLoadDataRepresentation(provider: NSItemProvider, typeId: String, filename: String) async -> URL? {
         await withCheckedContinuation { continuation in
             provider.loadDataRepresentation(forTypeIdentifier: typeId) { data, error in
                 guard error == nil, let data = data, !data.isEmpty else {
