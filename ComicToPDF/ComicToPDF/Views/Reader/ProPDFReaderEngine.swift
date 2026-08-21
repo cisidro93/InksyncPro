@@ -226,15 +226,15 @@ struct ProPDFReaderEngine: View {
         .focusable()
         .focusEffectDisabled()
         .onKeyPress(.leftArrow) {
-            jumpToPage(isMangaMode ? currentPageIndex + 1 : currentPageIndex - 1)
+            advancePage(forward: false)
             return .handled
         }
         .onKeyPress(.rightArrow) {
-            jumpToPage(isMangaMode ? currentPageIndex - 1 : currentPageIndex + 1)
+            advancePage(forward: true)
             return .handled
         }
         .onKeyPress(.space) {
-            jumpToPage(currentPageIndex + 1)
+            advancePage(forward: true)
             return .handled
         }
         .task {
@@ -342,6 +342,9 @@ struct ProPDFReaderEngine: View {
     }
 
     @ViewBuilder private func pdfCanvasView(document: PDFDocument) -> some View {
+        let isLandscape = UIScreen.main.bounds.width > UIScreen.main.bounds.height
+        let isDual = prefs.pdfDualPage || (prefs.autoLandscapeDualPage && isLandscape)
+
         ZStack {
             ProPDFViewRepresentable(
                 pdf: pdf,
@@ -351,14 +354,10 @@ struct ProPDFReaderEngine: View {
                 isCroppedMode: isCroppedMode,
                 isExpandedView: isExpandedView,
                 onPrevPage: {
-                    jumpToPage(isMangaMode ? currentPageIndex + 1 : currentPageIndex - 1)
+                    advancePage(forward: false)
                 },
                 onNextPage: {
-                    if currentPageIndex >= totalPages - 1 {
-                        attemptPDFSeriesContinuation()
-                    } else {
-                        jumpToPage(isMangaMode ? currentPageIndex - 1 : currentPageIndex + 1)
-                    }
+                    advancePage(forward: true)
                 },
                 onTapCenter: {
                     toggleChrome()
@@ -391,6 +390,32 @@ struct ProPDFReaderEngine: View {
                 }
             )
             .ignoresSafeArea()
+
+            // Physical Book Spine Median Crease & Depth Shadow in Dual-Page Landscape
+            if isLandscape && isDual && currentPageIndex > 0 {
+                GeometryReader { _ in
+                    HStack(spacing: 0) {
+                        Spacer()
+
+                        LinearGradient(
+                            colors: [
+                                Color.black.opacity(0.0),
+                                Color.black.opacity(0.12),
+                                Color.black.opacity(0.24),
+                                Color.black.opacity(0.12),
+                                Color.black.opacity(0.0)
+                            ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                        .frame(width: 22)
+                        .allowsHitTesting(false)
+
+                        Spacer()
+                    }
+                }
+                .allowsHitTesting(false)
+            }
 
             if isPencilMode {
                 PageCanvasOverlay(
@@ -901,6 +926,42 @@ struct ProPDFReaderEngine: View {
         saveReadingProgress()
     }
 
+    private func advancePage(forward: Bool) {
+        let isLandscape = UIScreen.main.bounds.width > UIScreen.main.bounds.height
+        let isDual = prefs.pdfDualPage || (prefs.autoLandscapeDualPage && isLandscape)
+        let isManga = isMangaMode || prefs.pdfRTL
+        let effectiveForward = isManga ? !forward : forward
+
+        if isDual {
+            if effectiveForward {
+                if currentPageIndex == 0 {
+                    jumpToPage(1)
+                } else if currentPageIndex >= totalPages - 1 {
+                    attemptPDFSeriesContinuation()
+                } else {
+                    jumpToPage(min(totalPages - 1, currentPageIndex + 2))
+                }
+            } else {
+                if currentPageIndex <= 1 {
+                    jumpToPage(0)
+                } else {
+                    jumpToPage(max(0, currentPageIndex - 2))
+                }
+            }
+        } else {
+            if effectiveForward {
+                if currentPageIndex >= totalPages - 1 {
+                    attemptPDFSeriesContinuation()
+                } else {
+                    jumpToPage(currentPageIndex + 1)
+                }
+            } else {
+                jumpToPage(max(0, currentPageIndex - 1))
+            }
+        }
+        HapticEngine.selection()
+    }
+
     private func saveHighlight(text: String, color: PDFHighlightColor) {
         if let pdfView = pdfViewReference, let selection = pdfView.currentSelection {
             for page in selection.pages {
@@ -1136,7 +1197,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         let prefs = EBookPreferences.shared
         let isLandscape = UIScreen.main.bounds.width > UIScreen.main.bounds.height
         let isDual = prefs.pdfDualPage || (prefs.autoLandscapeDualPage && isLandscape)
-        pdfView.displayMode = isDual ? .twoUp : .singlePageContinuous
+        pdfView.displayMode = isDual ? .twoUp : .singlePage
         pdfView.displaysAsBook = isDual
 
         let margin = max(0, prefs.textMargin)
@@ -1197,7 +1258,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         let prefs = EBookPreferences.shared
         let isLandscape = uiView.bounds.width > uiView.bounds.height
         let isDual = prefs.pdfDualPage || (prefs.autoLandscapeDualPage && isLandscape)
-        let targetDisplayMode: PDFDisplayMode = isDual ? .twoUp : .singlePageContinuous
+        let targetDisplayMode: PDFDisplayMode = isDual ? .twoUp : .singlePage
         
         if uiView.displayMode != targetDisplayMode {
             uiView.displayMode = targetDisplayMode

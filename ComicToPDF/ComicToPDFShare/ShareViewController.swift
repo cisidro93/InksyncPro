@@ -69,13 +69,13 @@ class ShareViewController: UIViewController {
         if let context = extensionContext {
             let openSelector = NSSelectorFromString("openURL:completionHandler:")
             if context.responds(to: openSelector) {
-                context.open(deepLinkURL) { _ in }
+                context.open(deepLinkURL, completionHandler: nil)
             }
         }
 
-        // 4. Delayed dismissal (350ms): prevents SpringBoard from aborting the app activation
+        // 4. Delayed dismissal (500ms): prevents SpringBoard from aborting the app activation
         // before the extension process is detached.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.50) { [weak self] in
             let item = NSExtensionItem()
             item.userInfo = ["openURL": deepLinkURL]
             self?.extensionContext?.completeRequest(returningItems: [item], completionHandler: nil)
