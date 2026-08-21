@@ -121,12 +121,12 @@ struct ProPDFReaderEngine: View {
             }
         } else if insets.modeRaw == "smartAuto" {
             isCroppedMode = true
-            let sensitivity = max(0.05, min(0.25, prefs.autoCropSensitivity))
+            let sensitivity = max(0.02, min(0.08, prefs.autoCropSensitivity * 0.35))
             for i in 0..<doc.pageCount {
                 if let page = doc.page(at: i) {
                     let mediaBox = page.bounds(for: .mediaBox)
                     let insetX = mediaBox.width * sensitivity
-                    let insetY = mediaBox.height * sensitivity * 1.2
+                    let insetY = mediaBox.height * sensitivity
                     page.setBounds(mediaBox.insetBy(dx: insetX, dy: insetY), for: .cropBox)
                 }
             }
@@ -694,7 +694,7 @@ struct ProPDFReaderEngine: View {
                     self.pdfDocument = doc
                     self.currentPageIndex = max(0, min(savedIndex, doc.pageCount - 1))
                     let savedCrop = ReaderProgressTracker.shared.cropInsets(for: sourcePDF.id)
-                    let initialCrop = savedCrop ?? (self.prefs.defaultCropModeRaw == "smartAuto" ? .smartAuto : CodableCropInsets(top: self.prefs.defaultCropTop, bottom: self.prefs.defaultCropBottom, left: self.prefs.defaultCropLeft, right: self.prefs.defaultCropRight, modeRaw: self.prefs.defaultCropModeRaw))
+                    let initialCrop = savedCrop ?? (self.prefs.defaultCropModeRaw == "smartAuto" ? .smartAuto : .none)
                     self.applyCropInsets(initialCrop)
                     self.extractAmbientColor(for: self.currentPageIndex)
                     
@@ -1064,17 +1064,16 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         pdfView.backgroundColor = .clear
         pdfView.isOpaque = false
         pdfView.insetsLayoutMarginsFromSafeArea = false
+        pdfView.usePageViewController(false)
 
         let prefs = EBookPreferences.shared
         let isLandscape = UIScreen.main.bounds.width > UIScreen.main.bounds.height
         let isDual = prefs.pdfDualPage || (prefs.autoLandscapeDualPage && isLandscape)
-        let spineLoc: UIPageViewController.SpineLocation = isDual ? .mid : .min
-        let options: [UIPageViewController.OptionsKey: Any] = [
-            .spineLocation: NSNumber(value: spineLoc.rawValue),
-            .interPageSpacing: 0
-        ]
-        pdfView.usePageViewController(true, withViewOptions: options)
-        pdfView.displaysAsBook = isDual
+        pdfView.displayMode = isDual ? .twoUp : .singlePage
+        pdfView.displaysAsBook = false
+
+        let margin = max(0, prefs.textMargin)
+        pdfView.pageBreakMargins = UIEdgeInsets(top: 0, left: margin, bottom: 0, right: margin)
 
         if let scrollView = pdfView.subviews.first(where: { $0 is UIScrollView }) as? UIScrollView {
             scrollView.maximumZoomScale = 5.0
@@ -1131,58 +1130,32 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         let prefs = EBookPreferences.shared
         let isLandscape = uiView.bounds.width > uiView.bounds.height
         let isDual = prefs.pdfDualPage || (prefs.autoLandscapeDualPage && isLandscape)
-        let spineLoc: UIPageViewController.SpineLocation = isDual ? .mid : .min
+        let targetDisplayMode: PDFDisplayMode = isDual ? .twoUp : .singlePage
         
-        if uiView.displaysAsBook != isDual {
-            uiView.displaysAsBook = isDual
-            let options: [UIPageViewController.OptionsKey: Any] = [
-                .spineLocation: NSNumber(value: spineLoc.rawValue),
-                .interPageSpacing: 0
-            ]
-            uiView.usePageViewController(true, withViewOptions: options)
+        if uiView.displayMode != targetDisplayMode {
+            uiView.displayMode = targetDisplayMode
+        }
+        uiView.displaysAsBook = false
+
+        let margin = max(0, prefs.textMargin)
+        let targetMargins = UIEdgeInsets(top: 0, left: margin, bottom: 0, right: margin)
+        if uiView.pageBreakMargins != targetMargins {
+            uiView.pageBreakMargins = targetMargins
         }
 
-        let hasCustomMargin = prefs.textMargin > 0
-        let targetDisplayBox: PDFDisplayBox = (isCroppedMode || hasCustomMargin) ? .cropBox : .mediaBox
-        
-        let cropStateChanged = isCroppedMode != context.coordinator.lastCropMode ||
-                               prefs.textMargin != context.coordinator.lastTextMargin
-        if cropStateChanged {
-            context.coordinator.lastCropMode = isCroppedMode
-            context.coordinator.lastTextMargin = prefs.textMargin
-            if let currentPage = uiView.currentPage {
-                let docIndex = document.index(for: currentPage)
-                let start = max(0, docIndex - 3)
-                let end = min(document.pageCount - 1, docIndex + 3)
-                for i in start...end {
-                    guard let page = document.page(at: i) else { continue }
-                    let mediaBox = page.bounds(for: .mediaBox)
-                    if isCroppedMode {
-                        let sensitivity = max(0.05, min(0.25, prefs.autoCropSensitivity))
-                        let marginInset = prefs.textMargin * 0.5
-                        let insetX = (mediaBox.width * sensitivity) + marginInset
-                        let insetY = (mediaBox.height * sensitivity * 1.2) + marginInset
-                        let croppedRect = mediaBox.insetBy(dx: insetX, dy: insetY)
-                        page.setBounds(croppedRect, for: .cropBox)
-                    } else if hasCustomMargin {
-                        let marginX = prefs.textMargin
-                        let marginY = prefs.textMargin * 0.75
-                        let marginRect = mediaBox.insetBy(dx: marginX, dy: marginY)
-                        page.setBounds(marginRect, for: .cropBox)
-                    } else {
-                        page.setBounds(mediaBox, for: .cropBox)
-                    }
-                }
-            }
-        }
-
+        let targetDisplayBox: PDFDisplayBox = isCroppedMode ? .cropBox : .mediaBox
         if uiView.displayBox != targetDisplayBox {
             uiView.displayBox = targetDisplayBox
         }
 
         let boundsChanged = context.coordinator.lastBoundsSize != uiView.bounds.size
+        let cropStateChanged = isCroppedMode != context.coordinator.lastCropMode ||
+                               prefs.textMargin != context.coordinator.lastTextMargin
 
         if boundsChanged || cropStateChanged {
+            context.coordinator.lastCropMode = isCroppedMode
+            context.coordinator.lastTextMargin = prefs.textMargin
+
             if isExpandedView {
                 let fitScale = uiView.scaleFactorForSizeToFit
                 let targetScale = max(fitScale * 1.35, 1.25)
