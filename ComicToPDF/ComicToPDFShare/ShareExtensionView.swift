@@ -20,182 +20,284 @@ struct ShareExtensionView: View {
     ]
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
-                Color(.systemGroupedBackground)
+                // Rich Obsidian Background with ambient gradient glow
+                Color(red: 0.05, green: 0.05, blue: 0.07)
                     .ignoresSafeArea()
-                
+
+                RadialGradient(
+                    colors: [Color(red: 0.15, green: 0.78, blue: 0.45).opacity(0.12), Color.clear],
+                    center: .topTrailing,
+                    startRadius: 40,
+                    endRadius: 360
+                )
+                .ignoresSafeArea()
+
+                RadialGradient(
+                    colors: [Color(red: 0.38, green: 0.30, blue: 0.95).opacity(0.10), Color.clear],
+                    center: .bottomLeading,
+                    startRadius: 60,
+                    endRadius: 400
+                )
+                .ignoresSafeArea()
+
                 VStack(spacing: 0) {
                     if isLoading {
                         Spacer()
-                        VStack(spacing: 16) {
+                        VStack(spacing: 18) {
                             ProgressView()
-                                .scaleEffect(1.3)
+                                .scaleEffect(1.4)
+                                .tint(Color(red: 0.15, green: 0.78, blue: 0.45))
                             Text("Loading shared files...")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
+                                .font(.system(size: 15, weight: .medium, design: .rounded))
+                                .foregroundColor(.white.opacity(0.7))
                         }
                         Spacer()
                     } else if selectedFiles.isEmpty {
                         Spacer()
-                        VStack(spacing: 16) {
-                            Image(systemName: "doc.questionmark")
-                                .font(.system(size: 60))
-                                .foregroundColor(.secondary)
+                        VStack(spacing: 18) {
+                            Image(systemName: "doc.questionmark.fill")
+                                .font(.system(size: 56))
+                                .foregroundStyle(
+                                    LinearGradient(
+                                        colors: [.orange, .pink],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                                .shadow(color: .orange.opacity(0.3), radius: 12)
+
                             Text("No Compatible Files Found")
-                                .font(.headline)
-                            Text("Share PDF, EPUB, CBZ, CBR, CB7, or ZIP files to import directly into Inksync Pro.")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
+                                .font(.system(size: 18, weight: .bold, design: .rounded))
+                                .foregroundColor(.white)
+
+                            Text("Share PDF, EPUB, CBZ, CBR, CB7, or ZIP files to import directly into your InkSync Pro Library.")
+                                .font(.system(size: 13, weight: .regular, design: .rounded))
+                                .foregroundColor(.white.opacity(0.6))
                                 .multilineTextAlignment(.center)
-                                .padding(.horizontal, 32)
+                                .padding(.horizontal, 36)
                         }
                         Spacer()
                     } else {
                         // File list
-                        List {
-                            Section {
+                        ScrollView {
+                            VStack(spacing: 12) {
+                                // Header Pill
+                                HStack {
+                                    Text("\(selectedFiles.count) FILE\(selectedFiles.count > 1 ? "S" : "") READY TO IMPORT")
+                                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                                        .foregroundColor(Color(red: 0.15, green: 0.78, blue: 0.45))
+                                    Spacer()
+                                }
+                                .padding(.horizontal, 20)
+                                .padding(.top, 16)
+
                                 ForEach(selectedFiles) { file in
-                                    HStack(spacing: 12) {
-                                        Image(systemName: iconForExtension(file.fileExtension))
-                                            .font(.title2)
-                                            .foregroundColor(.orange)
-                                            .frame(width: 32)
-                                        
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text(file.name)
-                                                .font(.subheadline)
-                                                .fontWeight(.medium)
-                                                .lineLimit(2)
-                                            
-                                            Text(file.fileExtension.uppercased())
-                                                .font(.caption2)
-                                                .fontWeight(.semibold)
-                                                .foregroundColor(.orange)
-                                                .padding(.horizontal, 6)
-                                                .padding(.vertical, 2)
-                                                .background(Color.orange.opacity(0.15))
-                                                .cornerRadius(4)
+                                    HStack(spacing: 14) {
+                                        ZStack {
+                                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                                .fill(iconBackgroundColor(for: file.fileExtension).opacity(0.18))
+                                                .frame(width: 44, height: 44)
+                                                .overlay(
+                                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                                        .stroke(iconBackgroundColor(for: file.fileExtension).opacity(0.35), lineWidth: 1)
+                                                )
+
+                                            Image(systemName: iconForExtension(file.fileExtension))
+                                                .font(.system(size: 20, weight: .semibold))
+                                                .foregroundColor(iconBackgroundColor(for: file.fileExtension))
                                         }
-                                        
+
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text(file.name)
+                                                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                                .foregroundColor(.white)
+                                                .lineLimit(2)
+
+                                            Text(file.fileExtension.uppercased())
+                                                .font(.system(size: 10, weight: .bold, design: .rounded))
+                                                .foregroundColor(iconBackgroundColor(for: file.fileExtension))
+                                                .padding(.horizontal, 7)
+                                                .padding(.vertical, 2)
+                                                .background(iconBackgroundColor(for: file.fileExtension).opacity(0.15), in: Capsule())
+                                        }
+
                                         Spacer()
-                                        
+
                                         if file.isProcessed {
                                             Image(systemName: "checkmark.circle.fill")
-                                                .foregroundColor(.green)
+                                                .font(.system(size: 22))
+                                                .foregroundColor(Color(red: 0.15, green: 0.78, blue: 0.45))
                                         }
                                     }
-                                    .padding(.vertical, 4)
+                                    .padding(14)
+                                    .background(.ultraThinMaterial)
+                                    .background(Color.white.opacity(0.04))
+                                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                            .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                                    )
+                                    .padding(.horizontal, 16)
                                 }
-                            } header: {
-                                Text("\(selectedFiles.count) file\(selectedFiles.count > 1 ? "s" : "") ready to import")
                             }
+                            .padding(.bottom, 100)
                         }
-                        .listStyle(.insetGrouped)
-                        
-                        // Import button
-                        VStack(spacing: 12) {
+
+                        // Bottom Action Dock
+                        VStack(spacing: 10) {
                             if let error = errorMessage {
-                                HStack {
+                                HStack(spacing: 6) {
                                     Image(systemName: "exclamationmark.triangle.fill")
                                         .foregroundColor(.red)
                                     Text(error)
-                                        .font(.caption)
+                                        .font(.system(size: 12, weight: .medium, design: .rounded))
                                         .foregroundColor(.red)
                                 }
+                                .padding(.horizontal, 16)
                             }
-                            
+
                             Button(action: processFiles) {
                                 HStack(spacing: 8) {
                                     Image(systemName: "arrow.down.doc.fill")
-                                    Text("Import to Inksync Pro Library")
-                                        .fontWeight(.semibold)
+                                        .font(.system(size: 15, weight: .bold))
+                                    Text("Import to InkSync Pro Library")
+                                        .font(.system(size: 15, weight: .bold, design: .rounded))
                                 }
-                                .foregroundColor(.white)
+                                .foregroundColor(.black)
                                 .frame(maxWidth: .infinity)
-                                .padding(.vertical, 14)
-                                .background(Color.orange)
-                                .cornerRadius(12)
-                                .shadow(color: Color.orange.opacity(0.3), radius: 6, y: 3)
+                                .padding(.vertical, 15)
+                                .background(
+                                    LinearGradient(
+                                        colors: [Color(red: 0.20, green: 0.88, blue: 0.52), Color(red: 0.10, green: 0.70, blue: 0.38)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    ),
+                                    in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                )
+                                .shadow(color: Color(red: 0.15, green: 0.78, blue: 0.45).opacity(0.4), radius: 10, y: 4)
                             }
+                            .padding(.horizontal, 16)
+                            .padding(.bottom, 12)
                         }
-                        .padding()
-                        .background(Color(.secondarySystemGroupedBackground))
+                        .background(.ultraThinMaterial)
+                        .background(Color.black.opacity(0.6))
                     }
                 }
-                
-                // Processing overlay
+
+                // Processing Overlay
                 if isProcessing {
-                    Color.black.opacity(0.5)
+                    Color.black.opacity(0.65)
                         .ignoresSafeArea()
-                    
+
                     VStack(spacing: 20) {
                         ProgressView(value: processingProgress)
-                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                            .scaleEffect(1.5)
-                        
+                            .progressViewStyle(CircularProgressViewStyle(tint: Color(red: 0.15, green: 0.78, blue: 0.45)))
+                            .scaleEffect(1.6)
+
                         Text("Importing to Library...")
-                            .font(.headline)
+                            .font(.system(size: 17, weight: .bold, design: .rounded))
                             .foregroundColor(.white)
-                        
+
                         Text(currentFileName)
-                            .font(.subheadline)
-                            .foregroundColor(.white.opacity(0.8))
+                            .font(.system(size: 13, weight: .medium, design: .rounded))
+                            .foregroundColor(.white.opacity(0.75))
                             .lineLimit(1)
-                        
+
                         Text("\(Int(processingProgress * 100))%")
-                            .font(.caption)
-                            .foregroundColor(.white.opacity(0.6))
+                            .font(.system(size: 12, weight: .bold, design: .monospaced))
+                            .foregroundColor(Color(red: 0.15, green: 0.78, blue: 0.45))
                     }
                     .padding(32)
-                    .background(RoundedRectangle(cornerRadius: 20).fill(Color.black.opacity(0.85)))
+                    .background(.ultraThinMaterial)
+                    .background(Color.black.opacity(0.85))
+                    .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 22, style: .continuous)
+                            .stroke(Color.white.opacity(0.18), lineWidth: 1)
+                    )
                 }
-                
-                // Success overlay
+
+                // Success Overlay
                 if showingSuccess {
-                    Color.black.opacity(0.5)
+                    Color.black.opacity(0.65)
                         .ignoresSafeArea()
-                    
-                    VStack(spacing: 20) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 56))
-                            .foregroundColor(.green)
-                        
-                        Text("Import Complete!")
-                            .font(.headline)
-                            .foregroundColor(.white)
-                        
-                        Text("\(processedCount) item\(processedCount > 1 ? "s" : "") added to your Library")
-                            .font(.subheadline)
-                            .foregroundColor(.white.opacity(0.8))
-                        
-                        Button("Open Inksync Pro") {
-                            onDismiss()
+
+                    VStack(spacing: 18) {
+                        ZStack {
+                            Circle()
+                                .fill(Color(red: 0.15, green: 0.78, blue: 0.45).opacity(0.2))
+                                .frame(width: 80, height: 80)
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.system(size: 54))
+                                .foregroundColor(Color(red: 0.15, green: 0.78, blue: 0.45))
                         }
-                        .foregroundColor(.white)
-                        .fontWeight(.semibold)
-                        .padding(.horizontal, 32)
-                        .padding(.vertical, 12)
-                        .background(Color.green)
-                        .cornerRadius(10)
+
+                        Text("Import Complete!")
+                            .font(.system(size: 20, weight: .bold, design: .rounded))
+                            .foregroundColor(.white)
+
+                        Text("\(processedCount) item\(processedCount > 1 ? "s" : "") added to your Library")
+                            .font(.system(size: 14, weight: .medium, design: .rounded))
+                            .foregroundColor(.white.opacity(0.8))
+
+                        Button(action: onDismiss) {
+                            HStack(spacing: 6) {
+                                Text("Open InkSync Pro")
+                                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                                Image(systemName: "arrow.right.circle.fill")
+                                    .font(.system(size: 16))
+                            }
+                            .foregroundColor(.black)
+                            .padding(.horizontal, 28)
+                            .padding(.vertical, 13)
+                            .background(
+                                LinearGradient(
+                                    colors: [Color(red: 0.20, green: 0.88, blue: 0.52), Color(red: 0.10, green: 0.70, blue: 0.38)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ),
+                                in: Capsule()
+                            )
+                            .shadow(color: Color(red: 0.15, green: 0.78, blue: 0.45).opacity(0.4), radius: 10, y: 4)
+                        }
                     }
                     .padding(32)
-                    .background(RoundedRectangle(cornerRadius: 20).fill(Color.black.opacity(0.85)))
+                    .background(.ultraThinMaterial)
+                    .background(Color.black.opacity(0.85))
+                    .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 24, style: .continuous)
+                            .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                    )
                 }
             }
             .navigationTitle("InkSync Pro")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+            .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
+                ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {
                         onDismiss()
                     }
+                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    .foregroundColor(.white.opacity(0.8))
                 }
             }
         }
-        .navigationViewStyle(.stack)
         .onAppear {
             loadSharedFiles()
+        }
+    }
+
+    private func iconBackgroundColor(for ext: String) -> Color {
+        switch ext.lowercased() {
+        case "pdf": return Color(red: 1.0, green: 0.35, blue: 0.35)
+        case "epub": return Color(red: 0.35, green: 0.65, blue: 1.0)
+        case "cbz", "cbr", "cb7", "cbt": return Color(red: 1.0, green: 0.65, blue: 0.2)
+        default: return Color(red: 0.15, green: 0.78, blue: 0.45)
         }
     }
     

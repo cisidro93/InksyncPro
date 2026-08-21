@@ -253,7 +253,8 @@ actor LibraryScanner {
                     }
                 }
 
-                var displayName = filename
+                let cleanTitle = fileURL.deletingPathExtension().lastPathComponent
+                var displayName = cleanTitle.isEmpty ? fileURL.lastPathComponent : cleanTitle
                 if fileURL.pathExtension.lowercased() == "pdf" {
                     if let recoveredTitle = await MainActor.run(body: { PDFTitleRecoverer.recoverPDFTitle(from: fileURL) }) {
                         displayName = recoveredTitle
