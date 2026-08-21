@@ -1655,11 +1655,6 @@ struct MarkdownTextEditor: UIViewRepresentable {
 
         for item in items {
             let btn = FormatButton(title: item.title, insertBefore: item.insert, insertAfter: item.after, textView: textView)
-            btn.setTitleColor(UIColor.label, for: .normal)
-            btn.titleLabel?.font = UIFont.systemFont(ofSize: 13, weight: .semibold)
-            btn.backgroundColor = UIColor.secondarySystemFill
-            btn.layer.cornerRadius = 6
-            btn.contentEdgeInsets = UIEdgeInsets(top: 6, left: 10, bottom: 6, right: 10)
             stack.addArrangedSubview(btn)
         }
 
@@ -2434,7 +2429,15 @@ private final class FormatButton: UIButton {
         self.insertAfter  = insertAfter
         self.textView = textView
         super.init(frame: .zero)
-        setTitle(title, for: .normal)
+        var config = UIButton.Configuration.plain()
+        config.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 10, bottom: 6, trailing: 10)
+        config.baseForegroundColor = .label
+        config.attributedTitle = AttributedString(title, attributes: AttributeContainer([
+            .font: UIFont.systemFont(ofSize: 13, weight: .semibold)
+        ]))
+        self.configuration = config
+        self.backgroundColor = UIColor.secondarySystemFill
+        self.layer.cornerRadius = 6
         addTarget(self, action: #selector(tapped), for: .touchUpInside)
     }
     required init?(coder: NSCoder) { fatalError() }

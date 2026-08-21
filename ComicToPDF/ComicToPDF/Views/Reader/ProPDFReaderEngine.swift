@@ -32,6 +32,7 @@ struct ProPDFReaderEngine: View {
 
     // Environment & Preferences
     @ObservedObject private var prefs = EBookPreferences.shared
+    @AppStorage("activeFilterPreset") private var activeFilterPreset: ReadingFilterPreset = .original
     @Environment(\.modelContext) private var modelContext
     @FocusState private var isReaderFocused: Bool
     @StateObject private var velocityEngine = ReaderVelocityEngine()
@@ -335,8 +336,8 @@ struct ProPDFReaderEngine: View {
                     }
                 }
             )
-            .intelligentPDFDarkMode(isEnabled: prefs.themeRaw == EBookTheme.night.rawValue && prefs.readingFilter == .none)
-            .readingFilter(prefs.readingFilter)
+            .intelligentPDFDarkMode(isEnabled: prefs.themeRaw == EBookTheme.night.rawValue && activeFilterPreset == .original)
+            .applyFilterPreset(activeFilterPreset)
             .ignoresSafeArea()
 
             if isPencilMode {
@@ -461,10 +462,7 @@ struct ProPDFReaderEngine: View {
             VStack {
                 Spacer()
                 FilterHUDView(
-                    activePreset: Binding(
-                        get: { prefs.readingFilter },
-                        set: { prefs.readingFilter = $0 }
-                    ),
+                    activePreset: $activeFilterPreset,
                     onDismiss: {
                         withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                             showingFilterHUD = false
@@ -577,7 +575,7 @@ struct ProPDFReaderEngine: View {
                 }
                 HapticEngine.medium()
             },
-            isEnhanced: prefs.readingFilter != .none,
+            isEnhanced: activeFilterPreset != .original,
             onEnhanceToggle: {
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                     showingFilterHUD.toggle()
