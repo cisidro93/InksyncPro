@@ -51,42 +51,57 @@ actor LibraryScanner {
         // Bridge Shared container files from iOS Share Extension into local Inbox
         let appGroupIDs = [
             "group.com.antigravity.ComicToPDF",
-            "group.com.antigravity.inksync"
+            "group.com.antigravity.inksync",
+            "group.com.antigravity.InksyncPro"
         ]
+        var scannedGroupURLs: Set<URL> = []
         for groupID in appGroupIDs {
-            if let groupURL = fileManager.containerURL(forSecurityApplicationGroupIdentifier: groupID) {
+            if let groupURL = fileManager.containerURL(forSecurityApplicationGroupIdentifier: groupID),
+               !scannedGroupURLs.contains(groupURL) {
+                scannedGroupURLs.insert(groupURL)
                 let sharedDirs = [
                     groupURL.appendingPathComponent("PendingConversions", isDirectory: true),
-                    groupURL.appendingPathComponent("Inbox", isDirectory: true)
+                    groupURL.appendingPathComponent("Inbox", isDirectory: true),
+                    groupURL.appendingPathComponent("ShareStaging", isDirectory: true)
                 ]
                 for sharedDir in sharedDirs {
-                    if let sharedFiles = try? fileManager.contentsOfDirectory(at: sharedDir, includingPropertiesForKeys: nil) {
-                        for fileURL in sharedFiles {
-                            let ext = fileURL.pathExtension.lowercased()
-                            if ext == "manifest" || fileURL.lastPathComponent.contains(".manifest.json") {
-                                try? fileManager.removeItem(at: fileURL)
-                            } else if ["cbz", "cbr", "pdf", "epub", "zip", "rar", "cb7", "cbt"].contains(ext) || isSupportedSharedFile(fileURL) {
-                                try? fileManager.createDirectory(at: inboxDir, withIntermediateDirectories: true)
-                                
-                                let cleanBase = (fileURL.lastPathComponent as NSString).deletingPathExtension
-                                let targetExt: String
-                                if ext == "zip" {
-                                    targetExt = "cbz"
-                                } else if ext == "rar" {
-                                    targetExt = "cbr"
-                                } else if ext.isEmpty {
-                                    targetExt = detectExtensionFromMagicBytes(fileURL) ?? "cbz"
+                    guard let enumerator = fileManager.enumerator(at: sharedDir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) else { continue }
+                    while let fileURL = enumerator.nextObject() as? URL {
+                        var isDir: ObjCBool = false
+                        guard fileManager.fileExists(atPath: fileURL.path, isDirectory: &isDir), !isDir.boolValue else { continue }
+                        
+                        let ext = fileURL.pathExtension.lowercased()
+                        if ext == "manifest" || fileURL.lastPathComponent.contains(".manifest.json") {
+                            try? fileManager.removeItem(at: fileURL)
+                        } else if ["cbz", "cbr", "pdf", "epub", "zip", "rar", "cb7", "cbt", "7z", "tar"].contains(ext) || isSupportedSharedFile(fileURL) {
+                            try? fileManager.createDirectory(at: inboxDir, withIntermediateDirectories: true)
+                            
+                            let cleanBase = (fileURL.lastPathComponent as NSString).deletingPathExtension
+                            let targetExt: String
+                            if ext == "zip" {
+                                targetExt = "cbz"
+                            } else if ext == "rar" {
+                                targetExt = "cbr"
+                            } else if ext == "7z" {
+                                targetExt = "cb7"
+                            } else if ext.isEmpty {
+                                targetExt = detectExtensionFromMagicBytes(fileURL) ?? "cbz"
+                            } else {
+                                targetExt = ext
+                            }
+                            
+                            let targetFilename = cleanBase + "." + targetExt
+                            let dest = inboxDir.appendingPathComponent(targetFilename)
+                            try? fileManager.removeItem(at: dest)
+                            do {
+                                try fileManager.moveItem(at: fileURL, to: dest)
+                                Logger.shared.log("LibraryScanner: imported shared file '\(targetFilename)'", category: "Import", type: .success)
+                            } catch {
+                                if let data = try? Data(contentsOf: fileURL) {
+                                    try? data.write(to: dest, options: .atomic)
+                                    try? fileManager.removeItem(at: fileURL)
+                                    Logger.shared.log("LibraryScanner: imported shared file '\(targetFilename)' via stream copy", category: "Import", type: .success)
                                 } else {
-                                    targetExt = ext
-                                }
-                                
-                                let targetFilename = cleanBase + "." + targetExt
-                                let dest = inboxDir.appendingPathComponent(targetFilename)
-                                try? fileManager.removeItem(at: dest)
-                                do {
-                                    try fileManager.moveItem(at: fileURL, to: dest)
-                                    Logger.shared.log("LibraryScanner: imported shared file '\(targetFilename)'", category: "Import", type: .success)
-                                } catch {
                                     Logger.shared.log("LibraryScanner: failed to import shared file: \(error.localizedDescription)", category: "Import", type: .error)
                                 }
                             }

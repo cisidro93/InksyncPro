@@ -173,6 +173,7 @@
             <array>
                 <string>public.data</string>
                 <string>public.archive</string>
+                <string>public.zip-archive</string>
             </array>
             <key>UTTypeDescription</key>
             <string>Comic Book Archive Zip</string>
@@ -207,6 +208,80 @@
                 <array>
                     <string>cbr</string>
                     <string>CBR</string>
+                </array>
+            </dict>
+        </dict>
+        <dict>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.data</string>
+                <string>public.composite-content</string>
+            </array>
+            <key>UTTypeDescription</key>
+            <string>PDF Document</string>
+            <key>UTTypeIconFiles</key>
+            <array/>
+            <key>UTTypeIdentifier</key>
+            <string>com.adobe.pdf</string>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array>
+                    <string>pdf</string>
+                    <string>PDF</string>
+                </array>
+                <key>public.mime-type</key>
+                <array>
+                    <string>application/pdf</string>
+                </array>
+            </dict>
+        </dict>
+        <dict>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.data</string>
+                <string>public.composite-content</string>
+                <string>public.archive</string>
+            </array>
+            <key>UTTypeDescription</key>
+            <string>EPUB eBook</string>
+            <key>UTTypeIconFiles</key>
+            <array/>
+            <key>UTTypeIdentifier</key>
+            <string>org.idpf.epub-container</string>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array>
+                    <string>epub</string>
+                    <string>EPUB</string>
+                </array>
+                <key>public.mime-type</key>
+                <array>
+                    <string>application/epub+zip</string>
+                </array>
+            </dict>
+        </dict>
+        <dict>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.data</string>
+                <string>public.archive</string>
+            </array>
+            <key>UTTypeDescription</key>
+            <string>7-Zip Archive</string>
+            <key>UTTypeIconFiles</key>
+            <array/>
+            <key>UTTypeIdentifier</key>
+            <string>org.7-zip.7-zip-archive</string>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array>
+                    <string>7z</string>
+                    <string>7Z</string>
+                    <string>cb7</string>
+                    <string>CB7</string>
                 </array>
             </dict>
         </dict>

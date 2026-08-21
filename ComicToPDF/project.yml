@@ -105,12 +105,21 @@ targets:
               - com.macrabbit.comicbookzip
               - com.antigravity.cbz
               - public.cbz-archive
+              - public.zip-archive
+              - public.archive
+              - public.data
           - CFBundleTypeName: "Comic Book RAR Archive"
             LSHandlerRank: Owner
             LSItemContentTypes:
               - com.macrabbit.comicbookrar
               - com.antigravity.cbr
               - public.cbr-archive
+              - com.rarlab.rar-archive
+              - public.rar-archive
+          - CFBundleTypeName: "7-Zip Comic Archive"
+            LSHandlerRank: Owner
+            LSItemContentTypes:
+              - org.7-zip.7-zip-archive
           - CFBundleTypeName: "PDF Document"
             LSHandlerRank: Alternate
             LSItemContentTypes:
@@ -145,6 +154,11 @@ targets:
             UTTypeConformsTo: [public.archive]
             UTTypeTagSpecification:
               public.filename-extension: [cbr]
+          - UTTypeIdentifier: org.7-zip.7-zip-archive
+            UTTypeDescription: 7-Zip Archive
+            UTTypeConformsTo: [public.archive]
+            UTTypeTagSpecification:
+              public.filename-extension: [7z, cb7]
           - UTTypeIdentifier: org.idpf.epub-container
             UTTypeDescription: EPUB eBook
             UTTypeConformsTo: [public.data]

@@ -312,6 +312,8 @@ struct ShareExtensionView: View {
 
     // MARK: - Load Shared Files
 
+    @State private var sessionStagingID: String = UUID().uuidString
+
     private func loadSharedFiles() {
         guard let ctx = extensionContext,
               let inputItems = ctx.inputItems as? [NSExtensionItem] else {
@@ -345,8 +347,13 @@ struct ShareExtensionView: View {
                         "org.idpf.epub-container",
                         UTType.epub.identifier,
                         "com.macrabbit.comicbookzip",
+                        "com.antigravity.cbz",
                         UTType.zip.identifier,
+                        "com.macrabbit.comicbookrar",
+                        "com.antigravity.cbr",
+                        "org.7-zip.7-zip-archive",
                         "public.archive",
+                        "public.zip-archive",
                         "public.data",
                         "public.content",
                         "public.item",
@@ -363,6 +370,9 @@ struct ShareExtensionView: View {
                     var detectedExt: String? = nil
 
                     for typeId in candidateTypes {
+                        // Crucial: Only query NSItemProvider for types it actually conforms to
+                        guard provider.hasItemConformingToTypeIdentifier(typeId) else { continue }
+
                         let hintExt = extensionFromSuggestedName(baseName) ?? (UTType(typeId).flatMap { targetExtension(for: $0) })
                         let tempName: String
                         if let h = hintExt {
@@ -539,7 +549,8 @@ struct ShareExtensionView: View {
         var containers: [URL] = []
         let groupIDs = [
             "group.com.antigravity.ComicToPDF",
-            "group.com.antigravity.inksync"
+            "group.com.antigravity.inksync",
+            "group.com.antigravity.InksyncPro"
         ]
         for id in groupIDs {
             if let container = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: id) {
@@ -548,17 +559,15 @@ struct ShareExtensionView: View {
                 }
             }
         }
-        if let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
-            if !containers.contains(docs) {
-                containers.append(docs)
-            }
-        }
         return containers
     }
 
     nonisolated private func copyToSharedContainer(_ sourceURL: URL, destFilename: String) -> URL? {
         let containers = getAppGroupContainers()
-        guard !containers.isEmpty else { return nil }
+        guard !containers.isEmpty else {
+            print("[ShareExt] Error: No shared App Group container accessible.")
+            return nil
+        }
         
         let cleanDest = destFilename.replacingOccurrences(of: ".tmp", with: "")
         let accessing = sourceURL.startAccessingSecurityScopedResource()
@@ -567,9 +576,10 @@ struct ShareExtensionView: View {
         var primaryResultURL: URL? = nil
         
         for container in containers {
-            let inboxURL = container.appendingPathComponent("Inbox", isDirectory: true)
-            try? FileManager.default.createDirectory(at: inboxURL, withIntermediateDirectories: true)
-            let destURL = inboxURL.appendingPathComponent(cleanDest)
+            // Stage into isolated session directory so it is never deleted by markForConversion
+            let stagingURL = container.appendingPathComponent("ShareStaging", isDirectory: true)
+            try? FileManager.default.createDirectory(at: stagingURL, withIntermediateDirectories: true)
+            let destURL = stagingURL.appendingPathComponent(cleanDest)
             try? FileManager.default.removeItem(at: destURL)
             
             do {
@@ -588,13 +598,16 @@ struct ShareExtensionView: View {
 
     nonisolated private func writeRawDataToSharedContainer(_ data: Data, destFilename: String) -> URL? {
         let containers = getAppGroupContainers()
-        guard !containers.isEmpty else { return nil }
+        guard !containers.isEmpty else {
+            print("[ShareExt] Error: No shared App Group container accessible.")
+            return nil
+        }
         
         var primaryResultURL: URL? = nil
         for container in containers {
-            let inboxURL = container.appendingPathComponent("Inbox", isDirectory: true)
-            try? FileManager.default.createDirectory(at: inboxURL, withIntermediateDirectories: true)
-            let destURL = inboxURL.appendingPathComponent(destFilename)
+            let stagingURL = container.appendingPathComponent("ShareStaging", isDirectory: true)
+            try? FileManager.default.createDirectory(at: stagingURL, withIntermediateDirectories: true)
+            let destURL = stagingURL.appendingPathComponent(destFilename)
             try? FileManager.default.removeItem(at: destURL)
             
             if (try? data.write(to: destURL, options: .atomic)) != nil {
@@ -665,15 +678,23 @@ struct ShareExtensionView: View {
                 try? data.write(to: manifestURL)
             }
             
-            // Copy file into PendingConversions & Inbox
+            // Copy file into PendingConversions & Inbox safely without deleting source
             let destPending = pendingURL.appendingPathComponent(file.name)
             let destInbox = inboxURL.appendingPathComponent(file.name)
-            try? FileManager.default.removeItem(at: destPending)
-            try? FileManager.default.removeItem(at: destInbox)
             
-            if FileManager.default.fileExists(atPath: file.url.path) {
-                try? FileManager.default.copyItem(at: file.url, to: destPending)
-                try? FileManager.default.copyItem(at: file.url, to: destInbox)
+            guard FileManager.default.fileExists(atPath: file.url.path) else {
+                print("[ShareExt] Error: Source file does not exist at \(file.url.path)")
+                continue
+            }
+            
+            if file.url.path != destPending.path {
+                try? FileManager.default.removeItem(at: destPending)
+                try FileManager.default.copyItem(at: file.url, to: destPending)
+            }
+            
+            if file.url.path != destInbox.path {
+                try? FileManager.default.removeItem(at: destInbox)
+                try FileManager.default.copyItem(at: file.url, to: destInbox)
             }
         }
     }
@@ -707,3 +728,4 @@ enum ShareError: Error {
     case copyFailed
     case conversionFailed
 }
+
