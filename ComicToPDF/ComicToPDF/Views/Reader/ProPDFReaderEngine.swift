@@ -190,46 +190,6 @@ struct ProPDFReaderEngine: View {
                         )
                         .ignoresSafeArea()
                     }
-
-                    // 3-Zone Fallback Tap Overlay for 100% Reliable Navigation & Chrome Toggle
-                    if selectedTextForHUD == nil && !isPencilMode && pendingLinkPreview == nil {
-                        GeometryReader { geo in
-                            let width = geo.size.width
-                            let height = geo.size.height
-                            
-                            HStack(spacing: 0) {
-                                // Left 20% Tap Zone (Previous Page)
-                                Color.clear
-                                    .frame(width: width * 0.2, height: height)
-                                    .contentShape(Rectangle())
-                                    .onTapGesture {
-                                        HapticEngine.light()
-                                        jumpToPage(isMangaMode ? currentPageIndex + 1 : currentPageIndex - 1)
-                                    }
-                                
-                                // Center 60% Tap Zone (Toggle Chrome)
-                                Color.clear
-                                    .frame(width: width * 0.6, height: height)
-                                    .contentShape(Rectangle())
-                                    .onTapGesture {
-                                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                                            chromeVisible.toggle()
-                                        }
-                                        HapticEngine.selection()
-                                    }
-                                
-                                // Right 20% Tap Zone (Next Page)
-                                Color.clear
-                                    .frame(width: width * 0.2, height: height)
-                                    .contentShape(Rectangle())
-                                    .onTapGesture {
-                                        HapticEngine.light()
-                                        jumpToPage(isMangaMode ? currentPageIndex - 1 : currentPageIndex + 1)
-                                    }
-                            }
-                        }
-                        .ignoresSafeArea()
-                    }
                 }
             } else {
                 // Loading State
