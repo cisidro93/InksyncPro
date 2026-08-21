@@ -45,6 +45,7 @@ struct ProPDFReaderEngine: View {
     @State private var activeZoomScale: CGFloat = 1.0
     @State private var showZoomPill = false
     @State private var zoomPillTask: Task<Void, Never>? = nil
+    @State private var chromeIdleTask: Task<Void, Never>? = nil
     @State private var loadTask: Task<Void, Never>? = nil
     @State private var accessedSecurityScopedURL: URL? = nil
     // Hyperlink Destination Preview HUD State
@@ -56,6 +57,28 @@ struct ProPDFReaderEngine: View {
 
     private var totalPages: Int {
         pdfDocument?.pageCount ?? pdf.pageCount
+    }
+
+    private func startChromeIdleTimer() {
+        chromeIdleTask?.cancel()
+        chromeIdleTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            guard !Task.isCancelled else { return }
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                chromeVisible = false
+            }
+        }
+    }
+
+    private func toggleChrome() {
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+            chromeVisible.toggle()
+        }
+        if chromeVisible {
+            startChromeIdleTimer()
+        } else {
+            chromeIdleTask?.cancel()
+        }
     }
 
     private func showToastMessage(_ message: String) {
@@ -136,7 +159,7 @@ struct ProPDFReaderEngine: View {
 
     var body: some View {
         ZStack {
-            Color.inkBackground
+            Color.black
                 .ignoresSafeArea()
 
             mainContentView
@@ -178,6 +201,11 @@ struct ProPDFReaderEngine: View {
             toastAlertOverlay
             ReadingJumpToastOverlay()
         }
+        .overlay {
+            if prefs.showReadingRuler {
+                ReadingRulerOverlay()
+            }
+        }
         .focusable()
         .focusEffectDisabled()
         .onKeyPress(.leftArrow) {
@@ -198,6 +226,7 @@ struct ProPDFReaderEngine: View {
         .onDisappear {
             loadTask?.cancel()
             zoomPillTask?.cancel()
+            chromeIdleTask?.cancel()
             accessedSecurityScopedURL?.stopAccessingSecurityScopedResource()
             accessedSecurityScopedURL = nil
             readingRoom.stop()
@@ -305,9 +334,7 @@ struct ProPDFReaderEngine: View {
                     jumpToPage(isMangaMode ? currentPageIndex - 1 : currentPageIndex + 1)
                 },
                 onTapCenter: {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        chromeVisible.toggle()
-                    }
+                    toggleChrome()
                 },
                 onTextSelectionChanged: { text in
                     withAnimation(.easeInOut(duration: 0.18)) {
@@ -536,6 +563,14 @@ struct ProPDFReaderEngine: View {
                 set: { jumpToPage(Int(round($0 * Double(max(1, totalPages - 1))))) }
             ),
             totalPages: max(1, totalPages),
+            customScrubber: AnyView(
+                VisualPDFScrubber(
+                    currentIndex: $currentPageIndex,
+                    totalPages: max(1, totalPages),
+                    document: pdfDocument,
+                    isMangaMode: isMangaMode
+                )
+            ),
             getPageThumbnail: { index in
                 guard let doc = pdfDocument, let page = doc.page(at: index) else { return nil }
                 return page.thumbnail(of: CGSize(width: 140, height: 190), for: .cropBox)
@@ -764,6 +799,132 @@ struct ProPDFReaderEngine: View {
         )
         modelContext.insert(card)
         try? modelContext.save()
+    }
+}
+
+// MARK: - Visual PDF Scrubber (Matches VisualComicScrubber)
+struct VisualPDFScrubber: View {
+    @Binding var currentIndex: Int
+    let totalPages: Int
+    let document: PDFDocument?
+    var isMangaMode: Bool = false
+
+    @State private var dragIndex: Int? = nil
+    @State private var thumbXOffset: CGFloat = 0
+
+    private let trackHeight: CGFloat = 10
+    private let thumbSize: CGFloat = 26
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Thumbnail preview card while scrubbing
+            if let activeIndex = dragIndex, activeIndex >= 0 && activeIndex < totalPages {
+                thumbnailCard(for: activeIndex)
+                    .offset(x: clampedThumbOffset)
+                    .padding(.bottom, 8)
+                    .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .bottom)))
+                    .animation(.spring(response: 0.25, dampingFraction: 0.7), value: dragIndex)
+            }
+
+            GeometryReader { geo in
+                let trackWidth = max(10, geo.size.width - thumbSize)
+                let displayIndex = dragIndex ?? currentIndex
+                let normalized = isMangaMode
+                    ? CGFloat(totalPages - 1 - displayIndex)
+                    : CGFloat(displayIndex)
+                let ratio = totalPages > 1 ? min(max(normalized / CGFloat(totalPages - 1), 0), 1) : 0
+                let thumbX = ratio * trackWidth
+
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Color.white.opacity(0.15))
+                        .frame(height: trackHeight)
+
+                    Capsule()
+                        .fill(
+                            LinearGradient(
+                                colors: [Color.white.opacity(0.9), Color.white.opacity(0.6)],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .frame(width: thumbX + thumbSize, height: trackHeight)
+
+                    Circle()
+                        .fill(Color.white)
+                        .frame(width: thumbSize, height: thumbSize)
+                        .shadow(color: .black.opacity(0.35), radius: 6, y: 2)
+                        .shadow(
+                            color: dragIndex != nil ? Color.white.opacity(0.35) : .clear,
+                            radius: 10
+                        )
+                        .scaleEffect(dragIndex != nil ? 1.15 : 1.0)
+                        .animation(.spring(response: 0.2, dampingFraction: 0.65), value: dragIndex != nil)
+                        .offset(x: thumbX)
+                        .gesture(
+                            DragGesture(minimumDistance: 0)
+                                .onChanged { val in
+                                    let percentage = min(max(val.location.x / max(1, geo.size.width), 0), 1)
+                                    let rawIndex = Int(round(percentage * CGFloat(max(1, totalPages - 1))))
+                                    let targeted = isMangaMode ? (totalPages - 1 - rawIndex) : rawIndex
+                                    thumbXOffset = val.location.x - geo.size.width / 2
+                                    if dragIndex != targeted {
+                                        UISelectionFeedbackGenerator().selectionChanged()
+                                        dragIndex = targeted
+                                    }
+                                }
+                                .onEnded { _ in
+                                    if let final = dragIndex {
+                                        HapticEngine.light()
+                                        currentIndex = final
+                                    }
+                                    dragIndex = nil
+                                }
+                        )
+                }
+                .frame(height: thumbSize)
+            }
+            .frame(height: thumbSize)
+        }
+    }
+
+    private var clampedThumbOffset: CGFloat {
+        max(-80, min(80, thumbXOffset))
+    }
+
+    @ViewBuilder
+    private func thumbnailCard(for index: Int) -> some View {
+        VStack(spacing: 6) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(.ultraThinMaterial)
+                    .frame(width: 72, height: 104)
+
+                if let doc = document, let page = doc.page(at: index) {
+                    Image(uiImage: page.thumbnail(of: CGSize(width: 140, height: 200), for: .cropBox))
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 68, height: 100)
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                } else {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: .white.opacity(0.5)))
+                }
+            }
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(Color.white.opacity(0.2), lineWidth: 0.5)
+            )
+            .shadow(color: .black.opacity(0.5), radius: 14, y: 6)
+
+            Text("\(index + 1) / \(totalPages)")
+                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .foregroundColor(.white)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(.ultraThinMaterial, in: Capsule())
+                .overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 0.5))
+        }
     }
 }
 
