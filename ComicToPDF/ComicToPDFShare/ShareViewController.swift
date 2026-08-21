@@ -9,7 +9,10 @@ class ShareViewController: UIViewController {
         
         let contentView = ShareExtensionView(
             extensionContext: extensionContext,
-            onDismiss: { [weak self] in
+            onCancel: { [weak self] in
+                self?.extensionContext?.completeRequest(returningItems: nil, completionHandler: nil)
+            },
+            onOpenApp: { [weak self] in
                 self?.openHostAppAndComplete()
             }
         )

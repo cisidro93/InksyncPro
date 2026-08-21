@@ -3,7 +3,8 @@ import UniformTypeIdentifiers
 
 struct ShareExtensionView: View {
     let extensionContext: NSExtensionContext?
-    let onDismiss: () -> Void
+    var onCancel: () -> Void = {}
+    var onOpenApp: () -> Void = {}
     
     @State private var selectedFiles: [SharedFile] = []
     @State private var isLoading = true
@@ -242,7 +243,7 @@ struct ShareExtensionView: View {
                             .font(.system(size: 14, weight: .medium, design: .rounded))
                             .foregroundColor(.white.opacity(0.8))
 
-                        Button(action: onDismiss) {
+                        Button(action: onOpenApp) {
                             HStack(spacing: 6) {
                                 Text("Open InkSync Pro")
                                     .font(.system(size: 15, weight: .bold, design: .rounded))
@@ -280,7 +281,7 @@ struct ShareExtensionView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {
-                        onDismiss()
+                        onCancel()
                     }
                     .font(.system(size: 14, weight: .semibold, design: .rounded))
                     .foregroundColor(.white.opacity(0.8))
@@ -541,8 +542,18 @@ struct ShareExtensionView: View {
                         targetExt = Self.detectFileExtension(from: finalURL) ?? (Self.supportedExtensions.contains(ext) ? ext : "pdf")
                     }
 
-                    let cleanBase = (baseName as NSString).deletingPathExtension
-                    let properFilename = "\(cleanBase).\(targetExt)"
+                    // Preserve the authentic original filename from finalURL / source item
+                    let sourceFilename = finalURL.lastPathComponent
+                    let effectiveBase: String
+                    if !sourceFilename.isEmpty && !sourceFilename.hasPrefix("SharedDocument_") && !sourceFilename.hasPrefix("temp_") && !sourceFilename.hasPrefix("tmp_") {
+                        effectiveBase = (sourceFilename as NSString).deletingPathExtension
+                    } else if let suggested = provider.suggestedName, !suggested.isEmpty, !suggested.hasPrefix("SharedDocument_") {
+                        effectiveBase = (suggested as NSString).deletingPathExtension
+                    } else {
+                        effectiveBase = (baseName as NSString).deletingPathExtension
+                    }
+
+                    let properFilename = "\(effectiveBase).\(targetExt)"
                     let targetURL = finalURL.deletingLastPathComponent().appendingPathComponent(properFilename)
                     if targetURL.path != finalURL.path {
                         try? FileManager.default.removeItem(at: targetURL)
