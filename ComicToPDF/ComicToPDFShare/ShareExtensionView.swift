@@ -329,24 +329,31 @@ struct ShareExtensionView: View {
                     let registered = provider.registeredTypeIdentifiers
                     let baseName = provider.suggestedName ?? "SharedDocument_\(UUID().uuidString.prefix(6))"
 
-                    // Build priority list of UTIs to attempt
+                    // Build priority list of UTIs: registered first, then fallbacks
                     var candidateTypes: [String] = []
-                    
-                    // 1. Direct file and URL types
-                    candidateTypes.append(UTType.fileURL.identifier)
-                    candidateTypes.append("public.file-url")
-                    candidateTypes.append("com.apple.cocoa.path")
-                    
-                    // 2. Specific format types
                     for typeId in registered {
                         if !candidateTypes.contains(typeId) {
                             candidateTypes.append(typeId)
                         }
                     }
                     
-                    // 3. Fallback generic types
-                    let genericTypes = [UTType.url.identifier, "public.url", UTType.data.identifier, "public.data", UTType.item.identifier, "public.item"]
-                    for typeId in genericTypes {
+                    let fallbackTypes = [
+                        UTType.fileURL.identifier,
+                        "public.file-url",
+                        "com.adobe.pdf",
+                        UTType.pdf.identifier,
+                        "org.idpf.epub-container",
+                        UTType.epub.identifier,
+                        "com.macrabbit.comicbookzip",
+                        UTType.zip.identifier,
+                        "public.archive",
+                        "public.data",
+                        "public.content",
+                        "public.item",
+                        UTType.url.identifier,
+                        "public.url"
+                    ]
+                    for typeId in fallbackTypes {
                         if !candidateTypes.contains(typeId) {
                             candidateTypes.append(typeId)
                         }
@@ -401,12 +408,15 @@ struct ShareExtensionView: View {
 
                     // Validate final format
                     let ext = (detectedExt ?? detectFileExtension(from: finalURL) ?? finalURL.pathExtension.lowercased()).lowercased()
-                    let targetExt = ext == "zip" ? "cbz" : (ext == "rar" ? "cbr" : ext)
-                    
-                    guard Self.supportedExtensions.contains(targetExt) else {
-                        print("[ShareExt] Unsupported format '\(ext)' for file: \(finalURL.lastPathComponent)")
-                        try? FileManager.default.removeItem(at: finalURL)
-                        continue
+                    let targetExt: String
+                    if ext == "zip" {
+                        targetExt = "cbz"
+                    } else if ext == "rar" {
+                        targetExt = "cbr"
+                    } else if Self.supportedExtensions.contains(ext) {
+                        targetExt = ext
+                    } else {
+                        targetExt = detectFileExtension(from: finalURL) ?? (Self.supportedExtensions.contains(ext) ? ext : "pdf")
                     }
 
                     // Ensure destination file has proper extension
@@ -525,70 +535,73 @@ struct ShareExtensionView: View {
 
     // MARK: - App Group File Operations
 
+    nonisolated private func getAppGroupContainers() -> [URL] {
+        var containers: [URL] = []
+        let groupIDs = [
+            "group.com.antigravity.ComicToPDF",
+            "group.com.antigravity.inksync"
+        ]
+        for id in groupIDs {
+            if let container = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: id) {
+                if !containers.contains(container) {
+                    containers.append(container)
+                }
+            }
+        }
+        if let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
+            if !containers.contains(docs) {
+                containers.append(docs)
+            }
+        }
+        return containers
+    }
+
     nonisolated private func copyToSharedContainer(_ sourceURL: URL, destFilename: String) -> URL? {
-        guard let containerURL = FileManager.default.containerURL(
-            forSecurityApplicationGroupIdentifier: "group.com.antigravity.ComicToPDF"
-        ) else { return nil }
+        let containers = getAppGroupContainers()
+        guard !containers.isEmpty else { return nil }
         
-        let inboxURL = containerURL.appendingPathComponent("Inbox", isDirectory: true)
-        try? FileManager.default.createDirectory(at: inboxURL, withIntermediateDirectories: true)
-        
-        // Preserve clean filename with proper extension
         let cleanDest = destFilename.replacingOccurrences(of: ".tmp", with: "")
-        let destURL = inboxURL.appendingPathComponent(cleanDest)
-        try? FileManager.default.removeItem(at: destURL)
-        
         let accessing = sourceURL.startAccessingSecurityScopedResource()
         defer { if accessing { sourceURL.stopAccessingSecurityScopedResource() } }
         
-        // Coordinated read + copy
-        var coordError: NSError?
-        var didCopy = false
+        var primaryResultURL: URL? = nil
         
-        NSFileCoordinator().coordinate(readingItemAt: sourceURL, options: .withoutChanges, error: &coordError) { safeURL in
+        for container in containers {
+            let inboxURL = container.appendingPathComponent("Inbox", isDirectory: true)
+            try? FileManager.default.createDirectory(at: inboxURL, withIntermediateDirectories: true)
+            let destURL = inboxURL.appendingPathComponent(cleanDest)
+            try? FileManager.default.removeItem(at: destURL)
+            
             do {
-                try FileManager.default.copyItem(at: safeURL, to: destURL)
-                didCopy = true
+                try FileManager.default.copyItem(at: sourceURL, to: destURL)
+                if primaryResultURL == nil { primaryResultURL = destURL }
             } catch {
-                // Fallback atomic write
-                if let data = try? Data(contentsOf: safeURL) {
+                if let data = try? Data(contentsOf: sourceURL) {
                     try? data.write(to: destURL, options: .atomic)
-                    didCopy = true
+                    if primaryResultURL == nil { primaryResultURL = destURL }
                 }
             }
         }
         
-        if didCopy {
-            return destURL
-        }
-        
-        // Direct read fallback if coordinator was skipped
-        if let data = try? Data(contentsOf: sourceURL) {
-            try? data.write(to: destURL, options: .atomic)
-            return destURL
-        }
-        
-        return nil
+        return primaryResultURL
     }
 
     nonisolated private func writeRawDataToSharedContainer(_ data: Data, destFilename: String) -> URL? {
-        guard let containerURL = FileManager.default.containerURL(
-            forSecurityApplicationGroupIdentifier: "group.com.antigravity.ComicToPDF"
-        ) else { return nil }
+        let containers = getAppGroupContainers()
+        guard !containers.isEmpty else { return nil }
         
-        let inboxURL = containerURL.appendingPathComponent("Inbox", isDirectory: true)
-        try? FileManager.default.createDirectory(at: inboxURL, withIntermediateDirectories: true)
-        
-        let destURL = inboxURL.appendingPathComponent(destFilename)
-        try? FileManager.default.removeItem(at: destURL)
-        
-        do {
-            try data.write(to: destURL, options: .atomic)
-            return destURL
-        } catch {
-            print("[ShareExt] Failed to write raw data: \(error.localizedDescription)")
-            return nil
+        var primaryResultURL: URL? = nil
+        for container in containers {
+            let inboxURL = container.appendingPathComponent("Inbox", isDirectory: true)
+            try? FileManager.default.createDirectory(at: inboxURL, withIntermediateDirectories: true)
+            let destURL = inboxURL.appendingPathComponent(destFilename)
+            try? FileManager.default.removeItem(at: destURL)
+            
+            if (try? data.write(to: destURL, options: .atomic)) != nil {
+                if primaryResultURL == nil { primaryResultURL = destURL }
+            }
         }
+        return primaryResultURL
     }
 
     // MARK: - Process and Mark for Library
@@ -631,30 +644,37 @@ struct ShareExtensionView: View {
     }
     
     private func markForConversion(_ file: SharedFile) throws {
-        guard let containerURL = FileManager.default.containerURL(
-            forSecurityApplicationGroupIdentifier: "group.com.antigravity.ComicToPDF"
-        ) else { throw ShareError.noContainer }
+        let containers = getAppGroupContainers()
+        guard !containers.isEmpty else { throw ShareError.noContainer }
         
-        let pendingURL = containerURL.appendingPathComponent("PendingConversions", isDirectory: true)
-        try FileManager.default.createDirectory(at: pendingURL, withIntermediateDirectories: true)
-        
-        // Manifest for tracking
-        let manifest = ConversionManifest(
-            sourceFile: file.name,
-            dateAdded: Date(),
-            status: .pending
-        )
-        
-        let manifestURL = pendingURL.appendingPathComponent("\(file.name).manifest.json")
-        let data = try JSONEncoder().encode(manifest)
-        try data.write(to: manifestURL)
-        
-        // Copy file into PendingConversions
-        let destURL = pendingURL.appendingPathComponent(file.name)
-        try? FileManager.default.removeItem(at: destURL)
-        
-        if FileManager.default.fileExists(atPath: file.url.path) {
-            try FileManager.default.copyItem(at: file.url, to: destURL)
+        for container in containers {
+            let pendingURL = container.appendingPathComponent("PendingConversions", isDirectory: true)
+            let inboxURL = container.appendingPathComponent("Inbox", isDirectory: true)
+            try? FileManager.default.createDirectory(at: pendingURL, withIntermediateDirectories: true)
+            try? FileManager.default.createDirectory(at: inboxURL, withIntermediateDirectories: true)
+            
+            // Manifest for tracking
+            let manifest = ConversionManifest(
+                sourceFile: file.name,
+                dateAdded: Date(),
+                status: .pending
+            )
+            
+            let manifestURL = pendingURL.appendingPathComponent("\(file.name).manifest.json")
+            if let data = try? JSONEncoder().encode(manifest) {
+                try? data.write(to: manifestURL)
+            }
+            
+            // Copy file into PendingConversions & Inbox
+            let destPending = pendingURL.appendingPathComponent(file.name)
+            let destInbox = inboxURL.appendingPathComponent(file.name)
+            try? FileManager.default.removeItem(at: destPending)
+            try? FileManager.default.removeItem(at: destInbox)
+            
+            if FileManager.default.fileExists(atPath: file.url.path) {
+                try? FileManager.default.copyItem(at: file.url, to: destPending)
+                try? FileManager.default.copyItem(at: file.url, to: destInbox)
+            }
         }
     }
 }
