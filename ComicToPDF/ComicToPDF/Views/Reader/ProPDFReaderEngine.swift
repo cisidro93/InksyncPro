@@ -138,95 +138,7 @@ struct ProPDFReaderEngine: View {
             Color.inkBackground
                 .ignoresSafeArea()
 
-            if isReflowMode {
-                ProPDFReflowReaderView(
-                    pdf: pdf,
-                    pdfDocument: pdfDocument,
-                    currentPageIndex: $currentPageIndex,
-                    onDismiss: {
-                        saveReadingProgress()
-                        onDismiss()
-                    },
-                    onToggleReflow: {
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                            isReflowMode = false
-                            prefs.pdfReflowMode = false
-                        }
-                    }
-                )
-            } else if let doc = pdfDocument {
-                // PDF Core Canvas View
-                ZStack {
-                    ProPDFViewRepresentable(
-                        document: doc,
-                        currentPageIndex: $currentPageIndex,
-                        pdfViewRef: $pdfViewReference,
-                        isCroppedMode: isCroppedMode,
-                        isExpandedView: isExpandedView,
-                        onPrevPage: {
-                            jumpToPage(isMangaMode ? currentPageIndex + 1 : currentPageIndex - 1)
-                        },
-                        onNextPage: {
-                            jumpToPage(isMangaMode ? currentPageIndex - 1 : currentPageIndex + 1)
-                        },
-                        onTapCenter: {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                chromeVisible.toggle()
-                            }
-                        },
-                        onTextSelectionChanged: { text in
-                            withAnimation(.easeInOut(duration: 0.18)) {
-                                selectedTextForHUD = text
-                            }
-                        },
-                        onScaleChanged: { scale in
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                activeZoomScale = scale
-                                showZoomPill = true
-                            }
-                            zoomPillTask?.cancel()
-                            zoomPillTask = Task {
-                                try? await Task.sleep(nanoseconds: 1_500_000_000)
-                                guard !Task.isCancelled else { return }
-                                await MainActor.run {
-                                    withAnimation(.easeInOut(duration: 0.3)) {
-                                        showZoomPill = false
-                                    }
-                                }
-                            }
-                        },
-                        onHyperlinkSelected: { destIndex, destPage in
-                            withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
-                                self.pendingLinkPreview = (destIndex, destPage)
-                            }
-                        }
-                    )
-                    .intelligentPDFDarkMode(isEnabled: prefs.themeRaw == EBookTheme.night.rawValue && prefs.readingFilter == .none)
-                    .readingFilter(prefs.readingFilter)
-                    .ignoresSafeArea()
-
-
-                    // PencilKit Ink Bearing Canvas Layer
-                    if isPencilMode {
-                        PageCanvasOverlay(
-                            pdfID: pdf.id,
-                            pageIndex: currentPageIndex,
-                            isMarkupEnabled: isPencilMode
-                        )
-                        .ignoresSafeArea()
-                    }
-                }
-            } else {
-                // Loading State
-                VStack(spacing: 16) {
-                    ProgressView()
-                        .scaleEffect(1.2)
-                        .tint(.inkGreen)
-                    Text("Loading PDF Document...")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(Theme.textSecondary)
-                }
-            }
+            mainContentView
 
             EdgeBrightnessGestureZone()
 
@@ -239,122 +151,12 @@ struct ProPDFReaderEngine: View {
             .allowsHitTesting(false)
             .ignoresSafeArea(edges: .bottom)
 
-            // Zoom Scale Percentage Pill HUD
-            if showZoomPill {
-                VStack {
-                    HStack(spacing: 6) {
-                        Image(systemName: "magnifyingglass")
-                            .font(.system(size: 11, weight: .bold))
-                        Text("\(Int(round(activeZoomScale * 100)))%")
-                            .font(.system(size: 12, weight: .bold, design: .rounded))
-                    }
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 7)
-                    .background(.ultraThinMaterial, in: Capsule())
-                    .overlay(Capsule().stroke(Color.white.opacity(0.2), lineWidth: 0.5))
-                    .shadow(color: .black.opacity(0.25), radius: 8, y: 3)
-                    .padding(.top, chromeVisible ? 70 : 50)
-                    Spacer()
-                }
-                .allowsHitTesting(false)
-                .transition(.opacity.combined(with: .scale(scale: 0.9)))
-                .zIndex(10)
-            }
-
-            // Hyperlink Destination Preview HUD Modal Overlay
-            if let preview = pendingLinkPreview {
-                ZStack {
-                    Color.black.opacity(0.45)
-                        .ignoresSafeArea()
-                        .onTapGesture {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                self.pendingLinkPreview = nil
-                            }
-                        }
-                    
-                    HyperlinkPreviewHUD(
-                        targetPageIndex: preview.pageIndex,
-                        targetPage: preview.targetPage,
-                        onConfirmJump: {
-                            let targetIdx = preview.pageIndex
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                self.pendingLinkPreview = nil
-                            }
-                            jumpToPage(targetIdx)
-                        },
-                        onDismiss: {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                self.pendingLinkPreview = nil
-                            }
-                        }
-                    )
-                    .transition(.scale(scale: 0.92).combined(with: .opacity))
-                }
-                .zIndex(25)
-            }
-
-            // Contextual Text Selection Markup HUD
-            if let selectedText = selectedTextForHUD, !selectedText.isEmpty {
-                VStack {
-                    Spacer()
-                    ProPDFTextSelectionHUD(
-                        selectedText: selectedText,
-                        pageIndex: currentPageIndex,
-                        onHighlight: { color in
-                            saveHighlight(text: selectedText, color: color)
-                            selectedTextForHUD = nil
-                        },
-                        onAddNote: { note in
-                            saveNote(text: selectedText, note: note)
-                            selectedTextForHUD = nil
-                        },
-                        onCopy: {
-                            selectedTextForHUD = nil
-                        },
-                        onSpeak: { text in
-                            speakText(text)
-                        },
-                        onCreateZettelkastenCard: { text in
-                            createZettelkastenCard(text: text)
-                            selectedTextForHUD = nil
-                        },
-                        onAddMarginaliaSymbol: { symbol in
-                            saveMarginalia(text: selectedText, symbol: symbol)
-                            selectedTextForHUD = nil
-                        }
-                    )
-                    .padding(.bottom, chromeVisible ? 80 : 30)
-                    .padding(.horizontal, 20)
-                }
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
-
-            // Master Unified Reader Chrome
+            zoomPillHUD
+            hyperlinkPreviewModal
+            textSelectionHUDOverlay
             readerChromeView
+            filterHUDOverlay
 
-            // Filter Preset HUD
-            if showingFilterHUD {
-                VStack {
-                    Spacer()
-                    FilterHUDView(
-                        activePreset: Binding(
-                            get: { prefs.readingFilter },
-                            set: { prefs.readingFilter = $0 }
-                        ),
-                        onDismiss: {
-                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                                showingFilterHUD = false
-                            }
-                        }
-                    )
-                    .padding(.bottom, chromeVisible ? 84 : 20)
-                }
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-                .zIndex(20)
-            }
-
-            // Live Reading Room Overlay
             if readingRoom.isHosting {
                 ReadingRoomOverlay(
                     session: readingRoom,
@@ -363,7 +165,6 @@ struct ProPDFReaderEngine: View {
                 )
             }
 
-            // Progress Footer when Chrome is hidden
             if !chromeVisible && selectedTextForHUD == nil {
                 KindleProgressFooterView(
                     currentPage: currentPageIndex + 1,
@@ -373,21 +174,7 @@ struct ProPDFReaderEngine: View {
                 .transition(.opacity)
             }
 
-            // Toast Alert Overlay
-            if showToast {
-                Text(toastMessage)
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 10)
-                    .background(.ultraThinMaterial, in: Capsule())
-                    .overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 0.5))
-                    .shadow(color: .black.opacity(0.2), radius: 12, y: 4)
-                    .padding(.bottom, 110)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-                    .zIndex(100)
-            }
-
+            toastAlertOverlay
             ReadingJumpToastOverlay()
         }
         .focusable()
@@ -474,15 +261,245 @@ struct ProPDFReaderEngine: View {
                 onDismiss: { showCropAdjustmentSheet = false }
             )
         }
-
     }
 
+    // MARK: - Subviews for Fast Compiler Type-Checking
+
+    @ViewBuilder private var mainContentView: some View {
+        if isReflowMode {
+            ProPDFReflowReaderView(
+                pdf: pdf,
+                pdfDocument: pdfDocument,
+                currentPageIndex: $currentPageIndex,
+                onDismiss: {
+                    saveReadingProgress()
+                    onDismiss()
+                },
+                onToggleReflow: {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                        isReflowMode = false
+                        prefs.pdfReflowMode = false
+                    }
+                }
+            )
+        } else if let doc = pdfDocument {
+            pdfCanvasView(document: doc)
+        } else {
+            pdfLoadingView
+        }
+    }
+
+    @ViewBuilder private func pdfCanvasView(document: PDFDocument) -> some View {
+        ZStack {
+            ProPDFViewRepresentable(
+                document: document,
+                currentPageIndex: $currentPageIndex,
+                pdfViewRef: $pdfViewReference,
+                isCroppedMode: isCroppedMode,
+                isExpandedView: isExpandedView,
+                onPrevPage: {
+                    jumpToPage(isMangaMode ? currentPageIndex + 1 : currentPageIndex - 1)
+                },
+                onNextPage: {
+                    jumpToPage(isMangaMode ? currentPageIndex - 1 : currentPageIndex + 1)
+                },
+                onTapCenter: {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        chromeVisible.toggle()
+                    }
+                },
+                onTextSelectionChanged: { text in
+                    withAnimation(.easeInOut(duration: 0.18)) {
+                        selectedTextForHUD = text
+                    }
+                },
+                onScaleChanged: { scale in
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                        activeZoomScale = scale
+                        showZoomPill = true
+                    }
+                    zoomPillTask?.cancel()
+                    zoomPillTask = Task {
+                        try? await Task.sleep(nanoseconds: 1_500_000_000)
+                        guard !Task.isCancelled else { return }
+                        await MainActor.run {
+                            withAnimation(.easeInOut(duration: 0.3)) {
+                                showZoomPill = false
+                            }
+                        }
+                    }
+                },
+                onHyperlinkSelected: { destIndex, destPage in
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+                        self.pendingLinkPreview = (destIndex, destPage)
+                    }
+                }
+            )
+            .intelligentPDFDarkMode(isEnabled: prefs.themeRaw == EBookTheme.night.rawValue && prefs.readingFilter == .none)
+            .readingFilter(prefs.readingFilter)
+            .ignoresSafeArea()
+
+            if isPencilMode {
+                PageCanvasOverlay(
+                    pdfID: pdf.id,
+                    pageIndex: currentPageIndex,
+                    isMarkupEnabled: isPencilMode
+                )
+                .ignoresSafeArea()
+            }
+        }
+    }
+
+    @ViewBuilder private var pdfLoadingView: some View {
+        VStack(spacing: 16) {
+            ProgressView()
+                .scaleEffect(1.2)
+                .tint(.inkGreen)
+            Text("Loading PDF Document...")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(Theme.textSecondary)
+        }
+    }
+
+    @ViewBuilder private var zoomPillHUD: some View {
+        if showZoomPill {
+            let scalePct = Int(round(activeZoomScale * 100))
+            VStack {
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 11, weight: .bold))
+                    Text("\(scalePct)%")
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 7)
+                .background(.ultraThinMaterial, in: Capsule())
+                .overlay(Capsule().stroke(Color.white.opacity(0.2), lineWidth: 0.5))
+                .shadow(color: .black.opacity(0.25), radius: 8, y: 3)
+                .padding(.top, chromeVisible ? 70 : 50)
+                Spacer()
+            }
+            .allowsHitTesting(false)
+            .transition(.opacity.combined(with: .scale(scale: 0.9)))
+            .zIndex(10)
+        }
+    }
+
+    @ViewBuilder private var hyperlinkPreviewModal: some View {
+        if let preview = pendingLinkPreview {
+            ZStack {
+                Color.black.opacity(0.45)
+                    .ignoresSafeArea()
+                    .onTapGesture {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            self.pendingLinkPreview = nil
+                        }
+                    }
+                
+                HyperlinkPreviewHUD(
+                    targetPageIndex: preview.pageIndex,
+                    targetPage: preview.targetPage,
+                    onConfirmJump: {
+                        let targetIdx = preview.pageIndex
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            self.pendingLinkPreview = nil
+                        }
+                        jumpToPage(targetIdx)
+                    },
+                    onDismiss: {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            self.pendingLinkPreview = nil
+                        }
+                    }
+                )
+                .transition(.scale(scale: 0.92).combined(with: .opacity))
+            }
+            .zIndex(25)
+        }
+    }
+
+    @ViewBuilder private var textSelectionHUDOverlay: some View {
+        if let selectedText = selectedTextForHUD, !selectedText.isEmpty {
+            VStack {
+                Spacer()
+                ProPDFTextSelectionHUD(
+                    selectedText: selectedText,
+                    pageIndex: currentPageIndex,
+                    onHighlight: { color in
+                        saveHighlight(text: selectedText, color: color)
+                        selectedTextForHUD = nil
+                    },
+                    onAddNote: { note in
+                        saveNote(text: selectedText, note: note)
+                        selectedTextForHUD = nil
+                    },
+                    onCopy: {
+                        selectedTextForHUD = nil
+                    },
+                    onSpeak: { text in
+                        speakText(text)
+                    },
+                    onCreateZettelkastenCard: { text in
+                        createZettelkastenCard(text: text)
+                        selectedTextForHUD = nil
+                    },
+                    onAddMarginaliaSymbol: { symbol in
+                        saveMarginalia(text: selectedText, symbol: symbol)
+                        selectedTextForHUD = nil
+                    }
+                )
+                .padding(.bottom, chromeVisible ? 80 : 30)
+                .padding(.horizontal, 20)
+            }
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
+    }
+
+    @ViewBuilder private var filterHUDOverlay: some View {
+        if showingFilterHUD {
+            VStack {
+                Spacer()
+                FilterHUDView(
+                    activePreset: Binding(
+                        get: { prefs.readingFilter },
+                        set: { prefs.readingFilter = $0 }
+                    ),
+                    onDismiss: {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                            showingFilterHUD = false
+                        }
+                    }
+                )
+                .padding(.bottom, chromeVisible ? 84 : 20)
+            }
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+            .zIndex(20)
+        }
+    }
+
+    @ViewBuilder private var toastAlertOverlay: some View {
+        if showToast {
+            Text(toastMessage)
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 18)
+                .padding(.vertical, 10)
+                .background(.ultraThinMaterial, in: Capsule())
+                .overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 0.5))
+                .shadow(color: .black.opacity(0.2), radius: 12, y: 4)
+                .padding(.bottom, 110)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .zIndex(100)
+        }
+    }
 
     // MARK: - Master Unified Reader Chrome
     @ViewBuilder private var readerChromeView: some View {
+        let pageStatus = "\(currentPageIndex + 1) / \(max(1, totalPages))  •  \(velocityEngine.estimatedTimeRemaining)"
         ReaderChrome(
             title: pdf.name,
-            pageText: "\(currentPageIndex + 1) / \(max(1, totalPages))  •  \(velocityEngine.estimatedTimeRemaining)",
+            pageText: pageStatus,
             isVisible: $chromeVisible,
             onBack: {
                 saveReadingProgress()
@@ -567,7 +584,6 @@ struct ProPDFReaderEngine: View {
                 }
             },
             isSettingsActive: showingSettings,
-            sessionStartTime: sessionStartTime,
             isInRoom: readingRoom.isHosting,
             roomPeerCount: readingRoom.peers.count,
             onRoomToggle: {
@@ -577,6 +593,7 @@ struct ProPDFReaderEngine: View {
                     readingRoom.startHosting(bookID: pdf.id.uuidString)
                 }
             },
+            sessionStartTime: sessionStartTime,
             onSwipeDown: {
                 saveReadingProgress()
                 onDismiss()
