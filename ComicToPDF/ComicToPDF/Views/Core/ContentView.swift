@@ -288,7 +288,11 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
             Logger.shared.log("App returned to foreground: trigger auto scan for shared container files", category: "Import")
-            conversionManager.scanLibrary()
+            // Give the Share Extension 0.5s to finish any final writes before scanning
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                conversionManager.scanLibrary()
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("SwitchToLibraryTab"))) { _ in
             // No-op
@@ -318,18 +322,22 @@ struct ContentView: View {
             
             if url.scheme == "inksyncpro" {
                 Task { @MainActor in
-                    try? await Task.sleep(nanoseconds: 800_000_000) // 0.8s grace period for file writes to finish
+                    // Allow up to 1.5s for the Share Extension to finish writing files
+                    // before the first scan — critical for large comics/PDFs on iPad
+                    try? await Task.sleep(nanoseconds: 1_500_000_000)
                     conversionManager.scanLibrary()
+                    // Navigate to Library tab so imported file is immediately visible
+                    router.selectedTab = .library
                     withAnimation(.spring()) {
                         activeToast = ToastMessage(
-                            title: "Library Sync",
-                            message: "Shared files added to library.",
+                            title: "Files Imported",
+                            message: "Shared files added to your library.",
                             systemImage: "arrow.down.doc.fill",
                             type: .success
                         )
                     }
-                    // Second deferred scan pass for large files
-                    try? await Task.sleep(nanoseconds: 2_000_000_000)
+                    // Second deferred scan pass to catch stragglers for large files
+                    try? await Task.sleep(nanoseconds: 3_000_000_000)
                     conversionManager.scanLibrary()
                 }
                 return

@@ -1125,13 +1125,19 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         pdfView.delegate = context.coordinator
         pdfView.document = document
         pdfView.autoScales = true
-        pdfView.minScaleFactor = 0.5
-        pdfView.maxScaleFactor = 5.0
+        // minScaleFactor must not be hardcoded — it must be <= scaleFactorForSizeToFit
+        // or PDFKit will render a denied/clipped view on iPad. Always set it AFTER
+        // the document is assigned, using scaleFactorForSizeToFit as the floor.
+        let fitScale = max(0.02, pdfView.scaleFactorForSizeToFit)
+        pdfView.minScaleFactor = fitScale
+        pdfView.maxScaleFactor = fitScale * 7.0
         pdfView.displayDirection = .horizontal
         pdfView.pageBreakMargins = UIEdgeInsets.zero
         pdfView.pageShadowsEnabled = true
-        pdfView.backgroundColor = .clear
-        pdfView.isOpaque = false
+        // Use opaque black background — .clear / isOpaque=false triggers iPadOS
+        // PDFKit's grey denied-page render path on certain iOS versions.
+        pdfView.backgroundColor = UIColor.black
+        pdfView.isOpaque = true
         pdfView.insetsLayoutMarginsFromSafeArea = false
         pdfView.usePageViewController(false)
 
@@ -1145,8 +1151,8 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         pdfView.pageBreakMargins = UIEdgeInsets(top: 0, left: margin, bottom: 0, right: margin)
 
         if let scrollView = pdfView.subviews.first(where: { $0 is UIScrollView }) as? UIScrollView {
-            scrollView.maximumZoomScale = 5.0
-            scrollView.minimumZoomScale = 0.5
+            scrollView.maximumZoomScale = fitScale * 7.0
+            scrollView.minimumZoomScale = fitScale
         }
 
         // Single Tap gesture setup
@@ -1184,6 +1190,22 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
 
         pdfView.layoutDocumentView()
 
+        // Deferred scale correction: run after the SwiftUI layout pass has given
+        // PDFView its final frame size. Without this, scaleFactorForSizeToFit
+        // is computed against a zero rect and the document renders denied/blank.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak pdfView] in
+            guard let pdfView else { return }
+            let correctedFit = max(0.02, pdfView.scaleFactorForSizeToFit)
+            pdfView.minScaleFactor = correctedFit
+            pdfView.maxScaleFactor = correctedFit * 7.0
+            if let sv = pdfView.subviews.first(where: { $0 is UIScrollView }) as? UIScrollView {
+                sv.minimumZoomScale = correctedFit
+                sv.maximumZoomScale = correctedFit * 7.0
+            }
+            pdfView.scaleFactor = correctedFit
+            pdfView.layoutDocumentView()
+        }
+
         DispatchQueue.main.async {
             self.pdfViewRef = pdfView
         }
@@ -1194,6 +1216,15 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
     func updateUIView(_ uiView: PDFView, context: Context) {
         if uiView.document != document {
             uiView.document = document
+            // Recompute fit scale after document swap
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak uiView] in
+                guard let uiView else { return }
+                let correctedFit = max(0.02, uiView.scaleFactorForSizeToFit)
+                uiView.minScaleFactor = correctedFit
+                uiView.maxScaleFactor = correctedFit * 7.0
+                uiView.scaleFactor = correctedFit
+                uiView.layoutDocumentView()
+            }
         }
 
         let prefs = EBookPreferences.shared
@@ -1225,14 +1256,17 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
             context.coordinator.lastCropMode = isCroppedMode
             context.coordinator.lastTextMargin = prefs.textMargin
 
+            // Recompute fitScale against actual current frame before applying
+            let fitScale = max(0.02, uiView.scaleFactorForSizeToFit)
+            uiView.minScaleFactor = fitScale
+            uiView.maxScaleFactor = fitScale * 7.0
+
             if isExpandedView {
-                let fitScale = uiView.scaleFactorForSizeToFit
-                let targetScale = max(fitScale * 1.35, 1.25)
+                let targetScale = max(fitScale * 1.35, fitScale + 0.1)
                 if abs(uiView.scaleFactor - targetScale) > 0.05 {
                     uiView.scaleFactor = targetScale
                 }
             } else if context.coordinator.userCustomZoomScale == nil {
-                let fitScale = uiView.scaleFactorForSizeToFit
                 if fitScale > 0 && abs(uiView.scaleFactor - fitScale) > 0.01 {
                     uiView.scaleFactor = fitScale
                 }

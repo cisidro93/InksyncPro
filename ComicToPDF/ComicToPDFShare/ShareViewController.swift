@@ -7,7 +7,6 @@ class ShareViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         
-        // Create SwiftUI view
         let contentView = ShareExtensionView(
             extensionContext: extensionContext,
             onDismiss: { [weak self] in
@@ -15,7 +14,6 @@ class ShareViewController: UIViewController {
             }
         )
         
-        // Host SwiftUI in UIKit
         let hostingController = UIHostingController(rootView: contentView)
         addChild(hostingController)
         view.addSubview(hostingController.view)
@@ -33,66 +31,22 @@ class ShareViewController: UIViewController {
     
     @MainActor
     private func openHostAppAndComplete() {
-        guard let url = URL(string: "inksyncpro://shared-import") else {
-            self.completeShareExtension()
+        // extensionContext.open is the ONLY valid mechanism to launch the host app
+        // from an iOS Share Extension — the extension runs in a separate sandboxed
+        // process and cannot access UIApplication.shared.
+        guard let url = URL(string: "inksyncpro://shared-import"),
+              let context = self.extensionContext else {
+            self.extensionContext?.completeRequest(returningItems: nil, completionHandler: nil)
             return
         }
         
-        // Strategy 1: Dynamic UIApplication invocation via Obj-C runtime (Universal iOS Extension pattern)
-        if let appClass = NSClassFromString("UIApplication") as? NSObject.Type,
-           let sharedApp = appClass.perform(NSSelectorFromString("sharedApplication"))?.takeUnretainedValue() as? NSObject {
-            let openSelector = NSSelectorFromString("openURL:options:completionHandler:")
-            if sharedApp.responds(to: openSelector) {
-                typealias OpenURLMethod = @convention(c) (NSObject, Selector, NSURL, NSDictionary, (@convention(block) (Bool) -> Void)?) -> Void
-                let methodIMP = sharedApp.method(for: openSelector)
-                let openFunc = unsafeBitCast(methodIMP, to: OpenURLMethod.self)
-                openFunc(sharedApp, openSelector, url as NSURL, [:] as NSDictionary, { [weak self] _ in
-                    Task { @MainActor [weak self] in
-                        self?.completeShareExtension()
-                    }
-                })
-                return
-            } else {
-                let simpleOpen = NSSelectorFromString("openURL:")
-                if sharedApp.responds(to: simpleOpen) {
-                    _ = sharedApp.perform(simpleOpen, with: url)
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-                        self?.completeShareExtension()
-                    }
-                    return
-                }
+        context.open(url) { [weak self] success in
+            // Note: the completion handler success value is unreliable on iPadOS —
+            // the system may return false even when the app successfully opens.
+            // Always complete the extension request regardless.
+            Task { @MainActor [weak self] in
+                self?.extensionContext?.completeRequest(returningItems: nil, completionHandler: nil)
             }
         }
-        
-        // Strategy 2: Responder chain traversal for openURL:
-        let selector = NSSelectorFromString("openURL:")
-        var current: UIResponder? = self
-        while let r = current {
-            if r.responds(to: selector) {
-                r.perform(selector, with: url)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-                    self?.completeShareExtension()
-                }
-                return
-            }
-            current = r.next
-        }
-        
-        // Strategy 3: NSExtensionContext fallback
-        if let context = self.extensionContext {
-            context.open(url) { [weak self] _ in
-                Task { @MainActor [weak self] in
-                    self?.completeShareExtension()
-                }
-            }
-            return
-        }
-        
-        self.completeShareExtension()
-    }
-
-    @MainActor
-    private func completeShareExtension() {
-        self.extensionContext?.completeRequest(returningItems: nil, completionHandler: nil)
     }
 }
