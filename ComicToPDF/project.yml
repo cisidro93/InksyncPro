@@ -121,11 +121,11 @@ targets:
             LSItemContentTypes:
               - org.7-zip.7-zip-archive
           - CFBundleTypeName: "PDF Document"
-            LSHandlerRank: Alternate
+            LSHandlerRank: Owner
             LSItemContentTypes:
               - com.adobe.pdf
           - CFBundleTypeName: "EPUB eBook"
-            LSHandlerRank: Alternate
+            LSHandlerRank: Owner
             LSItemContentTypes:
               - org.idpf.epub-container
         UTImportedTypeDeclarations:
@@ -159,16 +159,6 @@ targets:
             UTTypeConformsTo: [public.archive]
             UTTypeTagSpecification:
               public.filename-extension: [7z, cb7]
-          - UTTypeIdentifier: org.idpf.epub-container
-            UTTypeDescription: EPUB eBook
-            UTTypeConformsTo: [public.data]
-            UTTypeTagSpecification:
-              public.filename-extension: [epub]
-          - UTTypeIdentifier: com.adobe.pdf
-            UTTypeDescription: PDF Document
-            UTTypeConformsTo: [public.data]
-            UTTypeTagSpecification:
-              public.filename-extension: [pdf]
         UTExportedTypeDeclarations:
           - UTTypeIdentifier: com.antigravity.cbz
             UTTypeDescription: Comic Book Archive (Zip)
