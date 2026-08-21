@@ -87,23 +87,21 @@ struct UnifiedReaderView: View {
                 ZStack {
                     Color(hex: "#0a0a0f").edgesIgnoringSafeArea(.all)
                     
-                    if needsEPUBComicCheck {
+                    if pdf.url.pathExtension.lowercased() == "pdf" || pdf.name.lowercased().hasSuffix(".pdf") {
+                        ProPDFReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
+                    } else if needsEPUBComicCheck {
                         ProgressView("Loading…")
                             .foregroundColor(.white)
-                    } else {
-                        if let isComic = epubComicCheckResult {
-                            if isComic {
-                                ComicReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
-                            } else {
-                                BookReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
-                            }
+                    } else if let isComic = epubComicCheckResult {
+                        if isComic {
+                            ComicReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
                         } else {
-                            if pdf.url.pathExtension.lowercased() == "pdf" {
-                                ProPDFReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
-                            } else {
-                                ComicReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
-                            }
+                            BookReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
                         }
+                    } else if pdf.url.pathExtension.lowercased() == "epub" || pdf.name.lowercased().hasSuffix(".epub") {
+                        BookReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
+                    } else {
+                        ComicReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)

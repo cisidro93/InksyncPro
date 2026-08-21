@@ -145,8 +145,13 @@ actor LibraryScanner {
             return (rels, paths)
         }
 
-        // Scan both the Documents directory and the Wi-Fi transfer Inbox
-        let dirsToScan = [docDir, inboxDir]
+        // Scan Documents directory, Wi-Fi transfer Inbox, and all shared App Group staging directories
+        let sharedScanDirs = scannedGroupURLs.flatMap { [
+            $0.appendingPathComponent("Inbox", isDirectory: true),
+            $0.appendingPathComponent("PendingConversions", isDirectory: true),
+            $0.appendingPathComponent("ShareStaging", isDirectory: true)
+        ]}
+        let dirsToScan = [docDir, inboxDir] + sharedScanDirs
 
         for scanDir in dirsToScan {
             guard let enumerator = fileManager.enumerator(
