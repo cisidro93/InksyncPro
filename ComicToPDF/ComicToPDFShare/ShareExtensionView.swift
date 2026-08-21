@@ -193,6 +193,7 @@ struct ShareExtensionView: View {
                 }
             }
         }
+        .navigationViewStyle(.stack)
         .onAppear {
             loadSharedFiles()
         }
@@ -651,10 +652,13 @@ struct ShareExtensionView: View {
         errorMessage = nil
         
         Task {
+            var anyErrors = false
+            var stagedCount = 0
+            
             for (index, file) in selectedFiles.enumerated() {
                 await MainActor.run {
                     currentFileName = file.name
-                    processingProgress = Double(index) / Double(selectedFiles.count)
+                    processingProgress = Double(index) / Double(max(1, selectedFiles.count))
                 }
                 
                 do {
@@ -666,9 +670,12 @@ struct ShareExtensionView: View {
                         }
                         processedCount += 1
                     }
+                    stagedCount += 1
                 } catch {
+                    anyErrors = true
+                    print("[ShareExt] Error: Failed to stage \(file.name): \(error)")
                     await MainActor.run {
-                        errorMessage = "Failed to stage \(file.name)"
+                        errorMessage = "Failed to stage \(file.name): \(error.localizedDescription)"
                     }
                 }
             }
@@ -676,7 +683,17 @@ struct ShareExtensionView: View {
             await MainActor.run {
                 processingProgress = 1.0
                 isProcessing = false
-                showingSuccess = true
+                if stagedCount > 0 && !anyErrors {
+                    showingSuccess = true
+                } else if stagedCount == 0 {
+                    showingSuccess = false
+                    if errorMessage == nil {
+                        errorMessage = "Failed to stage shared documents to App Group container"
+                    }
+                } else {
+                    // Partial success
+                    showingSuccess = true
+                }
             }
         }
     }
@@ -685,15 +702,15 @@ struct ShareExtensionView: View {
         let containers = Self.getAppGroupContainers()
         guard !containers.isEmpty else { throw ShareError.noContainer }
 
-        // Bug 3 fix: Validate source file ONCE before the container loop.
-        // Previously the guard was INSIDE the loop with `continue`, which skips
-        // to the next container rather than throwing. Since file.url points into
-        // the first container's ShareStaging/, the fileExists check always fails
-        // for subsequent containers — silently writing nothing to PendingConversions.
+        let accessing = file.url.startAccessingSecurityScopedResource()
+        defer { if accessing { file.url.stopAccessingSecurityScopedResource() } }
+
         guard FileManager.default.fileExists(atPath: file.url.path) else {
             print("[ShareExt] Error: Source file does not exist at \(file.url.path)")
             throw ShareError.copyFailed
         }
+
+        var successfulStagings = 0
 
         for container in containers {
             let pendingURL = container.appendingPathComponent("PendingConversions", isDirectory: true)
@@ -708,21 +725,56 @@ struct ShareExtensionView: View {
             )
             let manifestURL = pendingURL.appendingPathComponent("\(file.name).manifest.json")
             if let data = try? JSONEncoder().encode(manifest) {
-                try? data.write(to: manifestURL)
+                try? data.write(to: manifestURL, options: .atomic)
             }
 
             let destPending = pendingURL.appendingPathComponent(file.name)
             let destInbox = inboxURL.appendingPathComponent(file.name)
 
-            if file.url.path != destPending.path {
-                try? FileManager.default.removeItem(at: destPending)
-                try FileManager.default.copyItem(at: file.url, to: destPending)
+            var didStagePending = false
+            var didStageInbox = false
+
+            if file.url.path == destPending.path {
+                didStagePending = true
+            } else {
+                didStagePending = Self.safeCopyOrWrite(from: file.url, to: destPending)
             }
-            if file.url.path != destInbox.path {
-                try? FileManager.default.removeItem(at: destInbox)
-                try FileManager.default.copyItem(at: file.url, to: destInbox)
+
+            if file.url.path == destInbox.path {
+                didStageInbox = true
+            } else {
+                didStageInbox = Self.safeCopyOrWrite(from: file.url, to: destInbox)
+            }
+
+            if didStagePending || didStageInbox {
+                successfulStagings += 1
             }
         }
+
+        if successfulStagings == 0 {
+            throw ShareError.copyFailed
+        }
+    }
+
+    nonisolated static func safeCopyOrWrite(from sourceURL: URL, to destURL: URL) -> Bool {
+        let accessing = sourceURL.startAccessingSecurityScopedResource()
+        defer { if accessing { sourceURL.stopAccessingSecurityScopedResource() } }
+
+        let parentDir = destURL.deletingLastPathComponent()
+        try? FileManager.default.createDirectory(at: parentDir, withIntermediateDirectories: true)
+        try? FileManager.default.removeItem(at: destURL)
+
+        do {
+            try FileManager.default.copyItem(at: sourceURL, to: destURL)
+            return true
+        } catch {
+            if let data = try? Data(contentsOf: sourceURL, options: .alwaysMapped) {
+                if (try? data.write(to: destURL, options: .atomic)) != nil {
+                    return true
+                }
+            }
+        }
+        return false
     }
 }
 
