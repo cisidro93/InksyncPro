@@ -118,7 +118,7 @@ final class PDFDiagnosticEngine: ObservableObject {
             lines.append(" • Displays As Book: \(pv.displaysAsBook ? "📖 YES" : "📄 NO")")
             lines.append(" • Display Direction: \(pv.displayDirection == .horizontal ? "Horizontal ↔" : "Vertical ↕")")
             lines.append(" • Is Opaque: \(pv.isOpaque ? "YES" : "NO")")
-            lines.append(" • Background Color: \(pv.backgroundColor?.description ?? "nil")")
+            lines.append(" • Background Color: \(String(describing: pv.backgroundColor))")
             lines.append(" • Page Break Margins: L:\(Int(pv.pageBreakMargins.left)) R:\(Int(pv.pageBreakMargins.right)) T:\(Int(pv.pageBreakMargins.top)) B:\(Int(pv.pageBreakMargins.bottom))")
             
             if let sv = pv.subviews.first(where: { $0 is UIScrollView }) as? UIScrollView {
