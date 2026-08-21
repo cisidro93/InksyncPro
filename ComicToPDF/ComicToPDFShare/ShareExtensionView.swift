@@ -15,7 +15,7 @@ struct ShareExtensionView: View {
     @State private var errorMessage: String?
     
     // Supported extensions across all formats
-    private static let supportedExtensions: Set<String> = [
+    nonisolated static let supportedExtensions: Set<String> = [
         "pdf", "epub", "cbz", "cbr", "cb7", "cbt", "zip", "rar", "7z", "tar"
     ]
     
