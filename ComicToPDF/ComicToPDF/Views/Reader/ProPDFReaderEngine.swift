@@ -603,7 +603,7 @@ struct ProPDFReaderEngine: View {
                     self.pdfDocument = loadedDoc
                     self.currentPageIndex = max(0, min(savedIndex, loadedDoc.pageCount - 1))
                     let savedCrop = ReaderProgressTracker.shared.cropInsets(for: sourcePDF.id)
-                    let initialCrop = savedCrop ?? (self.prefs.defaultCropModeRaw == "smartAuto" ? .smartAuto : CodableCropInsets(top: self.prefs.defaultCropTop, bottom: self.prefs.defaultCropBottom, left: self.prefs.defaultCropLeft, right: self.prefs.defaultCropRight, modeRaw: self.prefs.defaultCropModeRaw))
+                    let initialCrop = savedCrop ?? (self.prefs.defaultCropModeRaw == "smartAuto" ? .smartAuto : .none)
                     self.applyCropInsets(initialCrop)
                     
                     // Ingest native third-party PDF annotations into AnnotationStore
@@ -761,16 +761,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         pdfView.backgroundColor = .clear
         pdfView.isOpaque = false
         pdfView.insetsLayoutMarginsFromSafeArea = false
-
-        let prefs = EBookPreferences.shared
-        let isLandscape = UIScreen.main.bounds.width > UIScreen.main.bounds.height
-        let isDual = prefs.pdfDualPage || (prefs.autoLandscapeDualPage && isLandscape)
-        let spineLoc: UIPageViewController.SpineLocation = isDual ? .mid : .min
-        let options: [UIPageViewController.OptionsKey: Any] = [
-            .spineLocation: NSNumber(value: spineLoc.rawValue),
-            .interPageSpacing: 16.0
-        ]
-        pdfView.usePageViewController(true, withViewOptions: options)
+        pdfView.usePageViewController(false)
 
         if let scrollView = pdfView.subviews.first(where: { $0 is UIScrollView }) as? UIScrollView {
             scrollView.maximumZoomScale = 10.0
