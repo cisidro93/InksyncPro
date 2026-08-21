@@ -31,16 +31,22 @@ class ShareViewController: UIViewController {
         hostingController.didMove(toParent: self)
     }
     
+    @MainActor
     private func openHostAppAndComplete() {
-        guard let url = URL(string: "inksyncpro://shared-import") else {
-            extensionContext?.completeRequest(returningItems: nil, completionHandler: nil)
+        guard let url = URL(string: "inksyncpro://shared-import"),
+              let context = self.extensionContext else {
+            self.completeShareExtension()
             return
         }
-        let context = self.extensionContext
-        context?.open(url) { _ in
-            DispatchQueue.main.async {
-                context?.completeRequest(returningItems: nil, completionHandler: nil)
+        context.open(url) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.completeShareExtension()
             }
         }
+    }
+
+    @MainActor
+    private func completeShareExtension() {
+        self.extensionContext?.completeRequest(returningItems: nil, completionHandler: nil)
     }
 }

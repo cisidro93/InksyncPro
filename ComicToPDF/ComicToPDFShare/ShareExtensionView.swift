@@ -321,8 +321,7 @@ struct ShareExtensionView: View {
             return
         }
 
-        let sessionID = sessionStagingID
-        Task.detached(priority: .userInitiated) { [inputItems] in
+        Task { @MainActor in
             var filesToProcess: [SharedFile] = []
 
             for item in inputItems {
@@ -438,11 +437,9 @@ struct ShareExtensionView: View {
                     ))
                 }
             }
-            _ = sessionID // suppress unused warning
-            await MainActor.run {
-                self.selectedFiles = filesToProcess
-                self.isLoading = false
-            }
+
+            self.selectedFiles = filesToProcess
+            self.isLoading = false
         }
     }
 
