@@ -25,7 +25,6 @@ struct ProPDFReaderEngine: View {
     @State private var isExpandedView = false
     @State private var isReflowMode = false
     @State private var showingFilterHUD = false
-    @State private var showingDiagnosticHUD = false
     @State private var shareAnnotatedPDFURL: URL? = nil
 
     // Text Selection & Markup HUD
@@ -186,33 +185,11 @@ struct ProPDFReaderEngine: View {
 
             // Floating Time & Battery Header
             VStack {
-                HStack(spacing: 10) {
-                    FloatingReaderClockOverlay()
-                        .onTapGesture {
-                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                                showingDiagnosticHUD.toggle()
-                            }
-                            HapticEngine.medium()
-                        }
-
-                    Button(action: {
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                            showingDiagnosticHUD.toggle()
-                        }
-                        HapticEngine.medium()
-                    }) {
-                        Image(systemName: "stethoscope.circle.fill")
-                            .font(.system(size: 15, weight: .bold))
-                            .foregroundStyle(.orange)
-                            .padding(6)
-                            .background(.ultraThinMaterial, in: Circle())
-                            .overlay(Circle().stroke(Color.white.opacity(0.2), lineWidth: 0.5))
-                            .shadow(color: .black.opacity(0.3), radius: 4)
-                    }
-                }
-                .padding(.top, 8)
+                FloatingReaderClockOverlay()
+                    .padding(.top, 8)
                 Spacer()
             }
+            .allowsHitTesting(false)
             .ignoresSafeArea(edges: .bottom)
 
             zoomPillHUD
@@ -240,32 +217,6 @@ struct ProPDFReaderEngine: View {
 
             toastAlertOverlay
             ReadingJumpToastOverlay()
-
-            if showingDiagnosticHUD {
-                ZStack {
-                    Color.black.opacity(0.45)
-                        .ignoresSafeArea()
-                        .onTapGesture {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                showingDiagnosticHUD = false
-                            }
-                        }
-
-                    PDFDiagnosticHUDView(
-                        pdf: pdf,
-                        document: pdfDocument,
-                        pdfView: pdfViewReference,
-                        currentPageIndex: currentPageIndex,
-                        onDismiss: {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                showingDiagnosticHUD = false
-                            }
-                        }
-                    )
-                    .transition(.scale(scale: 0.92).combined(with: .opacity))
-                }
-                .zIndex(200)
-            }
         }
         .overlay {
             if prefs.showReadingRuler {
@@ -816,14 +767,6 @@ struct ProPDFReaderEngine: View {
                     
                     // Ingest native third-party PDF annotations into AnnotationStore
                     _ = PDFAnnotationSyncBridge.shared.importNativeAnnotations(from: doc, for: sourcePDF.id)
-
-                    // Run real-time diagnostic engine
-                    _ = PDFDiagnosticEngine.shared.inspect(
-                        pdf: sourcePDF,
-                        document: doc,
-                        pdfView: self.pdfViewReference,
-                        currentPageIndex: self.currentPageIndex
-                    )
                 }
             } else {
                 accessedURL?.stopAccessingSecurityScopedResource()
@@ -1456,12 +1399,6 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
             if self.parent.currentPageIndex != idx {
                 self.lastTargetPageIndex = idx
                 self.parent.currentPageIndex = idx
-                _ = PDFDiagnosticEngine.shared.inspect(
-                    pdf: self.parent.pdf,
-                    document: doc,
-                    pdfView: pdfView,
-                    currentPageIndex: idx
-                )
             }
         }
 
