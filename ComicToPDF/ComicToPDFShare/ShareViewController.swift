@@ -32,14 +32,12 @@ class ShareViewController: UIViewController {
     @MainActor
     private func openHostAppAndComplete() {
         guard let deepLinkURL = URL(string: "inksyncpro://shared-import") else {
-            extensionContext?.completeRequest(returningItems: nil)
+            extensionContext?.completeRequest(returningItems: nil, completionHandler: nil)
             return
         }
 
-        // Write a pending-import flag to App Group UserDefaults BEFORE launching.
-        // ContentView's willEnterForeground handler reads this flag and triggers
-        // a library scan + Library tab navigation even if the URL callback is skipped
-        // on iPadOS multi-window configurations.
+        // 1. Write pending-import flags to all App Group UserDefaults so the main app
+        // automatically detects and scans imported documents upon entering foreground
         let groupIDs = [
             "group.com.antigravity.ComicToPDF",
             "group.com.antigravity.inksync",
@@ -48,25 +46,36 @@ class ShareViewController: UIViewController {
         for gid in groupIDs {
             if let ud = UserDefaults(suiteName: gid) {
                 ud.set(Date().timeIntervalSince1970, forKey: "pendingShareImportTimestamp")
+                ud.set(true, forKey: "hasPendingShareImport")
                 ud.synchronize()
             }
         }
 
-        // Strategy 1: extensionContext.open — works on iPhone and some iPad configs
-        extensionContext?.open(deepLinkURL) { [weak self] success in
-            if !success {
-                // Strategy 2: iPad-safe fallback — complete with URL item so the system
-                // passes it to the host app's scene(_:openURLContexts:) / AppDelegate.
-                Task { @MainActor [weak self] in
-                    let item = NSExtensionItem()
-                    item.userInfo = ["openURL": deepLinkURL]
-                    self?.extensionContext?.completeRequest(returningItems: [item])
-                }
-            } else {
-                Task { @MainActor [weak self] in
-                    self?.extensionContext?.completeRequest(returningItems: nil)
-                }
+        // 2. Dispatch URL open via UIResponder chain (standard for iOS Share Extensions)
+        var responder: UIResponder? = self
+        while let current = responder {
+            let selector = NSSelectorFromString("openURL:")
+            if current.responds(to: selector) {
+                current.perform(selector, with: deepLinkURL)
+                break
             }
+            responder = current.next
+        }
+
+        // 3. Fallback to extensionContext.open
+        if let context = extensionContext {
+            let openSelector = NSSelectorFromString("openURL:completionHandler:")
+            if context.responds(to: openSelector) {
+                context.open(deepLinkURL) { _ in }
+            }
+        }
+
+        // 4. Delayed dismissal (350ms): prevents SpringBoard from aborting the app activation
+        // before the extension process is detached.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+            let item = NSExtensionItem()
+            item.userInfo = ["openURL": deepLinkURL]
+            self?.extensionContext?.completeRequest(returningItems: [item], completionHandler: nil)
         }
     }
 }

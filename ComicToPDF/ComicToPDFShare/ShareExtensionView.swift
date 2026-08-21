@@ -474,7 +474,9 @@ struct ShareExtensionView: View {
 
                 if let url = item as? URL {
                     if url.isFileURL {
-                        let res = copyToSharedContainer(url, destFilename: filename)
+                        let actualName = url.lastPathComponent
+                        let effectiveName = (!actualName.isEmpty && !actualName.hasPrefix("SharedDocument_") && !actualName.hasPrefix("temp_")) ? actualName : filename
+                        let res = copyToSharedContainer(url, destFilename: effectiveName)
                         continuation.resume(returning: res)
                     } else if url.scheme == "http" || url.scheme == "https" {
                         // Remote download
@@ -492,7 +494,9 @@ struct ShareExtensionView: View {
                 } else if let nsURL = item as? NSURL {
                     let u = nsURL as URL
                     if u.isFileURL {
-                        let res = copyToSharedContainer(u, destFilename: filename)
+                        let actualName = u.lastPathComponent
+                        let effectiveName = (!actualName.isEmpty && !actualName.hasPrefix("SharedDocument_") && !actualName.hasPrefix("temp_")) ? actualName : filename
+                        let res = copyToSharedContainer(u, destFilename: effectiveName)
                         continuation.resume(returning: res)
                     } else {
                         continuation.resume(returning: nil)
@@ -504,7 +508,9 @@ struct ShareExtensionView: View {
                     let res = writeRawDataToSharedContainer(nsData as Data, destFilename: filename)
                     continuation.resume(returning: res)
                 } else if let str = item as? String, let parsedURL = URL(string: str), parsedURL.isFileURL {
-                    let res = copyToSharedContainer(parsedURL, destFilename: filename)
+                    let actualName = parsedURL.lastPathComponent
+                    let effectiveName = (!actualName.isEmpty && !actualName.hasPrefix("SharedDocument_") && !actualName.hasPrefix("temp_")) ? actualName : filename
+                    let res = copyToSharedContainer(parsedURL, destFilename: effectiveName)
                     continuation.resume(returning: res)
                 } else {
                     continuation.resume(returning: nil)
@@ -521,7 +527,9 @@ struct ShareExtensionView: View {
                     continuation.resume(returning: nil)
                     return
                 }
-                let result = copyToSharedContainer(tempURL, destFilename: filename)
+                let actualName = tempURL.lastPathComponent
+                let effectiveName = (!actualName.isEmpty && !actualName.hasPrefix("SharedDocument_") && !actualName.hasPrefix("temp_")) ? actualName : filename
+                let result = copyToSharedContainer(tempURL, destFilename: effectiveName)
                 continuation.resume(returning: result)
             }
         }
@@ -535,7 +543,9 @@ struct ShareExtensionView: View {
                     continuation.resume(returning: nil)
                     return
                 }
-                let result = copyToSharedContainer(fileURL, destFilename: filename)
+                let actualName = fileURL.lastPathComponent
+                let effectiveName = (!actualName.isEmpty && !actualName.hasPrefix("SharedDocument_") && !actualName.hasPrefix("temp_")) ? actualName : filename
+                let result = copyToSharedContainer(fileURL, destFilename: effectiveName)
                 continuation.resume(returning: result)
             }
         }

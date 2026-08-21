@@ -1139,7 +1139,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         let isLandscape = UIScreen.main.bounds.width > UIScreen.main.bounds.height
         let isDual = prefs.pdfDualPage || (prefs.autoLandscapeDualPage && isLandscape)
         pdfView.displayMode = isDual ? .twoUp : .singlePage
-        pdfView.displaysAsBook = false
+        pdfView.displaysAsBook = isDual
 
         let margin = max(0, prefs.textMargin)
         pdfView.pageBreakMargins = UIEdgeInsets(top: 0, left: margin, bottom: 0, right: margin)
@@ -1211,7 +1211,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         if uiView.displayMode != targetDisplayMode {
             uiView.displayMode = targetDisplayMode
         }
-        uiView.displaysAsBook = false
+        uiView.displaysAsBook = isDual
 
         let margin = max(0, prefs.textMargin)
         let targetMargins = UIEdgeInsets(top: 0, left: margin, bottom: 0, right: margin)

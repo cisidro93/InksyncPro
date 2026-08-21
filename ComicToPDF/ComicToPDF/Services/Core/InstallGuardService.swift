@@ -32,12 +32,8 @@ final class InstallGuardService: @unchecked Sendable {
         // On simulator, since the keychain is wiped on app delete, we always nuke if the sandbox sentinel is missing.
         // On both simulator and device, we always nuke if the sandbox sentinel file is missing.
         // This guarantees a clean slate on any app delete-and-reinstall, wiping any iCloud-restored database skeletons.
-        let shouldNuke = !sentinelExists
-        
         if shouldNuke {
             performNuke(supportDir: supportDir)
-            userDefaults.set(true, forKey: "pendingFreshInstallCleanup")
-            startDeferredCleanupTask()
         }
         
         // Always write (or re-write) the sandbox sentinel file
@@ -55,49 +51,12 @@ final class InstallGuardService: @unchecked Sendable {
     }
 
     private func startDeferredCleanupTask() {
-        Task { @MainActor in
-            // Run a periodic cleanup loop for the first 10 seconds of app launch
-            // to catch files/folders that sync down asynchronously from iCloud Drive.
-            for _ in 0..<10 {
-                try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
-                await runDeferredCleanup()
-            }
-            userDefaults.set(false, forKey: "pendingFreshInstallCleanup")
-        }
+        // Disabled: Never asynchronously wipe user folders in the background
     }
     
     func runDeferredCleanup() async {
-        await Task.detached(priority: .background) { [fileManager] in
-            let docDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first
-            let supportDir = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            
-            // 1. Delete local documents
-            if let docDir = docDir {
-                if let items = try? fileManager.contentsOfDirectory(at: docDir, includingPropertiesForKeys: nil) {
-                    for item in items {
-                        try? fileManager.removeItem(at: item)
-                    }
-                }
-            }
-            
-            // 2. Delete local sandbox Inbox directory
-            if let supportDir = supportDir {
-                let inboxDir = supportDir.appendingPathComponent("InksyncVault/Inbox", isDirectory: true)
-                if let items = try? fileManager.contentsOfDirectory(at: inboxDir, includingPropertiesForKeys: nil) {
-                    for item in items {
-                        try? fileManager.removeItem(at: item)
-                    }
-                }
-            }
-            
-            // 3. Vaporize iCloud Ubiquity container Documents if available
-            if let iCloudDocDir = FileManager.default.url(forUbiquityContainerIdentifier: nil)?.appendingPathComponent("Documents") {
-                if let items = try? fileManager.contentsOfDirectory(at: iCloudDocDir, includingPropertiesForKeys: nil) {
-                    for item in items {
-                        try? fileManager.removeItem(at: item)
-                    }
-                }
-            }
+        // Disabled: Protect active user documents and inbox from background deletion
+    }
         }.value
     }
     
