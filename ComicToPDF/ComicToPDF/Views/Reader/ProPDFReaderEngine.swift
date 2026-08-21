@@ -7,6 +7,7 @@ import AVFoundation
 struct ProPDFReaderEngine: View {
     let pdf: ConvertedPDF
     var onDismiss: () -> Void
+    var allBooks: [ConvertedPDF] = []
 
     @State private var chromeVisible = false
     @State private var currentPageIndex: Int = 0
@@ -37,6 +38,10 @@ struct ProPDFReaderEngine: View {
     @FocusState private var isReaderFocused: Bool
     @StateObject private var velocityEngine = ReaderVelocityEngine()
     @StateObject private var readingRoom = ReadingRoomSession()
+
+    // Ambient page color extraction
+    @State private var ambientPageColor: Color = .clear
+    @State private var ambientColorTask: Task<Void, Never>? = nil
 
     @State private var sessionStartTime: Date = Date()
     @State private var showCropAdjustmentSheet = false
@@ -159,8 +164,18 @@ struct ProPDFReaderEngine: View {
 
     var body: some View {
         ZStack {
+            // Deep black background with subtle ambient illumination
             Color.black
                 .ignoresSafeArea()
+
+            RadialGradient(
+                colors: [ambientPageColor.opacity(0.18), Color.black],
+                center: .center,
+                startRadius: 80,
+                endRadius: 450
+            )
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
 
             mainContentView
 
@@ -227,6 +242,7 @@ struct ProPDFReaderEngine: View {
             loadTask?.cancel()
             zoomPillTask?.cancel()
             chromeIdleTask?.cancel()
+            ambientColorTask?.cancel()
             accessedSecurityScopedURL?.stopAccessingSecurityScopedResource()
             accessedSecurityScopedURL = nil
             readingRoom.stop()
@@ -236,8 +252,9 @@ struct ProPDFReaderEngine: View {
                 jumpToPage(pageIndex)
             }
         }
-        .onChange(of: currentPageIndex) { _, _ in
+        .onChange(of: currentPageIndex) { _, newIndex in
             saveReadingProgress()
+            extractAmbientColor(for: newIndex)
         }
         .sheet(isPresented: $showingOutlineDrawer) {
             PDFOutlineDrawer(
@@ -331,7 +348,11 @@ struct ProPDFReaderEngine: View {
                     jumpToPage(isMangaMode ? currentPageIndex + 1 : currentPageIndex - 1)
                 },
                 onNextPage: {
-                    jumpToPage(isMangaMode ? currentPageIndex - 1 : currentPageIndex + 1)
+                    if currentPageIndex >= totalPages - 1 {
+                        attemptPDFSeriesContinuation()
+                    } else {
+                        jumpToPage(isMangaMode ? currentPageIndex - 1 : currentPageIndex + 1)
+                    }
                 },
                 onTapCenter: {
                     toggleChrome()
@@ -617,6 +638,7 @@ struct ProPDFReaderEngine: View {
                 }
             },
             isSettingsActive: showingSettings,
+            ambientColor: ambientPageColor,
             isInRoom: readingRoom.isHosting,
             roomPeerCount: readingRoom.peers.count,
             onRoomToggle: {
@@ -674,6 +696,7 @@ struct ProPDFReaderEngine: View {
                     let savedCrop = ReaderProgressTracker.shared.cropInsets(for: sourcePDF.id)
                     let initialCrop = savedCrop ?? (self.prefs.defaultCropModeRaw == "smartAuto" ? .smartAuto : CodableCropInsets(top: self.prefs.defaultCropTop, bottom: self.prefs.defaultCropBottom, left: self.prefs.defaultCropLeft, right: self.prefs.defaultCropRight, modeRaw: self.prefs.defaultCropModeRaw))
                     self.applyCropInsets(initialCrop)
+                    self.extractAmbientColor(for: self.currentPageIndex)
                     
                     // Ingest native third-party PDF annotations into AnnotationStore
                     _ = PDFAnnotationSyncBridge.shared.importNativeAnnotations(from: doc, for: sourcePDF.id)
@@ -681,6 +704,92 @@ struct ProPDFReaderEngine: View {
             } else {
                 accessedURL?.stopAccessingSecurityScopedResource()
             }
+        }
+    }
+
+    private func extractAmbientColor(for index: Int) {
+        guard let doc = pdfDocument, let page = doc.page(at: index) else { return }
+        ambientColorTask?.cancel()
+        ambientColorTask = Task.detached(priority: .utility) {
+            guard !Task.isCancelled else { return }
+            let thumb = page.thumbnail(of: CGSize(width: 32, height: 32), for: .cropBox)
+            guard let cgImage = thumb.cgImage else { return }
+            
+            let thumbSize = 32
+            let colorSpace = CGColorSpaceCreateDeviceRGB()
+            let bytesPerRow = thumbSize * 4
+            var pixelBuffer = [UInt8](repeating: 0, count: thumbSize * bytesPerRow)
+
+            guard let ctx = CGContext(
+                data: &pixelBuffer,
+                width: thumbSize,
+                height: thumbSize,
+                bitsPerComponent: 8,
+                bytesPerRow: bytesPerRow,
+                space: colorSpace,
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else { return }
+
+            ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: thumbSize, height: thumbSize))
+            guard !Task.isCancelled else { return }
+
+            func pixel(x: Int, y: Int) -> (CGFloat, CGFloat, CGFloat) {
+                let offset = (y * bytesPerRow) + (x * 4)
+                let r = CGFloat(pixelBuffer[offset])     / 255
+                let g = CGFloat(pixelBuffer[offset + 1]) / 255
+                let b = CGFloat(pixelBuffer[offset + 2]) / 255
+                return (r, g, b)
+            }
+
+            var rSum: CGFloat = 0
+            var gSum: CGFloat = 0
+            var bSum: CGFloat = 0
+            var count: CGFloat = 0
+
+            let sampleSteps = 4
+            for s in 0..<sampleSteps {
+                let t = Int(Double(s + 1) / Double(sampleSteps + 1) * Double(thumbSize))
+                for (x, y) in [(0, t), (thumbSize - 1, t), (t, 0), (t, thumbSize - 1)] {
+                    let (r, g, b) = pixel(x: x, y: y)
+                    rSum += r; gSum += g; bSum += b; count += 1
+                }
+            }
+
+            guard count > 0, !Task.isCancelled else { return }
+            let avgR = rSum / count
+            let avgG = gSum / count
+            let avgB = bSum / count
+
+            await MainActor.run {
+                withAnimation(.easeInOut(duration: 0.6)) {
+                    self.ambientPageColor = Color(red: avgR, green: avgG, blue: avgB)
+                }
+            }
+        }
+    }
+
+    private func attemptPDFSeriesContinuation() {
+        guard let seriesName = pdf.metadata.series, !seriesName.isEmpty else { return }
+        let siblings = allBooks
+            .filter { $0.metadata.series == seriesName && $0.id != pdf.id }
+            .sorted { lhs, rhs in
+                let lhsNum = Double(lhs.metadata.issueNumber ?? lhs.metadata.volume ?? "")
+                let rhsNum = Double(rhs.metadata.issueNumber ?? rhs.metadata.volume ?? "")
+                if let l = lhsNum, let r = rhsNum { return l < r }
+                let lKey = lhs.metadata.issueNumber ?? lhs.metadata.volume ?? lhs.name
+                let rKey = rhs.metadata.issueNumber ?? rhs.metadata.volume ?? rhs.name
+                return lKey.localizedStandardCompare(rKey) == .orderedAscending
+            }
+        guard !siblings.isEmpty else { return }
+        let selfKey = pdf.metadata.issueNumber ?? pdf.metadata.volume ?? pdf.name
+        if let currentIdx = siblings.firstIndex(where: {
+            ($0.metadata.issueNumber ?? $0.metadata.volume ?? $0.name) == selfKey
+        }) {
+            let nextIdx = siblings.index(after: currentIdx)
+            guard siblings.indices.contains(nextIdx) else { return }
+            NotificationCenter.default.post(name: .openMergedBook, object: siblings[nextIdx])
+        } else if let first = siblings.first {
+            NotificationCenter.default.post(name: .openMergedBook, object: first)
         }
     }
 
@@ -947,10 +1056,11 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         pdfView.delegate = context.coordinator
         pdfView.document = document
         pdfView.autoScales = true
-        pdfView.minScaleFactor = 0.25
-        pdfView.maxScaleFactor = 10.0
-        pdfView.displayMode = .singlePage
+        pdfView.minScaleFactor = 0.5
+        pdfView.maxScaleFactor = 5.0
         pdfView.displayDirection = .horizontal
+        pdfView.pageBreakMargins = UIEdgeInsets.zero
+        pdfView.pageShadowsEnabled = true
         pdfView.backgroundColor = .clear
         pdfView.isOpaque = false
         pdfView.insetsLayoutMarginsFromSafeArea = false
@@ -961,13 +1071,14 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         let spineLoc: UIPageViewController.SpineLocation = isDual ? .mid : .min
         let options: [UIPageViewController.OptionsKey: Any] = [
             .spineLocation: NSNumber(value: spineLoc.rawValue),
-            .interPageSpacing: 16.0
+            .interPageSpacing: 0
         ]
         pdfView.usePageViewController(true, withViewOptions: options)
+        pdfView.displaysAsBook = isDual
 
         if let scrollView = pdfView.subviews.first(where: { $0 is UIScrollView }) as? UIScrollView {
-            scrollView.maximumZoomScale = 10.0
-            scrollView.minimumZoomScale = 0.25
+            scrollView.maximumZoomScale = 5.0
+            scrollView.minimumZoomScale = 0.5
         }
 
         // Single Tap gesture setup
@@ -1020,11 +1131,16 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         let prefs = EBookPreferences.shared
         let isLandscape = uiView.bounds.width > uiView.bounds.height
         let isDual = prefs.pdfDualPage || (prefs.autoLandscapeDualPage && isLandscape)
-        let targetDisplayMode: PDFDisplayMode = isDual ? .twoUp : .singlePage
-        if uiView.displayMode != targetDisplayMode {
-            uiView.displayMode = targetDisplayMode
+        let spineLoc: UIPageViewController.SpineLocation = isDual ? .mid : .min
+        
+        if uiView.displaysAsBook != isDual {
+            uiView.displaysAsBook = isDual
+            let options: [UIPageViewController.OptionsKey: Any] = [
+                .spineLocation: NSNumber(value: spineLoc.rawValue),
+                .interPageSpacing: 0
+            ]
+            uiView.usePageViewController(true, withViewOptions: options)
         }
-        uiView.displaysAsBook = false
 
         let hasCustomMargin = prefs.textMargin > 0
         let targetDisplayBox: PDFDisplayBox = (isCroppedMode || hasCustomMargin) ? .cropBox : .mediaBox
