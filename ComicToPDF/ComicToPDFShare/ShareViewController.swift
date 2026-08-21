@@ -36,11 +36,11 @@ class ShareViewController: UIViewController {
             extensionContext?.completeRequest(returningItems: nil, completionHandler: nil)
             return
         }
-        // extensionContext?.open is the ONLY supported API for opening the host app
-        // from an extension process. UIApplication is not reachable from an extension's
-        // responder chain — the UIResponder walk never reaches UIApplication.
-        extensionContext?.open(url) { [weak self] _ in
-            self?.extensionContext?.completeRequest(returningItems: nil, completionHandler: nil)
+        let context = self.extensionContext
+        context?.open(url) { _ in
+            DispatchQueue.main.async {
+                context?.completeRequest(returningItems: nil, completionHandler: nil)
+            }
         }
     }
 }

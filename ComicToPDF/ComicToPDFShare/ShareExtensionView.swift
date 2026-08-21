@@ -210,14 +210,14 @@ struct ShareExtensionView: View {
     // MARK: - Format & Extension Detection
 
     /// Maps a known UTType to the canonical file extension.
-    private func targetExtension(for type: UTType) -> String? {
+    nonisolated static func targetExtension(for type: UTType) -> String? {
         if type.conforms(to: .pdf) { return "pdf" }
         if type.conforms(to: .epub) { return "epub" }
         if type.conforms(to: .zip) { return "cbz" }
         if type.conforms(to: .archive) { return "cbz" }
         
         let ext = type.preferredFilenameExtension?.lowercased() ?? ""
-        if Self.supportedExtensions.contains(ext) {
+        if supportedExtensions.contains(ext) {
             return ext == "zip" ? "cbz" : (ext == "rar" ? "cbr" : ext)
         }
         
@@ -235,7 +235,7 @@ struct ShareExtensionView: View {
     }
 
     /// Derives a file extension from a filename or suggested name.
-    private func extensionFromSuggestedName(_ name: String?) -> String? {
+    nonisolated static func extensionFromSuggestedName(_ name: String?) -> String? {
         guard let name = name else { return nil }
         let raw = (name as NSString).pathExtension.lowercased()
         switch raw {
@@ -252,7 +252,7 @@ struct ShareExtensionView: View {
     }
     
     /// Inspects the magic bytes of a file to reliably identify its true format.
-    private func detectFileExtension(from url: URL) -> String? {
+    nonisolated static func detectFileExtension(from url: URL) -> String? {
         let existingExt = url.pathExtension.lowercased()
         
         let accessing = url.startAccessingSecurityScopedResource()
@@ -260,12 +260,12 @@ struct ShareExtensionView: View {
         
         guard let fileHandle = try? FileHandle(forReadingFrom: url),
               let data = try? fileHandle.read(upToCount: 4096) else {
-            return Self.supportedExtensions.contains(existingExt) ? existingExt : nil
+            return supportedExtensions.contains(existingExt) ? existingExt : nil
         }
         defer { try? fileHandle.close() }
         
         guard data.count >= 4 else {
-            return Self.supportedExtensions.contains(existingExt) ? existingExt : nil
+            return supportedExtensions.contains(existingExt) ? existingExt : nil
         }
 
         // PDF (%PDF -> 0x25 0x50 0x44 0x46)
@@ -303,7 +303,7 @@ struct ShareExtensionView: View {
             }
         }
 
-        if Self.supportedExtensions.contains(existingExt) {
+        if supportedExtensions.contains(existingExt) {
             return existingExt == "zip" ? "cbz" : (existingExt == "rar" ? "cbr" : existingExt)
         }
 
@@ -321,10 +321,6 @@ struct ShareExtensionView: View {
             return
         }
 
-        // Bug 2 fix: Move all file I/O off @MainActor into a background task.
-        // Share extensions have a strict OS memory+CPU budget. Running heavy file
-        // copies on the main actor freezes the UI and risks the OS killing the
-        // extension before any files are fully written to disk.
         let sessionID = sessionStagingID
         Task.detached(priority: .userInitiated) { [inputItems] in
             var filesToProcess: [SharedFile] = []
@@ -377,8 +373,8 @@ struct ShareExtensionView: View {
                     for typeId in candidateTypes {
                         guard provider.hasItemConformingToTypeIdentifier(typeId) else { continue }
 
-                        let hintExt = await MainActor.run { self.extensionFromSuggestedName(baseName) }
-                            ?? UTType(typeId).flatMap { await MainActor.run { self.targetExtension(for: $0) } }
+                        let hintExt = Self.extensionFromSuggestedName(baseName)
+                            ?? UTType(typeId).flatMap { Self.targetExtension(for: $0) }
                         let tempName: String
                         if let h = hintExt {
                             let clean = (baseName as NSString).deletingPathExtension
@@ -387,24 +383,24 @@ struct ShareExtensionView: View {
                             tempName = baseName
                         }
 
-                        if let url = await self.tryLoadItem(provider: provider, typeId: typeId, filename: tempName) {
+                        if let url = await Self.tryLoadItem(provider: provider, typeId: typeId, filename: tempName) {
                             loadedURL = url
-                            detectedExt = await MainActor.run { self.detectFileExtension(from: url) } ?? hintExt ?? url.pathExtension.lowercased()
+                            detectedExt = Self.detectFileExtension(from: url) ?? hintExt ?? url.pathExtension.lowercased()
                             break
                         }
-                        if let url = await self.tryLoadFileRepresentation(provider: provider, typeId: typeId, filename: tempName) {
+                        if let url = await Self.tryLoadFileRepresentation(provider: provider, typeId: typeId, filename: tempName) {
                             loadedURL = url
-                            detectedExt = await MainActor.run { self.detectFileExtension(from: url) } ?? hintExt ?? url.pathExtension.lowercased()
+                            detectedExt = Self.detectFileExtension(from: url) ?? hintExt ?? url.pathExtension.lowercased()
                             break
                         }
-                        if let url = await self.tryLoadInPlaceFileRepresentation(provider: provider, typeId: typeId, filename: tempName) {
+                        if let url = await Self.tryLoadInPlaceFileRepresentation(provider: provider, typeId: typeId, filename: tempName) {
                             loadedURL = url
-                            detectedExt = await MainActor.run { self.detectFileExtension(from: url) } ?? hintExt ?? url.pathExtension.lowercased()
+                            detectedExt = Self.detectFileExtension(from: url) ?? hintExt ?? url.pathExtension.lowercased()
                             break
                         }
-                        if let url = await self.tryLoadDataRepresentation(provider: provider, typeId: typeId, filename: tempName) {
+                        if let url = await Self.tryLoadDataRepresentation(provider: provider, typeId: typeId, filename: tempName) {
                             loadedURL = url
-                            detectedExt = await MainActor.run { self.detectFileExtension(from: url) } ?? hintExt ?? url.pathExtension.lowercased()
+                            detectedExt = Self.detectFileExtension(from: url) ?? hintExt ?? url.pathExtension.lowercased()
                             break
                         }
                     }
@@ -414,7 +410,7 @@ struct ShareExtensionView: View {
                         continue
                     }
 
-                    let ext = (detectedExt ?? (await MainActor.run { self.detectFileExtension(from: finalURL) }) ?? finalURL.pathExtension.lowercased()).lowercased()
+                    let ext = (detectedExt ?? Self.detectFileExtension(from: finalURL) ?? finalURL.pathExtension.lowercased()).lowercased()
                     let targetExt: String
                     if ext == "zip" {
                         targetExt = "cbz"
@@ -423,7 +419,7 @@ struct ShareExtensionView: View {
                     } else if Self.supportedExtensions.contains(ext) {
                         targetExt = ext
                     } else {
-                        targetExt = (await MainActor.run { self.detectFileExtension(from: finalURL) }) ?? (Self.supportedExtensions.contains(ext) ? ext : "pdf")
+                        targetExt = Self.detectFileExtension(from: finalURL) ?? (Self.supportedExtensions.contains(ext) ? ext : "pdf")
                     }
 
                     let cleanBase = (baseName as NSString).deletingPathExtension
@@ -452,7 +448,7 @@ struct ShareExtensionView: View {
 
     // MARK: - Async Item Loaders
 
-    private func tryLoadItem(provider: NSItemProvider, typeId: String, filename: String) async -> URL? {
+    nonisolated static func tryLoadItem(provider: NSItemProvider, typeId: String, filename: String) async -> URL? {
         await withCheckedContinuation { continuation in
             provider.loadItem(forTypeIdentifier: typeId, options: nil) { item, error in
                 guard error == nil, let item = item else {
@@ -462,13 +458,13 @@ struct ShareExtensionView: View {
 
                 if let url = item as? URL {
                     if url.isFileURL {
-                        let res = self.copyToSharedContainer(url, destFilename: filename)
+                        let res = copyToSharedContainer(url, destFilename: filename)
                         continuation.resume(returning: res)
                     } else if url.scheme == "http" || url.scheme == "https" {
                         // Remote download
                         Task.detached(priority: .userInitiated) {
                             if let (data, _) = try? await URLSession.shared.data(from: url) {
-                                let res = self.writeRawDataToSharedContainer(data, destFilename: filename)
+                                let res = writeRawDataToSharedContainer(data, destFilename: filename)
                                 continuation.resume(returning: res)
                             } else {
                                 continuation.resume(returning: nil)
@@ -480,19 +476,19 @@ struct ShareExtensionView: View {
                 } else if let nsURL = item as? NSURL {
                     let u = nsURL as URL
                     if u.isFileURL {
-                        let res = self.copyToSharedContainer(u, destFilename: filename)
+                        let res = copyToSharedContainer(u, destFilename: filename)
                         continuation.resume(returning: res)
                     } else {
                         continuation.resume(returning: nil)
                     }
                 } else if let data = item as? Data {
-                    let res = self.writeRawDataToSharedContainer(data, destFilename: filename)
+                    let res = writeRawDataToSharedContainer(data, destFilename: filename)
                     continuation.resume(returning: res)
                 } else if let nsData = item as? NSData {
-                    let res = self.writeRawDataToSharedContainer(nsData as Data, destFilename: filename)
+                    let res = writeRawDataToSharedContainer(nsData as Data, destFilename: filename)
                     continuation.resume(returning: res)
                 } else if let str = item as? String, let parsedURL = URL(string: str), parsedURL.isFileURL {
-                    let res = self.copyToSharedContainer(parsedURL, destFilename: filename)
+                    let res = copyToSharedContainer(parsedURL, destFilename: filename)
                     continuation.resume(returning: res)
                 } else {
                     continuation.resume(returning: nil)
@@ -501,40 +497,40 @@ struct ShareExtensionView: View {
         }
     }
 
-    private func tryLoadFileRepresentation(provider: NSItemProvider, typeId: String, filename: String) async -> URL? {
+    nonisolated static func tryLoadFileRepresentation(provider: NSItemProvider, typeId: String, filename: String) async -> URL? {
         await withCheckedContinuation { continuation in
             provider.loadFileRepresentation(forTypeIdentifier: typeId) { tempURL, error in
                 guard error == nil, let tempURL = tempURL else {
                     continuation.resume(returning: nil)
                     return
                 }
-                let result = self.copyToSharedContainer(tempURL, destFilename: filename)
+                let result = copyToSharedContainer(tempURL, destFilename: filename)
                 continuation.resume(returning: result)
             }
         }
     }
 
-    private func tryLoadInPlaceFileRepresentation(provider: NSItemProvider, typeId: String, filename: String) async -> URL? {
+    nonisolated static func tryLoadInPlaceFileRepresentation(provider: NSItemProvider, typeId: String, filename: String) async -> URL? {
         await withCheckedContinuation { continuation in
             provider.loadInPlaceFileRepresentation(forTypeIdentifier: typeId) { fileURL, _, error in
                 guard error == nil, let fileURL = fileURL else {
                     continuation.resume(returning: nil)
                     return
                 }
-                let result = self.copyToSharedContainer(fileURL, destFilename: filename)
+                let result = copyToSharedContainer(fileURL, destFilename: filename)
                 continuation.resume(returning: result)
             }
         }
     }
 
-    private func tryLoadDataRepresentation(provider: NSItemProvider, typeId: String, filename: String) async -> URL? {
+    nonisolated static func tryLoadDataRepresentation(provider: NSItemProvider, typeId: String, filename: String) async -> URL? {
         await withCheckedContinuation { continuation in
             provider.loadDataRepresentation(forTypeIdentifier: typeId) { data, error in
                 guard error == nil, let data = data, !data.isEmpty else {
                     continuation.resume(returning: nil)
                     return
                 }
-                let result = self.writeRawDataToSharedContainer(data, destFilename: filename)
+                let result = writeRawDataToSharedContainer(data, destFilename: filename)
                 continuation.resume(returning: result)
             }
         }
@@ -542,7 +538,7 @@ struct ShareExtensionView: View {
 
     // MARK: - App Group File Operations
 
-    nonisolated private func getAppGroupContainers() -> [URL] {
+    nonisolated static func getAppGroupContainers() -> [URL] {
         var containers: [URL] = []
         let groupIDs = [
             "group.com.antigravity.ComicToPDF",
@@ -559,7 +555,7 @@ struct ShareExtensionView: View {
         return containers
     }
 
-    nonisolated private func copyToSharedContainer(_ sourceURL: URL, destFilename: String) -> URL? {
+    nonisolated static func copyToSharedContainer(_ sourceURL: URL, destFilename: String) -> URL? {
         let containers = getAppGroupContainers()
         guard !containers.isEmpty else {
             print("[ShareExt] Error: No shared App Group container accessible.")
@@ -593,7 +589,7 @@ struct ShareExtensionView: View {
         return primaryResultURL
     }
 
-    nonisolated private func writeRawDataToSharedContainer(_ data: Data, destFilename: String) -> URL? {
+    nonisolated static func writeRawDataToSharedContainer(_ data: Data, destFilename: String) -> URL? {
         let containers = getAppGroupContainers()
         guard !containers.isEmpty else {
             print("[ShareExt] Error: No shared App Group container accessible.")
@@ -654,7 +650,7 @@ struct ShareExtensionView: View {
     }
     
     private func markForConversion(_ file: SharedFile) throws {
-        let containers = getAppGroupContainers()
+        let containers = Self.getAppGroupContainers()
         guard !containers.isEmpty else { throw ShareError.noContainer }
 
         // Bug 3 fix: Validate source file ONCE before the container loop.
