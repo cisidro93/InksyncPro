@@ -315,37 +315,51 @@ struct ShareExtensionView: View {
     @State private var sessionStagingID: String = UUID().uuidString
 
     private func loadSharedFiles() {
-        guard let ctx = extensionContext,
-              let inputItems = ctx.inputItems as? [NSExtensionItem] else {
-            isLoading = false
-            return
-        }
-
         Task { @MainActor in
+            var foundItems: [NSExtensionItem] = []
+
+            // Retry loop up to 5 times (total ~1 second) if extensionContext.inputItems takes time to populate
+            for attempt in 0..<5 {
+                if let ctx = extensionContext,
+                   let items = ctx.inputItems as? [NSExtensionItem],
+                   !items.isEmpty {
+                    let hasAttachments = items.contains { ($0.attachments?.count ?? 0) > 0 }
+                    if hasAttachments {
+                        foundItems = items
+                        break
+                    }
+                }
+                if attempt < 4 {
+                    try? await Task.sleep(nanoseconds: 200_000_000) // 200ms
+                }
+            }
+
+            guard !foundItems.isEmpty else {
+                isLoading = false
+                return
+            }
+
             var filesToProcess: [SharedFile] = []
 
-            for item in inputItems {
+            for item in foundItems {
                 guard let attachments = item.attachments else { continue }
 
                 for provider in attachments {
                     let registered = provider.registeredTypeIdentifiers
                     let baseName = provider.suggestedName ?? "SharedDocument_\(UUID().uuidString.prefix(6))"
 
-                    // Build priority list of UTIs: registered first, then fallbacks
-                    var candidateTypes: [String] = []
-                    for typeId in registered {
-                        if !candidateTypes.contains(typeId) {
-                            candidateTypes.append(typeId)
-                        }
-                    }
-
+                    // Try registered type identifiers first!
+                    var candidateTypes: [String] = registered
                     let fallbackTypes = [
+                        UTType.data.identifier,
+                        UTType.item.identifier,
+                        UTType.content.identifier,
+                        UTType.pdf.identifier,
+                        "com.adobe.pdf",
+                        UTType.epub.identifier,
+                        "org.idpf.epub-container",
                         UTType.fileURL.identifier,
                         "public.file-url",
-                        "com.adobe.pdf",
-                        UTType.pdf.identifier,
-                        "org.idpf.epub-container",
-                        UTType.epub.identifier,
                         "com.macrabbit.comicbookzip",
                         "com.antigravity.cbz",
                         UTType.zip.identifier,
@@ -354,15 +368,11 @@ struct ShareExtensionView: View {
                         "org.7-zip.7-zip-archive",
                         "public.archive",
                         "public.zip-archive",
-                        "public.data",
-                        "public.content",
-                        "public.item",
-                        UTType.url.identifier,
-                        "public.url"
+                        "public.data"
                     ]
-                    for typeId in fallbackTypes {
-                        if !candidateTypes.contains(typeId) {
-                            candidateTypes.append(typeId)
+                    for fallback in fallbackTypes {
+                        if !candidateTypes.contains(fallback) {
+                            candidateTypes.append(fallback)
                         }
                     }
 
@@ -370,7 +380,7 @@ struct ShareExtensionView: View {
                     var detectedExt: String? = nil
 
                     for typeId in candidateTypes {
-                        guard provider.hasItemConformingToTypeIdentifier(typeId) else { continue }
+                        guard provider.hasItemConformingToTypeIdentifier(typeId) || registered.contains(typeId) else { continue }
 
                         let hintExt = Self.extensionFromSuggestedName(baseName)
                             ?? UTType(typeId).flatMap { Self.targetExtension(for: $0) }
@@ -382,21 +392,28 @@ struct ShareExtensionView: View {
                             tempName = baseName
                         }
 
-                        if let url = await Self.tryLoadItem(provider: provider, typeId: typeId, filename: tempName) {
-                            loadedURL = url
-                            detectedExt = Self.detectFileExtension(from: url) ?? hintExt ?? url.pathExtension.lowercased()
-                            break
-                        }
+                        // Method 1: loadFileRepresentation (modern Apple standard for files from Files app, Mail, Safari)
                         if let url = await Self.tryLoadFileRepresentation(provider: provider, typeId: typeId, filename: tempName) {
                             loadedURL = url
                             detectedExt = Self.detectFileExtension(from: url) ?? hintExt ?? url.pathExtension.lowercased()
                             break
                         }
+
+                        // Method 2: loadInPlaceFileRepresentation
                         if let url = await Self.tryLoadInPlaceFileRepresentation(provider: provider, typeId: typeId, filename: tempName) {
                             loadedURL = url
                             detectedExt = Self.detectFileExtension(from: url) ?? hintExt ?? url.pathExtension.lowercased()
                             break
                         }
+
+                        // Method 3: loadItem (handles URLs, NSURLs, file-urls)
+                        if let url = await Self.tryLoadItem(provider: provider, typeId: typeId, filename: tempName) {
+                            loadedURL = url
+                            detectedExt = Self.detectFileExtension(from: url) ?? hintExt ?? url.pathExtension.lowercased()
+                            break
+                        }
+
+                        // Method 4: loadDataRepresentation (in-memory fallback)
                         if let url = await Self.tryLoadDataRepresentation(provider: provider, typeId: typeId, filename: tempName) {
                             loadedURL = url
                             detectedExt = Self.detectFileExtension(from: url) ?? hintExt ?? url.pathExtension.lowercased()
@@ -553,6 +570,15 @@ struct ShareExtensionView: View {
                 }
             }
         }
+        if containers.isEmpty {
+            if let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
+                containers.append(docs)
+            }
+            if let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+                containers.append(appSupport)
+            }
+            containers.append(FileManager.default.temporaryDirectory)
+        }
         return containers
     }
 
@@ -576,14 +602,19 @@ struct ShareExtensionView: View {
             let destURL = stagingURL.appendingPathComponent(cleanDest)
             try? FileManager.default.removeItem(at: destURL)
             
+            var didCopy = false
             do {
                 try FileManager.default.copyItem(at: sourceURL, to: destURL)
-                if primaryResultURL == nil { primaryResultURL = destURL }
+                didCopy = true
             } catch {
-                if let data = try? Data(contentsOf: sourceURL) {
-                    try? data.write(to: destURL, options: .atomic)
-                    if primaryResultURL == nil { primaryResultURL = destURL }
+                if let data = try? Data(contentsOf: sourceURL, options: .alwaysMapped) {
+                    if (try? data.write(to: destURL, options: .atomic)) != nil {
+                        didCopy = true
+                    }
                 }
+            }
+            if didCopy && primaryResultURL == nil {
+                primaryResultURL = destURL
             }
         }
         

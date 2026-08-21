@@ -23,6 +23,7 @@ struct ProPDFReaderEngine: View {
     @State private var isCroppedMode = false
     @State private var isExpandedView = false
     @State private var isReflowMode = false
+    @State private var showingFilterHUD = false
     @State private var shareAnnotatedPDFURL: URL? = nil
 
     // Text Selection & Markup HUD
@@ -34,7 +35,9 @@ struct ProPDFReaderEngine: View {
     @Environment(\.modelContext) private var modelContext
     @FocusState private var isReaderFocused: Bool
     @StateObject private var velocityEngine = ReaderVelocityEngine()
+    @StateObject private var readingRoom = ReadingRoomSession()
 
+    @State private var sessionStartTime: Date = Date()
     @State private var showCropAdjustmentSheet = false
     @State private var activeCropInsets: CodableCropInsets = .zero
     @AppStorage("isMangaMode") private var isMangaMode = false
@@ -46,8 +49,27 @@ struct ProPDFReaderEngine: View {
     // Hyperlink Destination Preview HUD State
     @State private var pendingLinkPreview: (pageIndex: Int, targetPage: PDFPage)? = nil
 
+    // Toast Notifications
+    @State private var toastMessage: String = ""
+    @State private var showToast: Bool = false
+
     private var totalPages: Int {
         pdfDocument?.pageCount ?? pdf.pageCount
+    }
+
+    private func showToastMessage(_ message: String) {
+        toastMessage = message
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+            showToast = true
+        }
+        Task {
+            try? await Task.sleep(nanoseconds: 1_800_000_000)
+            await MainActor.run {
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    showToast = false
+                }
+            }
+        }
     }
 
     private func applyCropInsets(_ insets: CodableCropInsets) {
@@ -121,7 +143,10 @@ struct ProPDFReaderEngine: View {
                     pdf: pdf,
                     pdfDocument: pdfDocument,
                     currentPageIndex: $currentPageIndex,
-                    onDismiss: onDismiss,
+                    onDismiss: {
+                        saveReadingProgress()
+                        onDismiss()
+                    },
                     onToggleReflow: {
                         withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                             isReflowMode = false
@@ -308,24 +333,37 @@ struct ProPDFReaderEngine: View {
             // Master Unified Reader Chrome
             readerChromeView
 
-            // High-Speed Haptic Thumbnail Scrub Rail
-            if chromeVisible {
+            // Filter Preset HUD
+            if showingFilterHUD {
                 VStack {
                     Spacer()
-                    ThumbnailScrubBar(
-                        document: pdfDocument,
-                        totalPages: max(1, totalPages),
-                        currentPageIndex: $currentPageIndex,
-                        onSelectPage: { pageIdx in
-                            jumpToPage(pageIdx)
+                    FilterHUDView(
+                        activePreset: Binding(
+                            get: { prefs.readingFilter },
+                            set: { prefs.readingFilter = $0 }
+                        ),
+                        onDismiss: {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                showingFilterHUD = false
+                            }
                         }
                     )
-                    .padding(.bottom, 68)
+                    .padding(.bottom, chromeVisible ? 84 : 20)
                 }
                 .transition(.move(edge: .bottom).combined(with: .opacity))
-                .zIndex(12)
+                .zIndex(20)
             }
 
+            // Live Reading Room Overlay
+            if readingRoom.isHosting {
+                ReadingRoomOverlay(
+                    session: readingRoom,
+                    currentPage: currentPageIndex,
+                    totalPages: max(1, totalPages)
+                )
+            }
+
+            // Progress Footer when Chrome is hidden
             if !chromeVisible && selectedTextForHUD == nil {
                 KindleProgressFooterView(
                     currentPage: currentPageIndex + 1,
@@ -333,6 +371,21 @@ struct ProPDFReaderEngine: View {
                     estimatedMinutesLeft: ReaderProgressTracker.shared.progress(for: pdf.id)?.estimatedMinutesRemaining
                 )
                 .transition(.opacity)
+            }
+
+            // Toast Alert Overlay
+            if showToast {
+                Text(toastMessage)
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 10)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 0.5))
+                    .shadow(color: .black.opacity(0.2), radius: 12, y: 4)
+                    .padding(.bottom, 110)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .zIndex(100)
             }
 
             ReadingJumpToastOverlay()
@@ -359,6 +412,7 @@ struct ProPDFReaderEngine: View {
             zoomPillTask?.cancel()
             accessedSecurityScopedURL?.stopAccessingSecurityScopedResource()
             accessedSecurityScopedURL = nil
+            readingRoom.stop()
         }
         .onReceive(NotificationCenter.default.publisher(for: .readerJumpToPage)) { notification in
             if let pageIndex = notification.userInfo?["pageIndex"] as? Int, pageIndex >= 0, pageIndex < totalPages {
@@ -428,9 +482,12 @@ struct ProPDFReaderEngine: View {
     @ViewBuilder private var readerChromeView: some View {
         ReaderChrome(
             title: pdf.name,
-            pageText: "Page \(currentPageIndex + 1) of \(max(1, totalPages))",
+            pageText: "\(currentPageIndex + 1) / \(max(1, totalPages))  •  \(velocityEngine.estimatedTimeRemaining)",
             isVisible: $chromeVisible,
-            onBack: onDismiss,
+            onBack: {
+                saveReadingProgress()
+                onDismiss()
+            },
             onBookmark: {
                 let bookmark = Annotation(
                     pdfID: pdf.id,
@@ -441,6 +498,7 @@ struct ProPDFReaderEngine: View {
                     modifiedAt: Date()
                 )
                 AnnotationStore.shared.add(bookmark)
+                showToastMessage("Bookmark Added")
                 HapticEngine.medium()
             },
             onBookmarkActive: AnnotationStore.shared.annotations(for: pdf.id).contains(where: { $0.pageIndex == currentPageIndex && $0.kind == .bookmark }),
@@ -475,6 +533,7 @@ struct ProPDFReaderEngine: View {
             onCopyToggle: {
                 if let pdfView = pdfViewReference, let page = pdfView.currentPage, let text = page.string {
                     UIPasteboard.general.string = text
+                    showToastMessage("Page Text Copied")
                     HapticEngine.success()
                 }
             },
@@ -501,8 +560,25 @@ struct ProPDFReaderEngine: View {
                 }
                 HapticEngine.medium()
             },
+            isEnhanced: prefs.readingFilter != .none,
+            onEnhanceToggle: {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                    showingFilterHUD.toggle()
+                }
+            },
             isSettingsActive: showingSettings,
+            sessionStartTime: sessionStartTime,
+            isInRoom: readingRoom.isHosting,
+            roomPeerCount: readingRoom.peers.count,
+            onRoomToggle: {
+                if readingRoom.isHosting {
+                    readingRoom.stop()
+                } else {
+                    readingRoom.startHosting(bookID: pdf.id.uuidString)
+                }
+            },
             onSwipeDown: {
+                saveReadingProgress()
                 onDismiss()
             }
         )
@@ -584,6 +660,9 @@ struct ProPDFReaderEngine: View {
                 }
             }
             velocityEngine.recordPageTurn()
+            if readingRoom.isHosting {
+                readingRoom.broadcastPage(clamped, totalPages: max(1, totalPages))
+            }
         }
         currentPageIndex = clamped
         if let doc = pdfDocument, let page = doc.page(at: clamped), pdfViewReference?.currentPage != page {
