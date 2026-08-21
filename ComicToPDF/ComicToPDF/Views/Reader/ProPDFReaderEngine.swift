@@ -25,6 +25,7 @@ struct ProPDFReaderEngine: View {
     @State private var isExpandedView = false
     @State private var isReflowMode = false
     @State private var showingFilterHUD = false
+    @State private var showingDiagnosticHUD = false
     @State private var shareAnnotatedPDFURL: URL? = nil
 
     // Text Selection & Markup HUD
@@ -185,11 +186,33 @@ struct ProPDFReaderEngine: View {
 
             // Floating Time & Battery Header
             VStack {
-                FloatingReaderClockOverlay()
-                    .padding(.top, 8)
+                HStack(spacing: 10) {
+                    FloatingReaderClockOverlay()
+                        .onTapGesture {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                showingDiagnosticHUD.toggle()
+                            }
+                            HapticEngine.medium()
+                        }
+
+                    Button(action: {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                            showingDiagnosticHUD.toggle()
+                        }
+                        HapticEngine.medium()
+                    }) {
+                        Image(systemName: "stethoscope.circle.fill")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(.orange)
+                            .padding(6)
+                            .background(.ultraThinMaterial, in: Circle())
+                            .overlay(Circle().stroke(Color.white.opacity(0.2), lineWidth: 0.5))
+                            .shadow(color: .black.opacity(0.3), radius: 4)
+                    }
+                }
+                .padding(.top, 8)
                 Spacer()
             }
-            .allowsHitTesting(false)
             .ignoresSafeArea(edges: .bottom)
 
             zoomPillHUD
@@ -217,6 +240,32 @@ struct ProPDFReaderEngine: View {
 
             toastAlertOverlay
             ReadingJumpToastOverlay()
+
+            if showingDiagnosticHUD {
+                ZStack {
+                    Color.black.opacity(0.45)
+                        .ignoresSafeArea()
+                        .onTapGesture {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                showingDiagnosticHUD = false
+                            }
+                        }
+
+                    PDFDiagnosticHUDView(
+                        pdf: pdf,
+                        document: pdfDocument,
+                        pdfView: pdfViewReference,
+                        currentPageIndex: currentPageIndex,
+                        onDismiss: {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                showingDiagnosticHUD = false
+                            }
+                        }
+                    )
+                    .transition(.scale(scale: 0.92).combined(with: .opacity))
+                }
+                .zIndex(200)
+            }
         }
         .overlay {
             if prefs.showReadingRuler {
@@ -344,6 +393,7 @@ struct ProPDFReaderEngine: View {
     @ViewBuilder private func pdfCanvasView(document: PDFDocument) -> some View {
         ZStack {
             ProPDFViewRepresentable(
+                pdf: pdf,
                 document: document,
                 currentPageIndex: $currentPageIndex,
                 pdfViewRef: $pdfViewReference,
@@ -389,8 +439,6 @@ struct ProPDFReaderEngine: View {
                     }
                 }
             )
-            .intelligentPDFDarkMode(isEnabled: prefs.themeRaw == EBookTheme.night.rawValue && activeFilterPreset == .original)
-            .applyFilterPreset(activeFilterPreset)
             .ignoresSafeArea()
 
             if isPencilMode {
@@ -768,6 +816,14 @@ struct ProPDFReaderEngine: View {
                     
                     // Ingest native third-party PDF annotations into AnnotationStore
                     _ = PDFAnnotationSyncBridge.shared.importNativeAnnotations(from: doc, for: sourcePDF.id)
+
+                    // Run real-time diagnostic engine
+                    _ = PDFDiagnosticEngine.shared.inspect(
+                        pdf: sourcePDF,
+                        document: doc,
+                        pdfView: self.pdfViewReference,
+                        currentPageIndex: self.currentPageIndex
+                    )
                 }
             } else {
                 accessedURL?.stopAccessingSecurityScopedResource()
@@ -1111,6 +1167,7 @@ struct VisualPDFScrubber: View {
 
 // MARK: - UIViewRepresentable for Vector PDFKit View
 struct ProPDFViewRepresentable: UIViewRepresentable {
+    let pdf: ConvertedPDF
     let document: PDFDocument
     @Binding var currentPageIndex: Int
     @Binding var pdfViewRef: PDFView?
@@ -1128,34 +1185,25 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         pdfView.delegate = context.coordinator
         pdfView.displayDirection = .horizontal
         pdfView.pageShadowsEnabled = true
-        // Opaque black background — transparent background triggers iPadOS PDFKit
-        // grey placeholder render on certain iOS versions under UIKit compositing.
-        pdfView.backgroundColor = UIColor.black
-        pdfView.isOpaque = true
+        pdfView.backgroundColor = .clear
+        pdfView.isOpaque = false
         pdfView.insetsLayoutMarginsFromSafeArea = false
         pdfView.usePageViewController(false)
 
         let prefs = EBookPreferences.shared
         let isLandscape = UIScreen.main.bounds.width > UIScreen.main.bounds.height
         let isDual = prefs.pdfDualPage || (prefs.autoLandscapeDualPage && isLandscape)
-        pdfView.displayMode = isDual ? .twoUp : .singlePage
+        pdfView.displayMode = isDual ? .twoUp : .singlePageContinuous
         pdfView.displaysAsBook = isDual
 
         let margin = max(0, prefs.textMargin)
         pdfView.pageBreakMargins = UIEdgeInsets(top: 0, left: margin, bottom: 0, right: margin)
 
-        // Assign document AFTER all display properties are set so PDFKit
-        // does a single coherent first layout pass.
+        // Assign document AFTER display configuration
         pdfView.document = document
-
-        // Let autoScales handle fit-to-width completely. Never set scaleFactor
-        // manually here — the frame is zero at makeUIView time on iPad and any
-        // manual override will race against PDFKit's own layout, causing the
-        // denied/placeholder page render at sub-minimum zoom levels.
         pdfView.autoScales = true
-        // Wide safety bounds — updateUIView recomputes against real frame.
-        pdfView.minScaleFactor = 0.01
-        pdfView.maxScaleFactor = 8.0
+        pdfView.minScaleFactor = 0.25
+        pdfView.maxScaleFactor = 6.0
 
         // Single Tap gesture setup
         let tapGesture = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
@@ -1206,7 +1254,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         let prefs = EBookPreferences.shared
         let isLandscape = uiView.bounds.width > uiView.bounds.height
         let isDual = prefs.pdfDualPage || (prefs.autoLandscapeDualPage && isLandscape)
-        let targetDisplayMode: PDFDisplayMode = isDual ? .twoUp : .singlePage
+        let targetDisplayMode: PDFDisplayMode = isDual ? .twoUp : .singlePageContinuous
         
         if uiView.displayMode != targetDisplayMode {
             uiView.displayMode = targetDisplayMode
@@ -1408,6 +1456,12 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
             if self.parent.currentPageIndex != idx {
                 self.lastTargetPageIndex = idx
                 self.parent.currentPageIndex = idx
+                _ = PDFDiagnosticEngine.shared.inspect(
+                    pdf: self.parent.pdf,
+                    document: doc,
+                    pdfView: pdfView,
+                    currentPageIndex: idx
+                )
             }
         }
 
