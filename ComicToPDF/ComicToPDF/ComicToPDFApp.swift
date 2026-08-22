@@ -17,26 +17,67 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         open url: URL,
         options: [UIApplication.OpenURLOptionsKey: Any] = [:]
     ) -> Bool {
-        guard url.scheme == "inksyncpro" else { return false }
-        // Write a pending-import flag to the shared App Group so ContentView's
-        // willEnterForeground observer picks it up even if onOpenURL doesn't fire.
-        let groupIDs = [
-            "group.com.antigravity.ComicToPDF",
-            "group.com.antigravity.inksync",
-            "group.com.antigravity.InksyncPro"
-        ]
-        for gid in groupIDs {
-            if let ud = UserDefaults(suiteName: gid) {
-                ud.set(Date().timeIntervalSince1970, forKey: "pendingShareImportTimestamp")
-                ud.synchronize()
+        if url.scheme == "inksyncpro" {
+            // Write a pending-import flag to the shared App Group so ContentView's
+            // willEnterForeground observer picks it up even if onOpenURL doesn't fire.
+            let groupIDs = [
+                "group.com.antigravity.ComicToPDF",
+                "group.com.antigravity.inksync",
+                "group.com.antigravity.InksyncPro"
+            ]
+            for gid in groupIDs {
+                if let ud = UserDefaults(suiteName: gid) {
+                    ud.set(Date().timeIntervalSince1970, forKey: "pendingShareImportTimestamp")
+                    ud.synchronize()
+                }
             }
+            // Post directly so ContentView can scan + navigate without waiting for onOpenURL
+            NotificationCenter.default.post(
+                name: NSNotification.Name("InksyncPro.ShareImportReceived"),
+                object: url
+            )
+            return true
         }
-        // Post directly so ContentView can scan + navigate without waiting for onOpenURL
-        NotificationCenter.default.post(
-            name: NSNotification.Name("InksyncPro.ShareImportReceived"),
-            object: url
-        )
-        return true
+
+        if url.isFileURL {
+            let accessing = url.startAccessingSecurityScopedResource()
+            Task.detached(priority: .userInitiated) {
+                defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+                let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
+                let inboxDir = appSupport.appendingPathComponent("InksyncVault/Inbox", isDirectory: true)
+                try? FileManager.default.createDirectory(at: inboxDir, withIntermediateDirectories: true)
+                let dest = inboxDir.appendingPathComponent(url.lastPathComponent)
+                try? FileManager.default.removeItem(at: dest)
+                
+                var copySuccess = false
+                NSFileCoordinator().coordinate(readingItemAt: url, options: .withoutChanges, error: nil) { safeURL in
+                    if let _ = try? FileManager.default.copyItem(at: safeURL, to: dest) {
+                        copySuccess = true
+                    } else if let data = try? Data(contentsOf: safeURL) {
+                        try? data.write(to: dest, options: .atomic)
+                        copySuccess = true
+                    }
+                }
+                
+                if !copySuccess {
+                    if let data = try? Data(contentsOf: url) {
+                        try? data.write(to: dest, options: .atomic)
+                        copySuccess = true
+                    }
+                }
+                
+                await MainActor.run {
+                    NotificationCenter.default.post(name: .libraryNeedsRescan, object: nil)
+                    NotificationCenter.default.post(
+                        name: NSNotification.Name("InksyncPro.DirectFileOpenReceived"),
+                        object: dest
+                    )
+                }
+            }
+            return true
+        }
+
+        return false
     }
 
     // MARK: - Background URLSession (OPDSDownloadQueue)

@@ -27,18 +27,24 @@ actor PDFRenderActor {
         Logger.shared.log("Loading PDF document from \(url.lastPathComponent)", category: "PDFRenderActor", type: .info)
         
         let accessing = externalAccessing ? false : url.startAccessingSecurityScopedResource()
-        let doc = PDFDocument(url: url)
-        guard let doc = doc else {
+        var doc = PDFDocument(url: url)
+        if doc == nil, let data = try? Data(contentsOf: url, options: .alwaysMapped) {
+            doc = PDFDocument(data: data)
+        }
+        guard let validDoc = doc else {
             if accessing { url.stopAccessingSecurityScopedResource() }
             Logger.shared.log("Failed to load PDF document from \(url.lastPathComponent). Corrupt or inaccessible file.", category: "PDFRenderActor", type: .error)
             return 0
         }
+        if validDoc.isLocked {
+            validDoc.unlock(withPassword: "")
+        }
         
-        self.currentDocument = doc
+        self.currentDocument = validDoc
         self.currentURL = url
         self.accessingResource = accessing
-        Logger.shared.log("Successfully loaded PDF with \(doc.pageCount) pages.", category: "PDFRenderActor", type: .success)
-        return doc.pageCount
+        Logger.shared.log("Successfully loaded PDF with \(validDoc.pageCount) pages.", category: "PDFRenderActor", type: .success)
+        return validDoc.pageCount
     }
     
     /// Renders a specific page thread-safely.
