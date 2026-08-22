@@ -391,32 +391,6 @@ struct ProPDFReaderEngine: View {
             )
             .ignoresSafeArea()
 
-            // Physical Book Spine Median Crease & Depth Shadow in Dual-Page Landscape
-            if isLandscape && isDual && currentPageIndex > 0 {
-                GeometryReader { _ in
-                    HStack(spacing: 0) {
-                        Spacer()
-
-                        LinearGradient(
-                            colors: [
-                                Color.black.opacity(0.0),
-                                Color.black.opacity(0.12),
-                                Color.black.opacity(0.24),
-                                Color.black.opacity(0.12),
-                                Color.black.opacity(0.0)
-                            ],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                        .frame(width: 22)
-                        .allowsHitTesting(false)
-
-                        Spacer()
-                    }
-                }
-                .allowsHitTesting(false)
-            }
-
             if isPencilMode {
                 PageCanvasOverlay(
                     pdfID: pdf.id,

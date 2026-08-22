@@ -1108,12 +1108,14 @@ struct TwoUpPageCell: View {
     @State private var image: UIImage? = nil
     
     var body: some View {
+        let currentImage = image ?? cache.getImage(at: index)
+        
         ZStack {
             Color.black
-            if let image = image {
+            if let displayImg = currentImage {
                 if cropHalf != .none {
                     GeometryReader { geo in
-                        Image(uiImage: image)
+                        Image(uiImage: displayImg)
                             .resizable()
                             .applyFilterPreset(activeFilterPreset)
                             .aspectRatio(contentMode: .fit)
@@ -1121,34 +1123,30 @@ struct TwoUpPageCell: View {
                             .offset(x: cropHalf == .left ? 0 : -geo.size.width)
                     }
                     .clipped()
-                    .transition(.opacity)
                 } else {
-                    Image(uiImage: image)
+                    Image(uiImage: displayImg)
                         .resizable()
                         .applyFilterPreset(activeFilterPreset)
                         .aspectRatio(contentMode: .fit)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
                         .clipped()
-                        .transition(.opacity)
                 }
             } else {
-                ProgressView()
-                    .progressViewStyle(CircularProgressViewStyle(tint: .white.opacity(0.5)))
-                    .transition(.opacity)
+                Color.black
             }
         }
         .clipped()
         .id(index)
         .onAppear {
-            image = cache.getImage(at: index)
+            if image == nil {
+                image = cache.getImage(at: index)
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .comicImageCacheImageLoaded)) { notification in
             guard let userInfo = notification.userInfo,
                   let loadedIndex = userInfo["index"] as? Int,
                   loadedIndex == index else { return }
-            withAnimation(.easeIn(duration: 0.18)) {
-                image = cache.getImage(at: index)
-            }
+            image = cache.getImage(at: index)
         }
     }
 }

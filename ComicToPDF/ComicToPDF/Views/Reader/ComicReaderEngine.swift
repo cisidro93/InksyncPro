@@ -2934,12 +2934,7 @@ struct ComicPageView: View {
                 }
                 .clipped()
             } else {
-                ZStack {
-                    Color.black
-                    ProgressView()
-                        .progressViewStyle(CircularProgressViewStyle(tint: .white.opacity(0.5)))
-                        .scaleEffect(1.5)
-                }
+                Color.black
             }
         }
         .id(index)
