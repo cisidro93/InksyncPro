@@ -307,7 +307,6 @@ struct ContentView: View {
                             systemImage: "arrow.down.doc.fill",
                             type: .success
                         )
-                    }
                     try? await Task.sleep(nanoseconds: 2_500_000_000)
                     conversionManager.scanLibrary()
                 }
@@ -317,7 +316,7 @@ struct ContentView: View {
         // extensionContext.open() delivers the inksyncpro:// URL via UIKit delegate path
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncPro.ShareImportReceived"))) { _ in
             Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                try? await Task.sleep(nanoseconds: 1_200_000_000)
                 conversionManager.scanLibrary()
                 router.selectedTab = 0
                 withAnimation(.spring()) {
@@ -328,12 +327,33 @@ struct ContentView: View {
                         type: .success
                     )
                 }
-                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                try? await Task.sleep(nanoseconds: 2_500_000_000)
                 conversionManager.scanLibrary()
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncPro.DirectFileOpenReceived"))) { notification in
+            if let destURL = notification.object as? URL {
+                Task { @MainActor in
+                    router.selectedTab = 0
+                    conversionManager.scanLibrary()
+                    withAnimation(.spring()) {
+                        activeToast = ToastMessage(
+                            title: "Document Added",
+                            message: "\(destURL.lastPathComponent) added to your library.",
+                            systemImage: "checkmark.circle.fill",
+                            type: .success
+                        )
+                    }
+                    try? await Task.sleep(nanoseconds: 600_000_000)
+                    conversionManager.scanLibrary()
+                    if let newlyImported = conversionManager.convertedPDFs.first(where: { $0.url.lastPathComponent == destURL.lastPathComponent }) {
+                        self.selectedPDF = newlyImported
+                    }
+                }
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("SwitchToLibraryTab"))) { _ in
-            // No-op
+            router.selectedTab = 0
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ShowSettingsInspector"))) { _ in
             showingSettingsInspector = true
@@ -360,11 +380,8 @@ struct ContentView: View {
             
             if url.scheme == "inksyncpro" {
                 Task { @MainActor in
-                    // Allow up to 1.5s for the Share Extension to finish writing files
-                    // before the first scan — critical for large comics/PDFs on iPad
-                    try? await Task.sleep(nanoseconds: 1_500_000_000)
+                    try? await Task.sleep(nanoseconds: 1_200_000_000)
                     conversionManager.scanLibrary()
-                    // Navigate to Library tab (index 0) so imported file is immediately visible
                     router.selectedTab = 0
                     withAnimation(.spring()) {
                         activeToast = ToastMessage(
@@ -374,8 +391,7 @@ struct ContentView: View {
                             type: .success
                         )
                     }
-                    // Second deferred scan pass to catch stragglers for large files
-                    try? await Task.sleep(nanoseconds: 3_000_000_000)
+                    try? await Task.sleep(nanoseconds: 2_500_000_000)
                     conversionManager.scanLibrary()
                 }
                 return
@@ -400,7 +416,6 @@ struct ContentView: View {
                         copySuccess = true
                     } catch {
                         Logger.shared.log("onOpenURL: Copy coordinated file failed: \(error.localizedDescription)", category: "Import", type: .error)
-                        // Direct read fallback
                         if let data = try? Data(contentsOf: safeURL) {
                             try? data.write(to: dest, options: .atomic)
                             copySuccess = true
@@ -408,24 +423,33 @@ struct ContentView: View {
                     }
                 }
                 
-                if copySuccess {
-                    _ = await ImportQueueManager.shared.stageWithDuplicateCheck([dest])
-                    
-                    Task { @MainActor in
-                        withAnimation(.spring()) {
-                            activeToast = ToastMessage(
-                                title: "Added to Library",
-                                message: "\(url.lastPathComponent) added to your library.",
-                                systemImage: "checkmark.circle.fill",
-                                type: .success
-                            )
-                        }
+                if !copySuccess {
+                    if let data = try? Data(contentsOf: url) {
+                        try? data.write(to: dest, options: .atomic)
+                        copySuccess = true
                     }
                 }
                 
-                // Perform a complete scan so all new items are ingested immediately
+                await MainActor.run {
+                    router.selectedTab = 0
+                    conversionManager.scanLibrary()
+                    withAnimation(.spring()) {
+                        activeToast = ToastMessage(
+                            title: "Added to Library",
+                            message: "\(url.lastPathComponent) added to your library.",
+                            systemImage: "checkmark.circle.fill",
+                            type: .success
+                        )
+                    }
+                }
+                
+                // Allow scanner to register file then auto-select
+                try? await Task.sleep(nanoseconds: 600_000_000)
                 await MainActor.run {
                     conversionManager.scanLibrary()
+                    if let newlyImported = conversionManager.convertedPDFs.first(where: { $0.url.lastPathComponent == dest.lastPathComponent }) {
+                        self.selectedPDF = newlyImported
+                    }
                 }
             }
         }

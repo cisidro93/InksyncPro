@@ -1106,9 +1106,31 @@ struct TwoUpPageCell: View {
     var cropHalf: CropHalf = .none
     
     @State private var image: UIImage? = nil
+    @State private var croppedImage: UIImage? = nil
+    
+    private func updateCroppedImage(from source: UIImage?) {
+        guard let source = source else {
+            croppedImage = nil
+            return
+        }
+        if let manualInsets = ReaderProgressTracker.shared.cropInsets(for: cache.pdfID), manualInsets.modeRaw == "custom" {
+            let width = source.size.width
+            let height = source.size.height
+            let minX = manualInsets.left
+            let minY = manualInsets.top
+            let cropW = max(0.05, 1.0 - manualInsets.left - manualInsets.right)
+            let cropH = max(0.05, 1.0 - manualInsets.top - manualInsets.bottom)
+            let normalizedRect = CGRect(x: minX, y: minY, width: cropW, height: cropH)
+            if let cropped = ImageProcessor.crop(image: source, to: normalizedRect) {
+                self.croppedImage = cropped
+                return
+            }
+        }
+        self.croppedImage = source
+    }
     
     var body: some View {
-        let currentImage = image ?? cache.getImage(at: index)
+        let currentImage = croppedImage ?? image ?? cache.getImage(at: index)
         
         ZStack {
             Color.black
@@ -1139,14 +1161,23 @@ struct TwoUpPageCell: View {
         .id(index)
         .onAppear {
             if image == nil {
-                image = cache.getImage(at: index)
+                let img = cache.getImage(at: index)
+                image = img
+                updateCroppedImage(from: img)
+            } else {
+                updateCroppedImage(from: image)
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .comicImageCacheImageLoaded)) { notification in
             guard let userInfo = notification.userInfo,
                   let loadedIndex = userInfo["index"] as? Int,
                   loadedIndex == index else { return }
-            image = cache.getImage(at: index)
+            let img = cache.getImage(at: index)
+            image = img
+            updateCroppedImage(from: img)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("Reader_CropInsetsChanged"))) { _ in
+            updateCroppedImage(from: image ?? cache.getImage(at: index))
         }
     }
 }

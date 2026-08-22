@@ -145,12 +145,14 @@ final class ComicImageCache: ObservableObject {
     @Published var loadError: String? = nil   // Non-nil = show error view with exit button
     @Published var isLandscapeArray: [Bool] = []
     var pageCount: Int = 0
+    let pdfID: UUID
     let isPDF: Bool
     let isStream: Bool
     let sourceMode: SourceMode
     var activelyAccessedURL: URL?
     
     init(pdf: ConvertedPDF, prefetchLimit: Int = 2) {
+        self.pdfID = pdf.id
         self.prefetchLimit = prefetchLimit
         self.sourceMode = pdf.sourceMode
         self.cache.totalCostLimit = 150 * 1024 * 1024 // 150 MB absolute RAM cap
@@ -1460,6 +1462,7 @@ struct ComicReaderEngine: View {
     /// Study Notebook and Highlights State
     @State private var showAnnotations = false
     @State private var activeHighlightToEdit: SDAnnotation? = nil
+    @State private var showCropAdjustmentSheet = false
     
     /// Focus state for Magic Keyboard navigation
     @FocusState private var isReaderFocused: Bool
@@ -1827,6 +1830,21 @@ struct ComicReaderEngine: View {
             AnnotationEditSheet(annotation: annotation)
                 .presentationDetents([.height(180), .medium])
                 .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showCropAdjustmentSheet) {
+            ProCropAdjustmentSheet(
+                pdfID: pdf.id,
+                pdfDocument: (cache.isPDF ? PDFDocument(url: pdf.url) : nil),
+                sourceImage: cache.getImage(at: currentIndex),
+                currentPageIndex: currentIndex,
+                onApplyCrop: { insets in
+                    NotificationCenter.default.post(
+                        name: NSNotification.Name("Reader_CropInsetsChanged"),
+                        object: insets
+                    )
+                },
+                onDismiss: { showCropAdjustmentSheet = false }
+            )
         }
         .onDisappear {
             BackTapManager.shared.isEnabled = false
@@ -2244,6 +2262,9 @@ struct ComicReaderEngine: View {
                     isAutoCropEnabled.toggle()
                 }
                 HapticEngine.light()
+            },
+            onManualCropToggle: {
+                showCropAdjustmentSheet = true
             },
             isEnhanced: activeFilterPreset != .original,
             onEnhanceToggle: { withAnimation(.easeInOut) { showingFilterHUD.toggle() } },
@@ -2799,10 +2820,27 @@ struct ComicPageView: View {
         cropTask?.cancel()
         cropTask = nil
         
-        guard let sourceImage = image else {
+        guard let sourceImage = image ?? cache.getImage(at: index) else {
             displayImage = nil
             return
         }
+        
+        // 1. Manual Pro Crop Insets (Precision Top/Bottom/Left/Right trim)
+        if let manualInsets = ReaderProgressTracker.shared.cropInsets(for: cache.pdfID), manualInsets.modeRaw == "custom" {
+            let width = sourceImage.size.width
+            let height = sourceImage.size.height
+            let minX = manualInsets.left
+            let minY = manualInsets.top
+            let cropW = max(0.05, 1.0 - manualInsets.left - manualInsets.right)
+            let cropH = max(0.05, 1.0 - manualInsets.top - manualInsets.bottom)
+            let normalizedRect = CGRect(x: minX, y: minY, width: cropW, height: cropH)
+            if let cropped = ImageProcessor.crop(image: sourceImage, to: normalizedRect) {
+                self.displayImage = cropped
+                return
+            }
+        }
+        
+        // 2. Smart Auto Crop
         if isAutoCropEnabled {
             cropTask = Task.detached(priority: .userInitiated) {
                 let cropRect = SmartCropper.suggestCrop(for: sourceImage)
@@ -2950,6 +2988,9 @@ struct ComicPageView: View {
             updateDisplayImage()
         }
         .onChange(of: isAutoCropEnabled) { _, _ in
+            updateDisplayImage()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("Reader_CropInsetsChanged"))) { _ in
             updateDisplayImage()
         }
         .onChange(of: currentScale) { oldScale, newScale in

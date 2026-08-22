@@ -5,7 +5,8 @@ import PDFKit
 /// Provides live Top/Bottom/Left/Right trim sliders, 1-tap presets, and per-book persistence.
 struct ProCropAdjustmentSheet: View {
     let pdfID: UUID
-    let pdfDocument: PDFDocument?
+    var pdfDocument: PDFDocument? = nil
+    var sourceImage: UIImage? = nil
     let currentPageIndex: Int
     var onApplyCrop: (CodableCropInsets) -> Void
     var onDismiss: () -> Void
@@ -270,24 +271,40 @@ struct ProCropAdjustmentSheet: View {
             rightTrim = prefs.defaultCropRight
         }
 
-        // Render low-res preview of current page
-        guard let page = pdfDocument?.page(at: currentPageIndex) else { return }
-        let rect = page.bounds(for: .mediaBox)
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 1.0
-        let targetSize = CGSize(width: 300, height: 300 * (rect.height / max(1, rect.width)))
-        let renderer = UIGraphicsImageRenderer(size: targetSize, format: format)
-        let img = renderer.image { ctx in
-            UIColor.white.set()
-            ctx.fill(CGRect(origin: .zero, size: targetSize))
-            ctx.cgContext.saveGState()
-            ctx.cgContext.translateBy(x: 0, y: targetSize.height)
-            ctx.cgContext.scaleBy(x: targetSize.width / rect.width, y: -targetSize.height / rect.height)
-            page.draw(with: .mediaBox, to: ctx.cgContext)
-            ctx.cgContext.restoreGState()
-        }
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-            self.previewImage = img
+        // Render preview of current page
+        if let page = pdfDocument?.page(at: currentPageIndex) {
+            let cropBox = page.bounds(for: .cropBox)
+            let mediaBox = page.bounds(for: .mediaBox)
+            let rect = (cropBox.width > 0 && cropBox.height > 0) ? cropBox : mediaBox
+            let targetBox: PDFDisplayBox = (cropBox.width > 0 && cropBox.height > 0) ? .cropBox : .mediaBox
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 1.0
+            let targetSize = CGSize(width: 300, height: 300 * (rect.height / max(1, rect.width)))
+            let renderer = UIGraphicsImageRenderer(size: targetSize, format: format)
+            let img = renderer.image { ctx in
+                UIColor.white.set()
+                ctx.fill(CGRect(origin: .zero, size: targetSize))
+                ctx.cgContext.saveGState()
+                ctx.cgContext.translateBy(x: 0, y: targetSize.height)
+                ctx.cgContext.scaleBy(x: targetSize.width / rect.width, y: -targetSize.height / rect.height)
+                ctx.cgContext.translateBy(x: -rect.origin.x, y: -rect.origin.y)
+                page.draw(with: targetBox, to: ctx.cgContext)
+                ctx.cgContext.restoreGState()
+            }
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                self.previewImage = img
+            }
+        } else if let src = sourceImage {
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 1.0
+            let targetSize = CGSize(width: 300, height: 300 * (src.size.height / max(1, src.size.width)))
+            let renderer = UIGraphicsImageRenderer(size: targetSize, format: format)
+            let img = renderer.image { _ in
+                src.draw(in: CGRect(origin: .zero, size: targetSize))
+            }
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                self.previewImage = img
+            }
         }
     }
 
