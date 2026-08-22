@@ -307,6 +307,7 @@ struct ContentView: View {
                             systemImage: "arrow.down.doc.fill",
                             type: .success
                         )
+                    }
                     try? await Task.sleep(nanoseconds: 2_500_000_000)
                     conversionManager.scanLibrary()
                 }
