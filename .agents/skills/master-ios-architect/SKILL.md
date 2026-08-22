@@ -6,6 +6,7 @@ description: Master iOS & Systems Architecture Protocol for InksyncPro synthesiz
 # Master iOS & Systems Architecture Protocol for InksyncPro
 
 Synthesized from world-class software engineering educators:
+
 - **Point-Free (Brandon Williams & Stephen Celis):** Swift 6 Concurrency, Single-Source State Machines & Unidirectional Data Flow.
 - **Kavsoft (UI/UX Engineering):** Glassmorphism, 120Hz ProMotion Fluid Animations, Custom Gestures & Micro-Interactions.
 - **Paul Hudson (Hacking with Swift):** Native Framework Mastery (PDFKit, WebKit, PencilKit, Metal Graphics & SwiftData).
@@ -17,6 +18,7 @@ Synthesized from world-class software engineering educators:
 ## 1. Core Architectural Pillars
 
 ### Pillar 1: Point-Free Swift 6 State Architecture
+
 1. **Single Source of Truth:**
    - Never mirror or duplicate state across views. Maintain authoritative state managers (e.g., `ReaderProgressTracker.shared`, `EBookPreferences.shared`).
    - Use `@MainActor` isolation for UI-bound state and `Actor` isolation for asynchronous background tasks.
@@ -27,6 +29,7 @@ Synthesized from world-class software engineering educators:
    - Ensure UI state transitions cannot trigger inconsistent intermediate states (e.g., `safeSetViewControllers` in `UIPageViewController` to guarantee array length alignment with `spineLocation`).
 
 ### Pillar 2: Kavsoft UI/UX & ProMotion Polish
+
 1. **Aesthetic Excellence:**
    - Use rich, harmonious color palettes (e.g. `Color.inkBackground`, `Color.inkGreen`, `Color.inkOrange`).
    - Implement frosted-glass glassmorphism (`.ultraThinMaterial`, `Capsule()`, `RoundedRectangle(cornerRadius: 16)`).
@@ -37,6 +40,7 @@ Synthesized from world-class software engineering educators:
    - Adapt UI layouts seamlessly between iPhone portrait/landscape and iPad dual-page / multi-column presentation.
 
 ### Pillar 3: Paul Hudson Native Framework Integration
+
 1. **PDFKit & WebKit Optimization:**
    - Enable Smart Margin Cropping by dynamically setting `page.setBounds(cropRect, for: .cropBox)` and scaling `scaleFactor` to fill 100% of the screen width.
    - Prevent view destruction during crop toggles by keeping `PDFKitRepresentedView` mounted.
@@ -48,6 +52,7 @@ Synthesized from world-class software engineering educators:
    - Pre-render 0ms column snapshots for 3D page curl transitions.
 
 ### Pillar 4: ThePrimeagen Low-Level Performance & Zero-Leak Memory Safety
+
 1. **Empirical Log & Traceback First:**
    - Always read full, un-truncated `.ips` crash logs and stack traces before forming a diagnostic hypothesis.
    - Trace exact faulting frames (`_validatedViewControllersForTransitionWithViewControllers:animated:`, `loadChapterAndPresent`) back to root causes.
@@ -58,6 +63,7 @@ Synthesized from world-class software engineering educators:
    - Offload heavy tasks (PDF rendering, image sampling, archive extraction, smart crop calculation) to background tasks (`Task.detached(priority: .userInitiated)`).
 
 ### Pillar 5: Visual Kernel Knowledge Management
+
 1. **Visual State Clarity:**
    - Provide clear, immediate visual indicators for active states (Smart Crop active, Pencil Ink mode enabled, Dual Page active).
 2. **Zettelkasten & Study Notebook:**
@@ -68,6 +74,7 @@ Synthesized from world-class software engineering educators:
 ## 2. Developer Action Checklist
 
 Whenever authoring, refactoring, or reviewing code for InksyncPro:
+
 - [ ] Has the error or bug been justified by empirical log/crash evidence?
 - [ ] Is state managed through a single source of truth without duplicated properties?
 - [ ] Are view controller array bounds dynamically aligned to prevent UIKit exceptions?

@@ -10,6 +10,7 @@ This skill provides step-by-step instructions for conducting **Clean Code Audits
 ## Core Rules & Principles
 
 ### 1. Single Responsibility Principle (SRP)
+
 - **Rule**: Every class, struct, actor, function, and SwiftUI view component MUST have a single, well-defined responsibility.
 - **Action**:
   - Keep functions under 30-40 lines wherever possible.
@@ -17,24 +18,28 @@ This skill provides step-by-step instructions for conducting **Clean Code Audits
   - Separate UI layout logic from data parsing and persistence.
 
 ### 2. Don't Repeat Yourself (DRY) & Single Source of Truth
+
 - **Rule**: Never duplicate business logic, layout metrics, string manipulation loops, or state structures across multiple files.
 - **Action**:
   - Extract repeated inline code (e.g., drag gestures, image extension checks, string filename trimming) into shared extensions or reusable components.
   - Maintain a single authoritative manager (e.g., `ReaderProgressTracker.shared`, `AppSettingsManager.shared`) for global state.
 
 ### 3. Eliminate Magic Numbers & Cryptic Abbreviations
+
 - **Rule**: No unexplained hardcoded numbers or abbreviated variable names.
 - **Action**:
   - Store layout bounds, animation spring values, and debounce thresholds in named constant enums (e.g., `ReaderLayoutConstants`).
   - Use intent-revealing parameter names (`activeReaderPageIndex`) instead of vague placeholders (`idx`, `p`, `val`).
 
 ### 4. Self-Documenting Code & Intent-Focused Comments
+
 - **Rule**: Code must be expressive enough to explain *what* it does through naming and clean structure.
 - **Action**:
   - Only write comments to explain *why* a complex algorithm, workaround, or low-level optimization was implemented.
   - Remove redundant syntax comments (e.g., `// loop over array`).
 
 ### 5. Resource Cleanliness & Memory Safety
+
 - **Rule**: Zero dangling listeners, zero uncancelled background tasks, and zero memory leaks.
 - **Action**:
   - Always implement observer teardown (`dismantleUIView`, `deinit`) when adding NotificationCenter listeners.
