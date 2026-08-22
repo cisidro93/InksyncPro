@@ -23,7 +23,7 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         options: [UIApplication.OpenURLOptionsKey: Any] = [:]
     ) -> Bool {
 
-        if url.scheme == "inksyncpro" {
+        if url.scheme == "inksyncpro" || url.scheme == "inksync" {
             // The Share Extension has already written files to the App Group.
             // SharedImportCoordinator will move them into InksyncVault/Inbox
             // with retry logic in case the extension process is still writing.
@@ -38,62 +38,8 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         }
 
         if url.isFileURL {
-            // "Open With" / Files.app / AirDrop — copy into InksyncVault/Inbox
-            // on a background thread, then notify ContentView to scan + auto-select.
-            let accessing = url.startAccessingSecurityScopedResource()
-            Task.detached(priority: .userInitiated) {
-                defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-
-                let appSupport = FileManager.default.urls(
-                    for: .applicationSupportDirectory, in: .userDomainMask
-                ).first ?? FileManager.default.temporaryDirectory
-                let inboxDir = appSupport.appendingPathComponent("InksyncVault/Inbox", isDirectory: true)
-                try? FileManager.default.createDirectory(at: inboxDir, withIntermediateDirectories: true)
-                let dest = inboxDir.appendingPathComponent(url.lastPathComponent)
-                try? FileManager.default.removeItem(at: dest)
-
-                var copySuccess = false
-
-                // NSFileCoordinator respects iCloud and Files-provider file locks.
-                NSFileCoordinator().coordinate(
-                    readingItemAt: url, options: .withoutChanges, error: nil
-                ) { safeURL in
-                    do {
-                        try FileManager.default.copyItem(at: safeURL, to: dest)
-                        copySuccess = true
-                    } catch {
-                        if let data = try? Data(contentsOf: safeURL, options: .alwaysMapped) {
-                            copySuccess = (try? data.write(to: dest, options: .atomic)) != nil
-                        }
-                    }
-                }
-
-                // Final fallback — direct read (handles some iCloud-stub cases).
-                if !copySuccess, let data = try? Data(contentsOf: url, options: .alwaysMapped) {
-                    copySuccess = (try? data.write(to: dest, options: .atomic)) != nil
-                }
-
-                guard copySuccess else {
-                    Logger.shared.log(
-                        "AppDelegate: Failed to copy file \(url.lastPathComponent) to InksyncVault/Inbox",
-                        category: "Import", type: .error
-                    )
-                    return
-                }
-
-                Logger.shared.log(
-                    "AppDelegate: Copied '\(url.lastPathComponent)' → InksyncVault/Inbox",
-                    category: "Import", type: .success
-                )
-
-                await MainActor.run {
-                    SharedImportCoordinator.shared.registerDirectlyOpenedFile(at: dest)
-                    NotificationCenter.default.post(
-                        name: NSNotification.Name("InksyncPro.DirectFileOpenReceived"),
-                        object: dest
-                    )
-                    NotificationCenter.default.post(name: .libraryNeedsRescan, object: nil)
-                }
+            Task { @MainActor in
+                await SharedImportCoordinator.shared.handleDirectFileOpen(url: url)
             }
             return true
         }
@@ -184,8 +130,8 @@ struct InksyncProApp: App {
                 .modelContainer(InksyncProApp.sharedModelContainer)
                 .preferredColorScheme(selectedTheme.colorScheme)
                 .onAppear {
-                    // MigrationService is invoked inside ContentView.onAppear
-                    // where the SwiftData model context is available via @Environment.
+                    // Check for any pending imports from Share Extension on launch
+                    SharedImportCoordinator.shared.coordinateImport(retryCount: 3, retryDelaySeconds: 0.5)
                 }
                 .onChange(of: scenePhase) { _, newPhase in
                     switch newPhase {
@@ -196,6 +142,7 @@ struct InksyncProApp: App {
                          InksyncProApp.scheduleAppRefresh()
                     case .active:
                          SecurityManager.shared.handleAppForegrounding()
+                         SharedImportCoordinator.shared.coordinateImport(retryCount: 3, retryDelaySeconds: 0.5)
                          NotificationCenter.default.post(name: .libraryNeedsRescan, object: nil)
                     @unknown default: break
                     }

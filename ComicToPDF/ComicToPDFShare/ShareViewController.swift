@@ -59,8 +59,6 @@ class ShareViewController: UIViewController {
         }
 
         // ── Step 1: Write import flags to every known App Group suite ──────────
-        // The host app checks ALL three identifiers because provisioning profiles
-        // sometimes only grant one of them, depending on the build configuration.
         let appGroupIDs = [
             "group.com.antigravity.ComicToPDF",
             "group.com.antigravity.inksync",
@@ -75,30 +73,43 @@ class ShareViewController: UIViewController {
             }
         }
 
-        // ── Step 2: Open the host app ──────────────────────────────────────────
-        //
-        // `extensionContext?.open(_:completionHandler:)` is the ONLY officially
-        // documented API for activating the containing app from a Share Extension.
-        //
-        // We call `completeRequest` INSIDE the completion handler so that we never
-        // signal extension completion before the system has confirmed the URL open
-        // request has been dispatched to SpringBoard.
-        //
-        // IMPORTANT: if `open()` returns false (e.g., the scheme is not registered
-        // or the device is in some edge-case state) we still complete gracefully;
-        // the host app will pick up the files via the `willEnterForeground` flag on
-        // next launch.
+        // ── Step 2: Open the host app via UIResponder chain ───────────────────
+        var didOpenViaResponder = false
+        var responder: UIResponder? = self
+        while let r = responder {
+            let sel = Selector(("openURL:"))
+            if r.responds(to: sel) {
+                r.perform(sel, with: deepLinkURL)
+                didOpenViaResponder = true
+                break
+            }
+            let selOptions = Selector(("openURL:options:completionHandler:"))
+            if r.responds(to: selOptions) {
+                r.perform(selOptions, with: deepLinkURL, with: [:] as NSDictionary, with: nil)
+                didOpenViaResponder = true
+                break
+            }
+            responder = r.next
+        }
 
-        extensionContext?.open(deepLinkURL, completionHandler: { [weak self] success in
-            DispatchQueue.main.async {
-                if !success {
-                    // URL open was not dispatched — host app will pick up via flag.
-                }
+        if didOpenViaResponder {
+            // Dismiss extension after giving SpringBoard time to start app switch
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
                 self?.extensionContext?.completeRequest(
                     returningItems: nil,
                     completionHandler: nil
                 )
             }
-        })
+        } else {
+            // Fallback to extensionContext.open
+            extensionContext?.open(deepLinkURL, completionHandler: { [weak self] _ in
+                DispatchQueue.main.async {
+                    self?.extensionContext?.completeRequest(
+                        returningItems: nil,
+                        completionHandler: nil
+                    )
+                }
+            })
+        }
     }
 }

@@ -44,8 +44,8 @@ final class SharedImportCoordinator: ObservableObject {
     // MARK: - Entry Points
 
     /// Called by ContentView's willEnterForeground observer, AppDelegate URL handler,
-    /// and the `inksyncpro://` deep-link handler. Safe to call multiple times — it
-    /// debounces internally.
+    /// scenePhase changes, and the `inksyncpro://` deep-link handler. Safe to call
+    /// multiple times — it debounces internally.
     func coordinateImport(retryCount: Int = 3, retryDelaySeconds: Double = 0.8) {
         guard !isIngesting else { return }
         isIngesting = true
@@ -58,8 +58,87 @@ final class SharedImportCoordinator: ObservableObject {
                 }
                 self.clearPendingShareFlags()
                 self.isIngesting = false
+                if !ingestedNames.isEmpty {
+                    Logger.shared.log(
+                        "SharedImportCoordinator: Completed import of \(ingestedNames.count) file(s), notifying system",
+                        category: "Import", type: .success
+                    )
+                    NotificationCenter.default.post(
+                        name: NSNotification.Name("InksyncPro.ShareImportReceived"),
+                        object: nil
+                    )
+                    NotificationCenter.default.post(name: .libraryNeedsRescan, object: nil)
+                }
             }
         }
+    }
+
+    /// Centralized, failsafe direct file:// ingestion method.
+    /// Handles security-scoped access, coordination, destination placement in InksyncVault/Inbox,
+    /// and dispatches notifications for UI update.
+    @discardableResult
+    func handleDirectFileOpen(url: URL) async -> URL? {
+        let accessing = url.startAccessingSecurityScopedResource()
+        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+
+        let appSupport = FileManager.default.urls(
+            for: .applicationSupportDirectory, in: .userDomainMask
+        ).first ?? FileManager.default.temporaryDirectory
+        let inboxDir = appSupport.appendingPathComponent("InksyncVault/Inbox", isDirectory: true)
+        try? FileManager.default.createDirectory(at: inboxDir, withIntermediateDirectories: true)
+        let filename = url.lastPathComponent
+        let dest = inboxDir.appendingPathComponent(filename)
+
+        // If file is already at destination and valid, register and return
+        if dest.path == url.path && FileManager.default.fileExists(atPath: dest.path) {
+            registerDirectlyOpenedFile(at: dest)
+            NotificationCenter.default.post(name: .libraryNeedsRescan, object: nil)
+            return dest
+        }
+
+        try? FileManager.default.removeItem(at: dest)
+
+        var copySuccess = false
+
+        // Coordinate read via NSFileCoordinator
+        NSFileCoordinator().coordinate(
+            readingItemAt: url, options: .withoutChanges, error: nil
+        ) { safeURL in
+            do {
+                try FileManager.default.copyItem(at: safeURL, to: dest)
+                copySuccess = true
+            } catch {
+                if let data = try? Data(contentsOf: safeURL, options: .alwaysMapped) {
+                    copySuccess = (try? data.write(to: dest, options: .atomic)) != nil
+                }
+            }
+        }
+
+        // Direct stream fallback
+        if !copySuccess, let data = try? Data(contentsOf: url, options: .alwaysMapped) {
+            copySuccess = (try? data.write(to: dest, options: .atomic)) != nil
+        }
+
+        guard copySuccess else {
+            Logger.shared.log(
+                "SharedImportCoordinator: Failed to copy file \(filename) to InksyncVault/Inbox",
+                category: "Import", type: .error
+            )
+            return nil
+        }
+
+        Logger.shared.log(
+            "SharedImportCoordinator: Successfully ingested direct file '\(filename)' → InksyncVault/Inbox",
+            category: "Import", type: .success
+        )
+
+        registerDirectlyOpenedFile(at: dest)
+        NotificationCenter.default.post(
+            name: NSNotification.Name("InksyncPro.DirectFileOpenReceived"),
+            object: dest
+        )
+        NotificationCenter.default.post(name: .libraryNeedsRescan, object: nil)
+        return dest
     }
 
     /// Called when a direct file:// URL is handed to the app (Open With, Files.app, AirDrop).
@@ -256,11 +335,32 @@ final class SharedImportCoordinator: ObservableObject {
         return names
     }
 
-    // MARK: - Public: Has pending share from App Group
-
     func hasPendingShareImport() -> Bool {
-        return appGroupIDs.contains(where: {
-            (UserDefaults(suiteName: $0)?.double(forKey: "pendingShareImportTimestamp") ?? 0) > 0
-        })
+        if appGroupIDs.contains(where: {
+            (UserDefaults(suiteName: $0)?.double(forKey: "pendingShareImportTimestamp") ?? 0) > 0 ||
+            UserDefaults(suiteName: $0)?.bool(forKey: "hasPendingShareImport") == true
+        }) {
+            return true
+        }
+
+        // Also check physical directories in App Groups for any staged files
+        let fm = FileManager.default
+        for groupID in appGroupIDs {
+            guard let container = fm.containerURL(forSecurityApplicationGroupIdentifier: groupID) else { continue }
+            let stagingDirs = [
+                container.appendingPathComponent("ShareStaging"),
+                container.appendingPathComponent("Inbox"),
+                container.appendingPathComponent("PendingConversions")
+            ]
+            for dir in stagingDirs {
+                if let contents = try? fm.contentsOfDirectory(atPath: dir.path), !contents.isEmpty {
+                    let validFiles = contents.filter { !$0.hasSuffix(".manifest.json") && !$0.hasPrefix(".") }
+                    if !validFiles.isEmpty {
+                        return true
+                    }
+                }
+            }
+        }
+        return false
     }
 }

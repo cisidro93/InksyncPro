@@ -30,6 +30,9 @@
                     ANY $attach.registeredTypeIdentifiers UTI-CONFORMS-TO "public.data"
                     || ANY $attach.registeredTypeIdentifiers UTI-CONFORMS-TO "public.archive"
                     || ANY $attach.registeredTypeIdentifiers UTI-CONFORMS-TO "public.file-url"
+                    || ANY $attach.registeredTypeIdentifiers UTI-CONFORMS-TO "public.content"
+                    || ANY $attach.registeredTypeIdentifiers UTI-CONFORMS-TO "public.item"
+                    || ANY $attach.registeredTypeIdentifiers UTI-CONFORMS-TO "public.url"
                 ).@count > 0
             ).@count > 0</string>
         </dict>
@@ -41,6 +44,7 @@
     <key>LSApplicationQueriesSchemes</key>
     <array>
         <string>inksyncpro</string>
+        <string>inksync</string>
     </array>
 </dict>
 </plist>

@@ -382,14 +382,11 @@ struct ContentView: View {
                 return
             }
 
-            // inksyncpro://shared-import — Share Extension callback.
-            // AppDelegate already handled this via application(_:open:options:);
-            // onOpenURL may fire as an additional signal on some iOS versions.
-            // We forward it to SharedImportCoordinator so files move if they haven't already.
-            if url.scheme == "inksyncpro" {
+            // inksyncpro:// or inksync:// shared-import — Share Extension callback.
+            if url.scheme == "inksyncpro" || url.scheme == "inksync" {
                 Task { @MainActor in
-                    SharedImportCoordinator.shared.coordinateImport(retryCount: 3, retryDelaySeconds: 0.8)
-                    try? await Task.sleep(nanoseconds: 1_500_000_000)
+                    SharedImportCoordinator.shared.coordinateImport(retryCount: 4, retryDelaySeconds: 0.5)
+                    try? await Task.sleep(nanoseconds: 800_000_000)
                     conversionManager.scanLibrary()
                     router.selectedTab = 0
                     withAnimation(.spring()) {
@@ -400,33 +397,42 @@ struct ContentView: View {
                             type: .success
                         )
                     }
+                    try? await Task.sleep(nanoseconds: 1_000_000_000)
+                    conversionManager.scanLibrary()
+                    let filenames = SharedImportCoordinator.shared.consumeAutoSelectFilenames()
+                    if filenames.count == 1, let name = filenames.first,
+                       let match = conversionManager.convertedPDFs.first(where: { $0.url.lastPathComponent == name }) {
+                        self.selectedPDF = match
+                    }
                 }
                 return
             }
 
-            // Direct file:// open — AppDelegate already started copying it.
-            // onOpenURL fires concurrently; just ensure we're on the library tab.
-            guard url.isFileURL else { return }
-            Task { @MainActor in
-                router.selectedTab = 0
-                // Wait for AppDelegate's background copy task to finish (~600ms).
-                try? await Task.sleep(nanoseconds: 800_000_000)
-                conversionManager.scanLibrary()
-                withAnimation(.spring()) {
-                    activeToast = ToastMessage(
-                        title: "Added to Library",
-                        message: "\(url.lastPathComponent) ready to read.",
-                        systemImage: "checkmark.circle.fill",
-                        type: .success
-                    )
+            // Direct file:// open ("Open In", "Copy to InkSync Pro", Files app, AirDrop)
+            if url.isFileURL {
+                Task { @MainActor in
+                    router.selectedTab = 0
+                    if let dest = await SharedImportCoordinator.shared.handleDirectFileOpen(url: url) {
+                        conversionManager.scanLibrary()
+                        withAnimation(.spring()) {
+                            activeToast = ToastMessage(
+                                title: "Added to Library",
+                                message: "\(dest.lastPathComponent) ready to read.",
+                                systemImage: "checkmark.circle.fill",
+                                type: .success
+                            )
+                        }
+                        try? await Task.sleep(nanoseconds: 400_000_000)
+                        conversionManager.scanLibrary()
+                        if let newlyImported = conversionManager.convertedPDFs.first(
+                            where: { $0.url.lastPathComponent == dest.lastPathComponent }
+                        ) {
+                            self.selectedPDF = newlyImported
+                        }
+                        SharedImportCoordinator.shared.consumeAutoSelectFilenames()
+                    }
                 }
-                try? await Task.sleep(nanoseconds: 600_000_000)
-                conversionManager.scanLibrary()
-                if let newlyImported = conversionManager.convertedPDFs.first(
-                    where: { $0.url.lastPathComponent == url.lastPathComponent }
-                ) {
-                    self.selectedPDF = newlyImported
-                }
+                return
             }
         }
         .onChange(of: showingWebExport) { _, showing in

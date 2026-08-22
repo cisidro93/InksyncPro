@@ -93,10 +93,17 @@
                 <string>com.antigravity.cbz</string>
                 <string>com.antigravity.cbr</string>
                 <string>com.adobe.pdf</string>
+                <string>public.pdf</string>
                 <string>org.idpf.epub-container</string>
+                <string>public.epub</string>
                 <string>org.7-zip.7-zip-archive</string>
                 <string>public.archive</string>
                 <string>public.zip-archive</string>
+                <string>com.pkware.zip-archive</string>
+                <string>com.rarlab.rar-archive</string>
+                <string>public.data</string>
+                <string>public.content</string>
+                <string>public.item</string>
             </array>
         </dict>
     </array>
@@ -246,6 +253,7 @@
             <key>CFBundleURLSchemes</key>
             <array>
                 <string>inksyncpro</string>
+                <string>inksync</string>
             </array>
         </dict>
     </array>

@@ -806,16 +806,27 @@ struct ShareExtensionView: View {
             await MainActor.run {
                 processingProgress = 1.0
                 isProcessing = false
-                if stagedCount > 0 && !anyErrors {
+                if stagedCount > 0 {
+                    // Set import flags immediately in all App Group UserDefaults suites
+                    let appGroupIDs = [
+                        "group.com.antigravity.ComicToPDF",
+                        "group.com.antigravity.inksync",
+                        "group.com.antigravity.InksyncPro"
+                    ]
+                    let timestamp = Date().timeIntervalSince1970
+                    for gid in appGroupIDs {
+                        if let ud = UserDefaults(suiteName: gid) {
+                            ud.set(timestamp, forKey: "pendingShareImportTimestamp")
+                            ud.set(true, forKey: "hasPendingShareImport")
+                            ud.synchronize()
+                        }
+                    }
                     showingSuccess = true
-                } else if stagedCount == 0 {
+                } else {
                     showingSuccess = false
                     if errorMessage == nil {
                         errorMessage = "Failed to stage shared documents to App Group container"
                     }
-                } else {
-                    // Partial success
-                    showingSuccess = true
                 }
             }
         }
